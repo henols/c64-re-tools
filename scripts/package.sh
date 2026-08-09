@@ -62,10 +62,36 @@ if (mcp) {
     errors.push(".mcp.json: vice server args must reference ${CLAUDE_PLUGIN_ROOT}");
 }
 
+// The two published npm packages track the plugin version, and the installer
+// depends on the EXACT vice-mcp version it ships against, so a single `v<version>`
+// tag publishes a coherent set (installer -> its bundled vice-mcp).
+const vicePkg = readJson(".claude/mcp/vice/package.json");
+const installerPkg = readJson("installer/package.json");
+if (plugin && vicePkg) {
+  if (vicePkg.name !== "@henols/vice-mcp")
+    errors.push(`vice package name is "${vicePkg.name}", expected "@henols/vice-mcp"`);
+  if (vicePkg.private)
+    errors.push(".claude/mcp/vice/package.json is still marked private (cannot be published)");
+  if (vicePkg.version !== plugin.version)
+    errors.push(`version mismatch: .claude/mcp/vice/package.json "${vicePkg.version}" vs plugin "${plugin.version}"`);
+}
+if (plugin && installerPkg) {
+  if (installerPkg.name !== "@henols/c64-re-tools")
+    errors.push(`installer package name is "${installerPkg.name}", expected "@henols/c64-re-tools"`);
+  if (installerPkg.private)
+    errors.push("installer/package.json is still marked private (cannot be published)");
+  if (installerPkg.version !== plugin.version)
+    errors.push(`version mismatch: installer/package.json "${installerPkg.version}" vs plugin "${plugin.version}"`);
+  const dep = installerPkg.dependencies && installerPkg.dependencies["@henols/vice-mcp"];
+  if (dep !== plugin.version)
+    errors.push(`installer's @henols/vice-mcp dependency is "${dep}", expected exact "${plugin.version}"`);
+}
+
 // Required files.
 [".mcp.json", "scripts/ensure-mcp-deps.sh",
  ".claude/mcp/vice/package.json", ".claude/mcp/vice/package-lock.json",
- ".claude/mcp/vice/vice-proxy.ts"].forEach(mustExist);
+ ".claude/mcp/vice/vice-proxy.ts",
+ "installer/package.json", "installer/bin/cli.mjs", "installer/scripts/sync-skills.mjs"].forEach(mustExist);
 
 // Every skill directory must carry a SKILL.md.
 const skillsDir = path.join(root, ".claude/skills");

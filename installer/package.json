@@ -1,0 +1,53 @@
+{
+  "name": "@henols/c64-re-tools",
+  "version": "0.1.1",
+  "description": "Installer that adds the C64 reverse-engineering skills and the VICE emulator MCP server (@henols/vice-mcp) to a project.",
+  "type": "module",
+  "bin": {
+    "c64-re-tools": "bin/cli.mjs"
+  },
+  "files": [
+    "bin/",
+    "skills/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Henrik Olsson",
+    "url": "https://github.com/henols"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henols/c64-re-tools.git",
+    "directory": "installer"
+  },
+  "homepage": "https://github.com/henols/c64-re-tools#readme",
+  "bugs": {
+    "url": "https://github.com/henols/c64-re-tools/issues"
+  },
+  "keywords": [
+    "c64",
+    "commodore-64",
+    "vice",
+    "6502",
+    "6510",
+    "acme",
+    "reverse-engineering",
+    "mcp",
+    "claude",
+    "installer"
+  ],
+  "dependencies": {
+    "@henols/vice-mcp": "0.1.1"
+  },
+  "scripts": {
+    "sync-skills": "node scripts/sync-skills.mjs",
+    "prepack": "node scripts/sync-skills.mjs"
+  }
+}
