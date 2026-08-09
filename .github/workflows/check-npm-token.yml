@@ -1,0 +1,54 @@
+name: Check NPM_TOKEN
+
+# A manual, on-demand diagnostic: run it from the Actions tab
+# (Actions -> "Check NPM_TOKEN" -> "Run workflow") to find out whether the
+# NPM_TOKEN repository secret is set AND whether npm actually accepts it --
+# without cutting a release. It never prints the token itself, only its length
+# and, if valid, the npm username it authenticates as.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check NPM_TOKEN secret
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN is EMPTY or not set as a repository secret."
+            echo "❌ NPM_TOKEN is EMPTY (GitHub Actions sees no value)."
+            echo ""
+            echo "Fix: Settings -> Secrets and variables -> Actions -> the 'Secrets' tab"
+            echo "     -> Repository secrets -> New repository secret"
+            echo "     Name:  NPM_TOKEN"
+            echo "     Value: your npm token string (starts with 'npm_')"
+            echo ""
+            echo "Common mistakes: it was added under the 'Variables' tab instead of"
+            echo "'Secrets', added as an Environment secret, or the token's NAME was"
+            echo "pasted instead of the npm_... value."
+            exit 1
+          fi
+
+          echo "✅ NPM_TOKEN is present (length ${#NODE_AUTH_TOKEN} characters)."
+          echo "Verifying npm accepts it..."
+          if who="$(npm whoami 2>/dev/null)"; then
+            echo "✅ npm accepted the token. Authenticated as: ${who}"
+            echo ""
+            echo "Publishing will work as long as '${who}' is allowed to publish the @henols scope."
+            echo "You can now re-run the failed publish, or cut a new release tag."
+          else
+            echo "::error::NPM_TOKEN is set but npm rejected it."
+            echo "❌ NPM_TOKEN is set, but npm REJECTED it (invalid, expired, or wrong type)."
+            echo ""
+            echo "Fix: on npmjs.com create a new *Automation* classic token, then replace"
+            echo "     the NPM_TOKEN secret value with the new npm_... string."
+            exit 1
+          fi
