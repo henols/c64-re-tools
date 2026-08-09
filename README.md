@@ -93,12 +93,15 @@ so the tests travel and run unchanged.
 
 ## Publishing (maintainers)
 
-Both npm packages track the plugin version (enforced by `scripts/package.sh`).
-To release, bump the version in `plugin.json`, `marketplace.json`,
-`.claude/mcp/vice/package.json`, and `installer/package.json` (and the installer's
-`@henols/vice-mcp` dependency) to the same value, then push a matching `v<version>`
-tag. CI publishes `@henols/vice-mcp` then `@henols/c64-re-tools` to npm — this
-requires an automation token in the **`NPM_TOKEN`** repository secret, with the
+To release, push a `v<version>` tag (e.g. `v0.1.2`) — or create a GitHub Release,
+which creates the tag. CI takes the version **from the tag** and publishes
+`@henols/vice-mcp` then `@henols/c64-re-tools` to npm at that version, so you do
+**not** need to pre-bump the source `package.json` files to match (the committed
+versions are placeholders that CI overwrites at publish time). The GitHub-Release
+step is idempotent, so a hand-drafted release and the CI run don't collide.
+
+Publishing requires an automation token in the **`NPM_TOKEN`** repository secret
+(Settings → Secrets and variables → Actions → *Repository secrets*), with the
 `@henols` scope created and publishable by that token.
 
 ## Developing / testing the MCP server
