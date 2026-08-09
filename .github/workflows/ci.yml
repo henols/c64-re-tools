@@ -74,12 +74,27 @@ jobs:
       - name: Build installable package
         run: bash scripts/package.sh
       - name: Publish release assets
+        # Idempotent: create the release if it doesn't exist yet, otherwise just
+        # attach/replace the assets. This lets a release be drafted by hand (or
+        # by a re-run) without the job colliding with "release already exists".
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --generate-notes --title "${GITHUB_REF_NAME}"
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --generate-notes --title "${GITHUB_REF_NAME}"
+          fi
 
   publish-npm:
     # On a v* tag, publish both npm packages to the public registry.
+    #
+    # The published version is taken from the tag (v1.2.3 -> 1.2.3), so a release
+    # can be cut just by pushing/creating a tag -- no need to pre-bump the source
+    # package.json files to match. The committed versions are placeholders that
+    # `npm version` overwrites here before publishing.
+    #
     # Requires an automation token in the NPM_TOKEN repository secret; the
     # @henols scope must exist and the token must be allowed to publish it.
     needs: build
@@ -92,27 +107,24 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Verify tag matches package versions
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF_NAME#v}"
-          PLUGIN_V="$(node -p "require('./.claude-plugin/plugin.json').version")"
-          if [ "$TAG" != "$PLUGIN_V" ]; then
-            echo "tag '${GITHUB_REF_NAME}' does not match plugin version '${PLUGIN_V}'"
-            exit 1
-          fi
-          # Re-run the five-way version-agreement + layout validation.
-          bash scripts/package.sh
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       # Publish the MCP server first: the installer depends on this exact version.
       - name: Publish @henols/vice-mcp
         working-directory: .claude/mcp/vice
-        run: npm publish
+        run: |
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @henols/c64-re-tools
         working-directory: installer
-        run: npm publish
+        run: |
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm pkg set "dependencies.@henols/vice-mcp=${{ steps.ver.outputs.version }}"
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
