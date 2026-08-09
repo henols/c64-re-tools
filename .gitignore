@@ -27,3 +27,11 @@ mcp-deps.lock.sha256
 
 # build artifacts from scripts/package.sh
 dist/
+
+# Skills copied into the installer package by installer/scripts/sync-skills.mjs
+# on `npm pack`/`prepack`. Generated from the canonical .claude/skills/; never
+# committed.
+/installer/skills/
+
+# npm pack output
+*.tgz

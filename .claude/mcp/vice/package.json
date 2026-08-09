@@ -1,11 +1,64 @@
 {
-  "name": "vice-mcp",
-  "private": true,
+  "name": "@henols/vice-mcp",
+  "version": "0.1.1",
+  "description": "VICE emulator MCP server for C64 reverse-engineering: a stdio MCP server that proxies vice tools to a host VICE MCP server.",
   "type": "module",
+  "bin": {
+    "vice-mcp": "vice-proxy.ts"
+  },
+  "main": "vice-proxy.ts",
+  "files": [
+    "vice-proxy.ts",
+    "vice.ts",
+    "vice-sync.ts",
+    "vice-probe.ts",
+    "vice-broker-client.ts",
+    "containerpath.ts",
+    "hostpath.ts",
+    "repo-root.ts",
+    "install-resources.ts",
+    "incident-record.ts",
+    "refresh-manifest.ts",
+    "build.ts",
+    "container-guard.mts",
+    "resources",
+    "tools-manifest.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Henrik Olsson",
+    "url": "https://github.com/henols"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henols/c64-re-tools.git",
+    "directory": ".claude/mcp/vice"
+  },
+  "homepage": "https://github.com/henols/c64-re-tools#readme",
+  "bugs": {
+    "url": "https://github.com/henols/c64-re-tools/issues"
+  },
+  "keywords": [
+    "c64",
+    "commodore-64",
+    "vice",
+    "6502",
+    "6510",
+    "mcp",
+    "reverse-engineering"
+  ],
   "scripts": {
     "test": "node --test '*.test.*'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "node build.ts"
+    "build": "node build.ts",
+    "smoke": "node smoke.mjs"
   },
   "dependencies": {
     "@mastra/mcp": "1.15.0",

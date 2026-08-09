@@ -170,16 +170,19 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // array's own history has been anticipating since it was first written.
 // Every change to it must be a deliberate edit with a commit behind it, not
 // a silent widening to make a red gate pass.
-// In this plugin repo the tracked shell-script set is exactly two: the
-// host-side VICE launcher (deployed from resources/) and the SessionStart
-// dependency-provisioning script the plugin runs on the consumer. Unlike the
-// originating project this carries no `.devcontainer/` provisioning scripts --
-// a plugin is installed into someone else's workspace, not shipped with its
-// own container image -- so the old ".devcontainer/-exactly-2" assertion is
-// gone. This array still shrinks/grows only by a deliberate, committed edit.
+// In this plugin repo the tracked shell-script set is exactly three: the
+// host-side VICE launcher (deployed from resources/), the SessionStart
+// dependency-provisioning script the plugin runs on the consumer, and the
+// packaging script that validates the manifests and builds the release zip.
+// Unlike the originating project this carries no `.devcontainer/` provisioning
+// scripts -- a plugin is installed into someone else's workspace, not shipped
+// with its own container image -- so the old ".devcontainer/-exactly-2"
+// assertion is gone. This array still shrinks/grows only by a deliberate,
+// committed edit.
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   ".claude/mcp/vice/resources/vice-launcher.sh",
   "scripts/ensure-mcp-deps.sh",
+  "scripts/package.sh",
 ].sort();
 
 test("structural: git ls-files enumerates the tracked shell-script set as exactly EXPECTED_TRACKED_SHELL_SCRIPTS", async () => {

@@ -40,6 +40,13 @@ jobs:
         working-directory: .claude/mcp/vice
         run: npm test
 
+      - name: Smoke-test the MCP server (boots under type-stripping + MCP handshake)
+        working-directory: .claude/mcp/vice
+        run: npm run smoke
+
+      - name: Validate npm package contents
+        run: node scripts/check-npm-packages.mjs
+
       - name: Build installable package
         run: bash scripts/package.sh
 
@@ -70,3 +77,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --generate-notes --title "${GITHUB_REF_NAME}"
+
+  publish-npm:
+    # On a v* tag, publish both npm packages to the public registry.
+    # Requires an automation token in the NPM_TOKEN repository secret; the
+    # @henols scope must exist and the token must be allowed to publish it.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify tag matches package versions
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          PLUGIN_V="$(node -p "require('./.claude-plugin/plugin.json').version")"
+          if [ "$TAG" != "$PLUGIN_V" ]; then
+            echo "tag '${GITHUB_REF_NAME}' does not match plugin version '${PLUGIN_V}'"
+            exit 1
+          fi
+          # Re-run the five-way version-agreement + layout validation.
+          bash scripts/package.sh
+
+      # Publish the MCP server first: the installer depends on this exact version.
+      - name: Publish @henols/vice-mcp
+        working-directory: .claude/mcp/vice
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @henols/c64-re-tools
+        working-directory: installer
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
