@@ -1,0 +1,1231 @@
+{
+  "generated_at": "2026-07-31T15:56:00.302Z",
+  "endpoint": "http://host.docker.internal:6510/mcp",
+  "tools": [
+    {
+      "name": "initialize",
+      "description": "Initialize MCP session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string",
+            "description": "Protocol version"
+          },
+          "capabilities": {},
+          "clientInfo": {}
+        }
+      }
+    },
+    {
+      "name": "notifications_initialized",
+      "description": "Client initialized notification",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tools_list",
+      "description": "List all available tools with schemas",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tools_call",
+      "description": "Call a tool by name",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name to call"
+          },
+          "arguments": {}
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "vice_ping",
+      "description": "Check if VICE is responding",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_execution_run",
+      "description": "Resume execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_execution_pause",
+      "description": "Pause execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_execution_step",
+      "description": "Step one or more instructions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Number of instructions to step"
+          },
+          "stepOver": {
+            "type": "boolean",
+            "description": "Step over subroutines"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_registers_get",
+      "description": "Get CPU registers",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_registers_set",
+      "description": "Set CPU register value",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "register": {
+            "type": "string",
+            "description": "Register name: PC|A|X|Y|SP|N|V|B|D|I|Z|C"
+          },
+          "value": {
+            "type": "number",
+            "description": "Register value"
+          }
+        },
+        "required": [
+          "register",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_read",
+      "description": "Read memory range (with optional bank selection)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "size": {
+            "type": "number",
+            "description": "Bytes to read (1-65535)"
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: Memory bank name (e.g., 'ram' to read RAM under ROM). Use vice.memory.banks to list available banks."
+          },
+          "encoding": {
+            "type": "string",
+            "description": "Optional: 'array' for legacy per-byte hex strings, or 'hex' for one compact hex string."
+          }
+        },
+        "required": [
+          "address",
+          "size"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_write",
+      "description": "Write to memory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "data": {
+            "type": "array",
+            "description": "Bytes to write (0-255 each)",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "address",
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_banks",
+      "description": "List available memory banks",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_memory_search",
+      "description": "Search for byte patterns in memory with optional wildcards",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start address: number, hex string ($C000), or symbol name"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address: number, hex string ($FFFF), or symbol name"
+          },
+          "pattern": {
+            "type": "array",
+            "description": "Byte pattern to find, e.g., [0x4C, 0x00, 0xA0] for JMP $A000",
+            "items": {
+              "type": "number"
+            }
+          },
+          "mask": {
+            "type": "array",
+            "description": "Per-byte mask: 0xFF=exact match, 0x00=wildcard (optional)",
+            "items": {
+              "type": "number"
+            }
+          },
+          "max_results": {
+            "type": "number",
+            "description": "Maximum matches to return (default: 100, max: 10000)"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "pattern"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_add",
+      "description": "Add checkpoint/breakpoint",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start address: number, hex string ($1000), or symbol name"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address: number, hex, or symbol (optional, default=start)"
+          },
+          "stop": {
+            "type": "boolean",
+            "description": "Stop execution when hit (default=true)"
+          },
+          "load": {
+            "type": "boolean",
+            "description": "Break on memory read (default=false)"
+          },
+          "store": {
+            "type": "boolean",
+            "description": "Break on memory write (default=false)"
+          },
+          "exec": {
+            "type": "boolean",
+            "description": "Break on execution (default=true)"
+          }
+        },
+        "required": [
+          "start"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_delete",
+      "description": "Delete checkpoint",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number to delete"
+          }
+        },
+        "required": [
+          "checkpoint_num"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_list",
+      "description": "List all checkpoints",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_checkpoint_toggle",
+      "description": "Enable/disable checkpoint",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable (true) or disable (false)"
+          }
+        },
+        "required": [
+          "checkpoint_num",
+          "enabled"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_set_condition",
+      "description": "Set checkpoint condition",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number"
+          },
+          "condition": {
+            "type": "string",
+            "description": "Condition expression (e.g., 'A == $42')"
+          }
+        },
+        "required": [
+          "checkpoint_num",
+          "condition"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_set_ignore_count",
+      "description": "Set checkpoint ignore count",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of hits to ignore"
+          }
+        },
+        "required": [
+          "checkpoint_num",
+          "count"
+        ]
+      }
+    },
+    {
+      "name": "vice_sprite_get",
+      "description": "Get sprite state",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite": {
+            "type": "number",
+            "description": "Sprite number 0-7 (omit to get all sprites)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_sprite_set",
+      "description": "Set sprite properties",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite": {
+            "type": "number",
+            "description": "Sprite number 0-7"
+          },
+          "x": {
+            "type": "number",
+            "description": "X position 0-511"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y position 0-255"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable sprite"
+          },
+          "multicolor": {
+            "type": "boolean",
+            "description": "Multicolor mode"
+          },
+          "expand_x": {
+            "type": "boolean",
+            "description": "Double width"
+          },
+          "expand_y": {
+            "type": "boolean",
+            "description": "Double height"
+          },
+          "priority_foreground": {
+            "type": "boolean",
+            "description": "Draw over background"
+          },
+          "color": {
+            "type": "number",
+            "description": "Sprite color 0-15"
+          }
+        },
+        "required": [
+          "sprite"
+        ]
+      }
+    },
+    {
+      "name": "vice_vicii_get_state",
+      "description": "Get VIC-II internal state",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_vicii_set_state",
+      "description": "Set VIC-II registers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": {
+            "type": "array",
+            "description": "Array of {offset, value} objects to set VIC-II registers (offset 0x00-0x2E)",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_sid_get_state",
+      "description": "Get SID state (voices, filter)",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_sid_set_state",
+      "description": "Set SID registers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": {
+            "type": "array",
+            "description": "Array of {offset, value} objects to set SID registers (offset 0x00-0x1C)",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_cia_get_state",
+      "description": "Get CIA state (timers, ports)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cia": {
+            "type": "number",
+            "description": "CIA chip number: 1 or 2 (optional, default returns both)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_cia_set_state",
+      "description": "Set CIA registers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cia1_registers": {
+            "type": "array",
+            "description": "Array of {offset, value} objects to set CIA1 registers (offset 0x00-0x0F)",
+            "items": {
+              "type": "object"
+            }
+          },
+          "cia2_registers": {
+            "type": "array",
+            "description": "Array of {offset, value} objects to set CIA2 registers (offset 0x00-0x0F)",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_disk_attach",
+      "description": "Attach disk image to drive",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "number",
+            "description": "Drive unit (8-11)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to disk image (.d64, .g64, etc)"
+          }
+        },
+        "required": [
+          "unit",
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "vice_disk_detach",
+      "description": "Detach disk image from drive",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "number",
+            "description": "Drive unit (8-11)"
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      }
+    },
+    {
+      "name": "vice_disk_read_sector",
+      "description": "Read raw sector data",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "number",
+            "description": "Drive unit (8-11)"
+          },
+          "track": {
+            "type": "number",
+            "description": "Track number (1-42 for D64)"
+          },
+          "sector": {
+            "type": "number",
+            "description": "Sector number (0-20 depending on track)"
+          }
+        },
+        "required": [
+          "unit",
+          "track",
+          "sector"
+        ]
+      }
+    },
+    {
+      "name": "vice_autostart",
+      "description": "Autostart a PRG or disk image",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to PRG file or disk image (.d64, .g64, .prg)"
+          },
+          "program": {
+            "type": "string",
+            "description": "Program name to load from disk image (optional)"
+          },
+          "run": {
+            "type": "boolean",
+            "description": "Run after loading (default: true)"
+          },
+          "index": {
+            "type": "number",
+            "description": "Program index on disk, 0-based (default: 0)"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "vice_machine_reset",
+      "description": "Reset the machine (soft or hard reset)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "Reset mode: 'soft' (CPU reset, default) or 'hard' (power cycle)"
+          },
+          "run_after": {
+            "type": "boolean",
+            "description": "Resume execution after reset (default: true)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_display_screenshot",
+      "description": "Capture screenshot (to file or base64)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path to save screenshot (optional if return_base64=true)"
+          },
+          "format": {
+            "type": "string",
+            "description": "Image format: PNG or BMP (default: PNG)"
+          },
+          "return_base64": {
+            "type": "boolean",
+            "description": "Return screenshot as base64 data URI (default: false)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_display_get_dimensions",
+      "description": "Get display dimensions",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_keyboard_type",
+      "description": "Type text (uppercase ASCII displays as uppercase on C64 by default)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to type (converts to PETSCII). Use \\n for Return."
+          },
+          "petscii_upper": {
+            "type": "boolean",
+            "description": "Default true: uppercase ASCII displays as uppercase on C64. Set false for raw PETSCII (uppercase ASCII maps to graphics)"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "vice_keyboard_petscii",
+      "description": "Feed exact PETSCII bytes into the KERNAL keyboard buffer",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "Exact PETSCII bytes to feed to the KERNAL keyboard buffer (1-255 each; 13 is Return)",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "name": "vice_keyboard_key_press",
+      "description": "Press a specific key",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key name or VHK code. Names: Return, Space, BackSpace, Delete, Escape, Tab, Up, Down, Left, Right, Home, End, F1-F8, or single char"
+          },
+          "modifiers": {
+            "type": "array",
+            "description": "Optional modifiers: shift, control, ctrl, alt, meta, command, cmd",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hold_frames": {
+            "type": "number",
+            "description": "Hold duration in frames (1-300). Key auto-releases after this many frames (~16.7ms each at 60Hz)"
+          },
+          "hold_ms": {
+            "type": "number",
+            "description": "Hold duration in milliseconds (1-5000). Key auto-releases after this time. Overrides hold_frames if both specified"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "vice_keyboard_key_release",
+      "description": "Release a specific key",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key name or VHK code. Names: Return, Space, BackSpace, Delete, Escape, Tab, Up, Down, Left, Right, Home, End, F1-F8, or single char"
+          },
+          "modifiers": {
+            "type": "array",
+            "description": "Optional modifiers: shift, control, ctrl, alt, meta, command, cmd",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "vice_keyboard_restore",
+      "description": "Press/release RESTORE key (triggers NMI, not in matrix)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pressed": {
+            "type": "boolean",
+            "description": "Key pressed state: true to press (triggers NMI), false to release (default: true)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_joystick_set",
+      "description": "Set joystick state",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "number",
+            "description": "Joystick port 1 or 2 (default=1)"
+          },
+          "direction": {
+            "type": "string",
+            "description": "Direction: up, down, left, right, center, or array for diagonals"
+          },
+          "fire": {
+            "type": "boolean",
+            "description": "Fire button state (default=false)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_joystick_tap",
+      "description": "Tap joystick direction/fire for a fixed number of frames, then center",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "number",
+            "description": "Joystick port 1 or 2 (default=1)"
+          },
+          "direction": {
+            "type": "string",
+            "description": "Direction: up, down, left, right, center, or array for diagonals"
+          },
+          "fire": {
+            "type": "boolean",
+            "description": "Fire button state (default=false)"
+          },
+          "duration_frames": {
+            "type": "number",
+            "description": "Tap duration in frames (1-300, default=3)"
+          },
+          "duration_ms": {
+            "type": "number",
+            "description": "Tap duration in milliseconds (1-5000). Overrides duration_frames if both specified"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_disassemble",
+      "description": "Disassemble memory to 6502 instructions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Start address: number, hex string ($1000), or symbol name"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of instructions to disassemble (default: 10, max: 100)"
+          },
+          "show_symbols": {
+            "type": "boolean",
+            "description": "Show symbol names in output (default: true)"
+          }
+        },
+        "required": [
+          "address"
+        ]
+      }
+    },
+    {
+      "name": "vice_symbols_load",
+      "description": "Load symbol/label file (VICE, KickAssembler, simple formats)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to symbol file (.sym, .lbl)"
+          },
+          "format": {
+            "type": "string",
+            "description": "Format: 'auto' (default), 'kickasm', 'vice', or 'simple'. Auto-detects KickAssembler (.label/.namespace) vs VICE (al C:xxxx) format"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "vice_symbols_lookup",
+      "description": "Lookup symbol by name or address",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Symbol name to look up (returns address)"
+          },
+          "address": {
+            "type": "number",
+            "description": "Address to look up (returns symbol name)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_watch_add",
+      "description": "Add memory watchpoint with optional condition (shorthand for checkpoint with store/load)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "size": {
+            "type": "number",
+            "description": "Number of bytes to watch (default: 1)"
+          },
+          "type": {
+            "type": "string",
+            "description": "Watch type: 'read', 'write', or 'both' (default: 'write')"
+          },
+          "condition": {
+            "type": "string",
+            "description": "Condition expression for conditional watchpoint. Supported: 'A == $xx', 'X == $xx', 'Y == $xx', 'PC == $xxxx', 'SP == $xx'. For store watches, condition is evaluated after the store completes."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      }
+    },
+    {
+      "name": "vice_backtrace",
+      "description": "Show call stack (JSR return addresses)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "depth": {
+            "type": "number",
+            "description": "Max stack frames to show (default: 16, max: 64)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_run_until",
+      "description": "Run until address or for N cycles (with timeout)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Target address: number, hex, or symbol (stops when PC reaches this)"
+          },
+          "cycles": {
+            "type": "number",
+            "description": "Max cycles to run (timeout, not yet implemented)"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_keyboard_matrix",
+      "description": "Direct keyboard matrix control (for games that scan keyboard directly)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key name: A-Z, 0-9, SPACE, RETURN, F1, F3, F5, F7, UP, DOWN, LEFT, RIGHT, STOP"
+          },
+          "row": {
+            "type": "number",
+            "description": "Keyboard matrix row (0-7, alternative to key name)"
+          },
+          "col": {
+            "type": "number",
+            "description": "Keyboard matrix column (0-7, alternative to key name)"
+          },
+          "pressed": {
+            "type": "boolean",
+            "description": "Key pressed state (default: true)"
+          },
+          "hold_frames": {
+            "type": "number",
+            "description": "Hold duration in frames (1-300). Key auto-releases after this many frames (~16.7ms each at 60Hz)"
+          },
+          "hold_ms": {
+            "type": "number",
+            "description": "Hold duration in milliseconds (1-5000). Key auto-releases after this time. Overrides hold_frames if both specified"
+          }
+        }
+      }
+    },
+    {
+      "name": "vice_keyboard_chord",
+      "description": "Press multiple C64 keyboard matrix keys together for a fixed number of frames",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "description": "Keys to press simultaneously. Entries may be key names or {row,col} objects.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hold_frames": {
+            "type": "number",
+            "description": "Hold duration in frames (1-300, default=3)"
+          },
+          "hold_ms": {
+            "type": "number",
+            "description": "Hold duration in milliseconds (1-5000). Overrides hold_frames if both specified"
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      }
+    },
+    {
+      "name": "vice_snapshot_save",
+      "description": "Save complete emulator state to a named snapshot. Use this to capture a debugging checkpoint that can be restored later with snapshot.load. Snapshots are stored in ~/.config/vice/mcp_snapshots/ with JSON metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique name for this snapshot (alphanumeric, underscore, hyphen only). Choose descriptive names like 'before_crash' or 'level3_boss_fight'."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what state this snapshot captures. Be specific: 'Player at level 3, about to trigger sprite collision bug'."
+          },
+          "include_roms": {
+            "type": "boolean",
+            "description": "Include ROM images in snapshot (default: false). Enable for full reproducibility, disable for smaller files."
+          },
+          "include_disks": {
+            "type": "boolean",
+            "description": "Include disk drive state in snapshot (default: false). Enable if disk contents are relevant to the bug being debugged."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "vice_snapshot_load",
+      "description": "Restore emulator state from a previously saved snapshot. Use this to return to a known debugging checkpoint without re-running setup steps. The emulator will be in the exact state it was when the snapshot was saved.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the snapshot to load (as provided to snapshot.save). Use snapshot.list to see available snapshots."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "vice_snapshot_list",
+      "description": "List all available snapshots with their metadata. Returns snapshot names, descriptions, creation times, and machine types. Use this to find the right snapshot to load for debugging.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_cycles_stopwatch",
+      "description": "Measure elapsed CPU cycles for timing-critical code analysis. Use 'reset' to start timing, 'read' to get elapsed cycles, or 'reset_and_read' for atomic read-and-reset. Ideal for measuring raster routine timing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Action to perform: 'reset' (start timing), 'read' (get elapsed cycles), or 'reset_and_read' (atomic read and reset)",
+            "enum": [
+              "reset",
+              "read",
+              "reset_and_read"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_fill",
+      "description": "Fill memory range with a repeating byte pattern. Useful for clearing memory, creating NOP sleds, or setting up test conditions. The pattern repeats to fill the entire range from start to end (inclusive).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start address: number, hex string ($A000), or symbol name"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address (inclusive): number, hex string ($DFFF), or symbol name"
+          },
+          "pattern": {
+            "type": "array",
+            "description": "Byte pattern to repeat, e.g., [0] for zero-fill, [0xAA, 0x55] for alternating",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "pattern"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_compare",
+      "description": "Compare two memory ranges or compare current memory against a snapshot. Use mode='ranges' to compare two live memory ranges, or mode='snapshot' to compare against a previously saved state. Returns list of differences with addresses and values.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "Comparison mode: 'ranges' to compare two memory ranges, 'snapshot' to compare against saved state"
+          },
+          "range1_start": {
+            "type": "string",
+            "description": "Start address of first range (for mode='ranges'): number, hex string ($1000), or symbol"
+          },
+          "range1_end": {
+            "type": "string",
+            "description": "End address of first range (for mode='ranges'): number, hex string ($1FFF), or symbol"
+          },
+          "range2_start": {
+            "type": "string",
+            "description": "Start address of second range (for mode='ranges'): number, hex string ($2000), or symbol"
+          },
+          "snapshot_name": {
+            "type": "string",
+            "description": "Name of snapshot to compare against (for mode='snapshot')"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start address to compare (for mode='snapshot'): number, hex string ($A000), or symbol"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address to compare (for mode='snapshot'): number, hex string ($BFFF), or symbol"
+          },
+          "max_differences": {
+            "type": "number",
+            "description": "Maximum differences to return (default: 100, max: 10000)"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_group_create",
+      "description": "Create a named checkpoint group for batch operations. Groups allow you to enable/disable multiple breakpoints at once. Optionally include initial checkpoint_ids array.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Group name (unique identifier)"
+          },
+          "checkpoint_ids": {
+            "type": "array",
+            "description": "Optional array of checkpoint IDs to include in the group",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_group_add",
+      "description": "Add checkpoints to an existing group. Use this to grow a group after creation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "Group name to add checkpoints to"
+          },
+          "checkpoint_ids": {
+            "type": "array",
+            "description": "Array of checkpoint IDs to add to the group",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "group",
+          "checkpoint_ids"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_group_toggle",
+      "description": "Enable or disable all checkpoints in a group. Use enabled=true to enable, enabled=false to disable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "Group name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable (true) or disable (false) all checkpoints in the group"
+          }
+        },
+        "required": [
+          "group",
+          "enabled"
+        ]
+      }
+    },
+    {
+      "name": "vice_checkpoint_group_list",
+      "description": "List all checkpoint groups with their member counts. Returns group names, checkpoint IDs, and enabled/disabled counts.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_machine_config_get",
+      "description": "Get current machine configuration including chips, memory map, and resources. Returns machine type, available chips, memory layout, and configurable resources.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vice_machine_config_set",
+      "description": "Set machine configuration resources (WarpMode, Speed, video standard, SID model, CIA model, etc). WarpMode (0/1) disables speed limiting for fast execution. Speed (1-10000, 0=unlimited) sets CPU speed percentage. Only whitelisted resources can be changed. Returns the new configuration.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "resources": {
+            "type": "string",
+            "description": "Object of resource name/value pairs (e.g. {\"MachineVideoStandard\": 1, \"SidModel\": 0})"
+          }
+        },
+        "required": [
+          "resources"
+        ]
+      }
+    },
+    {
+      "name": "vice_sprite_inspect",
+      "description": "Visual representation of sprite bitmap data. Reads sprite pointer, data, and multicolor settings to render ASCII art. ASCII Legend: '.'=transparent(00), '#'=sprite color(10), '@'=multi1(01), '%'=multi2(11).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite_number": {
+            "type": "number",
+            "description": "Sprite number 0-7 to inspect"
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format: 'ascii' (default), 'binary', or 'png_base64'"
+          }
+        },
+        "required": [
+          "sprite_number"
+        ]
+      }
+    }
+  ]
+}

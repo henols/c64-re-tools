@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "written_by": "vice-broker.sh",
+  "pid": 1144457,
+  "started_at": "2026-08-03T17:15:13Z",
+  "heartbeat_at": "2026-08-03T21:57:01Z",
+  "spares_target": 3,
+  "max_instances": 16,
+  "ttl_seconds": 180,
+  "poll_ms": 500,
+  "dry_run": false
+}

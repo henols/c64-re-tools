@@ -1,0 +1,10 @@
+{
+  "epoch": 1,
+  "spawned_at": "2026-08-03T17:58:34Z",
+  "pid": 1685908,
+  "supervisor_pid": 1685873,
+  "vice_bin": "x64sc",
+  "vice_args": ["-mcpserver","-mcpserverhost","0.0.0.0","-mcpserverport","6514"],
+  "log": "logs/x64sc-20260803-175834.log",
+  "dry_run": false
+}

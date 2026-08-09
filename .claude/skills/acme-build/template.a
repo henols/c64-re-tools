@@ -1,0 +1,39 @@
+; C64 / 6510 program skeleton.
+; Build:  node .claude/skills/acme-build/scripts/acme.mjs build THIS.a
+; No !to here on purpose - the driver passes -o, and having both makes ACME
+; warn "Output file already chosen" and silently ignore the !to.
+
+!cpu 6510                       ; C64's CPU: legal 6502 + the illegal opcodes
+!source <cbm/c64/vic.a>         ; vic_*  registers, viccolor_* constants
+!source <cbm/c64/kernal.a>      ; k_*    KERNAL entry points ($ff81-$fff5)
+!source <cbm/c64/cia1.a>        ; cia1_* keyboard / joystick 2
+
+* = $0801                       ; start of BASIC RAM
+
+; --- BASIC stub: "10 SYS <entry>", so LOAD"...",8,1 + RUN reaches the code.
+; The SYS digits are computed from `entry`, so inserting code above never
+; breaks the stub - which is the classic way to lose an afternoon.
+        !word .eol, 10          ; link to next line, line number
+        !byte $9e               ; SYS token
+        !byte '0' + entry % 10000 / 1000
+        !byte '0' + entry %  1000 /  100
+        !byte '0' + entry %   100 /   10
+        !byte '0' + entry %    10
+        !byte 0                 ; end of BASIC line
+.eol    !word 0                 ; end of BASIC program
+
+entry
+        lda #viccolor_BLACK
+        sta vic_cbg             ; $d021 background
+        lda #viccolor_GREEN
+        sta vic_cborder         ; $d020 border
+
+        ldx #0
+-       lda .msg,x
+        beq +
+        jsr k_chrout            ; $ffd2 print one PETSCII char
+        inx
+        bne -
++       rts
+
+.msg    !pet "hello from acme", 13, 0

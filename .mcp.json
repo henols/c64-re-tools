@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vice": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/.claude/mcp/vice/vice-proxy.ts"],
+      "timeout": 150000,
+      "env": {
+        "MASTRA_TELEMETRY_DISABLED": "1"
+      }
+    }
+  }
+}

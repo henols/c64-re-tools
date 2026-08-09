@@ -1,0 +1,26 @@
+# npm dependencies for the VICE MCP server (.claude/mcp/vice). Provisioned on
+# the consumer side by scripts/ensure-mcp-deps.sh; never committed.
+node_modules/
+
+# Host-side VICE supervisor/broker runtime state, written under the resolved
+# project root at runtime (see .claude/mcp/vice/repo-root.ts).
+/.vice-supervisor/
+/.vice-supervisor.bak-*/
+
+# tools/ is the generated, gitignored deployment target the MCP installer
+# copies resources/ into on first tool call (see install-resources.ts). Listed
+# per-file (not a blanket /tools/) so host-scripts.test.ts's two-way parity gate
+# with resourceEntries() holds; tools/ only ever holds these deployed artifacts.
+/tools/broker-control.mjs
+/tools/broker-epoch.mjs
+/tools/broker-kill.mjs
+/tools/broker-launch.mjs
+/tools/broker-state.mjs
+/tools/container-guard.mjs
+/tools/vice-broker.mjs
+/tools/vice-launcher.sh
+/tools/.vice-deployed.json
+
+# Lockfile stamp written by ensure-mcp-deps.sh when CLAUDE_PLUGIN_DATA is
+# unavailable and it falls back to stamping next to the source.
+mcp-deps.lock.sha256
