@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 // Pure derivation over values the agent already fetched. Contacts nothing.
 //
-// The mcp__plugin_c64-rc-tools_vice__* tools are the only route to the emulator (.claude/CLAUDE.md
+// The mcp__plugin_c64-re-tools_vice__* tools are the only route to the emulator (.claude/CLAUDE.md
 // § Emulator Access). This script therefore takes register values as arguments
 // and RAM as a file, and performs only the arithmetic that a lookup table
 // cannot: register bits -> concrete addresses.
@@ -303,7 +303,7 @@ function vectors(buf, portOverride, showAll) {
   out.push('under KERNAL ROM — which is exactly what runs when HIRAM = 0.');
   out.push('');
   out.push('A target marked bank-ambiguous is NOT resolved by this image. Read it twice');
-  out.push('live — mcp__plugin_c64-rc-tools_vice__vice_memory_read with the default bank, then again with');
+  out.push('live — mcp__plugin_c64-re-tools_vice__vice_memory_read with the default bank, then again with');
   out.push('bank:"ram" — and compare. Differing from stock ROM at that address means the');
   out.push('program has its own code hidden under ROM.');
   return out.join('\n');
@@ -322,7 +322,7 @@ const USAGE = `usage:
   derive.mjs vectors <image.bin> [--port 35] [--all]
 
 Values are hex by default ($3E, 0x3E, 3E all work); %00111110 for binary.
-Register values come from mcp__plugin_c64-rc-tools_vice__vice_vicii_get_state / vice_memory_read.
+Register values come from mcp__plugin_c64-re-tools_vice__vice_vicii_get_state / vice_memory_read.
 <image.bin> is a 65536-byte capture (see the c64-ram-capture skill).`;
 
 function main(argv) {

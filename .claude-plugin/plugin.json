@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "c64-rc-tools",
+  "name": "c64-re-tools",
   "displayName": "C64 Reverse-Engineering Tools",
   "version": "0.1.1",
-  "description": "VICE emulator MCP server (mcp__plugin_c64-rc-tools_vice__* tools) plus C64 reverse-engineering and ACME-rebuild skills, extracted from the Bruce Lee project.",
+  "description": "VICE emulator MCP server (mcp__plugin_c64-re-tools_vice__* tools) plus C64 reverse-engineering and ACME-rebuild skills, extracted from the Bruce Lee project.",
   "author": {
     "name": "Henrik Olsson",
     "url": "https://github.com/henols"
   },
-  "repository": "https://github.com/henols/c64-rc-tools",
+  "repository": "https://github.com/henols/c64-re-tools",
   "keywords": [
     "c64",
     "commodore-64",

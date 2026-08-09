@@ -5,7 +5,7 @@ description: Capture a running C64's full 64K RAM as a verified flat image, and 
 
 # Capturing and comparing C64 RAM
 
-**Reach the emulator only through the `mcp__plugin_c64-rc-tools_vice__*` tools.** They are the one
+**Reach the emulator only through the `mcp__plugin_c64-re-tools_vice__*` tools.** They are the one
 permitted route. Never open a connection by any other means.
 
 **Never hand-assemble a capture.** Sixteen `vice_memory_read` calls have to land
@@ -31,7 +31,7 @@ node $C floor   a.bin b.bin c.bin                # drift floor across a capture 
 ```
 
 All three modules read only committed files and the JSON **you** wrote from your
-own `mcp__plugin_c64-rc-tools_vice__*` calls. They contact nothing.
+own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
 
 ## The order
 
@@ -73,28 +73,28 @@ directory chain that leaves the image or loops, reported instead of hanging.
 
 ## Boot a disk
 
-1. `mcp__plugin_c64-rc-tools_vice__vice_disk_attach` with the disk image.
-2. `mcp__plugin_c64-rc-tools_vice__vice_autostart` with the same image.
-3. `mcp__plugin_c64-rc-tools_vice__vice_execution_run`.
-4. `mcp__plugin_c64-rc-tools_vice__vice_registers_get` and confirm the program counter has moved.
+1. `mcp__plugin_c64-re-tools_vice__vice_disk_attach` with the disk image.
+2. `mcp__plugin_c64-re-tools_vice__vice_autostart` with the same image.
+3. `mcp__plugin_c64-re-tools_vice__vice_execution_run`.
+4. `mcp__plugin_c64-re-tools_vice__vice_registers_get` and confirm the program counter has moved.
 
 If the program counter has not moved, type `LOAD"*",8,1` with
-`mcp__plugin_c64-rc-tools_vice__vice_keyboard_type`, run it, then type `RUN` and run it.
+`mcp__plugin_c64-re-tools_vice__vice_keyboard_type`, run it, then type `RUN` and run it.
 
 ## Capture at a trigger address
 
-1. `mcp__plugin_c64-rc-tools_vice__vice_checkpoint_add` at the trigger address, with execution
+1. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_add` at the trigger address, with execution
    breaking and stopping enabled.
-2. `mcp__plugin_c64-rc-tools_vice__vice_execution_run`.
-3. Poll `mcp__plugin_c64-rc-tools_vice__vice_ping` until the checkpoint reports a hit.
-4. Read `$0000`–`$FFFF` with repeated `mcp__plugin_c64-rc-tools_vice__vice_memory_read` calls of
+2. `mcp__plugin_c64-re-tools_vice__vice_execution_run`.
+3. Poll `mcp__plugin_c64-re-tools_vice__vice_ping` until the checkpoint reports a hit.
+4. Read `$0000`–`$FFFF` with repeated `mcp__plugin_c64-re-tools_vice__vice_memory_read` calls of
    4096 bytes each. Write them to `chunks.json` as an array of
    `{ "address": "$0000", "hex": "..." }` records, one per call, hex only.
 5. Record the chip state in the **same paused window**, into `raw.json`. The keys
    are fixed, because `chip-state` derives from exactly these: `registers`,
    `sprites` and `cpu` pass through verbatim from
-   `mcp__plugin_c64-rc-tools_vice__vice_vicii_get_state` / `mcp__plugin_c64-rc-tools_vice__vice_sprite_get` /
-   `mcp__plugin_c64-rc-tools_vice__vice_registers_get`; `port01_raw` is `$0001`; `dd00_raw` is
+   `mcp__plugin_c64-re-tools_vice__vice_vicii_get_state` / `mcp__plugin_c64-re-tools_vice__vice_sprite_get` /
+   `mcp__plugin_c64-re-tools_vice__vice_registers_get`; `port01_raw` is `$0001`; `dd00_raw` is
    `$DD00`; `d018_raw` is `$D018`; `sprite_pointers` is the eight bytes at
    `screen_base+$3F8`.
 6. Write all four artifacts in one call:
@@ -109,10 +109,10 @@ If the program counter has not moved, type `LOAD"*",8,1` with
    `.capture.json` under `recovery/<release>/dumps/`, and returns their paths
    with the SHA-256. It also derives `vic_bank`, `screen_base`, `charset_base`
    and `sprite_data_addresses` for free — do not recompute them by hand.
-7. `mcp__plugin_c64-rc-tools_vice__vice_checkpoint_delete` the checkpoint.
-8. `mcp__plugin_c64-rc-tools_vice__vice_checkpoint_list` and confirm it reports zero checkpoints.
+7. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_delete` the checkpoint.
+8. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_list` and confirm it reports zero checkpoints.
    Accept only this enumeration as proof. Record the count.
-9. `mcp__plugin_c64-rc-tools_vice__vice_execution_run` to leave the machine running.
+9. `mcp__plugin_c64-re-tools_vice__vice_execution_run` to leave the machine running.
 
 Read state before you resume, and resume exactly once at the end.
 
@@ -155,13 +155,13 @@ only after the provenance diff partitions loader from cracktro from game — see
 
 ## Find an entry point
 
-1. Press past any "hit any key" gate with `mcp__plugin_c64-rc-tools_vice__vice_keyboard_matrix`.
-2. Step forward in batches with `mcp__plugin_c64-rc-tools_vice__vice_execution_step`, reading
-   `mcp__plugin_c64-rc-tools_vice__vice_registers_get` after each batch.
+1. Press past any "hit any key" gate with `mcp__plugin_c64-re-tools_vice__vice_keyboard_matrix`.
+2. Step forward in batches with `mcp__plugin_c64-re-tools_vice__vice_execution_step`, reading
+   `mcp__plugin_c64-re-tools_vice__vice_registers_get` after each batch.
 3. Stop when the program counter and the stack pointer both settle into a
    repeating range across three consecutive batches. That range is the
    dispatch loop; its lowest address is the entry point.
-4. Confirm the address with `mcp__plugin_c64-rc-tools_vice__vice_disassemble` before recording it.
+4. Confirm the address with `mcp__plugin_c64-re-tools_vice__vice_disassemble` before recording it.
 
 Set a batch ceiling before you start. Report failure to stabilise as a finding
 with the batches spent; never extend the ceiling silently.
@@ -179,7 +179,7 @@ What that leaves you:
 - **A clean capture is one during which no epoch-drift error appeared.** Record
   that, not a pair of hand-read numbers.
 - **When you need the numbers,** they come from the drift error's own text, or
-  from `mcp__plugin_c64-rc-tools_vice__vice_diagnose`'s `restarted` report. Both name the before and
+  from `mcp__plugin_c64-re-tools_vice__vice_diagnose`'s `restarted` report. Both name the before and
   after value.
 - **A drift error voids the run** even if the very next call succeeds. It will —
   the proxy re-baselines so the session stays usable — and a successful retry

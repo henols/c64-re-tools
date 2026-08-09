@@ -44,7 +44,7 @@ moved.** The strongest single tell: in one incident `vice_checkpoint_list` repor
 at `hit_count: 0` after multiple resume/poll cycles, on an IRQ-driven screen where its address
 *must* execute every frame.
 
-**`mcp__plugin_c64-rc-tools_vice__vice_diagnose` now performs this check for you** (2026-08-04): it enumerates armed
+**`mcp__plugin_c64-re-tools_vice__vice_diagnose` now performs this check for you** (2026-08-04): it enumerates armed
 checkpoints, reads the PC, resolves the live IRQ handler through `$01`, and returns a
 `checkpoint_trap` verdict — with **no resume and no stopwatch call**, which matters because
 `vice_execution_run` is this project's leading crash suspect. Call it before anything else. The

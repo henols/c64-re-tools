@@ -1,4 +1,4 @@
-# c64-rc-tools
+# c64-re-tools
 
 A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
 Commodore 64 games — extracted from the [Bruce Lee](https://github.com/henols/bruce_lee)
@@ -6,7 +6,7 @@ reverse-engineering project so it can be reused across C64 projects.
 
 It provides two things as a single installable unit:
 
-- **The `vice` MCP server** — `mcp__plugin_c64-rc-tools_vice__*` tools that drive a host VICE
+- **The `vice` MCP server** — `mcp__plugin_c64-re-tools_vice__*` tools that drive a host VICE
   emulator (run disks, read/write RAM, checkpoints, screenshots, snapshots,
   scripted input) through an on-demand broker.
 - **Six C64 skills:**
@@ -20,8 +20,8 @@ It provides two things as a single installable unit:
 ## Install
 
 ```
-/plugin marketplace add henols/c64-rc-tools
-/plugin install c64-rc-tools@c64-rc-tools
+/plugin marketplace add henols/c64-re-tools
+/plugin install c64-re-tools@c64-re-tools
 ```
 
 The plugin is `defaultEnabled: false`; enable it in the project where you want
@@ -44,7 +44,7 @@ working in**, not under the plugin's own install directory. It resolves that
 root from `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
 `.claude/mcp/vice/repo-root.ts`. The VICE emulator itself runs on the host and
-is reached only through the `mcp__plugin_c64-rc-tools_vice__*` tools.
+is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
 
 ## Layout
 

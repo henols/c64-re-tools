@@ -58,7 +58,7 @@ A vector target in `$A000-$BFFF`, `$D000-$DFFF` or `$E000-$FFFF` is *either* ROM
 underneath, decided by `$01` at the moment the vector is taken. `derive.mjs` marks these
 `bank-ambiguous` and stops there, because a static image cannot settle it.
 
-Live, it is one extra call: read the target with `mcp__plugin_c64-rc-tools_vice__vice_memory_read`'s default bank,
+Live, it is one extra call: read the target with `mcp__plugin_c64-re-tools_vice__vice_memory_read`'s default bank,
 then again with `bank: "ram"`, and compare (`vice_memory_banks` lists what is available). Agreeing
 with stock ROM bytes ⇒ the vector genuinely lands in ROM and the KERNAL path is in use. Differing
 ⇒ **the program has its own code hidden under ROM**, which is a large structural finding and is
@@ -83,7 +83,7 @@ Run over all six committed captures of one title (two releases, runs 1-3 each):
 NMI and RESET sharing one entry is the shape of an anti-tamper trap: RESTORE and reset are the two
 ways a user perturbs a running game, and both land in the same place. `$1116` is therefore the
 address to checkpoint when the emulator is next available — press RESTORE with
-`mcp__plugin_c64-rc-tools_vice__vice_keyboard_restore` (it is *not* in the keyboard matrix, and NMI will not retrigger
+`mcp__plugin_c64-re-tools_vice__vice_keyboard_restore` (it is *not* in the keyboard matrix, and NMI will not retrigger
 until the line is released, so it is a press→release **edge**), then `vice_machine_reset` soft and
 hard, and record where the PC actually lands.
 

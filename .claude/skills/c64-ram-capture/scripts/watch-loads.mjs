@@ -3,7 +3,7 @@
 // here takes already-fetched data as an argument or reads a committed file
 // -- nothing in this module contacts the emulator, ever. The single
 // permitted route to the emulator is the executing agent's own
-// `mcp__plugin_c64-rc-tools_vice__*` tool calls (see .claude/CLAUDE.md "Emulator Access");
+// `mcp__plugin_c64-re-tools_vice__*` tool calls (see .claude/CLAUDE.md "Emulator Access");
 // arming, resuming, polling, disassembling and reading memory all happen in
 // the agent's own turn, and the observations land in a committed hit-log
 // JSON (`recovery/<release>/dumps/<release>-loading-hits.json`) that this
@@ -334,7 +334,7 @@ function renderReleaseSection(id, log) {
     }
   }
 
-  s += `**Route:** the executing agent's own \`mcp__plugin_c64-rc-tools_vice__*\` tool calls -- machine ${log.machine ?? "unknown"}, ` +
+  s += `**Route:** the executing agent's own \`mcp__plugin_c64-re-tools_vice__*\` tool calls -- machine ${log.machine ?? "unknown"}, ` +
     `video standard ${log.video_standard ?? "unknown"}, VICE server version ${log.vice_version ?? "unknown"}.\n\n`;
 
   s += `### Armed set\n\n`;
@@ -412,7 +412,7 @@ function renderReleaseSection(id, log) {
 
   s += `### Hand-off to plan 02-02\n\n`;
   s += "The registry's `watch_set` entries for this release are the re-armable specification: plan 02-02's own " +
-    "executing agent re-arms the same set by issuing the same `mcp__plugin_c64-rc-tools_vice__vice_checkpoint_add` calls during Phase " +
+    "executing agent re-arms the same set by issuing the same `mcp__plugin_c64-re-tools_vice__vice_checkpoint_add` calls during Phase " +
     "2's exhaustive all-chambers trace, and interprets what it observes with this module's pure `attributeAddress`, " +
     "`reportHits` and `classifyHit` functions. This is a hand-off of data and procedure, not an executable -- plan " +
     "02-02's own plan text should describe agent-performed arming with acceptance criteria over a committed record " +
@@ -425,7 +425,7 @@ function renderReleaseSection(id, log) {
 
   s += `### Teardown proof\n\n`;
   const teardown = log.teardown ?? {};
-  s += `Checkpoints remaining after teardown, from an explicit \`mcp__plugin_c64-rc-tools_vice__vice_checkpoint_list\` enumeration: ` +
+  s += `Checkpoints remaining after teardown, from an explicit \`mcp__plugin_c64-re-tools_vice__vice_checkpoint_list\` enumeration: ` +
     `**${teardown.checkpoints_remaining ?? "unrecorded"}** (enumerated at ${teardown.enumerated_at ?? "unrecorded"}).\n\n`;
 
   if ((log.identity_changes ?? []).length > 0) {
@@ -452,7 +452,7 @@ export function renderLoading(entries) {
     "This document is the absence-as-evidence record: per release, the armed set with its justification, the " +
     "idle calibration result, the coverage reached with a mechanical arrival proof per milestone, the states not " +
     "reached, the attributed hits, and the teardown enumeration. Every measurement below was fetched by the " +
-    "executing agent's own `mcp__plugin_c64-rc-tools_vice__*` tool calls; `.claude/skills/c64-ram-capture/scripts/watch-loads.mjs` and `.claude/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
+    "executing agent's own `mcp__plugin_c64-re-tools_vice__*` tool calls; `.claude/skills/c64-ram-capture/scripts/watch-loads.mjs` and `.claude/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
     "only the pure logic that resolves, attributes, orders and renders it -- neither module contacted the " +
     "emulator.\n\n";
   for (const { id, log } of entries) {

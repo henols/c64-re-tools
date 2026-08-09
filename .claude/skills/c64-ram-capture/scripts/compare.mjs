@@ -2,7 +2,7 @@
 // Compare 65536-byte C64 RAM captures and classify every difference.
 //
 // Pure logic. This module reads files the agent already captured and does
-// arithmetic over them. It contacts nothing: the mcp__plugin_c64-rc-tools_vice__* tools are the
+// arithmetic over them. It contacts nothing: the mcp__plugin_c64-re-tools_vice__* tools are the
 // only route to the emulator (.claude/CLAUDE.md § Emulator Access), and
 // nothing here opens a connection, reads broker state, or shells out.
 //
@@ -245,7 +245,7 @@ $D000-$DFFF is I/O, not RAM — reading it samples live hardware, so it can neve
 One differing bit is drift and passes; two or more is divergence and fails.
 --limit 0 prints every row. Exit status is 1 on a FAIL verdict.
 
-Images come from the capture procedure in this skill's SKILL.md, via mcp__plugin_c64-rc-tools_vice__*.
+Images come from the capture procedure in this skill's SKILL.md, via mcp__plugin_c64-re-tools_vice__*.
 This script contacts nothing.`);
   process.exit(cmd ? 1 : 0);
 }

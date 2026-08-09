@@ -43,6 +43,6 @@ if ( cd "$MCP_DIR" && npm ci --no-audit --no-fund ); then
 else
 	# Leave no stamp so the next session retries; never block the session.
 	rm -f "$STAMP"
-	echo "ensure-mcp-deps: npm ci failed -- mcp__plugin_c64-rc-tools_vice__* tools will be unavailable until it succeeds." >&2
+	echo "ensure-mcp-deps: npm ci failed -- mcp__plugin_c64-re-tools_vice__* tools will be unavailable until it succeeds." >&2
 fi
 exit 0

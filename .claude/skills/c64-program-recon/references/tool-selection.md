@@ -1,4 +1,4 @@
-# Which `mcp__plugin_c64-rc-tools_vice__*` call answers which question
+# Which `mcp__plugin_c64-re-tools_vice__*` call answers which question
 
 **This is not a restatement of the tool surface.** You already hold typed schemas for every
 call; read parameters off those. What the schemas cannot tell you is *which call to reach for
@@ -50,6 +50,6 @@ and resume exactly once at the end. See `observation-hazards.md`.
 
 ## The standing constraint
 
-`mcp__plugin_c64-rc-tools_vice__*` is the only route to the emulator. Any step of a method that would want a Node
+`mcp__plugin_c64-re-tools_vice__*` is the only route to the emulator. Any step of a method that would want a Node
 process talking to VICE is dead on arrival and must be expressed as agent-performed tool calls —
 the same rule that reduced `c64-ram-capture` to a procedure and deleted its original `scripts/`.

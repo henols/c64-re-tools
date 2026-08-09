@@ -3,7 +3,7 @@
 // of a structural fact worth stating up front: the executing agent can
 // write text, not binary, so the only shape a committable 65536-byte image
 // can take under the one permitted route to the emulator is *the agent
-// serialises what it fetched via mcp__plugin_c64-rc-tools_vice__* tool calls, and a pure
+// serialises what it fetched via mcp__plugin_c64-re-tools_vice__* tool calls, and a pure
 // function renders it*. Every function below takes already-fetched data as
 // an argument -- nothing here contacts the emulator.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -28,7 +28,7 @@ function rel(p) {
 
 /**
  * Assemble the ordered `{ address, hex }` chunk records the agent wrote
- * after its `mcp__plugin_c64-rc-tools_vice__vice_memory_read` calls into a 65536-byte buffer.
+ * after its `mcp__plugin_c64-re-tools_vice__vice_memory_read` calls into a 65536-byte buffer.
  * Asserts contiguity from $0000 with no gap and no overlap and a total of
  * exactly 65536 bytes, naming the offending address in every failure.
  */

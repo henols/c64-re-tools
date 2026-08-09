@@ -16,7 +16,7 @@ one of them.** Work the order below. Do not start with a remedy.
 | **Genuinely wedged** | Two consecutive cycle brackets read exactly `0` | `vice_recycle` with a reason, as a last resort |
 
 ```
-mcp__plugin_c64-rc-tools_vice__vice_diagnose        # one call, no arguments, answers which of the five it is
+mcp__plugin_c64-re-tools_vice__vice_diagnose        # one call, no arguments, answers which of the five it is
 ```
 
 `vice_diagnose` returns a closed five-verdict vocabulary — `restarted`, `checkpoint_trap`,

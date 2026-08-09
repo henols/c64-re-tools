@@ -49,7 +49,7 @@ Only address-typed *and* referenced symbols survive into the `.vs` — raw
 `--vicelabels` output lists constants too, and a debugger reading
 `viccolor_WHITE = $1` would relabel the 6510 processor port at `$0001`
 (`curateLabels`, `scripts/acme.mjs`) — hence 4 addresses against 121 total
-symbols above. Load it with `mcp__plugin_c64-rc-tools_vice__vice_symbols_load` (format `vice`), this
+symbols above. Load it with `mcp__plugin_c64-re-tools_vice__vice_symbols_load` (format `vice`), this
 project's only route to the emulator (`.claude/CLAUDE.md` § Version Compatibility
 / § Emulator Access).
 

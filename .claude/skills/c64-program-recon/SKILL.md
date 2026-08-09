@@ -21,7 +21,7 @@ node $D sprites --dd00 3E --d018 18 --d015 0F --ptrs 20,21,22,23,FF,FF,FF,FF
 ```
 
 The script does only the arithmetic that a lookup table cannot — register bits to concrete
-addresses — over values **you** fetched through `mcp__plugin_c64-rc-tools_vice__*`. It contacts nothing.
+addresses — over values **you** fetched through `mcp__plugin_c64-re-tools_vice__*`. It contacts nothing.
 
 ## The order
 
@@ -150,7 +150,7 @@ This one is the route between the stations. It does not restate what the others 
 | `references/graphics.md` | The VIC derivation chain, the char-ROM shadow trap, sprites, watch targets |
 | `references/sound-and-input.md` | SID player vs `$D41B`-as-RNG vs digi; CIA#1 vs CIA#2 |
 | `references/observation-hazards.md` | Every way a live read gives a wrong answer. **Read before driving.** |
-| `references/tool-selection.md` | Which `mcp__plugin_c64-rc-tools_vice__*` call answers which question, and what to delegate |
+| `references/tool-selection.md` | Which `mcp__plugin_c64-re-tools_vice__*` call answers which question, and what to delegate |
 | `references/reconstruction.md` | Binary inclusion, behavioural-equivalence correctness bar, SMC labels, label vocabulary |
 | `templates/memory-map.template.md` | Region map with per-row confidence grading |
 
