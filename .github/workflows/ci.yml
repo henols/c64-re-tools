@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+# Path translation in the MCP tests reads these; on GitHub's runner the
+# workspace IS the checkout dir, so CONTAINER_WORKSPACE_PATH must equal it.
+# HOST_WORKSPACE_PATH is an arbitrary host-side mirror (the tests only need it
+# set and consistent). The runner is non-root, so the read-only-deployment
+# tests are enforced correctly here.
+env:
+  CONTAINER_WORKSPACE_PATH: ${{ github.workspace }}
+  HOST_WORKSPACE_PATH: /host${{ github.workspace }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: .claude/mcp/vice/package-lock.json
+
+      - name: Install MCP server dependencies
+        working-directory: .claude/mcp/vice
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: .claude/mcp/vice
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: .claude/mcp/vice
+        run: npm test
+
+      - name: Build installable package
+        run: bash scripts/package.sh
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: c64-re-tools-package
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+
+  release:
+    # On a v* tag, attach the built package to the GitHub Release.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build installable package
+        run: bash scripts/package.sh
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --generate-notes --title "${GITHUB_REF_NAME}"

@@ -24,3 +24,6 @@ node_modules/
 # Lockfile stamp written by ensure-mcp-deps.sh when CLAUDE_PLUGIN_DATA is
 # unavailable and it falls back to stamping next to the source.
 mcp-deps.lock.sha256
+
+# build artifacts from scripts/package.sh
+dist/
