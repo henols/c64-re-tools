@@ -6,6 +6,12 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish to npm (e.g. 0.1.5) -- no leading v. Publishes both packages via OIDC."
+        required: true
+        type: string
 
 # Path translation in the MCP tests reads these; on GitHub's runner the
 # workspace IS the checkout dir, so CONTAINER_WORKSPACE_PATH must equal it.
@@ -101,7 +107,9 @@ jobs:
     # OIDC also requires npm >= 11.5.1, so npm is upgraded below (the runner's
     # bundled npm is older). Provenance attestations are produced automatically.
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Runs on a v* tag push, or on a manual "Run workflow" (workflow_dispatch)
+    # where the version is supplied as an input.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -116,9 +124,16 @@ jobs:
       - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
         run: npm install -g npm@latest
 
-      - name: Derive version from tag
+      - name: Derive version
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        # From the workflow_dispatch input when triggered manually, otherwise
+        # from the tag (v1.2.3 -> 1.2.3).
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       # Publish the MCP server first: the installer depends on this exact version.
       # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
