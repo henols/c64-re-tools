@@ -386,7 +386,7 @@ async function ensureInitialized(): Promise<void> {
   await rpc("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
-    clientInfo: { name: "bruce-lee-recover", version: "1.0" },
+    clientInfo: { name: "vice-recover", version: "1.0" },
   });
   initialized = true;
 }

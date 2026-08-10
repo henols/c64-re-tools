@@ -248,7 +248,7 @@ test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branc
   // Portable check: the launcher's bash .git walk must land on the SAME root
   // Node's own .git-walk branch resolves (env forced empty so neither
   // CLAUDE_PROJECT_DIR nor CONTAINER_WORKSPACE_PATH short-circuits it). This
-  // replaced a hardcoded project-name match (`/bruce_lee$/`) so the suite
+  // replaced a hardcoded project-name match (`/example-project$/`) so the suite
   // travels with the module instead of asserting one repo's name.
   assert.equal(
     resourcesVals.repo_root,

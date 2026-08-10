@@ -1,8 +1,7 @@
 # c64-re-tools
 
 A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
-Commodore 64 games — extracted from the [Bruce Lee](https://github.com/henols/bruce_lee)
-reverse-engineering project so it can be reused across C64 projects.
+Commodore 64 games, reusable across C64 projects.
 
 It provides two things as a single installable unit:
 

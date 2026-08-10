@@ -202,7 +202,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 // which already executed by the time this file's own body starts, but every
 // subsequent async operation this file performs is covered.
 //
-// There are TWO correct exit paths, not one (spike-findings-bruce-lee
+// There are TWO correct exit paths, not one (spike-findings
 // skill, shutdown-and-lease-release.md): a graceful client shutdown
 // delivers SIGINT first (then SIGTERM ~100ms later, then SIGKILL at
 // ~490ms) and never closes stdin; an abrupt client death closes stdin
@@ -262,7 +262,7 @@ const OUTPUT_CHAR_CAP: number = (() => {
 //
 // D-1.2-H (plan 01.2-03 task 2). MAX_MCP_OUTPUT_TOKENS genuinely governs
 // the CLIENT's own inline-response ceiling (measured at 40-60KB --
-// spike-findings-bruce-lee skill, large-response-chunking.md -- about half
+// spike-findings skill, large-response-chunking.md -- about half
 // the design's original ~100KB assumption; a 64K RAM read is ~192KB as
 // hex, far above either figure). It is read from the client's own process
 // environment, set via `.claude/settings.json`'s `env` block, which this
@@ -1493,7 +1493,7 @@ function brokerLaunchFailedMessage(reason: string): string {
 /** State: the broker is alive and a request was written, but neither a
  * grant nor a denial appeared before pollGrant()'s own deadline -- an
  * explicit warming-and-retry result, never a silent hang. A cold x64sc
- * launch plus boot plus readiness is seconds (spike-findings-bruce-lee
+ * launch plus boot plus readiness is seconds (spike-findings
  * skill), well inside the client's own per-server timeout (.mcp.json's
  * `timeout` field, task 2), so the correct next action is simply to retry
  * the SAME call, not to treat this as a failure requiring a different fix. */
@@ -1693,7 +1693,7 @@ class PathTranslationError extends Error {}
 // The boundary check MUST run against a normalized path, never the raw
 // string. `startsWith(root)` on an unnormalized value is satisfied by any
 // string that merely begins with the root's characters, so a lexical `..`
-// sequence -- "/workspaces/bruce_lee/../../../etc/passwd" -- passes a raw
+// sequence -- "/workspaces/c64-project/../../../etc/passwd" -- passes a raw
 // prefix test and is then handed to hostPath(), which does NOT refuse it:
 // when relative() normalizes to a leading "..", hostpath.mjs deliberately
 // falls through to generic mount-based translation instead of throwing (its
@@ -1985,7 +1985,7 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
 //
 // On-demand acquisition (Phase 01.2): deferred to the FIRST forwarded
 // tools/call, never to initialize/tools/list, matching the measured "spawn
-// is eager, acquisition must not be" finding (spike-findings-bruce-lee
+// is eager, acquisition must not be" finding (spike-findings
 // skill, proxy-lifecycle-and-process-identity.md) -- a session that never
 // forwards a call never asks the broker for anything (C3).
 //
@@ -2841,7 +2841,7 @@ async function forwardToVice(name: string, args: Record<string, unknown>): Promi
 
 // -------------------------------------------------------------- teardown
 //
-// TWO ladders, not one, firing DIFFERENT handlers (spike-findings-bruce-lee
+// TWO ladders, not one, firing DIFFERENT handlers (spike-findings
 // skill, shutdown-and-lease-release.md -- measured, not assumed): a
 // graceful client ending delivers SIGINT first, then SIGTERM ~100ms later,
 // then SIGKILL at ~490ms total, and NEVER closes stdin. Abrupt client death
