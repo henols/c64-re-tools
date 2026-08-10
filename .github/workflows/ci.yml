@@ -149,3 +149,65 @@ jobs:
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm pkg set "dependencies.@henols/vice-mcp=${{ steps.ver.outputs.version }}"
           npm publish
+
+  release-on-merge:
+    # Auto-release on every merge to main (a PR merge is a push to main):
+    # bump the PATCH of the current published version and publish both packages
+    # via OIDC, then create the matching tag + GitHub release.
+    #
+    # For a minor/major bump, use the manual "Run workflow" trigger with an
+    # explicit version instead. To land a merge WITHOUT releasing, include
+    # "[skip release]" in the merge commit message.
+    needs: build
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && !contains(github.event.head_commit.message, '[skip release]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag + GitHub release
+      id-token: write # OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Compute next patch version
+        id: ver
+        # Base the bump on what's actually on npm, so it never collides with an
+        # already-published version (git tags may lag behind).
+        run: |
+          set -euo pipefail
+          CURRENT="$(npm view @henols/vice-mcp version 2>/dev/null || echo 0.0.0)"
+          NEXT="$(node -e 'const v=process.argv[1].split(".").map(Number); console.log(`${v[0]}.${v[1]}.${v[2]+1}`)' "$CURRENT")"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Auto-release: $CURRENT -> $NEXT"
+
+      - name: Publish @henols/vice-mcp
+        working-directory: .claude/mcp/vice
+        run: |
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm publish
+
+      - name: Publish @henols/c64-re-tools
+        working-directory: installer
+        run: |
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm pkg set "dependencies.@henols/vice-mcp=${{ steps.ver.outputs.version }}"
+          npm publish
+
+      - name: Create tag + GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The tag is created at this merge commit by the GITHUB_TOKEN, which by
+        # design does NOT re-trigger the tag-push workflow (no double publish).
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.ver.outputs.version }}"
+          gh release create "$TAG" --target "${{ github.sha }}" --generate-notes --title "$TAG"

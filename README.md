@@ -93,12 +93,19 @@ so the tests travel and run unchanged.
 
 ## Publishing (maintainers)
 
-To release, push a `v<version>` tag (e.g. `v0.1.2`) — or create a GitHub Release,
-which creates the tag. CI takes the version **from the tag** and publishes
-`@henols/vice-mcp` then `@henols/c64-re-tools` to npm at that version, so you do
-**not** need to pre-bump the source `package.json` files to match (the committed
-versions are placeholders that CI overwrites at publish time). The GitHub-Release
-step is idempotent, so a hand-drafted release and the CI run don't collide.
+Releases are **automatic**: every merge to `main` publishes a new **patch**
+version. CI reads the current version from npm, bumps the patch, publishes
+`@henols/vice-mcp` then `@henols/c64-re-tools`, and creates the matching `v<version>`
+tag + GitHub release. Include `[skip release]` in the merge commit message to land
+a change without releasing.
+
+For a **minor or major** bump, trigger a release manually with an explicit version:
+Actions → **CI** → **Run workflow** → enter e.g. `0.2.0` (this is the
+`workflow_dispatch` path). Pushing a `v<version>` tag by hand also works.
+
+Either way the version is taken from the tag/input/auto-bump, so you do **not**
+pre-bump the source `package.json` files (their versions are placeholders CI
+overwrites at publish time).
 
 Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
 package has a Trusted Publisher configured on npmjs.com pointing at this repo and
