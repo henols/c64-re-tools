@@ -95,7 +95,7 @@ function isInside(child: string, parent: string): boolean {
  *      below are unchanged.
  *   1. `env.CONTAINER_WORKSPACE_PATH`, when set AND `from` resolves inside
  *      it -- this devcontainer sets it (`.devcontainer/devcontainer.json`'s
- *      `containerEnv`, value `/workspaces/bruce_lee`), and it is the most
+ *      `containerEnv`, value `/workspaces/c64-project`), and it is the most
  *      explicit signal available.
  *   2. Otherwise, walk up from `from` toward the filesystem root, returning
  *      the first directory containing a `.git` entry (`existsSync` on the

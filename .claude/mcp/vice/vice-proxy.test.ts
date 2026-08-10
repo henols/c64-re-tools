@@ -186,7 +186,7 @@ async function listenOn(server: Server, host: string): Promise<number> {
 
 /** The container's first non-internal (non-loopback) IPv4 address -- what
  * makes listenOn()'s stub unreachable on loopback and reachable only via
- * the rewrite (see spike-findings-bruce-lee-adjacent environment note in
+ * the rewrite (see spike-findings-adjacent environment note in
  * this task's PLAN.md). Asserted present, never silently skipped -- a test
  * relying on this address must fail loudly if the environment lacks one,
  * not quietly pass having tested nothing. */

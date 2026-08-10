@@ -69,11 +69,11 @@ test("signal 2: /run/.containerenv exists (podman)", () => {
 });
 
 test("signal 3: CONTAINER_WORKSPACE_PATH is set", () => {
-  const deps = clearDeps({ env: { CONTAINER_WORKSPACE_PATH: "/workspaces/bruce_lee" } });
+  const deps = clearDeps({ env: { CONTAINER_WORKSPACE_PATH: "/workspaces/c64-project" } });
   const signals = evaluateContainerSignals(deps);
   const sig = signals.find((s) => s.description === "CONTAINER_WORKSPACE_PATH is set (this devcontainer sets it)");
   assert.ok(sig?.fired);
-  assert.equal(sig?.evidence, "/workspaces/bruce_lee");
+  assert.equal(sig?.evidence, "/workspaces/c64-project");
 });
 
 test("signal 4: systemd-detect-virt --container reports a virtualization technology", () => {
@@ -202,7 +202,7 @@ test("isInsideContainer(): true when any single signal fires -- the same >=1 rul
   // predicate's view (without dropping it from the guard's) fails here.
   assert.equal(isInsideContainer(clearDeps({ fileExists: (p) => p === "/.dockerenv" })), true);
   assert.equal(isInsideContainer(clearDeps({ fileExists: (p) => p === "/run/.containerenv" })), true);
-  assert.equal(isInsideContainer(clearDeps({ env: { CONTAINER_WORKSPACE_PATH: "/workspaces/bruce_lee" } })), true);
+  assert.equal(isInsideContainer(clearDeps({ env: { CONTAINER_WORKSPACE_PATH: "/workspaces/c64-project" } })), true);
   assert.equal(isInsideContainer(clearDeps({ runSystemdDetectVirt: () => "docker" })), true);
   assert.equal(
     isInsideContainer(

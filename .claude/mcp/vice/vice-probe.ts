@@ -171,7 +171,7 @@ export async function probeInstance({
       params: {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "bruce-lee-probe", version: "1.0" },
+        clientInfo: { name: "vice-probe", version: "1.0" },
       },
     });
     if (!initRes.ok) {
