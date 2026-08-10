@@ -100,9 +100,10 @@ which creates the tag. CI takes the version **from the tag** and publishes
 versions are placeholders that CI overwrites at publish time). The GitHub-Release
 step is idempotent, so a hand-drafted release and the CI run don't collide.
 
-Publishing requires an automation token in the **`NPM_TOKEN`** repository secret
-(Settings → Secrets and variables → Actions → *Repository secrets*), with the
-`@henols` scope created and publishable by that token.
+Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
+package has a Trusted Publisher configured on npmjs.com pointing at this repo and
+`ci.yml`; the `publish-npm` job runs with `id-token: write` and authenticates to
+npm directly, and npm records provenance automatically.
 
 ## Developing / testing the MCP server
 
