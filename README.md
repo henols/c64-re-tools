@@ -96,8 +96,8 @@ so the tests travel and run unchanged.
 Releases are **automatic**: every merge to `main` publishes a new **patch**
 version. CI reads the current version from npm, bumps the patch, publishes
 `@henols/vice-mcp` then `@henols/c64-re-tools`, and creates the matching `v<version>`
-tag + GitHub release. Include `[skip release]` in the merge commit message to land
-a change without releasing.
+tag + GitHub release. Put `[skip release]` in the merge commit **subject** (first
+line) to land a change without releasing.
 
 For a **minor or major** bump, trigger a release manually with an explicit version:
 Actions → **CI** → **Run workflow** → enter e.g. `0.2.0` (this is the

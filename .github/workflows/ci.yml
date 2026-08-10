@@ -156,29 +156,44 @@ jobs:
     # via OIDC, then create the matching tag + GitHub release.
     #
     # For a minor/major bump, use the manual "Run workflow" trigger with an
-    # explicit version instead. To land a merge WITHOUT releasing, include
-    # "[skip release]" in the merge commit message.
+    # explicit version instead. To land a merge WITHOUT releasing, put the
+    # skip marker in the commit SUBJECT (first line) -- see the gate step.
     needs: build
-    if: >-
-      github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
-      && !contains(github.event.head_commit.message, '[skip release]')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the tag + GitHub release
       id-token: write # OIDC trusted publishing
     steps:
       - uses: actions/checkout@v4
+
+      - name: Decide whether to release
+        id: gate
+        # Only the commit SUBJECT (first line) is checked, so a PR body that
+        # merely mentions the marker doesn't accidentally skip the release.
+        run: |
+          set -euo pipefail
+          SUBJECT="$(git log -1 --pretty=%s)"
+          if printf '%s' "$SUBJECT" | grep -qiF '[skip release]'; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Commit subject requests skip: $SUBJECT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.gate.outputs.release == 'true'
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
       - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
+        if: steps.gate.outputs.release == 'true'
         run: npm install -g npm@latest
 
       - name: Compute next patch version
         id: ver
+        if: steps.gate.outputs.release == 'true'
         # Base the bump on what's actually on npm, so it never collides with an
         # already-published version (git tags may lag behind).
         run: |
@@ -190,12 +205,14 @@ jobs:
           echo "Auto-release: $CURRENT -> $NEXT"
 
       - name: Publish @henols/vice-mcp
+        if: steps.gate.outputs.release == 'true'
         working-directory: .claude/mcp/vice
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm publish
 
       - name: Publish @henols/c64-re-tools
+        if: steps.gate.outputs.release == 'true'
         working-directory: installer
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
@@ -203,6 +220,7 @@ jobs:
           npm publish
 
       - name: Create tag + GitHub release
+        if: steps.gate.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         # The tag is created at this merge commit by the GITHUB_TOKEN, which by
