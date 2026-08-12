@@ -14,8 +14,25 @@ findings:
   warning: 4
   info: 3
   total: 8
-status: issues_found
+status: resolved
+resolved_in: bfee49b
+resolved: 2026-08-12
 ---
+
+> **All eight findings fixed in `bfee49b`.** CR-01, WR-02: cleanup moved into
+> `finally`. WR-01: PC decoded only for `STOPPED`/`RESUMED`; the other event
+> types now print their real fields. WR-03: check 13's baseline read isolated
+> from the destructive write. WR-04: `bodyLen` capped at 4 MiB with resync
+> fallback. IN-01: border sample taken relative to `(xo, yo)`, mismatch
+> caveated. IN-02: stub dir removed on exit (SIGTERM limitation documented).
+> IN-03: socket destroyed and timer cleared on connect timeout.
+>
+> `docs/phase1-probe-results.md` carries a correction note for the 30
+> mislabeled `PC=` lines WR-01 produced; the verbatim transcripts are
+> intentionally preserved rather than rewritten.
+>
+> Verified: `node --check` clean, `--selftest` passes, `tsc --noEmit` clean,
+> automatable test suite unchanged at 294 pass / 0 fail.
 
 # Phase 1: Code Review Report
 
