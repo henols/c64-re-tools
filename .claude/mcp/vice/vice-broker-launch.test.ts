@@ -51,6 +51,26 @@ interface RunResult {
   stderr: string;
 }
 
+// Never let a broker spawned by this file launch a REAL emulator. Inside the
+// devcontainer the container guard refuses to launch at all, so this file's
+// brokers never reached a spawn; on a bare host the guard correctly PERMITS
+// launching and the broker's default VICE_BIN resolves to `x64sc`, so running
+// this suite outside the container spawned actual VICE processes that blocked
+// the run and outlived it.
+//
+// The stub is a UNIQUE per-run path, deliberately NOT the bare "/bin/sleep"
+// broker-e2e.test.ts uses. discoverBandProcesses() (broker-kill.mts) selects
+// reap targets with `entry.args.includes(viceBin)` -- a SUBSTRING match over
+// every process's full argument string, paired only with a port-band check.
+// A short, ubiquitous identity like "/bin/sleep" therefore lets a broker
+// started by this suite SIGTERM/SIGKILL unrelated processes on a developer's
+// host. A unique path under this run's own temp dir cannot collide.
+const STUB_DIR = mkdtempSync(join(tmpdir(), "vice-broker-launch-stubbin-"));
+const STUB_VICE_BIN = join(STUB_DIR, "x64sc-test-stub");
+writeFileSync(STUB_VICE_BIN, "#!/bin/sh\nexec sleep \"${1:-600}\"\n", { mode: 0o755 });
+
+const VICE_BIN_STUB: Record<string, string> = { VICE_BIN: STUB_VICE_BIN, VICE_ARGS: "600" };
+
 /** Runs the deployed artifact SYNCHRONOUSLY under a bare `node` invocation --
  * only valid for a code path that exits promptly on its own (parseArgs
  * failure, the container guard's refusal, or the pre-listener
@@ -60,7 +80,7 @@ function runBrokerSync(deployDir: string, args: string[], env: Record<string, st
   const result = spawnSync(process.execPath, [join(deployDir, "vice-broker.mjs"), ...args], {
     cwd: deployDir,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...VICE_BIN_STUB, ...env },
   });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
@@ -70,7 +90,7 @@ function runBrokerSync(deployDir: string, args: string[], env: Record<string, st
 function runBrokerAsync(deployDir: string, args: string[], env: Record<string, string> = {}): { child: ChildProcess; getStderr: () => string } {
   const child = spawn(process.execPath, [join(deployDir, "vice-broker.mjs"), ...args], {
     cwd: deployDir,
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...VICE_BIN_STUB, ...env },
   });
   let stderr = "";
   child.stderr?.on("data", (d: Buffer) => {
