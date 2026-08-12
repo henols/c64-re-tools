@@ -24,9 +24,25 @@
  * synthesised buffers. Run this before trusting a live run against a real
  * build to have caught any layout regression here first.
  *
+ * Bounded fixture capture (needs a real x64sc; writes fixtures/binmon/):
+ *   node .claude/mcp/vice/probe-binmon.mjs --capture <case>
+ *   node .claude/mcp/vice/probe-binmon.mjs --capture all [--capture-out <dir>]
+ * <case> is one of "display-get", "event-interleaved", "checkpoint-list", or
+ * "all". Writes <case>.bin (raw concatenated wire bytes) and <case>.json (a
+ * provenance sidecar: capturedFrom, viceVersion, capturedAt, command) into
+ * --capture-out (defaults to fixtures/binmon/ next to this script), each via
+ * a tmp-sibling -> rename write. Every case is bounded by MAX_CAPTURE_FRAMES:
+ * a runaway case aborts and writes nothing rather than consuming the whole
+ * capture session's time budget (see the CHECKPOINT_INFO x18 flood recorded
+ * in docs/phase1-probe-results.md). binmon-fixtures.ts's loadCapturedFixture()
+ * is the consumer of what this writes.
+ *
  * No dependencies; pure Node (net).
  */
 import net from "node:net";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const STX = 0x02;
 const API = 0x02;
@@ -38,6 +54,7 @@ const CMD = {
   CHECKPOINT_GET: 0x11,
   CHECKPOINT_SET: 0x12,
   CHECKPOINT_DELETE: 0x13,
+  CHECKPOINT_LIST: 0x14,
   CONDITION_SET: 0x22,
   RESOURCE_GET: 0x51,
   ADVANCE_INSTRUCTIONS: 0x71,
@@ -76,6 +93,19 @@ const EVT = {
 // arbitrary 32-bit value read out of a desynced stream.
 const MAX_BODY_LEN = 4 * 1024 * 1024;
 
+// Hard per-case cap on how many frames --capture will accumulate before
+// aborting that case and writing no .bin for it. Exists because a
+// non-stopping or wide-range checkpoint can flood CHECKPOINT_INFO frames
+// synchronously from inside the CPU loop -- exactly the CHECKPOINT_INFO x18
+// flood observed on the fork build and recorded in
+// docs/phase1-probe-results.md's "Anomaly observed on the fork build". A
+// runaway case must not consume the whole capture session's time budget for
+// the other cases.
+const MAX_CAPTURE_FRAMES = 32;
+
+// The three real-capture VERIF-02 cases --capture accepts (plus "all").
+const CAPTURE_CASES = ["display-get", "event-interleaved", "checkpoint-list"];
+
 const ERR_NAME = {
   0x00: "OK",
   0x01: "OBJECT_MISSING",
@@ -113,6 +143,10 @@ class BinMon {
     this.nextId = 1;
     this.events = [];
     this.observedApi = null; // api_version byte from the response header, as observed
+    // Set by --capture mode only: called with each frame's header+body,
+    // downstream of the resync/MAX_BODY_LEN-guarded framing loop below (never
+    // a second, independent parse of the wire). Left null outside capture.
+    this.onFrame = null;
     socket.on("data", (chunk) => this._onData(chunk));
   }
 
@@ -143,6 +177,11 @@ class BinMon {
       if (this.buf.length < total) break;
       const frame = this.buf.subarray(0, total);
       this.buf = this.buf.subarray(total);
+      // --capture mode's raw-byte dump: fires here, downstream of the
+      // resync + MAX_BODY_LEN guards above, on every reassembled frame
+      // (both replies and unsolicited events) in arrival order. Never
+      // re-parses the wire independently.
+      if (this.onFrame) this.onFrame(Buffer.from(frame));
       if (this.observedApi === null) this.observedApi = frame[1];
       const respType = frame[6];
       const errCode = frame[7];
@@ -514,12 +553,86 @@ function selftest() {
   );
   assertTrue(disp.buflen === pixelData.length, "parseDisplayGet: buflen derived from infoLen");
   assertTrue(disp.buffer.equals(pixelData), "parseDisplayGet: pixel buffer located correctly");
+
+  // --- --capture mode selftest additions (no socket, no emulator) ---------
+
+  // (a) the sidecar builder emits exactly the four required provenance keys.
+  const sidecarKeys = Object.keys({
+    capturedFrom: "x",
+    viceVersion: "x",
+    capturedAt: "x",
+    command: "x",
+  });
+  assertTrue(
+    sidecarKeys.length === 4 &&
+      ["capturedFrom", "viceVersion", "capturedAt", "command"].every((k) => sidecarKeys.includes(k)),
+    "capture sidecar: exactly the four required provenance keys",
+  );
+
+  // Local, offline-only response-frame builder for the two checks below --
+  // deliberately not exported, and not the same code path as
+  // binmon-fixtures.ts's encodeResponseFrame() (a separate module this
+  // plain-JS script must not import), but the same 12-byte layout.
+  const buildResponseFrame = (respType, errCode, reqId, body) => {
+    const header = Buffer.alloc(12);
+    header[0] = STX;
+    header[1] = API;
+    header.writeUInt32LE(body.length, 2);
+    header[6] = respType;
+    header[7] = errCode;
+    header.writeUInt32LE(reqId >>> 0, 8);
+    return Buffer.concat([header, body]);
+  };
+
+  // (b) the frame-dump serializer round-trips through the EXISTING _onData()
+  // framing loop: feed a synthesised two-frame stream through a stub-socket
+  // BinMon and confirm onFrame fires once per reassembled frame, verbatim.
+  {
+    const stubSocket = { on() {}, write() {} };
+    const mon = new BinMon(stubSocket);
+    const captured = [];
+    mon.onFrame = (frame) => captured.push(frame);
+    const r1 = buildResponseFrame(0x62, 0x00, EVENT_ID, Buffer.from([0x01, 0x02])); // STOPPED-shaped
+    const r2 = buildResponseFrame(0x81, 0x00, 7, Buffer.alloc(0)); // a plain reply
+    mon._onData(Buffer.concat([r1, r2]));
+    assertTrue(captured.length === 2, "capture selftest: onFrame fires once per reassembled frame");
+    assertTrue(captured[0].equals(r1), "capture selftest: first captured frame matches byte-for-byte");
+    assertTrue(captured[1].equals(r2), "capture selftest: second captured frame matches byte-for-byte");
+  }
+
+  // (c) the MAX_CAPTURE_FRAMES cap aborts rather than looping: feed more
+  // frames than the cap through the same onFrame-guard logic runCapture()
+  // uses and confirm collection stops exactly at the cap with abort set.
+  {
+    const stubSocket = { on() {}, write() {} };
+    const mon = new BinMon(stubSocket);
+    const frames = [];
+    let aborted = false;
+    mon.onFrame = (frame) => {
+      if (frames.length >= MAX_CAPTURE_FRAMES) {
+        aborted = true;
+        return;
+      }
+      frames.push(frame);
+      if (frames.length >= MAX_CAPTURE_FRAMES) aborted = true;
+    };
+    const many = Buffer.concat(
+      Array.from({ length: MAX_CAPTURE_FRAMES + 5 }, (_, i) => buildResponseFrame(0x81, 0x00, i + 1, Buffer.alloc(0))),
+    );
+    mon._onData(many);
+    assertTrue(aborted, "capture selftest: MAX_CAPTURE_FRAMES cap trips the abort flag rather than looping forever");
+    assertTrue(
+      frames.length === MAX_CAPTURE_FRAMES,
+      `capture selftest: frame collection stops exactly at the cap (got ${frames.length})`,
+    );
+  }
 }
 
-async function main() {
-  const { host, port } = parseTarget();
-  console.log(`Connecting to VICE binary monitor at ${host}:${port} ...`);
-  const socket = await new Promise((resolve, reject) => {
+// Shared by main() and --capture's runCapture(): connect a raw TCP socket to
+// the binary monitor, with a bounded connect timeout. Lifted out of main()
+// unchanged so there is exactly one connect implementation, not two.
+function connectSocket(host, port) {
+  return new Promise((resolve, reject) => {
     let connectTimer = null;
     const s = net.createConnection({ host, port }, () => {
       if (connectTimer) clearTimeout(connectTimer);
@@ -530,15 +643,20 @@ async function main() {
       s.destroy();
       reject(err);
     });
-    // Tear the socket down before rejecting: this script exits immediately
-    // afterwards today, but a dangling socket plus its retained "error"
-    // listener would leak if this connect logic is ever lifted into a
-    // longer-lived module.
+    // Tear the socket down before rejecting: callers exit (or move to the
+    // next case) immediately after a failed connect, but a dangling socket
+    // plus its retained "error" listener would leak otherwise.
     connectTimer = setTimeout(() => {
       s.destroy();
       reject(new Error("connect timeout"));
     }, 4000);
   });
+}
+
+async function main() {
+  const { host, port } = parseTarget();
+  console.log(`Connecting to VICE binary monitor at ${host}:${port} ...`);
+  const socket = await connectSocket(host, port);
   console.log("Connected.\n");
   const mon = new BinMon(socket);
   const results = {};
@@ -983,6 +1101,200 @@ async function main() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// --capture mode (D-19): write byte-exact, provenance-stamped fixtures for
+// the three VERIF-02 cases that need a real emulator. Added alongside
+// --selftest, never replacing it. Every case's raw-byte dump sits downstream
+// of BinMon's own _onData() framing loop via the onFrame hook above -- this
+// never re-parses the wire independently and never bypasses MAX_BODY_LEN.
+// ---------------------------------------------------------------------------
+
+function usageCaptureError(badCase) {
+  const named = badCase ? `Unknown --capture case "${badCase}".` : "Missing --capture <case>.";
+  return `${named} Valid cases: ${CAPTURE_CASES.join(", ")}, or "all".`;
+}
+
+function parseCaptureArgs(argv) {
+  const idx = argv.indexOf("--capture");
+  if (idx === -1) return null;
+  const caseName = argv[idx + 1];
+  const outIdx = argv.indexOf("--capture-out");
+  const outDir = outIdx !== -1 ? argv[outIdx + 1] : null;
+  return { caseName, outDir };
+}
+
+// Write via a tmp-sibling then rename -- never a direct in-place write --
+// matching this repo's established atomic-write convention
+// (refresh-manifest.ts's writeManifestAtomic()).
+function writeAtomic(path, data) {
+  const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmpPath, data);
+  renameSync(tmpPath, path);
+}
+
+// Run `fn()` while every frame BinMon reassembles is appended to a bounded
+// array via the onFrame hook. Once MAX_CAPTURE_FRAMES frames have been read,
+// further frames are dropped and `aborted` is set -- the case must stop
+// accumulating rather than let a flood consume the whole capture session.
+async function withFrameCapture(mon, fn) {
+  const frames = [];
+  let aborted = false;
+  mon.onFrame = (frame) => {
+    if (frames.length >= MAX_CAPTURE_FRAMES) {
+      aborted = true;
+      return;
+    }
+    frames.push(frame);
+    if (frames.length >= MAX_CAPTURE_FRAMES) {
+      aborted = true;
+      console.log(`   [capture] hit MAX_CAPTURE_FRAMES (${MAX_CAPTURE_FRAMES}) -- aborting this case`);
+    }
+  };
+  try {
+    await fn();
+  } finally {
+    mon.onFrame = null;
+  }
+  return { frames, aborted };
+}
+
+async function captureDisplayGetCase(mon) {
+  return withFrameCapture(mon, async () => {
+    await mon.send(CMD.DISPLAY_GET, Buffer.from([0x00, 0x00]));
+  });
+}
+
+async function captureEventInterleavedCase(mon) {
+  return withFrameCapture(mon, async () => {
+    // Stepping one instruction reliably produces at least one 0xffffffff
+    // event frame (RESUMED/REGISTER_INFO/STOPPED, per check 6's own
+    // "ASYNC EVENTS" probe above) landing between this request and its own
+    // reply -- exactly the interleaving this case exists to capture.
+    const stepBody = Buffer.alloc(3);
+    stepBody[0] = 0x00;
+    stepBody.writeUInt16LE(1, 1);
+    await mon.send(CMD.ADVANCE_INSTRUCTIONS, stepBody);
+    await sleep(200); // let interleaved events land before the case ends
+  });
+}
+
+async function captureCheckpointListCase(mon) {
+  // Both checkpoint numbers live outside the try so the finally can delete
+  // whichever were actually created, even if CHECKPOINT_LIST itself throws --
+  // the same cleanup discipline checks 9 and 10 above already established.
+  let cpNumA = null;
+  let cpNumB = null;
+  try {
+    return await withFrameCapture(mon, async () => {
+      // Two narrow, single-address (start === end) stop=1 checkpoints --
+      // never the fork's $0000-$FFFF full-range shape, which produced the
+      // CHECKPOINT_INFO x18 flood recorded in docs/phase1-probe-results.md.
+      const rA = await mon.send(
+        CMD.CHECKPOINT_SET,
+        checkpointSetBody({ start: 0xea31, end: 0xea31, stop: 1, enabled: 0, temporary: 1 }),
+      );
+      cpNumA = rA.errCode === 0x00 ? parseCheckpointInfo(rA.body).checkpointNum : null;
+
+      const rB = await mon.send(
+        CMD.CHECKPOINT_SET,
+        checkpointSetBody({ start: 0xea81, end: 0xea81, stop: 1, enabled: 0, temporary: 1 }),
+      );
+      cpNumB = rB.errCode === 0x00 ? parseCheckpointInfo(rB.body).checkpointNum : null;
+
+      await mon.send(CMD.CHECKPOINT_LIST);
+      await sleep(100); // let any CHECKPOINT_INFO frames the list emits land
+    });
+  } finally {
+    for (const n of [cpNumA, cpNumB]) {
+      if (n === null) continue;
+      try {
+        await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(n));
+      } catch {
+        console.log(`    (could not delete capture checkpoint #${n} -- it is enabled:0 and therefore inert)`);
+      }
+    }
+  }
+}
+
+const CAPTURE_COMMAND_BY_CASE = {
+  "display-get": "DISPLAY_GET (0x84)",
+  "event-interleaved": "ADVANCE_INSTRUCTIONS (0x71)",
+  "checkpoint-list": "CHECKPOINT_SET (0x12) x2 -> CHECKPOINT_LIST (0x14) -> CHECKPOINT_DELETE (0x13) x2",
+};
+const CAPTURE_RUNNER_BY_CASE = {
+  "display-get": captureDisplayGetCase,
+  "event-interleaved": captureEventInterleavedCase,
+  "checkpoint-list": captureCheckpointListCase,
+};
+
+async function runCapture(caseName, outDirArg) {
+  const outDir = outDirArg
+    ? resolve(outDirArg)
+    : join(dirname(fileURLToPath(import.meta.url)), "fixtures", "binmon");
+  mkdirSync(outDir, { recursive: true });
+
+  const { host, port } = parseTarget();
+  console.log(`[capture] connecting to VICE binary monitor at ${host}:${port} ...`);
+  const socket = await connectSocket(host, port);
+  console.log("[capture] connected.\n");
+  const mon = new BinMon(socket);
+
+  let viceVersion = "unknown";
+  try {
+    const viceInfo = await mon.send(CMD.VICE_INFO);
+    if (viceInfo.body.length >= 1) {
+      const vlen = viceInfo.body[0];
+      viceVersion = Array.from(viceInfo.body.subarray(1, 1 + vlen)).join(".");
+    }
+  } catch (e) {
+    console.log(`[capture] VICE_INFO failed (${e.message}) -- viceVersion will read "unknown"`);
+  }
+  // capturedFrom names the resolved binary path plus stock/fork, per the
+  // sidecar contract binmon-fixtures.ts's loadCapturedFixture() enforces.
+  // Neither is observable from a bare TCP client, so both are taken from the
+  // environment/CLI, with an honest fallback rather than a guessed value.
+  const capturedFrom = `${process.env.CAPTURE_BACKEND_KIND || "unknown"}:${process.env.VICE_BIN || `${host}:${port}`}`;
+
+  const casesToRun = caseName === "all" ? CAPTURE_CASES : [caseName];
+  for (const c of casesToRun) {
+    console.log(`[capture] running case "${c}" ...`);
+    let result;
+    try {
+      result = await CAPTURE_RUNNER_BY_CASE[c](mon);
+    } catch (e) {
+      console.log(`[capture] case "${c}" FAILED: ${e.message}`);
+      continue;
+    }
+    if (result.aborted) {
+      console.log(`[capture] case "${c}" ABORTED: reached MAX_CAPTURE_FRAMES (${MAX_CAPTURE_FRAMES}) -- no .bin written`);
+      continue;
+    }
+    if (result.frames.length === 0) {
+      console.log(`[capture] case "${c}" produced no frames -- no .bin written`);
+      continue;
+    }
+    const bytes = Buffer.concat(result.frames);
+    const sidecar = {
+      capturedFrom,
+      viceVersion,
+      capturedAt: new Date().toISOString(),
+      command: CAPTURE_COMMAND_BY_CASE[c],
+    };
+    writeAtomic(join(outDir, `${c}.bin`), bytes);
+    writeAtomic(join(outDir, `${c}.json`), JSON.stringify(sidecar, null, 2) + "\n");
+    console.log(
+      `[capture] case "${c}" OK: ${result.frames.length} frame(s), ${bytes.length} byte(s) -> ${join(outDir, c)}.{bin,json}`,
+    );
+  }
+
+  try {
+    await mon.send(CMD.EXIT);
+  } catch { /* ignore -- a case above may have already left the target unresponsive */ }
+  try {
+    socket.end();
+  } catch { /* ignore */ }
+}
+
 if (process.argv.includes("--selftest")) {
   try {
     selftest();
@@ -991,6 +1303,20 @@ if (process.argv.includes("--selftest")) {
   } catch (e) {
     console.error(e.message);
     process.exit(1);
+  }
+} else if (process.argv.includes("--capture")) {
+  const parsed = parseCaptureArgs(process.argv);
+  const caseName = parsed && parsed.caseName;
+  if (!caseName || (caseName !== "all" && !CAPTURE_CASES.includes(caseName))) {
+    // Validated BEFORE any socket connection is attempted -- a bogus case
+    // name must fail fast and offline, never dial the target first.
+    console.error(usageCaptureError(caseName));
+    process.exit(1);
+  } else {
+    runCapture(caseName, parsed.outDir).catch((e) => {
+      console.error("capture error:", e.message);
+      process.exit(1);
+    });
   }
 } else {
   main().catch((e) => {
