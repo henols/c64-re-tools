@@ -86,6 +86,7 @@ None — plan executed exactly as written. All body-builder layouts, check order
 ## Issues Encountered
 - The worktree's HEAD was several commits behind the orchestrator's expected base (`5033cb7`) at agent start, with `.planning/` and other Phase-1 planning artifacts entirely absent from the checked-out tree. Resolved per the `worktree_branch_check` protocol: confirmed the working tree was clean, then `git reset --hard 5033cb7` to the expected base before any file reads. This is expected worktree-provisioning behavior, not a plan deviation.
 - `cd .claude/mcp/vice && npm test` (the plan's non-regression backstop) required `npm ci` first since `node_modules/` was absent in the freshly-provisioned worktree (expected — `node_modules` is gitignored project-wide and provisioned by a SessionStart hook that doesn't run inside a worktree agent). Ran `npm --prefix .claude/mcp/vice ci --no-audit --no-fund` using the existing committed lockfile (no new package installed, so this is not a Rule-3-excluded action) before running the suite.
+- The full `npm test` run (all `*.test.*` files via `node --test`) hung past a 280s timeout in this sandboxed worktree, with no output beyond `Terminated`. Isolated the cause: running the non-broker/non-e2e subset (`repo-root`, `containerpath`, `vice`, etc.) completes in ~0.4s (16 pass / 3 pre-existing unrelated failures). `grep -rl 'probe-binmon' *.test.*` returns nothing — no test file imports or exercises `probe-binmon.mjs`, confirming it sits outside the test module graph exactly as the plan's own verification note states. The hang is pre-existing broker/e2e test infrastructure behavior (likely requiring real process spawning or a display this sandbox lacks), not a regression introduced by this plan's changes.
 
 ## User Setup Required
 
@@ -99,3 +100,12 @@ None - no external service configuration required.
 ---
 *Phase: 01-corrected-ground-truth*
 *Completed: 2026-08-12*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/probe-binmon.mjs`
+- FOUND: `.planning/phases/01-corrected-ground-truth/01-03-SUMMARY.md`
+- FOUND commit: `a3d9c38` (Task 1)
+- FOUND commit: `1fab1cd` (Task 2)
+- FOUND commit: `7b57e7e` (Task 3)
+- FOUND commit: `6f8412e` (Summary)
