@@ -90,6 +90,16 @@ None - no external service configuration required.
 - This plan is independent of `01-02` (constraints.md/ADR), `01-03` (probe extension), and `01-04` (probe execution) per the roadmap's Wave 1 parallel-plans note — no blockers introduced for those plans.
 - No code was touched; the existing `node --test` suite is unaffected (confirmed via the `.ts`/`.mts`/`.mjs` non-regression grep, which returned 0).
 
+## Self-Check: PASSED
+
+- FOUND: docs/phase0-binmon-findings.md
+- FOUND: docs/stock-vice-parity.md
+- FOUND: .planning/phases/01-corrected-ground-truth/01-01-SUMMARY.md
+- FOUND commit: e9d7cae (Task 1)
+- FOUND commit: 2005fce (Task 2)
+- FOUND commit: 4dd3437 (Task 3)
+- FOUND commit: 69bbb18 (SUMMARY commit)
+
 ---
 *Phase: 01-corrected-ground-truth*
 *Completed: 2026-08-12*
