@@ -4,9 +4,10 @@ Synthesized by `gsd-doc-synthesizer`. Primary source is the SPEC,
 `docs/phase0-binmon-findings.md`, derived by reading VICE source
 (`VICE-Team/svn-mirror` @ `master`: `vice/src/monitor/monitor_binary.c`,
 `vice/src/monitor/mon_register.c`). Phase 1 applied source-verified corrections
-to this file on 2026-08-12; every item below has a settled status now. The one
-remaining unresolved item, `CON-probe-outstanding`, is resolved by the
-empirical probe run.
+to this file on 2026-08-12; every item below now has a settled status. The
+block that was the one remaining unresolved item — renamed to
+`CON-probe-resolved` to reflect its settled state — is resolved by the
+empirical probe run recorded in `docs/phase1-probe-results.md`.
 
 Two capability constraints (`CON-sid-readback-hard-loss`,
 `CON-chip-internal-state-partial`) originate from `docs/stock-vice-parity.md`
@@ -198,14 +199,19 @@ format; the ADR's looser paraphrase is superseded.
 - **supersedes:** `docs/roadmap-stock-vice.md` group B, which listed VIC-II / CIA
   state as a straightforward client-side derivation.
 
-## CON-probe-outstanding
+## CON-probe-resolved
 
-- **source:** `docs/phase0-binmon-findings.md` "The one empirical step left"
+- **source:** `docs/phase0-binmon-findings.md` "The empirical probe has been run
+  — see docs/phase1-probe-results.md" (corrected 2026-08-12, Phase 1)
 - **type:** nfr
-- **status:** OUTSTANDING
-- **constraint:** `.claude/mcp/vice/probe-binmon.mjs` must be run against a stock
-  `x64sc -binarymonitor` (this repo's container has no VICE and no display). It
-  confirms on the real build: connectivity + api version, whether CPU history is
-  enabled (the stopwatch), that `DISPLAY_GET` works, and demonstrates the async
-  STOPPED/RESUMED demux. **Its result decides the timing-tool design before
-  Phase-1 client code lands.**
+- **status:** RESOLVED — see docs/phase1-probe-results.md
+- **constraint:** `.claude/mcp/vice/probe-binmon.mjs` has been run against both a
+  stock `x64sc -binarymonitor` (VICE 3.9, `/usr/bin/x64sc`) and the barryw fork's
+  binary monitor (VICE 3.10, `/usr/local/bin/x64sc`, not a stock 3.10 build). The
+  run confirmed connectivity + api version, the `CPUHISTORY_GET` version gate
+  (`INVALID_TYPE` on 3.9, success on the fork's 3.10-vintage tree), that
+  `DISPLAY_GET` and `PALETTE_GET` work, and demonstrated the async event demux —
+  plus resolved or accepted-as-unknown all five items research previously
+  flagged UNVERIFIED. Full results, raw output, and one newly-observed anomaly
+  (a fork-only checkpoint flood during the `RL`/`CY` fire test) are recorded in
+  `docs/phase1-probe-results.md`.
