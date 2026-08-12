@@ -768,17 +768,89 @@ async function main() {
     console.log(`12. ADVANCE_INSTRUCTIONS event pair -> FAILED (${e.message})`);
   }
 
-  // Resume the machine and disconnect cleanly.
+  // 13. MEM_SET into drive ROM $C000 (UNVERIFIED item 3). This is the only
+  //     probe that can crash the target, so it runs last. Gated on evidence
+  //     from check 11, not assumption: with TDE off, drive reads return
+  //     silent zeros rather than an error, so an unguarded run would produce
+  //     a meaningless "looks like a no-op" answer.
+  try {
+    if (!results.tdeOn || !results.driveTypeNonZero) {
+      console.log(
+        "13. MEM_SET drive ROM -> SKIPPED (Drive8TrueEmulation/Drive8Type precondition from check 11 not confirmed on; a zero read-back here would not be evidence of a safe no-op)",
+      );
+      results.driveRomWrite = "skipped-precondition-unmet";
+    } else {
+      const before = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+      const beforeData = before.body.subarray(2, 2 + before.body.readUInt16LE(0));
+      const beforeByte = beforeData[0];
+      const setR = await mon.send(
+        CMD.MEM_SET,
+        memSetBody({ start: 0xc000, end: 0xc000, memspace: 0x01, data: Buffer.from([0xff]) }),
+      );
+      if (setR.errCode !== 0x00) {
+        console.log(`13. MEM_SET drive ROM -> REJECTED (${ERR_NAME[setR.errCode] || setR.errCode})`);
+        results.driveRomWrite = "rejected";
+      } else {
+        const after = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+        const afterData = after.body.subarray(2, 2 + after.body.readUInt16LE(0));
+        const afterByte = afterData[0];
+        if (afterByte === beforeByte) {
+          console.log(
+            `13. MEM_SET drive ROM -> OK but byte UNCHANGED ($${beforeByte.toString(16)}) -- silent no-op store stub`,
+          );
+          results.driveRomWrite = "silent-no-op";
+        } else {
+          console.log(
+            `13. MEM_SET drive ROM -> OK, byte CHANGED $${beforeByte.toString(16)} -> $${afterByte.toString(16)} -- drive ROM is writable through the monitor`,
+          );
+          results.driveRomWrite = "writable";
+        }
+      }
+    }
+  } catch (e) {
+    console.log(
+      `13. MEM_SET drive ROM -> the drive-ROM write crashed or hung the target (${e.message}) -- this IS the answer to UNVERIFIED item 3, not a probe defect`,
+    );
+    results.driveRomWrite = "crashed-or-hung";
+  }
+
+  // Resume the machine and disconnect cleanly. Tolerate a socket already
+  // closed by check 13 -- the verdict below must still print.
   try {
     await mon.send(CMD.EXIT);
+  } catch { /* ignore -- check 13 may have already crashed/closed the target */ }
+  try {
+    socket.end();
   } catch { /* ignore */ }
-  socket.end();
 
-  console.log("\n=== Phase-0 verdict (checks 1-6 only; extended verdict follows in 01-03 Task 3) ===");
-  console.log(`connect/ping ....... ${results.ping ? "PASS" : "FAIL"}`);
-  console.log(`vice version ....... ${results.version || "?"}`);
-  console.log(`cycle stopwatch .... ${results.cpuHistory ? "AVAILABLE" : "MISSING"}`);
-  console.log(`screenshot ......... ${results.display ? "AVAILABLE" : "MISSING/unsupported"}`);
+  console.log("\n=== Phase-1 verdict ===");
+  console.log(`connect/ping ............ ${results.ping ? "PASS" : "FAIL"}`);
+  console.log(`api_version (observed) .. ${mon.observedApi != null ? `0x${mon.observedApi.toString(16)}` : "?"}`);
+  console.log(`vice version ............ ${results.version || "?"}`);
+  console.log(
+    `cpuhistory_get ........... ${results.cpuHistory === undefined ? "?" : results.cpuHistory ? "OK" : "unavailable (INVALID_TYPE 0x83 on <3.10, CMD_FAILURE 0x8f if disabled on >=3.10)"}`,
+  );
+  console.log(`display_get geometry ..... ${results.display ? "AVAILABLE" : "MISSING/unsupported"}`);
+  console.log(`palette_get entries ...... ${results.palette ? results.palette.count : "?"}`);
+  console.log(
+    `checkpoint_set 8/9-byte .. 8-byte: ${results.checkpointSet8 ?? "?"}  9-byte: ${results.checkpointSet9 ?? "?"}`,
+  );
+  console.log(
+    `RL/CY condition .......... accepted=${results.rlCyAccepted ?? "?"}  LIN/CYC rejected=${results.linCycRejected ?? "?"}  fired=${results.conditionFired ?? "?"}`,
+  );
+  console.log(
+    `Drive8TrueEmulation ...... on=${results.tdeOn ?? "?"}  Drive8Type nonzero=${results.driveTypeNonZero ?? "?"}`,
+  );
+  console.log(
+    `ADVANCE_INSTRUCTIONS ..... event slice: [${(results.advanceEventSlice || []).join(", ") || "?"}]`,
+  );
+  console.log(`drive ROM MEM_SET ........ ${results.driveRomWrite || "?"}`);
+  console.log(
+    `unsolicited event sequence (full session) -> ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
+  );
+  console.log(
+    "\nVICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see docs/phase1-probe-results.md for the recorded run.",
+  );
 }
 
 if (process.argv.includes("--selftest")) {
