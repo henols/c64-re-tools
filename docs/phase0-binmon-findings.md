@@ -6,22 +6,56 @@ and `vice/src/monitor/mon_register.c`. Where a point still needs to be confirmed
 against a *specific build*, it is called out as **VERIFY** and covered by the
 probe script (`.claude/mcp/vice/probe-binmon.mjs`).
 
-## 1. Cycle stopwatch — RESOLVED: yes, via CPU history
+## 1. Cycle stopwatch — RESOLVED: yes, via CPU history (plus a reconstructible fallback)
 
 - There is **no monotonic cycle register**. `e_Cycle` (0x36) and `e_Rasterline`
   (0x35) are *not real registers* — `mon_register.c` gates them with the comment
   *"these are not actually registers, we need them for the conditionals"*.
   `e_Cycle` is the cycle **within the current raster line**, for checkpoint
-  conditions — not elapsed time. So `REGISTERS_GET` (0x31) cannot be a stopwatch.
-- **`CPUHISTORY_GET` (0x86) is the stopwatch.** Each history entry ends with a
-  **uint64 absolute clock** (`write_uint64(current->cycle, …)` in
+  conditions — not elapsed time, and it is not monotonic.
+- **`REGISTERS_GET` (0x31) does return `LIN`/`CYC`.** Both are present in
+  `mon_reg_list_6510` (`mon_register6502.c:57`), so a plain `REGISTERS_GET` call
+  sources them. The point that survives is only that neither is monotonic on its
+  own — `CYC` is cycle-within-raster-line, same as above. Absolute elapsed
+  cycles can be reconstructed client-side without CPU history:
+  `cycles = frames * 19656 (PAL) + Δ(LIN * 63 + CYC)`, with the frame count read
+  from a **non-stopping** exec checkpoint at `$EA31`, taking `hit_count` from
+  bytes 13–16 of the `CHECKPOINT_INFO` (0x11) response. **Cost warning:** every
+  hit of a non-stopping checkpoint fires a synchronous `CHECKPOINT_INFO` frame
+  from inside the CPU loop (`mon_breakpoint.c:439-535`), so a non-stopping
+  checkpoint over a wide address range is dangerous — this reconstruction uses a
+  single frame-boundary address, not a range, but the hazard applies to any
+  other non-stopping checkpoint the client adds alongside it.
+- This reconstruction route is a **second, always-available stopwatch**, not a
+  replacement for CPU history — Phase 7 picks between the two routes with
+  measured socket cost; this document states that `REGISTERS_GET` can source
+  cycle data, it does not re-litigate that routing decision.
+- **`CPUHISTORY_GET` (0x86) is the other stopwatch route.** Each history entry
+  ends with a **uint64 absolute clock** (`write_uint64(current->cycle, …)` in
   `monitor_binary.c`). Read the newest entry's cycle before and after a run; the
   difference is a cycle-accurate elapsed count.
-- **VERIFY:** CPU history is a *compile-time* feature. If the target `x64sc`
-  wasn't built with it, `CPUHISTORY_GET` returns an error or zero entries and the
-  stopwatch is unavailable. The probe checks this on the real build. Fallbacks if
-  absent: derive cycles by summing per-instruction costs while single-stepping
-  (slow), or fall back to wall-clock timing.
+- **VERIFY — the availability gate is the VICE version, not a build flag.**
+  `--enable-cpuhistory` is on by default (`configure.ac:120,521`), and Debian,
+  Ubuntu, Homebrew and official VICE CI all build with it — whether the feature
+  was compiled in is not the risk. The real gate is `e_MON_CMD_CPUHISTORY_GET`
+  (`0x86`), which exists only in **VICE >= 3.10** (VICE manual §13, "Minimum
+  VICE version: 3.10"); Debian trixie/forky/sid and all current Ubuntu ship 3.9,
+  whose `monitor_binary.c` has no `0x86` case at all. Two distinguishable
+  failures: the opcode absent entirely (VICE < 3.10) returns `INVALID_TYPE`
+  (`0x83`); the opcode present but the feature genuinely disabled on a >= 3.10
+  build returns `CMD_FAILURE` (`0x8f`). Detect capability via `VICE_INFO`
+  (0x85)'s 4-byte version quad, never the SVN revision field, which is zeros in
+  distro builds. The probe records which of the two error codes appears on a
+  given build; it does not decide whether the feature was compiled in.
+- Checkpoint *conditions* use a different, uppercase-only token pair: `RL`
+  (raster line) and `CY` (cycle within line) — **not** the `REGISTERS_GET`
+  names `LIN`/`CYC`, which lex as `BANKNAME` in `COND_MODE` and produce a
+  syntax error (`0x8f`, no diagnostic body) (`mon_lex.l:559-560`). Conditions
+  have **no operator precedence** (`mon_parse.y:168`), so
+  `RL == $64 && CY == $14` parses as `(((RL==$64) && CY) == $14)` and is
+  always false — parenthesise every comparison. Bare integer literals are
+  **hex by default** (`monitor.c:1597`), so `RL == 100` means line 256, not
+  100.
 
 ## 2. run-until-N-cycles — native only for run-until-*address*
 
