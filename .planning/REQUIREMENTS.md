@@ -11,9 +11,9 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Docs correctness (prerequisite)
 
-- [ ] **DOC-01**: `docs/phase0-binmon-findings.md` no longer asserts that pause-on-demand requires a checkpoint, that `REGISTERS_GET` cannot source a stopwatch, or that CPU history's compile flag is the availability risk — and states the real gate (VICE ≥ 3.10)
-- [ ] **DOC-02**: `docs/phase0-binmon-findings.md` and `docs/stock-vice-parity.md` name the condition-parser pseudo-registers as `RL`/`CY`, so no downstream plan writes a condition on `LIN` and gets error `0x8f`
-- [ ] **DOC-03**: `.planning/intel/constraints.md` reflects the corrected findings, and `CON-stopwatch-via-cpuhistory` is no longer marked PROVISIONAL-on-CPU-history
+- [x] **DOC-01**: `docs/phase0-binmon-findings.md` no longer asserts that pause-on-demand requires a checkpoint, that `REGISTERS_GET` cannot source a stopwatch, or that CPU history's compile flag is the availability risk — and states the real gate (VICE ≥ 3.10)
+- [x] **DOC-02**: `docs/phase0-binmon-findings.md` and `docs/stock-vice-parity.md` name the condition-parser pseudo-registers as `RL`/`CY`, so no downstream plan writes a condition on `LIN` and gets error `0x8f`
+- [x] **DOC-03**: `.planning/intel/constraints.md` reflects the corrected findings, and `CON-stopwatch-via-cpuhistory` is no longer marked PROVISIONAL-on-CPU-history
 
 ### Backend selection
 
@@ -111,10 +111,10 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Verification
 
-- [ ] **VERIF-01**: The binary-monitor probe has been run against a real stock VICE build and its results recorded
+- [x] **VERIF-01**: The binary-monitor probe has been run against a real stock VICE build and its results recorded
 - [ ] **VERIF-02**: Protocol client behaviour is unit-tested against recorded or stubbed frames, including the malformed and event-interleaved cases
 - [ ] **VERIF-03**: Tool output is compared between backends for a known program, with expected divergences documented rather than treated as failures
-- [ ] **VERIF-04**: The five items the research flagged UNVERIFIED are resolved empirically or recorded as accepted unknowns
+- [x] **VERIF-04**: The five items the research flagged UNVERIFIED are resolved empirically or recorded as accepted unknowns
 
 ## Future Requirements
 
@@ -152,9 +152,9 @@ and the sequencing rationale.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DOC-01 | Phase 1 | Pending |
-| DOC-02 | Phase 1 | Pending |
-| DOC-03 | Phase 1 | Pending |
+| DOC-01 | Phase 1 | Complete |
+| DOC-02 | Phase 1 | Complete |
+| DOC-03 | Phase 1 | Complete |
 | BACK-01 | Phase 2 | Pending |
 | BACK-02 | Phase 2 | Pending |
 | BACK-03 | Phase 2 | Pending |
@@ -216,10 +216,10 @@ and the sequencing rationale.
 | DIST-02 | Phase 8 | Pending |
 | DIST-03 | Phase 8 | Pending |
 | SKILL-01 | Phase 8 | Pending |
-| VERIF-01 | Phase 1 | Pending |
+| VERIF-01 | Phase 1 | Complete |
 | VERIF-02 | Phase 2 | Pending |
 | VERIF-03 | Phase 8 | Pending |
-| VERIF-04 | Phase 1 | Pending |
+| VERIF-04 | Phase 1 | Complete |
 
 **Coverage:**
 - v0.2.0 requirements: 68 total
