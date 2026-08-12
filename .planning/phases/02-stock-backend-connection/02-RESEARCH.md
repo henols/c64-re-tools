@@ -864,7 +864,7 @@ convention this repo does not use.
 | A3 | The fork's binary-monitor implementation is unmodified from stock upstream for the specific opcodes this phase's connect handshake exercises (`PING`, `VICE_INFO`) | (inherited from Phase 1's own A1, not re-verified this session) | If the fork *does* patch these paths, a connect-handshake design validated against the fork build (the only ≥3.10-vintage binary Phase 1 had access to) could behave differently against a genuine stock 3.10 release |
 | A4 | Reusing `vice.ts`'s existing `MachineRestartedError` (rather than a new stock-specific error type) is sufficient for PROTO-06's "new machine, re-handshake" half | Where the Code Goes / stock-connect.ts | D-11 states this explicitly as a locked decision, not merely a research recommendation — flagged here only because this research did not verify that `MachineRestartedError`'s existing fields (`baselineEpoch`/`currentEpoch`/`where`/`lastToolCall`) are semantically sufficient for a stock-path epoch model that has no `epoch.json` file equivalent yet (that file is a broker-launch-side artifact, not something the stock binmon connection itself produces) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **How does the container-side client actually inform the broker "the binmon
    socket is now open," for D-13's ownership flag?**
@@ -881,6 +881,13 @@ convention this repo does not use.
      (b)'s plan, informed by (but not blocked on) stream (c)'s eventual
      connect-handshake code, per the Work-Stream Decomposition section's
      "contract-level, not code-level" coupling note.
+   - **RESOLVED — plan 02-05 (planner decision).** A genuinely new pair of
+     control-plane ops, `monitor_claim` and `monitor_release`, joining
+     `ControlRequestKind`'s existing five-message vocabulary; and it is a *claim
+     before dialling*, not a report after connecting. Reporting after the fact
+     cannot satisfy PROTO-08, because by then the second `connect()` is already
+     sitting unserviced in the backlog. Refusal carries `code: "monitor_owned"`
+     plus the holding grant id. See `02-05-PLAN.md` § Decisions Implemented.
 
 2. **Does `-mcpserver` even need testing for backend detection, or does
    `-binarymonitor` support alone (already common to both) make the
@@ -894,6 +901,15 @@ convention this repo does not use.
    - Recommendation: verify empirically on a host with both binaries (per
      Phase 1's confirmed dual-build environment) before locking the mechanism
      in the plan.
+   - **RESOLVED — plan 02-07 (planner decision), with evidence gathered by plan
+     02-02 task 3.** `--help` output introspection is the mechanism; trial launch
+     is explicitly not used, because it depends on unverified assumption A1 and
+     because `--help` runs outside `broker-launch.mts`'s `inFlight` critical
+     section by construction. The empirical check this question asks for is plan
+     02-02 task 3: `-mcpserver` and `-binarymonitor` grep counts against both real
+     builds, recorded in `docs/phase2-backend-probe-evidence.md`, which 02-07's
+     `classifyHelpOutput()` must reproduce and must read before implementation.
+     See `02-07-PLAN.md` § Decisions Implemented.
 
 ## Environment Availability
 

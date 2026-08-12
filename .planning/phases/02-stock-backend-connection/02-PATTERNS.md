@@ -25,7 +25,7 @@
 | `broker-control.test.ts` (modify — extend) | test (integration, real listener) | event-driven | itself — existing `makeClient()`/`waitFor()` harness (lines 40-90) | exact (self) |
 | `vice-broker-client.ts` (modify, if D-13's signal needs a client-side call) | service (container-side broker client) | request-response over TCP | itself — `openBrokerControl()` | exact (self) |
 | `broker-launch.test.ts` (modify — extend, BROK-01) | test (unit) | event-driven | itself | exact (self) |
-| `vice-proxy.ts` (modify — 2 edits: `manifestPath()` backend branch, `tools` construction dispatch choice) | controller (stdio dispatch) | request-response | itself — `manifestPath()` (393-397), `tools` construction (3009-3013) | exact (self) — **do not append a third dispatch site (D-09)** |
+| `vice-proxy.ts` (modify — 3 edits: `manifestPath()` backend branch, `ensureBrokerLease()`'s success branch widened to carry the held lease, `tools` construction dispatch choice) | controller (stdio dispatch) | request-response | itself — `manifestPath()` (393-397), `ensureBrokerLease()` (2136-2212), `tools` construction (3009-3013) | exact (self) — **one dispatch site, one manifest site, one acquisition function; do not append a second of any (D-09)** |
 | `refresh-manifest.ts` (possibly modify — per-backend regen) | utility (manual CLI) | file I/O | itself — `writeManifestAtomic()`, guarded entry point | exact (self) |
 | `vice.ts` (read-only reference; `MachineRestartedError` reused, not modified) | service (transport seam) | request-response | itself | exact (self) |
 
@@ -479,9 +479,13 @@ op's handler stub follows the same injection pattern as the existing five.
 
 ### `stock-dispatch.ts`'s consumer edits to `vice-proxy.ts`
 
-**Analog:** itself. Exactly two edits, both at already-identified seams —
-do not add a third dispatch site (D-09's "no fall-through" requirement,
-ARCHITECTURE.md's "Re-deriving a cross-cutting seam locally" anti-pattern).
+**Analog:** itself. Exactly three edits, all at already-identified seams.
+The invariant is not the number — it is that there stays exactly ONE dispatch
+site, ONE manifest site and ONE lease-acquisition function (D-09's "no
+fall-through" requirement, ARCHITECTURE.md's "Re-deriving a cross-cutting seam
+locally" anti-pattern). An earlier draft said two edits; that count omitted the
+lease wiring, which left the stock dispatch path with no host, no port and no
+control session to claim on before dialling.
 
 **Edit 1 — `manifestPath()`** (lines 393-397), gains a backend-conditional
 branch following the exact override pattern `VICE_TOOLS_MANIFEST` already
@@ -504,6 +508,18 @@ for (const def of readManifestTools()) {
   tools[def.name] = buildViceTool(def, (args) => forwardToVice(def.name, args));
 }
 ```
+
+**Edit 3 — `ensureBrokerLease()`** (lines 2136-2212), the ONE acquisition
+function, whose success branch widens from `{ ok: true }` to
+`{ ok: true, lease: HeldLease | null }` so its result can be threaded into
+`stockConnect({ host, port, targetId, brokerControl })`. `lease` is `null` only
+on the `VICE_MCP_URL` early return, where no broker control session exists and
+the stock path must therefore refuse rather than dial. The function itself is
+then passed as `dispatchStock`'s `ensureLease` dependency at the Edit 2 call
+site — the stock path reuses the fork path's acquisition rather than building a
+second one, which is what keeps D-13's claim-before-dial ordering enforceable
+(the claim inside `stockConnect()` must be made on the SAME control session that
+acquired the grant).
 
 **Never-throw / `{content, isError}` contract to preserve** — every stock
 dispatch handler must return this same shape, matching `forwardToVice()`'s

@@ -130,7 +130,7 @@ Notes:
   4. Against recorded and synthesised frames, the client survives byte-at-a-time delivery, a ~157 KB `DISPLAY_GET`, a zero-length `JAM`, an event interleaved between a request and its reply, a `CHECKPOINT_LIST` answering N+1 frames on one request id, an error reply typed `0x00`, a duplicate reply on a settled id, and a mid-stream desync — and it never resolves a pending request with a `0xffffffff` event, including when the event shares a response type with a legitimate reply.
   5. A user can ask which backend is active and which VICE version is connected and gets both; the version-gated capabilities of that build are determined at connect time rather than at first use, and an emulator that died or restarted underneath the client is reported distinctly from a timeout.
 
-**Plans**: 9 plans in 6 waves
+**Plans**: 10 plans in 7 waves
 
 Plans:
 - [ ] 02-01-PLAN.md — Wave 1: narrowed automated test gate, binmon fixture encoder and synthetic case builders, bounded `probe-binmon.mjs --capture` mode
@@ -141,7 +141,8 @@ Plans:
 - [ ] 02-06-PLAN.md — Wave 4: request-id-first demux, related-frame accumulation, expected-response table, and the socket-lifecycle rejection path
 - [ ] 02-07-PLAN.md — Wave 4: `backend-detect.mts` — the `--help` probe, the cached verdict under `.vice-supervisor/`, and the single `VICE_BACKEND` reader
 - [ ] 02-08-PLAN.md — Wave 5: `stock-connect.ts` — claim-then-dial handshake, `api_version` assertion, capability gate, and `MachineRestartedError` reuse
-- [ ] 02-09-PLAN.md — Wave 6: trimmed stock manifest, `stock-dispatch.ts` with no fall-through, and `vice_ping` naming backend and VICE version
+- [ ] 02-09-PLAN.md — Wave 6: trimmed stock manifest with a tested selector, and the lease-to-session seam that threads `ensureBrokerLease()`'s held lease into `stockConnect()`
+- [ ] 02-10-PLAN.md — Wave 7: `stock-dispatch.ts`'s table with no fall-through, `vice_ping` naming backend and VICE version, and the three `vice-proxy.ts` backend seams
 
 Notes:
 
