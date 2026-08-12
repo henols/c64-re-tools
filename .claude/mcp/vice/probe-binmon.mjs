@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 /*
- * Phase-0 de-risk probe for stock VICE's binary monitor.
+ * Phase-1 de-risk probe for stock VICE's binary monitor.
  *
  * This repo's container has no VICE and no display, so this must be run on a
- * machine with a stock x64sc. It answers the roadmap's open questions against a
- * REAL build (see docs/phase0-binmon-findings.md):
- *   1. Connect + api/version (VICE_INFO)
- *   2. Is CPU history compiled in?  -> the cycle "stopwatch" (CPUHISTORY_GET)
- *   3. Does DISPLAY_GET work? (needs api >= 2)  -> screenshots
- *   4. Demonstrate the async STOPPED/RESUMED event demux
+ * machine with a real x64sc. It answers success criterion 3 (api version, VICE
+ * version quad, CPUHISTORY_GET's 0x83-vs-0x8f distinction, DISPLAY_GET geometry,
+ * PALETTE_GET entry count, observed unsolicited event sequence) and all five
+ * items research flagged UNVERIFIED (9-byte CHECKPOINT_SET, Drive8TrueEmulation
+ * naming, MEM_SET into drive ROM, RL/CY condition acceptance + firing,
+ * PALETTE_GET/pixel-vs-register), plus whether ADVANCE_INSTRUCTIONS emits a
+ * RESUMED/STOPPED pair. See docs/phase0-binmon-findings.md and
+ * docs/phase1-probe-results.md (the recorded run).
  *
  * Usage:
- *   1) Launch stock VICE with the binary monitor:
+ *   1) Launch a VICE build with the binary monitor:
  *        x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502
  *   2) node .claude/mcp/vice/probe-binmon.mjs [host] [port]
  *      (defaults: 127.0.0.1 6502; or set VICE_BINMON=host:port)
+ *
+ * Offline self-check (no emulator, no socket):
+ *   node .claude/mcp/vice/probe-binmon.mjs --selftest
+ * Verifies every wire-body builder and response parser below against
+ * synthesised buffers. Run this before trusting a live run against a real
+ * build to have caught any layout regression here first.
  *
  * No dependencies; pure Node (net).
  */
@@ -26,15 +34,25 @@ const EVENT_ID = 0xffffffff;
 
 const CMD = {
   MEM_GET: 0x01,
+  MEM_SET: 0x02,
+  CHECKPOINT_GET: 0x11,
+  CHECKPOINT_SET: 0x12,
+  CHECKPOINT_DELETE: 0x13,
+  CONDITION_SET: 0x22,
+  RESOURCE_GET: 0x51,
   ADVANCE_INSTRUCTIONS: 0x71,
   PING: 0x81,
   REGISTERS_AVAILABLE: 0x83,
   DISPLAY_GET: 0x84,
   VICE_INFO: 0x85,
   CPUHISTORY_GET: 0x86,
+  PALETTE_GET: 0x91,
   EXIT: 0xaa,
 };
 const RESP_NAME = {
+  0x11: "CHECKPOINT_INFO", // add — shares response type with CHECKPOINT_GET/SET replies;
+  // demux already keys on request-id so this is display-only.
+  0x31: "REGISTER_INFO", // add — shares response type with REGISTERS_GET replies.
   0x61: "JAM",
   0x62: "STOPPED",
   0x63: "RESUMED",
@@ -52,8 +70,9 @@ const ERR_NAME = {
 
 function parseTarget() {
   const env = process.env.VICE_BINMON;
-  let host = process.argv[2] || (env && env.split(":")[0]) || "127.0.0.1";
-  let port = Number(process.argv[3] || (env && env.split(":")[1]) || 6502);
+  const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  let host = positional[0] || (env && env.split(":")[0]) || "127.0.0.1";
+  let port = Number(positional[1] || (env && env.split(":")[1]) || 6502);
   return { host, port };
 }
 
@@ -74,6 +93,7 @@ class BinMon {
     this.pending = new Map(); // requestId -> {resolve, reject}
     this.nextId = 1;
     this.events = [];
+    this.observedApi = null; // api_version byte from the response header, as observed
     socket.on("data", (chunk) => this._onData(chunk));
   }
 
@@ -91,6 +111,7 @@ class BinMon {
       if (this.buf.length < total) break;
       const frame = this.buf.subarray(0, total);
       this.buf = this.buf.subarray(total);
+      if (this.observedApi === null) this.observedApi = frame[1];
       const respType = frame[6];
       const errCode = frame[7];
       const reqId = frame.readUInt32LE(8);
@@ -107,7 +128,7 @@ class BinMon {
       const p = this.pending.get(reqId);
       if (p) {
         this.pending.delete(reqId);
-        p.resolve({ respType, errCode, body });
+        p.resolve({ respType, errCode, body, api: this.observedApi });
       }
     }
   }
@@ -142,6 +163,304 @@ function newestCycleFromHistory(body) {
   const cycleOff = itemStart + itemSize - 13;
   if (cycleOff < 0 || cycleOff + 8 > body.length) return { count, cycle: null };
   return { count, cycle: body.readBigUInt64LE(cycleOff) };
+}
+
+// ---------------------------------------------------------------------------
+// Request-body builders and response parsers. Every new probe check (below,
+// in main()) is built on these; no second framing implementation.
+// ---------------------------------------------------------------------------
+
+// MEM_GET (0x01) / MEM_SET (0x02) share the same 8-byte header layout:
+// sidefx(1), start(u16LE), end(u16LE), memspace(1), bank(u16LE) — always
+// exactly 8 bytes for MEM_GET; MEM_SET appends the payload at offset 8.
+function memGetBody({ sidefx = 0, start, end, memspace = 0x00, bank = 0x0000 } = {}) {
+  const body = Buffer.alloc(8);
+  body[0] = sidefx;
+  body.writeUInt16LE(start, 1);
+  body.writeUInt16LE(end, 3);
+  body[5] = memspace;
+  body.writeUInt16LE(bank, 6);
+  return body;
+}
+
+function memSetBody({ start, end, memspace, data }) {
+  const body = Buffer.alloc(8 + data.length);
+  body[0] = 0x00; // sidefx = false
+  body.writeUInt16LE(start, 1);
+  body.writeUInt16LE(end, 3);
+  body[5] = memspace; // 0x00 main, 0x01-0x04 units 8-11; 0x08 (internal enum) is rejected
+  body.writeUInt16LE(0x0000, 6); // bank id, ignored by drivemem_bank_store
+  data.copy(body, 8);
+  return body;
+}
+
+// CHECKPOINT_SET (0x12) request body: 8 bytes, or 9 with the optional memspace byte.
+function checkpointSetBody({
+  start,
+  end,
+  stop = 1,
+  enabled = 1,
+  ops = 0x04,
+  temporary = 1,
+  memspace,
+}) {
+  const withMemspace = memspace !== undefined;
+  const body = Buffer.alloc(withMemspace ? 9 : 8);
+  body.writeUInt16LE(start, 0);
+  body.writeUInt16LE(end, 2);
+  body[4] = stop;
+  body[5] = enabled;
+  body[6] = ops; // e_exec = 0x04
+  body[7] = temporary;
+  if (withMemspace) body[8] = memspace; // 0x00 main, 0x01-0x04 units 8-11
+  return body;
+}
+
+// Small shared helper: CHECKPOINT_GET/CHECKPOINT_DELETE both take a bare
+// checkpointNum(u32LE) body. Not one of the enumerated builders above; kept
+// tiny and local since it has nothing else to validate offline.
+function cpNumBody(checkpointNum) {
+  const body = Buffer.alloc(4);
+  body.writeUInt32LE(checkpointNum, 0);
+  return body;
+}
+
+// CONDITION_SET (0x22) request body: checkpointNum(u32LE), exprLen(1), expr
+// ASCII, NOT NUL-terminated. Throws before encoding if the expression exceeds
+// 255 bytes (the length field is a uint8; a silently truncated frame would
+// desync the stream) — the ASVS V5 control recorded in the plan's threat model.
+function conditionSetBody(checkpointNum, expr) {
+  const exprBuf = Buffer.from(expr, "ascii");
+  if (exprBuf.length > 255) throw new Error("CONDITION_SET expr exceeds 255 bytes");
+  const body = Buffer.alloc(5 + exprBuf.length);
+  body.writeUInt32LE(checkpointNum, 0);
+  body[4] = exprBuf.length;
+  exprBuf.copy(body, 5);
+  return body;
+}
+// Example, correctly parenthesised, hex literal, uppercase pseudo-registers:
+//   conditionSetBody(cpNum, "(RL == $64) && (CY == $14)")
+
+// RESOURCE_GET (0x51) request body: nameLen(1), name ASCII.
+function resourceGetBody(name) {
+  const n = Buffer.from(name, "ascii");
+  const body = Buffer.alloc(1 + n.length);
+  body[0] = n.length;
+  n.copy(body, 1);
+  return body;
+}
+// Response: body[0]===0x00 -> string, len at body[1], ASCII after.
+// body[0]===0x01 -> int, SIGNED int32LE at offset 2 (e.g. Speed can be negative).
+// OBJECT_MISSING (0x01 errCode) is returned both for "resource does not exist"
+// and for "string resource is NULL" — the two are NOT distinguishable on the
+// wire. This matters for interpreting the Drive8TrueEmulation result.
+function parseResource(r) {
+  if (r.errCode !== 0x00) return { missing: true };
+  if (r.body[0] === 0x00) {
+    const len = r.body[1];
+    return { type: "string", value: r.body.subarray(2, 2 + len).toString("ascii") };
+  }
+  return { type: "int", value: r.body.readInt32LE(2) };
+}
+
+// PALETTE_GET (0x91) request body: 1 byte, use_vic = 0x00 on x64sc.
+function paletteGetBody() {
+  return Buffer.from([0x00]);
+}
+// Response: [count:u16LE][ per entry: itemSize(1)=3, r, g, b ]*count.
+function parsePalette(body) {
+  const count = body.readUInt16LE(0);
+  const entries = [];
+  let off = 2;
+  for (let i = 0; i < count; i++) {
+    const itemSize = body[off]; // expect 3
+    const r = body[off + 1];
+    const g = body[off + 2];
+    const b = body[off + 3];
+    entries.push({ r, g, b });
+    off += 1 + itemSize;
+  }
+  return { count, entries };
+}
+
+// CHECKPOINT_INFO (0x11) response body, fixed 23 bytes.
+function parseCheckpointInfo(body) {
+  return {
+    checkpointNum: body.readUInt32LE(0),
+    currentlyHit: body[4] === 1,
+    startAddr: body.readUInt16LE(5),
+    endAddr: body.readUInt16LE(7),
+    hitCount: body.readUInt32LE(13),
+    memspace: body[22],
+  };
+}
+
+// DISPLAY_GET (0x84) response body: [info_len:u32LE][dw,dh,xo,yo,iw,ih:u16LE
+// each][bpp:1][buflen:u32LE][buffer...], where the buflen field position and
+// pixel-buffer start are DERIVED from info_len, never hardcoded to 17/21.
+function parseDisplayGet(body) {
+  const infoLen = body.readUInt32LE(0);
+  const dw = body.readUInt16LE(4);
+  const dh = body.readUInt16LE(6);
+  const xo = body.readUInt16LE(8);
+  const yo = body.readUInt16LE(10);
+  const iw = body.readUInt16LE(12);
+  const ih = body.readUInt16LE(14);
+  const bpp = body[16];
+  const buflenOff = 4 + infoLen;
+  const buflen = body.readUInt32LE(buflenOff);
+  const bufStart = buflenOff + 4;
+  const buffer = body.subarray(bufStart, bufStart + buflen);
+  return { infoLen, dw, dh, xo, yo, iw, ih, bpp, buflen, buffer };
+}
+
+// ---------------------------------------------------------------------------
+// Offline self-test: proves every builder/parser above without a socket.
+// ---------------------------------------------------------------------------
+
+function assertTrue(cond, msg) {
+  if (!cond) throw new Error(`SELFTEST FAILED: ${msg}`);
+}
+
+function selftest() {
+  // encode(): STX, api, body length, request id, command type.
+  const frame = encode(0x01020304, 0x81, Buffer.from([0xaa, 0xbb]));
+  assertTrue(frame[0] === STX, "encode: STX byte at offset 0");
+  assertTrue(frame[1] === API, "encode: api byte at offset 1");
+  assertTrue(frame.readUInt32LE(2) === 2, "encode: body length u32LE at offset 2");
+  assertTrue(frame.readUInt32LE(6) === 0x01020304, "encode: request id u32LE at offset 6");
+  assertTrue(frame[10] === 0x81, "encode: command type byte at offset 10");
+
+  // checkpointSetBody: 8 bytes without memspace, 9 with.
+  const cp8 = checkpointSetBody({ start: 0xea31, end: 0xea31 });
+  assertTrue(cp8.length === 8, "checkpointSetBody: 8 bytes without memspace");
+  assertTrue(cp8[6] === 0x04, "checkpointSetBody: ops defaults to 0x04");
+  const cp9 = checkpointSetBody({ start: 0xea31, end: 0xea31, memspace: 0x00 });
+  assertTrue(cp9.length === 9, "checkpointSetBody: 9 bytes with memspace");
+  assertTrue(cp9[8] === 0x00, "checkpointSetBody: memspace lands in byte 8");
+
+  // conditionSetBody: layout, and the 255-byte throw guard.
+  const cond = conditionSetBody(3, "(RL == $64)");
+  assertTrue(cond.readUInt32LE(0) === 3, "conditionSetBody: checkpoint number u32LE");
+  assertTrue(cond[4] === "(RL == $64)".length, "conditionSetBody: byte length at offset 4");
+  assertTrue(
+    cond.subarray(5).toString("ascii") === "(RL == $64)",
+    "conditionSetBody: ascii expr from offset 5",
+  );
+  let threw = false;
+  try {
+    conditionSetBody(1, "x".repeat(256));
+  } catch {
+    threw = true;
+  }
+  assertTrue(threw, "conditionSetBody: throws on a 256-byte expression");
+
+  // memGetBody / memSetBody: field offsets.
+  const mg = memGetBody({ start: 0xd020, end: 0xd021, memspace: 0x00 });
+  assertTrue(mg.length === 8, "memGetBody: exactly 8 bytes");
+  assertTrue(mg.readUInt16LE(1) === 0xd020, "memGetBody: start at offset 1");
+  assertTrue(mg.readUInt16LE(3) === 0xd021, "memGetBody: end at offset 3");
+  assertTrue(mg[5] === 0x00, "memGetBody: memspace at offset 5");
+  assertTrue(mg.readUInt16LE(6) === 0x0000, "memGetBody: bank at offset 6");
+
+  const ms = memSetBody({ start: 0xc000, end: 0xc000, memspace: 0x01, data: Buffer.from([0xff]) });
+  assertTrue(ms.length === 9, "memSetBody: 8 + data.length bytes");
+  assertTrue(ms.readUInt16LE(1) === 0xc000, "memSetBody: start at offset 1");
+  assertTrue(ms[5] === 0x01, "memSetBody: memspace at offset 5");
+  assertTrue(ms[8] === 0xff, "memSetBody: payload at offset 8");
+
+  // resourceGetBody: name length + ascii name.
+  const rg = resourceGetBody("Drive8TrueEmulation");
+  assertTrue(rg[0] === "Drive8TrueEmulation".length, "resourceGetBody: name length byte");
+  assertTrue(
+    rg.subarray(1).toString("ascii") === "Drive8TrueEmulation",
+    "resourceGetBody: ascii name from offset 1",
+  );
+
+  // paletteGetBody: single 0x00 byte.
+  const pg = paletteGetBody();
+  assertTrue(pg.length === 1 && pg[0] === 0x00, "paletteGetBody: single 0x00 byte");
+
+  // parsePalette: synthesised 16-entry buffer.
+  const palBody = Buffer.alloc(2 + 16 * 4);
+  palBody.writeUInt16LE(16, 0);
+  for (let i = 0; i < 16; i++) {
+    const off = 2 + i * 4;
+    palBody[off] = 3;
+    palBody[off + 1] = i * 10;
+    palBody[off + 2] = i * 10 + 1;
+    palBody[off + 3] = i * 10 + 2;
+  }
+  const pal = parsePalette(palBody);
+  assertTrue(pal.count === 16, "parsePalette: count 16");
+  assertTrue(
+    pal.entries[0].r === 0 && pal.entries[0].g === 1 && pal.entries[0].b === 2,
+    "parsePalette: first entry RGB",
+  );
+  assertTrue(
+    pal.entries[15].r === 150 && pal.entries[15].g === 151 && pal.entries[15].b === 152,
+    "parsePalette: last entry RGB",
+  );
+
+  // parseResource: synthesised string body and synthesised negative-int body.
+  const strBody = Buffer.concat([Buffer.from([0x00, 4]), Buffer.from("test", "ascii")]);
+  const strRes = parseResource({ errCode: 0x00, body: strBody });
+  assertTrue(
+    strRes.type === "string" && strRes.value === "test",
+    "parseResource: string resource decode",
+  );
+  const intBody = Buffer.alloc(6);
+  intBody[0] = 0x01;
+  intBody[1] = 4;
+  intBody.writeInt32LE(-42, 2);
+  const intRes = parseResource({ errCode: 0x00, body: intBody });
+  assertTrue(
+    intRes.type === "int" && intRes.value === -42,
+    "parseResource: signed negative int decode",
+  );
+
+  // parseCheckpointInfo: synthesised 23-byte body.
+  const cpiBody = Buffer.alloc(23);
+  cpiBody.writeUInt32LE(7, 0);
+  cpiBody[4] = 1;
+  cpiBody.writeUInt16LE(0xea31, 5);
+  cpiBody.writeUInt16LE(0xea31, 7);
+  cpiBody.writeUInt32LE(3, 13);
+  cpiBody[22] = 0x00;
+  const cpi = parseCheckpointInfo(cpiBody);
+  assertTrue(cpi.checkpointNum === 7, "parseCheckpointInfo: checkpoint number");
+  assertTrue(cpi.hitCount === 3, "parseCheckpointInfo: hit count");
+
+  // parseDisplayGet: synthesised body with a deliberately non-13 infoLen,
+  // proving the buffer-length/pixel-buffer offsets are derived, not hardcoded.
+  const infoLen = 20;
+  const dw = 384;
+  const dh = 272;
+  const xo = 1;
+  const yo = 2;
+  const iw = 320;
+  const ih = 200;
+  const bpp = 8;
+  const pixelData = Buffer.from([0x11, 0x22, 0x33]);
+  const dispBody = Buffer.alloc(4 + infoLen + 4 + pixelData.length);
+  dispBody.writeUInt32LE(infoLen, 0);
+  dispBody.writeUInt16LE(dw, 4);
+  dispBody.writeUInt16LE(dh, 6);
+  dispBody.writeUInt16LE(xo, 8);
+  dispBody.writeUInt16LE(yo, 10);
+  dispBody.writeUInt16LE(iw, 12);
+  dispBody.writeUInt16LE(ih, 14);
+  dispBody[16] = bpp;
+  dispBody.writeUInt32LE(pixelData.length, 4 + infoLen);
+  pixelData.copy(dispBody, 4 + infoLen + 4);
+  const disp = parseDisplayGet(dispBody);
+  assertTrue(
+    disp.dw === dw && disp.dh === dh && disp.xo === xo && disp.yo === yo && disp.iw === iw &&
+      disp.ih === ih && disp.bpp === bpp,
+    "parseDisplayGet: geometry fields with a non-13 infoLen",
+  );
+  assertTrue(disp.buflen === pixelData.length, "parseDisplayGet: buflen derived from infoLen");
+  assertTrue(disp.buffer.equals(pixelData), "parseDisplayGet: pixel buffer located correctly");
 }
 
 async function main() {
@@ -239,15 +558,10 @@ async function main() {
         `5. DISPLAY_GET     -> ${ERR_NAME[r.errCode] || r.errCode}${r.errCode === 0x82 ? " (api < 2)" : ""}`,
       );
     } else {
-      // body: [info_len:4][dw:2][dh:2][xo:2][yo:2][iw:2][ih:2][bpp:1][buflen:4][buffer...]
-      const dw = r.body.readUInt16LE(4);
-      const dh = r.body.readUInt16LE(6);
-      const iw = r.body.readUInt16LE(12);
-      const ih = r.body.readUInt16LE(14);
-      const bpp = r.body[16];
+      const disp = parseDisplayGet(r.body);
       results.display = true;
       console.log(
-        `5. DISPLAY_GET     -> OK, debug ${dw}x${dh}, inner ${iw}x${ih}, ${bpp}bpp indexed  => screenshots feasible`,
+        `5. DISPLAY_GET     -> OK, debug ${disp.dw}x${disp.dh}, inner ${disp.iw}x${disp.ih}, ${disp.bpp}bpp indexed  => screenshots feasible`,
       );
     }
   } catch (e) {
@@ -268,22 +582,289 @@ async function main() {
     console.log(`6. ASYNC EVENTS    -> FAILED (${e.message})`);
   }
 
-  // Resume the machine and disconnect cleanly.
+  // 7. PALETTE_GET entry count (hard requirement of success criterion 3).
+  try {
+    const r = await mon.send(CMD.PALETTE_GET, paletteGetBody());
+    if (r.errCode !== 0x00) {
+      results.palette = null;
+      console.log(`7. PALETTE_GET     -> ${ERR_NAME[r.errCode] || r.errCode}`);
+    } else {
+      const pal = parsePalette(r.body);
+      results.palette = pal;
+      const first = pal.entries[0] || {};
+      console.log(
+        `7. PALETTE_GET     -> OK, ${pal.count} entries, first RGB=(${first.r},${first.g},${first.b})`,
+      );
+    }
+  } catch (e) {
+    results.palette = null;
+    console.log(`7. PALETTE_GET     -> FAILED (${e.message})`);
+  }
+
+  // 8. DISPLAY_GET pixel vs the live $D020/$D021 border/background register
+  //    (UNVERIFIED item 5, second half). Do not hardcode a default colour —
+  //    read the live registers via MEM_GET instead (research assumption A2).
+  try {
+    const memR = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xd020, end: 0xd021, memspace: 0x00 }));
+    // MEM_GET response body: [len:u16LE][data...]
+    const dataLen = memR.body.readUInt16LE(0);
+    const memData = memR.body.subarray(2, 2 + dataLen);
+    const borderReg = memData[0] & 0x0f;
+    const bgReg = memData.length >= 2 ? memData[1] & 0x0f : null;
+
+    const dispR = await mon.send(CMD.DISPLAY_GET, Buffer.from([0x00, 0x00]));
+    if (dispR.errCode !== 0x00) {
+      results.pixelCheck = false;
+      console.log(`8. PIXEL vs $D020  -> DISPLAY_GET ${ERR_NAME[dispR.errCode] || dispR.errCode}`);
+    } else {
+      const disp = parseDisplayGet(dispR.body);
+      console.log(
+        `   geometry: dw=${disp.dw} dh=${disp.dh} xo=${disp.xo} yo=${disp.yo} iw=${disp.iw} ih=${disp.ih} bpp=${disp.bpp}`,
+      );
+      const borderIdx = disp.buffer[4 * disp.dw + 4];
+      const borderRgb = results.palette && results.palette.entries[borderIdx];
+      const borderMatch = borderIdx === borderReg;
+      results.pixelCheck = borderMatch;
+      console.log(
+        `8. PIXEL vs $D020  -> corner(4,4) index=${borderIdx} expected(masked $D020)=${borderReg} ${borderMatch ? "MATCH" : "MISMATCH"}${borderRgb ? ` rgb=(${borderRgb.r},${borderRgb.g},${borderRgb.b})` : ""}`,
+      );
+      const cx = Math.floor(disp.dw / 2);
+      const cy = Math.floor(disp.dh / 2);
+      const centreIdx = disp.buffer[cy * disp.dw + cx];
+      console.log(
+        `   centre(${cx},${cy}) index=${centreIdx} vs expected(masked $D021)=${bgReg} (informational only; may land on a glyph)`,
+      );
+    }
+  } catch (e) {
+    results.pixelCheck = false;
+    console.log(`8. PIXEL vs $D020  -> FAILED (${e.message})`);
+  }
+
+  // 9. CHECKPOINT_SET: 8-byte vs 9-byte body (UNVERIFIED item 1). Both
+  //    checkpoints are disabled + temporary so neither perturbs execution,
+  //    and both are deleted immediately so nothing leaks into later checks.
+  try {
+    const body8 = checkpointSetBody({ start: 0xea31, end: 0xea31, stop: 1, enabled: 0, ops: 0x04, temporary: 1 });
+    const r8 = await mon.send(CMD.CHECKPOINT_SET, body8);
+    const err8 = ERR_NAME[r8.errCode] || r8.errCode;
+    const cpNum8 = r8.errCode === 0x00 ? parseCheckpointInfo(r8.body).checkpointNum : null;
+
+    const body9 = checkpointSetBody({
+      start: 0xea31,
+      end: 0xea31,
+      stop: 1,
+      enabled: 0,
+      ops: 0x04,
+      temporary: 1,
+      memspace: 0x00,
+    });
+    const r9 = await mon.send(CMD.CHECKPOINT_SET, body9);
+    const err9 = ERR_NAME[r9.errCode] || r9.errCode;
+    const cpNum9 = r9.errCode === 0x00 ? parseCheckpointInfo(r9.body).checkpointNum : null;
+
+    results.checkpointSet8 = err8;
+    results.checkpointSet9 = err9;
+    console.log(`9. CHECKPOINT_SET  -> 8-byte: ${err8}  9-byte(+memspace): ${err9}`);
+
+    if (cpNum8 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum8));
+    if (cpNum9 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum9));
+  } catch (e) {
+    console.log(`9. CHECKPOINT_SET  -> FAILED (${e.message})`);
+  }
+
+  // 10. RL/CY conditions: accepted, and actually firing (UNVERIFIED item 4's
+  //     answerable half; the empirical proof behind DOC-02).
+  try {
+    const fullRange = checkpointSetBody({ start: 0x0000, end: 0xffff, stop: 1, enabled: 1, ops: 0x04, temporary: 0 });
+    const rSet = await mon.send(CMD.CHECKPOINT_SET, fullRange);
+    if (rSet.errCode !== 0x00) {
+      console.log(`10. RL/CY CONDITION -> CHECKPOINT_SET FAILED (${ERR_NAME[rSet.errCode] || rSet.errCode})`);
+    } else {
+      const cpNum = parseCheckpointInfo(rSet.body).checkpointNum;
+
+      // (a) token differential: correct-token condition, then the LIN/CYC
+      //     negative control on the SAME checkpoint.
+      const rlcyCond = await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(RL == $64) && (CY == $14)"));
+      const linCycCond = await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(LIN == $64) && (CYC == $14)"));
+      results.rlCyAccepted = rlcyCond.errCode === 0x00;
+      results.linCycRejected = linCycCond.errCode !== 0x00;
+      console.log(
+        `10a. RL/CY vs LIN/CYC -> RL/CY: ${ERR_NAME[rlcyCond.errCode] || rlcyCond.errCode}  LIN/CYC: ${ERR_NAME[linCycCond.errCode] || linCycCond.errCode}`,
+      );
+
+      // (b) fire test: relax to a reachable single-token condition, resume,
+      //     and check hit_count transitioned from 0.
+      await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(RL == $64)"));
+      await mon.send(CMD.EXIT);
+      await sleep(500);
+      const cpGet = await mon.send(CMD.CHECKPOINT_GET, cpNumBody(cpNum));
+      const hitCount = cpGet.errCode === 0x00 ? parseCheckpointInfo(cpGet.body).hitCount : null;
+      results.conditionFired = hitCount != null && hitCount > 0;
+      console.log(
+        `10b. FIRE TEST      -> hitCount=${hitCount != null ? hitCount : "?"} ${hitCount > 0 ? "FIRED" : "did not fire"}; events so far: ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
+      );
+
+      // (c) cleanup: conditions cannot be read back or cleared and leak with
+      //     their checkpoint, so delete it now before any later check runs.
+      await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum));
+    }
+  } catch (e) {
+    console.log(`10. RL/CY CONDITION -> FAILED (${e.message})`);
+  }
+
+  // 11. Drive8TrueEmulation under that exact name (UNVERIFIED item 2).
+  try {
+    const tde = await mon.send(CMD.RESOURCE_GET, resourceGetBody("Drive8TrueEmulation"));
+    const tdeParsed = parseResource(tde);
+    const driveType = await mon.send(CMD.RESOURCE_GET, resourceGetBody("Drive8Type"));
+    const driveTypeParsed = parseResource(driveType);
+
+    let fallback = null;
+    if (tdeParsed.missing) {
+      const fb = await mon.send(CMD.RESOURCE_GET, resourceGetBody("DriveTrueEmulation"));
+      fallback = parseResource(fb);
+    }
+
+    results.tdeOn = !tdeParsed.missing && tdeParsed.type === "int" && tdeParsed.value !== 0;
+    results.driveTypeNonZero = !driveTypeParsed.missing && driveTypeParsed.type === "int" && driveTypeParsed.value !== 0;
+
+    console.log(
+      `11. Drive8TrueEmulation -> ${tdeParsed.missing ? "OBJECT_MISSING (does-not-exist or NULL string, not distinguishable on the wire)" : `${tdeParsed.type}=${tdeParsed.value}`}`,
+    );
+    console.log(
+      `    Drive8Type          -> ${driveTypeParsed.missing ? "OBJECT_MISSING" : `${driveTypeParsed.type}=${driveTypeParsed.value}`}`,
+    );
+    if (fallback) {
+      console.log(
+        `    DriveTrueEmulation (fallback name) -> ${fallback.missing ? "OBJECT_MISSING" : `${fallback.type}=${fallback.value}`}`,
+      );
+    }
+  } catch (e) {
+    console.log(`11. Drive8TrueEmulation -> FAILED (${e.message})`);
+  }
+
+  // 12. Does ADVANCE_INSTRUCTIONS emit a RESUMED/STOPPED pair? (ROADMAP's
+  //     separately-listed probe addition; feeds criterion 3's "observed
+  //     unsolicited event sequence". Does not assert a specific answer.)
+  try {
+    const before = mon.events.length;
+    const stepBody = Buffer.alloc(3);
+    stepBody[0] = 0x00;
+    stepBody.writeUInt16LE(1, 1);
+    await mon.send(CMD.ADVANCE_INSTRUCTIONS, stepBody);
+    await sleep(150);
+    const slice = mon.events.slice(before).map((e) => e.name);
+    results.advanceEventSlice = slice;
+    let verdict;
+    if (slice.length === 2 && slice[0] === "RESUMED" && slice[1] === "STOPPED") {
+      verdict = "RESUMED then STOPPED";
+    } else if (slice.length === 1 && slice[0] === "STOPPED") {
+      verdict = "STOPPED only";
+    } else {
+      verdict = slice.length ? "other" : "no events";
+    }
+    console.log(`12. ADVANCE_INSTRUCTIONS event pair -> [${slice.join(", ") || "none"}] (${verdict})`);
+  } catch (e) {
+    console.log(`12. ADVANCE_INSTRUCTIONS event pair -> FAILED (${e.message})`);
+  }
+
+  // 13. MEM_SET into drive ROM $C000 (UNVERIFIED item 3). This is the only
+  //     probe that can crash the target, so it runs last. Gated on evidence
+  //     from check 11, not assumption: with TDE off, drive reads return
+  //     silent zeros rather than an error, so an unguarded run would produce
+  //     a meaningless "looks like a no-op" answer.
+  try {
+    if (!results.tdeOn || !results.driveTypeNonZero) {
+      console.log(
+        "13. MEM_SET drive ROM -> SKIPPED (Drive8TrueEmulation/Drive8Type precondition from check 11 not confirmed on; a zero read-back here would not be evidence of a safe no-op)",
+      );
+      results.driveRomWrite = "skipped-precondition-unmet";
+    } else {
+      const before = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+      const beforeData = before.body.subarray(2, 2 + before.body.readUInt16LE(0));
+      const beforeByte = beforeData[0];
+      const setR = await mon.send(
+        CMD.MEM_SET,
+        memSetBody({ start: 0xc000, end: 0xc000, memspace: 0x01, data: Buffer.from([0xff]) }),
+      );
+      if (setR.errCode !== 0x00) {
+        console.log(`13. MEM_SET drive ROM -> REJECTED (${ERR_NAME[setR.errCode] || setR.errCode})`);
+        results.driveRomWrite = "rejected";
+      } else {
+        const after = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+        const afterData = after.body.subarray(2, 2 + after.body.readUInt16LE(0));
+        const afterByte = afterData[0];
+        if (afterByte === beforeByte) {
+          console.log(
+            `13. MEM_SET drive ROM -> OK but byte UNCHANGED ($${beforeByte.toString(16)}) -- silent no-op store stub`,
+          );
+          results.driveRomWrite = "silent-no-op";
+        } else {
+          console.log(
+            `13. MEM_SET drive ROM -> OK, byte CHANGED $${beforeByte.toString(16)} -> $${afterByte.toString(16)} -- drive ROM is writable through the monitor`,
+          );
+          results.driveRomWrite = "writable";
+        }
+      }
+    }
+  } catch (e) {
+    console.log(
+      `13. MEM_SET drive ROM -> the drive-ROM write crashed or hung the target (${e.message}) -- this IS the answer to UNVERIFIED item 3, not a probe defect`,
+    );
+    results.driveRomWrite = "crashed-or-hung";
+  }
+
+  // Resume the machine and disconnect cleanly. Tolerate a socket already
+  // closed by check 13 -- the verdict below must still print.
   try {
     await mon.send(CMD.EXIT);
+  } catch { /* ignore -- check 13 may have already crashed/closed the target */ }
+  try {
+    socket.end();
   } catch { /* ignore */ }
-  socket.end();
 
-  console.log("\n=== Phase-0 verdict ===");
-  console.log(`connect/ping ....... ${results.ping ? "PASS" : "FAIL"}`);
-  console.log(`vice version ....... ${results.version || "?"}`);
-  console.log(`cycle stopwatch .... ${results.cpuHistory ? "AVAILABLE (CPU history on)" : "MISSING (build lacks CPU history)"}`);
-  console.log(`screenshot ......... ${results.display ? "AVAILABLE" : "MISSING/unsupported"}`);
-  console.log("\nIf 'cycle stopwatch' is MISSING, the timing tools need a fallback");
-  console.log("(instruction-count or wall-clock); see docs/phase0-binmon-findings.md.");
+  console.log("\n=== Phase-1 verdict ===");
+  console.log(`connect/ping ............ ${results.ping ? "PASS" : "FAIL"}`);
+  console.log(`api_version (observed) .. ${mon.observedApi != null ? `0x${mon.observedApi.toString(16)}` : "?"}`);
+  console.log(`vice version ............ ${results.version || "?"}`);
+  console.log(
+    `cpuhistory_get ........... ${results.cpuHistory === undefined ? "?" : results.cpuHistory ? "OK" : "unavailable (INVALID_TYPE 0x83 on <3.10, CMD_FAILURE 0x8f if disabled on >=3.10)"}`,
+  );
+  console.log(`display_get geometry ..... ${results.display ? "AVAILABLE" : "MISSING/unsupported"}`);
+  console.log(`palette_get entries ...... ${results.palette ? results.palette.count : "?"}`);
+  console.log(
+    `checkpoint_set 8/9-byte .. 8-byte: ${results.checkpointSet8 ?? "?"}  9-byte: ${results.checkpointSet9 ?? "?"}`,
+  );
+  console.log(
+    `RL/CY condition .......... accepted=${results.rlCyAccepted ?? "?"}  LIN/CYC rejected=${results.linCycRejected ?? "?"}  fired=${results.conditionFired ?? "?"}`,
+  );
+  console.log(
+    `Drive8TrueEmulation ...... on=${results.tdeOn ?? "?"}  Drive8Type nonzero=${results.driveTypeNonZero ?? "?"}`,
+  );
+  console.log(
+    `ADVANCE_INSTRUCTIONS ..... event slice: [${(results.advanceEventSlice || []).join(", ") || "?"}]`,
+  );
+  console.log(`drive ROM MEM_SET ........ ${results.driveRomWrite || "?"}`);
+  console.log(
+    `unsolicited event sequence (full session) -> ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
+  );
+  console.log(
+    "\nVICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see docs/phase1-probe-results.md for the recorded run.",
+  );
 }
 
-main().catch((e) => {
-  console.error("probe error:", e.message);
-  process.exit(1);
-});
+if (process.argv.includes("--selftest")) {
+  try {
+    selftest();
+    console.log("SELFTEST PASS - all wire body builders and response parsers verified offline");
+    process.exit(0);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+} else {
+  main().catch((e) => {
+    console.error("probe error:", e.message);
+    process.exit(1);
+  });
+}
