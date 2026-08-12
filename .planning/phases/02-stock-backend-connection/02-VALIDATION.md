@@ -1,8 +1,8 @@
 ---
 phase: 2
 slug: stock-backend-connection
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-12
 ---
@@ -76,6 +76,24 @@ Task IDs are assigned by the planner; this map is keyed on requirement until pla
 
 ## Wave 0 Requirements
 
+> Assigned to **plan 02-01** (wave 1, blocking) unless noted. Every task in every
+> plan carries an `<automated>` verify pointing at a file plan 02-01 or its own task
+> creates. The three stub test files listed below are created by the plan that owns
+> the code they test (02-04/02-06 for `stock-protocol.test.ts`, 02-08 for
+> `stock-connect.test.ts`, 02-07 for `backend-detect.test.ts`), tests-first inside
+> the task via its `<behavior>` block — the Wave 0 obligation they actually carry is
+> the *fixture* and *gate* substrate they consume, which plan 02-01 delivers first.
+
+- [x] **Narrowed test-runner script** — plan 02-01 task 1 (`npm run test:automated`, `test-gate.mjs` + `test-gate.test.ts` drift guard)
+- [x] **Fixture directory + provenance record** — plan 02-01 task 2 (`fixtures/binmon/README.md`, `binmon-fixtures.ts`); real captures in plan 02-02
+- [x] **`probe-binmon.mjs` capture mode** — plan 02-01 task 3 (`MAX_CAPTURE_FRAMES = 32`, single-address checkpoints, `finally` deletion)
+- [x] `stock-protocol.test.ts` — plans 02-04 and 02-06, tests-first per task
+- [x] `stock-connect.test.ts` — plan 02-08, tests-first per task
+- [x] `backend-detect.test.ts` — plan 02-07, tests-first per task
+- [x] `stock-dispatch.test.ts` — plan 02-09 (new since this document was written: it carries the automated coverage for logic that would otherwise live in `vice-proxy.ts`, whose own test file is manual-only)
+
+### Original list (superseded above)
+
 - [ ] **Narrowed test-runner script** (e.g. `npm run test:automated`) in
       `.claude/mcp/vice/package.json`, globbing the 21 automated files and excluding
       `vice-broker-launch.test.ts`, `vice-proxy.test.ts`, `broker-e2e.test.ts`.
@@ -113,4 +131,4 @@ Task IDs are assigned by the planner; this map is keyed on requirement until pla
 - [ ] The phase gate is the narrowed command, never the bare `npm test`
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved at planning (2026-08-12) — 9 plans, 6 waves
