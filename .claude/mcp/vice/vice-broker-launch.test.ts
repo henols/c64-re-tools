@@ -68,6 +68,19 @@ interface RunResult {
 const STUB_DIR = mkdtempSync(join(tmpdir(), "vice-broker-launch-stubbin-"));
 const STUB_VICE_BIN = join(STUB_DIR, "x64sc-test-stub");
 writeFileSync(STUB_VICE_BIN, "#!/bin/sh\nexec sleep \"${1:-600}\"\n", { mode: 0o755 });
+// Every deployDir in this file is rmSync'd in its own finally; STUB_DIR is
+// created once at module load, so it needs a process-level cleanup or it leaves
+// a vice-broker-launch-stubbin-* directory behind on every run.
+//
+// LIMITATION, deliberate: "exit" does not fire when this process is SIGTERM'd,
+// which is how a stalled run of this file actually ends today. A SIGTERM handler
+// would cover that, but registering one SUPPRESSES Node's default
+// terminate-on-SIGTERM behaviour (see vice-proxy.test.ts's own header on this
+// exact trap), so a stalled file would then only die to SIGKILL. Leaking a
+// couple of empty temp dirs from killed runs is the better trade.
+process.on("exit", () => {
+  rmSync(STUB_DIR, { recursive: true, force: true });
+});
 
 const VICE_BIN_STUB: Record<string, string> = { VICE_BIN: STUB_VICE_BIN, VICE_ARGS: "600" };
 

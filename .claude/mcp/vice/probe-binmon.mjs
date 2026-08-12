@@ -57,6 +57,25 @@ const RESP_NAME = {
   0x62: "STOPPED",
   0x63: "RESUMED",
 };
+// Response types that arrive unsolicited at request-id 0xffffffff. Only
+// STOPPED/RESUMED carry a 2-byte PC body; JAM's body is zero-length, and
+// CHECKPOINT_INFO/REGISTER_INFO bodies are entirely different structures.
+// Reading a "PC" out of the latter two produces plausible-looking nonsense --
+// see the field-specific rendering in _onData().
+const EVT = {
+  JAM: 0x61,
+  STOPPED: 0x62,
+  RESUMED: 0x63,
+  CHECKPOINT_INFO: 0x11,
+  REGISTER_INFO: 0x31,
+};
+
+// Upper bound on a trusted body length. The largest legitimate frame is a
+// DISPLAY_GET of the full debug screen (504*312 = 157,248 bytes at 8bpp plus
+// its info block), so 4 MiB is far above anything real while still refusing an
+// arbitrary 32-bit value read out of a desynced stream.
+const MAX_BODY_LEN = 4 * 1024 * 1024;
+
 const ERR_NAME = {
   0x00: "OK",
   0x01: "OBJECT_MISSING",
@@ -107,6 +126,19 @@ class BinMon {
         continue;
       }
       const bodyLen = this.buf.readUInt32LE(2);
+      // A bodyLen beyond any legitimate frame means this 0x02 was not really a
+      // frame start (a 0x02 byte inside an earlier body, reached after a
+      // one-byte desync). Trusting it would park the cursor waiting for bytes
+      // that never arrive, and every later response would queue behind it and
+      // time out with no hint at the real cause. Drop one byte and resync
+      // instead of trusting an arbitrary 32-bit length.
+      if (bodyLen > MAX_BODY_LEN) {
+        console.log(
+          `   [framing] implausible body length ${bodyLen} at a 0x02 byte -- treating as desync, resyncing one byte`,
+        );
+        this.buf = this.buf.subarray(1);
+        continue;
+      }
       const total = 12 + bodyLen;
       if (this.buf.length < total) break;
       const frame = this.buf.subarray(0, total);
@@ -118,11 +150,26 @@ class BinMon {
       const body = frame.subarray(12, total);
       if (reqId === EVENT_ID) {
         const name = RESP_NAME[respType] || `0x${respType.toString(16)}`;
-        const pc = body.length >= 2 ? body.readUInt16LE(0) : null;
-        this.events.push({ name, pc });
-        console.log(
-          `   [async event] ${name}${pc != null ? ` PC=$${pc.toString(16).padStart(4, "0")}` : ""}`,
-        );
+        // PC is read ONLY for the two event types whose body actually is a
+        // 2-byte PC. JAM (0x61) has a zero-length body; CHECKPOINT_INFO (0x11)
+        // begins with a u32 checkpoint number and REGISTER_INFO (0x31) with a
+        // register-item count, so decoding either as a PC yields a
+        // plausible-but-meaningless value. An earlier revision did exactly
+        // that and wrote fabricated "PC=$0001"/"PC=$000a" lines into
+        // docs/phase1-probe-results.md's recorded transcripts.
+        const isPcShaped = respType === EVT.STOPPED || respType === EVT.RESUMED;
+        const pc = isPcShaped && body.length >= 2 ? body.readUInt16LE(0) : null;
+        let detail = "";
+        if (pc != null) {
+          detail = ` PC=$${pc.toString(16).padStart(4, "0")}`;
+        } else if (respType === EVT.CHECKPOINT_INFO && body.length >= 23) {
+          const info = parseCheckpointInfo(body);
+          detail = ` checkpoint=#${info.checkpointNum} hit_count=${info.hitCount} currently_hit=${info.currentlyHit}`;
+        } else if (respType === EVT.REGISTER_INFO && body.length >= 2) {
+          detail = ` register_count=${body.readUInt16LE(0)}`;
+        }
+        this.events.push({ name, pc, detail: detail.trim() });
+        console.log(`   [async event] ${name}${detail}`);
         continue;
       }
       const p = this.pending.get(reqId);
@@ -150,6 +197,12 @@ class BinMon {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Control-flow marker: check 13's pre-write baseline read failed, so the
+ * destructive write was never attempted and the outer catch must not report a
+ * write outcome. Not an error condition to diagnose -- it has already printed
+ * its own line. */
+class SkipCheck13 extends Error {}
 
 // Extract the newest history entry's uint64 cycle from a CPUHISTORY_GET body.
 // Layout: uint32 count, then per entry: item_size(1) + <item_size bytes>, where
@@ -467,9 +520,24 @@ async function main() {
   const { host, port } = parseTarget();
   console.log(`Connecting to VICE binary monitor at ${host}:${port} ...`);
   const socket = await new Promise((resolve, reject) => {
-    const s = net.createConnection({ host, port }, () => resolve(s));
-    s.on("error", reject);
-    setTimeout(() => reject(new Error("connect timeout")), 4000);
+    let connectTimer = null;
+    const s = net.createConnection({ host, port }, () => {
+      if (connectTimer) clearTimeout(connectTimer);
+      resolve(s);
+    });
+    s.on("error", (err) => {
+      if (connectTimer) clearTimeout(connectTimer);
+      s.destroy();
+      reject(err);
+    });
+    // Tear the socket down before rejecting: this script exits immediately
+    // afterwards today, but a dangling socket plus its retained "error"
+    // listener would leak if this connect logic is ever lifted into a
+    // longer-lived module.
+    connectTimer = setTimeout(() => {
+      s.destroy();
+      reject(new Error("connect timeout"));
+    }, 4000);
   });
   console.log("Connected.\n");
   const mon = new BinMon(socket);
@@ -621,13 +689,25 @@ async function main() {
       console.log(
         `   geometry: dw=${disp.dw} dh=${disp.dh} xo=${disp.xo} yo=${disp.yo} iw=${disp.iw} ih=${disp.ih} bpp=${disp.bpp}`,
       );
-      const borderIdx = disp.buffer[4 * disp.dw + 4];
+      // Sample RELATIVE to the inner-screen origin (xo, yo), a few pixels back
+      // into the border. A fixed (4,4) lands in pre-visible blanking padding
+      // given the real xo=136/yo=51 this build reports, which produced an
+      // uncaveated MISMATCH in both recorded runs that looked like a
+      // PALETTE_GET/DISPLAY_GET fault rather than a bad sample coordinate.
+      const bx = Math.max(0, disp.xo - 4);
+      const by = Math.max(0, disp.yo - 4);
+      const borderIdx = disp.buffer[by * disp.dw + bx];
       const borderRgb = results.palette && results.palette.entries[borderIdx];
       const borderMatch = borderIdx === borderReg;
       results.pixelCheck = borderMatch;
       console.log(
-        `8. PIXEL vs $D020  -> corner(4,4) index=${borderIdx} expected(masked $D020)=${borderReg} ${borderMatch ? "MATCH" : "MISMATCH"}${borderRgb ? ` rgb=(${borderRgb.r},${borderRgb.g},${borderRgb.b})` : ""}`,
+        `8. PIXEL vs $D020  -> border(${bx},${by}) index=${borderIdx} expected(masked $D020)=${borderReg} ${borderMatch ? "MATCH" : "MISMATCH"}${borderRgb ? ` rgb=(${borderRgb.r},${borderRgb.g},${borderRgb.b})` : ""}`,
       );
+      if (!borderMatch) {
+        console.log(
+          "   (a MISMATCH here can be a sample-coordinate artifact -- blanking padding vs rendered border -- not necessarily a DISPLAY_GET or PALETTE_GET fault)",
+        );
+      }
       const cx = Math.floor(disp.dw / 2);
       const cy = Math.floor(disp.dh / 2);
       const centreIdx = disp.buffer[cy * disp.dw + cx];
@@ -643,11 +723,17 @@ async function main() {
   // 9. CHECKPOINT_SET: 8-byte vs 9-byte body (UNVERIFIED item 1). Both
   //    checkpoints are disabled + temporary so neither perturbs execution,
   //    and both are deleted immediately so nothing leaks into later checks.
+  // Both numbers live outside the try so the finally can delete whichever were
+  // created, even if the second CHECKPOINT_SET throws. These are enabled: 0, so
+  // a leak is inert rather than harmful -- but it still contradicts this
+  // check's own "deleted immediately so nothing leaks" contract.
+  let cpNum8 = null;
+  let cpNum9 = null;
   try {
     const body8 = checkpointSetBody({ start: 0xea31, end: 0xea31, stop: 1, enabled: 0, ops: 0x04, temporary: 1 });
     const r8 = await mon.send(CMD.CHECKPOINT_SET, body8);
     const err8 = ERR_NAME[r8.errCode] || r8.errCode;
-    const cpNum8 = r8.errCode === 0x00 ? parseCheckpointInfo(r8.body).checkpointNum : null;
+    cpNum8 = r8.errCode === 0x00 ? parseCheckpointInfo(r8.body).checkpointNum : null;
 
     const body9 = checkpointSetBody({
       start: 0xea31,
@@ -660,20 +746,33 @@ async function main() {
     });
     const r9 = await mon.send(CMD.CHECKPOINT_SET, body9);
     const err9 = ERR_NAME[r9.errCode] || r9.errCode;
-    const cpNum9 = r9.errCode === 0x00 ? parseCheckpointInfo(r9.body).checkpointNum : null;
+    cpNum9 = r9.errCode === 0x00 ? parseCheckpointInfo(r9.body).checkpointNum : null;
 
     results.checkpointSet8 = err8;
     results.checkpointSet9 = err9;
     console.log(`9. CHECKPOINT_SET  -> 8-byte: ${err8}  9-byte(+memspace): ${err9}`);
-
-    if (cpNum8 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum8));
-    if (cpNum9 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum9));
   } catch (e) {
     console.log(`9. CHECKPOINT_SET  -> FAILED (${e.message})`);
+  } finally {
+    for (const n of [cpNum8, cpNum9]) {
+      if (n === null) continue;
+      try {
+        await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(n));
+      } catch {
+        console.log(`    (could not delete checkpoint #${n} -- it is enabled:0 and therefore inert)`);
+      }
+    }
   }
 
   // 10. RL/CY conditions: accepted, and actually firing (UNVERIFIED item 4's
   //     answerable half; the empirical proof behind DOC-02).
+  // cpNum lives OUTSIDE the try so the finally can always delete it. This
+  // checkpoint is enabled, non-temporary, full-address-range and stop=1, and
+  // the machine is resumed via EXIT while it is live -- if anything after that
+  // throws (CHECKPOINT_GET timing out is the observed case, see
+  // docs/phase1-probe-results.md), a leaked copy re-fires on essentially the
+  // next instruction and wedges every later check on the same connection.
+  let cp10Num = null;
   try {
     const fullRange = checkpointSetBody({ start: 0x0000, end: 0xffff, stop: 1, enabled: 1, ops: 0x04, temporary: 0 });
     const rSet = await mon.send(CMD.CHECKPOINT_SET, fullRange);
@@ -681,6 +780,7 @@ async function main() {
       console.log(`10. RL/CY CONDITION -> CHECKPOINT_SET FAILED (${ERR_NAME[rSet.errCode] || rSet.errCode})`);
     } else {
       const cpNum = parseCheckpointInfo(rSet.body).checkpointNum;
+      cp10Num = cpNum;
 
       // (a) token differential: correct-token condition, then the LIN/CYC
       //     negative control on the SAME checkpoint.
@@ -704,12 +804,22 @@ async function main() {
         `10b. FIRE TEST      -> hitCount=${hitCount != null ? hitCount : "?"} ${hitCount > 0 ? "FIRED" : "did not fire"}; events so far: ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
       );
 
-      // (c) cleanup: conditions cannot be read back or cleared and leak with
-      //     their checkpoint, so delete it now before any later check runs.
-      await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum));
+      // (c) cleanup happens in the finally below -- conditions cannot be read
+      //     back or cleared and leak with their checkpoint, so it must run
+      //     even when the fire test above throws.
     }
   } catch (e) {
     console.log(`10. RL/CY CONDITION -> FAILED (${e.message})`);
+  } finally {
+    if (cp10Num !== null) {
+      try {
+        await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cp10Num));
+      } catch {
+        console.log(
+          `    (could not delete checkpoint #${cp10Num} -- connection already unresponsive; it will die with the target)`,
+        );
+      }
+    }
   }
 
   // 11. Drive8TrueEmulation under that exact name (UNVERIFIED item 2).
@@ -780,38 +890,58 @@ async function main() {
       );
       results.driveRomWrite = "skipped-precondition-unmet";
     } else {
-      const before = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
-      const beforeData = before.body.subarray(2, 2 + before.body.readUInt16LE(0));
-      const beforeByte = beforeData[0];
-      const setR = await mon.send(
-        CMD.MEM_SET,
-        memSetBody({ start: 0xc000, end: 0xc000, memspace: 0x01, data: Buffer.from([0xff]) }),
-      );
-      if (setR.errCode !== 0x00) {
-        console.log(`13. MEM_SET drive ROM -> REJECTED (${ERR_NAME[setR.errCode] || setR.errCode})`);
-        results.driveRomWrite = "rejected";
-      } else {
-        const after = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
-        const afterData = after.body.subarray(2, 2 + after.body.readUInt16LE(0));
-        const afterByte = afterData[0];
-        if (afterByte === beforeByte) {
-          console.log(
-            `13. MEM_SET drive ROM -> OK but byte UNCHANGED ($${beforeByte.toString(16)}) -- silent no-op store stub`,
-          );
-          results.driveRomWrite = "silent-no-op";
+      // The baseline read is deliberately OUTSIDE the write's own try. A
+      // failure here happens BEFORE any byte is written, so attributing it to
+      // "the drive-ROM write crashed the target" would corrupt the exact
+      // causal claim this check exists to establish for UNVERIFIED item 3.
+      let beforeByte;
+      try {
+        const before = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+        beforeByte = before.body.subarray(2, 2 + before.body.readUInt16LE(0))[0];
+      } catch (e) {
+        console.log(
+          `13. MEM_SET drive ROM -> SKIPPED: the pre-write baseline read failed (${e.message}). No write was attempted, so this says nothing about UNVERIFIED item 3.`,
+        );
+        results.driveRomWrite = "skipped-baseline-read-failed";
+        throw new SkipCheck13();
+      }
+
+      try {
+        const setR = await mon.send(
+          CMD.MEM_SET,
+          memSetBody({ start: 0xc000, end: 0xc000, memspace: 0x01, data: Buffer.from([0xff]) }),
+        );
+        if (setR.errCode !== 0x00) {
+          console.log(`13. MEM_SET drive ROM -> REJECTED (${ERR_NAME[setR.errCode] || setR.errCode})`);
+          results.driveRomWrite = "rejected";
         } else {
-          console.log(
-            `13. MEM_SET drive ROM -> OK, byte CHANGED $${beforeByte.toString(16)} -> $${afterByte.toString(16)} -- drive ROM is writable through the monitor`,
-          );
-          results.driveRomWrite = "writable";
+          const after = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xc000, end: 0xc000, memspace: 0x01 }));
+          const afterData = after.body.subarray(2, 2 + after.body.readUInt16LE(0));
+          const afterByte = afterData[0];
+          if (afterByte === beforeByte) {
+            console.log(
+              `13. MEM_SET drive ROM -> OK but byte UNCHANGED ($${beforeByte.toString(16)}) -- silent no-op store stub`,
+            );
+            results.driveRomWrite = "silent-no-op";
+          } else {
+            console.log(
+              `13. MEM_SET drive ROM -> OK, byte CHANGED $${beforeByte.toString(16)} -> $${afterByte.toString(16)} -- drive ROM is writable through the monitor`,
+            );
+            results.driveRomWrite = "writable";
+          }
         }
+      } catch (e) {
+        console.log(
+          `13. MEM_SET drive ROM -> the write itself crashed or hung the target (${e.message}) -- this IS the answer to UNVERIFIED item 3, not a probe defect`,
+        );
+        results.driveRomWrite = "crashed-or-hung";
       }
     }
   } catch (e) {
-    console.log(
-      `13. MEM_SET drive ROM -> the drive-ROM write crashed or hung the target (${e.message}) -- this IS the answer to UNVERIFIED item 3, not a probe defect`,
-    );
-    results.driveRomWrite = "crashed-or-hung";
+    if (!(e instanceof SkipCheck13)) {
+      console.log(`13. MEM_SET drive ROM -> FAILED before the write (${e.message})`);
+      results.driveRomWrite = "failed-before-write";
+    }
   }
 
   // Resume the machine and disconnect cleanly. Tolerate a socket already

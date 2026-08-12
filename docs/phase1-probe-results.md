@@ -158,6 +158,17 @@ match was used. This left checks 11 ("Drive8TrueEmulation" resource probe), 12
 `SKIPPED` on its unmet precondition) without fork-build data points; their dispositions above
 rest on the stock 3.9 data only.
 
+**Probe defect that prolonged, but did not cause, the failure.** A later code review
+found that check 10 deleted its checkpoint *after* the `CHECKPOINT_GET` read-back,
+inside the same `try` — so when that read timed out, the delete never ran and the
+enabled, full-range, `stop=1` checkpoint was left live on a machine that `EXIT` had
+just resumed. That leak does not explain the initial 18-event burst (it happened
+before the delete would have run either way), but it does plausibly explain why the
+connection never recovered afterwards and why checks 11-13 each timed out in turn:
+the leaked breakpoint would re-fire on essentially every instruction. The probe now
+deletes the checkpoint in a `finally`. Treat the *non-recovery* as partly
+probe-induced; the *trigger* remains the open question described above.
+
 This does not contradict any corrected claim in `docs/phase0-binmon-findings.md` or
 `docs/stock-vice-parity.md` — neither document claims a `stop=1` checkpoint is guaranteed to
 halt cleanly on its first condition match under a maximally broad address range with a
@@ -169,6 +180,31 @@ this is a result, not a failure of the run, and it was not re-run to obtain a cl
 ---
 
 ## Raw probe output
+
+> **Correction — `PC=` on `REGISTER_INFO` and `CHECKPOINT_INFO` lines is a probe
+> defect, not emulator telemetry.** The transcripts below are preserved exactly as
+> the probe printed them, so the two mislabeled values still appear verbatim
+> (`REGISTER_INFO PC=$000a` ×11, `CHECKPOINT_INFO PC=$0001` ×19). At the time of
+> this run, `probe-binmon.mjs` decoded the first two body bytes of *every*
+> unsolicited event as a program counter. That is correct only for `STOPPED` and
+> `RESUMED`, whose bodies are a 2-byte PC — so every `STOPPED`/`RESUMED PC=$e5xx`
+> value below is genuine. It is wrong for the other two event types, whose bodies
+> are different structures entirely:
+>
+> | Printed as | Actually is |
+> |---|---|
+> | `REGISTER_INFO PC=$000a` | the **register-item count**, 10 registers — `REGISTER_INFO`'s body is a count-prefixed register list and carries no PC |
+> | `CHECKPOINT_INFO PC=$0001` | the **checkpoint number**, 1 — `CHECKPOINT_INFO`'s body begins with a `uint32` `checkpointNum` (its `hit_count` is at offset 13) |
+>
+> Both are constant across every occurrence precisely because they are static
+> fields, not a moving PC — which is the tell. No program counter was ever
+> reported for either event type on either build, and no conclusion in the
+> sections above rests on these values. The probe was fixed after this run (the
+> handler now decodes a PC only for `STOPPED`/`RESUMED` and prints
+> `checkpoint=#N hit_count=N` / `register_count=N` instead), so a future run will
+> not reproduce these lines. The transcripts are deliberately **not** rewritten:
+> altering a verbatim capture to show output the tool never produced would be a
+> worse defect than the mislabel it hides.
 
 ### Stock VICE 3.9 (`/usr/bin/x64sc`, port 6502)
 
