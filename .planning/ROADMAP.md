@@ -89,13 +89,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `probe-binmon.mjs` has been run against a real stock `x64sc -binarymonitor` and its output is recorded in the repo: api version, the VICE version quad, whether `CPUHISTORY_GET` succeeds or fails with `0x83` versus `0x8f`, `DISPLAY_GET` geometry, `PALETTE_GET` entry count, and the observed unsolicited event sequence.
   4. Each of the five items the research flagged UNVERIFIED is either answered by that probe run or recorded as an accepted unknown that states what breaks if the assumption is wrong.
 
-**Plans:** 4 plans in 2 waves
+**Plans:** 3/4 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Correct the two normative protocol documents (`phase0-binmon-findings.md`, `stock-vice-parity.md`): RL/CY, pause-on-demand, stopwatch, version gate, 3-to-5 event types [wave 1]
-- [ ] 01-02-PLAN.md — Bring `constraints.md` into agreement (4 CON blocks) and fully correct the `roadmap-stock-vice.md` ADR [wave 1]
-- [ ] 01-03-PLAN.md — Extend `probe-binmon.mjs` to cover PALETTE_GET, RL/CY conditions, 8-vs-9-byte CHECKPOINT_SET, Drive8TrueEmulation, drive-ROM MEM_SET, event pair, pixel check, plus an offline `--selftest` [wave 1]
+- [x] 01-01-PLAN.md — Correct the two normative protocol documents (`phase0-binmon-findings.md`, `stock-vice-parity.md`): RL/CY, pause-on-demand, stopwatch, version gate, 3-to-5 event types [wave 1]
+- [x] 01-02-PLAN.md — Bring `constraints.md` into agreement (4 CON blocks) and fully correct the `roadmap-stock-vice.md` ADR [wave 1]
+- [x] 01-03-PLAN.md — Extend `probe-binmon.mjs` to cover PALETTE_GET, RL/CY conditions, 8-vs-9-byte CHECKPOINT_SET, Drive8TrueEmulation, drive-ROM MEM_SET, event pair, pixel check, plus an offline `--selftest` [wave 1]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -324,7 +324,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Corrected Ground Truth | 0/4 | Planned | - |
+| 1. Corrected Ground Truth | 3/4 | In Progress|  |
 | 2. Stock Backend Connection | 0/TBD | Not started | - |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |

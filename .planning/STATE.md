@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-12T12:11:16.753Z"
-last_activity: 2026-08-12 -- Phase 1 planning complete
+last_updated: "2026-08-12T13:06:23.112Z"
+last_activity: 2026-08-12 -- Phase 01 execution started
 progress:
   total_phases: 8
   completed_phases: 0
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 1 — Corrected Ground Truth
+**Current focus:** Phase 01 — corrected-ground-truth
 
 ## Current Position
 
-Phase: 1 of 8 (Corrected Ground Truth)
-Plan: — of TBD
-Status: Ready to execute
-Last activity: 2026-08-12 -- Phase 1 planning complete
+Phase: 01 (corrected-ground-truth) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 01
+Last activity: 2026-08-12 -- Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
