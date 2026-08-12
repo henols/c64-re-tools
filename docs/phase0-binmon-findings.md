@@ -138,10 +138,15 @@ INVALID_TYPE `0x83`, CMD_FAILURE `0x8f`.
 `item_size`(1) + register block + **cycle (uint64)** + instr_len(1) + opcode +
 operands.
 
-## The one empirical step left
+## The empirical probe has been run — see docs/phase1-probe-results.md
 
-Run `.claude/mcp/vice/probe-binmon.mjs` against a stock `x64sc -binarymonitor`
-(this repo's container has no VICE and no display). It confirms, on the real
-build: connectivity + api version, whether **CPU history is enabled** (the
-stopwatch), that `DISPLAY_GET` works, and demonstrates the async STOPPED/RESUMED
-demux. Its result decides the timing-tool design before Phase 1 client code lands.
+`.claude/mcp/vice/probe-binmon.mjs` has been run against both a stock `x64sc
+-binarymonitor` (VICE 3.9, `/usr/bin/x64sc`) and the barryw fork's binary monitor
+(VICE 3.10, `/usr/local/bin/x64sc`, not a stock 3.10 build — see the recorded
+caveat). The full run, including raw output and per-item dispositions, is
+recorded in `docs/phase1-probe-results.md`. In short: it confirmed the
+`CPUHISTORY_GET` version gate (`INVALID_TYPE` on 3.9, success on the 3.10-vintage
+fork), the `RL`/`CY` condition acceptance-and-firing behaviour, `PALETTE_GET`'s
+16-entry table, and `DISPLAY_GET`'s geometry — and it surfaced one new anomaly
+(a fork-only checkpoint-flood observed during the `RL`/`CY` fire test) that is
+recorded there rather than silently absorbed.
