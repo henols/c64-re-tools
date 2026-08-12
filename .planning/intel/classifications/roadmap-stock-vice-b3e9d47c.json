@@ -1,0 +1,38 @@
+{
+  "source_path": "/home/henrik/dev/henrik/git/c64-re-tools/docs/roadmap-stock-vice.md",
+  "type": "ADR",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Roadmap: move c64-re-tools onto stock VICE",
+  "summary": "Proposes dropping the custom -mcpserver VICE build and driving unmodified x64sc through its binary monitor, with tool mapping, gaps, and a phased plan.",
+  "scope": [
+    "VICE emulator (x64sc)",
+    "VICE binary monitor protocol",
+    "custom -mcpserver patched build",
+    "vice-proxy stdio MCP server",
+    "vice.ts call() seam",
+    "vice-sync.ts checkpoint sync",
+    "broker-launch.mts / vice-broker.mts launcher",
+    "new vice-binmon.ts protocol client",
+    "6502 disassembler",
+    "framebuffer to PNG screenshot encoder",
+    "63-tool MCP surface",
+    "cycle stopwatch and run-until timing",
+    "d64 disk sector parsing"
+  ],
+  "cross_refs": [
+    "https://vice-emu.sourceforge.io/vice_13.html",
+    ".claude/mcp/vice/vice.ts",
+    ".claude/mcp/vice/vice-proxy.ts",
+    ".claude/mcp/vice/vice-sync.ts",
+    ".claude/mcp/vice/broker-launch.mts",
+    ".claude/mcp/vice/vice-broker.mts",
+    ".mcp.json",
+    "tools-manifest.json",
+    "README.md",
+    "d64-parse.mjs"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Hybrid document. ADR signals: explicit 'Status: proposed' marker, Context ('The core finding') / Decision ('What changes (architecture)') / Consequences ('What it buys you', including costs and trade-offs), converging on one chosen architectural path. Competing SPEC signals: binary-monitor command opcodes, TCP framing details (STX 0x02, length, cmd, request-id, little-endian), and per-tool capability mapping. Competing DOC signals: filename 'roadmap', phased delivery plan, and verification steps read as planning prose rather than a contract. Resolved to ADR per the highest-precedence ambiguity rule; locked is false because status is 'proposed', not 'Accepted'. Downstream synthesizer should treat the phase list as plan-of-record, not as locked requirements."
+}

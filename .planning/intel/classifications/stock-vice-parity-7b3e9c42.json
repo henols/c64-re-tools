@@ -1,0 +1,33 @@
+{
+  "source_path": "/home/henrik/dev/henrik/git/c64-re-tools/docs/stock-vice-parity.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Stock VICE parity: what changes for the tool surface",
+  "summary": "Two-way gap analysis of capabilities lost, gained, and reimplemented when migrating from the custom x64sc -mcpserver to stock VICE's binary monitor.",
+  "scope": [
+    "stock VICE binary monitor",
+    "x64sc -mcpserver custom build",
+    "VICE MCP tool surface",
+    "tools-manifest.json",
+    "SID state read-back",
+    "low-level/matrix keyboard input",
+    "CPU instruction-history trace (CPUHISTORY_GET)",
+    "1541 drive-CPU debugging",
+    "checkpoints and run-until/pause semantics",
+    "VIC-II and CIA state introspection",
+    "RESOURCE_GET/SET",
+    "PALETTE_GET and screenshots",
+    "snapshots and disk sector reads",
+    "client-side reimplementation (disassembler, PNG encoding, .d64 parsing)"
+  ],
+  "cross_refs": [
+    "docs/roadmap-stock-vice.md",
+    "tools-manifest.json",
+    "monitor_binary.c",
+    "mon_register.c"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "No frontmatter and no filename-convention signal. Competing signals: SPEC-flavored content (binary monitor command codes such as CPUHISTORY_GET 0x86, MEM_GET, RESOURCE_GET/SET 0x51/0x52, KEYBOARD_FEED 0x72) versus DOC-flavored structure (prose-heavy comparative analysis, no contracts, schemas, or normative requirements). Resolved to DOC because the command references are cited as evidence in a capability gap analysis rather than defined as implementation contracts; the document also contains no Decision/Consequences sections and no acceptance criteria. It is a decision-input analysis feeding docs/roadmap-stock-vice.md, so the synthesizer may want to treat its loss/gain findings as constraints on any future stock-VICE migration ADR."
+}

@@ -1,0 +1,28 @@
+{
+  "source_path": "/home/henrik/dev/henrik/git/c64-re-tools/docs/phase0-binmon-findings.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Phase 0 — stock VICE binary-monitor de-risk findings",
+  "summary": "Defines the stock VICE binary-monitor wire protocol, command opcodes, error codes, and capability constraints that the Phase-1 client must implement.",
+  "scope": [
+    "VICE binary monitor protocol",
+    "wire format (request/response headers)",
+    "command opcode set and error codes",
+    "CPUHISTORY_GET cycle stopwatch",
+    "DISPLAY_GET INDEXED8 framebuffer",
+    "PALETTE_GET",
+    "checkpoints and execution control",
+    "async STOPPED/RESUMED/JAM events",
+    "Phase-1 client",
+    "probe-binmon.mjs verification script"
+  ],
+  "cross_refs": [
+    ".claude/mcp/vice/probe-binmon.mjs",
+    "vice/src/monitor/monitor_binary.c",
+    "vice/src/monitor/mon_register.c"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Ambiguous between DOC (framed as a de-risk findings report with narrative RESOLVED/VERIFY sections) and SPEC. Resolved to SPEC per the higher-precedence rule: the document's substance is protocol contracts — byte-offset request/response header tables, the confirmed command opcode set, error codes, and the CPUHISTORY_GET body/response schema — which the Phase-1 client must honor. No frontmatter and no filename/path convention signal; content signals only. Contains unresolved VERIFY items (CPU history may be compile-time disabled) pending an empirical probe run, so some stated constraints are provisional."
+}
