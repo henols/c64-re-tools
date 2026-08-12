@@ -135,6 +135,16 @@ its own opcode table. Ballpark ≥100× slower than realtime (rate unverified).
 > prefer route 2 (text-monitor `stopwatch` over a concurrent `-remotemonitor`) if the
 > dual-interface path is taken, or measure route 1's actual socket load against a real
 > build before committing to it. Do not treat route 1 as free.
+>
+> **REFINEMENT, same day** (`.planning/research/GAINS-PROTOCOL.md` §B.10): the hazard
+> applies to *unconditioned* checkpoints only. A **conditioned** checkpoint emits 0x11
+> only when its condition passes, because `mon_evaluate_conditional` runs before
+> `mon_breakpoint_event` (`mon_breakpoint.c:544-558`). So full-range checkpoint + raster
+> condition is the *supported idiom* for raster breakpoints and is practical after all —
+> the per-instruction condition *evaluation* cost remains, but the socket traffic does
+> not. The `$EA31` frame counter in route 1 is unconditioned, so the ~50/sec figure
+> above still stands for it; adding a condition would not help, since every hit is a
+> wanted hit.
 
 **For the `vice-wedge-triage` diagnostic specifically:** `REGISTERS_GET` (0x31) →
 `EXIT` (0xaa) → wait → repeat. `(LIN,CYC)` changed ⇒ emulation is advancing
