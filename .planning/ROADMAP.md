@@ -66,7 +66,7 @@ without adding a check that the test suite does not already run.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE
+- [x] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE (completed 2026-08-12)
 - [ ] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it
 - [ ] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend
 - [ ] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it
@@ -89,7 +89,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `probe-binmon.mjs` has been run against a real stock `x64sc -binarymonitor` and its output is recorded in the repo: api version, the VICE version quad, whether `CPUHISTORY_GET` succeeds or fails with `0x83` versus `0x8f`, `DISPLAY_GET` geometry, `PALETTE_GET` entry count, and the observed unsolicited event sequence.
   4. Each of the five items the research flagged UNVERIFIED is either answered by that probe run or recorded as an accepted unknown that states what breaks if the assumption is wrong.
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 Plans:
 **Wave 1**
 
@@ -99,7 +99,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-04-PLAN.md — Run the probe against stock 3.9 and fork 3.10, record `docs/phase1-probe-results.md`, close the two "probe outstanding" references [wave 2]
+- [x] 01-04-PLAN.md — Run the probe against stock 3.9 and fork 3.10, record `docs/phase1-probe-results.md`, close the two "probe outstanding" references [wave 2]
 
 Notes:
 
@@ -324,7 +324,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Corrected Ground Truth | 3/4 | In Progress|  |
+| 1. Corrected Ground Truth | 4/4 | Complete   | 2026-08-12 |
 | 2. Stock Backend Connection | 0/TBD | Not started | - |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
