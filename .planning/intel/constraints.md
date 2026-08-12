@@ -3,7 +3,9 @@
 Synthesized by `gsd-doc-synthesizer`. Primary source is the SPEC,
 `docs/phase0-binmon-findings.md`, derived by reading VICE source
 (`VICE-Team/svn-mirror` @ `master`: `vice/src/monitor/monitor_binary.c`,
-`vice/src/monitor/mon_register.c`). Items tagged **PROVISIONAL** await the
+`vice/src/monitor/mon_register.c`). Phase 1 applied source-verified corrections
+to this file on 2026-08-12; every item below has a settled status now. The one
+remaining unresolved item, `CON-probe-outstanding`, is resolved by the
 empirical probe run.
 
 Two capability constraints (`CON-sid-readback-hard-loss`,
@@ -80,29 +82,40 @@ format; the ADR's looser paraphrase is superseded.
 
 ## CON-no-monotonic-cycle-register
 
-- **source:** `docs/phase0-binmon-findings.md` §1
+- **source:** `docs/phase0-binmon-findings.md` §1 (corrected 2026-08-12, Phase 1)
 - **type:** protocol
 - **constraint:** There is **no monotonic cycle register**. `e_Cycle` (`0x36`) and
   `e_Rasterline` (`0x35`) are not real registers — `mon_register.c` gates them
   with the comment *"these are not actually registers, we need them for the
   conditionals"*. `e_Cycle` is the cycle **within the current raster line**, for
-  checkpoint conditions, not elapsed time. `REGISTERS_GET` (`0x31`) therefore
-  cannot serve as a stopwatch.
+  checkpoint conditions, not elapsed time. However `LIN` and `CYC` **are** present
+  in `mon_reg_list_6510` (`mon_register6502.c:57`) and `REGISTERS_GET` (`0x31`)
+  does return them, so absolute cycles **can** be reconstructed without CPU
+  history: `cycles = frames × 19656 (PAL) + Δ(LIN × 63 + CYC)`, with frame count
+  taken from a **non-stopping** exec checkpoint's `hit_count` (bytes 13-16 of the
+  `CHECKPOINT_GET`/`CHECKPOINT_INFO` (`0x11`) response). Cost warning: every hit of
+  a non-stopping checkpoint fires a synchronous `CHECKPOINT_INFO` event from
+  inside the CPU loop (`mon_breakpoint.c:439-535`) — do not place one over a wide
+  range for this purpose. Phase 7 chooses between this route and the CPU-history
+  route (`CON-stopwatch-via-cpuhistory`) based on measured cost; that choice is
+  not pre-decided here.
 
 ## CON-stopwatch-via-cpuhistory
 
-- **source:** `docs/phase0-binmon-findings.md` §1
+- **source:** `docs/phase0-binmon-findings.md` §1 (corrected 2026-08-12, Phase 1)
 - **type:** protocol
-- **status:** PROVISIONAL — depends on build-time feature
+- **status:** SETTLED — gated by VICE version, not a build-time compile flag
 - **constraint:** `CPUHISTORY_GET` (`0x86`) is the stopwatch. Each history entry
   ends with a uint64 absolute clock (`write_uint64(current->cycle, …)` in
   `monitor_binary.c`). Read the newest entry's cycle before and after a run; the
   difference is a cycle-accurate elapsed count.
-- **VERIFY:** CPU history is a **compile-time** feature. If the target `x64sc`
-  wasn't built with it, `CPUHISTORY_GET` returns an error or zero entries and the
-  stopwatch is unavailable. Fallbacks: sum per-instruction costs while
-  single-stepping (slow), or fall back to wall-clock timing. Detect via
-  `VICE_INFO` (`0x85`) / probe.
+- **VERSION GATE:** `e_MON_CMD_CPUHISTORY_GET` (`0x86`) requires **VICE ≥ 3.10**.
+  `--enable-cpuhistory` is on by default and universally set in distro/CI builds —
+  the compile flag is not the risk. Debian/Ubuntu ship VICE 3.9 and lack the
+  opcode entirely (`INVALID_TYPE` `0x83`); on ≥3.10 with the feature genuinely
+  disabled, expect `CMD_FAILURE` (`0x8f`). Detect via `VICE_INFO` (`0x85`)'s
+  version quad. Fallbacks on 3.9: reconstruct via `LIN`/`CYC` + a non-stopping
+  frame-count checkpoint (see `CON-no-monotonic-cycle-register`), or wall-clock.
 
 ## CON-no-run-for-n-cycles
 
@@ -127,20 +140,30 @@ format; the ADR's looser paraphrase is superseded.
 
 ## CON-async-event-demux
 
-- **source:** `docs/phase0-binmon-findings.md` §4
+- **source:** `docs/phase0-binmon-findings.md` §4 (corrected 2026-08-12, Phase 1)
 - **type:** protocol
-- **constraint:** The emulator emits **unsolicited** events, all with request-id
-  `MON_EVENT_ID = 0xffffffff`: `STOPPED` (`0x62`, body = 2-byte PC), `RESUMED`
-  (`0x63`, body = 2-byte PC), `JAM` (`0x61`). The client **must demultiplex**
-  these from command replies by request-id.
+- **constraint:** The emulator emits **five** unsolicited message types, not
+  three, all with request-id `MON_EVENT_ID = 0xffffffff`: `STOPPED` (`0x62`,
+  body = 2-byte PC), `RESUMED` (`0x63`, body = 2-byte PC), `JAM` (`0x61`,
+  **zero-length body** — `monitor_binary.c:384-394` computes the PC then passes
+  `length = 0`, so no PC is sent), `CHECKPOINT_INFO` (`0x11`, emitted on every
+  checkpoint hit) and `REGISTER_INFO` (`0x31`, emitted on every monitor open).
+  `CHECKPOINT_INFO` and `REGISTER_INFO` **share a response type with a
+  legitimate command reply**, so the client **must demultiplex** by request-id
+  and must never resolve a pending request with an event. This block is what
+  Phase 2's PROTO-03 and PROTO-04 derive from; it must not undercount.
 
-## CON-no-pause-now-opcode
+## CON-inbound-byte-halts-machine
 
-- **source:** `docs/phase0-binmon-findings.md` §4
+- **source:** `docs/phase0-binmon-findings.md` §4 (corrected 2026-08-12, Phase 1)
 - **type:** protocol
-- **constraint:** `EXIT` (`0xaa`) resumes the emulator. There is **no "pause now"
-  opcode** — to stop a free-running machine on demand, set a temporary checkpoint
-  (or open the monitor). This is the ergonomic wrinkle for `vice_execution_pause`.
+- **constraint:** `monitor_check_binary()` calls `monitor_startup_trap()` on
+  **any inbound byte** (`monitor_binary.c:281`), invoked every vsync from
+  `monitor_vsync_hook` (`monitor.c:395`). A bare `PING` (`0x81`) therefore halts
+  a free-running machine within roughly one frame and emits `STOPPED` (`0x62`)
+  — **no temporary checkpoint is required**. `EXIT` (`0xaa`) resumes. A timeout
+  here means no vsync is running, which is itself a `vice-wedge-triage`
+  diagnostic signal.
 
 ## CON-sid-readback-hard-loss
 
