@@ -134,7 +134,7 @@ Notes:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Wave 1: narrowed automated test gate, binmon fixture encoder and synthetic case builders, bounded `probe-binmon.mjs --capture` mode
+- [x] 02-01-PLAN.md — Wave 1: narrowed automated test gate, binmon fixture encoder and synthetic case builders, bounded `probe-binmon.mjs --capture` mode
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -364,7 +364,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
-| 2. Stock Backend Connection | 0/TBD | Not started | - |
+| 2. Stock Backend Connection | 1/10 | In Progress|  |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
