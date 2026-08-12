@@ -105,6 +105,10 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [ ] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
 - [ ] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
 
+### Skill playbooks
+
+- [ ] **SKILL-01**: The skills whose documented methodology depends on fork-only capabilities name the stock-backend route or state the fork requirement, so Claude following a playbook is not sent into a refusal — covering `c64-program-recon`'s `vice_keyboard_matrix` instruction and whole-chip-read guidance, `c64-ram-capture`'s matrix-keyboard "hit any key" step, and `vice-wedge-triage`'s stopwatch bracket
+
 ### Verification
 
 - [ ] **VERIF-01**: The binary-monitor probe has been run against a real stock VICE build and its results recorded
@@ -142,17 +146,94 @@ Deferred. Tracked, not in this roadmap.
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated during roadmap creation (2026-08-12). Every v0.2.0 requirement maps to
+exactly one phase. See `.planning/ROADMAP.md` for phase goals, success criteria,
+and the sequencing rationale.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| DOC-01 | Phase 1 | Pending |
+| DOC-02 | Phase 1 | Pending |
+| DOC-03 | Phase 1 | Pending |
+| BACK-01 | Phase 2 | Pending |
+| BACK-02 | Phase 2 | Pending |
+| BACK-03 | Phase 2 | Pending |
+| BACK-04 | Phase 2 | Pending |
+| BACK-05 | Phase 8 | Pending |
+| PROTO-01 | Phase 2 | Pending |
+| PROTO-02 | Phase 2 | Pending |
+| PROTO-03 | Phase 2 | Pending |
+| PROTO-04 | Phase 2 | Pending |
+| PROTO-05 | Phase 2 | Pending |
+| PROTO-06 | Phase 2 | Pending |
+| PROTO-07 | Phase 2 | Pending |
+| PROTO-08 | Phase 2 | Pending |
+| DIRECT-01 | Phase 3 | Pending |
+| DIRECT-02 | Phase 3 | Pending |
+| DIRECT-03 | Phase 3 | Pending |
+| DIRECT-04 | Phase 3 | Pending |
+| DIRECT-05 | Phase 3 | Pending |
+| DIRECT-06 | Phase 3 | Pending |
+| DIRECT-07 | Phase 3 | Pending |
+| DIRECT-08 | Phase 3 | Pending |
+| DIRECT-09 | Phase 3 | Pending |
+| DERIV-01 | Phase 5 | Pending |
+| DERIV-02 | Phase 5 | Pending |
+| DERIV-03 | Phase 5 | Pending |
+| DERIV-04 | Phase 5 | Pending |
+| DERIV-05 | Phase 5 | Pending |
+| DERIV-06 | Phase 5 | Pending |
+| DERIV-07 | Phase 4 | Pending |
+| DISASM-01 | Phase 4 | Pending |
+| DISASM-02 | Phase 4 | Pending |
+| DISASM-03 | Phase 4 | Pending |
+| DISASM-04 | Phase 4 | Pending |
+| DISASM-05 | Phase 4 | Pending |
+| DISASM-06 | Phase 4 | Pending |
+| DISASM-07 | Phase 4 | Pending |
+| SHOT-01 | Phase 5 | Pending |
+| SHOT-02 | Phase 5 | Pending |
+| SHOT-03 | Phase 5 | Pending |
+| SHOT-04 | Phase 5 | Pending |
+| SHOT-05 | Phase 5 | Pending |
+| GAIN-01 | Phase 6 | Pending |
+| GAIN-02 | Phase 6 | Pending |
+| GAIN-03 | Phase 6 | Pending |
+| GAIN-04 | Phase 6 | Pending |
+| GAIN-05 | Phase 6 | Pending |
+| GAIN-06 | Phase 6 | Pending |
+| GAIN-07 | Phase 6 | Pending |
+| GAIN-08 | Phase 6 | Pending |
+| GAIN-09 | Phase 6 | Pending |
+| TIME-01 | Phase 7 | Pending |
+| TIME-02 | Phase 7 | Pending |
+| TIME-03 | Phase 7 | Pending |
+| TIME-04 | Phase 7 | Pending |
+| BROK-01 | Phase 2 | Pending |
+| BROK-02 | Phase 2 | Pending |
+| BROK-03 | Phase 2 | Pending |
+| DIST-01 | Phase 8 | Pending |
+| DIST-02 | Phase 8 | Pending |
+| DIST-03 | Phase 8 | Pending |
+| SKILL-01 | Phase 8 | Pending |
+| VERIF-01 | Phase 1 | Pending |
+| VERIF-02 | Phase 2 | Pending |
+| VERIF-03 | Phase 8 | Pending |
+| VERIF-04 | Phase 1 | Pending |
 
 **Coverage:**
-- v0.2.0 requirements: 63 total
-- Mapped to phases: 0
-- Unmapped: 63 ⚠️
+- v0.2.0 requirements: 68 total
+- Mapped to phases: 68
+- Unmapped: 0 ✓
+
+*Count correction: an earlier version of this block stated 63 total. The file
+contains 67 requirement items (BACK 5, BROK 3, DERIV 7, DIRECT 9, DISASM 7,
+DIST 3, DOC 3, GAIN 9, PROTO 8, SHOT 5, TIME 4, VERIF 4). Corrected during
+roadmap creation.*
+
+**Requirements per phase:** Phase 1: 5 · Phase 2: 16 · Phase 3: 9 · Phase 4: 8 ·
+Phase 5: 11 · Phase 6: 9 · Phase 7: 4 · Phase 8: 5
 
 ---
 *Requirements defined: 2026-08-12*
-*Last updated: 2026-08-12 after initial definition*
+*Last updated: 2026-08-12 after roadmap creation (traceability populated, count corrected 63 -> 67)*
