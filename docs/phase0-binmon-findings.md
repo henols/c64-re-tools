@@ -74,15 +74,26 @@ palette indices) and requires **api_version ≥ 2**. The response carries: debug
 indices → RGB, then encode a PNG in the client. (The old `-mcpserver` returned a
 ready image; that conversion now moves client-side.)
 
-## 4. Pause / run model — async events, no bare pause
+## 4. Pause / run model — any inbound byte halts the machine
 
-- The emulator emits **unsolicited** events, all with request-id
+- The emulator emits **five** unsolicited event types, all at request-id
   `MON_EVENT_ID = 0xffffffff`: `STOPPED` (0x62, body = 2-byte PC), `RESUMED`
-  (0x63, body = 2-byte PC), `JAM` (0x61). The client **must demultiplex** these
-  from command replies by request-id.
-- `EXIT` (0xaa) resumes the emulator. There is **no "pause now" opcode** — to stop
-  a free-running machine on demand, set a temporary checkpoint (or open the
-  monitor). This is the one real ergonomic wrinkle for `vice_execution_pause`.
+  (0x63, body = 2-byte PC), `JAM` (0x61, **zero-length body** —
+  `monitor_binary.c:384-394` computes the PC but then passes `length = 0`, so
+  no PC is sent; every client surveyed that assumes a 2-byte body breaks on
+  it), `CHECKPOINT_INFO` (0x11, emitted on every checkpoint hit), and
+  `REGISTER_INFO` (0x31, emitted on every monitor open). The last two **share
+  a response type with a legitimate command reply**, so the client's
+  demultiplexer must key on request-id and must never resolve a pending
+  request with an event.
+- `monitor_check_binary()` calls `monitor_startup_trap()` on **any inbound
+  byte** (`monitor_binary.c:281`), and that check runs every vsync from
+  `monitor_vsync_hook` (`monitor.c:395`). A bare `PING` (0x81) therefore halts
+  the machine within roughly one frame and emits `STOPPED` (0x62) — no
+  temporary checkpoint is required to stop a free-running machine on demand.
+  Corollary: if there is no vsync because the host UI is paused or hung, the
+  command times out, which is itself a `vice-wedge-triage` diagnostic signal
+  rather than a protocol failure. `EXIT` (0xaa) still resumes the emulator.
 
 ## 5. Wire format (for the Phase-1 client)
 
