@@ -131,17 +131,36 @@ Notes:
   5. A user can ask which backend is active and which VICE version is connected and gets both; the version-gated capabilities of that build are determined at connect time rather than at first use, and an emulator that died or restarted underneath the client is reported distinctly from a timeout.
 
 **Plans**: 10 plans in 7 waves
-
 Plans:
+**Wave 1**
+
 - [ ] 02-01-PLAN.md — Wave 1: narrowed automated test gate, binmon fixture encoder and synthetic case builders, bounded `probe-binmon.mjs --capture` mode
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02-PLAN.md — Wave 2 (checkpoints): capture the three real-emulator VERIF-02 fixtures with provenance, and record what `--help` actually prints on both builds
 - [ ] 02-03-PLAN.md — Wave 2: backend-selected launch argv (`-binarymonitor`), and the orphan reap re-derived from the broker's own allocation record
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-04-PLAN.md — Wave 3: `stock-protocol.ts` framing, response parsing, the three vendored defect fixes, and the body-length guard
 - [ ] 02-05-PLAN.md — Wave 3: broker-side single-monitor-client ownership (`monitor_claim`/`monitor_release`) and the container-side conflict outcome
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-06-PLAN.md — Wave 4: request-id-first demux, related-frame accumulation, expected-response table, and the socket-lifecycle rejection path
 - [ ] 02-07-PLAN.md — Wave 4: `backend-detect.mts` — the `--help` probe, the cached verdict under `.vice-supervisor/`, and the single `VICE_BACKEND` reader
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 02-08-PLAN.md — Wave 5: `stock-connect.ts` — claim-then-dial handshake, `api_version` assertion, capability gate, and `MachineRestartedError` reuse
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 02-09-PLAN.md — Wave 6: trimmed stock manifest with a tested selector, and the lease-to-session seam that threads `ensureBrokerLease()`'s held lease into `stockConnect()`
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 02-10-PLAN.md — Wave 7: `stock-dispatch.ts`'s table with no fall-through, `vice_ping` naming backend and VICE version, and the three `vice-proxy.ts` backend seams
 
 Notes:

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: planning
-last_updated: "2026-08-12T19:14:38.257Z"
-last_activity: 2026-08-12
+status: executing
+last_updated: "2026-08-12T21:08:02.071Z"
+last_activity: 2026-08-12 -- Phase 2 planning complete
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 4
+  total_plans: 14
   completed_plans: 4
   percent: 13
 ---
@@ -28,8 +28,8 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 Phase: 2
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-12
+Status: Ready to execute
+Last activity: 2026-08-12 -- Phase 2 planning complete
 
 Progress: [░░░░░░░░░░] 0%
 
