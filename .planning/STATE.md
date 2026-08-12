@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: planning
-last_updated: "2026-08-12T00:00:00.000Z"
-last_activity: 2026-08-12
+status: executing
+last_updated: "2026-08-12T12:11:16.753Z"
+last_activity: 2026-08-12 -- Phase 1 planning complete
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
   percent: 0
 ---
@@ -28,14 +28,15 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 Phase: 1 of 8 (Corrected Ground Truth)
 Plan: — of TBD
-Status: Ready to plan
-Last activity: 2026-08-12 — Roadmap created; 67 requirements mapped across 8 phases
+Status: Ready to execute
+Last activity: 2026-08-12 -- Phase 1 planning complete
 
 Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: —
 - Total execution time: —
@@ -47,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
@@ -62,11 +64,14 @@ Recent decisions affecting current work:
 - Roadmap: BACK-02 (fork backend unchanged) is a success criterion in Phase 2
   only, plus a standing per-phase regression gate — not a criterion repeated per
   phase. See ROADMAP.md "Standing Constraints".
+
 - Roadmap: DERIV-07's derived-tool interception seam is built once in Phase 4
   alongside its first and largest consumer (the disassembler); Phase 5's
   screenshots and derivations and Phase 6's gains all route through it.
+
 - Roadmap: the disassembler library is protocol-independent and may be built in
   parallel with Phase 2/3 — the largest parallelism win available.
+
 - Milestone: all three stock-only gain groups in scope (not parity-first).
 - Milestone: backend selected project-level, one per MCP server process; parity
   verification therefore requires two server processes.
@@ -81,16 +86,20 @@ Recent decisions affecting current work:
 - **Phase 1 external prerequisite:** VERIF-01 needs a real stock VICE build and a
   display on the *host*; this repo's container has neither. Confirm availability
   before planning Phase 1.
+
 - **`docs/phase0-binmon-findings.md` is normative (ingest W2) and currently
   wrong in four places.** Until Phase 1 lands, do not derive protocol design
   from it — in particular, a condition written on `LIN` instead of `RL` fails at
   runtime with error `0x8f` and gives no diagnostic over the socket.
+
 - **Requirement count discrepancy resolved:** REQUIREMENTS.md said 63; the file
   contains 67 items. Corrected to 67 in the Coverage block.
+
 - **Open coverage gap:** no requirement covers revising the playbook prose in the
   3 of 6 skills whose documented methodology depends on fork-only capabilities.
   Runtime symptom is covered by BACK-05. Decide: add `SKILL-01` mapped to Phase
   8, or defer explicitly. See ROADMAP.md "Coverage Notes".
+
 - **`CPUHISTORY_GET` needs VICE ≥ 3.10**; Debian and all current Ubuntu ship 3.9,
   so the milestone's headline gain is unavailable on the most common `apt`
   install path. Graceful degradation is required, not optional.

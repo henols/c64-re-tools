@@ -547,7 +547,11 @@ Repetitions" item 1.
 resolve; none of them undermine the Error Inventory (a)-(d), which are all confirmed by direct
 citation to VICE source line numbers already present in this repo.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Both questions were settled at plan time (2026-08-12). Resolutions are recorded inline
+> below. **Note that Q1 was resolved AGAINST this document's own recommendation** — do not
+> read the "Recommendation" lines below as the decision.
 
 1. **Should `docs/roadmap-stock-vice.md` be corrected too, even though DOC-01/02/03 don't name it?**
    - What we know: it repeats Error (b) in three places; it's marked `Status: proposed` and
@@ -558,6 +562,12 @@ citation to VICE source line numbers already present in this repo.
    - Recommendation: add a one-line erratum/pointer at the top of the ADR rather than a full
      rewrite — cheap, closes the goal-vs-criteria gap, and preserves the ADR as a historical
      record (which several `.planning/intel/*.md` files already treat it as).
+   - **RESOLVED — fix it fully, overriding the recommendation above.** The user chose a full
+     correction over an erratum-note: the phase goal is that *every* downstream plan reads
+     correct protocol facts, and an erratum leaves the wrong text in place for anyone who
+     reads past it. Planned in `01-02-PLAN.md` Task 2, which corrects all three
+     pause-on-demand claims plus the event-type undercount at line 89 ("async
+     stopped/resumed events" names 2 of 5).
 
 2. **Should the corrected §4 also fix the 3-vs-5 unsolicited-event-types undercount?**
    - What we know: `CLAUDE.md`/`PROJECT.md` already state 5 types correctly; the doc states 3.
@@ -567,6 +577,10 @@ citation to VICE source line numbers already present in this repo.
      directly depends on the corrected event count (PROTO-03) and there's no reason to leave
      the doc that generated Phase 2's requirements internally inconsistent with those
      requirements.
+   - **RESOLVED — folded in, as recommended.** Planned in `01-01-PLAN.md` Task 2. One
+     location correction from this document's original wording: the literal "3 event types"
+     claim is in `docs/phase0-binmon-findings.md` §4, **not** in `docs/roadmap-stock-vice.md`
+     — the ADR's undercount is the separate line-89 wording handled under Q1.
 
 ## Environment Availability
 

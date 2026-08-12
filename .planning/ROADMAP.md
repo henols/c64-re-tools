@@ -38,23 +38,29 @@ without adding a check that the test suite does not already run.
   `vice-proxy.ts`'s dispatch, `rewriteArguments()`, the broker launch path) must
   show the fork path exercised. **Decision: one criterion in Phase 2, plus a
   standing regression gate — not a criterion repeated per phase.**
+
 - **The stdio MCP surface must not change.** Same tool names and argument shapes
   across both backends, so the six skills keep working.
+
 - **The broker's single-owner `inFlight` launch guard stays a synchronous
   check-and-set with no `await` between.** It exists because of the 2026-08-01
   triple-launch outage and is regression-tested.
+
 - **`vice-sync.ts`'s documented invariants survive:** exactly one resume per
   wait; poll on `hit_count`, never on paused state; never delete a VICE-marked
   temporary checkpoint.
+
 - **Any host-facing path or hostname goes through `hostpath.ts` /
   `containerpath.ts` / `container-guard.mts`.** The closed consumer set for
   host-path logic is tested; do not widen it casually.
+
 - **Client-side derivations go in sibling modules, never appended to
   `vice-proxy.ts`** (already 3,093 lines and the sole tool-surface seam).
 
 ## Phases
 
 **Phase Numbering:**
+
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
@@ -72,23 +78,31 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Corrected Ground Truth
+
 **Goal**: Every downstream plan reads protocol facts that match what the emulator actually does
 **Depends on**: Nothing (first phase)
 **Requirements**: DOC-01, DOC-02, DOC-03, VERIF-01, VERIF-04
 **Success Criteria** (what must be TRUE):
+
   1. `docs/phase0-binmon-findings.md` and `docs/stock-vice-parity.md` name `RL`/`CY` as the condition-parser pseudo-registers, so a reader following them cannot write a condition on `LIN` and get error `0x8f`.
   2. The same documents no longer assert that pause-on-demand requires a checkpoint, that `REGISTERS_GET` cannot source a stopwatch, or that CPU history's compile flag is the availability risk — and they name VICE ≥ 3.10 as the real gate. `.planning/intel/constraints.md` agrees and `CON-stopwatch-via-cpuhistory` is no longer marked PROVISIONAL-on-CPU-history.
   3. `probe-binmon.mjs` has been run against a real stock `x64sc -binarymonitor` and its output is recorded in the repo: api version, the VICE version quad, whether `CPUHISTORY_GET` succeeds or fails with `0x83` versus `0x8f`, `DISPLAY_GET` geometry, `PALETTE_GET` entry count, and the observed unsolicited event sequence.
   4. Each of the five items the research flagged UNVERIFIED is either answered by that probe run or recorded as an accepted unknown that states what breaks if the assumption is wrong.
-**Plans:** 4 plans in 2 waves
 
+**Plans:** 4 plans in 2 waves
 Plans:
+**Wave 1**
+
 - [ ] 01-01-PLAN.md — Correct the two normative protocol documents (`phase0-binmon-findings.md`, `stock-vice-parity.md`): RL/CY, pause-on-demand, stopwatch, version gate, 3-to-5 event types [wave 1]
 - [ ] 01-02-PLAN.md — Bring `constraints.md` into agreement (4 CON blocks) and fully correct the `roadmap-stock-vice.md` ADR [wave 1]
 - [ ] 01-03-PLAN.md — Extend `probe-binmon.mjs` to cover PALETTE_GET, RL/CY conditions, 8-vs-9-byte CHECKPOINT_SET, Drive8TrueEmulation, drive-ROM MEM_SET, event pair, pixel check, plus an offline `--selftest` [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 01-04-PLAN.md — Run the probe against stock 3.9 and fork 3.10, record `docs/phase1-probe-results.md`, close the two "probe outstanding" references [wave 2]
 
 Notes:
+
 - This phase exists because `docs/phase0-binmon-findings.md` is **normative by ingest resolution W2** and currently contains four verified errors. Any later phase that derives protocol design from it inherits them — most sharply, a checkpoint condition written on `LIN` instead of `RL` fails at runtime with `0x8f`, and the condition parser gives no diagnostic back over the socket.
 - VERIF-01 has never been run. It gates timing design (Phase 7) and screenshot design (Phase 5), and five items in `GAINS-PROTOCOL.md` route to it.
 - **Parallel:** the doc corrections and the probe run are fully independent — no ordering between them. Realised as three Wave-1 plans (01-01 docs, 01-02 intel+ADR, 01-03 probe extension) with disjoint file ownership, plus a Wave-2 plan (01-04) that runs the probe and cross-links the result into the files the Wave-1 plans own.
@@ -96,18 +110,22 @@ Notes:
 - Probe additions worth folding in while it is being run: a 9-byte `CHECKPOINT_SET` against 3.9, whether `Drive8TrueEmulation` exists under that name on 3.9, `MEM_SET` into drive ROM, whether `ADVANCE_INSTRUCTIONS` emits a `RESUMED`/`STOPPED` pair, and one `DISPLAY_GET` pixel checked against the known colour at that position.
 
 ### Phase 2: Stock Backend Connection
+
 **Goal**: The server can be pointed at a stock VICE and hold a correct, correlated, event-demultiplexed conversation with it
 **Depends on**: Phase 1
 **Requirements**: BACK-01, BACK-02, BACK-03, BACK-04, PROTO-01, PROTO-02, PROTO-03, PROTO-04, PROTO-05, PROTO-06, PROTO-07, PROTO-08, BROK-01, BROK-02, BROK-03, VERIF-02
 **Success Criteria** (what must be TRUE):
+
   1. Setting one project-level config value switches which VICE backend the server drives, with no code edit; with the fork selected, tool behaviour is identical to v0.1.x and the existing suite passes unchanged.
   2. The broker launches an unmodified `x64sc` with binary-monitor flags and the fork with its existing flags, chosen by backend — and its existing guarantees still hold: one launch in flight at a time, crash supervision, and an incident record written before any kill.
   3. Exactly one monitor client owns an emulator instance; a second connection is prevented or reported as an ownership conflict, and is never diagnosed as a wedged emulator.
   4. Against recorded and synthesised frames, the client survives byte-at-a-time delivery, a ~157 KB `DISPLAY_GET`, a zero-length `JAM`, an event interleaved between a request and its reply, a `CHECKPOINT_LIST` answering N+1 frames on one request id, an error reply typed `0x00`, a duplicate reply on a settled id, and a mid-stream desync — and it never resolves a pending request with a `0xffffffff` event, including when the event shares a response type with a legitimate reply.
   5. A user can ask which backend is active and which VICE version is connected and gets both; the version-gated capabilities of that build are determined at connect time rather than at first use, and an emulator that died or restarted underneath the client is reported distinctly from a timeout.
+
 **Plans**: TBD
 
 Notes:
+
 - This is the foundation everything after it builds on, which is why it is one phase despite carrying 16 requirements. Its three work streams are largely independent and can be planned in parallel: (a) the framing/correlation/demux client and its test fixtures, (b) broker launch flags plus single-client ownership, (c) config-driven selection and the connect handshake — (c) consumes (a)'s handshake, so it lands last.
 - **PROTO-03 and PROTO-04 are correctness-critical, not hardening.** Five unsolicited message types arrive at request-id `0xffffffff`, and `CHECKPOINT_INFO` (0x11) / `REGISTER_INFO` (0x31) share a response type with legitimate replies — resolving a pending request with one returns silently wrong data that looks right. `JAM` (0x61) has a zero-length body and breaks every client surveyed. Both belong here.
 - PROTO-08 and BROK-02 are two halves of one mechanism (exclusive per-instance ownership) and are deliberately in the same phase. Stock VICE services exactly one client; a second `connect()` sits unserviced in the backlog with no reply and no EOF, indistinguishable from a wedge.
@@ -116,17 +134,21 @@ Notes:
 - Never mint request id `0xffffffff`; keep the id a full uint32.
 
 ### Phase 3: Direct Tools
+
 **Goal**: Every tool with a 1:1 binary-monitor equivalent works on the stock backend
 **Depends on**: Phase 2
 **Requirements**: DIRECT-01, DIRECT-02, DIRECT-03, DIRECT-04, DIRECT-05, DIRECT-06, DIRECT-07, DIRECT-08, DIRECT-09
 **Success Criteria** (what must be TRUE):
+
   1. A user can read and write emulator memory and CPU registers on the stock backend, with reads side-effect-free by default — reading `$D019` does not acknowledge the IRQ — and no read forces a pause/resume round trip it does not need.
   2. A user can set, list, delete, toggle and condition checkpoints and watchpoints; conditions are emitted through a typed builder that parenthesises every comparison, emits `$hex` literals, and uses `RL`/`CY`, so a silently-always-false condition cannot be produced.
   3. A user can pause a freely-running emulator on demand and resume it, step instructions, and execute until return — with pause and resume idempotent, so an agent retry is a no-op rather than a second halt.
   4. A user can reset the machine, autostart a PRG or disk image, attach and detach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend.
+
 **Plans**: TBD
 
 Notes:
+
 - **Build the condition builder correctly here, not in Phase 6.** DIRECT-03 already covers conditions; the typed-AST approach (full parenthesisation, `$hex` literals, uppercase `RL`/`CY`) eliminates three independent traps at once and means Phase 6's GAIN-06 extends it with raster semantics rather than rewriting a string-concatenation path.
 - Run/stop state must be a projection of the event stream only, with an honest `unknown` state after connect — never derived from the commands sent. Every command halts the machine; resume is a separate `EXIT`. Gate commands on the derived state, cool resumes down, and never send from inside the event handler.
 - `stop: false` (trace) checkpoints emit one frame per hit synchronously from inside the CPU loop over a blocking socket, which can mutually deadlock client and emulator. Treat them as a dangerous capability: explicit opt-in, hot-range refusal, and a per-second rate limit that disables the offending checkpoint id.
@@ -134,18 +156,22 @@ Notes:
 - **Parallel:** memory/registers, checkpoints/watchpoints, execution control, and the machine-control group (reset/autostart/disks/input/snapshots/banks) are four largely independent tool families.
 
 ### Phase 4: Client-Side Tool Seam and 6510 Disassembler
+
 **Goal**: Client-side tools have a home that never sees a host-translated path, and the largest one — the disassembler several later tools depend on — works
 **Depends on**: Phase 3
 **Requirements**: DERIV-07, DISASM-01, DISASM-02, DISASM-03, DISASM-04, DISASM-05, DISASM-06, DISASM-07
 **Success Criteria** (what must be TRUE):
+
   1. Client-side tools are intercepted **before** `forwardToVice()` runs `rewriteArguments()` and live in sibling modules rather than in `vice-proxy.ts`; a test proves a derived tool receives the container path and never the host-translated one.
   2. A user can disassemble a memory range on the stock backend, and all 256 opcodes decode with correct instruction lengths — including the undocumented 6510 set and, in particular, the twelve `NOP` variants whose operand lengths desynchronise everything after them when wrong.
   3. Branch instructions render the resolved target address rather than the raw offset; a partial instruction at the end of a range is reported as truncated rather than fabricated; `JMP ($xxFF)` carries an explicit NMOS page-wrap warning; and symbol substitution is applied only where operand role and width prove it cannot change the encoding.
   4. Disassembly re-assembles through ACME, verified by a round-trip test whose exclusions are enumerated and asserted rather than skipped.
   5. The disassembler adds no npm dependency and no GPL-licensed material, and the opcode table's zlib provenance is attributed in the source and in third-party notices.
+
 **Plans**: TBD
 
 Notes:
+
 - **This phase answers the shared-seam question deliberately.** DERIV-07's interception point is built once here, and every later client-side tool routes through it: Phase 5's derivations and screenshots, and Phase 6's gains that compose multiple primitives. Building it in the phase that has the first and largest consumer avoids both a seam with no user and a seam retrofitted under three consumers at once.
 - The hazard being closed: `rewriteArguments()` runs at `vice-proxy.ts:2773` **inside** `forwardToVice()` and before `call()`. A derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container.
 - **Parallel, and the biggest parallelism win in the milestone:** the disassembler library (DISASM-02..07) is a pure function with no protocol dependency and no emulator requirement. It can be built and fully tested alongside Phase 2 or Phase 3. Only DISASM-01 — the tool that reads memory through the seam — needs Phase 3.
@@ -154,18 +180,22 @@ Notes:
 - Blocks: DERIV-02 (backtrace needs instruction lengths) and GAIN-01 (CPU-history decode uses the same table).
 
 ### Phase 5: Client-Side Derivations and Screenshots
+
 **Goal**: Tools the fork implemented inside the emulator work client-side on stock, including screenshots
 **Depends on**: Phase 4
 **Requirements**: DERIV-01, DERIV-02, DERIV-03, DERIV-04, DERIV-05, DERIV-06, SHOT-01, SHOT-02, SHOT-03, SHOT-04, SHOT-05
 **Success Criteria** (what must be TRUE):
+
   1. A user can search, compare and fill memory ranges, group checkpoints and set an ignore count, get a call backtrace, load a symbol file and see addresses resolved to symbol names, and inspect and set sprites including ASCII rendering — all on the stock backend.
   2. Decoded VIC-II and CIA state marks every internal field stock cannot read as explicitly unavailable, never reporting it as zero.
   3. A user capturing a screenshot on the stock backend receives a valid PNG at a returned file path, written directly to the container path with no host translation, and the incident record's "saved to" claim is verifiable against the file existing.
   4. Screenshot capture adds no npm dependency, and screenshot content is visible to Claude as an MCP image content block rather than only as a text-encoded data URI.
   5. `gatherWedgeEvidence()` no longer host-translates the screenshot path on the stock backend, and torn-frame behaviour is either avoided by capturing while paused or documented.
+
 **Plans**: TBD
 
 Notes:
+
 - Screenshots are a derived tool through Phase 4's seam, composing `DISPLAY_GET` + `PALETTE_GET` plus local encoding. The two calls can be issued concurrently — the client correlates by request id.
 - Encode with a ~50-line indexed-PNG writer over `node:zlib` (`crc32` since Node 22.2, `deflateSync` for the RFC 1950 stream `IDAT` needs). `DISPLAY_GET` INDEXED8 bytes are already PNG colour-type-3 pixel data — index `N` maps directly to palette entry `N`. `pngjs` cannot write indexed PNGs at all; native encoders are the wrong shape for an `npx`-distributed plugin.
 - Parse `BL`/`BD` off `4 + FL`, not the literal offsets 17/21 the probe hardcodes, and advance palette entries by `1 + IS`, not a fixed 4.
@@ -175,18 +205,22 @@ Notes:
 - **Parallel:** memory search/compare/fill, checkpoint groups, the symbol store, chip-state decode, sprites, and screenshots are six independent tool families. Only backtrace has an intra-milestone dependency (Phase 4's opcode table).
 
 ### Phase 6: Stock-Only Gains
+
 **Goal**: The three capability groups only stock VICE has become usable, with their traps closed rather than discovered later
 **Depends on**: Phase 5
 **Requirements**: GAIN-01, GAIN-02, GAIN-03, GAIN-04, GAIN-05, GAIN-06, GAIN-07, GAIN-08, GAIN-09
 **Success Criteria** (what must be TRUE):
+
   1. On a build that supports it, a user retrieves a CPU instruction-history trace with registers and cycle timestamps; on a build that does not, the tool explains what is missing and which version provides it, distinguishing "opcode absent" from "feature not compiled in".
   2. A user can set checkpoints and read registers and memory on a 1541 drive CPU; with true drive emulation disabled the tool reports that precondition explicitly instead of returning zeros that look like data.
   3. After a drive checkpoint hit, stepping and `@bank:` conditions still act on the CPU the user asked for — the tool either restores the contaminated state or refuses, and never silently steps the drive.
   4. A user can break at an exact raster line and cycle; a condition that would be silently always false — unparenthesised, bare-decimal, `LIN`/`CYC`, lowercase, or out of range for the machine's video standard — is refused with an explanation instead of being sent.
   5. A user can read the emulator's exact palette and get and set resources beyond today's whitelist, while resources that power-cycle the machine or break the monitor connection are denied outright and drive-resetting ones require explicit intent.
+
 **Plans**: TBD
 
 Notes:
+
 - **GAIN-05 is in the same phase as GAIN-03 by requirement, not by convenience.** Drive debugging is what creates `default_memspace` contamination: a drive checkpoint hit sets it at `monitor.c:3393-3396`, no binary-monitor command resets it, and afterwards `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the *drive* CPU while `@bank:` conditions fail outright. Shipping GAIN-03 without GAIN-05 silently breaks stepping for the rest of the session.
 - Drive reads on `x64sc` **always succeed** — `check_drive_emu_level_ok()` is a machine-capability check that always passes, so there is no protocol-level way to detect a stopped drive CPU. The real gate is `Drive8TrueEmulation` plus a non-zero `Drive8Type`, and setting TDE resets the drive CPU (destructive, must be labelled).
 - `CPUHISTORY_GET` needs VICE ≥ 3.10 (Debian and all current Ubuntu ship 3.9) **and** is compile-time optional even on 3.10+ — the two failures are distinguishable only by error code (`0x83` vs `0x8f`). Gate on the 4-byte version quad, never the SVN revision, which is zeros in distro builds. Clamp the count field to 65535.
@@ -195,35 +229,43 @@ Notes:
 - **Parallel:** the three research groups (A drive-CPU, B raster conditions, C resources/palette) are independent of each other. Within A, GAIN-03/04/05 are one unit.
 
 ### Phase 7: Cycle Timing and Wedge Triage
+
 **Goal**: "How long did that take" and "is the emulator still advancing" work on the stock backend
 **Depends on**: Phase 6
 **Requirements**: TIME-01, TIME-02, TIME-03, TIME-04
 **Success Criteria** (what must be TRUE):
+
   1. A user can measure elapsed CPU cycles on the stock backend on any supported VICE version, by a route whose socket cost has been measured against a real build rather than assumed.
   2. A user can run until an address is reached exactly, and cycle-bounded execution either works or reports its approximation and error bound honestly rather than implying precision it does not have.
   3. `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend: two samples straddling a resume, distinguishing advancing-but-jiffy-frozen from a tight loop.
+
 **Plans**: TBD
 
 Notes:
+
 - This phase must **resolve the CONFLICT and REFINEMENT blocks** in `.planning/notes/stock-vice-migration-revised-loss-ledger.md` rather than inherit them. Route 1 (reconstruct from `LIN`/`CYC` with a frame counter from an unconditioned non-stopping checkpoint at `$EA31`) costs ~50-60 unsolicited `CHECKPOINT_INFO` frames per second for as long as the stopwatch exists, emitted synchronously from inside the CPU loop. The REFINEMENT does not rescue it — every hit of a frame counter is a wanted hit, so a condition cannot reduce the traffic. Route 2 (the text monitor's real `stopwatch` over a concurrent `-remotemonitor`, which coexists with `-binarymonitor`) avoids it. Decide with measurement, and record the decision.
 - Route 2's dependency is why this phase sits after Phase 6: enabling the text monitor is either a broker launch flag or `RESOURCE_SET MonitorServer 1`, and keeping both options open means not blocking on a launch-flag decision made in Phase 2.
 - There is no monotonic cycle register. `LIN`/`CYC` are readable but wrap every frame, are derived from the CPU clock rather than the VIC-II raster counter (fixed phase offset from `$D012`), are identical across all memspaces, and are silently read-only.
 - Prefer registers over `$D012` for the advancing check, and add the jiffy clock at `$A0-$A2`. Both samples must straddle an `EXIT` or the values are frozen.
 
 ### Phase 8: Capability Surface, Docs, and Cross-Backend Verification
+
 **Goal**: A user knows what each backend gives them, can get there from a package manager, and the two backends' output has actually been compared
 **Depends on**: Phase 7
 **Requirements**: BACK-05, DIST-01, DIST-02, DIST-03, SKILL-01, VERIF-03
 **Success Criteria** (what must be TRUE):
+
   1. Every tool in the manifest declares its support level per backend, so a user can see what changes between them without running anything — no tool is removed and no single backend-agnostic flag is used.
   2. Calling a tool unsupported on the active backend returns an error naming the capability, the reason, and which backend provides it — never a silent wrong answer and never a no-op success.
   3. A new user can read which VICE they need, where to get it per platform, what differs per version, and that the fork is required for SID read-back and matrix keyboard.
   4. Installing the plugin plus a package-manager stock VICE is sufficient to drive the emulator end to end, verified on a clean machine or container rather than asserted.
   5. Tool output has been compared between backends for a known program using a harness that runs **two server processes**, one per backend, with every divergence either explained as expected or filed as a defect.
   6. No skill playbook instructs Claude to use a capability the active backend cannot provide without naming the stock-backend route or the fork requirement — covering `c64-program-recon`'s `vice_keyboard_matrix` instruction and whole-chip-read guidance, `c64-ram-capture`'s matrix-keyboard "hit any key" step, and `vice-wedge-triage`'s stopwatch bracket.
+
 **Plans**: TBD
 
 Notes:
+
 - **VERIF-03 is a harness design task, not a test run.** Backend selection is project-level — one backend per MCP server process — so both backends cannot be live in one process. The harness must stand up two servers, drive the same script through each, and diff structured output, with a documented divergence list (disassembly spelling, illegal-opcode rendering, and everything `docs/stock-vice-parity.md` §A.7 already licensed) treated as expected rather than as failures. Budget it as real work.
 - BACK-05 lands here rather than in Phase 2 because the error it returns must name the capability and the restoring backend, which requires the completed per-backend capability matrix — and that requires the full tool inventory from Phases 3-7.
 - BACK-05 also carries the runtime half of the skill-methodology problem: `vice_keyboard_matrix` on stock must say "the fork backend provides this" instead of doing nothing. See Coverage Notes for the prose half.
@@ -252,6 +294,7 @@ requirement covers revising that **playbook prose**:
 - BACK-05 covers the *runtime* symptom — a stock-backend call to a fork-only
   tool now names the capability and the backend that restores it, instead of
   silently doing nothing.
+
 - DIST-02 covers *install* documentation, not skill methodology.
 
 So the failure mode is caught at runtime but the playbooks still tell Claude to
