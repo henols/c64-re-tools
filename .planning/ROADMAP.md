@@ -80,13 +80,19 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The same documents no longer assert that pause-on-demand requires a checkpoint, that `REGISTERS_GET` cannot source a stopwatch, or that CPU history's compile flag is the availability risk — and they name VICE ≥ 3.10 as the real gate. `.planning/intel/constraints.md` agrees and `CON-stopwatch-via-cpuhistory` is no longer marked PROVISIONAL-on-CPU-history.
   3. `probe-binmon.mjs` has been run against a real stock `x64sc -binarymonitor` and its output is recorded in the repo: api version, the VICE version quad, whether `CPUHISTORY_GET` succeeds or fails with `0x83` versus `0x8f`, `DISPLAY_GET` geometry, `PALETTE_GET` entry count, and the observed unsolicited event sequence.
   4. Each of the five items the research flagged UNVERIFIED is either answered by that probe run or recorded as an accepted unknown that states what breaks if the assumption is wrong.
-**Plans**: TBD
+**Plans:** 4 plans in 2 waves
+
+Plans:
+- [ ] 01-01-PLAN.md — Correct the two normative protocol documents (`phase0-binmon-findings.md`, `stock-vice-parity.md`): RL/CY, pause-on-demand, stopwatch, version gate, 3-to-5 event types [wave 1]
+- [ ] 01-02-PLAN.md — Bring `constraints.md` into agreement (4 CON blocks) and fully correct the `roadmap-stock-vice.md` ADR [wave 1]
+- [ ] 01-03-PLAN.md — Extend `probe-binmon.mjs` to cover PALETTE_GET, RL/CY conditions, 8-vs-9-byte CHECKPOINT_SET, Drive8TrueEmulation, drive-ROM MEM_SET, event pair, pixel check, plus an offline `--selftest` [wave 1]
+- [ ] 01-04-PLAN.md — Run the probe against stock 3.9 and fork 3.10, record `docs/phase1-probe-results.md`, close the two "probe outstanding" references [wave 2]
 
 Notes:
 - This phase exists because `docs/phase0-binmon-findings.md` is **normative by ingest resolution W2** and currently contains four verified errors. Any later phase that derives protocol design from it inherits them — most sharply, a checkpoint condition written on `LIN` instead of `RL` fails at runtime with `0x8f`, and the condition parser gives no diagnostic back over the socket.
 - VERIF-01 has never been run. It gates timing design (Phase 7) and screenshot design (Phase 5), and five items in `GAINS-PROTOCOL.md` route to it.
-- **Parallel:** the doc corrections and the probe run are fully independent — two plans, no ordering between them.
-- **External prerequisite:** the probe needs a real VICE build and a display on the host; this repo's container has neither. This is the phase's only blocking dependency and should be confirmed available before planning.
+- **Parallel:** the doc corrections and the probe run are fully independent — no ordering between them. Realised as three Wave-1 plans (01-01 docs, 01-02 intel+ADR, 01-03 probe extension) with disjoint file ownership, plus a Wave-2 plan (01-04) that runs the probe and cross-links the result into the files the Wave-1 plans own.
+- **External prerequisite — RESOLVED (verified 2026-08-12, planning).** This session runs on the host, not in a container. Both builds are present: `/usr/bin/x64sc` is stock VICE 3.9 and `/usr/local/bin/x64sc` is the barryw fork built from a VICE 3.10 tree; both expose `-binarymonitor`/`-binarymonitoraddress`, `DISPLAY=:0` and Wayland are available, and Node is v22.22.0. Having both builds gives a real `CPUHISTORY_GET` differential (expect `0x83` on 3.9, success on 3.10). The remaining gap — no *stock* 3.10 build — is recorded as an accepted unknown under success criterion 4, not treated as a blocker.
 - Probe additions worth folding in while it is being run: a 9-byte `CHECKPOINT_SET` against 3.9, whether `Drive8TrueEmulation` exists under that name on 3.9, `MEM_SET` into drive ROM, whether `ADVANCE_INSTRUCTIONS` emits a `RESUMED`/`STOPPED` pair, and one `DISPLAY_GET` pixel checked against the known colour at that position.
 
 ### Phase 2: Stock Backend Connection
@@ -275,7 +281,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Corrected Ground Truth | 0/TBD | Not started | - |
+| 1. Corrected Ground Truth | 0/4 | Planned | - |
 | 2. Stock Backend Connection | 0/TBD | Not started | - |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
