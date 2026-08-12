@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { hostPath } from "./hostpath.ts";
+import { repoRoot } from "./repo-root.ts";
 import {
   hostRootCandidates,
   containerPath,
@@ -20,9 +21,13 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(HERE, "containerpath.ts");
-// Same derivation containerpath.ts itself uses (env-first, else four
-// levels up from this directory) -- not a second, possibly-diverging guess.
-const CONTAINER_WS = process.env.CONTAINER_WORKSPACE_PATH || resolve(HERE, "..", "..", "..", "..");
+// Same derivation containerpath.ts itself uses (env-first, else repoRoot()
+// off this file's own location) -- not a second, possibly-diverging guess.
+// This deliberately does NOT hard-code a four-level hop: containerpath.ts
+// dropped that count when it moved out of .claude/skills/, and a fixed count
+// resolved one level above the real repo root here, which silently made the
+// round-trip and captured-grant expectations below disagree with the module.
+const CONTAINER_WS = process.env.CONTAINER_WORKSPACE_PATH || repoRoot({ from: HERE });
 
 function firstNonInternalIPv4(): string | null {
   for (const addrs of Object.values(networkInterfaces())) {
@@ -35,20 +40,36 @@ function firstNonInternalIPv4(): string | null {
 
 // ---------------------------------------------------------------- round-trip
 
+// HOST_WORKSPACE_PATH is set for the duration of this one test so translation
+// is genuinely EXERCISED wherever the suite runs. Without it, hostPath() falls
+// through to the mountinfo branch, which on a bare host returns the path
+// unchanged -- the round-trip then holds only trivially, and the assertion that
+// it "must actually translate" fails through no fault of the code under test.
+// A synthetic host root (not a real directory) keeps the mapping unambiguous
+// and independent of how this machine happens to be mounted.
+const SYNTHETIC_HOST_WS = "/synthetic-host-root/workspace";
+
 test("round-trip: containerPath(hostPath(p)) === p, for the workspace root, a .vice-supervisor path, and an ordinary file", () => {
   const cases = [
     CONTAINER_WS,
     join(CONTAINER_WS, ".vice-supervisor", "6520", "epoch.json"),
     join(CONTAINER_WS, ".claude", "CLAUDE.md"),
   ];
-  for (const p of cases) {
-    const h = hostPath(p);
-    assert.notEqual(
-      h,
-      p,
-      `hostPath(${p}) must actually translate in this environment for this round-trip to be meaningful`
-    );
-    assert.equal(containerPath(h), p, `containerPath(hostPath(${p})) must equal ${p}`);
+  const prev = process.env.HOST_WORKSPACE_PATH;
+  process.env.HOST_WORKSPACE_PATH = SYNTHETIC_HOST_WS;
+  try {
+    for (const p of cases) {
+      const h = hostPath(p, { workspaceRoot: CONTAINER_WS });
+      assert.notEqual(
+        h,
+        p,
+        `hostPath(${p}) must actually translate in this environment for this round-trip to be meaningful`
+      );
+      assert.equal(containerPath(h), p, `containerPath(hostPath(${p})) must equal ${p}`);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.HOST_WORKSPACE_PATH;
+    else process.env.HOST_WORKSPACE_PATH = prev;
   }
 });
 

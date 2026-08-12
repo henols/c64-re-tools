@@ -371,19 +371,29 @@ test("hostLaunchInstructions(): contains exactly one resolved host path, names t
   assert.match(text, /respawn/i, "must describe the broker respawning a crashed instance with backoff");
 });
 
-test("hostLaunchInstructions(): the named exit codes match what containerGuardEnforce()/containerGuardReport() actually return in this (containerized) environment", () => {
+test("hostLaunchInstructions(): the named exit codes match what containerGuardEnforce()/containerGuardReport() return for a container", () => {
   const root = mkdtempSync(join(tmpdir(), "vice-hostlaunch-exitcodes-"));
   const text = hostLaunchInstructions(root);
 
-  // This test process is itself running inside the devcontainer, so both
-  // guard functions fire for real here -- no stubbed deps needed. Plan 01's
-  // own container-guard.test.ts asserts the SAME two values (2 refuse, 3
-  // report); this test compares hostLaunchInstructions()'s PROSE against
-  // those same live-computed numbers rather than a second hardcoded literal.
-  const enforceRc = containerGuardEnforce();
-  const reportRc = containerGuardReport();
-  assert.equal(enforceRc, 2, "sanity: containerGuardEnforce() must refuse with exit 2 inside this container");
-  assert.equal(reportRc, 3, "sanity: containerGuardReport() must report exit 3 inside this container");
+  // The guard only refuses INSIDE a container, so the two codes below are
+  // computed against injected deps that fire exactly one signal
+  // (CONTAINER_WORKSPACE_PATH) rather than against this process's own
+  // environment. That keeps the numbers live-computed from the guard itself --
+  // the point of this test, versus a second hardcoded literal -- while letting
+  // the suite pass on a bare host as well as in the devcontainer, where
+  // reading the ambient environment returned 0 and failed the sanity check.
+  // Plan 01's own container-guard.test.ts asserts the SAME two values
+  // (2 refuse, 3 report).
+  const containerDeps = {
+    fileExists: () => false,
+    readFile: () => "",
+    env: { CONTAINER_WORKSPACE_PATH: "/workspaces/c64-re-tools" } as NodeJS.ProcessEnv,
+    runSystemdDetectVirt: () => null,
+  };
+  const enforceRc = containerGuardEnforce(containerDeps);
+  const reportRc = containerGuardReport(containerDeps);
+  assert.equal(enforceRc, 2, "sanity: containerGuardEnforce() must refuse with exit 2 for a container");
+  assert.equal(reportRc, 3, "sanity: containerGuardReport() must report exit 3 for a container");
 
   assert.match(text, new RegExp(`exit ${enforceRc}\\b`), `hostLaunchInstructions() must name the guard's actual refusal exit code (${enforceRc})`);
   assert.match(text, /--check-container/, "must name the diagnostic flag for the full per-signal breakdown");

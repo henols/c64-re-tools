@@ -173,15 +173,26 @@ test("resolveControlTarget(): a record carrying 0.0.0.0 never yields it as the d
   });
 });
 
-test("resolveControlTarget(): neither 127.0.0.1 nor localhost in the record ever surfaces as the dial target, with no override set", async () => {
+test("resolveControlTarget(): neither 127.0.0.1 nor localhost in the record is ever TRUSTED as the dial target, with no override set", async () => {
   await withEnv("VICE_BROKER_CONTROL_DIAL_HOST", undefined, () => {
     for (const recordedHost of ["127.0.0.1", "localhost"]) {
       const result = resolveControlTarget({ control_host: recordedHost }, 6600);
       assert.equal(result.ok, true, `must resolve ok for recorded host ${recordedHost}: ${JSON.stringify(result)}`);
       if (!result.ok) return;
-      assert.notEqual(result.target.host, recordedHost, `the recorded value ${recordedHost} must never become the dial target`);
-      assert.equal(result.target.host, mcpHost());
-      assert.equal(result.target.recorded, recordedHost);
+      // `source` is the guard-removal-sensitive assertion here, NOT a string
+      // comparison against the recorded host: it proves the value came from
+      // alias resolution rather than from the record. On a bare host mcpHost()
+      // legitimately IS 127.0.0.1, so a `notEqual(host, recordedHost)` check
+      // fails there for a correct implementation -- it only ever held because
+      // this suite assumed it ran inside the devcontainer.
+      assert.equal(result.target.source, "bridge_alias", `${recordedHost} must be resolved via the bridge alias, never echoed from the record`);
+      assert.equal(result.target.host, mcpHost(), "the resolved host must be exactly what mcpHost() answers");
+      assert.equal(result.target.recorded, recordedHost, "the record's own control_host is carried through for diagnostics only");
+      // Where the environment's alias genuinely differs from the recorded
+      // value (any container), additionally prove it never surfaces verbatim.
+      if (mcpHost() !== recordedHost) {
+        assert.notEqual(result.target.host, recordedHost, `the recorded value ${recordedHost} must never become the dial target`);
+      }
     }
   });
 });
