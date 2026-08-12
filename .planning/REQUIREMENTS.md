@@ -21,7 +21,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [ ] **BACK-02**: User running the fork backend sees behaviour identical to v0.1.x — no regression in any tool
 - [ ] **BACK-03**: User can ask which backend is active and which VICE version is connected, and gets an answer naming both
 - [ ] **BACK-04**: Server detects at connect time whether the connected VICE supports each version-gated capability, rather than failing at first use
-- [ ] **BACK-05**: Calling a tool unsupported on the active backend returns an error that names the capability, the reason, and which backend provides it — never a silent wrong answer
+- [ ] **BACK-05**: Calling a tool the active backend does not advertise returns an error that names the capability, the reason, and which backend provides it — not a generic unknown-tool error, and never a silent wrong answer. Under D-07 the manifest is trimmed per backend, so on stock this is the out-of-manifest `tools/call` path rather than a present-but-refusing tool
 
 ### Protocol client
 
@@ -101,7 +101,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Distribution and documentation
 
-- [ ] **DIST-01**: Every tool declares its support level per backend, so a user can see what changes between them
+- [ ] **DIST-01**: The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — including tools absent from the active backend's trimmed manifest (D-07)
 - [ ] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
 - [ ] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
 

@@ -31,11 +31,17 @@ silently dropped. See `.planning/INGEST-CONFLICTS.md` § RESOLVED.
 ## DEC-preserve-mcp-surface
 
 - **source:** `docs/roadmap-stock-vice.md`
-- **status:** proposed (not locked)
+- **status:** **SUPERSEDED on the surface-shape point by Phase 2 D-07 (2026-08-12)**
 - **scope:** MCP tool surface / blast radius
-- **decision:** The stdio MCP surface Claude Code sees stays unchanged. The single
-  seam to swap is `vice.ts`'s `call()` (plus `vice-sync.ts`). The 63-tool surface
-  is preserved in shape.
+- **decision (superseded part):** ~~The 63-tool surface is preserved in shape across
+  both backends.~~ D-07 replaces this: the manifest is **trimmed per backend**,
+  permanently — stock advertises only the tools it implements, so the two backends
+  expose different tool lists. A tool advertised on both keeps the same name and
+  argument shape, and the fork's list is unchanged from v0.1.x.
+- **decision (still standing):** The single seam to swap for *direct* tools is
+  `vice.ts`'s `call()` (plus `vice-sync.ts`); derived tools intercept before
+  `forwardToVice()`. There must be no fall-through from the stock dispatch path to
+  the fork's HTTP forward (D-09).
 
 ## DEC-server-logic-moves-client-side
 

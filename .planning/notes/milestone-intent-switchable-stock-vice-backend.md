@@ -53,8 +53,14 @@ Rejected alternatives, recorded for the ADR:
 
 - *Backend follows the emulator (probe at launch + explicit override)* — richer UX,
   best serves "install stock VICE and go", but adds detection machinery.
+  **→ REVERSED by D-07's sibling decision D-01 (2026-08-12): this is now the chosen
+  mechanism.** The backend is **detected** once when the broker first starts and
+  cached; `VICE_BACKEND` becomes an explicit **override**, not a required setting.
+  BACK-01 still holds — one config value still switches backends. The detection
+  machinery priced in above turned out to be a single cached probe. The
+  discriminator is `-mcpserver`, not `-binarymonitor` (the fork accepts both).
 - *Explicit per-instance at launch* (`vice_start({ backend })`) — fully deterministic,
-  allows both backends concurrently.
+  allows both backends concurrently. **Still rejected.**
 
 **Known consequence of the project-level choice:** you **cannot run both backends
 side by side** in one server process. That directly affects
@@ -75,12 +81,20 @@ Hard constraint attached: **`CPUHISTORY_GET` (0x86) requires VICE ≥ 3.10.**
 Debian trixie/forky/sid and all current Ubuntu ship 3.9, which lacks the opcode.
 Detect via `VICE_INFO` (0x85) + trial 0x86; degrade gracefully.
 
-### Degraded-tool policy: keep every tool, annotate per backend
+### Degraded-tool policy: keep every tool, annotate per backend — **REVERSED by D-07 (2026-08-12)**
 
-No tool is removed from `tools-manifest.json`. Support is annotated **per backend**,
+> **This section is no longer authoritative.** Phase 2 decision D-07 reverses it:
+> the manifest **is** trimmed per backend, permanently, and the two backends
+> expose different tool lists. What survives from this section: the rejection of
+> a single backend-agnostic `degraded` flag (still lossy), and the requirement
+> that the user be told which backend restores a capability — which now lands as
+> documentation (DIST-01) plus an out-of-manifest call error (BACK-05).
+> See `.planning/phases/02-stock-backend-connection/02-CONTEXT.md` D-07/D-08/D-09.
+
+~~No tool is removed from `tools-manifest.json`. Support is annotated **per backend**,
 so the client can tell the user which backend restores a capability. A single
 backend-agnostic `degraded` flag was rejected as lossy; removing tools was rejected
-because the surface would change shape between backends.
+because the surface would change shape between backends.~~
 
 ### SID read-back: no mitigation to build
 

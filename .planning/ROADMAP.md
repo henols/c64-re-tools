@@ -39,8 +39,16 @@ without adding a check that the test suite does not already run.
   show the fork path exercised. **Decision: one criterion in Phase 2, plus a
   standing regression gate — not a criterion repeated per phase.**
 
-- **The stdio MCP surface must not change.** Same tool names and argument shapes
-  across both backends, so the six skills keep working.
+- **The stdio MCP surface is trimmed per backend, not made uniform.** Stock
+  advertises only the tools it actually implements, so the two backends expose
+  **different tool lists** — this is the shipped end state, not scaffolding
+  (Phase 2, D-07). What does not change: a tool advertised on both backends has
+  the **same name and the same argument shape** on both, and the fork backend's
+  advertised list is unchanged from v0.1.x. Consequence, carried by SKILL-01:
+  a skill written against the full fork surface **breaks** on stock rather than
+  degrading, so the playbooks must name the stock route or the fork requirement.
+  **This supersedes** the earlier "the surface must not change" constraint and
+  `.planning/intel/decisions.md`'s `DEC-preserve-mcp-surface`.
 
 - **The broker's single-owner `inFlight` launch guard stays a synchronous
   check-and-set with no `await` between.** It exists because of the 2026-08-01
@@ -255,8 +263,8 @@ Notes:
 **Requirements**: BACK-05, DIST-01, DIST-02, DIST-03, SKILL-01, VERIF-03
 **Success Criteria** (what must be TRUE):
 
-  1. Every tool in the manifest declares its support level per backend, so a user can see what changes between them without running anything — no tool is removed and no single backend-agnostic flag is used.
-  2. Calling a tool unsupported on the active backend returns an error naming the capability, the reason, and which backend provides it — never a silent wrong answer and never a no-op success.
+  1. The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — the manifest itself is trimmed per backend (D-07), so this declaration lives in documentation and covers tools absent from the active backend's list.
+  2. Calling a tool the active backend does not advertise returns an error naming the capability, the reason, and which backend provides it — not a generic unknown-tool error, never a silent wrong answer, and never a no-op success. On stock this is the out-of-manifest call path, since the tool is absent from `tools/list` rather than present-and-refusing.
   3. A new user can read which VICE they need, where to get it per platform, what differs per version, and that the fork is required for SID read-back and matrix keyboard.
   4. Installing the plugin plus a package-manager stock VICE is sufficient to drive the emulator end to end, verified on a clean machine or container rather than asserted.
   5. Tool output has been compared between backends for a known program using a harness that runs **two server processes**, one per backend, with every divergence either explained as expected or filed as a defect.
@@ -268,7 +276,7 @@ Notes:
 
 - **VERIF-03 is a harness design task, not a test run.** Backend selection is project-level — one backend per MCP server process — so both backends cannot be live in one process. The harness must stand up two servers, drive the same script through each, and diff structured output, with a documented divergence list (disassembly spelling, illegal-opcode rendering, and everything `docs/stock-vice-parity.md` §A.7 already licensed) treated as expected rather than as failures. Budget it as real work.
 - BACK-05 lands here rather than in Phase 2 because the error it returns must name the capability and the restoring backend, which requires the completed per-backend capability matrix — and that requires the full tool inventory from Phases 3-7.
-- BACK-05 also carries the runtime half of the skill-methodology problem: `vice_keyboard_matrix` on stock must say "the fork backend provides this" instead of doing nothing. See Coverage Notes for the prose half.
+- BACK-05 also carries the runtime half of the skill-methodology problem: `vice_keyboard_matrix` on stock must say "the fork backend provides this" instead of doing nothing. Under D-07 that tool is **absent** from stock's `tools/list`, so BACK-05's error is raised on an out-of-manifest `tools/call` — an MCP client may call a tool it was never advertised, and that is the case this criterion covers. See Coverage Notes for the prose half.
 - **Parallel:** the manifest annotation, the install/version documentation, and the parity harness are three independent plans.
 
 ## Coverage Notes
