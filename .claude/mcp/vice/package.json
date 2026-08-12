@@ -56,6 +56,8 @@
   ],
   "scripts": {
     "test": "node --test '*.test.*'",
+    "test:automated": "node test-gate.mjs",
+    "test:manual": "node test-gate.mjs --manual",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node build.ts",
     "smoke": "node smoke.mjs"
