@@ -582,6 +582,192 @@ async function main() {
     console.log(`6. ASYNC EVENTS    -> FAILED (${e.message})`);
   }
 
+  // 7. PALETTE_GET entry count (hard requirement of success criterion 3).
+  try {
+    const r = await mon.send(CMD.PALETTE_GET, paletteGetBody());
+    if (r.errCode !== 0x00) {
+      results.palette = null;
+      console.log(`7. PALETTE_GET     -> ${ERR_NAME[r.errCode] || r.errCode}`);
+    } else {
+      const pal = parsePalette(r.body);
+      results.palette = pal;
+      const first = pal.entries[0] || {};
+      console.log(
+        `7. PALETTE_GET     -> OK, ${pal.count} entries, first RGB=(${first.r},${first.g},${first.b})`,
+      );
+    }
+  } catch (e) {
+    results.palette = null;
+    console.log(`7. PALETTE_GET     -> FAILED (${e.message})`);
+  }
+
+  // 8. DISPLAY_GET pixel vs the live $D020/$D021 border/background register
+  //    (UNVERIFIED item 5, second half). Do not hardcode a default colour —
+  //    read the live registers via MEM_GET instead (research assumption A2).
+  try {
+    const memR = await mon.send(CMD.MEM_GET, memGetBody({ start: 0xd020, end: 0xd021, memspace: 0x00 }));
+    // MEM_GET response body: [len:u16LE][data...]
+    const dataLen = memR.body.readUInt16LE(0);
+    const memData = memR.body.subarray(2, 2 + dataLen);
+    const borderReg = memData[0] & 0x0f;
+    const bgReg = memData.length >= 2 ? memData[1] & 0x0f : null;
+
+    const dispR = await mon.send(CMD.DISPLAY_GET, Buffer.from([0x00, 0x00]));
+    if (dispR.errCode !== 0x00) {
+      results.pixelCheck = false;
+      console.log(`8. PIXEL vs $D020  -> DISPLAY_GET ${ERR_NAME[dispR.errCode] || dispR.errCode}`);
+    } else {
+      const disp = parseDisplayGet(dispR.body);
+      console.log(
+        `   geometry: dw=${disp.dw} dh=${disp.dh} xo=${disp.xo} yo=${disp.yo} iw=${disp.iw} ih=${disp.ih} bpp=${disp.bpp}`,
+      );
+      const borderIdx = disp.buffer[4 * disp.dw + 4];
+      const borderRgb = results.palette && results.palette.entries[borderIdx];
+      const borderMatch = borderIdx === borderReg;
+      results.pixelCheck = borderMatch;
+      console.log(
+        `8. PIXEL vs $D020  -> corner(4,4) index=${borderIdx} expected(masked $D020)=${borderReg} ${borderMatch ? "MATCH" : "MISMATCH"}${borderRgb ? ` rgb=(${borderRgb.r},${borderRgb.g},${borderRgb.b})` : ""}`,
+      );
+      const cx = Math.floor(disp.dw / 2);
+      const cy = Math.floor(disp.dh / 2);
+      const centreIdx = disp.buffer[cy * disp.dw + cx];
+      console.log(
+        `   centre(${cx},${cy}) index=${centreIdx} vs expected(masked $D021)=${bgReg} (informational only; may land on a glyph)`,
+      );
+    }
+  } catch (e) {
+    results.pixelCheck = false;
+    console.log(`8. PIXEL vs $D020  -> FAILED (${e.message})`);
+  }
+
+  // 9. CHECKPOINT_SET: 8-byte vs 9-byte body (UNVERIFIED item 1). Both
+  //    checkpoints are disabled + temporary so neither perturbs execution,
+  //    and both are deleted immediately so nothing leaks into later checks.
+  try {
+    const body8 = checkpointSetBody({ start: 0xea31, end: 0xea31, stop: 1, enabled: 0, ops: 0x04, temporary: 1 });
+    const r8 = await mon.send(CMD.CHECKPOINT_SET, body8);
+    const err8 = ERR_NAME[r8.errCode] || r8.errCode;
+    const cpNum8 = r8.errCode === 0x00 ? parseCheckpointInfo(r8.body).checkpointNum : null;
+
+    const body9 = checkpointSetBody({
+      start: 0xea31,
+      end: 0xea31,
+      stop: 1,
+      enabled: 0,
+      ops: 0x04,
+      temporary: 1,
+      memspace: 0x00,
+    });
+    const r9 = await mon.send(CMD.CHECKPOINT_SET, body9);
+    const err9 = ERR_NAME[r9.errCode] || r9.errCode;
+    const cpNum9 = r9.errCode === 0x00 ? parseCheckpointInfo(r9.body).checkpointNum : null;
+
+    results.checkpointSet8 = err8;
+    results.checkpointSet9 = err9;
+    console.log(`9. CHECKPOINT_SET  -> 8-byte: ${err8}  9-byte(+memspace): ${err9}`);
+
+    if (cpNum8 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum8));
+    if (cpNum9 !== null) await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum9));
+  } catch (e) {
+    console.log(`9. CHECKPOINT_SET  -> FAILED (${e.message})`);
+  }
+
+  // 10. RL/CY conditions: accepted, and actually firing (UNVERIFIED item 4's
+  //     answerable half; the empirical proof behind DOC-02).
+  try {
+    const fullRange = checkpointSetBody({ start: 0x0000, end: 0xffff, stop: 1, enabled: 1, ops: 0x04, temporary: 0 });
+    const rSet = await mon.send(CMD.CHECKPOINT_SET, fullRange);
+    if (rSet.errCode !== 0x00) {
+      console.log(`10. RL/CY CONDITION -> CHECKPOINT_SET FAILED (${ERR_NAME[rSet.errCode] || rSet.errCode})`);
+    } else {
+      const cpNum = parseCheckpointInfo(rSet.body).checkpointNum;
+
+      // (a) token differential: correct-token condition, then the LIN/CYC
+      //     negative control on the SAME checkpoint.
+      const rlcyCond = await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(RL == $64) && (CY == $14)"));
+      const linCycCond = await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(LIN == $64) && (CYC == $14)"));
+      results.rlCyAccepted = rlcyCond.errCode === 0x00;
+      results.linCycRejected = linCycCond.errCode !== 0x00;
+      console.log(
+        `10a. RL/CY vs LIN/CYC -> RL/CY: ${ERR_NAME[rlcyCond.errCode] || rlcyCond.errCode}  LIN/CYC: ${ERR_NAME[linCycCond.errCode] || linCycCond.errCode}`,
+      );
+
+      // (b) fire test: relax to a reachable single-token condition, resume,
+      //     and check hit_count transitioned from 0.
+      await mon.send(CMD.CONDITION_SET, conditionSetBody(cpNum, "(RL == $64)"));
+      await mon.send(CMD.EXIT);
+      await sleep(500);
+      const cpGet = await mon.send(CMD.CHECKPOINT_GET, cpNumBody(cpNum));
+      const hitCount = cpGet.errCode === 0x00 ? parseCheckpointInfo(cpGet.body).hitCount : null;
+      results.conditionFired = hitCount != null && hitCount > 0;
+      console.log(
+        `10b. FIRE TEST      -> hitCount=${hitCount != null ? hitCount : "?"} ${hitCount > 0 ? "FIRED" : "did not fire"}; events so far: ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
+      );
+
+      // (c) cleanup: conditions cannot be read back or cleared and leak with
+      //     their checkpoint, so delete it now before any later check runs.
+      await mon.send(CMD.CHECKPOINT_DELETE, cpNumBody(cpNum));
+    }
+  } catch (e) {
+    console.log(`10. RL/CY CONDITION -> FAILED (${e.message})`);
+  }
+
+  // 11. Drive8TrueEmulation under that exact name (UNVERIFIED item 2).
+  try {
+    const tde = await mon.send(CMD.RESOURCE_GET, resourceGetBody("Drive8TrueEmulation"));
+    const tdeParsed = parseResource(tde);
+    const driveType = await mon.send(CMD.RESOURCE_GET, resourceGetBody("Drive8Type"));
+    const driveTypeParsed = parseResource(driveType);
+
+    let fallback = null;
+    if (tdeParsed.missing) {
+      const fb = await mon.send(CMD.RESOURCE_GET, resourceGetBody("DriveTrueEmulation"));
+      fallback = parseResource(fb);
+    }
+
+    results.tdeOn = !tdeParsed.missing && tdeParsed.type === "int" && tdeParsed.value !== 0;
+    results.driveTypeNonZero = !driveTypeParsed.missing && driveTypeParsed.type === "int" && driveTypeParsed.value !== 0;
+
+    console.log(
+      `11. Drive8TrueEmulation -> ${tdeParsed.missing ? "OBJECT_MISSING (does-not-exist or NULL string, not distinguishable on the wire)" : `${tdeParsed.type}=${tdeParsed.value}`}`,
+    );
+    console.log(
+      `    Drive8Type          -> ${driveTypeParsed.missing ? "OBJECT_MISSING" : `${driveTypeParsed.type}=${driveTypeParsed.value}`}`,
+    );
+    if (fallback) {
+      console.log(
+        `    DriveTrueEmulation (fallback name) -> ${fallback.missing ? "OBJECT_MISSING" : `${fallback.type}=${fallback.value}`}`,
+      );
+    }
+  } catch (e) {
+    console.log(`11. Drive8TrueEmulation -> FAILED (${e.message})`);
+  }
+
+  // 12. Does ADVANCE_INSTRUCTIONS emit a RESUMED/STOPPED pair? (ROADMAP's
+  //     separately-listed probe addition; feeds criterion 3's "observed
+  //     unsolicited event sequence". Does not assert a specific answer.)
+  try {
+    const before = mon.events.length;
+    const stepBody = Buffer.alloc(3);
+    stepBody[0] = 0x00;
+    stepBody.writeUInt16LE(1, 1);
+    await mon.send(CMD.ADVANCE_INSTRUCTIONS, stepBody);
+    await sleep(150);
+    const slice = mon.events.slice(before).map((e) => e.name);
+    results.advanceEventSlice = slice;
+    let verdict;
+    if (slice.length === 2 && slice[0] === "RESUMED" && slice[1] === "STOPPED") {
+      verdict = "RESUMED then STOPPED";
+    } else if (slice.length === 1 && slice[0] === "STOPPED") {
+      verdict = "STOPPED only";
+    } else {
+      verdict = slice.length ? "other" : "no events";
+    }
+    console.log(`12. ADVANCE_INSTRUCTIONS event pair -> [${slice.join(", ") || "none"}] (${verdict})`);
+  } catch (e) {
+    console.log(`12. ADVANCE_INSTRUCTIONS event pair -> FAILED (${e.message})`);
+  }
+
   // Resume the machine and disconnect cleanly.
   try {
     await mon.send(CMD.EXIT);
