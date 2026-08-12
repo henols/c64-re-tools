@@ -2,6 +2,12 @@
 
 > Status: proposed. This document is the reference for the migration; the actual
 > work happens on a dedicated implementation branch.
+>
+> **Corrected 2026-08-12 (Phase 1):** the on-demand-halt behavior and the
+> unsolicited-event set below were wrong and have been corrected in place.
+> `docs/phase0-binmon-findings.md` is the normative source for binary-monitor
+> protocol facts (resolution W2) — consult it, not this ADR, for anything not
+> explicitly restated here.
 
 ## The core finding (why this matters)
 
@@ -58,18 +64,23 @@ client-side**).
   only. **This is the #1 de-risk item.**
 - **Low-level keyboard** (key press/release, matrix, chord, RESTORE/NMI): feed (0x72)
   injects text only; holds/matrix/NMI likely unsupported → partial/degraded.
-- **Explicit pause-now**: binary monitor stop/continue is monitor-entry/checkpoint
-  driven; "pause on demand" needs a workaround (temp checkpoint / monitor open).
 - **disk_read_sector**: parse the `.d64` directly (already done in the
   `c64-ram-capture` skill's `d64-parse.mjs`), not via the monitor.
 - **Deep internal chip state** beyond memory-mapped registers: not exposed.
+
+**Resolved (2026-08-12, Phase 1):** on-demand halting of a free-running machine
+is not a gap. `monitor_check_binary()` calls `monitor_startup_trap()` on any
+inbound byte (`monitor_binary.c:281`), invoked every vsync from
+`monitor_vsync_hook` (`monitor.c:395`), so a bare `PING` (0x81) halts the
+machine within roughly one frame and emits `STOPPED` (0x62). No temporary
+checkpoint or monitor-open workaround is required.
 
 ## Doability
 
 **Yes — doable.** ~85–90% of the surface is either direct (A) or a straightforward
 client-side derivation (B). It is an engineering effort, not a research dead-end.
-Residual risk concentrates in group C — chiefly cycle-accurate timing and the
-run/pause model.
+Residual risk concentrates in group C — chiefly cycle-accurate timing; on-demand
+halting is settled (see "Resolved" note above).
 
 ## What it buys you
 
@@ -83,11 +94,18 @@ run/pause model.
 ## Phased plan
 
 - **Phase 0 — De-risk (do first):** probe a stock `x64sc -binarymonitor` for (a) elapsed
-  cycle count, (b) the pause/continue model, (c) Display Get format. Decide the timing
-  fallback. Small throwaway TCP probe.
-- **Phase 1 — Binary-monitor client:** TCP framing (STX 0x02, length, cmd, request-id,
-  little-endian), request/response correlation, async stopped/resumed events, reconnect
-  — behind the existing `call()` seam so the rest of the tree is untouched.
+  cycle count, (b) that the `STOPPED` event actually arrives on a bare `PING` as the
+  source predicts (the on-demand-halt behavior itself is already settled from source,
+  not unknown), (c) Display Get format. Decide the timing fallback. Small throwaway
+  TCP probe.
+- **Phase 1 — Binary-monitor client:** an 11-byte request header (STX, api_version,
+  body length, request id, command type, all little-endian), request/response
+  correlation, and demultiplexing of all **five** unsolicited event types —
+  `STOPPED` (0x62), `RESUMED` (0x63), `JAM` (0x61, zero-length body),
+  `CHECKPOINT_INFO` (0x11) and `REGISTER_INFO` (0x31), the last two sharing a
+  response type with a legitimate command reply so the demultiplexer must key
+  on request-id — plus reconnect, behind the existing `call()` seam so the rest
+  of the tree is untouched.
 - **Phase 2 — Direct tools (group A).**
 - **Phase 3 — Derived tools (group B):** incl. the 6502 disassembler + symbol store.
 - **Phase 4 — Screenshot:** Display Get + Palette → PNG.
@@ -108,7 +126,8 @@ run/pause model.
 
 ## Verification
 
-- Phase-0 probe result (cycle count + pause model) recorded before further work.
+- Phase-0 probe result recorded at `docs/phase1-probe-results.md` (produced by
+  Phase 1 plan `01-04`) before further work.
 - Unit tests for the binary-monitor client against recorded/stubbed protocol frames.
 - End-to-end: launch stock `x64sc -binarymonitor`, drive the MCP tools, diff outputs
   against the current `-mcpserver` behavior for a known program.
