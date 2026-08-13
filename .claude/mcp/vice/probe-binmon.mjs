@@ -556,17 +556,49 @@ function selftest() {
 
   // --- --capture mode selftest additions (no socket, no emulator) ---------
 
-  // (a) the sidecar builder emits exactly the four required provenance keys.
-  const sidecarKeys = Object.keys({
-    capturedFrom: "x",
-    viceVersion: "x",
-    capturedAt: "x",
-    command: "x",
+  // (a) WR-11: the REAL sidecar builder -- buildSidecar(), the same function
+  // runCapture() writes with -- emits exactly the four required provenance keys,
+  // with the case's own recorded command. The previous version of this check
+  // built an object literal with those keys and asserted the literal had them,
+  // exercising nothing while its message claimed to cover the builder.
+  const builtSidecar = buildSidecar({
+    capturedFrom: "stock:/usr/bin/x64sc",
+    viceVersion: "3.9.0.0",
+    caseName: "display-get",
+    now: () => new Date("2026-08-13T00:00:00.000Z"),
   });
+  const sidecarKeys = Object.keys(builtSidecar);
   assertTrue(
     sidecarKeys.length === 4 &&
       ["capturedFrom", "viceVersion", "capturedAt", "command"].every((k) => sidecarKeys.includes(k)),
-    "capture sidecar: exactly the four required provenance keys",
+    "buildSidecar: exactly the four required provenance keys, and no others",
+  );
+  assertTrue(builtSidecar.command === CAPTURE_COMMAND_BY_CASE["display-get"], "buildSidecar: command comes from the case's own recorded command string");
+  assertTrue(builtSidecar.capturedAt === "2026-08-13T00:00:00.000Z", "buildSidecar: capturedAt is an ISO timestamp from the injected clock");
+
+  // (a2) WR-11: a case with no recorded command is IMPOSSIBLE to write, rather
+  // than producing `command: undefined` -- which survives JSON.stringify and
+  // then fails loadCapturedFixture()'s required-key check much later, in
+  // another process, against a .bin that looks fine.
+  let sidecarThrew = false;
+  try {
+    buildSidecar({ capturedFrom: "stock:/usr/bin/x64sc", viceVersion: "3.9.0.0", caseName: "no-such-case" });
+  } catch {
+    sidecarThrew = true;
+  }
+  assertTrue(sidecarThrew, "buildSidecar: an unknown case name is refused, never written with an undefined command");
+
+  let emptySourceThrew = false;
+  try {
+    buildSidecar({ capturedFrom: "", viceVersion: "3.9.0.0", caseName: "display-get" });
+  } catch {
+    emptySourceThrew = true;
+  }
+  assertTrue(emptySourceThrew, "buildSidecar: an empty capturedFrom is refused -- provenance that cannot name its source is not provenance");
+
+  assertTrue(
+    Object.keys(CAPTURE_COMMAND_BY_CASE).every((c) => typeof buildSidecar({ capturedFrom: "x:y", viceVersion: "z", caseName: c }).command === "string"),
+    "buildSidecar: every capture case this script can run has a recorded command string",
   );
 
   // Local, offline-only response-frame builder for the two checks below --
@@ -1227,6 +1259,40 @@ const CAPTURE_RUNNER_BY_CASE = {
   "checkpoint-list": captureCheckpointListCase,
 };
 
+/**
+ * WR-11 (code review 2026-08-13): THE sidecar builder, extracted as a pure
+ * function so the selftest can exercise the real construction. The selftest
+ * used to build an object literal with the four keys and then assert that the
+ * object had those four keys -- exercising none of runCapture()'s actual
+ * construction while claiming, in its own assertion message, to cover "the
+ * sidecar builder". That is false confidence in exactly the provenance contract
+ * binmon-fixtures.ts's loadCapturedFixture() enforces at load time.
+ *
+ * `caseName` is looked up in CAPTURE_COMMAND_BY_CASE here, so a case with no
+ * command string cannot silently produce a sidecar with `command: undefined` --
+ * which would pass JSON.stringify and then fail loadCapturedFixture()'s
+ * required-key check much later, in a different process, against a .bin that
+ * looks fine. Throwing at construction is the whole point.
+ */
+export function buildSidecar({ capturedFrom, viceVersion, caseName, now = () => new Date() }) {
+  const command = CAPTURE_COMMAND_BY_CASE[caseName];
+  if (typeof command !== "string" || command === "") {
+    throw new Error(`buildSidecar: no capture command recorded for case "${caseName}" -- refusing to write a sidecar with no command`);
+  }
+  if (typeof capturedFrom !== "string" || capturedFrom === "") {
+    throw new Error("buildSidecar: capturedFrom must be a non-empty string -- provenance that cannot name its source is not provenance");
+  }
+  if (typeof viceVersion !== "string" || viceVersion === "") {
+    throw new Error('buildSidecar: viceVersion must be a non-empty string (use "unknown" when VICE_INFO could not be read)');
+  }
+  return {
+    capturedFrom,
+    viceVersion,
+    capturedAt: now().toISOString(),
+    command,
+  };
+}
+
 async function runCapture(caseName, outDirArg) {
   const outDir = outDirArg
     ? resolve(outDirArg)
@@ -1274,12 +1340,8 @@ async function runCapture(caseName, outDirArg) {
       continue;
     }
     const bytes = Buffer.concat(result.frames);
-    const sidecar = {
-      capturedFrom,
-      viceVersion,
-      capturedAt: new Date().toISOString(),
-      command: CAPTURE_COMMAND_BY_CASE[c],
-    };
+    // WR-11: the ONE sidecar construction, shared with the selftest.
+    const sidecar = buildSidecar({ capturedFrom, viceVersion, caseName: c });
     writeAtomic(join(outDir, `${c}.bin`), bytes);
     writeAtomic(join(outDir, `${c}.json`), JSON.stringify(sidecar, null, 2) + "\n");
     console.log(
