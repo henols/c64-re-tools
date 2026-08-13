@@ -124,9 +124,18 @@ const STUB_BROKER_CONTROL = {
 // still structurally satisfies this narrower field when threaded through.
 type FakeSessionBrokerControl = StockConnectSession["brokerControl"];
 
+/** The fake client carries a REAL disconnect() that flips `connected` to
+ * false (CR-05): a session teardown that only drops the reference is exactly
+ * the defect under test, so the stub has to be able to tell the two apart. */
 function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: FakeSessionBrokerControl; connected?: boolean }): StockConnectSession {
+  const client = {
+    connected: opts.connected ?? true,
+    disconnect: async (): Promise<void> => {
+      client.connected = false;
+    },
+  };
   return {
-    client: { connected: opts.connected ?? true } as unknown as StockConnectSession["client"],
+    client: client as unknown as StockConnectSession["client"],
     versionQuad: "3.9.0",
     capabilities: { cpuHistory: "absent" },
     host: opts.host,
@@ -243,6 +252,104 @@ test("lease: a replacement acquisition naming a different targetId calls stockCo
   const second = await ensureStockSession(deps);
   assert.ok(first.ok && second.ok);
   assert.equal(connectCalls, 2);
+});
+
+// ---------------------------------------------------------------------------
+// CR-05 (code review 2026-08-13): a replaced lease must TEAR DOWN the outgoing
+// session, not merely drop the reference. The holder is module-private, so the
+// reference is the last handle anything has on that socket and its broker-side
+// monitor claim; and stock VICE services exactly ONE binmon client, so a
+// leaked socket keeps occupying the instance's single client slot.
+// ---------------------------------------------------------------------------
+
+test("CR-05: a replacement acquisition disconnects the replaced session and releases ITS monitor claim, naming the old targetId", async () => {
+  const releasedTargets: string[] = [];
+  const brokerControl = {
+    claimMonitor: async () => ({ ok: true as const }),
+    releaseMonitor: async (opts: { targetId: string }) => {
+      releasedTargets.push(opts.targetId);
+      return { ok: true as const };
+    },
+  } as unknown as BrokerControlSession;
+
+  const leaseA: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
+  const leaseB: HeldLease = { host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl };
+  let currentLease: HeldLease = leaseA;
+  const sessions: StockConnectSession[] = [];
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease: currentLease }),
+    connect: async (opts) => {
+      const session = fakeSession(opts);
+      sessions.push(session);
+      return session;
+    },
+  };
+
+  const first = await ensureStockSession(deps);
+  assert.ok(first.ok);
+  const stale = sessions[0]!;
+  assert.equal(stale.client.connected, true, "precondition: the first session is live");
+
+  currentLease = leaseB;
+  const second = await ensureStockSession(deps);
+  assert.ok(second.ok);
+
+  assert.equal(stale.client.connected, false, "the replaced session's socket must be disconnected, not merely dereferenced");
+  assert.deepEqual(releasedTargets, ["grant-1"], "exactly one releaseMonitor, naming the OLD targetId -- never the replacement's");
+  assert.equal(second.session.targetId, "grant-2");
+  assert.equal(second.session.client.connected, true, "the replacement session must be live");
+});
+
+test("CR-05: a teardown failure on the replaced session does not stop the replacement handshake, and never leaves the dead session held", async () => {
+  const brokerControl = {
+    claimMonitor: async () => ({ ok: true as const }),
+    releaseMonitor: async () => {
+      throw new Error("test: broker refused the release");
+    },
+  } as unknown as BrokerControlSession;
+
+  const leaseA: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
+  const leaseB: HeldLease = { host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl };
+  let currentLease: HeldLease = leaseA;
+  let connectCalls = 0;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease: currentLease }),
+    connect: async (opts) => {
+      connectCalls++;
+      return fakeSession(opts);
+    },
+  };
+
+  assert.ok((await ensureStockSession(deps)).ok);
+  currentLease = leaseB;
+  const second = await ensureStockSession(deps);
+  assert.ok(second.ok, "a failed teardown of the OUTGOING session must not fail the replacement");
+  assert.equal(second.session.targetId, "grant-2");
+  assert.equal(connectCalls, 2);
+
+  // And the holder now names the replacement -- a third call with lease B
+  // reuses it rather than reconnecting.
+  const third = await ensureStockSession(deps);
+  assert.ok(third.ok);
+  assert.equal(connectCalls, 2, "the replacement must be the held session, so a third call reuses it");
+});
+
+test("CR-05: a FIRST acquisition with nothing held releases nothing -- no spurious releaseMonitor", async () => {
+  const releasedTargets: string[] = [];
+  const brokerControl = {
+    claimMonitor: async () => ({ ok: true as const }),
+    releaseMonitor: async (opts: { targetId: string }) => {
+      releasedTargets.push(opts.targetId);
+      return { ok: true as const };
+    },
+  } as unknown as BrokerControlSession;
+  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
+  const outcome = await ensureStockSession({
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  });
+  assert.ok(outcome.ok);
+  assert.deepEqual(releasedTargets, []);
 });
 
 test("lease: a held session whose socket has closed is re-established via stockReconnect, not silently reused", async () => {

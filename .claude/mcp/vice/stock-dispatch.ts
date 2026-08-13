@@ -135,7 +135,10 @@ export function clearHeldStockSession(): void {
  *   4. Otherwise reuse the held session when its targetId matches the
  *      lease's -- and only otherwise (no held session, or a targetId
  *      mismatch, which means a REPLACEMENT acquisition granted a different
- *      instance) call stockConnect() fresh and hold its result.
+ *      instance) TEAR DOWN whatever was held via stockDisconnect() (CR-05:
+ *      dropping the reference alone leaks a live socket into stock VICE's
+ *      single client slot) and then call stockConnect() fresh and hold its
+ *      result.
  *   5. A held session whose underlying socket has already died
  *      (`!session.client.connected`) is not silently reused: it is
  *      re-established via stockReconnect() (which itself re-proves machine
@@ -207,7 +210,36 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
   // No held session, or the lease now names a different targetId -- a
   // replacement acquisition means a different instance underneath, so
   // whatever was held is discarded rather than reused.
-  clearHeldStockSession();
+  //
+  // CR-05 (code review 2026-08-13): DISCARDED, not merely DEREFERENCED. The
+  // previous session's ViceMonitorClient is still connected at this point --
+  // its socket, its data/close/error listeners, its pending map and its
+  // broker-side monitorClient claim all outlive the reference, and the holder
+  // is module-private, so nulling it was the last chance anything had to
+  // release them. Because stock VICE services exactly ONE binmon client, that
+  // leaked socket keeps occupying the instance's single client slot: if the
+  // broker later hands the same port out again (a recycle/respawn builds a
+  // fresh InstanceRecord, so monitorClient is cleared and a new claim
+  // succeeds), the new client's connect() sits unserviced in the backlog with
+  // no reply and no EOF -- the state CLAUDE.md says must never be reachable
+  // and must never be diagnosed as a hang.
+  //
+  // stockDisconnect() is the ONE teardown that disconnects the socket AND
+  // releases the monitor claim together (its own header comment: a caller must
+  // never end up holding one without the other). Best-effort: a teardown
+  // failure on the OUTGOING session must not stop the replacement handshake,
+  // and the holder is cleared FIRST so a throw can never leave a dead session
+  // installed.
+  const stale = heldSession;
+  heldSession = null;
+  if (stale !== null) {
+    try {
+      await stockDisconnect(stale);
+    } catch (err) {
+      console.error(`ensureStockSession: tearing down the replaced stock session for target ${stale.targetId} did not complete: ${String(err)}`);
+    }
+  }
+
   const session = await connectFn({ host: lease.host, port: lease.port, targetId: lease.targetId, brokerControl: lease.brokerControl });
   heldSession = session;
   return { ok: true, session };
