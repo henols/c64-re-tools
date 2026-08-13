@@ -107,21 +107,6 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv 
     const host = mcpHost ?? process.env.VICE_BROKER_MCP_HOST ?? "0.0.0.0";
     return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
 }
-/** The ONE reader of the `VICE_BACKEND` environment variable in the broker
- * today. Plan 02-07 replaces this function's body with
- * `backend-detect.mts`'s cached detection verdict (D-01) -- until that plan
- * lands, do not add a second reader of that variable anywhere in this tree.
- * A second reader is exactly the failure shape `mcpHost()`'s own
- * container-detection comment (vice.ts) warns against one level up: two
- * independent answers to the same question can silently disagree the moment
- * one of them is updated and the other is not. Returns `"stock"` only for
- * the exact string `"stock"`; every other value -- unset, empty, or
- * unrecognised -- resolves to `"fork"`, so an existing deployment with no
- * opinion set keeps behaving exactly as it did before this variable
- * existed. */
-export function backendFromEnv() {
-    return process.env.VICE_BACKEND === "stock" ? "stock" : "fork";
-}
 /** The unguarded spawn+record primitive -- no in_flight check here at all.
  * Called from exactly two places: tryLaunchOne() below (which wraps it in
  * the standalone synchronous guard) and acquirePortAndLaunch() further

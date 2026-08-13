@@ -46,6 +46,17 @@ import type { BrokerState, InstanceRecord, PortAllocationResult } from "./broker
 // "./broker-epoch.mts" source import (safe -- test files reference the
 // literal .mts extension, never the post-build .mjs specifier).
 import type { EpochRecord } from "./broker-epoch.mjs";
+// Plan 02-07: ViceBackend's definition moved to backend-detect.mts, which is
+// now the type's one home (and the ONE reader of VICE_BACKEND, via that
+// module's own resolvedBackend() -- see backend-detect.mts's own header
+// comment). TYPE-ONLY, for the same reason as the two imports directly
+// above: backend-detect.mts is ALSO a host-bound sibling compiled into this
+// same build, so a VALUE import would need "./backend-detect.mjs" to exist
+// at runtime -- which it does not when this file runs directly, unbuilt,
+// under its own unit tests. This file only ever needs the TYPE (its own
+// Deps interfaces); nothing here calls resolvedBackend() itself -- that is
+// vice-broker.mts's job, exactly once, at startup.
+import type { ViceBackend } from "./backend-detect.mjs";
 
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
@@ -80,13 +91,6 @@ let inFlightReason: string | null = null;
 export function isLaunchInFlight(): boolean {
   return inFlight;
 }
-
-/** Phase 2 (BROK-01, D-12): the broker launches one of two binaries, chosen
- * per broker process (D-04 -- one broker only ever launches one kind of
- * binary, so nothing downstream needs to tell the two shapes apart at
- * runtime). "fork" is the existing, byte-identical `-mcpserver` launch this
- * module has always built; "stock" is the new binary-monitor launch. */
-export type ViceBackend = "fork" | "stock";
 
 // Gates the stock binmon-bind-widened stderr note below so a long-running
 // broker (or a test suite driving buildViceArgs() many times) emits it at
@@ -143,22 +147,6 @@ export function buildViceArgs(
   return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
 }
 
-/** The ONE reader of the `VICE_BACKEND` environment variable in the broker
- * today. Plan 02-07 replaces this function's body with
- * `backend-detect.mts`'s cached detection verdict (D-01) -- until that plan
- * lands, do not add a second reader of that variable anywhere in this tree.
- * A second reader is exactly the failure shape `mcpHost()`'s own
- * container-detection comment (vice.ts) warns against one level up: two
- * independent answers to the same question can silently disagree the moment
- * one of them is updated and the other is not. Returns `"stock"` only for
- * the exact string `"stock"`; every other value -- unset, empty, or
- * unrecognised -- resolves to `"fork"`, so an existing deployment with no
- * opinion set keeps behaving exactly as it did before this variable
- * existed. */
-export function backendFromEnv(): ViceBackend {
-  return process.env.VICE_BACKEND === "stock" ? "stock" : "fork";
-}
-
 export interface TryLaunchDeps {
   state: BrokerState;
   supervisorDir: string;
@@ -172,8 +160,9 @@ export interface TryLaunchDeps {
    * every existing test in broker-launch.test.ts that never mentions this
    * field) keeps producing the exact byte-identical fork argv it always
    * has. The real broker resolves this ONCE at startup via
-   * backendFromEnv() and passes the resolved value down through every real
-   * launch call site -- see this module's own backendFromEnv() doc comment. */
+   * backend-detect.mts's resolvedBackend() and passes the resolved value
+   * down through every real launch call site -- see that module's own doc
+   * comment; this file no longer reads VICE_BACKEND itself in any form. */
   backend?: ViceBackend;
   /** Stock-only bind override -- see buildViceArgs()'s own doc comment.
    * Ignored entirely when `backend` is `"fork"` or omitted. */

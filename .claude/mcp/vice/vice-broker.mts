@@ -42,10 +42,17 @@ import {
   probeReady,
   runBrokerPass,
   withCrashSupervision,
-  backendFromEnv,
   type SuperviseChildDeps,
-  type ViceBackend,
 } from "./broker-launch.mjs";
+// Plan 02-07: resolvedBackend() is now the ONE reader of VICE_BACKEND in
+// this tree -- ViceBackend's own definition moved to backend-detect.mts too,
+// so broker-launch.mjs's own (type-only) re-import of it and this file's
+// VALUE import both name the same one home. A real value import is safe
+// here (unlike inside broker-launch.mts) because vice-broker.mts is ALWAYS
+// run from its own compiled resources/ form -- both modules are compiled
+// together in the same build.ts pass, so "./backend-detect.mjs" always
+// exists as a real sibling file by the time this import resolves.
+import { resolvedBackend, type ViceBackend } from "./backend-detect.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances, type KillStage } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor, type EpochRecord } from "./broker-epoch.mjs";
 import {
@@ -344,12 +351,12 @@ export interface HandleAcquireDeps {
   buildColdSpawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
   /** Which backend's launch argv to build (D-04, D-12) -- the real broker
    * wiring (run()'s onAcquire callback below) resolves this ONCE at startup
-   * via backendFromEnv() and passes the SAME resolved value on every call
-   * (backendFromEnv() itself is never called per-acquire). Defaults to
-   * `"fork"` -- broker-launch.mts's own buildViceArgs() default -- when a
-   * caller omits it entirely (every pre-Phase-2 test in
-   * vice-broker-acquire.test.ts), so those tests keep exercising the exact
-   * byte-identical fork argv they always have. */
+   * via backend-detect.mts's resolvedBackend() and passes the SAME resolved
+   * value on every call (resolvedBackend() itself is never called
+   * per-acquire). Defaults to `"fork"` -- broker-launch.mts's own
+   * buildViceArgs() default -- when a caller omits it entirely (every
+   * pre-Phase-2 test in vice-broker-acquire.test.ts), so those tests keep
+   * exercising the exact byte-identical fork argv they always have. */
   backend?: ViceBackend;
   log?: (line: string) => void;
 }
@@ -879,12 +886,6 @@ async function run(args: ParsedArgs): Promise<void> {
   // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
   process.stderr.write(`${startupBanner()}\n`);
 
-  // Resolved ONCE here, at broker startup -- never re-read per launch. See
-  // backendFromEnv()'s own doc comment (broker-launch.mts): this is the ONE
-  // reader of VICE_BACKEND in the broker today, and D-04 means this single
-  // resolved value governs every launch this broker process ever performs.
-  const backend = backendFromEnv();
-
   const state = createBrokerState();
   const token = newControlToken();
   const controlHost = process.env.VICE_BROKER_CONTROL_HOST ?? "0.0.0.0";
@@ -913,6 +914,26 @@ async function run(args: ParsedArgs): Promise<void> {
     nextEpochFor,
     writeEpochRecord,
   });
+
+  // Plan 02-07 (D-01, D-03): resolved ONCE here, after the unconditional
+  // startup reap and BEFORE the control listener binds -- never re-read per
+  // launch, and never called from inside broker-launch.mts's `inFlight`
+  // single-owner guard (this call sits entirely outside it; no launch is
+  // even possible yet at this point in run()). `supervisorDir: args.stateDir`
+  // is passed explicitly -- args.stateDir IS `.vice-supervisor` under this
+  // broker's own repo root (see parseArgs() above), so this is the SAME
+  // directory repo-root.ts's supervisorDir() would resolve to, without this
+  // host-bound module ever importing that container-side resolver directly
+  // (backend-detect.mts's own header comment explains why it cannot). An
+  // `indeterminate` outcome does not prevent the broker from starting: it
+  // logs its own note (backend-detect.mts) and this line proceeds with the
+  // "fork" answer resolvedBackend() already returns for that case -- the
+  // pre-Phase-2 behaviour every existing install already has.
+  const backendResult = resolvedBackend({ supervisorDir: args.stateDir });
+  const backend: ViceBackend = backendResult.backend;
+  process.stderr.write(
+    `vice-broker: backend "${backend}" (source: ${backendResult.source}, binary: ${backendResult.binPath})\n`,
+  );
 
   // D-18: the singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
   let listener: Awaited<ReturnType<typeof startControlListener>>;

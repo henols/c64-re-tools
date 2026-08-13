@@ -38,7 +38,6 @@ import {
   superviseChild,
   withCrashSupervision,
   buildViceArgs,
-  backendFromEnv,
 } from "./broker-launch.mts";
 // Direct SOURCE import (".mts", not ".mjs") -- safe for a test file, which
 // always references the literal extension the file is actually saved
@@ -1535,9 +1534,9 @@ test("superviseChild: the give-up path leaves no live child pid, asserted by a z
 });
 
 // ===========================================================================
-// 02-03-PLAN.md, Task 1: buildViceArgs()/backendFromEnv() -- BROK-01, D-12.
-// Every test below exercises pure argv construction / env parsing; no
-// process is ever spawned in this section.
+// 02-03-PLAN.md, Task 1: buildViceArgs() -- BROK-01, D-12. Every test below
+// exercises pure argv construction / env parsing; no process is ever
+// spawned in this section.
 // ===========================================================================
 
 test("buildViceArgs: fork backend returns the exact byte-identical pre-Phase-2 argv", () => {
@@ -1586,28 +1585,9 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
   assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
 });
 
-test("backendFromEnv: returns 'stock' only for the exact string 'stock', and 'fork' for unset, empty, or any unrecognised value", () => {
-  const saved = process.env.VICE_BACKEND;
-  try {
-    process.env.VICE_BACKEND = "stock";
-    assert.equal(backendFromEnv(), "stock");
-
-    process.env.VICE_BACKEND = "fork";
-    assert.equal(backendFromEnv(), "fork");
-
-    delete process.env.VICE_BACKEND;
-    assert.equal(backendFromEnv(), "fork");
-
-    process.env.VICE_BACKEND = "";
-    assert.equal(backendFromEnv(), "fork");
-
-    process.env.VICE_BACKEND = "Stock";
-    assert.equal(backendFromEnv(), "fork");
-
-    process.env.VICE_BACKEND = "bogus";
-    assert.equal(backendFromEnv(), "fork");
-  } finally {
-    if (saved === undefined) delete process.env.VICE_BACKEND;
-    else process.env.VICE_BACKEND = saved;
-  }
-});
+// The env-reading VICE_BACKEND function that used to live here is RETIRED as
+// of plan 02-07 -- backend-detect.mts's resolvedBackend() is now the ONE
+// reader of VICE_BACKEND in this tree (its own test file,
+// backend-detect.test.ts, covers the override precedence, cache lifecycle,
+// and classification logic that removal leaves this file with nothing
+// further to assert about VICE_BACKEND reading).

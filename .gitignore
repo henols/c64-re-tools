@@ -11,6 +11,7 @@ node_modules/
 # copies resources/ into on first tool call (see install-resources.ts). Listed
 # per-file (not a blanket /tools/) so host-scripts.test.ts's two-way parity gate
 # with resourceEntries() holds; tools/ only ever holds these deployed artifacts.
+/tools/backend-detect.mjs
 /tools/broker-control.mjs
 /tools/broker-epoch.mjs
 /tools/broker-kill.mjs

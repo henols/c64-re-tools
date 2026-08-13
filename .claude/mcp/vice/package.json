@@ -22,6 +22,7 @@
     "refresh-manifest.ts",
     "build.ts",
     "container-guard.mts",
+    "backend-detect.mts",
     "resources",
     "tools-manifest.json",
     "README.md"
