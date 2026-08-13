@@ -14,6 +14,7 @@
     "vice-probe.ts",
     "vice-broker-client.ts",
     "stock-protocol.ts",
+    "stock-connect.ts",
     "containerpath.ts",
     "hostpath.ts",
     "repo-root.ts",
