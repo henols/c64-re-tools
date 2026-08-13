@@ -11,9 +11,26 @@
 // five of VERIF-02's eight cases unobtainable in this container, which has
 // no VICE and no display (see docs/phase1-probe-results.md's own framing).
 // This module makes those five cases synthesize-only fixtures; the other
-// three (display-get, event-interleaved, checkpoint-list) are captured for
-// real by probe-binmon.mjs's --capture mode and loaded back through
-// loadCapturedFixture() below.
+// three (display-get, event-interleaved, checkpoint-list) are LOADED from
+// fixtures/binmon/ through loadCapturedFixture() below, which
+// probe-binmon.mjs's --capture mode is what normally writes.
+//
+// PROVENANCE, CORRECTED (WR-10, code review 2026-08-13): the three fixtures
+// under fixtures/binmon/ are NOT currently real captures. This comment used to
+// say they were "captured for real", while all three sidecars say
+// `"capturedFrom": "synthesized-fallback"`, `"synthetic": true`, and both
+// fixtures/binmon/README.md and docs/phase2-backend-probe-evidence.md record
+// the 2026-08-13 override of D-19: no stock VICE binary is reachable in this
+// environment, so they were generated from the normative protocol spec
+// (docs/phase0-binmon-findings.md §3/§5) instead. In a codebase whose review
+// standard is "provenance that lies is the thing not to produce", the module
+// that LOADS the fixtures is the worst possible place for a stale claim of
+// hardware evidence. The re-capture follow-up is tracked at
+// .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md.
+//
+// Nothing downstream may treat these bytes as hardware evidence.
+// loadCapturedFixture() returns `provenance.synthetic` explicitly so a caller
+// can assert on it rather than inferring from a string.
 //
 // WHAT NOT TO DO: never import the vendor's contracts.ts/errors.ts here or
 // anywhere else in this package -- they pull in `zod`, which
@@ -193,6 +210,13 @@ const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "
 export interface CapturedFixture {
   bytes: Buffer;
   provenance: Record<string, unknown>;
+  /** WR-10: the sidecar's own `synthetic` flag, surfaced as a real boolean so a
+   * caller can assert "these bytes are/are not hardware evidence" without
+   * re-deriving it from `provenance.capturedFrom`'s string. Absent or
+   * non-boolean in the sidecar reads as `false` -- i.e. a fixture only claims
+   * hardware provenance when it says so explicitly, and no default can quietly
+   * turn a synthetic fixture into a recorded one. */
+  synthetic: boolean;
 }
 
 export interface LoadCapturedFixtureOptions {
@@ -219,7 +243,26 @@ export function loadCapturedFixture(caseName: string, { dir }: LoadCapturedFixtu
   }
 
   const bytes = readFileSync(binPath);
-  const provenance = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown>;
+  // WR-10: a CORRUPT sidecar gets the same MissingFixtureError treatment as an
+  // absent one. It used to be a bare JSON.parse, so unparseable provenance
+  // escaped as a raw SyntaxError -- the one failure shape this named error class
+  // exists to keep callers from having to catch generically, and the least
+  // informative possible answer to "is this fixture trustworthy".
+  let provenance: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(jsonPath, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("sidecar is not a JSON object");
+    }
+    provenance = parsed as Record<string, unknown>;
+  } catch (err) {
+    throw new MissingFixtureError(
+      `Captured fixture "${caseName}" sidecar at ${jsonPath} is unreadable or malformed (${
+        err instanceof Error ? err.message : String(err)
+      }) -- regenerate it with: ${command}`,
+      { path: jsonPath, command },
+    );
+  }
   const missingKeys = REQUIRED_PROVENANCE_KEYS.filter((k) => !(k in provenance));
   if (missingKeys.length > 0) {
     throw new MissingFixtureError(
@@ -228,5 +271,5 @@ export function loadCapturedFixture(caseName: string, { dir }: LoadCapturedFixtu
     );
   }
 
-  return { bytes, provenance };
+  return { bytes, provenance, synthetic: provenance.synthetic === true };
 }

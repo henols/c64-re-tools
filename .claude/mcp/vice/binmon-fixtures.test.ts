@@ -4,9 +4,10 @@
 // plain node:fs against a tmp directory for the loader's own tests.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   encodeResponseFrame,
@@ -144,6 +145,84 @@ test("loadCapturedFixture: a sidecar missing a required provenance key also thro
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// WR-10: provenance a caller can assert on, and a corrupt sidecar that fails
+// like every other unusable sidecar rather than as a bare SyntaxError.
+// ---------------------------------------------------------------------------
+
+test("WR-10 loadCapturedFixture: a CORRUPT sidecar throws MissingFixtureError, not a bare SyntaxError", () => {
+  const dir = mkdtempSync(join(tmpdir(), "binmon-fixtures-test-"));
+  try {
+    writeFileSync(join(dir, "display-get.bin"), Buffer.from([1]));
+    writeFileSync(join(dir, "display-get.json"), "{ this is not json");
+    assert.throws(
+      () => loadCapturedFixture("display-get", { dir }),
+      (err: unknown) => {
+        assert.ok(err instanceof MissingFixtureError, `expected MissingFixtureError, got ${String(err)}`);
+        assert.ok(!(err instanceof SyntaxError));
+        assert.match((err as Error).message, /unreadable or malformed/);
+        assert.match((err as Error).message, /probe-binmon\.mjs --capture display-get/, "the regenerate command must be named, as for every other unusable sidecar");
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-10 loadCapturedFixture: a sidecar that parses to a non-object (a bare array) is also MissingFixtureError", () => {
+  const dir = mkdtempSync(join(tmpdir(), "binmon-fixtures-test-"));
+  try {
+    writeFileSync(join(dir, "display-get.bin"), Buffer.from([1]));
+    writeFileSync(join(dir, "display-get.json"), "[1,2,3]");
+    assert.throws(() => loadCapturedFixture("display-get", { dir }), MissingFixtureError);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-10 loadCapturedFixture: `synthetic` is surfaced as a real boolean, and only a sidecar that SAYS so claims hardware provenance", () => {
+  const dir = mkdtempSync(join(tmpdir(), "binmon-fixtures-test-"));
+  try {
+    const base = { viceVersion: "3.9.0.0", capturedAt: new Date().toISOString(), command: "DISPLAY_GET (0x84)" };
+    writeFileSync(join(dir, "display-get.bin"), Buffer.from([1]));
+
+    writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "synthesized-fallback", synthetic: true }));
+    assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, true);
+
+    writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "stock:/usr/bin/x64sc" }));
+    assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, false, "a sidecar with no flag is treated as a real capture -- the flag is opt-in");
+
+    // A non-boolean must NOT be coerced into "recorded": a truthy string like
+    // "false" would otherwise silently promote a synthetic fixture.
+    writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "x", synthetic: "true" }));
+    assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-10: the three committed fixtures report synthetic: true, matching the recorded 2026-08-13 D-19 override", () => {
+  for (const caseName of ["display-get", "event-interleaved", "checkpoint-list"] as const) {
+    const loaded = loadCapturedFixture(caseName);
+    assert.equal(loaded.synthetic, true, `${caseName} is spec-synthesized, not hardware-recorded -- it must say so`);
+    assert.equal(loaded.provenance.capturedFrom, "synthesized-fallback");
+  }
+});
+
+test("WR-10: binmon-fixtures.ts's own header does not claim the three fixtures are real captures", () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "binmon-fixtures.ts"), "utf8");
+  const header = source.slice(0, source.indexOf("import "));
+  // Matches the CLAIM ("... are captured for real by ...") rather than the
+  // phrase, so the correction below is free to quote what it replaced.
+  assert.ok(
+    !/are captured for real/.test(header),
+    "the module that LOADS the fixtures is the worst place for a stale claim of hardware provenance",
+  );
+  assert.match(header, /NOT currently real captures/, "the header must state the fixtures' actual provenance");
+  assert.match(header, /re-record-binmon-fixtures-against-real-stock-vice/, "and point at the re-capture follow-up");
 });
 
 // ---------------------------------------------------------------------------
