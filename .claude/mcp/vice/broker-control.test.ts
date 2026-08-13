@@ -910,7 +910,7 @@ test("structural: the release and recycle handlers both set the deliberate-death
   const recycleRegion = extractSourceRegion(
     source,
     "async function handleRecycleForRealBroker(targetId: string, state: BrokerState): Promise<RecycleOutcome> {",
-    "function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState): Promise<void> {",
+    "function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, backend: ViceBackend): Promise<void> {",
   );
   const releaseRegion = extractSourceRegion(
     source,

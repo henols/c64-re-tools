@@ -41,7 +41,9 @@ import {
   probeReady,
   runBrokerPass,
   withCrashSupervision,
+  backendFromEnv,
   type SuperviseChildDeps,
+  type ViceBackend,
 } from "./broker-launch.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances, type KillStage } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor, type EpochRecord } from "./broker-epoch.mjs";
@@ -337,6 +339,15 @@ export interface HandleAcquireDeps {
    * makeLoggingSpawn()+withCrashSupervision() composition this function
    * always used. */
   buildColdSpawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
+  /** Which backend's launch argv to build (D-04, D-12) -- the real broker
+   * wiring (run()'s onAcquire callback below) resolves this ONCE at startup
+   * via backendFromEnv() and passes the SAME resolved value on every call
+   * (backendFromEnv() itself is never called per-acquire). Defaults to
+   * `"fork"` -- broker-launch.mts's own buildViceArgs() default -- when a
+   * caller omits it entirely (every pre-Phase-2 test in
+   * vice-broker-acquire.test.ts), so those tests keep exercising the exact
+   * byte-identical fork argv they always have. */
+  backend?: ViceBackend;
   log?: (line: string) => void;
 }
 
@@ -520,6 +531,7 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       state,
       stateDir,
       allocatePort: nextFreePort,
+      backend: deps.backend ?? "fork",
       spawnFactory:
         deps.buildColdSpawnFactory ??
         ((port: number) => {
@@ -672,11 +684,12 @@ async function handleRecycleForRealBroker(targetId: string, state: BrokerState):
  * because of invariants -- at most one launch per call, never invoked
  * concurrently with itself -- enforced elsewhere and never checked at the
  * point the variable used to be declared). */
-function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState): Promise<void> {
+function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, backend: ViceBackend): Promise<void> {
   let lastWarmLaunchLogRelPath = "";
   return maintainWarmFloor({
     state,
     stateDir,
+    backend,
     spawnFactory: (port: number) => {
       const supervisorDir = join(stateDir, String(port));
       const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
@@ -790,6 +803,12 @@ async function run(args: ParsedArgs): Promise<void> {
   // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
   process.stderr.write(`${startupBanner()}\n`);
 
+  // Resolved ONCE here, at broker startup -- never re-read per launch. See
+  // backendFromEnv()'s own doc comment (broker-launch.mts): this is the ONE
+  // reader of VICE_BACKEND in the broker today, and D-04 means this single
+  // resolved value governs every launch this broker process ever performs.
+  const backend = backendFromEnv();
+
   const state = createBrokerState();
   const token = newControlToken();
   const controlHost = process.env.VICE_BROKER_CONTROL_HOST ?? "0.0.0.0";
@@ -826,7 +845,7 @@ async function run(args: ParsedArgs): Promise<void> {
       host: controlHost,
       port: controlPort,
       token,
-      onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state),
+      onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state, { backend }),
       onRelease: (requestId) => handleRelease(requestId, state),
       onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
       onStatus: () => handleStatus(state),
@@ -944,7 +963,7 @@ async function run(args: ParsedArgs): Promise<void> {
     passInFlight = true;
     runBrokerPass({
       serveAcquires: () => drainPendingAcquires(listener.pendingAcquires),
-      maintainWarmFloor: () => maintainWarmFloorForRealBroker(args.stateDir, state),
+      maintainWarmFloor: () => maintainWarmFloorForRealBroker(args.stateDir, state, backend),
     })
       .catch((e) => {
         process.stderr.write(`vice-broker: evaluation pass failed: ${(e as Error).message}\n`);

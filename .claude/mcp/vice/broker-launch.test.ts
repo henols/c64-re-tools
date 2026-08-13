@@ -37,6 +37,8 @@ import {
   acquirePortAndLaunch,
   superviseChild,
   withCrashSupervision,
+  buildViceArgs,
+  backendFromEnv,
 } from "./broker-launch.mts";
 // Direct SOURCE import (".mts", not ".mjs") -- safe for a test file, which
 // always references the literal extension the file is actually saved
@@ -1529,5 +1531,83 @@ test("superviseChild: the give-up path leaves no live child pid, asserted by a z
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ===========================================================================
+// 02-03-PLAN.md, Task 1: buildViceArgs()/backendFromEnv() -- BROK-01, D-12.
+// Every test below exercises pure argv construction / env parsing; no
+// process is ever spawned in this section.
+// ===========================================================================
+
+test("buildViceArgs: fork backend returns the exact byte-identical pre-Phase-2 argv", () => {
+  const args = buildViceArgs(6510, { backend: "fork", mcpHost: "0.0.0.0" });
+  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6510"]);
+});
+
+test("buildViceArgs: the VICE_ARGS override short-circuits before either backend branch, unchanged for both backends", () => {
+  const forkArgs = buildViceArgs(6510, { backend: "fork", viceArgsEnv: "/bin/sleep 600" });
+  assert.deepEqual(forkArgs, ["/bin/sleep", "600"]);
+  const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600" });
+  assert.deepEqual(stockArgs, ["/bin/sleep", "600"]);
+});
+
+test("buildViceArgs: stock backend defaults to a loopback binary-monitor bind", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+});
+
+// MUST run before any later test in this file passes a non-loopback
+// binmonHost to buildViceArgs() -- the widened-bind note is gated by a
+// module-level flag with no test-facing reset, so this is the one place in
+// the whole file the note is provably observable as "exactly one," ahead of
+// the very next test below (which reuses the same widened host but does not
+// itself assert on stderr).
+test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly one stderr note per process, however many times buildViceArgs is called", () => {
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const writes: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
+    buildViceArgs(6511, { backend: "stock", binmonHost: "0.0.0.0" });
+    buildViceArgs(6512, { backend: "stock", binmonHost: "0.0.0.0" });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  const noteLines = writes.filter((l) => /binary monitor is/.test(l) && /unauthenticated/.test(l));
+  assert.equal(noteLines.length, 1, `expected exactly one widened-bind note across three calls, got ${noteLines.length}: ${JSON.stringify(writes)}`);
+});
+
+test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
+  const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
+  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
+});
+
+test("backendFromEnv: returns 'stock' only for the exact string 'stock', and 'fork' for unset, empty, or any unrecognised value", () => {
+  const saved = process.env.VICE_BACKEND;
+  try {
+    process.env.VICE_BACKEND = "stock";
+    assert.equal(backendFromEnv(), "stock");
+
+    process.env.VICE_BACKEND = "fork";
+    assert.equal(backendFromEnv(), "fork");
+
+    delete process.env.VICE_BACKEND;
+    assert.equal(backendFromEnv(), "fork");
+
+    process.env.VICE_BACKEND = "";
+    assert.equal(backendFromEnv(), "fork");
+
+    process.env.VICE_BACKEND = "Stock";
+    assert.equal(backendFromEnv(), "fork");
+
+    process.env.VICE_BACKEND = "bogus";
+    assert.equal(backendFromEnv(), "fork");
+  } finally {
+    if (saved === undefined) delete process.env.VICE_BACKEND;
+    else process.env.VICE_BACKEND = saved;
   }
 });

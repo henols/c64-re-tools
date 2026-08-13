@@ -59,23 +59,68 @@ let inFlightReason = null;
 export function isLaunchInFlight() {
     return inFlight;
 }
-/** Resolves the emulator's own argument vector. Two shapes, matching
- * resources/vice-supervisor.sh's own VICE_ARGS convention exactly: if
- * VICE_ARGS is set in the environment (a single space-separated string,
- * fully overridable -- vice-supervisor.sh's own header comment), it is used
- * AS-IS; otherwise the MCP server flags are constructed the way the bash
- * launcher builds them -- the MCP server flag, the MCP server host from
- * VICE_BROKER_MCP_HOST (default 0.0.0.0), and the MCP server port set to
- * the allocated port. The override exists because this broker's own tests
- * (and an operator's manual dry runs) need to launch a stand-in binary
- * (e.g. /bin/sleep) that does not understand -mcpserver flags. */
-export function buildViceArgs(port, { mcpHost, viceArgsEnv } = {}) {
+// Gates the stock binmon-bind-widened stderr note below so a long-running
+// broker (or a test suite driving buildViceArgs() many times) emits it at
+// most once per process -- the repo-root.ts `warnedEnvOutsideFrom` gate
+// pattern, reused here.
+let warnedBinmonBindWidened = false;
+/** Resolves the emulator's own argument vector for the given `backend`. The
+ * `VICE_ARGS` full-override short-circuit (matching
+ * resources/vice-supervisor.sh's own VICE_ARGS convention exactly) is
+ * checked FIRST, ahead of either backend branch, and stays unchanged for
+ * both: it exists because this broker's own tests (and an operator's manual
+ * dry runs) need to launch a stand-in binary (e.g. /bin/sleep) that
+ * understands neither `-mcpserver` nor `-binarymonitor` flags, and that need
+ * does not depend on which backend is configured.
+ *
+ * `backend: "fork"` returns exactly the pre-Phase-2 shape, byte-identical:
+ * the MCP server flag, the MCP server host from `mcpHost` or
+ * VICE_BROKER_MCP_HOST (default `0.0.0.0`), and the MCP server port.
+ *
+ * `backend: "stock"` returns `-binarymonitor -binarymonitoraddress
+ * ip4://<host>:<port>` (docs/phase1-probe-results.md's confirmed real-world
+ * command line) -- deliberately no `-remotemonitor` and no `-warp`; Phase 7
+ * revisits launch flags when it picks a stopwatch route. The host resolves
+ * from `binmonHost` or VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` --
+ * deliberately narrower than the fork path's `0.0.0.0` default, because
+ * VICE's binary monitor is unauthenticated by design and grants full
+ * read/write over the emulated machine plus process control to anything
+ * that can reach it (planner decision, `02-03-PLAN.md`). Widening the bind
+ * away from loopback emits exactly one stderr note per process, naming the
+ * resolved bind address and what the exposure grants. */
+export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv }) {
     const rawViceArgs = viceArgsEnv ?? process.env.VICE_ARGS;
     if (typeof rawViceArgs === "string" && rawViceArgs.trim() !== "") {
         return rawViceArgs.trim().split(/\s+/);
     }
+    if (backend === "stock") {
+        const host = binmonHost ?? process.env.VICE_BROKER_BINMON_HOST ?? "127.0.0.1";
+        if (host !== "127.0.0.1" && !warnedBinmonBindWidened) {
+            warnedBinmonBindWidened = true;
+            process.stderr.write(`vice-broker: stock binary-monitor bind widened to ${host} -- VICE's binary monitor is ` +
+                `unauthenticated and grants full memory read/write plus process control to anything that can ` +
+                `reach it; the default of 127.0.0.1 is the safe posture for a host-native install, widen only ` +
+                `when the MCP server itself runs in a container that must reach the host emulator\n`);
+        }
+        return ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+    }
     const host = mcpHost ?? process.env.VICE_BROKER_MCP_HOST ?? "0.0.0.0";
     return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
+}
+/** The ONE reader of the `VICE_BACKEND` environment variable in the broker
+ * today. Plan 02-07 replaces this function's body with
+ * `backend-detect.mts`'s cached detection verdict (D-01) -- until that plan
+ * lands, do not add a second reader of that variable anywhere in this tree.
+ * A second reader is exactly the failure shape `mcpHost()`'s own
+ * container-detection comment (vice.ts) warns against one level up: two
+ * independent answers to the same question can silently disagree the moment
+ * one of them is updated and the other is not. Returns `"stock"` only for
+ * the exact string `"stock"`; every other value -- unset, empty, or
+ * unrecognised -- resolves to `"fork"`, so an existing deployment with no
+ * opinion set keeps behaving exactly as it did before this variable
+ * existed. */
+export function backendFromEnv() {
+    return process.env.VICE_BACKEND === "stock" ? "stock" : "fork";
 }
 /** The unguarded spawn+record primitive -- no in_flight check here at all.
  * Called from exactly two places: tryLaunchOne() below (which wraps it in
@@ -94,7 +139,8 @@ function spawnAndRecordInstance(reason, port, deps) {
     const spawnFn = deps.spawn ?? ((cmd, args) => nodeSpawn(cmd, args));
     const now = deps.now ?? (() => Date.now());
     const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
-    const viceArgs = buildViceArgs(port, { mcpHost: deps.mcpHost });
+    const backend = deps.backend ?? "fork";
+    const viceArgs = buildViceArgs(port, { backend, mcpHost: deps.mcpHost, binmonHost: deps.binmonHost });
     const log = deps.log ?? defaultLog;
     log(`vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`);
     const child = spawnFn(viceBin, viceArgs);
@@ -196,6 +242,8 @@ export async function acquirePortAndLaunch(reason, deps) {
             now: deps.now,
             viceBin: deps.viceBin,
             mcpHost: deps.mcpHost,
+            backend: deps.backend,
+            binmonHost: deps.binmonHost,
         });
         return { ok: true, record };
     }
@@ -385,6 +433,8 @@ export async function maintainWarmFloor(deps) {
         now: deps.now,
         viceBin: deps.viceBin,
         mcpHost: deps.mcpHost,
+        backend: deps.backend,
+        binmonHost: deps.binmonHost,
     });
     if (result.ok) {
         log(`vice-broker: warmed 1 warm instance this pass -- ${ready + 1} of ${warmFloor} ready, remainder warmed on later passes`);
@@ -616,6 +666,8 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs) {
         now: deps.now,
         viceBin: deps.viceBin,
         mcpHost: deps.mcpHost,
+        backend: deps.backend,
+        binmonHost: deps.binmonHost,
         log: deps.log,
     });
     if (!record)
