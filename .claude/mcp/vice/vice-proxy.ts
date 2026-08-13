@@ -3075,17 +3075,58 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
 // SAME one the first arm's own lease check already calls), plus this file's
 // own already-settled binary path so the health-check tool on that path can
 // answer BACK-03 without ever re-detecting anything itself.
+/**
+ * The ONE backend-aware registration seam (D-09). CR-07 (code review
+ * 2026-08-13) is why it is a function rather than a ternary inlined in the
+ * manifest loop: the loop was backend-aware, but the three synthetic tools
+ * registered straight after it were NOT, and `tools/list` is served from this
+ * same object -- so on the stock backend the advertised surface was `vice_ping`
+ * PLUS `vice_result_continue`, `vice_recycle` and `vice_diagnose`, and two of
+ * those three ran the fork's HTTP transport against a port speaking the binary
+ * monitor. `handleDiagnose()` reaches ensureViceSession() /
+ * gatherCheckpointTrapEvidence() / gatherBracketEvidence(); `handleRecycle()`
+ * reaches gatherWedgeEvidence(). Both go through call()/forwardToVice(). That
+ * is a direct D-09 violation ("the stock path must never fall through to the
+ * fork's HTTP forward"), and `vice_diagnose` is the wedge-triage skill's
+ * documented opening move -- so its output on stock was HTTP failure text
+ * dressed as emulator diagnosis. The pre-existing structural test could not
+ * catch it: it only checked that no code LINE pairs the string "stock" with
+ * `forwardToVice`, which this arrangement satisfied while still reaching that
+ * transport.
+ *
+ * On the stock backend every tool registered through here is answered by
+ * dispatchStock -- which either has a table entry for the name or REFUSES BY
+ * NAME. There is no third path and no fall-through, which is D-09's whole
+ * point.
+ *
+ * WHAT NOT TO DO: never register a tool whose runner can reach `call()` /
+ * `forwardToVice()` / `ensureViceSession()` without going through this
+ * function. The one legitimate exception is a runner that touches no transport
+ * at all (`vice_result_continue`, which only reads this proxy's own
+ * CONTINUATION_STORE) -- and that exception is asserted, by name, in
+ * stock-dispatch.test.ts's structural section rather than left to judgement.
+ */
+function buildBackendAwareTool(def: ToolDefinition, forkRun: (args: Record<string, unknown>) => Promise<ToolCallResult>) {
+  return ACTIVE_BACKEND.backend === "fork"
+    ? buildViceTool(def, forkRun)
+    : buildViceTool(def, (args) => stockDispatch.dispatchStock(def.name, args, { ensureLease: ensureBrokerLease, resolvedBinaryPath: ACTIVE_BACKEND.binPath }));
+}
+
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
 for (const def of readManifestTools()) {
   if (DENY_LIST.includes(def.name)) continue;
-  tools[def.name] =
-    ACTIVE_BACKEND.backend === "fork"
-      ? buildViceTool(def, (args) => forwardToVice(def.name, args))
-      : buildViceTool(def, (args) => stockDispatch.dispatchStock(def.name, args, { ensureLease: ensureBrokerLease, resolvedBinaryPath: ACTIVE_BACKEND.binPath }));
+  tools[def.name] = buildBackendAwareTool(def, (args) => forwardToVice(def.name, args));
 }
+// Backend-INDEPENDENT by construction: handleResultContinue() is served
+// entirely from this proxy's own CONTINUATION_STORE and opens no socket of any
+// kind, so it is correct on either backend and is deliberately NOT routed
+// through dispatchStock (which would refuse the continuation mechanism itself).
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
-tools[RECYCLE_TOOL.name] = buildViceTool(RECYCLE_TOOL, (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildViceTool(DIAGNOSE_TOOL, (args) => handleDiagnose(args));
+// Backend-AWARE (CR-07): both of these gather evidence over the fork's HTTP
+// transport, so on stock they are refused by name rather than advertised and
+// then failed at the wire.
+tools[RECYCLE_TOOL.name] = buildBackendAwareTool(RECYCLE_TOOL, (args) => handleRecycle(args));
+tools[DIAGNOSE_TOOL.name] = buildBackendAwareTool(DIAGNOSE_TOOL, (args) => handleDiagnose(args));
 
 const server = new MCPServer({ name: "vice", version: PROXY_VERSION, tools });
 await server.startStdio();

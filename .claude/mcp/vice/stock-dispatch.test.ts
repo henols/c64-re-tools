@@ -693,9 +693,15 @@ test("dispatch: no handler in the table ever throws -- dispatchStock always reso
 const VICE_PROXY_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "vice-proxy.ts"), "utf8");
 const VICE_PROXY_CODE_LINES = VICE_PROXY_SOURCE.split("\n").filter((line) => !/^\s*\*/.test(line) && !/^\s*\/\//.test(line));
 
-test("structure/proxy: vice-proxy.ts references dispatchStock exactly once", () => {
-  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("dispatchStock"));
-  assert.equal(matches.length, 1, `expected exactly one dispatchStock reference, found ${matches.length}: ${JSON.stringify(matches)}`);
+test("structure/proxy: vice-proxy.ts has exactly one dispatchStock CALL SITE", () => {
+  // Counts call sites in CODE lines only. The original oracle counted every
+  // textual occurrence anywhere in the file, prose included, which made the
+  // "one dispatch site" guarantee it exists to protect indistinguishable from
+  // "nobody may explain the guarantee in a comment" (CR-07's fix has to
+  // document why the registration seam is backend-aware). The invariant is
+  // unchanged and still enforced: ONE place a stock tools/call is routed from.
+  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("dispatchStock("));
+  assert.equal(matches.length, 1, `expected exactly one dispatchStock( call site, found ${matches.length}: ${JSON.stringify(matches)}`);
 });
 
 test("structure/proxy: vice-proxy.ts's dispatchStock call site passes ensureBrokerLease as its LeaseProvider", () => {
@@ -715,6 +721,86 @@ test("structure/proxy: vice-proxy.ts's ensureBrokerLease has at least two lease-
 test("structure/proxy: no code line in vice-proxy.ts pairs \"stock\" with \"forwardToVice\"", () => {
   const offenders = VICE_PROXY_CODE_LINES.filter((line) => /stock/i.test(line) && line.includes("forwardToVice"));
   assert.equal(offenders.length, 0, `found a line pairing stock with forwardToVice: ${JSON.stringify(offenders)}`);
+});
+
+// ---------------------------------------------------------------------------
+// CR-07: the assertion above was satisfied by an arrangement that still
+// reached the fork's HTTP transport on stock -- the three synthetic tools were
+// registered unconditionally after the (backend-aware) manifest loop, and
+// tools/list is served from that same object, so vice_diagnose and
+// vice_recycle were advertised on stock and ran call()/forwardToVice() against
+// a binary-monitor port. Checking that no LINE pairs the two strings is not the
+// same as checking that no registered RUNNER can reach that transport. These
+// assert the registration seam itself.
+// ---------------------------------------------------------------------------
+
+/** Every `tools[<name>] = <expr>;` registration in vice-proxy.ts, as
+ * `[registrationKey, righthandSide]`. */
+function proxyToolRegistrations(): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const line of VICE_PROXY_CODE_LINES) {
+    const match = /^\s*tools\[([^\]]+)\]\s*=\s*(.+)$/.exec(line);
+    if (match) out.push([match[1]!.trim(), match[2]!.trim()]);
+  }
+  return out;
+}
+
+/** The three tools with no manifest entry at all -- served proxy-local, so the
+ * manifest loop's own backend-aware runner choice never covers them. */
+const SYNTHETIC_TOOL_KEYS = ["RESULT_CONTINUE_TOOL.name", "RECYCLE_TOOL.name", "DIAGNOSE_TOOL.name"];
+
+test("structure/proxy (CR-07): every registered tool whose runner can touch a transport goes through buildBackendAwareTool", () => {
+  const registrations = proxyToolRegistrations();
+  assert.ok(registrations.length >= 4, `expected the manifest-loop registration plus three synthetic ones, found ${registrations.length}`);
+  for (const [key, rhs] of registrations) {
+    if (key === "RESULT_CONTINUE_TOOL.name") continue; // the one asserted exception, covered below
+    assert.match(
+      rhs,
+      /buildBackendAwareTool\(/,
+      `tools[${key}] must be registered through buildBackendAwareTool so the stock backend answers or refuses BY NAME, never falls through to the fork's HTTP transport: ${rhs}`,
+    );
+  }
+});
+
+test("structure/proxy (CR-07): the synthetic tools are all registered, and the only one bypassing the backend-aware seam is vice_result_continue", () => {
+  const registrations = proxyToolRegistrations();
+  const keys = registrations.map(([key]) => key);
+  for (const synthetic of SYNTHETIC_TOOL_KEYS) {
+    assert.ok(keys.includes(synthetic), `expected a registration for ${synthetic}`);
+  }
+  const bypassing = registrations.filter(([, rhs]) => !rhs.includes("buildBackendAwareTool(")).map(([key]) => key);
+  assert.deepEqual(bypassing, ["RESULT_CONTINUE_TOOL.name"], "exactly one registration may bypass the backend-aware seam");
+});
+
+test("structure/proxy (CR-07): vice_result_continue's runner is handleResultContinue, whose body touches no transport at all", () => {
+  const registrations = proxyToolRegistrations();
+  const entry = registrations.find(([key]) => key === "RESULT_CONTINUE_TOOL.name");
+  assert.ok(entry, "vice_result_continue must still be registered");
+  assert.match(entry![1], /handleResultContinue\(/, "its runner must be handleResultContinue, the proxy-local continuation reader");
+
+  const start = VICE_PROXY_SOURCE.indexOf("function handleResultContinue(");
+  assert.ok(start > 0, "handleResultContinue() must still exist");
+  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
+  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
+    assert.ok(!body.includes(forbidden), `handleResultContinue() must not reach ${forbidden} -- that is what makes its backend-independence sound`);
+  }
+});
+
+test("structure/proxy (CR-07): buildBackendAwareTool routes the non-fork backend to dispatchStock, and that is the only dispatch site", () => {
+  const start = VICE_PROXY_SOURCE.indexOf("function buildBackendAwareTool(");
+  assert.ok(start > 0, "buildBackendAwareTool() must exist -- it is the one backend-aware registration seam");
+  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
+  assert.match(body, /ACTIVE_BACKEND\.backend === "fork"/, "the branch must read the ONCE-settled ACTIVE_BACKEND, never re-detect");
+  assert.match(body, /dispatchStock\(/, "the non-fork arm must answer through dispatchStock");
+});
+
+test("structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, and it is backend-aware", () => {
+  const registrations = proxyToolRegistrations();
+  for (const handler of ["handleDiagnose(", "handleRecycle("]) {
+    const hits = registrations.filter(([, rhs]) => rhs.includes(handler));
+    assert.equal(hits.length, 1, `expected exactly one registration referencing ${handler}, found ${hits.length}`);
+    assert.match(hits[0]![1], /buildBackendAwareTool\(/, `${handler} reaches the fork's HTTP transport, so its registration must be backend-aware`);
+  }
 });
 
 test("structure/proxy: vice-proxy.ts calls resolvedBackend() exactly once", () => {
