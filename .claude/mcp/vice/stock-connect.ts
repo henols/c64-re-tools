@@ -199,6 +199,55 @@ async function safeDisconnect(client: ViceMonitorClient): Promise<void> {
 }
 
 /**
+ * CR-02 (code review 2026-08-13). THE load-bearing counterpart to every
+ * command this handshake sends. docs/phase0-binmon-findings.md §4, read from
+ * VICE's own source, is explicit: `monitor_check_binary()` calls
+ * `monitor_startup_trap()` on ANY INBOUND BYTE (monitor_binary.c:281), and
+ * that check runs every vsync -- so the bare `PING` (0x81) below halts the
+ * emulated C64 within roughly one frame and emits `STOPPED` (0x62). `EXIT`
+ * (0xaa) is the ONLY thing that resumes it.
+ *
+ * Before this function existed, nothing in this tree ever sent 0xaa: the
+ * first `vice_ping` on the stock backend froze the machine and left it frozen
+ * for the life of the held session, with a `STOPPED` event nobody consumed --
+ * exactly the "stopped advancing / not wedged / merely paused" state
+ * `vice-wedge-triage` exists to disambiguate, manufactured by the health
+ * check itself.
+ *
+ * WHAT NOT TO DO: never add a command sequence to this file (or to any future
+ * stock handler) that leaves the machine halted. The invariant is that a
+ * handshake returns the machine to the run state it found it in. That is why
+ * the success-path call below is INSIDE the try: a handshake that cannot
+ * prove it resumed the machine is a FAILED handshake, routed through the same
+ * disconnect-and-release cleanup as any other step, never a success that
+ * silently leaves the C64 frozen.
+ *
+ * The `RESUMED` (0x63) event VICE emits alongside the EXIT reply arrives at
+ * request id 0xffffffff and is routed to ViceMonitorClient's 'event' channel
+ * by the request-id-first demux -- deliberately not awaited here: keying on
+ * it would mean waiting on an unsolicited frame, which is precisely what that
+ * demux forbids resolving a request with.
+ */
+async function resumeMachine(client: ViceMonitorClient): Promise<void> {
+  await client.send(CommandType.Exit);
+}
+
+/** Best-effort resume for the FAILURE path only: the machine may already be
+ * halted by whichever command got through before the failure, and this
+ * handshake must not leave it that way if it can help it. Every error is
+ * swallowed -- the original handshake failure is what the caller must see
+ * (WR-07's own concern), never a cleanup error replacing it. Skipped entirely
+ * when the socket is already gone, since there is nothing to send through. */
+async function safeResume(client: ViceMonitorClient): Promise<void> {
+  if (!client.connected) return;
+  try {
+    await resumeMachine(client);
+  } catch (err) {
+    console.error(`stockConnect: best-effort resume (EXIT 0xaa) after a failed handshake did not complete: ${String(err)}`);
+  }
+}
+
+/**
  * The one connect handshake for the stock path, in load-bearing order:
  *
  *   1. claimMonitor() -- BEFORE any socket is opened (PROTO-08, D-13). A
@@ -216,9 +265,14 @@ async function safeDisconnect(client: ViceMonitorClient): Promise<void> {
  *   6. Record this instance's epoch (deps.epochPath) as the reconnect
  *      baseline (Task 2) -- absence is normal here (D-3's own posture) and
  *      becomes significant only at stockReconnect() time.
+ *   7. Send EXIT (0xaa) to RESUME the machine step 3's PING halted (CR-02).
+ *      Non-optional: see resumeMachine()'s own header comment. This handshake
+ *      returns the emulator to the run state it found it in, or fails.
  *
  * Every failure path releases the monitor claim before propagating -- a
- * handshake that fails at any step must never leave the instance claimed.
+ * handshake that fails at any step must never leave the instance claimed --
+ * and best-effort resumes the machine first, so a failed handshake does not
+ * leave a frozen C64 behind either.
  */
 export async function stockConnect({ host, port, targetId, brokerControl, deps = {} }: StockConnectOptions): Promise<StockConnectSession> {
   const claimOutcome = await brokerControl.claimMonitor({ targetId });
@@ -236,13 +290,20 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
   }
 
   const client = new ViceMonitorClient();
+  // CR-02: flipped immediately BEFORE step 7's resume is attempted, so the
+  // failure path below never sends a SECOND EXIT for a resume that already
+  // failed on its own (which would stack a second full timeout on top of the
+  // first, and re-report the same problem twice).
+  let resumeAttempted = false;
 
   try {
     await client.connect(host, port);
 
     // Step 3: api_version assertion. A non-0x02 api_version rejects this
     // send() call directly with a StockFramingError naming the observed
-    // value -- see this function's own header comment.
+    // value -- see this function's own header comment. NOTE (CR-02): this
+    // single byte HALTS the emulated machine (any inbound byte does --
+    // docs/phase0-binmon-findings.md §4); step 7's EXIT is what undoes it.
     await client.send(CommandType.Ping);
 
     // Step 4: build identity.
@@ -262,10 +323,19 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     const baselineRecord: EpochResult | null = deps.epochPath ? readEpochFn(deps.epochPath) : null;
     const baselineEpoch = baselineRecord && baselineRecord.present ? baselineRecord.epoch : null;
 
+    // Step 7 (CR-02): resume the machine the PING in step 3 halted. LAST, and
+    // inside the try -- see resumeMachine()'s own header comment for why a
+    // failure here must fail the whole handshake rather than return a session
+    // whose emulator is frozen.
+    resumeAttempted = true;
+    await resumeMachine(client);
+
     return { client, versionQuad, capabilities, host, port, targetId, brokerControl, deps, baselineEpoch };
   } catch (err) {
     // Every failure path releases the claim before propagating -- a
-    // handshake that fails at any step must not leave the instance locked.
+    // handshake that fails at any step must not leave the instance locked --
+    // and, CR-02, tries to leave the machine RUNNING on the way out too.
+    if (!resumeAttempted) await safeResume(client);
     await safeDisconnect(client);
     await brokerControl.releaseMonitor({ targetId });
     throw err;

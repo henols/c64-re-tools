@@ -107,10 +107,16 @@ interface HappyPathOptions {
   onRequest?: (req: DecodedRequest) => void;
 }
 
-/** A responder answering PING, VICE_INFO and CPUHISTORY_GET in the shape a
- * well-behaved stock build would -- every other command type is ignored
- * (returns null, no reply), which is fine because this handshake never sends
- * anything else. */
+/** A responder answering PING, VICE_INFO, CPUHISTORY_GET and EXIT in the
+ * shape a well-behaved stock build would -- every other command type is
+ * ignored (returns null, no reply), which is fine because this handshake never
+ * sends anything else.
+ *
+ * The EXIT (0xaa) arm was added with CR-02's fix: a real stock build answers
+ * EXIT with its own response type AND emits an unsolicited RESUMED (0x63) at
+ * request id 0xffffffff, so this stub models BOTH. Without the EXIT arm the
+ * stub would silently model an emulator that never resumes -- which is the
+ * defect, not the contract. */
 function happyPathResponder({ cpuHistoryErrorCode = ErrorCode.Ok, version = [3, 9, 0, 0], onRequest }: HappyPathOptions = {}): StockResponder {
   return (req) => {
     onRequest?.(req);
@@ -126,6 +132,16 @@ function happyPathResponder({ cpuHistoryErrorCode = ErrorCode.Ok, version = [3, 
         });
       case CommandType.CpuHistoryGet:
         return encodeResponseFrame({ responseType: ResponseType.CpuHistoryGet, errorCode: cpuHistoryErrorCode, requestId: req.requestId });
+      case CommandType.Exit:
+        return Buffer.concat([
+          encodeResponseFrame({ responseType: ResponseType.Exit, errorCode: ErrorCode.Ok, requestId: req.requestId }),
+          encodeResponseFrame({
+            responseType: ResponseType.Resumed,
+            errorCode: ErrorCode.Ok,
+            requestId: 0xffffffff,
+            body: Buffer.from([0x31, 0xea]),
+          }),
+        ]);
       default:
         return null;
     }
@@ -167,6 +183,113 @@ test("stockConnect: handshake claims before dialling and completes against a stu
     await stockDisconnect(session);
     assert.equal(state.releaseCalls, 1);
   });
+});
+
+// ===========================================================================
+// CR-02: the handshake must RESUME the machine its own PING halted.
+//
+// These assert on the bytes that actually left the socket, not on the presence
+// of a constant: docs/phase0-binmon-findings.md §4 says any inbound byte halts
+// the machine and only EXIT (0xaa) resumes it, so the observable contract is
+// "an EXIT reached the wire, after the capability probe, exactly once".
+// ===========================================================================
+
+test("stockConnect (CR-02): a successful handshake sends exactly one EXIT (0xaa), and sends it LAST -- after the capability probe", async () => {
+  const seenCommands: number[] = [];
+  await withStockStubServer(happyPathResponder({ onRequest: (req) => seenCommands.push(req.commandType) }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-resume-1", brokerControl });
+
+    const exits = seenCommands.filter((c) => c === CommandType.Exit);
+    assert.equal(exits.length, 1, `the handshake must resume the machine its PING halted exactly once -- saw ${JSON.stringify(seenCommands)}`);
+    assert.equal(CommandType.Exit, 0xaa, "the resume opcode is EXIT 0xaa per docs/phase0-binmon-findings.md §4");
+    assert.equal(seenCommands[seenCommands.length - 1], CommandType.Exit, "the resume must be the LAST command of the handshake");
+    assert.ok(
+      seenCommands.indexOf(CommandType.CpuHistoryGet) < seenCommands.indexOf(CommandType.Exit),
+      "the resume must follow the capability probe, not precede it",
+    );
+    // The full load-bearing order, asserted as a sequence rather than a set.
+    assert.deepEqual(seenCommands, [CommandType.Ping, CommandType.ViceInfo, CommandType.CpuHistoryGet, CommandType.Exit]);
+
+    await stockDisconnect(session);
+  });
+});
+
+test("stockConnect (CR-02): a cached capability record still resumes -- the short-circuit must not skip the EXIT", async () => {
+  const seenCommands: number[] = [];
+  await withStockStubServer(happyPathResponder({ onRequest: (req) => seenCommands.push(req.commandType) }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({
+      host: "127.0.0.1",
+      port,
+      targetId: "grant-resume-2",
+      brokerControl,
+      deps: {
+        binPath: "x64sc",
+        readCapabilityRecordFn: () => ({ versionQuad: "3.9.0.0", cpuHistoryAvailable: true, stale: false }),
+        writeCapabilityRecordFn: () => {},
+      },
+    });
+    assert.ok(!seenCommands.includes(CommandType.CpuHistoryGet));
+    assert.deepEqual(seenCommands, [CommandType.Ping, CommandType.ViceInfo, CommandType.Exit]);
+    await stockDisconnect(session);
+  });
+});
+
+test("stockConnect (CR-02): a handshake whose EXIT is never answered FAILS -- it never returns a session with a frozen machine", async () => {
+  const seenCommands: number[] = [];
+  await withStockStubServer(
+    (req) => {
+      seenCommands.push(req.commandType);
+      // A stub that models the pre-fix emulator: it answers everything except
+      // the resume, so the machine would be left halted.
+      if (req.commandType === CommandType.Exit) return null;
+      return happyPathResponder()(req);
+    },
+    async (port) => {
+      const { brokerControl, state } = makeStubBrokerControl();
+      await assert.rejects(
+        stockConnect({ host: "127.0.0.1", port, targetId: "grant-resume-3", brokerControl, deps: {} }),
+        (err: unknown) => {
+          assert.ok(err instanceof StockRequestTimeoutError, `expected a timeout on the unanswered EXIT, got ${String(err)}`);
+          assert.equal((err as StockRequestTimeoutError).commandType, CommandType.Exit);
+          return true;
+        },
+      );
+      assert.equal(state.releaseCalls, 1, "the failed handshake must still release the monitor claim");
+      assert.deepEqual(
+        seenCommands.filter((c) => c === CommandType.Exit),
+        [CommandType.Exit],
+        "the handshake attempted the resume exactly once before giving up",
+      );
+    },
+  );
+});
+
+test("stockConnect (CR-02): a handshake that fails AFTER the halting PING still best-effort resumes on the way out", async () => {
+  const seenCommands: number[] = [];
+  await withStockStubServer(
+    (req) => {
+      seenCommands.push(req.commandType);
+      if (req.commandType === CommandType.Ping) {
+        return encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: req.requestId });
+      }
+      if (req.commandType === CommandType.ViceInfo) {
+        // A wire-level failure at step 4, AFTER the PING already halted the machine.
+        return encodeResponseFrame({ responseType: ResponseType.ViceInfo, errorCode: ErrorCode.CmdFailure, requestId: req.requestId });
+      }
+      if (req.commandType === CommandType.Exit) {
+        return encodeResponseFrame({ responseType: ResponseType.Exit, errorCode: ErrorCode.Ok, requestId: req.requestId });
+      }
+      return null;
+    },
+    async (port) => {
+      const { brokerControl, state } = makeStubBrokerControl();
+      await assert.rejects(stockConnect({ host: "127.0.0.1", port, targetId: "grant-resume-4", brokerControl }));
+      assert.ok(seenCommands.includes(CommandType.Exit), `a failed handshake must not leave the machine halted -- saw ${JSON.stringify(seenCommands)}`);
+      assert.equal(state.releaseCalls, 1);
+    },
+  );
 });
 
 test("stockConnect: api_version mismatch on PING rejects with a typed framing failure naming the observed value and disconnects", async () => {
