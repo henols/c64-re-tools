@@ -246,3 +246,12 @@ None - no external service configuration required.
 ---
 *Phase: 02-stock-backend-connection*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-protocol.ts`
+- FOUND: `.claude/mcp/vice/stock-protocol.test.ts`
+- FOUND: `.planning/phases/02-stock-backend-connection/02-04-SUMMARY.md`
+- FOUND commit `296dd7d` (test: RED, failing coverage)
+- FOUND commit `be40274` (feat: GREEN, parser + socket layer)
+- FOUND commit `2298588` (docs: plan summary)
