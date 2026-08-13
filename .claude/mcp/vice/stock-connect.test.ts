@@ -13,7 +13,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { stockConnect, stockDisconnect, stockReconnect, type StockConnectBrokerControl } from "./stock-connect.ts";
+import { stockConnect, stockDisconnect, stockReconnect, clampCpuHistoryCount, type StockConnectBrokerControl } from "./stock-connect.ts";
 import {
   CommandType,
   ResponseType,
@@ -167,6 +167,53 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): { brokerCon
   };
   return { brokerControl, state };
 }
+
+// ===========================================================================
+// WR-12: clampCpuHistoryCount() -- bounded at both ends, and against
+// non-finite input. Exported so the guard its own doc comment advertises for
+// "any future caller of this same request shape" is both reachable and
+// testable, rather than a private clamp a second call site would re-derive.
+// ===========================================================================
+
+test("WR-12 clampCpuHistoryCount: clamps the documented uint16 wrap at 65535", () => {
+  assert.equal(clampCpuHistoryCount(65535), 65535);
+  assert.equal(clampCpuHistoryCount(65536), 65535, "monitor_binary.c:1492 stores the count in a uint16_t -- 65536 wraps to 0 server-side");
+  assert.equal(clampCpuHistoryCount(1_000_000), 65535);
+});
+
+test("WR-12 clampCpuHistoryCount: a negative count clamps to 0 instead of reaching writeUInt32LE, which throws on it", () => {
+  assert.equal(clampCpuHistoryCount(-1), 0);
+  assert.equal(clampCpuHistoryCount(-65536), 0);
+  // The pre-fix failure mode, asserted directly: writeUInt32LE genuinely throws.
+  assert.throws(() => Buffer.alloc(5).writeUInt32LE(-1, 1));
+});
+
+test("WR-12 clampCpuHistoryCount: NaN and the infinities clamp to an explicit 0", () => {
+  assert.equal(clampCpuHistoryCount(Number.NaN), 0);
+  assert.equal(clampCpuHistoryCount(Number.POSITIVE_INFINITY), 0);
+  assert.equal(clampCpuHistoryCount(Number.NEGATIVE_INFINITY), 0);
+  // Correction to WR-02's own wording: on Node 22 `writeUInt32LE(NaN)` does NOT
+  // throw -- it silently writes 0. Verified here so the reason for the guard is
+  // recorded accurately: NaN's hazard is a SILENT coercion nobody chose, and
+  // POSITIVE_INFINITY would coerce past the uint16 the server stores. The
+  // clamp makes that 0 deliberate instead of incidental. The genuinely
+  // throwing input is a negative count, asserted in the test above.
+  const scratch = Buffer.alloc(5);
+  assert.doesNotThrow(() => scratch.writeUInt32LE(Number.NaN, 1));
+  assert.equal(scratch.readUInt32LE(1), 0);
+});
+
+test("WR-12 clampCpuHistoryCount: a fractional count truncates -- the wire field is an integer", () => {
+  assert.equal(clampCpuHistoryCount(10.9), 10);
+  assert.equal(clampCpuHistoryCount(-0.5), 0);
+});
+
+test("WR-12 clampCpuHistoryCount: every clamped value is a legal writeUInt32LE argument", () => {
+  for (const raw of [Number.NaN, Number.NEGATIVE_INFINITY, -1, -0.5, 0, 1.5, 65535, 65536, 1e9, Number.POSITIVE_INFINITY]) {
+    const clamped = clampCpuHistoryCount(raw);
+    assert.doesNotThrow(() => Buffer.alloc(5).writeUInt32LE(clamped, 1), `clamped(${raw}) = ${clamped} must be writable`);
+  }
+});
 
 // ===========================================================================
 // Task 1: claim-then-dial handshake with api_version and VICE_INFO

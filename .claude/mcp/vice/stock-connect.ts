@@ -79,8 +79,18 @@ export interface StockCapabilities {
  * of this same request shape. */
 const CPU_HISTORY_MAX_COUNT = 65535;
 
-function clampCpuHistoryCount(count: number): number {
-  return Math.min(count, CPU_HISTORY_MAX_COUNT);
+/** WR-02/WR-12: bounded at BOTH ends, and against non-finite input. A bare
+ * `Math.min(count, 65535)` clamped only the documented uint16 wrap and passed
+ * negatives and NaN straight through to `body.writeUInt32LE(count, 1)`, which
+ * THROWS for either. This function's own doc comment above advertises it as "a
+ * general guard for any future caller of this same request shape" -- and that
+ * caller is exactly the one who will hand it unvalidated input, so the guard
+ * has to hold for the whole numeric domain, not just the upper bound. A
+ * fractional count truncates rather than throwing: the wire field is an
+ * integer, and 0 is the safe floor (this handshake's own probe uses it). */
+export function clampCpuHistoryCount(count: number): number {
+  if (!Number.isFinite(count)) return 0;
+  return Math.min(Math.max(Math.trunc(count), 0), CPU_HISTORY_MAX_COUNT);
 }
 
 /** Sends CPUHISTORY_GET (0x86) with memspace=main and a zero, clamped count,
