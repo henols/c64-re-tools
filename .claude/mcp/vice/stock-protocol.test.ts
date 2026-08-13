@@ -60,7 +60,7 @@ test("parseBuffer: byte-at-a-time delivery yields nothing until the final byte, 
   const oneShot = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(oneShot.responses.length, 1);
 
-  let buffered = Buffer.alloc(0);
+  let buffered: Buffer = Buffer.alloc(0);
   const counters = { desyncBytes: 0 };
   const collected: unknown[] = [];
   for (const chunk of chunkBytes(frame, 1)) {
@@ -240,20 +240,30 @@ test("error hierarchy: StockProtocolError, StockFramingError, StockDesyncError a
 // ===========================================================================
 
 /** Start a raw net server driven by `handler(socket)`, run `fn(port)` against
- * it, then shut down -- closeAllConnections() BEFORE close() so a stub that
- * never finishes a frame cannot wedge the suite. Mirrors vice-probe.test.ts's
- * withStubServer() harness discipline for net.Server instead of http.Server. */
+ * it, then shut down -- every accepted socket is tracked and destroyed
+ * BEFORE close() so a stub that never finishes a frame (or a client that
+ * never disconnects) cannot leave a lingering handle open and wedge the
+ * suite. net.Server has no closeAllConnections() (that method exists only
+ * on http.Server) -- tracking accepted sockets ourselves is the net.Server
+ * equivalent of vice-probe.test.ts's withStubServer() harness discipline. */
 async function withStubNetServer<T>(
   handler: (socket: import("node:net").Socket) => void,
   fn: (port: number) => Promise<T>,
 ): Promise<T> {
-  const server: Server = createServer(handler);
+  const sockets = new Set<import("node:net").Socket>();
+  const server: Server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    handler(socket);
+  });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const port = (server.address() as AddressInfo).port;
   try {
     return await fn(port);
   } finally {
-    server.closeAllConnections();
+    for (const socket of sockets) {
+      socket.destroy();
+    }
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
