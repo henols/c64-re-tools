@@ -3109,7 +3109,13 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
 function buildBackendAwareTool(def: ToolDefinition, forkRun: (args: Record<string, unknown>) => Promise<ToolCallResult>) {
   return ACTIVE_BACKEND.backend === "fork"
     ? buildViceTool(def, forkRun)
-    : buildViceTool(def, (args) => stockDispatch.dispatchStock(def.name, args, { ensureLease: ensureBrokerLease, resolvedBinaryPath: ACTIVE_BACKEND.binPath }));
+    : buildViceTool(def, (args) =>
+        stockDispatch.dispatchStock(def.name, args, {
+          ensureLease: ensureBrokerLease,
+          resolvedBinaryPath: ACTIVE_BACKEND.binPath,
+          resolvedBinaryPathIsResolved: ACTIVE_BACKEND.binPathResolved,
+        }),
+      );
 }
 
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};

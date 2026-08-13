@@ -188,6 +188,92 @@ test("resolvedBackend: override is exact-string-matched -- an unrecognised VICE_
 });
 
 // ===========================================================================
+// WR-05: binPath is the RESOLVED absolute path when there is one, and
+// binPathResolved says which of the two cases the caller has. Every
+// resolvedBackend() return path used to hand back the raw configured name while
+// two consumers' doc comments (and BACK-03's own `vice_ping` field name)
+// claimed resolution -- so `vice_ping` on stock reported "x64sc", which inside
+// a container names nothing at all.
+// ===========================================================================
+
+test("WR-05: a resolvable binary yields the RESOLVED absolute path, flagged resolved, on the probe path", () => {
+  resetResolvedBackendForTests();
+  const result = resolvedBackend(
+    stubDeps({ viceBin: "x64sc", resolveBinPath: () => "/usr/local/bin/x64sc", probe: () => "stock" }),
+  );
+  assert.equal(result.source, "probe");
+  assert.equal(result.binPath, "/usr/local/bin/x64sc", "the configured name must not be reported as the path when a real one is known");
+  assert.equal(result.binPathResolved, true);
+});
+
+test("WR-05: an UNRESOLVABLE binary falls back to the configured name and is flagged unresolved", () => {
+  resetResolvedBackendForTests();
+  const result = resolvedBackend(stubDeps({ viceBin: "x64sc", resolveBinPath: () => null, probe: () => "stock" }));
+  assert.equal(result.binPath, "x64sc", "the configured name is still reported -- it is the only information available");
+  assert.equal(result.binPathResolved, false, "and it must never claim to be resolved");
+});
+
+test("WR-05: the override path resolves too -- an explicit VICE_BACKEND does not mean an unresolved path", () => {
+  resetResolvedBackendForTests();
+  const resolved = resolvedBackend(
+    stubDeps({ env: { VICE_BACKEND: "stock" }, viceBin: "x64sc", resolveBinPath: () => "/opt/vice/bin/x64sc" }),
+  );
+  assert.equal(resolved.source, "override");
+  assert.equal(resolved.binPath, "/opt/vice/bin/x64sc");
+  assert.equal(resolved.binPathResolved, true);
+
+  resetResolvedBackendForTests();
+  const unresolved = resolvedBackend(stubDeps({ env: { VICE_BACKEND: "stock" }, viceBin: "x64sc", resolveBinPath: () => null }));
+  assert.equal(unresolved.binPath, "x64sc");
+  assert.equal(unresolved.binPathResolved, false);
+});
+
+test("WR-05: the override path still spawns nothing while resolving the path", () => {
+  resetResolvedBackendForTests();
+  let probeCalls = 0;
+  const result = resolvedBackend(
+    stubDeps({
+      env: { VICE_BACKEND: "fork" },
+      viceBin: "x64sc",
+      resolveBinPath: () => "/usr/bin/x64sc",
+      probe: () => {
+        probeCalls++;
+        return "stock";
+      },
+    }),
+  );
+  assert.equal(result.binPath, "/usr/bin/x64sc");
+  assert.equal(probeCalls, 0, "resolution is a filesystem lookup, never a spawn -- the override path must stay spawn-free");
+});
+
+test("WR-05: the indeterminate outcome carries the resolved path too, not the bare name", () => {
+  resetResolvedBackendForTests();
+  const result = resolvedBackend(
+    stubDeps({ viceBin: "x64sc", resolveBinPath: () => "/usr/bin/x64sc", probe: () => "unknown" }),
+  );
+  assert.equal(result.source, "indeterminate");
+  assert.equal(result.binPath, "/usr/bin/x64sc");
+  assert.equal(result.binPathResolved, true);
+});
+
+test("WR-05: probeBackend still receives the UNRESOLVED configured name, so the OS's own PATH search happens as it would for a real invocation", () => {
+  resetResolvedBackendForTests();
+  const probedWith: string[] = [];
+  const result = resolvedBackend(
+    stubDeps({
+      viceBin: "x64sc",
+      resolveBinPath: () => "/usr/bin/x64sc",
+      probe: (bin) => {
+        probedWith.push(bin);
+        return "stock";
+      },
+    }),
+  );
+  assert.deepEqual(probedWith, ["x64sc"], "the probe target is deliberately the configured name, not the resolved path");
+  assert.equal(result.binPath, "/usr/bin/x64sc", "while the REPORTED path is the resolved one");
+});
+
+// ===========================================================================
 // resolvedBackend(): the on-disk cache -- hit, miss (each identity field),
 // malformed file, absent file.
 // ===========================================================================

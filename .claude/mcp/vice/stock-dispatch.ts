@@ -79,8 +79,14 @@ export type LeaseProvider = () => Promise<{ ok: true; lease: HeldLease | null } 
  * must never stub ensureStockSession itself: that is the wiring under test.
  *
  * `resolvedBinaryPath` (Task 1, plan 02-10) is BACK-03's third field on
- * `vice_ping`'s answer -- the resolved binary path `resolvedBackend()`
- * already determined. It is a plain string handed down from vice-proxy.ts's
+ * `vice_ping`'s answer -- `resolvedBackend().binPath`, which since WR-05 is a
+ * genuinely resolved ABSOLUTE path whenever the binary could be resolved, and
+ * the configured name (e.g. `"x64sc"`) only when it could not. Before WR-05
+ * this field was always the raw configured name while both this comment and
+ * BACK-03's own field name claimed resolution -- so `vice_ping` on stock
+ * reported `"x64sc"`, which inside a container names nothing at all.
+ * `binaryPathResolved` carries which of the two cases it is, so the answer
+ * never implies resolution it did not achieve. It is a plain string handed down from vice-proxy.ts's
  * OWN single, module-scope call to `resolvedBackend()` (see that file's own
  * "resolve the active backend once" discipline) -- this module must never
  * call `resolvedBackend()`/`probeBackend()` itself, per backend-detect.mts's
@@ -93,6 +99,12 @@ export interface StockDispatchDeps {
   connect?: typeof stockConnect;
   reconnect?: typeof stockReconnect;
   resolvedBinaryPath?: string;
+  /** WR-05: whether `resolvedBinaryPath` above is a real resolved absolute path
+   * (`true`) or the configured name resolution failed on (`false`). Threaded
+   * down from the SAME single `resolvedBackend()` call, never recomputed.
+   * Omitted defaults to `false` -- the honest answer when nothing said
+   * otherwise. */
+  resolvedBinaryPathIsResolved?: boolean;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };
@@ -395,6 +407,10 @@ async function viceHandlerPing(_args: Record<string, unknown>, deps: StockDispat
     backend: "stock" as const,
     viceVersion: `VICE ${session.versionQuad}`,
     resolvedBinaryPath: deps.resolvedBinaryPath ?? "",
+    // WR-05: says outright whether the field above IS a resolved path. Without
+    // it, an agent reading `"x64sc"` cannot tell "this is where the binary is"
+    // from "this is what we were told to look for, and we could not find it".
+    resolvedBinaryPathIsResolved: deps.resolvedBinaryPathIsResolved ?? false,
     capabilities: session.capabilities,
   };
   return { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false };

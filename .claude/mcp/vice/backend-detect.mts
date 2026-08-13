@@ -313,7 +313,29 @@ export type ResolvedBackendSource = "override" | "cache" | "probe" | "indetermin
 export interface ResolvedBackendResult {
   backend: ViceBackend;
   source: ResolvedBackendSource;
+  /**
+   * WR-05: the ABSOLUTE path this binary resolved to when it could be resolved,
+   * falling back to the configured name otherwise. It used to be `viceBin`
+   * unconditionally -- the raw `VICE_BIN`/`"x64sc"` string -- even though this
+   * function already computes `resolvedPath` internally for cache keying. Two
+   * consumers called that a resolved path in their own doc comments
+   * (StockDispatchDeps.resolvedBinaryPath, and BACK-03's `vice_ping` answer),
+   * so `vice_ping` on stock reported `"x64sc"` -- a name that, inside a
+   * container, resolves to nothing at all.
+   *
+   * Deliberately NOT what probeBackend() spawns: that still receives the
+   * ORIGINAL, unresolved string, so the OS's own PATH search happens exactly
+   * as it would for a real invocation. This field is what a HUMAN or an agent
+   * is shown, and "which file did you actually mean" is the question it has to
+   * answer.
+   */
   binPath: string;
+  /** WR-05: `true` only when `binPath` above is a real resolved absolute path;
+   * `false` when resolution failed and it fell back to the configured name.
+   * Carried explicitly so a consumer rendering it to an agent can say which of
+   * the two it has, instead of a reader having to guess from whether the string
+   * happens to contain a slash. */
+  binPathResolved: boolean;
   note?: string;
 }
 
@@ -393,6 +415,14 @@ export function resetResolvedBackendForTests(): void {
  * pre-Phase-2 behaviour every existing install already has, so an
  * undetectable binary degrades to what already worked rather than to
  * nothing. */
+/** WR-05: the ONE place `binPath`/`binPathResolved` are derived, so the four
+ * return paths below cannot disagree about what "the binary" means. A resolved
+ * absolute path when there is one; the configured name, flagged as unresolved,
+ * when there is not. */
+function binPathFields(resolvedPath: string | null, viceBin: string): { binPath: string; binPathResolved: boolean } {
+  return resolvedPath !== null ? { binPath: resolvedPath, binPathResolved: true } : { binPath: viceBin, binPathResolved: false };
+}
+
 export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackendResult {
   const env = deps.env ?? process.env;
   const viceBin = deps.viceBin ?? env.VICE_BIN ?? "x64sc";
@@ -403,15 +433,20 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
   // seam) still takes precedence when supplied, exactly like every other
   // field on this options object.
   const override = deps.env ? deps.env.VICE_BACKEND : process.env.VICE_BACKEND;
+  const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
 
   if (override === "stock" || override === "fork") {
-    return { backend: override, source: "override", binPath: viceBin };
+    // WR-05: an explicit backend override still resolves the PATH, so
+    // `vice_ping` reports a real file rather than the bare name. This is a
+    // filesystem lookup only -- existsSync per PATH entry -- and NEVER a spawn,
+    // so the override path keeps its "answered fresh, straight from the
+    // environment, spawns nothing" property.
+    return { backend: override, source: "override", ...binPathFields(resolveBinPath(viceBin, env), viceBin) };
   }
 
   if (memoisedResult !== null) return memoisedResult;
 
   const log = deps.log ?? defaultLog;
-  const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
   const stat = deps.stat ?? defaultStat;
   const probe = deps.probe ?? ((bin: string) => probeBackend(bin));
   const now = deps.now ?? ((): number => Date.now());
@@ -428,7 +463,7 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
       cached.mtimeMs === identity!.mtimeMs &&
       cached.sizeBytes === identity!.sizeBytes
     ) {
-      const result: ResolvedBackendResult = { backend: cached.backend, source: "cache", binPath: viceBin };
+      const result: ResolvedBackendResult = { backend: cached.backend, source: "cache", ...binPathFields(resolvedPath, viceBin) };
       memoisedResult = result;
       emitDetectedNote(result, viceBin, log);
       return result;
@@ -443,7 +478,7 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
       `its --help output matched neither the -mcpserver nor the -binarymonitor discriminator. ` +
       `Set VICE_BACKEND=stock or VICE_BACKEND=fork explicitly.`;
     log(note);
-    const result: ResolvedBackendResult = { backend: "fork", source: "indeterminate", binPath: viceBin, note };
+    const result: ResolvedBackendResult = { backend: "fork", source: "indeterminate", ...binPathFields(resolvedPath, viceBin), note };
     memoisedResult = result;
     return result;
   }
@@ -459,7 +494,7 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
     });
   }
 
-  const result: ResolvedBackendResult = { backend: verdict, source: "probe", binPath: viceBin };
+  const result: ResolvedBackendResult = { backend: verdict, source: "probe", ...binPathFields(resolvedPath, viceBin) };
   memoisedResult = result;
   emitDetectedNote(result, viceBin, log);
   return result;

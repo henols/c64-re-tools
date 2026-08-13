@@ -618,6 +618,7 @@ test("ping: the success payload carries backend, viceVersion, and resolvedBinary
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
     resolvedBinaryPath: "/opt/vice/bin/x64sc",
+    resolvedBinaryPathIsResolved: true,
   };
   const result = await dispatchStock("vice_ping", {}, deps);
   assert.equal(result.isError, false);
@@ -626,6 +627,32 @@ test("ping: the success payload carries backend, viceVersion, and resolvedBinary
   assert.equal(typeof payload.viceVersion, "string");
   assert.match(payload.viceVersion, /3\.9\.0/);
   assert.equal(payload.resolvedBinaryPath, "/opt/vice/bin/x64sc");
+  assert.equal(payload.resolvedBinaryPathIsResolved, true);
+});
+
+test("WR-05 ping: an UNRESOLVED binary path is reported as such, so a bare name is never presented as a resolved path", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-wr05", brokerControl: STUB_BROKER_CONTROL });
+  const result = await dispatchStock("vice_ping", {}, {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+    // The pre-WR-05 production value: the raw configured name, which inside a
+    // container resolves to nothing at all.
+    resolvedBinaryPath: "x64sc",
+    resolvedBinaryPathIsResolved: false,
+  });
+  const payload = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  assert.equal(payload.resolvedBinaryPath, "x64sc");
+  assert.equal(payload.resolvedBinaryPathIsResolved, false, "the answer must not imply a resolution it did not achieve");
+});
+
+test("WR-05 ping: the resolution flag defaults to false when nothing said otherwise", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-wr05b", brokerControl: STUB_BROKER_CONTROL });
+  const result = await dispatchStock("vice_ping", {}, {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  });
+  const payload = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  assert.equal(payload.resolvedBinaryPathIsResolved, false);
 });
 
 test("ping: a MonitorOwnershipError from the handshake becomes isError:true naming the holder, without wedge/hung/unresponsive language", async () => {
