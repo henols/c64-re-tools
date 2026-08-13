@@ -11,8 +11,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
-import { manifestPathForBackend, ensureStockSession, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import {
+  manifestPathForBackend,
+  ensureStockSession,
+  clearHeldStockSession,
+  stockHandlerFor,
+  dispatchStock,
+  type StockDispatchDeps,
+} from "./stock-dispatch.ts";
 import { DENY_LIST, MachineRestartedError } from "./vice.ts";
+import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
 
@@ -281,4 +289,150 @@ test("lease: MachineRestartedError out of a held session's reconnect clears the 
   assert.ok(third.ok);
   assert.equal(connectCalls, 2);
   assert.equal(reconnectCalls, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Task 1 (plan 02-10): the dispatch table, the hard refusal, and vice_ping.
+// Every deps.connect/deps.reconnect below is a spy stub, never
+// stock-connect.ts's real socket-touching implementation -- these tests
+// assert dispatch WIRING and refusal TEXT, never protocol shape. Every
+// ping test drives dispatchStock() through a REAL ensureStockSession(), per
+// this plan's own test-stubbing-boundary decision -- never a stubbed
+// ensureStockSession.
+// ---------------------------------------------------------------------------
+
+test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFor(\"vice_mem_read\") returns undefined", () => {
+  assert.equal(typeof stockHandlerFor("vice_ping"), "function");
+  assert.equal(stockHandlerFor("vice_mem_read"), undefined);
+});
+
+test("refus: dispatchStock on a name with no handler refuses by name, names the fork, never calls forwardToVice, and never touches deps", async () => {
+  let depsTouched = false;
+  const emptyDeps = new Proxy({} as StockDispatchDeps, {
+    get(target, prop) {
+      depsTouched = true;
+      return (target as unknown as Record<string | symbol, unknown>)[prop];
+    },
+  });
+  const result = await dispatchStock("vice_mem_read", {}, emptyDeps);
+  assert.equal(result.isError, true);
+  const text = JSON.stringify(result.content);
+  assert.match(text, /vice_mem_read/);
+  assert.match(text, /fork/i);
+  assert.equal(depsTouched, false, "a miss must never read any field off deps");
+});
+
+test("refus: dispatchStock never returns a success shape for an unknown tool name", async () => {
+  const result = await dispatchStock("vice_totally_unknown_tool", {}, { ensureLease: async () => ({ ok: true, lease: null }) });
+  assert.equal(result.isError, true);
+});
+
+test("ping: dispatchStock(\"vice_ping\", ...) calls deps.ensureLease exactly once and deps.connect receives the exact lease fields", async () => {
+  let ensureLeaseCalls = 0;
+  const lease: HeldLease = { host: "10.1.2.3", port: 6510, targetId: "grant-ping-1", brokerControl: STUB_BROKER_CONTROL };
+  const receivedCalls: StockConnectOptions[] = [];
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      ensureLeaseCalls++;
+      return { ok: true, lease };
+    },
+    connect: async (opts) => {
+      receivedCalls.push(opts);
+      return fakeSession(opts);
+    },
+    resolvedBinaryPath: "/usr/local/bin/x64sc",
+  };
+  const result = await dispatchStock("vice_ping", {}, deps);
+  assert.equal(result.isError, false);
+  assert.equal(ensureLeaseCalls, 1);
+  assert.equal(receivedCalls.length, 1);
+  const received = receivedCalls[0]!;
+  assert.strictEqual(received.host, lease.host);
+  assert.strictEqual(received.port, lease.port);
+  assert.strictEqual(received.targetId, lease.targetId);
+  assert.strictEqual(received.brokerControl, lease.brokerControl);
+});
+
+test("ping: a failing ensureLease yields isError:true carrying the provider's message and never calls connect", async () => {
+  let connectCalls = 0;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (pid 1234)" }),
+    connect: async (opts) => {
+      connectCalls++;
+      return fakeSession(opts);
+    },
+  };
+  const result = await dispatchStock("vice_ping", {}, deps);
+  assert.equal(result.isError, true);
+  const text = JSON.stringify(result.content);
+  assert.match(text, /dead_or_hung/);
+  assert.equal(connectCalls, 0);
+});
+
+test("ping: the success payload carries backend, viceVersion, and resolvedBinaryPath", async () => {
+  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL };
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+    resolvedBinaryPath: "/opt/vice/bin/x64sc",
+  };
+  const result = await dispatchStock("vice_ping", {}, deps);
+  assert.equal(result.isError, false);
+  const payload = JSON.parse(result.content[0]!.text);
+  assert.equal(payload.backend, "stock");
+  assert.equal(typeof payload.viceVersion, "string");
+  assert.match(payload.viceVersion, /3\.9\.0/);
+  assert.equal(payload.resolvedBinaryPath, "/opt/vice/bin/x64sc");
+});
+
+test("ping: a MonitorOwnershipError from the handshake becomes isError:true naming the holder, without wedge/hung/unresponsive language", async () => {
+  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-3", brokerControl: STUB_BROKER_CONTROL };
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async () => {
+      throw new MonitorOwnershipError("stockConnect: monitor for target grant-ping-3 on port 6502 is already claimed by grant grant-other", {
+        holderGrantId: "grant-other",
+        holderClaimedAt: 1700000000000,
+        port: 6502,
+      });
+    },
+  };
+  const result = await dispatchStock("vice_ping", {}, deps);
+  assert.equal(result.isError, true);
+  const text = JSON.stringify(result.content).toLowerCase();
+  assert.match(text, /grant-other/);
+  assert.doesNotMatch(text, /wedge|hung|unresponsive/);
+});
+
+test("ping: a MachineRestartedError from the handshake becomes isError:true distinguishable from a provider-timeout message", async () => {
+  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-4", brokerControl: STUB_BROKER_CONTROL };
+  let connectCalls = 0;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => {
+      connectCalls++;
+      if (connectCalls === 1) return fakeSession({ ...opts, connected: false });
+      throw new Error("connect should not be called a second time in this scenario");
+    },
+    reconnect: async () => {
+      throw new MachineRestartedError("test: machine restarted across reconnect", { baselineEpoch: 5, currentEpoch: 9 });
+    },
+  };
+  await dispatchStock("vice_ping", {}, deps); // first call connects and holds a not-connected session
+  const result = await dispatchStock("vice_ping", {}, deps); // second call triggers the reconnect path
+  assert.equal(result.isError, true);
+  const text = JSON.stringify(result.content);
+  assert.match(text, /epoch/i);
+  assert.match(text, /baseline epoch 5/);
+  assert.match(text, /current epoch 9/);
+  assert.doesNotMatch(text.toLowerCase(), /timeout/);
+});
+
+test("dispatch: no handler in the table ever throws -- dispatchStock always resolves to a well-formed {content,isError} result", async () => {
+  const names = ["vice_ping", "vice_totally_unknown_tool", "vice_mem_read"];
+  for (const name of names) {
+    const result = await dispatchStock(name, {}, { ensureLease: async () => ({ ok: false, message: "unreachable in this test" }) });
+    assert.equal(typeof result.isError, "boolean");
+    assert.ok(Array.isArray(result.content));
+  }
 });
