@@ -90,3 +90,8 @@ process, then:
 - `.planning/phases/02-stock-backend-connection/02-02-PLAN.md` — original
   Task 1, written for a `checkpoint:human-verify` capture run that this
   override bypassed.
+- `.planning/todos/pending/2026-08-13-confirm-help-discriminator-against-real-vice-binaries.md`
+  — the sibling todo for plan 02-07's backend-detection `--help`
+  discriminator (`docs/phase2-backend-probe-evidence.md` §2's OPEN verdict),
+  a different, independently-scoped gap from the same environment
+  constraint that produced this one.
