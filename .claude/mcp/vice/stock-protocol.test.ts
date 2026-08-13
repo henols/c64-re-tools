@@ -640,6 +640,75 @@ test("WR-03: a large in-progress frame delivered in chunks is reassembled, with 
   );
 });
 
+// ---------------------------------------------------------------------------
+// WR-13: connect() robustness -- (a) the timeout path leaves an 'error'
+// listener attached, (b) a second connect() over a live socket is refused
+// rather than silently overwriting (and leaking) the first.
+// ---------------------------------------------------------------------------
+
+test("WR-13(b): connect() over an already-live socket is refused, and the existing socket keeps working", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) })));
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      assert.equal(client.connected, true);
+
+      await assert.rejects(client.connect("127.0.0.1", port), (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match((err as Error).message, /already holds a live socket/);
+        return true;
+      });
+
+      // The FIRST socket is untouched and still correlates a reply.
+      const reply = await client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 1000 });
+      assert.equal(reply.requestId, 1);
+      await client.disconnect();
+    },
+  );
+});
+
+test("WR-13(b): after disconnect(), connect() is permitted again -- the refusal is about a LIVE socket, not a used client", async () => {
+  await withStubNetServer(
+    () => {
+      /* never writes */
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await client.disconnect();
+      await client.connect("127.0.0.1", port);
+      assert.equal(client.connected, true);
+      await client.disconnect();
+    },
+  );
+});
+
+test("WR-13(a): a connect() that times out never produces an unhandled 'error' event", async () => {
+  const uncaught: unknown[] = [];
+  const onUncaught = (err: unknown): void => {
+    uncaught.push(err);
+  };
+  process.on("uncaughtException", onUncaught);
+  try {
+    const client = new ViceMonitorClient();
+    // 203.0.113.0/24 is TEST-NET-3 (RFC 5737) -- reserved for documentation and
+    // guaranteed non-routable, so the connect stalls rather than being refused.
+    await assert.rejects(client.connect("203.0.113.1", 65534, { timeoutMs: 60 }), (err: unknown) => {
+      assert.match(String((err as Error).message), /timed out after 60ms/);
+      return true;
+    });
+    // Give the destroyed socket a few turns to deliver anything it wants to.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.deepEqual(uncaught, [], "the abandoned socket's own 'error' must land on a listener, never on the global handler");
+    assert.equal(client.connected, false, "a timed-out connect must not leave the client believing it is connected");
+  } finally {
+    process.removeListener("uncaughtException", onUncaught);
+  }
+});
+
 test("ViceMonitorClient: disconnect() closes the socket and leaves no listener attached", async () => {
   await withStubNetServer(
     () => {

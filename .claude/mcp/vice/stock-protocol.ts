@@ -1073,6 +1073,22 @@ export class ViceMonitorClient extends EventEmitter {
   }
 
   connect(host: string, port: number, { timeoutMs = 5000 }: ConnectOptions = {}): Promise<void> {
+    // WR-13(b): refuse to connect over a socket that is still live. Before this,
+    // a second connect() simply OVERWROTE #socket, leaking the previous socket
+    // and its three listeners with nothing left to remove them, while
+    // #closed/#pending/#settledRing were reset inconsistently around it. Route
+    // a reconnect through disconnect() first -- which is what stock-connect.ts's
+    // stockReconnect() already does by building a fresh client -- rather than
+    // letting this method silently accumulate sockets against an emulator that
+    // services exactly one binmon client.
+    if (this.#socket != null && !this.#socket.destroyed) {
+      return Promise.reject(
+        new ViceError(
+          `connect to ${host}:${port} refused: this client already holds a live socket to port ${this.#port} -- call disconnect() first (stock VICE services exactly one binmon client)`,
+        ),
+      );
+    }
+
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({ host, port });
 
@@ -1095,6 +1111,17 @@ export class ViceMonitorClient extends EventEmitter {
       const timer = setTimeout(() => {
         socket.removeListener("connect", onConnect);
         socket.removeListener("error", onConnectError);
+        // WR-13(a): destroy() can itself deliver an 'error' for this socket
+        // (ECONNRESET on a half-open connect, for instance). With both
+        // listeners already removed that is an UNHANDLED 'error' event in Node
+        // -- which reaches nothing but the proxy's never-throw global handler
+        // and surfaces as an unexplained stderr incident. A no-op listener
+        // attached for the socket's remaining lifetime is the whole fix: this
+        // socket is abandoned, so there is nothing to report, but the event
+        // still needs somewhere to land.
+        socket.on("error", () => {
+          /* abandoned socket -- swallow, see the comment above */
+        });
         socket.destroy();
         reject(new ViceError(`connect to ${host}:${port} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
