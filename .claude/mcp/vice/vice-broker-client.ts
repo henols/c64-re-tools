@@ -664,6 +664,28 @@ export type OpenBrokerControlOutcome =
   | { ok: true; session: BrokerControlSession }
   | { ok: false; kind: ControlFailureKind; message: string; target?: string };
 
+/** The backend-agnostic coordinate set a session which ALREADY holds a
+ * broker grant hands to anything that needs to dial the instance that grant
+ * names (plan 02-09, PROTO-08, D-13). Declared here, beside
+ * BrokerControlSession and openBrokerControl(), because it is
+ * backend-agnostic -- the fork path does not consume it only because
+ * forwardToVice() reads activeInstance() from the same module (vice.ts)
+ * that owns the state, not because this shape is stock-specific.
+ *
+ * `targetId` is the GRANT ID, not the port -- the exact same value
+ * vice-proxy.ts's own `controlSession.recycle(grantId)` call site passes.
+ * `brokerControl` is the SAME control session the grant was acquired
+ * through; a stock handler must claim its monitor socket on this session,
+ * never on one it opened itself (see stock-dispatch.ts's own
+ * ensureStockSession() header comment for why a second acquisition would
+ * break the claim-before-dial guarantee this type exists to preserve). */
+export interface HeldLease {
+  host: string;
+  port: number;
+  targetId: string;
+  brokerControl: BrokerControlSession;
+}
+
 /** One in-flight request's settlement callback -- pushed onto the session's
  * FIFO pending queue in sendAndAwaitLine() below, and shifted off it by
  * EXACTLY ONE of: a response line arriving (createSession()'s own "data"
