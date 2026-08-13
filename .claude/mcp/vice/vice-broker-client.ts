@@ -691,6 +691,27 @@ export interface HeldLease {
   port: number;
   targetId: string;
   brokerControl: BrokerControlSession;
+  /** CR-06: THIS instance's own epoch.json, in the CONSUMER's view of the
+   * filesystem (i.e. already containerized -- vice-proxy.ts fills it from
+   * activeInstance().epochFile, which adoptGrant() set from the containerized
+   * grant). This is the reconnect-identity baseline stock-connect.ts's
+   * stockReconnect() proves machine identity against. NOT optional: with it
+   * absent, stockReconnect() reports a FALSE MachineRestartedError on every
+   * transient socket drop ("treat every result since the previous call as
+   * void"), because identity that cannot be proven is treated as not proven.
+   * Empty string means genuinely no epoch evidence exists, which is that same
+   * unprovable case stated explicitly rather than by omission. */
+  epochFile: string;
+  /** CR-06: the TOP-LEVEL supervisor directory -- the one holding
+   * `backend.json`, i.e. the same directory `broker.json` is read from
+   * (brokerRootDir()). Deliberately NOT the grant's own per-instance
+   * `supervisor_dir` (`<stateDir>/<port>`), which holds epoch.json and would
+   * make backend-detect.mts's capability cache look in a directory that never
+   * has a record in it -- a silent permanent miss. Empty string disables the
+   * capability cache (every connect re-probes), matching
+   * backend-detect.mts's own documented degradation for an omitted
+   * supervisorDir. */
+  supervisorDir: string;
 }
 
 /** One in-flight request's settlement callback -- pushed onto the session's

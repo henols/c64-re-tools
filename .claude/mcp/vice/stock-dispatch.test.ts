@@ -6,7 +6,9 @@
 // constraint.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -17,8 +19,10 @@ import {
   clearHeldStockSession,
   stockHandlerFor,
   dispatchStock,
+  stockDisconnect,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
+import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
@@ -124,6 +128,16 @@ const STUB_BROKER_CONTROL = {
 // still structurally satisfies this narrower field when threaded through.
 type FakeSessionBrokerControl = StockConnectSession["brokerControl"];
 
+/** Builds a HeldLease from the four coordinates a test actually cares about,
+ * defaulting the two CR-06 directory fields. They are REQUIRED on HeldLease
+ * (not optional) precisely so vice-proxy.ts's buildHeldLease() -- the ONE
+ * production construction site -- cannot silently omit them again; this helper
+ * keeps that requirement from turning into noise at 16 test call sites. Tests
+ * that care about the threading pass them explicitly. */
+function makeLease(opts: Omit<HeldLease, "epochFile" | "supervisorDir"> & Partial<Pick<HeldLease, "epochFile" | "supervisorDir">>): HeldLease {
+  return { epochFile: "", supervisorDir: "", ...opts };
+}
+
 /** The fake client carries a REAL disconnect() that flips `connected` to
  * false (CR-05): a session teardown that only drops the reference is exactly
  * the defect under test, so the stub has to be able to tell the two apart. */
@@ -151,7 +165,7 @@ test("lease: ensureLease is awaited strictly before stockConnect is ever called 
   let counter = 0;
   let leaseCallIndex = -1;
   let connectCallIndex = -1;
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => {
       leaseCallIndex = counter++;
@@ -170,7 +184,7 @@ test("lease: ensureLease is awaited strictly before stockConnect is ever called 
 
 test("lease: stockConnect receives the exact host/port/targetId/brokerControl the lease provider returned", async () => {
   const brokerControl = { ...STUB_BROKER_CONTROL };
-  const lease: HeldLease = { host: "10.0.0.5", port: 9002, targetId: "grant-42", brokerControl };
+  const lease: HeldLease = makeLease({ host: "10.0.0.5", port: 9002, targetId: "grant-42", brokerControl });
   const receivedCalls: StockConnectOptions[] = [];
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
@@ -221,7 +235,7 @@ test("lease: a lease of null (the VICE_MCP_URL override) never calls stockConnec
 
 test("lease: two successive calls with the same targetId call stockConnect exactly once -- the held session is reused", async () => {
   let connectCalls = 0;
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => {
@@ -237,8 +251,8 @@ test("lease: two successive calls with the same targetId call stockConnect exact
 
 test("lease: a replacement acquisition naming a different targetId calls stockConnect a second time", async () => {
   let connectCalls = 0;
-  const leaseA: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL };
-  const leaseB: HeldLease = { host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl: STUB_BROKER_CONTROL };
+  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
+  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl: STUB_BROKER_CONTROL });
   let currentLease: HeldLease = leaseA;
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease: currentLease }),
@@ -252,6 +266,128 @@ test("lease: a replacement acquisition naming a different targetId calls stockCo
   const second = await ensureStockSession(deps);
   assert.ok(first.ok && second.ok);
   assert.equal(connectCalls, 2);
+});
+
+// ---------------------------------------------------------------------------
+// CR-06 (code review 2026-08-13): production never passed StockConnectDeps, so
+// `baselineEpoch` was always null (making stockReconnect() throw a FALSE
+// MachineRestartedError on every transient drop) and the BACK-04 capability
+// cache was never read or written. The existing tests above could not see it
+// because they only assert on the four coordinates. These assert on `deps`.
+// ---------------------------------------------------------------------------
+
+test("CR-06: the lease's epochFile/supervisorDir and the settled binary path all reach stockConnect as deps", async () => {
+  const received: StockConnectOptions[] = [];
+  const lease = makeLease({
+    host: "127.0.0.1",
+    port: 6502,
+    targetId: "grant-deps-1",
+    brokerControl: STUB_BROKER_CONTROL,
+    epochFile: "/ws/.vice-supervisor/6502/epoch.json",
+    supervisorDir: "/ws/.vice-supervisor",
+  });
+  const outcome = await ensureStockSession({
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => {
+      received.push(opts);
+      return fakeSession(opts);
+    },
+    resolvedBinaryPath: "/usr/bin/x64sc",
+  });
+  assert.ok(outcome.ok);
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0]!.deps, {
+    epochPath: "/ws/.vice-supervisor/6502/epoch.json",
+    supervisorDir: "/ws/.vice-supervisor",
+    binPath: "/usr/bin/x64sc",
+  });
+});
+
+test("CR-06: the epoch path is the per-instance epoch.json, NOT the top-level supervisor dir -- the two are threaded independently", async () => {
+  const received: StockConnectOptions[] = [];
+  const lease = makeLease({
+    host: "127.0.0.1",
+    port: 6503,
+    targetId: "grant-deps-2",
+    brokerControl: STUB_BROKER_CONTROL,
+    epochFile: "/ws/.vice-supervisor/6503/epoch.json",
+    supervisorDir: "/ws/.vice-supervisor",
+  });
+  await ensureStockSession({
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => {
+      received.push(opts);
+      return fakeSession(opts);
+    },
+  });
+  const deps = received[0]!.deps!;
+  assert.notEqual(deps.epochPath, deps.supervisorDir, "backend.json and epoch.json live in DIFFERENT directories");
+  assert.match(String(deps.epochPath), /\/6503\/epoch\.json$/);
+  assert.doesNotMatch(String(deps.supervisorDir), /\/6503$/, "the capability cache must not be pointed at the per-instance directory");
+});
+
+test("CR-06: an empty lease field is threaded as ABSENT, never as an empty-string path", async () => {
+  const received: StockConnectOptions[] = [];
+  const lease = makeLease({ host: "127.0.0.1", port: 6504, targetId: "grant-deps-3", brokerControl: STUB_BROKER_CONTROL });
+  await ensureStockSession({
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => {
+      received.push(opts);
+      return fakeSession(opts);
+    },
+  });
+  assert.deepEqual(received[0]!.deps, {}, "no epochPath, no supervisorDir, no binPath -- absent, not empty strings");
+});
+
+test("CR-06: the real stockConnect, driven against a loopback binmon stub through ensureStockSession, records a non-null baselineEpoch", async () => {
+  // The one test in this file that uses the REAL stockConnect -- because the
+  // defect was precisely that the real function never received `deps`. The
+  // emulator is a loopback stub answering the four handshake commands; no
+  // broker process and no x64sc are involved.
+  const dir = mkdtempSync(join(tmpdir(), "stock-dispatch-cr06-"));
+  const epochPath = join(dir, "epoch.json");
+  writeFileSync(epochPath, JSON.stringify({ epoch: 7, spawned_at: new Date().toISOString(), pid: 4242 }));
+
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    let buf = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        if (buf.length < 11) break;
+        const bodyLength = buf.readUInt32LE(2);
+        const total = 11 + bodyLength;
+        if (buf.length < total) break;
+        const requestId = buf.readUInt32LE(6);
+        const commandType = buf[10]!;
+        buf = buf.subarray(total);
+        if (commandType === 0x85) {
+          // VICE_INFO: [len][3,9,0,0][svnLen]
+          socket.write(encodeResponseFrame({ responseType: 0x85, errorCode: 0x00, requestId, body: Buffer.from([4, 3, 9, 0, 0, 0]) }));
+        } else {
+          socket.write(encodeResponseFrame({ responseType: commandType, errorCode: 0x00, requestId }));
+        }
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as AddressInfo).port;
+
+  try {
+    const lease = makeLease({ host: "127.0.0.1", port, targetId: "grant-real-1", brokerControl: STUB_BROKER_CONTROL, epochFile: epochPath, supervisorDir: dir });
+    const outcome = await ensureStockSession({ ensureLease: async () => ({ ok: true, lease }) });
+    assert.ok(outcome.ok, `expected a live session: ${JSON.stringify(outcome)}`);
+    assert.equal(outcome.session.baselineEpoch, 7, "the reconnect baseline must be the epoch the lease's own epoch.json carries, not null");
+    assert.equal(outcome.session.versionQuad, "3.9.0.0");
+    await stockDisconnect(outcome.session);
+    clearHeldStockSession();
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -272,8 +408,8 @@ test("CR-05: a replacement acquisition disconnects the replaced session and rele
     },
   } as unknown as BrokerControlSession;
 
-  const leaseA: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
-  const leaseB: HeldLease = { host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl };
+  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
+  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl });
   let currentLease: HeldLease = leaseA;
   const sessions: StockConnectSession[] = [];
   const deps: StockDispatchDeps = {
@@ -308,8 +444,8 @@ test("CR-05: a teardown failure on the replaced session does not stop the replac
     },
   } as unknown as BrokerControlSession;
 
-  const leaseA: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
-  const leaseB: HeldLease = { host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl };
+  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
+  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl });
   let currentLease: HeldLease = leaseA;
   let connectCalls = 0;
   const deps: StockDispatchDeps = {
@@ -343,7 +479,7 @@ test("CR-05: a FIRST acquisition with nothing held releases nothing -- no spurio
       return { ok: true as const };
     },
   } as unknown as BrokerControlSession;
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
   const outcome = await ensureStockSession({
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
@@ -355,7 +491,7 @@ test("CR-05: a FIRST acquisition with nothing held releases nothing -- no spurio
 test("lease: a held session whose socket has closed is re-established via stockReconnect, not silently reused", async () => {
   let connectCalls = 0;
   let reconnectCalls = 0;
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => {
@@ -378,7 +514,7 @@ test("lease: a held session whose socket has closed is re-established via stockR
 test("lease: MachineRestartedError out of a held session's reconnect clears the holder so the next call re-handshakes", async () => {
   let connectCalls = 0;
   let reconnectCalls = 0;
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => {
@@ -436,7 +572,7 @@ test("refus: dispatchStock never returns a success shape for an unknown tool nam
 
 test("ping: dispatchStock(\"vice_ping\", ...) calls deps.ensureLease exactly once and deps.connect receives the exact lease fields", async () => {
   let ensureLeaseCalls = 0;
-  const lease: HeldLease = { host: "10.1.2.3", port: 6510, targetId: "grant-ping-1", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "10.1.2.3", port: 6510, targetId: "grant-ping-1", brokerControl: STUB_BROKER_CONTROL });
   const receivedCalls: StockConnectOptions[] = [];
   const deps: StockDispatchDeps = {
     ensureLease: async () => {
@@ -477,7 +613,7 @@ test("ping: a failing ensureLease yields isError:true carrying the provider's me
 });
 
 test("ping: the success payload carries backend, viceVersion, and resolvedBinaryPath", async () => {
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
@@ -493,7 +629,7 @@ test("ping: the success payload carries backend, viceVersion, and resolvedBinary
 });
 
 test("ping: a MonitorOwnershipError from the handshake becomes isError:true naming the holder, without wedge/hung/unresponsive language", async () => {
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-3", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-3", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async () => {
@@ -512,7 +648,7 @@ test("ping: a MonitorOwnershipError from the handshake becomes isError:true nami
 });
 
 test("ping: a MachineRestartedError from the handshake becomes isError:true distinguishable from a provider-timeout message", async () => {
-  const lease: HeldLease = { host: "127.0.0.1", port: 6502, targetId: "grant-ping-4", brokerControl: STUB_BROKER_CONTROL };
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-4", brokerControl: STUB_BROKER_CONTROL });
   let connectCalls = 0;
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
@@ -584,4 +720,23 @@ test("structure/proxy: no code line in vice-proxy.ts pairs \"stock\" with \"forw
 test("structure/proxy: vice-proxy.ts calls resolvedBackend() exactly once", () => {
   const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("resolvedBackend"));
   assert.equal(matches.length, 1, `expected exactly one resolvedBackend reference, found ${matches.length}`);
+});
+
+// CR-06: buildHeldLease() is the ONE production construction site for
+// HeldLease, and it lives in the one file the automated gate cannot execute
+// (vice-proxy.ts's own top-level `await server.startStdio()`). HeldLease's two
+// new fields being REQUIRED already makes an omission a typecheck failure;
+// these assert the VALUES it threads, which typing alone cannot.
+
+test("structure/proxy (CR-06): buildHeldLease() threads epochFile and supervisorDir, from activeInstance() and brokerRootDir() respectively", () => {
+  const start = VICE_PROXY_SOURCE.indexOf("function buildHeldLease(");
+  assert.ok(start > 0, "buildHeldLease() must still exist in vice-proxy.ts");
+  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
+  assert.match(body, /epochFile/, "the lease must carry the instance's epoch file -- without it stockReconnect() always reports a false machine restart");
+  assert.match(body, /supervisorDir:\s*brokerRootDir\(\)/, "the capability cache directory must come from brokerRootDir(), the same resolver broker.json is read from");
+  assert.match(body, /activeInstance\(\)/, "epochFile must be read fresh from activeInstance(), never memoised");
+  // The per-instance supervisor_dir would point backend.json at
+  // <stateDir>/<port>, where no record is ever written -- a silent permanent
+  // capability-cache miss.
+  assert.doesNotMatch(body, /supervisor_dir/, "the grant's per-instance supervisor_dir is NOT the capability-cache directory");
 });

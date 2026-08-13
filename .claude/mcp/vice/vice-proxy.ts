@@ -2171,9 +2171,25 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  * from the two success returns below that hold a control session.
  */
 function buildHeldLease(session: BrokerControlSession): HeldLease {
-  const { url, port } = activeInstance();
+  const { url, port, epochFile } = activeInstance();
   const host = new URL(url).hostname;
-  return { host, port, targetId: grantId ?? "", brokerControl: session };
+  // CR-06: `epochFile` and `supervisorDir` are what make the stock handshake's
+  // two BACK-04/reconnect mechanisms actually live on the real path -- before
+  // this, no production call ever passed StockConnectDeps, so `baselineEpoch`
+  // was always null (making stockReconnect() throw a FALSE
+  // MachineRestartedError on every transient drop) and the capability cache
+  // was never read or written.
+  //
+  // Two DIFFERENT directories, deliberately, and not interchangeable:
+  //   - epochFile is THIS instance's own `<stateDir>/<port>/epoch.json`, read
+  //     fresh from activeInstance() like every other field here (adoptGrant()
+  //     put the CONTAINERIZED path there, so it is already in this process's
+  //     view of the filesystem -- no second translation here).
+  //   - supervisorDir is the TOP-LEVEL `.vice-supervisor`, where backend.json
+  //     lives, resolved through brokerRootDir() -- the SAME resolver
+  //     broker.json is read from, never a locally re-derived path (the
+  //     "re-deriving a cross-cutting seam locally" anti-pattern).
+  return { host, port, targetId: grantId ?? "", brokerControl: session, epochFile, supervisorDir: brokerRootDir() };
 }
 
 async function ensureBrokerLease(): Promise<BrokerLeaseResult> {

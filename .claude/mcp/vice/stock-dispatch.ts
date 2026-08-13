@@ -29,7 +29,7 @@ import { resolve, join } from "node:path";
 import type { ViceBackend } from "./backend-detect.mts";
 import { MonitorOwnershipError, type HeldLease } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice.ts";
-import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession } from "./stock-connect.ts";
+import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";
 
 // ---------------------------------------------------------------------------
 // manifestPathForBackend() -- the manifest selector.
@@ -240,9 +240,51 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
     }
   }
 
-  const session = await connectFn({ host: lease.host, port: lease.port, targetId: lease.targetId, brokerControl: lease.brokerControl });
+  const session = await connectFn({
+    host: lease.host,
+    port: lease.port,
+    targetId: lease.targetId,
+    brokerControl: lease.brokerControl,
+    deps: stockConnectDepsFor(lease, deps),
+  });
   heldSession = session;
   return { ok: true, session };
+}
+
+/**
+ * CR-06 (code review 2026-08-13). The ONE place production builds
+ * StockConnectDeps. Before this existed, the only production call was
+ * `connectFn({ host, port, targetId, brokerControl })` -- no `deps` at all --
+ * so two mechanisms this phase built were inert on the real path:
+ *
+ *   - `deps.epochPath` was undefined, so `baselineEpoch` was always null and
+ *     stockReconnect()'s first branch ALWAYS threw MachineRestartedError.
+ *     Every transient socket drop told the agent "the emulator's identity
+ *     could not be proven across a reconnect ... treat every result since the
+ *     previous call as void", even when the machine never restarted.
+ *   - `deps.binPath`/`deps.supervisorDir` were undefined, so
+ *     resolveCapabilities() skipped the cache, re-probed CPUHISTORY_GET on
+ *     every handshake, and never called writeCapabilityRecord() -- BACK-04's
+ *     "settle once per binary, at connect time" was not achieved.
+ *
+ * Neither was visible to the existing tests, because both stub `connect`.
+ *
+ * Every value here is HANDED DOWN, never resolved locally: the two directories
+ * come from the lease vice-proxy.ts built (see HeldLease's own field comments
+ * for why they are two DIFFERENT directories), and `binPath` is the same
+ * already-settled `resolvedBinaryPath` vice_ping reports -- this module must
+ * never call resolvedBackend()/probeBackend() itself.
+ *
+ * An empty string is treated as ABSENT rather than passed through: the two
+ * consumers both branch on truthiness, and passing "" would key a capability
+ * cache read on an empty binary path.
+ */
+function stockConnectDepsFor(lease: HeldLease, deps: StockDispatchDeps): StockConnectDeps {
+  const connectDeps: StockConnectDeps = {};
+  if (lease.epochFile) connectDeps.epochPath = lease.epochFile;
+  if (lease.supervisorDir) connectDeps.supervisorDir = lease.supervisorDir;
+  if (deps.resolvedBinaryPath) connectDeps.binPath = deps.resolvedBinaryPath;
+  return connectDeps;
 }
 
 // Re-exported so a caller of this seam never needs a second import site for
