@@ -13,6 +13,7 @@
     "broker-launch.mts",
     "broker-kill.mts",
     "broker-epoch.mts",
-    "broker-control.mts"
+    "broker-control.mts",
+    "backend-detect.mts"
   ]
 }
