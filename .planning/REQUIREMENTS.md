@@ -95,9 +95,9 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Broker and launcher
 
-- [ ] **BROK-01**: Broker launches stock VICE with binary-monitor flags, and the fork with its existing flags, chosen by backend
-- [ ] **BROK-02**: Broker guarantees one monitor client per emulator instance
-- [ ] **BROK-03**: Existing broker guarantees survive the change — single in-flight launch, crash supervision, incident record before kill
+- [x] **BROK-01**: Broker launches stock VICE with binary-monitor flags, and the fork with its existing flags, chosen by backend
+- [x] **BROK-02**: Broker guarantees one monitor client per emulator instance
+- [x] **BROK-03**: Existing broker guarantees survive the change — single in-flight launch, crash supervision, incident record before kill
 
 ### Distribution and documentation
 
@@ -209,9 +209,9 @@ and the sequencing rationale.
 | TIME-02 | Phase 7 | Pending |
 | TIME-03 | Phase 7 | Pending |
 | TIME-04 | Phase 7 | Pending |
-| BROK-01 | Phase 2 | Pending |
-| BROK-02 | Phase 2 | Pending |
-| BROK-03 | Phase 2 | Pending |
+| BROK-01 | Phase 2 | Complete |
+| BROK-02 | Phase 2 | Complete |
+| BROK-03 | Phase 2 | Complete |
 | DIST-01 | Phase 8 | Pending |
 | DIST-02 | Phase 8 | Pending |
 | DIST-03 | Phase 8 | Pending |
