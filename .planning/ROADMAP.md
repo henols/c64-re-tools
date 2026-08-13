@@ -157,7 +157,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 02-09-PLAN.md — Wave 6: trimmed stock manifest with a tested selector, and the lease-to-session seam that threads `ensureBrokerLease()`'s held lease into `stockConnect()`
+- [x] 02-09-PLAN.md — Wave 6: trimmed stock manifest with a tested selector, and the lease-to-session seam that threads `ensureBrokerLease()`'s held lease into `stockConnect()`
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -364,7 +364,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
-| 2. Stock Backend Connection | 8/10 | In Progress|  |
+| 2. Stock Backend Connection | 9/10 | In Progress|  |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
