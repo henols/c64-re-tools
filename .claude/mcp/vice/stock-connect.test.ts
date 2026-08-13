@@ -410,7 +410,7 @@ test("stockConnect: a restarted machine's replaced binary re-validates the capab
         // PRE-restart build's answer -- readCapabilityRecord()'s own
         // staleness comparison (observedVersionQuad vs. stored versionQuad)
         // is exercised here for real, not stubbed away.
-        readCapabilityRecordFn: (_binPath: string, capDeps: { observedVersionQuad?: string }) => ({
+        readCapabilityRecordFn: (_binPath: string, capDeps: { observedVersionQuad?: string } = {}) => ({
           versionQuad: "3.9.0.0",
           cpuHistoryAvailable: false,
           stale: capDeps.observedVersionQuad !== undefined && capDeps.observedVersionQuad !== "3.9.0.0",
