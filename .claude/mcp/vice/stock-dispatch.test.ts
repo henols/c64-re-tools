@@ -14,7 +14,7 @@ import { dirname } from "node:path";
 import { manifestPathForBackend, ensureStockSession, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
 import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
-import type { StockConnectSession } from "./stock-connect.ts";
+import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
@@ -108,7 +108,15 @@ const STUB_BROKER_CONTROL = {
   releaseMonitor: async () => ({ ok: true as const }),
 } as unknown as BrokerControlSession;
 
-function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: BrokerControlSession; connected?: boolean }): StockConnectSession {
+// stockConnect()'s own StockConnectOptions.brokerControl (and
+// StockConnectSession.brokerControl) is typed as the narrower
+// StockConnectBrokerControl (claimMonitor/releaseMonitor only) -- alias it
+// off StockConnectSession itself rather than importing a second name, so a
+// value satisfying HeldLease.brokerControl (the wider BrokerControlSession)
+// still structurally satisfies this narrower field when threaded through.
+type FakeSessionBrokerControl = StockConnectSession["brokerControl"];
+
+function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: FakeSessionBrokerControl; connected?: boolean }): StockConnectSession {
   return {
     client: { connected: opts.connected ?? true } as unknown as StockConnectSession["client"],
     versionQuad: "3.9.0",
@@ -146,21 +154,22 @@ test("lease: ensureLease is awaited strictly before stockConnect is ever called 
 test("lease: stockConnect receives the exact host/port/targetId/brokerControl the lease provider returned", async () => {
   const brokerControl = { ...STUB_BROKER_CONTROL };
   const lease: HeldLease = { host: "10.0.0.5", port: 9002, targetId: "grant-42", brokerControl };
-  let received: { host: string; port: number; targetId: string; brokerControl: BrokerControlSession } | null = null;
+  const receivedCalls: StockConnectOptions[] = [];
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => {
-      received = opts;
+      receivedCalls.push(opts);
       return fakeSession(opts);
     },
   };
   const outcome = await ensureStockSession(deps);
   assert.ok(outcome.ok);
-  assert.ok(received !== null);
-  assert.strictEqual(received!.host, lease.host);
-  assert.strictEqual(received!.port, lease.port);
-  assert.strictEqual(received!.targetId, lease.targetId);
-  assert.strictEqual(received!.brokerControl, lease.brokerControl);
+  assert.equal(receivedCalls.length, 1, "stockConnect must be called exactly once");
+  const received = receivedCalls[0]!;
+  assert.strictEqual(received.host, lease.host);
+  assert.strictEqual(received.port, lease.port);
+  assert.strictEqual(received.targetId, lease.targetId);
+  assert.strictEqual(received.brokerControl, lease.brokerControl);
 });
 
 test("lease: a provider failure never calls stockConnect and its message passes through verbatim", async () => {
