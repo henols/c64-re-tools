@@ -649,6 +649,32 @@ test("correlat: a reply whose response type is not in the command's expected set
   );
 });
 
+test("WR-02: a request that times out and is answered afterwards counts as a duplicate reply and emits NO event", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        // Answer well after the caller's own 50ms deadline has elapsed.
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) })), 120);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+
+      await assert.rejects(client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 50 }), StockRequestTimeoutError);
+      assert.equal(client.counters.duplicateReplies, 0, "nothing has arrived yet");
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      assert.equal(client.counters.duplicateReplies, 1, "the late reply for an abandoned id must be counted as a duplicate");
+      assert.deepEqual(events, [], "a late COMMAND REPLY must never be emitted on the event channel");
+      await client.disconnect();
+    },
+  );
+});
+
 test("correlat: mintRequestId never produces VICE_BROADCAST_REQUEST_ID across 1000 consecutive mints", () => {
   const client = new ViceMonitorClient();
   const seen = new Set<number>();

@@ -1092,7 +1092,16 @@ export class ViceMonitorClient extends EventEmitter {
     return new Promise<ResolvedResponse>((resolve, reject) => {
       const startedAt = Date.now();
       const timer = setTimeout(() => {
-        this.#pending.delete(requestId);
+        // WR-02: #markSettled too, not just the pending-map delete. This id IS
+        // settled from the caller's point of view -- the promise has been
+        // rejected -- and a reply for it can still arrive afterwards ("connected
+        // but silent" is a timeout, not a dead socket). Without the ring entry
+        // #dispatch() finds neither a pending entry nor a settled one and falls
+        // through to emit("event"), routing a COMMAND REPLY onto the event
+        // channel -- exactly what the duplicate-reply branch two lines above it
+        // deliberately refuses to do, because a future consumer would read it
+        // as a second, spurious STOPPED/RESUMED-shaped transition.
+        this.#abandonPending(requestId);
         reject(
           new StockRequestTimeoutError(
             `command 0x${commandType.toString(16).padStart(2, "0")} (request id ${requestId}) timed out waiting for a reply after ${timeoutMs}ms`,
@@ -1112,7 +1121,10 @@ export class ViceMonitorClient extends EventEmitter {
       socket.write(packet, (err) => {
         if (err) {
           clearTimeout(timer);
-          this.#pending.delete(requestId);
+          // WR-02: same reasoning as the timeout path above -- the write failed,
+          // but the bytes may still have reached VICE, so a late reply must be
+          // counted as a duplicate rather than emitted as an event.
+          this.#abandonPending(requestId);
           reject(
             new StockConnectionClosedError(`socket write failed for request id ${requestId}: ${err.message}`, {
               port: this.#port,
@@ -1269,6 +1281,18 @@ export class ViceMonitorClient extends EventEmitter {
    * resolve()/reject(). */
   #finishPending(requestId: number, pending: PendingCommand): void {
     clearTimeout(pending.timer);
+    this.#pending.delete(requestId);
+    this.#markSettled(requestId);
+  }
+
+  /** WR-02: the abandonment counterpart to #finishPending(). Same pair of state
+   * mutations, minus the timer clear (the caller of this method has already
+   * dealt with the timer -- the timeout path IS the timer, and the write-error
+   * path clears it explicitly). Kept as its own named method so neither
+   * abandonment path can drift back into a bare `#pending.delete()` that
+   * forgets the settled-ring insert. Call exactly once per abandoned request
+   * id, immediately before reject(). */
+  #abandonPending(requestId: number): void {
     this.#pending.delete(requestId);
     this.#markSettled(requestId);
   }
