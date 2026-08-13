@@ -143,8 +143,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — Wave 3: `stock-protocol.ts` framing, response parsing, the three vendored defect fixes, and the body-length guard
-- [ ] 02-05-PLAN.md — Wave 3: broker-side single-monitor-client ownership (`monitor_claim`/`monitor_release`) and the container-side conflict outcome
+- [x] 02-04-PLAN.md — Wave 3: `stock-protocol.ts` framing, response parsing, the three vendored defect fixes, and the body-length guard
+- [x] 02-05-PLAN.md — Wave 3: broker-side single-monitor-client ownership (`monitor_claim`/`monitor_release`) and the container-side conflict outcome
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -364,7 +364,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
-| 2. Stock Backend Connection | 3/10 | In Progress|  |
+| 2. Stock Backend Connection | 5/10 | In Progress|  |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
