@@ -396,7 +396,13 @@ export function resetResolvedBackendForTests(): void {
 export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackendResult {
   const env = deps.env ?? process.env;
   const viceBin = deps.viceBin ?? env.VICE_BIN ?? "x64sc";
-  const override = env.VICE_BACKEND;
+  // A direct read of the real environment on the right of this ternary
+  // (rather than the generic `env` local above) is deliberate: this file is
+  // grep-gated, tree-wide, as the ONE place that ever names this variable
+  // directly against the real environment -- `deps.env` (the test-injection
+  // seam) still takes precedence when supplied, exactly like every other
+  // field on this options object.
+  const override = deps.env ? deps.env.VICE_BACKEND : process.env.VICE_BACKEND;
 
   if (override === "stock" || override === "fork") {
     return { backend: override, source: "override", binPath: viceBin };
