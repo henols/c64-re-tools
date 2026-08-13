@@ -24,11 +24,13 @@
 //     unconditionally (kill-never-recycle). The uncatchable signals (SIGKILL,
 //     SIGSTOP) are deliberately unhandled -- see registerShutdownHandlers()'s
 //     own comment.
-//   - reapOrphanedInstances()/discoverBandProcesses(): the unconditional
-//     startup reap (criterion I, D-15) that reaches instances this broker
-//     process has no in-memory record of, derived from the emulator port
-//     band plus process identity rather than from a registry a restart just
-//     lost.
+//   - reapOrphanedInstances(): the unconditional startup reap (criterion I,
+//     D-15) that reaches instances this broker process has no in-memory
+//     record of, derived from the emulator port band plus this broker's OWN
+//     on-disk allocation record (epoch.json) -- never a host process
+//     listing or a scan of another process's argv (02-03-PLAN.md/D-14/D-15;
+//     see reapOrphanedInstances()'s own header comment for the incident
+//     this revision closes).
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -401,57 +403,31 @@ export function startupBanner(): string {
 }
 
 // ============================================================================
-// Startup reap: unconditional, file-free, band-aware (criterion I, D-15).
+// Startup reap: unconditional, file-free... but no longer PROCESS-TABLE-free
+// (criterion I, D-15, as revised by 02-03-PLAN.md/D-14/D-15).
+//
+// 02-03-PLAN.md (BROK-03) retires this section's entire former identity
+// mechanism -- the two functions it lived in are gone from this tree
+// outright, not merely unused -- which used to select kill targets by
+// scanning EVERY host process's own argument string for a plain substring
+// match on the configured emulator binary path, gated only by "some bare
+// integer token >= basePort appears somewhere in that same string" -- folded
+// todo
+// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`,
+// observed killing two unrelated orchestrator shell processes on a
+// developer's host (a long scratchpad path supplied the qualifying integer;
+// a short VICE_BIN like `/bin/sleep` supplied the substring). D-15 replaces
+// that heuristic with the broker's OWN allocation record: this reap now
+// enumerates the instance directories under `stateDir` (which THIS broker,
+// or a same-machine predecessor, created) and kills only the pid each
+// directory's own epoch.json actually recorded launching. A host process
+// this broker never allocated a port for -- however it is named, however
+// many integers its argv happens to contain -- is out of scope BY
+// CONSTRUCTION and is never even enumerated, let alone considered a
+// candidate: that is the whole point, and a future "smarter heuristic"
+// reintroducing any form of process-table scanning here is the exact
+// regression this section exists to prevent.
 // ============================================================================
-
-export interface ProcessListEntry {
-  pid: number;
-  /** The process's own argument string, exactly the shape
-   * defaultReadProcessArgs()/`ps -o args=` returns for a single pid. */
-  args: string;
-}
-
-export type ProcessListingProbe = () => ProcessListEntry[] | Promise<ProcessListEntry[]>;
-
-/** Real default: `ps -eo pid=,args=` -- every process on the host, pid plus
- * its full argument string. Never throws: an unreadable `ps` (e.g. no
- * processes visible under this container's pid namespace) yields an empty
- * list rather than aborting the reap. */
-function defaultListProcesses(): ProcessListEntry[] {
-  let raw: string;
-  try {
-    raw = execFileSync("ps", ["-eo", "pid=,args="], { encoding: "utf8" });
-  } catch {
-    return [];
-  }
-  const out: ProcessListEntry[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trimStart();
-    if (trimmed === "") continue;
-    const m = /^(\d+)\s+(.*)$/.exec(trimmed);
-    if (!m) continue;
-    const pid = Number(m[1]);
-    if (!Number.isFinite(pid)) continue;
-    out.push({ pid, args: m[2] });
-  }
-  return out;
-}
-
-/** True iff `args` contains a bare numeric token whose value is >= basePort.
- * This is a substring/token scan over the process's own argument string --
- * the same class of untrusted-but-locally-observed check this module's
- * identity check already performs -- not a parse of any particular VICE
- * flag shape, so it holds regardless of whether the port arrived via
- * `-mcpserverport N` or a raw VICE_ARGS override naming the port some other
- * way. */
-function argsNamePortAtOrAbove(args: string, basePort: number): boolean {
-  const matches = args.match(/\d+/g);
-  if (!matches) return false;
-  return matches.some((token) => {
-    const n = Number(token);
-    return Number.isFinite(n) && n >= basePort;
-  });
-}
 
 function resolveBasePortForReap(override?: number): number {
   if (typeof override === "number") return override;
@@ -459,34 +435,6 @@ function resolveBasePortForReap(override?: number): number {
   if (raw === undefined || raw === "") return 6600;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 6600;
-}
-
-function resolveViceBinForReap(override?: string): string {
-  return override ?? process.env.VICE_BIN ?? "x64sc";
-}
-
-export interface DiscoverBandProcessesOptions {
-  listProcesses?: ProcessListingProbe;
-  viceBin?: string;
-  basePort?: number;
-}
-
-/** Two-condition selection (T-01.6.2-25/-26): a process qualifies ONLY when
- * its own argument string BOTH names the configured emulator binary AND
- * names a port at or above the allocation band's base. A process matching
- * only one condition is left alone -- this is the whole point: the
- * 6510-6599 band below the base is reserved by convention for an emulator a
- * human launched for their own work (D-18), and reaping one of those would
- * be exactly the squatting problem that band separation exists to prevent;
- * conversely an unrelated process that merely happens to mention a
- * matching-looking port is never a target either. */
-export async function discoverBandProcesses(options: DiscoverBandProcessesOptions = {}): Promise<ProcessListEntry[]> {
-  const listProcesses = options.listProcesses ?? defaultListProcesses;
-  const viceBin = resolveViceBinForReap(options.viceBin);
-  const basePort = resolveBasePortForReap(options.basePort);
-
-  const entries = await listProcesses();
-  return entries.filter((entry) => entry.args.includes(viceBin) && argsNamePortAtOrAbove(entry.args, basePort));
 }
 
 export interface ReapResult {
@@ -511,9 +459,7 @@ export interface ReapOrphanedInstancesOptions extends EpochWriterDeps {
   /** Root state directory -- the same one every per-port supervisorDir is
    * derived from elsewhere in this codebase (`join(stateDir, String(port))`). */
   stateDir: string;
-  viceBin?: string;
   basePort?: number;
-  listProcesses?: ProcessListingProbe;
   /** Defaults to the real verifiedKill() above. */
   kill?: (opts: VerifiedKillOptions) => Promise<KillStage>;
   log?: (line: string) => void;
@@ -584,23 +530,35 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
   deps.writeEpochRecord({ supervisorDir, record });
 }
 
-/** The unconditional startup reap (criterion I, D-15). Runs on every broker
- * start, before the control listener accepts and before anything is
- * launched -- unconditional because a broker killed with SIGKILL never runs
- * a shutdown path, so "was the last shutdown clean" is unanswerable, and a
- * marker file recording that answer would itself be the class of file-based
- * liveness claim this phase retires (consults NO such file; the seam this
- * module offers is the process listing and the on-disk instance
- * directories, nothing else).
+/** The unconditional startup reap (criterion I, D-15, kill-target identity
+ * revised by 02-03-PLAN.md/D-14/D-15). Runs on every broker start, before the
+ * control listener accepts and before anything is launched -- unconditional
+ * because a broker killed with SIGKILL never runs a shutdown path, so "was
+ * the last shutdown clean" is unanswerable, and a marker file recording that
+ * answer would itself be the class of file-based liveness claim this phase
+ * retires.
  *
- * Enumerates host processes via the injected/real process-listing
- * dependency, selects the two-condition matches (discoverBandProcesses()
- * above), and kills each one identity-verified against the configured
- * emulator binary. Then bumps the epoch of EVERY instance directory under
- * `stateDir` whose port falls in the band -- including directories this
- * broker process has no in-memory record of, which is the exact case this
- * seed (.planning/seeds/broker-restart-reaps-and-voids.md) flags: the void
- * has to reach instances a registry-free restart never heard of.
+ * Enumerates the on-disk instance directories under `stateDir` in the
+ * allocation band (`port >= basePort` -- the 6510-6599 range below it stays
+ * reserved by convention for an emulator a human launched for their own
+ * work, D-18), and for each one reads its OWN `epoch.json` -- never a host
+ * process listing, never an argv scan. A directory whose record is absent,
+ * unparseable, or carries no finite positive `pid` contributes nothing to
+ * `found`/`killed` and is skipped by the kill half entirely, but the epoch
+ * bump below still runs for it: a registry-free restart must still void
+ * every in-band instance directory it finds, including one it has no usable
+ * pid for, which is the exact case this seed
+ * (.planning/seeds/broker-restart-reaps-and-voids.md) flags -- the void has
+ * to reach instances a registry-free restart never heard of. A record that
+ * DOES carry a usable pid is killed via verifiedKill() with `expectedIdentity`
+ * set to THAT record's own `vice_bin` -- never a globally resolved binary
+ * name -- so a live pid whose own argv does not match what THIS broker
+ * itself recorded launching there is refused (`identity_refused`), exactly
+ * like every other verifiedKill() call site in this module.
+ *
+ * Then bumps the epoch of EVERY instance directory under `stateDir` whose
+ * port falls in the band, exactly as before this revision -- including
+ * directories this broker process has no in-memory record of.
  *
  * Logs one line naming the count found and the count killed, including the
  * zero case -- both the 2026-08-01 and 2026-08-02 incidents were diagnosed
@@ -609,29 +567,28 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
 export async function reapOrphanedInstances(options: ReapOrphanedInstancesOptions): Promise<ReapResult> {
   const kill = options.kill ?? verifiedKill;
   const log = options.log ?? defaultLog;
-  const viceBin = resolveViceBinForReap(options.viceBin);
   const basePort = resolveBasePortForReap(options.basePort);
   const listInstanceDirs = options.listInstanceDirs ?? defaultListInstanceDirs;
 
-  const matched = await discoverBandProcesses({
-    listProcesses: options.listProcesses,
-    viceBin,
-    basePort,
-  });
-
-  let killed = 0;
-  for (const entry of matched) {
-    const stage = await kill({ pid: entry.pid, expectedIdentity: viceBin });
-    if (stage === "sigterm" || stage === "sigkill") killed++;
-  }
-
   const ports = listInstanceDirs(options.stateDir);
+
+  let found = 0;
+  let killed = 0;
   for (const port of ports) {
-    if (port >= basePort) {
-      bumpEpochForInstanceDir(options, options.stateDir, port);
+    if (port < basePort) continue;
+
+    const epochFields = readExistingEpochFieldsMaybe(options.epochPathFor(options.stateDir, port));
+    const pid = epochFields?.pid;
+    if (typeof pid === "number" && Number.isFinite(pid) && pid > 0) {
+      found++;
+      const expectedIdentity = typeof epochFields?.vice_bin === "string" ? epochFields.vice_bin : "";
+      const stage = await kill({ pid, expectedIdentity });
+      if (stage === "sigterm" || stage === "sigkill") killed++;
     }
+
+    bumpEpochForInstanceDir(options, options.stateDir, port);
   }
 
-  log(`vice-broker: startup reap found ${matched.length} process(es) in the emulator port band, terminated ${killed}`);
-  return { found: matched.length, killed };
+  log(`vice-broker: startup reap found ${found} process(es) in the emulator port band, terminated ${killed}`);
+  return { found, killed };
 }

@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,13 +23,12 @@ import {
   shutdown,
   registerShutdownHandlers,
   startupBanner,
-  discoverBandProcesses,
   reapOrphanedInstances,
   _HANDLED_SIGNALS,
   type KillStage,
   type VerifiedKillDeps,
   type ShutdownDeps,
-  type ProcessListEntry,
+  type ReapOrphanedInstancesOptions,
 } from "./broker-kill.mts";
 import { createBrokerState, _snapshotState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import { epochPathFor, nextEpochFor, writeEpochRecord, type EpochRecord } from "./broker-epoch.mts";
@@ -609,73 +608,146 @@ test("end-to-end: the broker prints its start-time banner on stderr before the c
 });
 
 // ============================================================================
-// Task 3: discoverBandProcesses()/reapOrphanedInstances() -- the
-// unconditional startup reap, derived from the port band plus process
-// identity, never from a registry or a marker file.
+// Task 2 (02-03-PLAN.md, BROK-03, D-14/D-15): reapOrphanedInstances() -- the
+// unconditional startup reap, now derived ENTIRELY from this broker's own
+// on-disk allocation record (epoch.json per instance directory), never from
+// a host process listing or an argv scan. The former identity mechanism's
+// two functions, and the listProcesses/defaultListProcesses plumbing that
+// existed only to serve them, are DELETED outright from broker-kill.mts
+// (folded todo
+// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`)
+// -- nothing heuristic replaces them; a process this broker never allocated
+// a port for is out of scope by construction, and every test below proves
+// that boundary rather than merely the happy path.
 // ============================================================================
 
-test("discoverBandProcesses: against a four-entry injected listing (in-band emulator, out-of-band emulator, in-band other binary, unrelated process), exactly one is selected", async () => {
-  const entries: ProcessListEntry[] = [
-    { pid: 100, args: "/usr/bin/x64sc -mcpserver -mcpserverport 6605" }, // in-band emulator: MATCH
-    { pid: 101, args: "/usr/bin/x64sc -remotemonitoraddress 127.0.0.1:6520" }, // out-of-band emulator (below base): no match
-    { pid: 102, args: "/usr/bin/some-other-binary --port 6650" }, // in-band port, wrong binary: no match
-    { pid: 103, args: "/usr/bin/unrelated --flag" }, // unrelated: no match
-  ];
-  const matched = await discoverBandProcesses({ listProcesses: () => entries, viceBin: "x64sc", basePort: 6600 });
-  assert.deepEqual(
-    matched.map((e) => e.pid),
-    [100],
-  );
-});
+function makeReapDeps(stateDir: string, overrides: Partial<ReapOrphanedInstancesOptions> = {}): ReapOrphanedInstancesOptions {
+  return {
+    stateDir,
+    basePort: 6600,
+    epochPathFor,
+    nextEpochFor,
+    writeEpochRecord,
+    ...overrides,
+  };
+}
 
-test("discoverBandProcesses: a process naming the emulator binary but a port below the band's base is left alone", async () => {
-  const entries: ProcessListEntry[] = [{ pid: 200, args: "/usr/bin/x64sc -mcpserverport 6550" }];
-  const matched = await discoverBandProcesses({ listProcesses: () => entries, viceBin: "x64sc", basePort: 6600 });
-  assert.deepEqual(matched, []);
-});
-
-test("discoverBandProcesses: a process naming an in-band port but a different binary is left alone", async () => {
-  const entries: ProcessListEntry[] = [{ pid: 201, args: "/usr/bin/notepad --port 6650" }];
-  const matched = await discoverBandProcesses({ listProcesses: () => entries, viceBin: "x64sc", basePort: 6600 });
-  assert.deepEqual(matched, []);
-});
-
-test("reapOrphanedInstances: two real stub children, one imitating an in-band emulator and one out-of-band -- the in-band one ends up dead, the out-of-band one alive", async () => {
-  const inBand = realSpawn("/bin/sleep", ["300", "6605"]);
-  const outOfBand = realSpawn("/bin/sleep", ["300", "6520"]);
-  const inBandPid = inBand.pid!;
-  const outOfBandPid = outOfBand.pid!;
+test("reapOrphanedInstances: kills exactly the pids recorded in each in-band instance directory's own epoch.json, and leaves an unrelated process untouched even when its own argv names the vice binary and an in-band port", async () => {
+  const first = realSpawn("/bin/sleep", ["300"]);
+  const second = realSpawn("/bin/sleep", ["300"]);
+  // The decoy's OWN argv contains both the substring the retired heuristic
+  // matched on ("/bin/sleep") and a bare in-band port-looking integer -- the
+  // exact shape that heuristic would have selected. No instance directory is
+  // ever created for it; this is the test that proves it is now out of
+  // scope by construction, not merely absent from a stubbed process list.
+  const decoy = realSpawn("/bin/sleep", ["300", "6605"]);
+  const firstPid = first.pid!;
+  const secondPid = second.pid!;
+  const decoyPid = decoy.pid!;
   const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-"));
   try {
-    await waitFor(() => isAlive(inBandPid) && isAlive(outOfBandPid));
+    await waitFor(() => isAlive(firstPid) && isAlive(secondPid) && isAlive(decoyPid));
 
-    const result = await reapOrphanedInstances({
-      stateDir,
-      viceBin: "/bin/sleep",
-      basePort: 6600,
-      listProcesses: () => [
-        { pid: inBandPid, args: `/bin/sleep 300 6605` },
-        { pid: outOfBandPid, args: `/bin/sleep 300 6520` },
-      ],
-      epochPathFor,
-      nextEpochFor,
-      writeEpochRecord,
-    });
+    const firstDir = join(stateDir, "6605");
+    const secondDir = join(stateDir, "6606");
+    mkdirSync(firstDir, { recursive: true });
+    mkdirSync(secondDir, { recursive: true });
+    writeEpochRecord({ supervisorDir: firstDir, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: firstPid, supervisor_pid: process.pid, vice_bin: "/bin/sleep", vice_args: ["300"], log: "logs/x.log", dry_run: false } });
+    writeEpochRecord({ supervisorDir: secondDir, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: secondPid, supervisor_pid: process.pid, vice_bin: "/bin/sleep", vice_args: ["300"], log: "logs/x.log", dry_run: false } });
 
-    assert.equal(result.found, 1);
-    assert.equal(result.killed, 1);
+    const result = await reapOrphanedInstances(makeReapDeps(stateDir));
 
-    const inBandGone = await waitFor(() => !isAlive(inBandPid));
-    assert.ok(inBandGone, "the in-band stub child must be reaped");
-    assert.ok(isAlive(outOfBandPid), "the out-of-band stub child (the human's reserved band) must be left alone");
+    assert.equal(result.found, 2, "exactly the two recorded instance directories must contribute a usable pid");
+    assert.equal(result.killed, 2);
+
+    const bothGone = await waitFor(() => !isAlive(firstPid) && !isAlive(secondPid));
+    assert.ok(bothGone, "both recorded instances must be reaped");
+    assert.ok(isAlive(decoyPid), "a process with no corresponding instance directory must be left alone, regardless of what its own argv contains");
   } finally {
-    killIfAlive(inBandPid);
-    killIfAlive(outOfBandPid);
+    killIfAlive(firstPid);
+    killIfAlive(secondPid);
+    killIfAlive(decoyPid);
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
 
-test("reapOrphanedInstances: every in-band instance directory on disk has its epoch bumped by exactly one, including one with no in-memory record; an out-of-band directory is untouched", async () => {
+test("reapOrphanedInstances: an instance directory whose epoch.json is missing, unparseable, or carries no numeric pid is skipped without throwing, and its epoch bump still runs", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-bad-epoch-"));
+  try {
+    const missingDir = join(stateDir, "6601"); // no epoch.json at all
+    const malformedDir = join(stateDir, "6602");
+    const noPidDir = join(stateDir, "6603");
+    mkdirSync(missingDir, { recursive: true });
+    mkdirSync(malformedDir, { recursive: true });
+    mkdirSync(noPidDir, { recursive: true });
+    writeFileSync(join(malformedDir, "epoch.json"), "{ this is not json");
+    writeEpochRecord({ supervisorDir: noPidDir, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: Number.NaN as unknown as number, supervisor_pid: process.pid, vice_bin: "/bin/sleep", vice_args: [], log: "", dry_run: false } });
+
+    let killCalls = 0;
+    const result = await reapOrphanedInstances(makeReapDeps(stateDir, { kill: async () => { killCalls++; return "sigterm"; } }));
+
+    assert.equal(result.found, 0, "none of the three broken directories may contribute a usable pid");
+    assert.equal(result.killed, 0);
+    assert.equal(killCalls, 0, "verifiedKill (or its stand-in) must never be called for a directory with no usable pid");
+
+    // The epoch bump must still run for every in-band directory, regardless
+    // of whether its own pre-existing record was usable -- a registry-free
+    // restart must still void every in-band instance directory it finds.
+    for (const dir of [missingDir, malformedDir, noPidDir]) {
+      assert.ok(existsSync(join(dir, "epoch.json")), `${dir} must have an epoch.json written by the bump, even though its own kill contributed nothing`);
+    }
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedInstances: a recorded pid that is no longer alive yields kill stage already_exited and is not counted as killed", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-exited-"));
+  try {
+    const dir = join(stateDir, "6604");
+    mkdirSync(dir, { recursive: true });
+    writeEpochRecord({ supervisorDir: dir, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: 999999, supervisor_pid: process.pid, vice_bin: "/bin/sleep", vice_args: [], log: "", dry_run: false } });
+
+    const result = await reapOrphanedInstances(makeReapDeps(stateDir, { kill: async () => "already_exited" }));
+
+    assert.equal(result.found, 1, "the directory's own recorded pid is still a usable candidate, even though the process is already gone");
+    assert.equal(result.killed, 0, "'already_exited' must not be counted toward killed");
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedInstances: verifiedKill is called with expectedIdentity set to each instance's OWN recorded vice_bin, never a single globally-resolved binary name", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-identity-"));
+  try {
+    const dirA = join(stateDir, "6605");
+    const dirB = join(stateDir, "6606");
+    mkdirSync(dirA, { recursive: true });
+    mkdirSync(dirB, { recursive: true });
+    writeEpochRecord({ supervisorDir: dirA, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: 11111, supervisor_pid: process.pid, vice_bin: "/opt/vice-fork/x64sc", vice_args: [], log: "", dry_run: false } });
+    writeEpochRecord({ supervisorDir: dirB, record: { epoch: 1, spawned_at: new Date().toISOString(), pid: 22222, supervisor_pid: process.pid, vice_bin: "/usr/bin/x64sc", vice_args: [], log: "", dry_run: false } });
+
+    const seenIdentities: string[] = [];
+    await reapOrphanedInstances(
+      makeReapDeps(stateDir, {
+        kill: async (opts) => {
+          seenIdentities.push(opts.expectedIdentity);
+          return "already_exited";
+        },
+      }),
+    );
+
+    assert.deepEqual(
+      seenIdentities.sort(),
+      ["/opt/vice-fork/x64sc", "/usr/bin/x64sc"],
+      "each kill call's expectedIdentity must be that SAME directory's own recorded vice_bin, not a shared/global value",
+    );
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedInstances: every in-band instance directory on disk has its epoch bumped by exactly one; an out-of-band directory is untouched", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-epoch-"));
   try {
     const inBandDir = join(stateDir, "6605");
@@ -687,17 +759,9 @@ test("reapOrphanedInstances: every in-band instance directory on disk has its ep
     writeEpochRecord({ supervisorDir: inBandDir, record: inBandRecord });
     writeEpochRecord({ supervisorDir: outOfBandDir, record: outOfBandRecord });
 
-    const result = await reapOrphanedInstances({
-      stateDir,
-      viceBin: "/bin/sleep",
-      basePort: 6600,
-      listProcesses: () => [],
-      epochPathFor,
-      nextEpochFor,
-      writeEpochRecord,
-    });
+    const result = await reapOrphanedInstances(makeReapDeps(stateDir, { kill: async () => "already_exited" }));
 
-    assert.equal(result.found, 0);
+    assert.equal(result.found, 1, "only the in-band directory contributes a usable pid");
     assert.equal(result.killed, 0);
 
     const inBandAfter = JSON.parse(readFileSync(join(inBandDir, "epoch.json"), "utf8"));
@@ -713,20 +777,37 @@ test("reapOrphanedInstances: a reap that selects nothing still logs one line rep
   const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-zero-"));
   try {
     const lines: string[] = [];
-    const result = await reapOrphanedInstances({
-      stateDir,
-      viceBin: "x64sc",
-      basePort: 6600,
-      listProcesses: () => [],
-      epochPathFor,
-      nextEpochFor,
-      writeEpochRecord,
-      log: (line) => lines.push(line),
-    });
+    const result = await reapOrphanedInstances(makeReapDeps(stateDir, { log: (line) => lines.push(line) }));
     assert.deepEqual(result, { found: 0, killed: 0 });
     assert.equal(lines.length, 1, "exactly one summary log line must be emitted, even when nothing was found");
     assert.match(lines[0], /found 0/);
     assert.match(lines[0], /terminated 0/);
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedInstances: a listProcesses-shaped decoy is never invoked -- the reap no longer lists host processes at all", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-no-listprocesses-"));
+  try {
+    let decoyCalled = false;
+    // Smuggled in via a cast: ReapOrphanedInstancesOptions no longer
+    // declares `listProcesses` at all (a plain object literal with this key
+    // would already fail TypeScript's excess-property check), so this cast
+    // is the only way to prove, at RUNTIME, that even a caller who still
+    // supplies one gets no observable effect from it.
+    const decoyOptions = {
+      ...makeReapDeps(stateDir),
+      listProcesses: () => {
+        decoyCalled = true;
+        return [];
+      },
+    } as unknown as ReapOrphanedInstancesOptions;
+
+    const result = await reapOrphanedInstances(decoyOptions);
+
+    assert.deepEqual(result, { found: 0, killed: 0 });
+    assert.equal(decoyCalled, false, "a listProcesses-shaped decoy must never be invoked -- the reap no longer lists host processes at all");
   } finally {
     rmSync(stateDir, { recursive: true, force: true });
   }
@@ -810,7 +891,7 @@ test("structural: neither the retired env var name nor the retired discovery-rec
     let bannerRegionStripped = "";
     if (rel === "broker-kill.mts") {
       const startMarker = "export function startupBanner(): string {";
-      const endMarker = "export interface ProcessListEntry";
+      const endMarker = "function resolveBasePortForReap";
       const startIdx = raw.indexOf(startMarker);
       const endIdx = raw.indexOf(endMarker, startIdx + startMarker.length);
       assert.ok(startIdx !== -1 && endIdx !== -1 && endIdx > startIdx, "startupBanner()'s own region markers must both be found, in order");

@@ -59,12 +59,19 @@ interface RunResult {
 // the run and outlived it.
 //
 // The stub is a UNIQUE per-run path, deliberately NOT the bare "/bin/sleep"
-// broker-e2e.test.ts uses. discoverBandProcesses() (broker-kill.mts) selects
-// reap targets with `entry.args.includes(viceBin)` -- a SUBSTRING match over
-// every process's full argument string, paired only with a port-band check.
-// A short, ubiquitous identity like "/bin/sleep" therefore lets a broker
-// started by this suite SIGTERM/SIGKILL unrelated processes on a developer's
-// host. A unique path under this run's own temp dir cannot collide.
+// broker-e2e.test.ts uses. HISTORICAL NOTE (closed by 02-03-PLAN.md/D-15):
+// the startup reap used to select kill targets by scanning every host
+// process's own argument string for a plain substring match on the
+// configured emulator binary path, paired only with a port-band check --
+// a short, ubiquitous identity like "/bin/sleep" could therefore let a
+// broker started by this suite SIGTERM/SIGKILL an unrelated process on a
+// developer's host (folded todo
+// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`).
+// The reap is now driven entirely by this broker's own on-disk allocation
+// record (broker-kill.mts's reapOrphanedInstances()), so that specific
+// hazard no longer exists -- the unique stub path is kept anyway as
+// standing hygiene: a unique path under this run's own temp dir still
+// cannot collide with anything else on the host, by construction.
 const STUB_DIR = mkdtempSync(join(tmpdir(), "vice-broker-launch-stubbin-"));
 const STUB_VICE_BIN = join(STUB_DIR, "x64sc-test-stub");
 writeFileSync(STUB_VICE_BIN, "#!/bin/sh\nexec sleep \"${1:-600}\"\n", { mode: 0o755 });
