@@ -1,0 +1,13 @@
+{
+  "capturedFrom": "synthesized-fallback",
+  "viceVersion": "N/A -- synthetic, not observed from any real VICE_INFO reply",
+  "capturedAt": "2026-08-13T08:38:06.104Z",
+  "command": "DISPLAY_GET (0x84) [synthesized, not a live capture]",
+  "synthetic": true,
+  "specSections": [
+    "docs/phase0-binmon-findings.md §5 (12-byte response header layout)",
+    "docs/phase0-binmon-findings.md §3 (DISPLAY_GET body layout)",
+    "docs/phase1-probe-results.md recorded geometry (dw=504 dh=312 xo=136 yo=51 iw=320 ih=200 bpp=8)"
+  ],
+  "note": "Synthesized because no stock VICE binary is reachable in this environment (2026-08-13 user override of D-19). Byte-identical in shape to binmon-fixtures.ts's syntheticDisplayGetFrame(). Must be replaced by a real capture -- see .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md."
+}

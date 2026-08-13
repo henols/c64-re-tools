@@ -1,0 +1,12 @@
+{
+  "capturedFrom": "synthesized-fallback",
+  "viceVersion": "N/A -- synthetic, not observed from any real VICE_INFO reply",
+  "capturedAt": "2026-08-13T08:38:06.104Z",
+  "command": "CHECKPOINT_SET (0x12) x2 -> CHECKPOINT_LIST (0x14) [synthesized, not a live capture]",
+  "synthetic": true,
+  "specSections": [
+    "docs/phase0-binmon-findings.md §5 (response header; CHECKPOINT GET/SET/DELETE/LIST/TOGGLE opcodes 0x11-0x15)",
+    "probe-binmon.mjs's parseCheckpointInfo() (23-byte CHECKPOINT_INFO body layout, hand-derived from the same spec section)"
+  ],
+  "note": "Synthesized because no stock VICE binary is reachable in this environment (2026-08-13 user override of D-19). Models CHECKPOINT_LIST answering N+1 frames on one request id (two CHECKPOINT_INFO-shaped entries plus a terminator carrying the total count), all sharing request id 4, as the plan's own artifact description specifies. Must be replaced by a real capture -- see .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md."
+}
