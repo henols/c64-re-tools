@@ -148,8 +148,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-06-PLAN.md — Wave 4: request-id-first demux, related-frame accumulation, expected-response table, and the socket-lifecycle rejection path
-- [ ] 02-07-PLAN.md — Wave 4: `backend-detect.mts` — the `--help` probe, the cached verdict under `.vice-supervisor/`, and the single `VICE_BACKEND` reader
+- [x] 02-06-PLAN.md — Wave 4: request-id-first demux, related-frame accumulation, expected-response table, and the socket-lifecycle rejection path
+- [x] 02-07-PLAN.md — Wave 4: `backend-detect.mts` — the `--help` probe, the cached verdict under `.vice-supervisor/`, and the single `VICE_BACKEND` reader
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -364,7 +364,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
-| 2. Stock Backend Connection | 5/10 | In Progress|  |
+| 2. Stock Backend Connection | 7/10 | In Progress|  |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
