@@ -17,9 +17,9 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Backend selection
 
-- [ ] **BACK-01**: User selects which VICE backend the server drives by setting one config value, without editing code
-- [ ] **BACK-02**: User running the fork backend sees behaviour identical to v0.1.x — no regression in any tool
-- [ ] **BACK-03**: User can ask which backend is active and which VICE version is connected, and gets an answer naming both
+- [x] **BACK-01**: User selects which VICE backend the server drives by setting one config value, without editing code
+- [x] **BACK-02**: User running the fork backend sees behaviour identical to v0.1.x — no regression in any tool
+- [x] **BACK-03**: User can ask which backend is active and which VICE version is connected, and gets an answer naming both
 - [x] **BACK-04**: Server detects at connect time whether the connected VICE supports each version-gated capability, rather than failing at first use
 - [ ] **BACK-05**: Calling a tool the active backend does not advertise returns an error that names the capability, the reason, and which backend provides it — not a generic unknown-tool error, and never a silent wrong answer. Under D-07 the manifest is trimmed per backend, so on stock this is the out-of-manifest `tools/call` path rather than a present-but-refusing tool
 
@@ -155,9 +155,9 @@ and the sequencing rationale.
 | DOC-01 | Phase 1 | Complete |
 | DOC-02 | Phase 1 | Complete |
 | DOC-03 | Phase 1 | Complete |
-| BACK-01 | Phase 2 | Pending |
-| BACK-02 | Phase 2 | Pending |
-| BACK-03 | Phase 2 | Pending |
+| BACK-01 | Phase 2 | Complete |
+| BACK-02 | Phase 2 | Complete |
+| BACK-03 | Phase 2 | Complete |
 | BACK-04 | Phase 2 | Complete |
 | BACK-05 | Phase 8 | Pending |
 | PROTO-01 | Phase 2 | Complete |

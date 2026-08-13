@@ -133,6 +133,7 @@ import {
   type BrokerLivenessResult,
   type BrokerControlSession,
   type ControlFailureKind,
+  type HeldLease,
 } from "./vice-broker-client.ts";
 // The recycle path's own incident record (plan 01.3-01) -- written BEFORE
 // anything is killed (D-17), never through any network call of its own.
@@ -166,8 +167,23 @@ import type { StandardSchemaWithJSON } from "@mastra/core/schema";
 // A real, already-resolved transitive dependency of @mastra/mcp (Plan 01's
 // Task 2 note) -- deliberately NOT added to package.json directly.
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+// Plan 02-10: this file's own backend-detection and stock-dispatch consumer
+// edits. Both are namespace imports, deliberately -- keeps every reference to
+// their exported members's names down to the ONE call site each below (this
+// file's own grep-gated single-occurrence acceptance criteria), rather than a
+// named import whose binding is textually repeated at both the import line
+// and every call site.
+import * as backendDetect from "./backend-detect.mts";
+import * as stockDispatch from "./stock-dispatch.ts";
 
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
+
+// D-01/BACK-01: the backend is settled exactly ONCE here, at module scope --
+// never re-settled per tool or per call. Every seam below (manifest
+// selection, the tools construction loop's dispatch choice, and the final
+// ready log line) reads THIS constant, never the raw environment variable
+// and never a second detection call.
+const ACTIVE_BACKEND = backendDetect.resolvedBackend();
 
 // -------------------------------------------------------------- JSON-RPC
 //
@@ -390,10 +406,13 @@ const DIAGNOSE_TOOL: ToolDefinition = {
   },
 };
 
+// Edit 1 (plan 02-10): delegates to stock-dispatch.ts's own selector function
+// -- the ONE manifest site this file keeps, now backend-aware. The existing
+// malformed-manifest fallbacks in readManifestTools() below are untouched: a
+// missing or unreadable stock manifest still answers tools/list with an
+// empty array rather than crashing the server.
 function manifestPath(): string {
-  return process.env.VICE_TOOLS_MANIFEST
-    ? resolve(process.env.VICE_TOOLS_MANIFEST)
-    : join(HERE_DIR, "tools-manifest.json");
+  return stockDispatch.manifestPathForBackend(ACTIVE_BACKEND.backend, HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
 }
 
 function readManifestTools(): ToolInfo[] {
@@ -2131,11 +2150,35 @@ function containerizeGrant(grant: Record<string, unknown>): Record<string, unkno
  * that earlier decision needs to know it no longer applies, not that it was
  * quietly dropped.
  */
-type BrokerLeaseResult = { ok: true } | { ok: false; message: string };
+// Edit 2 (plan 02-10, D-13/PROTO-08): `ok: true` now carries a `lease:
+// HeldLease | null` -- `null` only for the VICE_MCP_URL override branch
+// below, where there is no broker control session to claim a monitor socket
+// through. Every failure branch is untouched.
+type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; message: string };
+
+/**
+ * Builds the HeldLease a stock handler needs from state read FRESH on every
+ * call -- activeInstance() and grantId -- never memoised here:
+ * handleGrantedInstanceUnreachable() overwrites both on a replacement
+ * acquisition, and a cached lease would keep pointing at the retired
+ * instance. `host` is the hostname of the active instance's ALREADY
+ * containerized `url` (containerizeGrant()'s own loopback rewrite already
+ * owns host/container translation -- reading its result here is reuse, not
+ * re-derivation). `port` is activeInstance().port (the broker allocates one
+ * port per instance and passes it to -binarymonitoraddress on the stock
+ * backend, per plan 02-03). `targetId` is grantId -- the same value
+ * controlSession.recycle(grantId) already sends on the wire. Called only
+ * from the two success returns below that hold a control session.
+ */
+function buildHeldLease(session: BrokerControlSession): HeldLease {
+  const { url, port } = activeInstance();
+  const host = new URL(url).hostname;
+  return { host, port, targetId: grantId ?? "", brokerControl: session };
+}
 
 async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
-  if (controlSession) return { ok: true };
-  if (process.env.VICE_MCP_URL) return { ok: true }; // explicit override -- broker never contacted
+  if (controlSession) return { ok: true, lease: buildHeldLease(controlSession) };
+  if (process.env.VICE_MCP_URL) return { ok: true, lease: null }; // explicit override -- broker never contacted, nothing to claim a monitor socket through
 
   // Classify liveness FIRST, before ever opening a connection (C10).
   // never_started and stale both return their message immediately, with no
@@ -2208,7 +2251,7 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   adoptGrant({ ...result.grant });
   viceSession = null; // re-baseline: the next ensureViceSession() reads the GRANTED instance's own epoch file
   controlSession = session;
-  return { ok: true };
+  return { ok: true, lease: buildHeldLease(session) };
 }
 
 /**
@@ -3006,10 +3049,23 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
 // function runs at read time. A manifest hot-reload mid-session is
 // therefore no longer picked up until the proxy restarts; the manifest is
 // regenerated by a manual, rare build step, never mid-session in practice.
+// Edit 3 (plan 02-10, D-09): the runner each manifest tool's own execute()
+// closes over is chosen by ACTIVE_BACKEND, decided ONCE above, never
+// per-tool or per-call. The first ternary arm below is byte-identical to
+// every prior plan's own forwarding call, unchanged.
+// The second arm (the OTHER backend) passes ensureBrokerLease itself as the
+// injected LeaseProvider (no locally-built acquisition wrapping it -- there
+// is exactly one acquisition function in this file, and this arm calls the
+// SAME one the first arm's own lease check already calls), plus this file's
+// own already-settled binary path so the health-check tool on that path can
+// answer BACK-03 without ever re-detecting anything itself.
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
 for (const def of readManifestTools()) {
   if (DENY_LIST.includes(def.name)) continue;
-  tools[def.name] = buildViceTool(def, (args) => forwardToVice(def.name, args));
+  tools[def.name] =
+    ACTIVE_BACKEND.backend === "fork"
+      ? buildViceTool(def, (args) => forwardToVice(def.name, args))
+      : buildViceTool(def, (args) => stockDispatch.dispatchStock(def.name, args, { ensureLease: ensureBrokerLease, resolvedBinaryPath: ACTIVE_BACKEND.binPath }));
 }
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
 tools[RECYCLE_TOOL.name] = buildViceTool(RECYCLE_TOOL, (args) => handleRecycle(args));
@@ -3090,4 +3146,13 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-console.error(`vice-proxy: ready, forwarding to ${activeInstance().url} (port ${activeInstance().port})`);
+// Log-line correction (plan 02-10): the fork arm is byte-identical to every
+// prior plan. The stock arm cannot yet name a real instance/port -- no
+// acquisition has happened at process startup, only lazily on the first
+// tools/call -- so it names the backend and the binary-monitor target
+// instead of a coordinate pair that does not exist yet.
+console.error(
+  ACTIVE_BACKEND.backend === "fork"
+    ? `vice-proxy: ready, forwarding to ${activeInstance().url} (port ${activeInstance().port})`
+    : `vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: ${ACTIVE_BACKEND.binPath})`,
+);

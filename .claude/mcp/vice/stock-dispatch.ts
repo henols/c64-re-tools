@@ -27,7 +27,8 @@
 import { resolve, join } from "node:path";
 
 import type { ViceBackend } from "./backend-detect.mts";
-import type { HeldLease } from "./vice-broker-client.ts";
+import { MonitorOwnershipError, type HeldLease } from "./vice-broker-client.ts";
+import { MachineRestartedError } from "./vice.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession } from "./stock-connect.ts";
 
 // ---------------------------------------------------------------------------
@@ -71,16 +72,27 @@ export function manifestPathForBackend(backend: ViceBackend, hereDir: string, en
 export type LeaseProvider = () => Promise<{ ok: true; lease: HeldLease | null } | { ok: false; message: string }>;
 
 /**
- * Injected dependencies for ensureStockSession(). `connect`/`reconnect`
- * exist SOLELY so tests can stub the socket-touching half of this seam --
- * production code passes neither, and stockConnect/stockReconnect (the real
- * imports) are the defaults. Tests must never stub ensureStockSession
- * itself: that is the wiring under test.
+ * Injected dependencies for ensureStockSession() and, below, every stock
+ * dispatch handler. `connect`/`reconnect` exist SOLELY so tests can stub the
+ * socket-touching half of this seam -- production code passes neither, and
+ * stockConnect/stockReconnect (the real imports) are the defaults. Tests
+ * must never stub ensureStockSession itself: that is the wiring under test.
+ *
+ * `resolvedBinaryPath` (Task 1, plan 02-10) is BACK-03's third field on
+ * `vice_ping`'s answer -- the resolved binary path `resolvedBackend()`
+ * already determined. It is a plain string handed down from vice-proxy.ts's
+ * OWN single, module-scope call to `resolvedBackend()` (see that file's own
+ * "resolve the active backend once" discipline) -- this module must never
+ * call `resolvedBackend()`/`probeBackend()` itself, per backend-detect.mts's
+ * own "do not call this per tool or per call" prohibition. Omitted entirely
+ * (never expected in production) falls back to an empty string rather than
+ * throwing.
  */
 export interface StockDispatchDeps {
   ensureLease: LeaseProvider;
   connect?: typeof stockConnect;
   reconnect?: typeof stockReconnect;
+  resolvedBinaryPath?: string;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };
@@ -206,3 +218,150 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
 // consumer accidentally importing stock-connect.ts's stockDisconnect
 // directly from two different specifiers.
 export { stockDisconnect };
+
+// ---------------------------------------------------------------------------
+// dispatchStock() -- the dispatch table and hard refusal (Task 1, plan 02-10).
+// ---------------------------------------------------------------------------
+//
+// D-09's whole point, restated at the point it is enforced: a tool call that
+// reaches dispatchStock() below either matches a table entry and is answered
+// by name, or matches nothing and is refused by name -- there is no third
+// path, and in particular no fall-through to forwardToVice() (vice-proxy.ts's
+// fork-transport function). This file has no code reference to that name at
+// all; a source-structure test in stock-dispatch.test.ts and a grep gate in
+// this plan's own acceptance criteria both confirm it stays that way.
+
+/** The shape every stock dispatch handler returns -- structurally IDENTICAL
+ * to vice-proxy.ts's own private ToolCallResult (ErrorTextResult |
+ * OkTextResult), by field name and type, but declared here rather than
+ * imported: vice-proxy.ts imports THIS file (Task 2), so importing back from
+ * it would be the exact module-cycle this codebase's own "module-cycle
+ * avoidance is deliberate" constraint forbids. TypeScript's structural
+ * typing makes the two interchangeable at every call site that matters --
+ * see vice-proxy.ts's own tools-construction loop, where a value of this
+ * type flows into a parameter typed as vice-proxy.ts's ToolCallResult with
+ * no adapter needed. */
+export interface StockErrorResult {
+  content: { type: "text"; text: string }[];
+  isError: true;
+}
+export interface StockOkResult {
+  content: { type: "text"; text: string }[];
+  isError: false;
+}
+export type StockToolResult = StockErrorResult | StockOkResult;
+
+function isErrorText(text: string): StockErrorResult {
+  return { content: [{ type: "text", text }], isError: true };
+}
+
+/** One stock dispatch table entry. `deps` is the SAME StockDispatchDeps
+ * ensureStockSession() itself takes -- a handler that needs a live session
+ * reaches it only through ensureStockSession(deps), never by resolving a
+ * lease or opening a socket of its own (that would be a second acquisition
+ * path, the exact thing ensureStockSession()'s own header comment
+ * prohibits). */
+export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDeps) => Promise<StockToolResult>;
+
+/** Converts the two typed errors ensureStockSession()/stockConnect() can
+ * propagate into well-formed refusal text, naming the tool. Never mentions
+ * "wedge", "hung", or "unresponsive" -- a monitor-ownership conflict is the
+ * broker's own enforcement of a DIFFERENT grant already holding this
+ * instance, a state vice-wedge-triage's opening move must not be misdirected
+ * by into treating as a wedged emulator (T-02-14, this file's own
+ * prohibition list). Anything else escaping a handler is converted too,
+ * generically, so no handler can ever let an exception reach the never-throw
+ * boundary one layer up in vice-proxy.ts. */
+function convertHandshakeError(toolName: string, err: unknown): StockErrorResult {
+  if (err instanceof MonitorOwnershipError) {
+    return isErrorText(
+      `${toolName}: this instance's monitor socket is already claimed by a different grant ` +
+        `(grant ${err.holderGrantId ?? "unknown"}, claimed at ${err.holderClaimedAt ?? "unknown"}, port ${err.port ?? "unknown"}) -- ` +
+        `only one client may hold the stock monitor socket at a time.`,
+    );
+  }
+  if (err instanceof MachineRestartedError) {
+    return isErrorText(
+      `${toolName}: the emulator's identity could not be proven across a reconnect ` +
+        `(baseline epoch ${String(err.baselineEpoch)}, current epoch ${String(err.currentEpoch)}) -- ` +
+        `treat every result since the previous call as void and retry.`,
+    );
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return isErrorText(`${toolName}: stock handshake failed (${message}).`);
+}
+
+/**
+ * The `vice_ping` table entry -- BACK-03's answer, on the tool an agent
+ * already reaches for first. Obtains a live session SOLELY through
+ * ensureStockSession(deps): no broker coordinates resolved, no socket
+ * opened, and no stockConnect() call, here. On a refusal (`{ ok: false }`)
+ * returns that refusal's own message verbatim -- never re-worded. On success
+ * enriches the ordinary ping answer with the three BACK-03 fields: `backend`
+ * (always `"stock"` on this path), `viceVersion` (rendered from the
+ * handshake's own version quad), and `resolvedBinaryPath` (threaded down
+ * from deps, never resolved here -- see StockDispatchDeps's own header
+ * comment on why).
+ */
+async function viceHandlerPing(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  let outcome: EnsureStockSessionOutcome;
+  try {
+    outcome = await ensureStockSession(deps);
+  } catch (err) {
+    return convertHandshakeError("vice_ping", err);
+  }
+
+  if (!outcome.ok) {
+    return isErrorText(outcome.message);
+  }
+
+  const session = outcome.session;
+  const payload = {
+    status: "ok",
+    backend: "stock" as const,
+    viceVersion: `VICE ${session.versionQuad}`,
+    resolvedBinaryPath: deps.resolvedBinaryPath ?? "",
+    capabilities: session.capabilities,
+  };
+  return { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false };
+}
+
+/** The ONE dispatch table this whole module tree ever defines (D-09) --
+ * keyed on manifest tool name. A later plan (phases 3-7) adds its own stock
+ * entries here, never a parallel table or a second dispatch site in
+ * vice-proxy.ts (grep-gated to exactly one `dispatchStock(` call there,
+ * plan 02-10 task 2's own acceptance criteria). */
+const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
+  vice_ping: viceHandlerPing,
+};
+
+/** Looks up the table entry for `name` -- `undefined` on a miss, never a
+ * refusal object itself (that is dispatchStock()'s job, below): this
+ * function is the pure lookup half, kept separate so a caller (or a test)
+ * can ask "does the stock backend implement this tool" without triggering
+ * any dispatch. */
+export function stockHandlerFor(name: string): StockHandler | undefined {
+  return STOCK_DISPATCH_TABLE[name];
+}
+
+/**
+ * The ONE dispatch entry point for the stock backend (D-09). On a hit,
+ * delegates to the table entry, unchanged. On a miss, refuses EXPLICITLY --
+ * naming the tool, stating the stock backend does not implement it, and
+ * naming the fork as the backend that does -- WITHOUT reading `deps` at all
+ * (no lease is ever requested for a tool that does not exist on this
+ * backend). There is no third branch, and in particular NO fall-through to
+ * forwardToVice() anywhere in this file or anything it calls -- that is
+ * D-09's whole point, grep-gated to zero occurrences of that name in this
+ * file's own code lines.
+ */
+export async function dispatchStock(name: string, args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const handler = stockHandlerFor(name);
+  if (!handler) {
+    return isErrorText(
+      `${name} is not implemented by the stock backend -- the fork backend provides this tool. ` +
+        `Set VICE_BACKEND=fork to use it there, or wait for a later phase to extend the stock dispatch table.`,
+    );
+  }
+  return handler(args, deps);
+}
