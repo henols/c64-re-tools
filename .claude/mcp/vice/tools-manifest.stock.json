@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-08-13T00:00:00.000Z",
+  "endpoint": "stock-binary-monitor",
+  "tools": [
+    {
+      "name": "vice_ping",
+      "description": "Check if VICE is responding",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    }
+  ]
+}

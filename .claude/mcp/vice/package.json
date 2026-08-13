@@ -24,8 +24,10 @@
     "build.ts",
     "container-guard.mts",
     "backend-detect.mts",
+    "stock-dispatch.ts",
     "resources",
     "tools-manifest.json",
+    "tools-manifest.stock.json",
     "README.md"
   ],
   "engines": {

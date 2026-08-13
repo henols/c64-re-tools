@@ -220,6 +220,33 @@ test("importing the module performs no handshake and writes nothing -- the entry
   }
 });
 
+test("manifest/backend: refresh-manifest.ts refuses to write tools-manifest.stock.json even when VICE_TOOLS_MANIFEST is pointed at it", async () => {
+  initializeShouldFail = false;
+  const dir = mkdtempSync(join(tmpdir(), "vice-manifest-stock-guard-test-"));
+  const stockPath = join(dir, "tools-manifest.stock.json");
+  const prevPath = process.env.VICE_TOOLS_MANIFEST;
+  const prevExitCode = process.exitCode;
+  process.env.VICE_TOOLS_MANIFEST = stockPath;
+  try {
+    await withStubHost(
+      () => ({ tools: [{ name: "vice_ping" }] }),
+      async () => {
+        await assert.rejects(
+          () => main(),
+          /refusing to write tools-manifest\.stock\.json/,
+          "main() must throw rather than ever write to a path literally named tools-manifest.stock.json"
+        );
+      }
+    );
+    assert.throws(() => readFileSync(stockPath), "no file must have been written at the stock-named path");
+  } finally {
+    if (prevPath === undefined) delete process.env.VICE_TOOLS_MANIFEST;
+    else process.env.VICE_TOOLS_MANIFEST = prevPath;
+    process.exitCode = prevExitCode;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the real tools-manifest.json is untouched by this entire test run", () => {
   let realManifestAfter: Buffer | null;
   try {

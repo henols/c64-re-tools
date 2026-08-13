@@ -11,10 +11,16 @@
 import { serverInfo, activeInstance, type ServerInfoPayload, type ToolInfo } from "./vice.ts";
 import { writeFileSync, chmodSync, renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MANIFEST_PATH = join(HERE, "tools-manifest.json");
+
+// The hand-authored stock surface's own filename (stock-dispatch.ts's
+// tools-manifest.stock.json, plan 02-09) -- named here ONLY so
+// writeManifestAtomic() below can refuse to ever target it, never as
+// something this file writes.
+const STOCK_MANIFEST_BASENAME = "tools-manifest.stock.json";
 
 function manifestPath(): string {
   return process.env.VICE_TOOLS_MANIFEST
@@ -39,8 +45,23 @@ export interface ToolsManifest {
  * a crash, not only against a rejected handshake -- the rejected-handshake
  * half of that guarantee already held (the early return below, unchanged
  * from the original), but a crash between "open the file" and "write the
- * content" could previously still truncate a good manifest to nothing. */
+ * content" could previously still truncate a good manifest to nothing.
+ *
+ * T-02-31 (02-09): this function regenerates the manifest from a LIVE fork
+ * host's tools/list, so its output path must NEVER be
+ * tools-manifest.stock.json -- that file is the hand-authored, separately
+ * committed stock surface (D-07/D-09), and this refresh path overwriting it
+ * with the fork's full tool list would silently destroy the trimming that
+ * surface exists to enforce. This assertion makes that impossible by
+ * accident; a future `--stock` flag pointing this generator at the stock
+ * file has to edit this line deliberately, not merely change a default. */
 function writeManifestAtomic(path: string, manifest: ToolsManifest): void {
+  if (basename(path) === STOCK_MANIFEST_BASENAME) {
+    throw new Error(
+      `refresh-manifest: refusing to write ${STOCK_MANIFEST_BASENAME} -- this generator regenerates the fork's ` +
+        `manifest from a live host and must never overwrite the hand-authored stock surface (D-07/D-09)`
+    );
+  }
   const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmpPath, "");
   chmodSync(tmpPath, 0o600);
