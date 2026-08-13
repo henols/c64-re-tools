@@ -499,11 +499,43 @@ export interface ParseResponseOptions {
 }
 
 /**
+ * CR-01 (code review 2026-08-13): every read below is bounds-checked through
+ * need() FIRST. Before this guard existed, a COMPLETE frame whose body was
+ * shorter than its response type requires threw a bare `RangeError` out of
+ * this function -- past parseBuffer()'s deliberately narrow catch (which
+ * absorbs only this function's own two documented throw types), out of a
+ * seam whose own doc comment promises it "never throws". Four shapes were
+ * reproduced against the pre-fix code: a zero-length STOPPED (0x62), a
+ * 1-byte MEM_GET (0x01), a CHECKPOINT_INFO (0x11) with a 10-byte body, and a
+ * DISPLAY_GET (0x84) whose wire-controlled `info_len` read 0xfffffff0. The
+ * last one is reachable from ordinary desync (once the scanner locks onto a
+ * false STX with a plausible length, every body byte is garbage-controlled),
+ * and inside ViceMonitorClient it discarded the WHOLE accumulated buffer --
+ * including complete, valid frames already sitting in it -- and left every
+ * in-flight request to time out.
+ *
+ * What NOT to do: never add a `case` here that reads at a fixed or
+ * wire-derived offset without a preceding need() for the bytes it touches.
+ * A short body is a FRAMING ERROR this function returns through its
+ * documented StockFramingError channel, never a RangeError it lets escape.
+ */
+function need(body: Buffer, bytes: number, responseType: number, requestId: number): void {
+  if (body.length < bytes) {
+    throw new StockFramingError(
+      `response type 0x${responseType.toString(16).padStart(2, "0")} body is ${body.length} byte(s), needs at least ${bytes}`,
+      { observed: body.length, expected: bytes, responseType, requestId },
+    );
+  }
+}
+
+/**
  * Decode one already-framed response. May THROW StockFramingError (api
- * version mismatch) or StockProtocolError (non-OK wire error code) --
- * parseBuffer() below is the seam that catches both and packages them into
- * its responses array instead of letting them escape. Never throws for an
- * unrecognized responseType; that falls through to the "unknown" shape.
+ * version mismatch, or a body too short for the response type -- see need()
+ * above) or StockProtocolError (non-OK wire error code) -- parseBuffer()
+ * below is the seam that catches both and packages them into its responses
+ * array instead of letting them escape. Never throws for an unrecognized
+ * responseType; that falls through to the "unknown" shape. Provably total
+ * for any Buffer: every offset read is preceded by a need() covering it.
  */
 export function parseResponse({ apiVersion, responseType, errorCode, requestId, body }: ParseResponseOptions): ParsedResponse {
   if (apiVersion !== VICE_API_VERSION) {
@@ -522,26 +554,34 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
 
   switch (responseType) {
     case ResponseType.MemoryGet: {
+      need(body, 2, responseType, requestId);
       const length = body.readUInt16LE(0);
+      need(body, 2 + length, responseType, requestId);
       return { type: "memory_get", requestId, errorCode, bytes: body.subarray(2, 2 + length) };
     }
     case ResponseType.RegisterInfo: {
+      need(body, 2, responseType, requestId);
       const count = body.readUInt16LE(0);
-      const registers = Array.from({ length: count }, (_, index) => {
+      const registers: Array<{ id: number; value: number }> = [];
+      for (let index = 0; index < count; index += 1) {
         const start = 2 + index * 4;
-        return { id: body[start + 1]!, value: body.readUInt16LE(start + 2) };
-      });
+        need(body, start + 4, responseType, requestId);
+        registers.push({ id: body[start + 1]!, value: body.readUInt16LE(start + 2) });
+      }
       return { type: "registers", requestId, errorCode, registers };
     }
     case ResponseType.RegistersAvailable: {
+      need(body, 2, responseType, requestId);
       const count = body.readUInt16LE(0);
       let offset = 2;
       const registers: Array<{ id: number; size: number; name: string }> = [];
       for (let index = 0; index < count; index += 1) {
+        need(body, offset + 4, responseType, requestId);
         const itemSize = body[offset]!;
         const id = body[offset + 1]!;
         const size = body[offset + 2]!;
         const nameLength = body[offset + 3]!;
+        need(body, offset + 4 + nameLength, responseType, requestId);
         const name = body.subarray(offset + 4, offset + 4 + nameLength).toString("ascii");
         registers.push({ id, size, name });
         offset += itemSize + 1;
@@ -568,6 +608,8 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       };
     }
     case ResponseType.CheckpointInfo: {
+      // 22 = the last field's own extent: hasCondition sits at body[21].
+      need(body, 22, responseType, requestId);
       const operation = body[11] ?? 0x04;
       const checkpoint: ParsedCheckpoint = {
         id: body.readUInt32LE(0),
@@ -589,6 +631,7 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // preceding CHECKPOINT_INFO events sharing this request id -- that
       // demux is plan 02-06's, not this parser's; always empty here, same as
       // the vendor.
+      need(body, 4, responseType, requestId);
       return { type: "checkpoint_list", requestId, errorCode, total: body.readUInt32LE(0), checkpoints: [] };
     }
     case ResponseType.DisplayGet: {
@@ -598,10 +641,20 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // header comment on the vendor's off-by-four defect, and
       // probe-binmon.mjs:parseDisplayGet()'s matching, already-tested
       // derivation.
+      need(body, 4, responseType, requestId);
       const infoLength = body.readUInt32LE(0);
+      // The six u16 geometry fields plus the bpp byte occupy body[4..16], so
+      // 17 bytes is the floor for the reads below regardless of what
+      // `info_len` claims. Then `buflen`'s own offset and the pixel buffer's
+      // declared extent are each validated against the REAL body length --
+      // CR-01 case C was a desynced stream whose info_len read 0xfffffff0,
+      // which threw a RangeError straight out of this parser.
+      need(body, 17, responseType, requestId);
       const buflenOffset = 4 + infoLength;
+      need(body, buflenOffset + 4, responseType, requestId);
       const imageLength = body.readUInt32LE(buflenOffset);
       const bufStart = buflenOffset + 4;
+      need(body, bufStart + imageLength, responseType, requestId);
       return {
         type: "display",
         requestId,
@@ -617,10 +670,12 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       };
     }
     case ResponseType.PaletteGet: {
+      need(body, 2, responseType, requestId);
       const count = body.readUInt16LE(0);
       let offset = 2;
       const items: ParsedPaletteItem[] = [];
       for (let index = 0; index < count; index += 1) {
+        need(body, offset + 4, responseType, requestId);
         const itemSize = body[offset] ?? 0;
         items.push({
           index,
@@ -633,14 +688,17 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       return { type: "palette", requestId, errorCode, items };
     }
     case ResponseType.Stopped:
+      need(body, 2, responseType, requestId);
       return { type: "stopped", requestId, errorCode, programCounter: body.readUInt16LE(0) };
     case ResponseType.Resumed:
+      need(body, 2, responseType, requestId);
       return { type: "resumed", requestId, errorCode, programCounter: body.readUInt16LE(0) };
     case ResponseType.Jam:
       // Defect (a) fix: never call readUInt16LE on a body that might be
       // zero-length. programCounter is null, not a fabricated 0.
       return { type: "jam", requestId, errorCode, programCounter: body.length >= 2 ? body.readUInt16LE(0) : null };
     case ResponseType.Undump:
+      need(body, 2, responseType, requestId);
       return { type: "undump", requestId, errorCode, programCounter: body.readUInt16LE(0) };
     default:
       return { type: "unknown", requestId, errorCode, responseType };
@@ -669,9 +727,11 @@ export interface ParseBufferResult {
  * place, so a caller can track a running total across many calls), and keeps
  * scanning within this same call. A declared body length above MAX_BODY_LEN
  * is treated identically -- skipped one byte at a time, never allocated
- * against. This function never throws; StockFramingError/StockProtocolError
- * raised by parseResponse() below are caught here and returned inside
- * `responses` rather than escaping the loop.
+ * against. This function never throws: StockFramingError/StockProtocolError
+ * raised by parseResponse() are caught here and returned inside `responses`
+ * rather than escaping the loop, and (CR-01) so is any other throw -- a
+ * COMPLETE frame whose body is shorter than its response type requires is a
+ * returned StockFramingError, never a RangeError out of this seam.
  */
 export function parseBuffer(buffer: Buffer, counters: ParseCounters = { desyncBytes: 0 }): ParseBufferResult {
   const responses: Array<ParsedResponse | StockProtocolError | StockFramingError> = [];
@@ -725,9 +785,32 @@ export function parseBuffer(buffer: Buffer, counters: ParseCounters = { desyncBy
       } else {
         // Not one of parseResponse()'s two documented throw types -- a
         // genuinely unexpected bug, not a wire-format event this seam is
-        // designed to absorb. Let it surface rather than silently swallowing
-        // a real defect.
-        throw err;
+        // designed to absorb. CR-01 (code review 2026-08-13): it is
+        // nonetheless NOT re-thrown any more. The prior `throw err` here
+        // broke this function's own documented contract ("This function
+        // never throws"), and the escape was reachable in practice, not
+        // hypothetically: a wire-controlled offset read past the end of a
+        // short body raised a RangeError, which sailed straight through this
+        // arm. parseResponse() is now provably total (see need() above), so
+        // reaching this arm means a genuine defect -- so it is LOUD on
+        // stderr (never silently swallowed, which was the original arm's
+        // whole point) while still being reported through the documented
+        // channel, and the frame is consumed so the same bytes cannot
+        // re-raise it on every subsequent chunk.
+        const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        console.error(
+          `[framing] BUG: parseResponse() threw an undocumented error for response type 0x${responseType
+            .toString(16)
+            .padStart(2, "0")} (request id ${requestId}, ${bodyLength}-byte body) -- ${message}`,
+        );
+        responses.push(
+          new StockFramingError(
+            `parseResponse() threw an undocumented ${err instanceof Error ? err.name : "error"} for response type 0x${responseType
+              .toString(16)
+              .padStart(2, "0")}: ${message}`,
+            { observed: bodyLength, responseType, requestId },
+          ),
+        );
       }
     }
 

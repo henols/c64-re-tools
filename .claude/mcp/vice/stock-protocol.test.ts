@@ -157,6 +157,128 @@ test("parseBuffer: the synthetic display-get frame's image bytes are located cor
 });
 
 // ---------------------------------------------------------------------------
+// CR-01 (code review 2026-08-13): a COMPLETE frame whose body is shorter
+// than its response type requires. The pre-existing coverage above only ever
+// exercised an INCOMPLETE frame (declared length exceeding bytes present),
+// which parseBuffer() breaks on before parseResponse() is ever called -- the
+// four shapes below all reached parseResponse() and threw a bare RangeError
+// straight out of a seam documented as "never throws", taking the whole
+// accumulated buffer (including valid frames beside them) with it inside
+// ViceMonitorClient.
+// ---------------------------------------------------------------------------
+
+/** Every reproduced short-body shape, as `[label, responseType, body]`. Each
+ * is a frame whose DECLARED length matches the bytes present -- i.e. framing
+ * is correct and the body is genuinely too short for its type. */
+const SHORT_BODY_CASES: Array<[string, number, Buffer]> = [
+  ["A: STOPPED (0x62) with a zero-length body", 0x62, Buffer.alloc(0)],
+  ["A': RESUMED (0x63) with a zero-length body", 0x63, Buffer.alloc(0)],
+  ["A'': UNDUMP (0x42) with a zero-length body", 0x42, Buffer.alloc(0)],
+  ["B: MEM_GET (0x01) with a 1-byte body", 0x01, Buffer.from([0x02])],
+  ["B': MEM_GET (0x01) declaring more bytes than its body carries", 0x01, Buffer.from([0x10, 0x00, 0xff])],
+  ["D: CHECKPOINT_INFO (0x11) with a 10-byte body", 0x11, Buffer.alloc(10)],
+  ["REGISTER_INFO (0x31) claiming 4 registers with no items", 0x31, Buffer.from([0x04, 0x00])],
+  ["PALETTE_GET (0x91) claiming 16 items with no items", 0x91, Buffer.from([0x10, 0x00])],
+  ["CHECKPOINT_LIST (0x14) with a 2-byte body", 0x14, Buffer.alloc(2)],
+];
+
+for (const [label, responseType, body] of SHORT_BODY_CASES) {
+  test(`parseBuffer: ${label} is a returned StockFramingError, never a throw`, () => {
+    const frame = encodeResponseFrame({ responseType, errorCode: 0x00, requestId: 11, body });
+    assert.doesNotThrow(() => parseBuffer(frame, { desyncBytes: 0 }));
+    const result = parseBuffer(frame, { desyncBytes: 0 });
+    assert.equal(result.responses.length, 1);
+    assert.ok(result.responses[0] instanceof StockFramingError, `expected a StockFramingError, got ${String(result.responses[0])}`);
+    const err = result.responses[0] as StockFramingError;
+    assert.equal(err.responseType, responseType);
+    assert.equal(err.requestId, 11);
+    // The frame is CONSUMED, so the same bytes cannot re-raise on the next chunk.
+    assert.equal(result.remainder.length, 0);
+  });
+}
+
+test("parseBuffer: case C -- a DISPLAY_GET whose wire info_len lies (0xfffffff0) is a returned StockFramingError, never a RangeError", () => {
+  const body = Buffer.alloc(24);
+  body.writeUInt32LE(0xfffffff0, 0); // info_len far past the body
+  const frame = encodeResponseFrame({ responseType: 0x84, errorCode: 0x00, requestId: 12, body });
+  const { responses, remainder } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.equal((responses[0] as StockFramingError).responseType, 0x84);
+  assert.equal(remainder.length, 0);
+});
+
+test("parseBuffer: a DISPLAY_GET whose buflen exceeds the body is a returned StockFramingError, not a silently short image", () => {
+  const infoLen = 13;
+  const info = Buffer.alloc(infoLen);
+  const infoLenField = Buffer.alloc(4);
+  infoLenField.writeUInt32LE(infoLen, 0);
+  const buflenField = Buffer.alloc(4);
+  buflenField.writeUInt32LE(1024, 0); // claims 1024 pixel bytes
+  const body = Buffer.concat([infoLenField, info, buflenField, Buffer.alloc(8)]); // supplies 8
+  const frame = encodeResponseFrame({ responseType: 0x84, errorCode: 0x00, requestId: 13, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+test("parseBuffer: a short body does NOT discard a valid frame sitting beside it in the same buffer", () => {
+  const short = encodeResponseFrame({ responseType: 0x62, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: Buffer.alloc(0) });
+  const good = encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 77, body: Buffer.alloc(0) });
+  const { responses, remainder } = parseBuffer(Buffer.concat([short, good]), { desyncBytes: 0 });
+  assert.equal(responses.length, 2);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.equal((responses[1] as { requestId: number }).requestId, 77);
+  assert.equal(remainder.length, 0);
+});
+
+test("parseResponse: a short body throws StockFramingError (parseBuffer's documented channel), never a RangeError", () => {
+  assert.throws(
+    () =>
+      parseResponse({
+        apiVersion: VICE_API_VERSION,
+        responseType: ResponseType.Stopped,
+        errorCode: ErrorCode.Ok,
+        requestId: 1,
+        body: Buffer.alloc(0),
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockFramingError, `expected StockFramingError, got ${String(err)}`);
+      assert.ok(!(err instanceof RangeError));
+      assert.equal((err as StockFramingError).observed, 0);
+      assert.equal((err as StockFramingError).expected, 2);
+      return true;
+    },
+  );
+});
+
+test("ViceMonitorClient: a short-body event frame does not abandon an in-flight request on the same stream", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        // A zero-length STOPPED (the CR-01 case-A shape) arriving BEFORE the
+        // real reply. Pre-fix this threw out of parseBuffer(), the client
+        // dropped the whole buffer, and the pending PING timed out.
+        socket.write(
+          encodeResponseFrame({ responseType: 0x62, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: Buffer.alloc(0) }),
+        );
+        socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) }));
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const desyncs: unknown[] = [];
+      client.on("desync", (e) => desyncs.push(e));
+      await client.connect("127.0.0.1", port);
+      const reply = await client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 1000 });
+      assert.equal(reply.requestId, 1);
+      assert.equal(desyncs.length, 0, "a short body is a framing error, not a buffer-destroying desync");
+      await client.disconnect();
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // error code / protocol error
 // ---------------------------------------------------------------------------
 
