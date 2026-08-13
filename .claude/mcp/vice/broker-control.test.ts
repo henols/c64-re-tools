@@ -33,6 +33,8 @@ import {
   type HostStateFields,
   type PendingAcquireQueue,
   type PendingAcquireEntry,
+  type MonitorClaimOutcome,
+  type MonitorReleaseOutcome,
 } from "./broker-control.mts";
 import { readBrokerLiveness } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
@@ -100,12 +102,18 @@ interface StubDeps {
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
+  onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
+  onMonitorRelease?: (requestId: string, targetId: string) => MonitorReleaseOutcome;
 }
 
-async function startTestListener(deps: StubDeps = {}): Promise<{ listener: StartControlListenerResult; token: string; releases: string[]; recycleCalls: string[] }> {
+async function startTestListener(
+  deps: StubDeps = {},
+): Promise<{ listener: StartControlListenerResult; token: string; releases: string[]; recycleCalls: string[]; monitorClaimCalls: string[]; monitorReleaseCalls: string[] }> {
   const token = newControlToken();
   const releases: string[] = [];
   const recycleCalls: string[] = [];
+  const monitorClaimCalls: string[] = [];
+  const monitorReleaseCalls: string[] = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
@@ -125,8 +133,16 @@ async function startTestListener(deps: StubDeps = {}): Promise<{ listener: Start
     onHostState:
       deps.onHostState ??
       (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600 })),
+    onMonitorClaim: (requestId, targetId) => {
+      monitorClaimCalls.push(targetId);
+      return deps.onMonitorClaim?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorClaimOutcome);
+    },
+    onMonitorRelease: (requestId, targetId) => {
+      monitorReleaseCalls.push(targetId);
+      return deps.onMonitorRelease?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorReleaseOutcome);
+    },
   });
-  return { listener, token, releases, recycleCalls };
+  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls };
 }
 
 // ============================================================================
@@ -263,10 +279,10 @@ test("recycle: a connection holding NO grant at all answers denied for any targe
   }
 });
 
-test("status: one entry per instance, carrying port, url, state, reason and epoch", async () => {
+test("status: one entry per instance, carrying port, url, state, reason, epoch and hasMonitorClient", async () => {
   const entries: StatusInstanceEntry[] = [
-    { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1 },
-    { port: 6601, url: "http://127.0.0.1:6601/mcp", state: "granted", reason: "acquire", epoch: 2 },
+    { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false },
+    { port: 6601, url: "http://127.0.0.1:6601/mcp", state: "granted", reason: "acquire", epoch: 2, hasMonitorClient: true },
   ];
   const { listener, token } = await startTestListener({ onStatus: () => entries });
   const client = makeClient(listener.port);
@@ -304,7 +320,7 @@ test("host_state: carries the broker pid, node version, resolved emulator binary
 
 test("neither the status nor the host_state response ever carries the token value", async () => {
   const { listener, token } = await startTestListener({
-    onStatus: () => [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1 }],
+    onStatus: () => [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false }],
   });
   const client = makeClient(listener.port);
   try {
@@ -315,6 +331,155 @@ test("neither the status nor the host_state response ever carries the token valu
     client.send({ op: "host_state", token });
     const hostResp = await client.next();
     assert.ok(!JSON.stringify(hostResp).includes(token), "host_state response must never contain the token string");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// ============================================================================
+// Plan 05, Task 1: monitor_claim/monitor_release -- wire-level dispatch
+// against injected onMonitorClaim/onMonitorRelease stubs (the real ownership
+// logic -- comparing grantId, idempotency, clearing -- is vice-broker.mts's
+// own handleMonitorClaim()/handleMonitorRelease(), unit-tested directly
+// there; this section proves only the framing, the token gate, and the
+// response envelope this listener owns).
+// ============================================================================
+
+test("monitor_claim: an ok stub answers the monitor_claimed response kind", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener({
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "monitor_claimed");
+    assert.deepEqual(monitorClaimCalls, ["req-a"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim: a monitor_owned stub answers an error carrying code monitor_owned and the holder's own grantId/claimedAt/pid, worded as an ownership conflict", async () => {
+  const { listener, token } = await startTestListener({
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242 } }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "monitor_owned");
+    assert.deepEqual(resp.holder, { grantId: "req-a", claimedAt: 111, pid: 4242 });
+    assert.match(String(resp.message), /ownership conflict/i);
+    assert.doesNotMatch(String(resp.message), /wedge|hung|unresponsive/i, "a monitor_owned refusal must never read as a wedge or a hang");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim: a repeated claim from the same grant id is idempotent -- the stub answers ok both times, no conflict", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener({
+    onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true } : { ok: false, code: "internal" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    const first = await client.next();
+    assert.equal(first.kind, "monitor_claimed");
+
+    client.send({ op: "monitor_claim", id: "claim-2", target_id: "req-a", token });
+    const second = await client.next();
+    assert.equal(second.kind, "monitor_claimed");
+
+    assert.deepEqual(monitorClaimCalls, ["req-a", "req-a"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim: an unknown target_id answers bad_request via the stub's own outcome, not internal", async () => {
+  const { listener, token } = await startTestListener({
+    onMonitorClaim: () => ({ ok: false, code: "bad_request" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "no-such-grant", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim: a missing target_id is refused bad_request before the callback is ever invoked", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.deepEqual(monitorClaimCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim/monitor_release: both ops are refused unauthorized when the token is wrong, before the callback is ever invoked", async () => {
+  const { listener, monitorClaimCalls, monitorReleaseCalls } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "c-1", target_id: "req-a", token: "wrong" });
+    const claimResp = await client.next();
+    assert.equal(claimResp.kind, "error");
+    assert.equal(claimResp.code, "unauthorized");
+
+    client.send({ op: "monitor_release", id: "r-1", target_id: "req-a", token: "wrong" });
+    // The connection was already destroyed by the first unauthorized
+    // request (matching every other op's own token-gate behaviour) -- no
+    // second response is expected; assert only that neither callback ran.
+    assert.deepEqual(monitorClaimCalls, []);
+    assert.deepEqual(monitorReleaseCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_release: an ok stub answers the monitor_released response kind", async () => {
+  const { listener, token, monitorReleaseCalls } = await startTestListener({
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "monitor_released");
+    assert.deepEqual(monitorReleaseCalls, ["req-a"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_release: a non-holder stub answers a refusal, not silent success", async () => {
+  const { listener, token } = await startTestListener({
+    onMonitorRelease: () => ({ ok: false, code: "denied" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
   } finally {
     client.close();
     listener.server.close();
@@ -550,11 +715,19 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("no new control-plane message kind was added by this gap closure -- ControlRequestKind still has exactly its original five members", () => {
+test("no new control-plane message kind was added by 01.6.2.1-03's gap closure -- ControlRequestKind still has exactly its original five members plus plan 05's two monitor ops", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
-  assert.equal(match![1].trim(), '"acquire" | "release" | "recycle" | "status" | "host_state"', "the union's five members must be unchanged");
+  // Plan 05 (BROK-02/PROTO-08) is the ONE deliberate addition since --
+  // exclusive monitor-client ownership genuinely needed a new op (see this
+  // plan's own SUMMARY); the original five members named by 01.6.2.1-03's
+  // gap closure are still unchanged and still the first five in the union.
+  assert.equal(
+    match![1].trim(),
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release"',
+    "the union must be exactly 01.6.2.1-03's original five members plus plan 05's monitor_claim/monitor_release",
+  );
 });
 
 test("structural: broker-control.mts's pending-acquire region contains no re-ordering (sort) call anywhere in the file", () => {

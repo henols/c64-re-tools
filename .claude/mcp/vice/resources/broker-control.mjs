@@ -7,13 +7,19 @@
 // broker-control.mts
 //
 // N / D-01 (plan 01, tracer): the framing, the token gate, and acquire/
-// release. THIS PLAN (05) completes the message set: recycle, status,
+// release. Plan 05 (task 1) completed the message set: recycle, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
-// kernel-enforced singleton guard's low-level bind primitive. The
-// subsystem's FIRST network listener: a TCP control plane replacing the
-// bash broker's requests/grants/denials/leases directory tree entirely. One
-// JSON object per line; the connection open IS the claim, connection close
-// IS the release (T-01.6.2-01 through -09).
+// kernel-enforced singleton guard's low-level bind primitive. THIS PLAN's
+// task 2 adds a SEVENTH and EIGHTH op, `monitor_claim`/`monitor_release`
+// (BROK-02/PROTO-08, D-13): exclusive ownership of an instance's raw binmon
+// socket, enforced here rather than left to a client-side heuristic --
+// stock VICE services exactly one binmon client, and a second connect()
+// produces no reply and no EOF, so the refusal must happen BEFORE any
+// second dial is ever attempted. The subsystem's FIRST network listener: a
+// TCP control plane replacing the bash broker's requests/grants/denials/
+// leases directory tree entirely. One JSON object per line; the connection
+// open IS the claim, connection close IS the release (T-01.6.2-01 through
+// -09).
 //
 // Wire format confirmed at plan 01's blocking checkpoint:decision
 // (2026-08-03, `as-specified`, no amendments -- see .planning/RE-FINDINGS.md
@@ -316,6 +322,47 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     max_instances: hs.maxInstances,
                     base_port: hs.basePort,
                 });
+            }
+            else if (req.op === "monitor_claim") {
+                const targetId = typeof req.target_id === "string" ? req.target_id : "";
+                if (targetId === "") {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "monitor_claim requires target_id" });
+                    return;
+                }
+                const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
+                const outcome = opts.onMonitorClaim(requestId, targetId);
+                if (outcome.ok) {
+                    writeLine(socket, { kind: "monitor_claimed" });
+                }
+                else if (outcome.code === "monitor_owned") {
+                    // Ownership conflict, named by holder -- deliberately worded to
+                    // never suggest the emulator itself has stopped answering
+                    // (T-02-18; the plan's own grep gate polices this).
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "monitor_owned",
+                        message: `instance already has a monitor client (grant ${outcome.holder.grantId}, claimed at ${outcome.holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
+                        holder: outcome.holder,
+                    });
+                }
+                else {
+                    writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_claim failed: ${outcome.code}` });
+                }
+            }
+            else if (req.op === "monitor_release") {
+                const targetId = typeof req.target_id === "string" ? req.target_id : "";
+                if (targetId === "") {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "monitor_release requires target_id" });
+                    return;
+                }
+                const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
+                const outcome = opts.onMonitorRelease(requestId, targetId);
+                if (outcome.ok) {
+                    writeLine(socket, { kind: "monitor_released" });
+                }
+                else {
+                    writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_release refused: ${outcome.code}` });
+                }
             }
             else {
                 writeLine(socket, { kind: "error", code: "bad_request", message: `unknown op: ${String(req.op)}` });

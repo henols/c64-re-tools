@@ -29,7 +29,7 @@ import { join, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
-import { createBrokerState, nextFreePort, countReady, countTotal, countLaunching, atCapacity, resolveBasePort, } from "./broker-state.mjs";
+import { createBrokerState, nextFreePort, countReady, countTotal, countLaunching, atCapacity, resolveBasePort, clearMonitorClient, } from "./broker-state.mjs";
 import { acquirePortAndLaunch, maintainWarmFloor, probeReady, runBrokerPass, withCrashSupervision, backendFromEnv, } from "./broker-launch.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from "./broker-epoch.mjs";
@@ -466,7 +466,65 @@ function handleStatus(state) {
         state: r.state,
         reason: r.reason,
         epoch: typeof r.epoch === "number" ? r.epoch : null,
+        hasMonitorClient: r.monitorClient !== undefined,
     }));
+}
+/** Resolves a monitor_claim/monitor_release target the SAME way
+ * handleRelease() and handleRecycleForRealBroker() already resolve theirs:
+ * `targetId` is a grant id, looked up in state.grants for its port, then
+ * the instance at that port. Returns `null` for an unknown target_id/port
+ * so callers answer `bad_request`, never `internal` (plan 05's own
+ * acceptance criterion). */
+function resolveInstanceForMonitorTarget(targetId, state) {
+    const grant = state.grants.get(targetId);
+    if (!grant)
+        return null;
+    return state.instances.get(grant.port) ?? null;
+}
+/** Answers `monitor_claim` (plan 05, BROK-02/PROTO-08, D-13): exclusive
+ * monitor-socket ownership enforced HERE, broker-side, so a conflicting
+ * claim is refused by name before any second `connect()` is ever attempted
+ * -- the one state stock VICE cannot report and no client-side heuristic
+ * can diagnose. `targetId` doubles as both "which instance" (resolved via
+ * the SAME grant lookup handleRelease()/handleRecycleForRealBroker() already
+ * use) and "the requesting grant's own identity" -- the claim IS the grant,
+ * so there is no separate identity to carry. A repeated claim from the SAME
+ * grant is idempotent (`ok: true`, no second holder created); a claim from
+ * a DIFFERENT grant while the instance already has a holder is refused,
+ * naming the current holder (T-02-18) -- never the emulator's own fault. */
+export function handleMonitorClaim(requestId, targetId, state) {
+    void requestId; // correlation only -- the claim's own identity is targetId itself
+    const instance = resolveInstanceForMonitorTarget(targetId, state);
+    if (!instance)
+        return { ok: false, code: "bad_request" };
+    const existing = instance.monitorClient;
+    if (!existing) {
+        instance.monitorClient = { grantId: targetId, claimedAt: Date.now(), pid: instance.pid };
+        return { ok: true };
+    }
+    if (existing.grantId === targetId) {
+        return { ok: true }; // idempotent repeat from the SAME grant -- no second holder
+    }
+    return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid } };
+}
+/** Answers `monitor_release` (plan 05, T-02-01): clears `monitorClient` ONLY
+ * when `targetId` names the CURRENT holder -- a non-holder is refused, not
+ * silently accepted (spoofing a release is exactly T-02-01's own
+ * disposition). An instance with no current holder at all tolerates the
+ * release as a success, matching the container-side client's own documented
+ * tolerance for releasing a socket the broker already cleared. */
+export function handleMonitorRelease(requestId, targetId, state) {
+    void requestId; // correlation only, matching handleMonitorClaim()'s own posture
+    const instance = resolveInstanceForMonitorTarget(targetId, state);
+    if (!instance)
+        return { ok: false, code: "bad_request" };
+    if (!instance.monitorClient)
+        return { ok: true }; // already cleared -- tolerated, not an error
+    if (instance.monitorClient.grantId !== targetId) {
+        return { ok: false, code: "denied" };
+    }
+    clearMonitorClient(instance);
+    return { ok: true };
 }
 /** Resolves a recycle target's emulator child pid from THIS broker's own
  * in-memory instance record -- record.pid is, by construction, exactly the
@@ -531,6 +589,13 @@ async function handleRecycleForRealBroker(targetId, state) {
     }
     const epochBefore = typeof instance.epoch === "number" ? instance.epoch : null;
     markDeliberateDeath(instance, true);
+    // Plan 05: a recycle clears monitor-client ownership as a side effect --
+    // the respawned record the exit handler creates is a BRAND NEW
+    // InstanceRecord object (broker-launch.mts's spawnAndRecordInstance())
+    // that never carries this field forward regardless, but clearing it here
+    // too keeps the CURRENT (pre-kill) record's own state honest for the
+    // window between this call and that respawn.
+    clearMonitorClient(instance);
     const killStage = await verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
     const outcome = killStage === "identity_refused" ? "identity_refused" : "ok";
     const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
@@ -633,6 +698,13 @@ export function handleRelease(requestId, state) {
     const instance = state.instances.get(grant.port);
     if (instance && instance.pid === grant.pid) {
         markDeliberateDeath(instance, false);
+        // Plan 05: releasing clears monitor-client ownership as a side effect
+        // -- redundant with the instance-map deletion two lines below (the
+        // WHOLE record, monitorClient included, is going away), but explicit
+        // for the same reason GrantRecord's own clearing is explicit here: the
+        // instance-map deletion is a Task-2-era invariant this task must not
+        // depend on silently continuing to hold.
+        clearMonitorClient(instance);
         state.grants.delete(requestId);
         state.instances.delete(grant.port);
         verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
@@ -710,6 +782,8 @@ async function run(args) {
             onRelease: (requestId) => handleRelease(requestId, state),
             onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
+            onMonitorClaim: (requestId, targetId) => handleMonitorClaim(requestId, targetId, state),
+            onMonitorRelease: (requestId, targetId) => handleMonitorRelease(requestId, targetId, state),
             onHostState: () => ({
                 pid: process.pid,
                 startedAt,

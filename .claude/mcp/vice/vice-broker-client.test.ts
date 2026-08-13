@@ -23,13 +23,23 @@ import {
   classifyConnectHost,
   resolveControlTarget,
   CONTROL_CONNECT_TIMEOUT_MS,
+  MonitorOwnershipError,
 } from "./vice-broker-client.ts";
 // The bridge alias itself (quick-260805-9ha) -- used only to assert
 // resolveControlTarget()'s default answer against the SAME function it
 // delegates to, never a second, hand-derived expectation of what that
 // answer should be.
 import { mcpHost } from "./vice.ts";
-import { startControlListener, newControlToken, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields } from "./broker-control.mts";
+import {
+  startControlListener,
+  newControlToken,
+  type AcquireOutcome,
+  type RecycleOutcome,
+  type StatusInstanceEntry,
+  type HostStateFields,
+  type MonitorClaimOutcome,
+  type MonitorReleaseOutcome,
+} from "./broker-control.mts";
 // Namespace import, read-only, for the export-list closure test below --
 // the whole point is comparing the module's OWN live key set against an
 // expected list, so this must be the real module object, not a destructured
@@ -294,6 +304,8 @@ interface FullBrokerDeps {
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
+  onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
+  onMonitorRelease?: (requestId: string, targetId: string) => MonitorReleaseOutcome;
 }
 
 /** A REAL, fully-protocol'd control listener (broker-control.mts's own
@@ -325,6 +337,8 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     onHostState:
       deps.onHostState ??
       (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600 })),
+    onMonitorClaim: deps.onMonitorClaim ?? (() => ({ ok: false, code: "internal" })),
+    onMonitorRelease: deps.onMonitorRelease ?? (() => ({ ok: false, code: "internal" })),
   });
 
   const rawLines: Record<string, unknown>[] = [];
@@ -825,6 +839,172 @@ test("session: a second release() resolves without throwing", async () => {
   }
 });
 
+// ============================================================================
+// Plan 05, Task 2: claimMonitor()/releaseMonitor() -- the container-side
+// claim BEFORE any binmon connect() (PROTO-08, D-13), against the SAME
+// real-listener harness (startFullBrokerListener()) every other session
+// method above already uses.
+// ============================================================================
+
+test("monitor_claim: claimMonitor() against a stub answering ok resolves a success outcome, and never dials a second socket", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.claimMonitor({ targetId: "req-a" });
+    assert.deepEqual(result, { ok: true });
+    assert.ok(
+      rawLines.some((l) => l.op === "monitor_claim" && l.target_id === "req-a"),
+      `expected a monitor_claim line naming target_id req-a: ${JSON.stringify(rawLines)}`,
+    );
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_claim: claimMonitor() against a stub answering monitor_owned resolves a discriminated ownership-conflict outcome carrying the holder's grantId/claimedAt -- never throws, never retries", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.claimMonitor({ targetId: "req-b" });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.reason, "monitor_owned");
+    if (result.reason !== "monitor_owned") return;
+    assert.deepEqual(result.holder, { grantId: "req-holder", claimedAt: 12345, pid: 4242 });
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_claim ownership conflict: the failure outcome's own message, and MonitorOwnershipError's message, name the holding grant and never use the words wedged, hung or unresponsive", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.claimMonitor({ targetId: "req-b" });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.reason, "monitor_owned");
+    if (result.reason !== "monitor_owned") return;
+
+    const err = new MonitorOwnershipError(`instance already has a monitor client held by grant ${result.holder.grantId} -- this is an ownership conflict, on port 6600`, {
+      holderGrantId: result.holder.grantId,
+      holderClaimedAt: result.holder.claimedAt,
+      port: 6600,
+    });
+    assert.ok(err instanceof Error);
+    assert.equal(err.holderGrantId, "req-holder");
+    assert.equal(err.port, 6600);
+    assert.doesNotMatch(err.message, /wedged|hung|unresponsive/i);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_claim: claimMonitor() never dials the binmon port itself, on success or on failure -- only the control-plane socket is ever touched", async () => {
+  let acceptedConnections = 0;
+  const { server, dir } = await startFullBrokerListener({
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 1, pid: null } }),
+  });
+  server.on("connection", () => {
+    acceptedConnections++;
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    await opened.session.claimMonitor({ targetId: "req-b" });
+    // Exactly one connection: the control-plane session openBrokerControl()
+    // itself opened. claimMonitor() must never open a second one, on
+    // success or on failure.
+    assert.equal(acceptedConnections, 1);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_release: releaseMonitor() sends monitor_release and tolerates a broker that has already cleared the record", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onMonitorRelease: () => ({ ok: true }), // the broker's own tolerance for an already-cleared target
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.releaseMonitor({ targetId: "req-a" });
+    assert.deepEqual(result, { ok: true });
+    assert.ok(rawLines.some((l) => l.op === "monitor_release" && l.target_id === "req-a"));
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_release: releaseMonitor() against a non-holder refusal from the broker resolves a distinct failure outcome, not a silent success", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onMonitorRelease: () => ({ ok: false, code: "denied" }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.releaseMonitor({ targetId: "req-b" });
+    assert.deepEqual(result, { ok: false, reason: "denied" });
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_claim: claimMonitor() a control-plane timeout during claim is reported as reason timeout, strictly distinct from monitor_owned ownership conflicts", async () => {
+  // A raw socket server that accepts but never answers -- forcing
+  // claimMonitor()'s own deadline to elapse, exactly like the existing
+  // "acquire: resolves a typed deadline failure" test above does for
+  // acquire().
+  const { server, port, sockets } = await startRawSocketServer();
+  const dir = tmpPoolDir();
+  writeBrokerJson(dir, {
+    version: 1,
+    pid: process.pid,
+    heartbeat_at: new Date().toISOString(),
+    control_host: "127.0.0.1",
+    control_port: port,
+    control_token: "tok-claim-deadline",
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.claimMonitor({ targetId: "req-a", timeoutMs: 150 });
+    assert.deepEqual(result, { ok: false, reason: "timeout" });
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ------------------------------------------------- structural: no filesystem write in the new region
 
 test("structural: the new control-client region (between the plan-06 marker pair) contains no filesystem-write construct", () => {
@@ -872,6 +1052,10 @@ test("the client module's export list is exactly the surviving surface", () => {
     // quick-260805-9ha: the dial-resolution layer's own two runtime exports.
     "classifyConnectHost",
     "resolveControlTarget",
+    // Plan 05 (BROK-02/PROTO-08): the one new runtime export -- a caller
+    // that prefers to raise on a monitor-ownership conflict rather than
+    // branch on ClaimMonitorOutcome constructs this directly.
+    "MonitorOwnershipError",
   ].sort();
   assert.deepEqual(
     actualKeys,

@@ -43,7 +43,7 @@ import { supervisorDir } from "./repo-root.ts";
 // and importing it would pull `hostpath.ts` into this module, which this
 // file's own header (lines 23-26) forbids and which the host-path
 // consumer-set assertion polices.
-import { mcpHost } from "./vice.ts";
+import { mcpHost, ViceError } from "./vice.ts";
 
 // -------------------------------------------------------------- request ids
 //
@@ -509,7 +509,13 @@ export type ControlFailureKind =
   | "denied"
   | "no_free_port"
   | "at_capacity"
-  | "internal";
+  | "internal"
+  // Plan 05 (BROK-02/PROTO-08): the broker's own ControlErrorCode gained
+  // this member for the ownership-conflict outcome; duplicated here for the
+  // same reason every other member already is (this client and the broker
+  // run in separate processes -- the shared surface is the wire format, not
+  // a TypeScript type).
+  | "monitor_owned";
 
 export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: false; kind: ControlFailureKind; message: string };
 
@@ -549,6 +555,75 @@ export type ControlHostStateResult =
   | { ok: true; hostState: ControlHostStateFields }
   | { ok: false; kind: ControlFailureKind; message: string };
 
+/** Plan 05 (BROK-02/PROTO-08, D-13): the current monitor-socket holder's own
+ * identity, named in a `monitor_owned` refusal -- field-for-field the same
+ * shape the broker's own MonitorHolder carries (broker-control.mts), minus
+ * nothing (pid included, matching GrantRecord's own convention this whole
+ * mechanism mirrors). */
+export interface MonitorClaimHolder {
+  grantId: string;
+  claimedAt: number;
+  pid: number | null;
+}
+
+export interface ClaimMonitorOptions {
+  targetId: string;
+  timeoutMs?: number;
+}
+
+export interface ReleaseMonitorOptions {
+  targetId: string;
+  timeoutMs?: number;
+}
+
+/** Discriminated claim outcome (plan 05): `monitor_owned` is kept STRICTLY
+ * separate from `timeout` -- conflating "someone else holds it" with "the
+ * broker did not answer" would reintroduce exactly the ambiguity PROTO-08
+ * exists to remove. Never thrown; a caller that wants to raise instead
+ * should construct a MonitorOwnershipError from this outcome's own fields
+ * (see that class's own header comment). */
+export type ClaimMonitorOutcome =
+  | { ok: true }
+  | { ok: false; reason: "monitor_owned"; holder: MonitorClaimHolder }
+  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "internal" };
+
+export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+
+export interface MonitorOwnershipErrorOptions {
+  holderGrantId?: string;
+  holderClaimedAt?: number;
+  port?: number;
+}
+
+/** Thrown (by a caller that prefers to raise rather than branch on
+ * ClaimMonitorOutcome) when `monitor_claim` is refused because a DIFFERENT
+ * grant already holds this instance's monitor socket (plan 05, PROTO-08,
+ * D-13). Names the holding grant and the port plainly, as an ownership
+ * conflict -- a state the broker itself enforced, distinct from an emulator
+ * that has stopped answering, and NOT a state the vice-wedge-triage skill's
+ * opening move should ever be misdirected by.
+ *
+ * The claim this error reports on a refusal is made BEFORE any binmon
+ * connect() is ever attempted: stock VICE services exactly one binmon
+ * client, and a second connect() produces no reply and no EOF, so a refusal
+ * arriving only after dialling would be byte-for-byte indistinguishable
+ * from a wedge (PROTO-08). Claiming first means this refusal is a JSON
+ * response on a control-plane socket that already works, and the second
+ * client never dials the binmon port at all (D-13). */
+export class MonitorOwnershipError extends ViceError {
+  holderGrantId?: string;
+  holderClaimedAt?: number;
+  port?: number;
+
+  constructor(message: string, { holderGrantId, holderClaimedAt, port }: MonitorOwnershipErrorOptions = {}) {
+    super(message);
+    this.name = "MonitorOwnershipError";
+    this.holderGrantId = holderGrantId;
+    this.holderClaimedAt = holderClaimedAt;
+    this.port = port;
+  }
+}
+
 /** Per-call deadline override -- matches PollOptions's own established shape
  * above (pollGrant()/pollRecycleAck() already take an optional `timeoutMs`
  * this same way). The MODULE-LEVEL constant (ACQUIRE_TIMEOUT_MS etc.) is the
@@ -570,6 +645,15 @@ export interface BrokerControlSession {
   recycle(targetId: string, opts?: ControlDeadlineOptions): Promise<ControlRecycleResult>;
   status(opts?: ControlDeadlineOptions): Promise<ControlStatusResult>;
   hostState(opts?: ControlDeadlineOptions): Promise<ControlHostStateResult>;
+  /** Claims exclusive ownership of an instance's monitor socket BEFORE any
+   * binmon connect() is attempted (plan 05, PROTO-08, D-13) -- see
+   * MonitorOwnershipError's own header comment for why claiming first is
+   * the only way this refusal can ever be distinguishable from a wedge. */
+  claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
+  /** Releases a previously claimed monitor socket. Tolerates a broker that
+   * has already cleared the record (release/recycle/process-exit all clear
+   * it broker-side) -- a second release is `ok: true`, not an error. */
+  releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
 }
 
 export interface OpenBrokerControlOptions {
@@ -595,7 +679,23 @@ interface PendingLineEntry {
   handle(line: Record<string, unknown> | null, brokerGone: boolean): void;
 }
 
-type RawLineOutcome = { ok: true; line: Record<string, unknown> } | { ok: false; kind: ControlFailureKind; message: string };
+// `holder` is optional and populated ONLY when `kind` is "monitor_owned" --
+// every other failure kind leaves it undefined, matching broker-control.mts's
+// own error variant this outcome mirrors (plan 05: extends the existing
+// generic failure shape rather than a parallel channel for the one kind
+// that needs an extra field).
+type RawLineOutcome = { ok: true; line: Record<string, unknown> } | { ok: false; kind: ControlFailureKind; message: string; holder?: MonitorClaimHolder };
+
+/** Never-throw extraction of a `holder` payload from untrusted wire input --
+ * absent or malformed input answers `undefined`, never a partially-filled
+ * object (plan 05's own never-throw-on-untrusted-input posture, matching
+ * this file's own header comment on broker.json reads). */
+function extractHolder(raw: unknown): MonitorClaimHolder | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const h = raw as Record<string, unknown>;
+  if (typeof h.grantId !== "string" || typeof h.claimedAt !== "number") return undefined;
+  return { grantId: h.grantId, claimedAt: h.claimedAt, pid: typeof h.pid === "number" ? h.pid : null };
+}
 
 /** Builds the session object wrapping an already-CONNECTED socket. Wires the
  * newline framing (buffer, split on "\n", one entry-per-response FIFO
@@ -675,10 +775,16 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
           }
           if (line.kind === "error") {
             const code = typeof line.code === "string" ? (line.code as ControlFailureKind) : "internal";
+            // Plan 05: forward `holder` verbatim ONLY for monitor_owned --
+            // every other error code carries no such field on the wire, and
+            // extractHolder() itself never invents one from absent/malformed
+            // input.
+            const holder = code === "monitor_owned" ? extractHolder(line.holder) : undefined;
             resolvePromise({
               ok: false,
               kind: code,
               message: typeof line.message === "string" ? line.message : "openBrokerControl: broker reported an error",
+              holder,
             });
             return;
           }
@@ -798,7 +904,52 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     };
   }
 
-  return { acquire, release, recycle, status, hostState };
+  /** Claims exclusive ownership of `opts.targetId`'s monitor socket, sending
+   * `{ op: "monitor_claim", id, target_id, token }` through the SAME
+   * `sendAndAwaitLine()` path -- the same session, the same token, the same
+   * newline-delimited JSON discipline every other op uses; no second
+   * control connection is ever opened, and this function never dials the
+   * binmon port itself, on success OR on failure (plan 05, PROTO-08, D-13
+   * -- see MonitorOwnershipError's own header comment for why the claim is
+   * made BEFORE any binmon connect()). `timeout` is reported distinctly
+   * from `monitor_owned`: a timeout means the broker did not answer, never
+   * that someone else owns the socket. */
+  async function claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome> {
+    const requestId = newRequestId();
+    const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    if (!raw.ok) {
+      if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
+      if (raw.kind === "monitor_owned" && raw.holder) return { ok: false, reason: "monitor_owned", holder: raw.holder };
+      if (raw.kind === "unauthorized" || raw.kind === "bad_request") return { ok: false, reason: raw.kind };
+      return { ok: false, reason: "internal" };
+    }
+    if (raw.line.kind !== "monitor_claimed") {
+      return { ok: false, reason: "internal" };
+    }
+    return { ok: true };
+  }
+
+  /** Releases a previously claimed monitor socket, sending
+   * `{ op: "monitor_release", id, target_id, token }` over the SAME
+   * session. Tolerates a broker that has already cleared the record (the
+   * broker's own onMonitorRelease answers `ok: true` for an already-cleared
+   * target) -- this function never retries and never opens a second
+   * connection. */
+  async function releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome> {
+    const requestId = newRequestId();
+    const raw = await sendAndAwaitLine({ op: "monitor_release", id: requestId, target_id: opts.targetId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    if (!raw.ok) {
+      if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
+      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      return { ok: false, reason: "internal" };
+    }
+    if (raw.line.kind !== "monitor_released") {
+      return { ok: false, reason: "internal" };
+    }
+    return { ok: true };
+  }
+
+  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor };
 }
 
 /** Opens ONE session against the control plane: reads broker.json ONCE for

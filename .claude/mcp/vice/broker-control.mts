@@ -1,13 +1,19 @@
 // broker-control.mts
 //
 // N / D-01 (plan 01, tracer): the framing, the token gate, and acquire/
-// release. THIS PLAN (05) completes the message set: recycle, status,
+// release. Plan 05 (task 1) completed the message set: recycle, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
-// kernel-enforced singleton guard's low-level bind primitive. The
-// subsystem's FIRST network listener: a TCP control plane replacing the
-// bash broker's requests/grants/denials/leases directory tree entirely. One
-// JSON object per line; the connection open IS the claim, connection close
-// IS the release (T-01.6.2-01 through -09).
+// kernel-enforced singleton guard's low-level bind primitive. THIS PLAN's
+// task 2 adds a SEVENTH and EIGHTH op, `monitor_claim`/`monitor_release`
+// (BROK-02/PROTO-08, D-13): exclusive ownership of an instance's raw binmon
+// socket, enforced here rather than left to a client-side heuristic --
+// stock VICE services exactly one binmon client, and a second connect()
+// produces no reply and no EOF, so the refusal must happen BEFORE any
+// second dial is ever attempted. The subsystem's FIRST network listener: a
+// TCP control plane replacing the bash broker's requests/grants/denials/
+// leases directory tree entirely. One JSON object per line; the connection
+// open IS the claim, connection close IS the release (T-01.6.2-01 through
+// -09).
 //
 // Wire format confirmed at plan 01's blocking checkpoint:decision
 // (2026-08-03, `as-specified`, no amendments -- see .planning/RE-FINDINGS.md
@@ -21,8 +27,8 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { timingSafeEqual, randomBytes } from "node:crypto";
 
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state";
-export type ControlErrorCode = "unauthorized" | "bad_request" | "denied" | "no_free_port" | "at_capacity" | "internal";
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release";
+export type ControlErrorCode = "unauthorized" | "bad_request" | "denied" | "no_free_port" | "at_capacity" | "internal" | "monitor_owned";
 
 export interface ControlRequest {
   op: string;
@@ -76,7 +82,38 @@ export interface StatusInstanceEntry {
   state: string;
   reason: string;
   epoch: number | null;
+  /** Plan 05: whether this instance currently has a claimed monitor client
+   * (InstanceRecord.monitorClient set), computed on demand from the SAME
+   * in-memory map every other status field reads. */
+  hasMonitorClient: boolean;
 }
+
+/** The claim conflict's refusal payload (plan 05, T-02-18): names the
+ * holding grant and its claim timestamp so a refusal is reported as an
+ * ownership conflict, never as a wedged or unresponsive emulator.
+ * `pid` mirrors GrantRecord.pid's own convention -- broker-state.mts's
+ * InstanceRecord.monitorClient's own header comment explains why. */
+export interface MonitorHolder {
+  grantId: string;
+  claimedAt: number;
+  pid: number | null;
+}
+
+/** Discriminated outcome for `monitor_claim` (plan 05, D-13): resolved by
+ * vice-broker.mts's own handleMonitorClaim(), which is the SOLE writer of
+ * InstanceRecord.monitorClient on a successful claim. `monitor_owned` is a
+ * distinct outcome from every other error -- it carries the holder's own
+ * identity, because a refusal answered "someone else has it, and here is
+ * who" is what makes this an ownership conflict rather than an unexplained
+ * hang. */
+export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_owned"; holder: MonitorHolder } | { ok: false; code: "bad_request" | "internal" };
+
+/** Discriminated outcome for `monitor_release` (plan 05, T-02-01): `denied`
+ * is refused WITHOUT clearing the record -- a non-holder cannot release
+ * someone else's claim. An already-cleared record (no current holder at
+ * all) is tolerated as a success, matching the container-side client's own
+ * documented tolerance for releasing twice. */
+export type MonitorReleaseOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
 export interface HostStateFields {
   pid: number;
@@ -116,6 +153,20 @@ export interface StartControlListenerOptions {
    * Neither this response nor the status response may ever carry the
    * capability token (T-01.6.2-32) -- this module never puts it there. */
   onHostState: () => HostStateFields;
+  /** Called on `monitor_claim`, AFTER the token check has already passed --
+   * the SAME gate every other op runs, checked before any state is read or
+   * written (plan 05, T-02-16). `requestId` is this specific claim request's
+   * own correlation id; `targetId` both resolves which instance is being
+   * claimed (the same way onRecycle's targetId resolves its own target) AND
+   * is the claiming identity compared against a conflicting holder -- see
+   * vice-broker.mts's handleMonitorClaim() for the resolution and
+   * idempotency rules. */
+  onMonitorClaim: (requestId: string, targetId: string) => MonitorClaimOutcome;
+  /** Called on `monitor_release`, under the same token gate. Clearing is
+   * refused (not silently accepted) when `targetId` names a grant that is
+   * NOT the current holder -- see MonitorReleaseOutcome's own header
+   * comment for the already-cleared tolerance. */
+  onMonitorRelease: (requestId: string, targetId: string) => MonitorReleaseOutcome;
 }
 
 export interface StartControlListenerResult {
@@ -159,7 +210,13 @@ export type ControlResponse =
       max_instances: number;
       base_port: number;
     }
-  | { kind: "error"; code: ControlErrorCode; message: string };
+  | { kind: "monitor_claimed" }
+  | { kind: "monitor_released" }
+  // `holder` is optional and populated ONLY for code "monitor_owned" --
+  // every other op's error reuses this exact same variant with `holder`
+  // omitted (plan 05 extends the existing seam rather than inventing a
+  // parallel channel for the one op that needs an extra field).
+  | { kind: "error"; code: ControlErrorCode; message: string; holder?: MonitorHolder };
 
 /** 32 cryptographically random bytes rendered as hex -- the per-boot
  * capability token. Held in memory only by the caller; written once into
@@ -487,6 +544,42 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           max_instances: hs.maxInstances,
           base_port: hs.basePort,
         });
+      } else if (req.op === "monitor_claim") {
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        if (targetId === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "monitor_claim requires target_id" });
+          return;
+        }
+        const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
+        const outcome = opts.onMonitorClaim(requestId, targetId);
+        if (outcome.ok) {
+          writeLine(socket, { kind: "monitor_claimed" });
+        } else if (outcome.code === "monitor_owned") {
+          // Ownership conflict, named by holder -- deliberately worded to
+          // never suggest the emulator itself has stopped answering
+          // (T-02-18; the plan's own grep gate polices this).
+          writeLine(socket, {
+            kind: "error",
+            code: "monitor_owned",
+            message: `instance already has a monitor client (grant ${outcome.holder.grantId}, claimed at ${outcome.holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
+            holder: outcome.holder,
+          });
+        } else {
+          writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_claim failed: ${outcome.code}` });
+        }
+      } else if (req.op === "monitor_release") {
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        if (targetId === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "monitor_release requires target_id" });
+          return;
+        }
+        const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
+        const outcome = opts.onMonitorRelease(requestId, targetId);
+        if (outcome.ok) {
+          writeLine(socket, { kind: "monitor_released" });
+        } else {
+          writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_release refused: ${outcome.code}` });
+        }
       } else {
         writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: `unknown op: ${String(req.op)}` });
       }

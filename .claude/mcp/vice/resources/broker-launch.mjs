@@ -541,6 +541,22 @@ async function handleExit(reason, port, deps) {
         return;
     }
     const log = deps.log ?? defaultLog;
+    // Plan 05 (BROK-02/PROTO-08): the process behind this instance's monitor
+    // socket has just exited, by every path this function can take (crash,
+    // recycle, or a deliberate teardown) -- clear the ownership record HERE,
+    // once, before any of those paths branch, so a client that died without
+    // releasing can never hold this lock forever. Redundant with the
+    // respawn/delete paths below (a fresh InstanceRecord never carries this
+    // field forward; a deleted one has no field to carry), but explicit for
+    // the same reason broker-state.mts's own header comment names this as one
+    // of the three required clearing sites. Assigned directly (not via
+    // broker-state.mjs's clearMonitorClient()) -- this module's own
+    // type-only import of that sibling (see this file's own header comment a
+    // few lines above) is load-bearing: a VALUE import would turn "./broker-
+    // state.mjs" into a real runtime resolution this file cannot satisfy when
+    // loaded directly (as broker-launch.test.ts does), rather than the
+    // compiled resources/ sibling this specifier is actually shaped for.
+    record.monitorClient = undefined;
     if (record.deliberateKill) {
         if (record.respawnAfterKill) {
             // Recycle. Capture the pre-kill state, crash history and backoff
