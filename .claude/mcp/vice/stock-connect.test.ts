@@ -362,6 +362,66 @@ test("stockConnect: api_version mismatch on PING rejects with a typed framing fa
   );
 });
 
+// ===========================================================================
+// WR-07: the failure-path cleanup must never replace the original failure.
+// ===========================================================================
+
+test("WR-07: a releaseMonitor that THROWS during failure cleanup does not replace the real handshake failure", async () => {
+  await withStockStubServer(
+    (req) => {
+      if (req.commandType === CommandType.Ping) {
+        // The real cause: an api_version mismatch.
+        return encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: req.requestId, apiVersion: 0x03 });
+      }
+      return null;
+    },
+    async (port) => {
+      const brokerControl: StockConnectBrokerControl = {
+        async claimMonitor() {
+          return { ok: true };
+        },
+        async releaseMonitor() {
+          throw new Error("test: the broker connection dropped during cleanup");
+        },
+      };
+      await assert.rejects(stockConnect({ host: "127.0.0.1", port, targetId: "grant-wr07-1", brokerControl }), (err: unknown) => {
+        assert.ok(err instanceof StockFramingError, `the caller must still see the REAL cause, got ${String(err)}`);
+        assert.equal((err as StockFramingError).observed, 0x03);
+        assert.doesNotMatch(String((err as Error).message), /dropped during cleanup/);
+        return true;
+      });
+    },
+  );
+});
+
+test("WR-07: a releaseMonitor that answers { ok: false } during failure cleanup does not replace the real handshake failure either", async () => {
+  await withStockStubServer(
+    (req) => {
+      if (req.commandType === CommandType.Ping) {
+        return encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: req.requestId, apiVersion: 0x03 });
+      }
+      return null;
+    },
+    async (port) => {
+      let releaseCalls = 0;
+      const brokerControl: StockConnectBrokerControl = {
+        async claimMonitor() {
+          return { ok: true };
+        },
+        async releaseMonitor() {
+          releaseCalls += 1;
+          return { ok: false, reason: "denied" };
+        },
+      };
+      await assert.rejects(
+        stockConnect({ host: "127.0.0.1", port, targetId: "grant-wr07-2", brokerControl }),
+        (err: unknown) => err instanceof StockFramingError,
+      );
+      assert.equal(releaseCalls, 1, "the release is still attempted exactly once -- its outcome is reported, not swallowed and not propagated");
+    },
+  );
+});
+
 test("stockConnect: cpuhistory available (error code 0x00) maps to capabilities.cpuHistory === 'available'", async () => {
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.Ok }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();

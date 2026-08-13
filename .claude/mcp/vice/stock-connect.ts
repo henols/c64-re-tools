@@ -347,7 +347,25 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     // and, CR-02, tries to leave the machine RUNNING on the way out too.
     if (!resumeAttempted) await safeResume(client);
     await safeDisconnect(client);
-    await brokerControl.releaseMonitor({ targetId });
+    // WR-07: the release must never REPLACE the original failure. Before this,
+    // a bare `await brokerControl.releaseMonitor(...)` sat between the catch and
+    // the throw, so a rejecting release substituted its own error for the real
+    // handshake cause (an api-version mismatch, a timeout, a closed socket) and
+    // the caller lost it entirely. Its `{ ok: false, reason }` outcome was
+    // discarded too, so a FAILED release was silent -- the instance stayed
+    // claimed while the caller was told the handshake failed for an unrelated
+    // reason. Both outcomes are now reported on stderr and neither can
+    // displace `err`.
+    try {
+      const released = await brokerControl.releaseMonitor({ targetId });
+      if (!released.ok) {
+        console.error(
+          `stockConnect: monitor release for target ${targetId} after a failed handshake was refused (${released.reason}) -- the instance may still be claimed`,
+        );
+      }
+    } catch (releaseErr) {
+      console.error(`stockConnect: monitor release for target ${targetId} after a failed handshake threw: ${String(releaseErr)}`);
+    }
     throw err;
   }
 }
