@@ -31,6 +31,7 @@ import {
   RESPONSE_HEADER_LEN,
   REQUEST_HEADER_LEN,
   MAX_BODY_LEN,
+  MAX_BUFFERED_LEN,
 } from "./stock-protocol.ts";
 import {
   encodeResponseFrame,
@@ -579,29 +580,61 @@ test("ViceMonitorClient: a jam frame and an unknown response type do not produce
   assert.equal(uncaught, null);
 });
 
-test("ViceMonitorClient: accumulated buffer above MAX_BODY_LEN without a complete frame emits a StockDesyncError instead of growing without bound", async () => {
-  const declaredBodyLength = MAX_BODY_LEN; // boundary: allowed by parseBuffer's own MAX_BODY_LEN check
+// ---------------------------------------------------------------------------
+// WR-03: the accumulation cap is MAX_BUFFERED_LEN, a DIFFERENT quantity from
+// MAX_BODY_LEN (one frame's declared body).
+//
+// The test that used to sit here asserted the defect as the contract: it sent a
+// legitimate frame declaring a MAX_BODY_LEN body, delivered part of it, and
+// required a StockDesyncError. That is precisely the failure WR-03 names -- a
+// frame at or near the body cap could never be reassembled from chunks, because
+// its own partially-received bytes tripped a cap meant for a different
+// quantity, so the retry hit the same wall forever. It is replaced, not
+// deleted: the same stream must now be REASSEMBLED, and the cap's real job
+// (bounding genuinely unparseable accumulation) is asserted structurally.
+// ---------------------------------------------------------------------------
+
+test("WR-03: MAX_BUFFERED_LEN is strictly larger than the largest legal frame, so any legal frame can always be reassembled from chunks", () => {
+  assert.ok(
+    MAX_BUFFERED_LEN > RESPONSE_HEADER_LEN + MAX_BODY_LEN,
+    `the accumulation cap (${MAX_BUFFERED_LEN}) must exceed header+max body (${RESPONSE_HEADER_LEN + MAX_BODY_LEN}); otherwise a maximal frame's own in-progress bytes trip it`,
+  );
+});
+
+test("WR-03: a large in-progress frame delivered in chunks is reassembled, with NO desync and no buffer reset", async () => {
+  // A body far above the old 4 MiB-shared cap's reach for chunked delivery, and
+  // well above a real full-screen DISPLAY_GET (~157 KB), sent in pieces.
+  const bodyLength = MAX_BODY_LEN;
   const header = Buffer.alloc(RESPONSE_HEADER_LEN);
   header[0] = VICE_STX;
   header[1] = VICE_API_VERSION;
-  header.writeUInt32LE(declaredBodyLength, 2);
-  header[6] = 0x01;
+  header.writeUInt32LE(bodyLength, 2);
+  header[6] = 0x01; // MEM_GET
   header[7] = 0x00;
-  header.writeUInt32LE(1, 8);
-  const sentTotal = MAX_BODY_LEN + 5; // > MAX_BODY_LEN cap, but < the full declared frame length
-  const partialBody = Buffer.alloc(sentTotal - RESPONSE_HEADER_LEN, 0);
-  const stream = Buffer.concat([header, partialBody]);
+  header.writeUInt32LE(7, 8);
+  const body = Buffer.alloc(bodyLength, 0);
+  body.writeUInt16LE(4, 0); // MEM_GET's own declared payload length
+  const frame = Buffer.concat([header, body]);
 
   await withStubNetServer(
-    (socket) => socket.write(stream),
+    (socket) => {
+      // Deliver in 512 KiB pieces, so the accumulated buffer spends most of the
+      // exchange above the OLD (wrong) cap.
+      for (const chunk of chunkBytes(frame, 512 * 1024)) socket.write(chunk);
+    },
     async (port) => {
       const client = new ViceMonitorClient();
       const desyncs: unknown[] = [];
+      const responses: unknown[] = [];
       client.on("desync", (e) => desyncs.push(e));
+      client.on("response", (r) => responses.push(r));
       await client.connect("127.0.0.1", port);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      assert.equal(desyncs.length, 1);
-      assert.ok(desyncs[0] instanceof StockDesyncError);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      assert.deepEqual(desyncs, [], "a legitimately large in-progress frame is not a desync");
+      assert.equal(responses.length, 1, "the frame must be reassembled and parsed exactly once");
+      assert.equal((responses[0] as { type: string }).type, "memory_get");
+      assert.equal((responses[0] as { requestId: number }).requestId, 7);
+      assert.equal(client.counters.desyncBytes, 0, "no byte of a legal frame may be counted as desync");
       await client.disconnect();
     },
   );

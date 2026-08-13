@@ -60,6 +60,18 @@ export const REQUEST_HEADER_LEN = 11;
 // Same rationale as probe-binmon.mjs:73-77's MAX_BODY_LEN.
 export const MAX_BODY_LEN = 4 * 1024 * 1024;
 
+/**
+ * WR-03: the cap on ACCUMULATED, not-yet-parseable bytes -- a DIFFERENT
+ * quantity from MAX_BODY_LEN above, which caps a single frame's DECLARED body
+ * length. #onData() used the same constant for both, so a frame whose body is
+ * at or near MAX_BODY_LEN could never be reassembled from chunks: its own
+ * partially-received bytes tripped the cap and the buffer was reset, forever,
+ * on every retry. The accumulation cap must therefore be strictly larger than
+ * the largest legal frame (header + max body) with room for a following frame's
+ * bytes arriving in the same chunk.
+ */
+export const MAX_BUFFERED_LEN = RESPONSE_HEADER_LEN + MAX_BODY_LEN + 64 * 1024;
+
 // ---------------------------------------------------------------------------
 // Command / response / error "enums" -- one-for-one with
 // docs/phase0-binmon-findings.md §5's normative set, which is a superset of
@@ -830,6 +842,22 @@ export function parseBuffer(buffer: Buffer, counters: ParseCounters = { desyncBy
   return { responses, remainder: buffer.subarray(offset), desyncBytes: counters.desyncBytes };
 }
 
+/**
+ * WR-03: does `buffer` start with a header that could be a real, still-arriving
+ * frame -- STX, plus a declared body length within MAX_BODY_LEN? This is
+ * exactly the shape parseBuffer() leaves as its `remainder` when it breaks on
+ * an incomplete frame, so a `true` here means "waiting for more bytes", never
+ * "desynced". Used ONLY to keep the accumulation cap from mistaking a large
+ * in-progress frame for garbage; it is not a second framing decision (the
+ * parser above remains the only one), and a buffer too short to hold a header
+ * is trivially still in progress.
+ */
+function beginsWithPlausibleFrame(buffer: Buffer): boolean {
+  if (buffer.length < RESPONSE_HEADER_LEN) return true;
+  if (buffer[0] !== VICE_STX) return false;
+  return buffer.readUInt32LE(2) <= MAX_BODY_LEN;
+}
+
 // ---------------------------------------------------------------------------
 // Correlation tables (plan 02-06) -- data-driven, not hardcoded branches
 // (D-16). These are consulted by ViceMonitorClient's #dispatch() below.
@@ -1172,7 +1200,16 @@ export class ViceMonitorClient extends EventEmitter {
       const { responses, remainder, desyncBytes } = parseBuffer(combined, counters);
       this.#desyncBytes = desyncBytes;
 
-      if (remainder.length > MAX_BODY_LEN) {
+      // WR-03: the cap is MAX_BUFFERED_LEN (accumulated bytes), NOT
+      // MAX_BODY_LEN (one frame's declared body). Using the latter for both
+      // meant a frame at or near 4 MiB -- a full-screen DISPLAY_GET is already
+      // ~157 KB, and nothing bounds a future one lower -- could never be
+      // reassembled from chunks: its own partially-received bytes tripped the
+      // cap, the buffer was reset, and the retry hit the same wall. The second
+      // condition is the other half: a remainder that BEGINS with a plausible
+      // frame header is an in-progress frame, never a desync, whatever its
+      // size. Only genuinely unparseable accumulation trips this.
+      if (remainder.length > MAX_BUFFERED_LEN && !beginsWithPlausibleFrame(remainder)) {
         // Accumulated unparsed bytes without a complete frame, past the cap
         // -- this is the DoS shape RESEARCH.md flags in the vendor client's
         // unbounded Buffer.concat growth path. Reset rather than keep
@@ -1180,13 +1217,20 @@ export class ViceMonitorClient extends EventEmitter {
         const skipped = remainder.length;
         this.#buffer = Buffer.alloc(0);
         this.#desyncBytes += skipped;
-        this.emit(
-          "desync",
-          new StockDesyncError(
-            `accumulated buffer exceeded MAX_BODY_LEN (${MAX_BODY_LEN}) without a complete frame -- buffer reset`,
-            { bytesSkipped: skipped },
-          ),
+        const desyncErr = new StockDesyncError(
+          `accumulated buffer exceeded MAX_BUFFERED_LEN (${MAX_BUFFERED_LEN}) with no parseable frame -- buffer reset`,
+          { bytesSkipped: skipped },
         );
+        this.emit("desync", desyncErr);
+        // WR-03: the discarded bytes may have included the only copy of an
+        // in-flight reply, so those requests can never be answered. Rejecting
+        // them now, with the reason, beats letting each one silently burn its
+        // full timeout and then report "connected but silent" -- which is a
+        // materially different diagnosis from "the stream desynced". The socket
+        // itself is still alive, so this deliberately does NOT go through
+        // #failAllPending(), which would also latch #closed and refuse every
+        // future send().
+        this.#rejectAllPending(desyncErr);
       } else {
         this.#buffer = remainder;
       }
@@ -1201,7 +1245,13 @@ export class ViceMonitorClient extends EventEmitter {
       // repeat the same throw on every subsequent chunk.
       this.#buffer = Buffer.alloc(0);
       const message = err instanceof Error ? err.message : String(err);
-      this.emit("desync", new StockDesyncError(`unexpected throw while parsing binmon stream: ${message}`));
+      const desyncErr = new StockDesyncError(`unexpected throw while parsing binmon stream: ${message}`);
+      this.emit("desync", desyncErr);
+      // WR-03: same reasoning as the accumulation-cap reset above -- the bytes
+      // that were dropped may have carried the only copy of an in-flight reply,
+      // so those requests cannot be answered and should not silently burn their
+      // full timeouts. The socket stays usable.
+      this.#rejectAllPending(desyncErr);
     }
   }
 
@@ -1293,6 +1343,26 @@ export class ViceMonitorClient extends EventEmitter {
     clearTimeout(pending.timer);
     this.#pending.delete(requestId);
     this.#markSettled(requestId);
+  }
+
+  /**
+   * WR-03: reject every in-flight request WITHOUT declaring the socket dead.
+   * Deliberately not #failAllPending(), which latches `#closed = true` and so
+   * refuses every future send() -- correct for a real close/error, wrong for a
+   * stream desync, where the connection is still usable and the caller's next
+   * command should be attempted. Each abandoned id is marked settled (same
+   * reasoning as WR-02) so a late reply is counted as a duplicate rather than
+   * emitted on the event channel.
+   */
+  #rejectAllPending(reason: unknown): void {
+    if (this.#pending.size === 0) return;
+    const entries = Array.from(this.#pending.entries());
+    this.#pending.clear();
+    for (const [requestId, pending] of entries) {
+      clearTimeout(pending.timer);
+      this.#markSettled(requestId);
+      pending.reject(reason);
+    }
   }
 
   /** WR-02: the abandonment counterpart to #finishPending(). Same pair of state
