@@ -2086,6 +2086,11 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
       maxInstances: 1,
       basePort: 0,
     }),
+    // Plan 05 (BROK-02/PROTO-08): this proxy-focused fixture never exercises
+    // monitor_claim/monitor_release itself -- these stubs exist only to
+    // satisfy StartControlListenerOptions's now-required fields.
+    onMonitorClaim: () => ({ ok: false, code: "internal" }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" }),
   });
   // Every accepted connection is captured as it arrives -- attached BEFORE
   // any caller has a chance to trigger one, so a later "which socket did

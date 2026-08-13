@@ -5,6 +5,15 @@
 // verbatim to tools/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 import { createServer } from "node:net";
+/** Clears `monitorClient` as a side effect of release, recycle, or the
+ * instance's own process exit (see InstanceRecord.monitorClient's own header
+ * comment for the three call sites) -- so a dead or torn-down client can
+ * never hold this lock forever. A no-op when no monitor client is currently
+ * recorded (idempotent, matching monitor_release's own tolerance for an
+ * already-cleared record). */
+export function clearMonitorClient(record) {
+    record.monitorClient = undefined;
+}
 export function createBrokerState() {
     return { instances: new Map(), grants: new Map(), blockedPorts: new Set() };
 }

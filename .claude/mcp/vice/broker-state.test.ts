@@ -21,6 +21,7 @@ import {
   countTotal,
   countLaunching,
   _snapshotState,
+  clearMonitorClient,
   DEFAULT_BASE_PORT,
   type BrokerState,
   type InstanceRecord,
@@ -246,6 +247,35 @@ test("the request-id validator the broker would use accepts the container-side g
   for (const bad of ["../../etc/passwd", "req-1-2-../../x", "req-1-2-3abc123", "", "not-a-request-id"]) {
     assert.equal(isValidRequestId(bad), false, `expected ${JSON.stringify(bad)} to be rejected`);
   }
+});
+
+// ------------------------------------------------- plan 05: monitorClient
+
+test("InstanceRecord.monitorClient: accepts the documented grantId/claimedAt/pid shape, absent by default", () => {
+  const instance = makeInstance();
+  assert.equal(instance.monitorClient, undefined, "a freshly constructed record carries no monitor client by default");
+
+  instance.monitorClient = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 };
+  assert.deepEqual(instance.monitorClient, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 });
+});
+
+test("clearMonitorClient: clears a set monitorClient", () => {
+  const instance = makeInstance({ monitorClient: { grantId: "req-1", claimedAt: 111, pid: 4242 } });
+  clearMonitorClient(instance);
+  assert.equal(instance.monitorClient, undefined);
+});
+
+test("clearMonitorClient: a no-op, and does not throw, when no monitor client is currently recorded", () => {
+  const instance = makeInstance();
+  assert.doesNotThrow(() => clearMonitorClient(instance));
+  assert.equal(instance.monitorClient, undefined);
+});
+
+test("clearMonitorClient: leaves every other field on the record untouched", () => {
+  const instance = makeInstance({ monitorClient: { grantId: "req-1", claimedAt: 111, pid: 4242 }, reason: "acquire" });
+  clearMonitorClient(instance);
+  assert.equal(instance.reason, "acquire");
+  assert.equal(instance.pid, 4242);
 });
 
 test("structural: no broker module hand-rolls a second copy of the request-id pattern -- the shared import above is the only binding", () => {

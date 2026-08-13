@@ -86,6 +86,42 @@ export interface InstanceRecord {
    * (broker-epoch.mts's instanceLogDirFor) the epoch record's own `log`
    * field is derived from, so the two can never disagree. */
   logPath?: string;
+  // ------------------------------------------------------------------
+  // Plan 05 (BROK-02/PROTO-08, D-13/D-15): exclusive monitor-socket
+  // ownership, enforced broker-side. Optional -- additive, same convention
+  // as the Plan 03 fields above. The SINGLE WRITER is vice-broker.mts's
+  // onMonitorClaim/onMonitorRelease control-plane handlers (handleMonitorClaim/
+  // handleMonitorRelease): set on a successful monitor_claim, cleared by
+  // clearMonitorClient() below on an explicit monitor_release, on this
+  // instance's own release/recycle (vice-broker.mts's handleRelease() /
+  // handleRecycleForRealBroker()), and on the instance's process exit
+  // (broker-launch.mts's crash-supervision handleExit()) -- so a client that
+  // died without releasing cannot permanently lock the instance.
+  //
+  // NAMED PITFALL (RESEARCH.md Common Pitfalls #2): this is NOT the same
+  // question GrantRecord.pid already answers. GrantRecord says "which
+  // container-side process holds this instance's LIFECYCLE grant" -- issued
+  // at acquire time, strictly BEFORE the client has dialled the binmon port
+  // at all. This field says "has the raw binmon socket actually been
+  // claimed" -- a later, separate event. Treating the existing grant as
+  // already solving exclusive monitor-client ownership is the mistake this
+  // comment exists to head off.
+  // ------------------------------------------------------------------
+  /** Set by a successful `monitor_claim`; cleared by clearMonitorClient().
+   * `pid` mirrors GrantRecord.pid's own convention -- the EMULATOR CHILD
+   * PROCESS's pid (this instance's own `pid` field at claim time), not the
+   * connecting client's pid, which this broker cannot observe over TCP. */
+  monitorClient?: { grantId: string; claimedAt: number; pid: number | null };
+}
+
+/** Clears `monitorClient` as a side effect of release, recycle, or the
+ * instance's own process exit (see InstanceRecord.monitorClient's own header
+ * comment for the three call sites) -- so a dead or torn-down client can
+ * never hold this lock forever. A no-op when no monitor client is currently
+ * recorded (idempotent, matching monitor_release's own tolerance for an
+ * already-cleared record). */
+export function clearMonitorClient(record: InstanceRecord): void {
+  record.monitorClient = undefined;
 }
 
 export interface GrantRecord {
