@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
 import { createBrokerState, nextFreePort, countReady, countTotal, countLaunching, atCapacity, resolveBasePort, } from "./broker-state.mjs";
-import { acquirePortAndLaunch, maintainWarmFloor, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
+import { acquirePortAndLaunch, maintainWarmFloor, probeReady, runBrokerPass, withCrashSupervision, backendFromEnv, } from "./broker-launch.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from "./broker-epoch.mjs";
 import { startControlListener, newControlToken, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
@@ -412,6 +412,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             state,
             stateDir,
             allocatePort: nextFreePort,
+            backend: deps.backend ?? "fork",
             spawnFactory: deps.buildColdSpawnFactory ??
                 ((port) => {
                     const supervisorDir = join(stateDir, String(port));
@@ -554,11 +555,12 @@ async function handleRecycleForRealBroker(targetId, state) {
  * because of invariants -- at most one launch per call, never invoked
  * concurrently with itself -- enforced elsewhere and never checked at the
  * point the variable used to be declared). */
-function maintainWarmFloorForRealBroker(stateDir, state) {
+function maintainWarmFloorForRealBroker(stateDir, state, backend) {
     let lastWarmLaunchLogRelPath = "";
     return maintainWarmFloor({
         state,
         stateDir,
+        backend,
         spawnFactory: (port) => {
             const supervisorDir = join(stateDir, String(port));
             const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
@@ -665,6 +667,11 @@ async function run(args) {
     // BEFORE anything else in this function runs -- an operator must be told
     // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
     process.stderr.write(`${startupBanner()}\n`);
+    // Resolved ONCE here, at broker startup -- never re-read per launch. See
+    // backendFromEnv()'s own doc comment (broker-launch.mts): this is the ONE
+    // reader of VICE_BACKEND in the broker today, and D-04 means this single
+    // resolved value governs every launch this broker process ever performs.
+    const backend = backendFromEnv();
     const state = createBrokerState();
     const token = newControlToken();
     const controlHost = process.env.VICE_BROKER_CONTROL_HOST ?? "0.0.0.0";
@@ -699,7 +706,7 @@ async function run(args) {
             host: controlHost,
             port: controlPort,
             token,
-            onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state),
+            onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state, { backend }),
             onRelease: (requestId) => handleRelease(requestId, state),
             onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
@@ -811,7 +818,7 @@ async function run(args) {
         passInFlight = true;
         runBrokerPass({
             serveAcquires: () => drainPendingAcquires(listener.pendingAcquires),
-            maintainWarmFloor: () => maintainWarmFloorForRealBroker(args.stateDir, state),
+            maintainWarmFloor: () => maintainWarmFloorForRealBroker(args.stateDir, state, backend),
         })
             .catch((e) => {
             process.stderr.write(`vice-broker: evaluation pass failed: ${e.message}\n`);
