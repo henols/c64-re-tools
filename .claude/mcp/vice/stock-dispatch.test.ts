@@ -436,3 +436,45 @@ test("dispatch: no handler in the table ever throws -- dispatchStock always reso
     assert.ok(Array.isArray(result.content));
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 2 (plan 02-10): source-structure assertions on vice-proxy.ts itself --
+// the structural stand-in for the fall-through and lease-wiring guarantees in
+// a file vice-proxy.test.ts (excluded from the automated gate) cannot prove
+// by running it. Every assertion here reads vice-proxy.ts as plain text; none
+// of them import or execute it (that file's own top-level `await
+// server.startStdio()` makes importing it unsafe outside a real stdio
+// harness).
+// ---------------------------------------------------------------------------
+
+const VICE_PROXY_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "vice-proxy.ts"), "utf8");
+const VICE_PROXY_CODE_LINES = VICE_PROXY_SOURCE.split("\n").filter((line) => !/^\s*\*/.test(line) && !/^\s*\/\//.test(line));
+
+test("structure/proxy: vice-proxy.ts references dispatchStock exactly once", () => {
+  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("dispatchStock"));
+  assert.equal(matches.length, 1, `expected exactly one dispatchStock reference, found ${matches.length}: ${JSON.stringify(matches)}`);
+});
+
+test("structure/proxy: vice-proxy.ts's dispatchStock call site passes ensureBrokerLease as its LeaseProvider", () => {
+  assert.match(VICE_PROXY_SOURCE, /dispatchStock\([^)]*ensureLease:\s*ensureBrokerLease/);
+});
+
+test("structure/proxy: vice-proxy.ts references manifestPathForBackend exactly once", () => {
+  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("manifestPathForBackend"));
+  assert.equal(matches.length, 1, `expected exactly one manifestPathForBackend reference, found ${matches.length}`);
+});
+
+test("structure/proxy: vice-proxy.ts's ensureBrokerLease has at least two lease-bearing success returns", () => {
+  const matches = VICE_PROXY_SOURCE.match(/ok:\s*true,\s*lease/g) ?? [];
+  assert.ok(matches.length >= 2, `expected >= 2 lease-bearing success returns, found ${matches.length}`);
+});
+
+test("structure/proxy: no code line in vice-proxy.ts pairs \"stock\" with \"forwardToVice\"", () => {
+  const offenders = VICE_PROXY_CODE_LINES.filter((line) => /stock/i.test(line) && line.includes("forwardToVice"));
+  assert.equal(offenders.length, 0, `found a line pairing stock with forwardToVice: ${JSON.stringify(offenders)}`);
+});
+
+test("structure/proxy: vice-proxy.ts calls resolvedBackend() exactly once", () => {
+  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("resolvedBackend"));
+  assert.equal(matches.length, 1, `expected exactly one resolvedBackend reference, found ${matches.length}`);
+});
