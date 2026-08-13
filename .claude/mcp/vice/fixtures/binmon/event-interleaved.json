@@ -1,0 +1,13 @@
+{
+  "capturedFrom": "synthesized-fallback",
+  "viceVersion": "N/A -- synthetic, not observed from any real VICE_INFO reply",
+  "capturedAt": "2026-08-13T08:38:06.104Z",
+  "command": "ADVANCE_INSTRUCTIONS (0x71) [synthesized, not a live capture]",
+  "synthetic": true,
+  "specSections": [
+    "docs/phase0-binmon-findings.md §5 (response header, request-id 0xffffffff for unsolicited events)",
+    "docs/phase0-binmon-findings.md §4 (pause/run model: any inbound byte halts the machine; a single-instruction step briefly resumes then stops)",
+    "CLAUDE.md protocol constraint: five unsolicited message types at 0xffffffff (STOPPED 0x62, RESUMED 0x63, JAM 0x61, CHECKPOINT_INFO 0x11, REGISTER_INFO 0x31); REGISTER_INFO recurs on every STOPPED transition (Phase 1 refinement, STATE.md)"
+  ],
+  "note": "Synthesized because no stock VICE binary is reachable in this environment (2026-08-13 user override of D-19). Event ordering (RESUMED, STOPPED, REGISTER_INFO, then the command's own correlated reply) follows the documented pause/run model and the recorded async-event demux behaviour; it is a plausible spec-conformant sequence, not an observed one. Must be replaced by a real capture -- see .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md."
+}

@@ -145,3 +145,96 @@ test("loadCapturedFixture: a sidecar missing a required provenance key also thro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// fixture: the three VERIF-02 cases committed under fixtures/binmon/ by plan
+// 02-02 (currently synthesized from the spec -- see
+// fixtures/binmon/README.md and docs/phase2-backend-probe-evidence.md for the
+// 2026-08-13 override -- but loaded and asserted on exactly as a real capture
+// would be; the well-formedness assertions below do not depend on the
+// bytes' origin). Named so `--test-name-pattern="fixture"` matches all six.
+// ---------------------------------------------------------------------------
+
+const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command"] as const;
+
+/** Walk a concatenated response-frame stream and return each frame's header
+ * fields plus body, asserting every frame's declared body length matches
+ * the bytes actually present and that no trailing partial frame remains. */
+function decomposeFrames(bytes: Buffer): Array<{ responseType: number; errorCode: number; requestId: number; body: Buffer }> {
+  const frames: Array<{ responseType: number; errorCode: number; requestId: number; body: Buffer }> = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    assert.ok(
+      offset + RESPONSE_HEADER_LEN <= bytes.length,
+      `truncated header at offset ${offset} (${bytes.length - offset} byte(s) remain, need ${RESPONSE_HEADER_LEN})`,
+    );
+    assert.equal(bytes[offset], VICE_STX, `frame at offset ${offset} does not start with STX`);
+    const bodyLen = bytes.readUInt32LE(offset + 2);
+    const responseType = bytes[offset + 6];
+    const errorCode = bytes[offset + 7];
+    const requestId = bytes.readUInt32LE(offset + 8);
+    const bodyStart = offset + RESPONSE_HEADER_LEN;
+    const bodyEnd = bodyStart + bodyLen;
+    assert.ok(
+      bodyEnd <= bytes.length,
+      `frame at offset ${offset} declares body length ${bodyLen} but only ${bytes.length - bodyStart} byte(s) remain`,
+    );
+    frames.push({ responseType, errorCode, requestId, body: bytes.subarray(bodyStart, bodyEnd) });
+    offset = bodyEnd;
+  }
+  assert.equal(offset, bytes.length, "trailing partial frame after the last complete frame");
+  return frames;
+}
+
+for (const caseName of ["display-get", "event-interleaved", "checkpoint-list"] as const) {
+  test(`fixture: ${caseName}.bin loads through loadCapturedFixture() without throwing`, () => {
+    assert.doesNotThrow(() => loadCapturedFixture(caseName));
+  });
+
+  test(`fixture: ${caseName}.json sidecar carries all four provenance keys with non-empty string values`, () => {
+    const { provenance } = loadCapturedFixture(caseName);
+    for (const key of REQUIRED_PROVENANCE_KEYS) {
+      assert.ok(key in provenance, `sidecar missing key "${key}"`);
+      assert.equal(typeof provenance[key], "string", `sidecar key "${key}" is not a string`);
+      assert.ok((provenance[key] as string).length > 0, `sidecar key "${key}" is an empty string`);
+    }
+  });
+
+  test(`fixture: ${caseName}.bin decomposes into at least one complete frame with no trailing partial frame`, () => {
+    const { bytes } = loadCapturedFixture(caseName);
+    const frames = decomposeFrames(bytes);
+    assert.ok(frames.length >= 1, "expected at least one complete frame");
+  });
+}
+
+test("fixture: display-get.bin is larger than 157,000 bytes", () => {
+  const { bytes } = loadCapturedFixture("display-get");
+  assert.ok(bytes.length > 157000, `display-get.bin too small: ${bytes.length} bytes`);
+});
+
+test("fixture: event-interleaved.bin carries at least one broadcast-id frame and at least one non-broadcast-id frame", () => {
+  const { bytes } = loadCapturedFixture("event-interleaved");
+  const frames = decomposeFrames(bytes);
+  assert.ok(
+    frames.some((f) => f.requestId === VICE_BROADCAST_REQUEST_ID),
+    "expected at least one frame at the broadcast request id (0xffffffff)",
+  );
+  assert.ok(
+    frames.some((f) => f.requestId !== VICE_BROADCAST_REQUEST_ID),
+    "expected at least one frame at a non-broadcast request id",
+  );
+});
+
+test("fixture: checkpoint-list.bin carries at least two frames sharing one non-broadcast request id", () => {
+  const { bytes } = loadCapturedFixture("checkpoint-list");
+  const frames = decomposeFrames(bytes);
+  const counts = new Map<number, number>();
+  for (const f of frames) {
+    if (f.requestId === VICE_BROADCAST_REQUEST_ID) continue;
+    counts.set(f.requestId, (counts.get(f.requestId) ?? 0) + 1);
+  }
+  assert.ok(
+    Array.from(counts.values()).some((n) => n >= 2),
+    `expected at least two frames sharing one non-broadcast request id, got counts: ${JSON.stringify(Array.from(counts.entries()))}`,
+  );
+});
