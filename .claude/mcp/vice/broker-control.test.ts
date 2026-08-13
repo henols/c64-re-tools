@@ -132,7 +132,7 @@ async function startTestListener(
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
-      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600 })),
+      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
     onMonitorClaim: (requestId, targetId) => {
       monitorClaimCalls.push(targetId);
       return deps.onMonitorClaim?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorClaimOutcome);
@@ -299,7 +299,7 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
 
 test("host_state: carries the broker pid, node version, resolved emulator binary, warm-floor target, instance ceiling and band base", async () => {
   const { listener, token } = await startTestListener({
-    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600 }),
+    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const }),
   });
   const client = makeClient(listener.port);
   try {
@@ -315,6 +315,33 @@ test("host_state: carries the broker pid, node version, resolved emulator binary
   } finally {
     client.close();
     listener.server.close();
+  }
+});
+
+test("WR-04 host_state: carries the broker's OWN backend verdict, so the container-side proxy can detect a disagreement", async () => {
+  for (const backend of ["fork", "stock"] as const) {
+    const { listener, token } = await startTestListener({
+      onHostState: () => ({
+        pid: 12345,
+        startedAt: "2026-08-13T00:00:00Z",
+        nodeVersion: "v24.0.0",
+        viceBin: "/usr/bin/x64sc",
+        warmFloor: 3,
+        maxInstances: 16,
+        basePort: 6600,
+        backend,
+      }),
+    });
+    const client = makeClient(listener.port);
+    try {
+      client.send({ op: "host_state", token });
+      const resp = await client.next();
+      assert.equal(resp.kind, "host_state");
+      assert.equal(resp.backend, backend, "the wire must carry the verdict that actually decided the emulator's launch argv");
+    } finally {
+      client.close();
+      listener.server.close();
+    }
   }
 });
 

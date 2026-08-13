@@ -337,7 +337,7 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
-      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600 })),
+      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
     onMonitorClaim: deps.onMonitorClaim ?? (() => ({ ok: false, code: "internal" })),
     onMonitorRelease: deps.onMonitorRelease ?? (() => ({ ok: false, code: "internal" })),
   });
@@ -406,6 +406,9 @@ test("openBrokerControl(): opens a session and drives all five request kinds, ev
     if (!hostStateResult.ok) return;
     assert.equal(hostStateResult.hostState.vice_bin, "x64sc");
     assert.equal(hostStateResult.hostState.max_instances, 16);
+    // WR-04: the broker's own backend verdict crosses the wire, narrowed at the
+    // boundary to the two known values or null.
+    assert.equal(hostStateResult.hostState.backend, "fork");
 
     const recycled = await session.recycle(acquired.grant.id);
     assert.equal(recycled.ok, true, `recycle must succeed: ${JSON.stringify(recycled)}`);
@@ -951,6 +954,37 @@ test("monitor_claim ownership conflict: the failure outcome's own message, and M
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-04: a broker that reports no backend, or an unrecognised one, is parsed as null -- absent evidence, never silent agreement", async () => {
+  for (const wireValue of [undefined, "banana", 42, null]) {
+    const { server, dir } = await startFullBrokerListener({
+      onHostState: () =>
+        ({
+          pid: 1,
+          startedAt: "2026-08-13T00:00:00Z",
+          nodeVersion: "v24.0.0",
+          viceBin: "x64sc",
+          warmFloor: 1,
+          maxInstances: 1,
+          basePort: 6600,
+          backend: wireValue,
+        }) as unknown as HostStateFields,
+    });
+    try {
+      const opened = await openBrokerControl(dir);
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+      const result = await opened.session.hostState();
+      assert.equal(result.ok, true);
+      if (!result.ok) return;
+      assert.equal(result.hostState.backend, null, `wire value ${JSON.stringify(wireValue)} must read as null, not as a verdict`);
+      await opened.session.release();
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 

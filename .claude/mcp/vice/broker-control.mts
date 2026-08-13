@@ -123,6 +123,17 @@ export interface HostStateFields {
   warmFloor: number;
   maxInstances: number;
   basePort: number;
+  /** WR-04: the backend verdict THIS broker resolved at startup -- the one that
+   * actually decided the emulator's launch argv. Put on the wire because the
+   * container-side proxy performs its OWN resolvedBackend() against the
+   * CONTAINER's filesystem, where there is usually no x64sc at all, so it
+   * classifies `unknown` -> `{ backend: "fork", source: "indeterminate" }`. D-01's
+   * "one reader" property holds per process but not across the pair, and a
+   * mismatch was previously neither detected nor reported: the proxy would
+   * advertise the fork's full manifest and forward HTTP at a binary-monitor
+   * port. This field is what lets the proxy detect that disagreement instead of
+   * discovering it as a transport failure. */
+  backend: "fork" | "stock";
 }
 
 export interface StartControlListenerOptions {
@@ -209,6 +220,8 @@ export type ControlResponse =
       warm_floor: number;
       max_instances: number;
       base_port: number;
+      /** WR-04: see HostStateFields.backend for why this is on the wire. */
+      backend: "fork" | "stock";
     }
   | { kind: "monitor_claimed" }
   | { kind: "monitor_released" }
@@ -582,6 +595,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           warm_floor: hs.warmFloor,
           max_instances: hs.maxInstances,
           base_port: hs.basePort,
+          backend: hs.backend,
         });
       } else if (req.op === "monitor_claim") {
         const targetId = typeof req.target_id === "string" ? req.target_id : "";

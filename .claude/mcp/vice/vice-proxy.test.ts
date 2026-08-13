@@ -2085,6 +2085,10 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
       warmFloor: 0,
       maxInstances: 1,
       basePort: 0,
+      // WR-04: this fixture stands in for a FORK broker, matching what the proxy
+      // under test resolves for itself here (no x64sc on PATH -> indeterminate ->
+      // "fork"), so ensureBrokerLease()'s backend-mismatch refusal does not fire.
+      backend: "fork" as const,
     }),
     // Plan 05 (BROK-02/PROTO-08): this proxy-focused fixture never exercises
     // monitor_claim/monitor_release itself -- these stubs exist only to

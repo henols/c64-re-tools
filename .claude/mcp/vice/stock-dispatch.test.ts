@@ -873,9 +873,32 @@ test("structure/proxy (CR-07): handleDiagnose and handleRecycle are each referen
   }
 });
 
-test("structure/proxy: vice-proxy.ts calls resolvedBackend() exactly once", () => {
-  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("resolvedBackend"));
-  assert.equal(matches.length, 1, `expected exactly one resolvedBackend reference, found ${matches.length}`);
+test("structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once", () => {
+  // Same correction as the dispatchStock oracle above: CODE lines only. The
+  // invariant is "the backend is settled exactly once, at module scope" -- a
+  // comment explaining that invariant (WR-04's mismatch check has to explain why
+  // the broker's verdict is authoritative) is not a second call.
+  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("resolvedBackend("));
+  assert.equal(matches.length, 1, `expected exactly one resolvedBackend( call, found ${matches.length}: ${JSON.stringify(matches)}`);
+});
+
+test("structure/proxy (WR-04): ensureBrokerLease() compares the broker's own backend verdict against ACTIVE_BACKEND and refuses a definite mismatch", () => {
+  const start = VICE_PROXY_SOURCE.indexOf("async function ensureBrokerLease(");
+  assert.ok(start > 0, "ensureBrokerLease() must still exist in vice-proxy.ts");
+  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
+
+  assert.match(body, /session\.hostState\(\)/, "the proxy must ask the broker which backend IT resolved");
+  assert.match(body, /hostState\.backend !== null/, "a broker that does not report a backend is absent evidence, not agreement");
+  assert.match(body, /hostState\.backend !== ACTIVE_BACKEND\.backend/, "the comparison must be against the ONCE-settled ACTIVE_BACKEND");
+  assert.match(body, /VICE_BACKEND=/, "the refusal must name the explicit override that fixes it");
+
+  // The check must precede the acquire, so a mismatch never allocates an
+  // emulator, and must release the control session it opened.
+  const checkAt = body.indexOf("session.hostState()");
+  const acquireAt = body.indexOf("session.acquire()");
+  assert.ok(checkAt > 0 && acquireAt > 0 && checkAt < acquireAt, "the backend check must run BEFORE the acquire");
+  const refusalBlock = body.slice(checkAt, acquireAt);
+  assert.match(refusalBlock, /session\.release\(\)/, "a refused mismatch must release the control session rather than leaking it");
 });
 
 // CR-06: buildHeldLease() is the ONE production construction site for

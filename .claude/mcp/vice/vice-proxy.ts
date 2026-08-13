@@ -2248,6 +2248,57 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   }
   const session = opened.session;
 
+  // WR-04: the FIRST thing done on a freshly opened control session -- before an
+  // emulator is allocated -- is to ask the broker which backend IT resolved, and
+  // refuse if it disagrees with this process's own verdict.
+  //
+  // Why this check has to exist: `ACTIVE_BACKEND` is resolved at module scope
+  // from resolvedBackend(), against the CONTAINER's filesystem, with no
+  // supervisorDir and therefore no cache -- while the emulator it describes is
+  // launched by the broker on the HOST, from the broker's own independent
+  // resolvedBackend({ supervisorDir }). In the normal devcontainer topology the
+  // container has no x64sc at all, so the proxy classifies `unknown` and
+  // degrades to `{ backend: "fork", source: "indeterminate" }`. If the host
+  // binary is stock, the proxy would otherwise advertise the fork's full
+  // manifest and forward HTTP at a binary-monitor port -- and nothing would ever
+  // report the disagreement; it would surface as an inexplicable transport
+  // failure on the first real tool call. D-01's "one reader" property holds per
+  // PROCESS but not across this pair, and this is the seam where the pair first
+  // meets.
+  //
+  // Refusing (rather than adapting) is deliberate: the advertised tool list was
+  // already built at startup from ACTIVE_BACKEND and answered to the client, so
+  // this process cannot re-decide its own surface here. VICE_BACKEND remains the
+  // explicit fix, and it must be set for BOTH processes.
+  //
+  // Absent evidence is NOT disagreement: a broker that does not report a backend
+  // (older build, or an unrecognised value) leaves `backend: null`, and a
+  // hostState() call that fails at all is not allowed to block an acquire. Only
+  // a definite, named mismatch refuses.
+  const brokerState = await session.hostState();
+  if (brokerState.ok && brokerState.hostState.backend !== null && brokerState.hostState.backend !== ACTIVE_BACKEND.backend) {
+    const brokerBackend = brokerState.hostState.backend;
+    await session.release();
+    return {
+      ok: false,
+      message:
+        `vice: backend mismatch between this MCP server and the broker that owns the emulator. This process ` +
+        `resolved "${ACTIVE_BACKEND.backend}" (source: ${ACTIVE_BACKEND.source}, binary: ${ACTIVE_BACKEND.binPath}) while the ` +
+        `broker resolved "${brokerBackend}" (binary: ${brokerState.hostState.vice_bin}) -- and the broker's verdict is the ` +
+        `authoritative one, because it is what the emulator was actually launched with. The two backends speak ` +
+        `different protocols on that port, so proceeding would send ${ACTIVE_BACKEND.backend === "fork" ? "HTTP at a binary-monitor port" : "binary-monitor frames at an HTTP endpoint"}. ` +
+        `This normally means the MCP server runs where the emulator binary is not (a container), so its own detection ` +
+        `could not see it. Set VICE_BACKEND=${brokerBackend} for THIS process as well -- it must be set for both -- ` +
+        `and restart the MCP server so its advertised tool list matches.`,
+    };
+  }
+  if (!brokerState.ok) {
+    console.error(
+      `vice-proxy: could not read the broker's own backend verdict (${brokerState.kind}: ${brokerState.message}) -- ` +
+        `proceeding with this process's own verdict "${ACTIVE_BACKEND.backend}" (source: ${ACTIVE_BACKEND.source}); a mismatch, if any, will not be detected`,
+    );
+  }
+
   const result = await session.acquire();
   if (!result.ok) {
     // No grant is coming for this session -- nothing to hold the connection

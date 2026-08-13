@@ -549,6 +549,12 @@ interface ControlHostStateFields {
   warm_floor: number;
   max_instances: number;
   base_port: number;
+  /** WR-04: the backend verdict the BROKER resolved -- the authoritative one,
+   * since it is what decided the emulator's launch argv. `null` when the broker
+   * predates this field or sent something unrecognised: absent evidence, kept
+   * strictly distinct from a definite disagreement, so a mismatch check can
+   * refuse only on the latter. */
+  backend: "fork" | "stock" | null;
 }
 
 export type ControlHostStateResult =
@@ -950,6 +956,10 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
         warm_floor: Number(line.warm_floor),
         max_instances: Number(line.max_instances),
         base_port: Number(line.base_port),
+        // WR-04: narrowed at the boundary, never cast -- anything other than the
+        // two known verdicts reads as `null` ("this broker did not tell us"),
+        // which callers must treat as absent evidence rather than agreement.
+        backend: line.backend === "fork" || line.backend === "stock" ? line.backend : null,
       },
     };
   }

@@ -962,6 +962,10 @@ async function run(args: ParsedArgs): Promise<void> {
         warmFloor: resolveWarmFloorForRecord(),
         maxInstances: resolveCeilingForRecord(),
         basePort: resolveBasePort(),
+        // WR-04: the verdict THIS process resolved once, at startup, above --
+        // the same one every launch argv is built from. Never a second
+        // resolvedBackend() call (backend-detect.mts's own prohibition).
+        backend,
       }),
     });
   } catch (e) {

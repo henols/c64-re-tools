@@ -357,6 +357,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     warm_floor: hs.warmFloor,
                     max_instances: hs.maxInstances,
                     base_port: hs.basePort,
+                    backend: hs.backend,
                 });
             }
             else if (req.op === "monitor_claim") {
