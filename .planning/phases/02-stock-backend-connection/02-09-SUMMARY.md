@@ -155,3 +155,18 @@ None - no external service configuration required.
 ---
 *Phase: 02-stock-backend-connection*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/tools-manifest.stock.json`
+- FOUND: `.claude/mcp/vice/stock-dispatch.ts`
+- FOUND: `.claude/mcp/vice/stock-dispatch.test.ts`
+- FOUND: `.claude/mcp/vice/vice-broker-client.ts`
+- FOUND: `.claude/mcp/vice/refresh-manifest.ts`
+- FOUND: `.claude/mcp/vice/refresh-manifest.test.ts`
+- FOUND: `.claude/mcp/vice/package.json`
+- FOUND: `.planning/phases/02-stock-backend-connection/02-09-SUMMARY.md`
+- FOUND commit `53f8a8e` (test: RED, failing coverage for the stock manifest and selector)
+- FOUND commit `d73f457` (feat: GREEN, trimmed stock manifest and a tested manifest selector)
+- FOUND commit `9fddeb8` (test: RED, failing coverage for the lease-to-session seam)
+- FOUND commit `08b1e01` (feat: GREEN, lease-to-session seam -- the held lease threaded into stockConnect)
