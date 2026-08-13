@@ -279,6 +279,97 @@ test("ViceMonitorClient: a short-body event frame does not abandon an in-flight 
 });
 
 // ---------------------------------------------------------------------------
+// WR-09: REGISTER_INFO items are walked with the WIRE's own item_size stride,
+// like REGISTERS_AVAILABLE beside it -- not a hardcoded 4.
+// ---------------------------------------------------------------------------
+
+/** One REGISTER_INFO item: [item_size:1][id:1][value:u16LE][...padding]. The
+ * wire's item_size counts every byte AFTER itself, so the stride is
+ * item_size + 1 (this is exactly how the RegistersAvailable case reads it). */
+function registerInfoItem(id: number, value: number, extraBytes = 0): Buffer {
+  const payload = Buffer.alloc(3 + extraBytes);
+  payload[0] = id;
+  payload.writeUInt16LE(value, 1);
+  return Buffer.concat([Buffer.from([payload.length]), payload]);
+}
+
+function registerInfoFrame(items: Buffer[], requestId = 21): Buffer {
+  const count = Buffer.alloc(2);
+  count.writeUInt16LE(items.length, 0);
+  return encodeResponseFrame({ responseType: 0x31, errorCode: 0x00, requestId, body: Buffer.concat([count, ...items]) });
+}
+
+test("WR-09: REGISTER_INFO with the ordinary 3-byte items parses every register", () => {
+  const frame = registerInfoFrame([registerInfoItem(0x00, 0x1234), registerInfoItem(0x01, 0xabcd), registerInfoItem(0x02, 0x00ff)]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; registers: Array<{ id: number; value: number }> };
+  assert.equal(parsed.type, "registers");
+  assert.deepEqual(parsed.registers, [
+    { id: 0x00, value: 0x1234 },
+    { id: 0x01, value: 0xabcd },
+    { id: 0x02, value: 0x00ff },
+  ]);
+});
+
+test("WR-09: REGISTER_INFO items whose declared item_size is LARGER than 3 still parse -- the hardcoded 4-byte stride mis-parsed the whole array", () => {
+  // Each item declares two trailing bytes beyond {id, value}: stride 6, not 4.
+  const frame = registerInfoFrame([registerInfoItem(0x10, 0x1111, 2), registerInfoItem(0x11, 0x2222, 2), registerInfoItem(0x12, 0x3333, 2)]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; registers: Array<{ id: number; value: number }> };
+  assert.deepEqual(parsed.registers, [
+    { id: 0x10, value: 0x1111 },
+    { id: 0x11, value: 0x2222 },
+    { id: 0x12, value: 0x3333 },
+  ]);
+});
+
+test("WR-09: REGISTER_INFO and REGISTERS_AVAILABLE agree on the stride rule for the same item layout", () => {
+  // The same three items, read by the two cases. RegistersAvailable's own body
+  // layout is [item_size][id][size][nameLen][name...]; both must advance by
+  // item_size + 1, which is the property this asserts rather than the shapes.
+  const infoFrame = registerInfoFrame([registerInfoItem(0x20, 0x0001, 1), registerInfoItem(0x21, 0x0002, 1)]);
+  const infoParsed = parseBuffer(infoFrame, { desyncBytes: 0 }).responses[0] as { registers: Array<{ id: number }> };
+  assert.deepEqual(
+    infoParsed.registers.map((r) => r.id),
+    [0x20, 0x21],
+  );
+
+  const availItem = (id: number, size: number, name: string): Buffer => {
+    const nameBytes = Buffer.from(name, "ascii");
+    const payload = Buffer.concat([Buffer.from([id, size, nameBytes.length]), nameBytes]);
+    return Buffer.concat([Buffer.from([payload.length]), payload]);
+  };
+  const availCount = Buffer.alloc(2);
+  availCount.writeUInt16LE(2, 0);
+  const availFrame = encodeResponseFrame({
+    responseType: 0x83,
+    errorCode: 0x00,
+    requestId: 22,
+    body: Buffer.concat([availCount, availItem(0x20, 2, "AC"), availItem(0x21, 2, "XR")]),
+  });
+  const availParsed = parseBuffer(availFrame, { desyncBytes: 0 }).responses[0] as { registers: Array<{ id: number; name: string }> };
+  assert.deepEqual(
+    availParsed.registers.map((r) => [r.id, r.name]),
+    [
+      [0x20, "AC"],
+      [0x21, "XR"],
+    ],
+  );
+});
+
+test("WR-09: a REGISTER_INFO body truncated mid-item is a returned StockFramingError, not a partial array", () => {
+  const count = Buffer.alloc(2);
+  count.writeUInt16LE(3, 0); // claims three items
+  const body = Buffer.concat([count, registerInfoItem(0x30, 0x4444)]); // supplies one
+  const frame = encodeResponseFrame({ responseType: 0x31, errorCode: 0x00, requestId: 23, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+// ---------------------------------------------------------------------------
 // error code / protocol error
 // ---------------------------------------------------------------------------
 

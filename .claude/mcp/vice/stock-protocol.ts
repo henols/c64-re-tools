@@ -560,13 +560,23 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       return { type: "memory_get", requestId, errorCode, bytes: body.subarray(2, 2 + length) };
     }
     case ResponseType.RegisterInfo: {
+      // WR-09: the stride comes from the wire's own per-item size byte, exactly
+      // like the RegistersAvailable case below. This case previously computed
+      // `2 + index * 4` -- stepping OVER the item_size byte it had just read
+      // past without using it -- so any register whose declared size is not 2
+      // bytes (or any future item-layout change) silently mis-parsed the WHOLE
+      // array rather than failing. These values feed LIN/CYC cycle
+      // reconstruction in a later phase, where a silently shifted array is a
+      // wrong answer, not an error.
       need(body, 2, responseType, requestId);
       const count = body.readUInt16LE(0);
+      let offset = 2;
       const registers: Array<{ id: number; value: number }> = [];
       for (let index = 0; index < count; index += 1) {
-        const start = 2 + index * 4;
-        need(body, start + 4, responseType, requestId);
-        registers.push({ id: body[start + 1]!, value: body.readUInt16LE(start + 2) });
+        need(body, offset + 4, responseType, requestId);
+        const itemSize = body[offset]!;
+        registers.push({ id: body[offset + 1]!, value: body.readUInt16LE(offset + 2) });
+        offset += itemSize + 1;
       }
       return { type: "registers", requestId, errorCode, registers };
     }
