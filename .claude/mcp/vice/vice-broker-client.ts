@@ -585,7 +585,14 @@ export interface ReleaseMonitorOptions {
 export type ClaimMonitorOutcome =
   | { ok: true }
   | { ok: false; reason: "monitor_owned"; holder: MonitorClaimHolder }
-  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "internal" };
+  // "denied" (CR-03): the broker's control plane refused because the grant
+  // named is not the one THIS connection holds. In a correct client that is
+  // unreachable -- stockConnect() always claims the grant its own session
+  // acquired -- so it is carried as its own reason rather than collapsed into
+  // "internal", where a wiring bug would be indistinguishable from a broker
+  // fault. Kept strictly distinct from "monitor_owned", which is a conflict
+  // between two LEGITIMATE holders.
+  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
 
 export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
 
@@ -942,7 +949,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
       if (raw.kind === "monitor_owned" && raw.holder) return { ok: false, reason: "monitor_owned", holder: raw.holder };
-      if (raw.kind === "unauthorized" || raw.kind === "bad_request") return { ok: false, reason: raw.kind };
+      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
     if (raw.line.kind !== "monitor_claimed") {

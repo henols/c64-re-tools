@@ -228,6 +228,16 @@ export function newControlToken(): string {
 
 const MAX_LINE_BYTES = 65536;
 
+/** CR-03: the one refusal wording for a target-naming op whose `target_id` is
+ * not the grant the asking connection itself holds. Deliberately worded as an
+ * authorisation refusal and NOT as an ownership conflict between two
+ * legitimate holders (`monitor_owned`, which names a holder) and never as an
+ * emulator fault -- see attachControlProtocol()'s own ownsTarget() comment,
+ * and T-02-18's prohibition on wedge/hang vocabulary in this file's
+ * monitor-op refusals. */
+const MONITOR_OWNERSHIP_DENIAL =
+  "monitor_claim/monitor_release may only target the grant this connection itself holds";
+
 export function resolveControlPort(override?: number): number {
   if (typeof override === "number") return override;
   const raw = process.env.VICE_BROKER_CONTROL_PORT;
@@ -379,6 +389,33 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       // every other connection and from the server itself (T-01.6.2-06).
     });
 
+    /**
+     * CR-03 (code review 2026-08-13). THE per-connection ownership predicate
+     * every target-naming op is gated on -- the same rule `recycle` has
+     * enforced since T-01.6.2-31, now shared rather than copied.
+     *
+     * Before this existed, `monitor_claim`/`monitor_release` took `target_id`
+     * from the request and passed it straight through, so any connection
+     * holding the per-boot control token (which every container-side proxy
+     * sharing this broker does) could name ANOTHER session's grant id.
+     * vice-broker.mts's handleMonitorClaim() uses that id as BOTH the target
+     * and the claiming identity, and handleMonitorRelease()'s "only the
+     * holder may release" check compared the request against itself -- so
+     * session B could lock session A out of its own monitor socket, or
+     * RELEASE A's live claim, after which a third client was free to dial the
+     * same single-client binmon socket. That is precisely the unserviced-
+     * backlog state D-13 exists to prevent and that CLAUDE.md says must never
+     * be reachable.
+     *
+     * WHAT NOT TO DO: never add another op that acts on a caller-supplied
+     * `target_id` without gating it here first. The grant a connection holds
+     * is the ONLY identity this protocol has -- `target_id` is a request
+     * field, not a credential.
+     */
+    function ownsTarget(targetId: string): boolean {
+      return requestIdForThisConnection !== null && targetId === requestIdForThisConnection;
+    }
+
     /** Attempts one acquire over THIS connection/socket, writing the
      * terminal response (grant or a non-queueing error) when settled, or
      * enqueueing itself and returning unsettled when a launch is already in
@@ -502,8 +539,10 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         // holds. This check happens here, before onRecycle() is ever
         // called, so a mismatched target never reaches the kill discipline
         // and never signals anything -- an injected signal recorder stays
-        // empty for this case.
-        if (requestIdForThisConnection === null || targetId !== requestIdForThisConnection) {
+        // empty for this case. Now expressed through the SAME ownsTarget()
+        // predicate monitor_claim/monitor_release use (CR-03), so the three
+        // target-naming ops cannot drift apart.
+        if (!ownsTarget(targetId)) {
           writeLine(socket, {
             kind: "error",
             code: "denied" as ControlErrorCode,
@@ -550,6 +589,10 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "monitor_claim requires target_id" });
           return;
         }
+        if (!ownsTarget(targetId)) {
+          writeLine(socket, { kind: "error", code: "denied" as ControlErrorCode, message: MONITOR_OWNERSHIP_DENIAL });
+          return;
+        }
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
         const outcome = opts.onMonitorClaim(requestId, targetId);
         if (outcome.ok) {
@@ -571,6 +614,10 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         const targetId = typeof req.target_id === "string" ? req.target_id : "";
         if (targetId === "") {
           writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "monitor_release requires target_id" });
+          return;
+        }
+        if (!ownsTarget(targetId)) {
+          writeLine(socket, { kind: "error", code: "denied" as ControlErrorCode, message: MONITOR_OWNERSHIP_DENIAL });
           return;
         }
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");

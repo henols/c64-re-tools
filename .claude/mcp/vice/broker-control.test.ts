@@ -342,16 +342,40 @@ test("neither the status nor the host_state response ever carries the token valu
 // against injected onMonitorClaim/onMonitorRelease stubs (the real ownership
 // logic -- comparing grantId, idempotency, clearing -- is vice-broker.mts's
 // own handleMonitorClaim()/handleMonitorRelease(), unit-tested directly
-// there; this section proves only the framing, the token gate, and the
-// response envelope this listener owns).
+// there; this section proves only the framing, the token gate, the
+// PER-CONNECTION ownership gate (CR-03) and the response envelope this
+// listener owns).
+//
+// CR-03 (code review 2026-08-13): every test below now ACQUIRES first, so the
+// connection genuinely holds the grant it names. They previously sent a
+// target_id on a connection that had never acquired anything and were served
+// -- which encoded the very gap the review found rather than catching it. A
+// grant a connection does not hold is now `denied`, and that denial is
+// asserted separately below.
 // ============================================================================
+
+/** The grant-issuing stub every monitor-op test below acquires through, so
+ * `target_id: "req-a"` is a grant THIS connection actually holds. */
+function grantingAcquire(): (id: string) => Promise<AcquireOutcome> {
+  return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } });
+}
+
+/** Acquires grant `id` over `client` and asserts the grant arrived, so every
+ * monitor-op test starts from a connection that owns what it names. */
+async function acquireGrant(client: ReturnType<typeof makeClient>, token: string, id: string): Promise<void> {
+  client.send({ op: "acquire", id, token });
+  const grant = await client.next();
+  assert.equal(grant.kind, "grant", `precondition: the connection must hold grant ${id}`);
+}
 
 test("monitor_claim: an ok stub answers the monitor_claimed response kind", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
+    await acquireGrant(client, token, "req-a");
     client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
@@ -364,10 +388,15 @@ test("monitor_claim: an ok stub answers the monitor_claimed response kind", asyn
 
 test("monitor_claim: a monitor_owned stub answers an error carrying code monitor_owned and the holder's own grantId/claimedAt/pid, worded as an ownership conflict", async () => {
   const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242 } }),
   });
   const client = makeClient(listener.port);
   try {
+    // This connection legitimately holds req-b; the instance behind it is
+    // already claimed by a DIFFERENT grant (req-a). That is the genuine
+    // ownership conflict, distinct from CR-03's spoofing case below.
+    await acquireGrant(client, token, "req-b");
     client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", token });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
@@ -383,10 +412,12 @@ test("monitor_claim: a monitor_owned stub answers an error carrying code monitor
 
 test("monitor_claim: a repeated claim from the same grant id is idempotent -- the stub answers ok both times, no conflict", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true } : { ok: false, code: "internal" }),
   });
   const client = makeClient(listener.port);
   try {
+    await acquireGrant(client, token, "req-a");
     client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
     const first = await client.next();
     assert.equal(first.kind, "monitor_claimed");
@@ -402,16 +433,110 @@ test("monitor_claim: a repeated claim from the same grant id is idempotent -- th
   }
 });
 
-test("monitor_claim: an unknown target_id answers bad_request via the stub's own outcome, not internal", async () => {
+test("monitor_claim: a target_id this connection holds but the broker cannot resolve answers bad_request via the stub's own outcome, not internal", async () => {
   const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: false, code: "bad_request" }),
   });
   const client = makeClient(listener.port);
   try {
+    await acquireGrant(client, token, "no-such-grant");
     client.send({ op: "monitor_claim", id: "claim-1", target_id: "no-such-grant", token });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// --------------------------------------------------------------------------
+// CR-03: the per-connection ownership gate itself.
+// --------------------------------------------------------------------------
+
+test("CR-03 monitor_claim: a connection holding grant A is DENIED when it names grant B, and the callback never runs", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "grant-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-b", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+    assert.match(String(resp.message), /only target the grant this connection itself holds/i);
+    assert.doesNotMatch(String(resp.message), /wedge|hung|unresponsive/i);
+    assert.deepEqual(monitorClaimCalls, [], "the denial must land BEFORE onMonitorClaim, so instance.monitorClient is never mutated");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("CR-03 monitor_release: a connection holding grant A is DENIED when it tries to release grant B -- releasing another session's live claim is not possible", async () => {
+  const { listener, token, monitorReleaseCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "grant-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "grant-b", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+    assert.deepEqual(monitorReleaseCalls, [], "the denial must land BEFORE onMonitorRelease, so no claim is cleared");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("CR-03: a connection that never acquired anything is DENIED both monitor ops, whatever target_id it names", async () => {
+  const { listener, token, monitorClaimCalls, monitorReleaseCalls } = await startTestListener({
+    onMonitorClaim: () => ({ ok: true }),
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", token });
+    const claimResp = await client.next();
+    assert.equal(claimResp.kind, "error");
+    assert.equal(claimResp.code, "denied");
+
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b", token });
+    const releaseResp = await client.next();
+    assert.equal(releaseResp.kind, "error");
+    assert.equal(releaseResp.code, "denied");
+
+    assert.deepEqual(monitorClaimCalls, []);
+    assert.deepEqual(monitorReleaseCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("CR-03: an explicit `release` drops the connection's grant, after which its own monitor ops are denied too", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "grant-a");
+    client.send({ op: "release", token });
+    const released = await client.next();
+    assert.equal(released.kind, "released");
+
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-a", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+    assert.deepEqual(monitorClaimCalls, []);
   } finally {
     client.close();
     listener.server.close();
@@ -456,10 +581,12 @@ test("monitor_claim/monitor_release: both ops are refused unauthorized when the 
 
 test("monitor_release: an ok stub answers the monitor_released response kind", async () => {
   const { listener, token, monitorReleaseCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
+    await acquireGrant(client, token, "req-a");
     client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", token });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_released");
@@ -470,12 +597,17 @@ test("monitor_release: an ok stub answers the monitor_released response kind", a
   }
 });
 
-test("monitor_release: a non-holder stub answers a refusal, not silent success", async () => {
+test("monitor_release: a broker-side non-holder outcome answers a refusal, not silent success", async () => {
   const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: false, code: "denied" }),
   });
   const client = makeClient(listener.port);
   try {
+    // The connection legitimately holds req-b -- the refusal here comes from
+    // the BROKER's own holder comparison, not from the control-plane
+    // ownership gate CR-03 added (which is covered separately above).
+    await acquireGrant(client, token, "req-b");
     client.send({ op: "monitor_release", id: "release-1", target_id: "req-b", token });
     const resp = await client.next();
     assert.equal(resp.kind, "error");

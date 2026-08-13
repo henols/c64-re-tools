@@ -24,6 +24,7 @@ import {
   resolveControlTarget,
   CONTROL_CONNECT_TIMEOUT_MS,
   MonitorOwnershipError,
+  type BrokerControlSession,
 } from "./vice-broker-client.ts";
 // The bridge alias itself (quick-260805-9ha) -- used only to assert
 // resolveControlTarget()'s default answer against the SAME function it
@@ -844,21 +845,52 @@ test("session: a second release() resolves without throwing", async () => {
 // claim BEFORE any binmon connect() (PROTO-08, D-13), against the SAME
 // real-listener harness (startFullBrokerListener()) every other session
 // method above already uses.
+//
+// CR-03 (code review 2026-08-13): every test below now ACQUIRES over the
+// session before claiming or releasing, and names the grant id the broker
+// actually issued -- because the control plane now refuses a target_id that is
+// not the grant the asking connection itself holds. They previously claimed a
+// hard-coded "req-a"/"req-b" over a connection that had never acquired
+// anything, which is the spoofable shape the review found rather than the
+// production sequence (stockConnect() always claims the grant its own session
+// acquired). Two of them silently stopped testing what they claimed once the
+// gate existed -- the monitor_owned and `denied` refusals they assert on must
+// come from the BROKER's own holder comparison, not from the control-plane
+// ownership gate, which is covered separately in broker-control.test.ts.
 // ============================================================================
+
+/** The grant-issuing onAcquire stub the monitor-op tests below acquire
+ * through. The listener echoes the CLIENT's own request id back as the
+ * grant id, so `grant.id` is exactly the grant that connection holds. */
+const GRANTING_ACQUIRE = async (): Promise<AcquireOutcome> => ({
+  ok: true,
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+});
+
+/** Acquires over `session` and returns the grant id, so a following
+ * claimMonitor()/releaseMonitor() names a target this connection owns. */
+async function heldGrantId(session: BrokerControlSession): Promise<string> {
+  const acquired = await session.acquire();
+  assert.equal(acquired.ok, true, "precondition: the session must hold a grant before claiming a monitor socket");
+  if (!acquired.ok) throw new Error("unreachable");
+  return acquired.grant.id;
+}
 
 test("monitor_claim: claimMonitor() against a stub answering ok resolves a success outcome, and never dials a second socket", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: true }),
   });
   try {
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    const result = await opened.session.claimMonitor({ targetId: "req-a" });
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
     assert.deepEqual(result, { ok: true });
     assert.ok(
-      rawLines.some((l) => l.op === "monitor_claim" && l.target_id === "req-a"),
-      `expected a monitor_claim line naming target_id req-a: ${JSON.stringify(rawLines)}`,
+      rawLines.some((l) => l.op === "monitor_claim" && l.target_id === targetId),
+      `expected a monitor_claim line naming target_id ${targetId}: ${JSON.stringify(rawLines)}`,
     );
     await opened.session.release();
   } finally {
@@ -869,16 +901,18 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
 
 test("monitor_claim: claimMonitor() against a stub answering monitor_owned resolves a discriminated ownership-conflict outcome carrying the holder's grantId/claimedAt -- never throws, never retries", async () => {
   const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
   });
   try {
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    const result = await opened.session.claimMonitor({ targetId: "req-b" });
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
     assert.equal(result.ok, false);
     if (result.ok) return;
-    assert.equal(result.reason, "monitor_owned");
+    assert.equal(result.reason, "monitor_owned", "the refusal must come from the broker's holder comparison, not the control-plane ownership gate");
     if (result.reason !== "monitor_owned") return;
     assert.deepEqual(result.holder, { grantId: "req-holder", claimedAt: 12345, pid: 4242 });
     await opened.session.release();
@@ -890,13 +924,15 @@ test("monitor_claim: claimMonitor() against a stub answering monitor_owned resol
 
 test("monitor_claim ownership conflict: the failure outcome's own message, and MonitorOwnershipError's message, name the holding grant and never use the words wedged, hung or unresponsive", async () => {
   const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
   });
   try {
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    const result = await opened.session.claimMonitor({ targetId: "req-b" });
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
     assert.equal(result.ok, false);
     if (result.ok) return;
     assert.equal(result.reason, "monitor_owned");
@@ -921,6 +957,7 @@ test("monitor_claim ownership conflict: the failure outcome's own message, and M
 test("monitor_claim: claimMonitor() never dials the binmon port itself, on success or on failure -- only the control-plane socket is ever touched", async () => {
   let acceptedConnections = 0;
   const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 1, pid: null } }),
   });
   server.on("connection", () => {
@@ -930,7 +967,8 @@ test("monitor_claim: claimMonitor() never dials the binmon port itself, on succe
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    await opened.session.claimMonitor({ targetId: "req-b" });
+    const targetId = await heldGrantId(opened.session);
+    await opened.session.claimMonitor({ targetId });
     // Exactly one connection: the control-plane session openBrokerControl()
     // itself opened. claimMonitor() must never open a second one, on
     // success or on failure.
@@ -944,15 +982,17 @@ test("monitor_claim: claimMonitor() never dials the binmon port itself, on succe
 
 test("monitor_release: releaseMonitor() sends monitor_release and tolerates a broker that has already cleared the record", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorRelease: () => ({ ok: true }), // the broker's own tolerance for an already-cleared target
   });
   try {
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    const result = await opened.session.releaseMonitor({ targetId: "req-a" });
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.releaseMonitor({ targetId });
     assert.deepEqual(result, { ok: true });
-    assert.ok(rawLines.some((l) => l.op === "monitor_release" && l.target_id === "req-a"));
+    assert.ok(rawLines.some((l) => l.op === "monitor_release" && l.target_id === targetId));
     await opened.session.release();
   } finally {
     server.close();
@@ -962,14 +1002,53 @@ test("monitor_release: releaseMonitor() sends monitor_release and tolerates a br
 
 test("monitor_release: releaseMonitor() against a non-holder refusal from the broker resolves a distinct failure outcome, not a silent success", async () => {
   const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
     onMonitorRelease: () => ({ ok: false, code: "denied" }),
   });
   try {
     const opened = await openBrokerControl(dir);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
-    const result = await opened.session.releaseMonitor({ targetId: "req-b" });
+    // The session genuinely holds this grant, so the `denied` below is the
+    // BROKER's own non-holder refusal -- not the control-plane ownership gate.
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.releaseMonitor({ targetId });
     assert.deepEqual(result, { ok: false, reason: "denied" });
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-03: claimMonitor()/releaseMonitor() naming a grant this connection does NOT hold are refused `denied` by the control plane, before the broker callback runs", async () => {
+  const claimCalls: string[] = [];
+  const releaseCalls: string[] = [];
+  const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onMonitorClaim: (_requestId, targetId) => {
+      claimCalls.push(targetId);
+      return { ok: true };
+    },
+    onMonitorRelease: (_requestId, targetId) => {
+      releaseCalls.push(targetId);
+      return { ok: true };
+    },
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    await heldGrantId(opened.session); // this connection holds its OWN grant
+
+    const claimed = await opened.session.claimMonitor({ targetId: "someone-elses-grant" });
+    assert.deepEqual(claimed, { ok: false, reason: "denied" });
+
+    const released = await opened.session.releaseMonitor({ targetId: "someone-elses-grant" });
+    assert.deepEqual(released, { ok: false, reason: "denied" });
+
+    assert.deepEqual(claimCalls, [], "a denied claim must never reach the broker's own claim handler");
+    assert.deepEqual(releaseCalls, [], "a denied release must never reach the broker's own release handler");
     await opened.session.release();
   } finally {
     server.close();
