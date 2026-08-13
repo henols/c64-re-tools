@@ -58,3 +58,24 @@ processes. `broker-e2e.test.ts` still uses bare `/bin/sleep` in six places and h
 the same hazard.
 
 Related: [[vice-broker-tests-stall-outside-devcontainer]]
+
+---
+
+## Resolved 2026-08-13 (Phase 2)
+
+Closed by two changes, both on `main`:
+
+1. **Plan 02-03** (`19535f8` fix(02-03): reap from the broker's own allocation
+   record, not argv scan) rewrote `reapOrphanedInstances()` to read each
+   instance's own `epoch.json` and **deleted** `discoverBandProcesses()` and
+   `argsNamePortAtOrAbove()` outright. Verified absent from the tree: a
+   repo-wide grep for either identifier returns nothing.
+2. **Code-review finding CR-04** (`02-REVIEW.md`, fixed in `02-REVIEW-FIX.md`)
+   closed the hole the rewrite left behind: `verifiedKill()` was called with
+   `expectedIdentity: ""` whenever an epoch record lacked a string `vice_bin`,
+   and `args.includes("")` is vacuously true — so the identity guard was
+   disabled exactly when evidence was missing. An empty identity now REFUSES
+   the kill (`broker-kill.mts`), which is the behaviour this todo asked for.
+
+The reap no longer inspects any process's argv to choose a target, and it will
+not signal a pid it cannot positively identify.
