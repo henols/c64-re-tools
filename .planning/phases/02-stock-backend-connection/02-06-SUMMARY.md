@@ -273,3 +273,11 @@ None - no external service configuration required.
 ---
 *Phase: 02-stock-backend-connection*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-protocol.ts`
+- FOUND: `.claude/mcp/vice/stock-protocol.test.ts`
+- FOUND: `.planning/phases/02-stock-backend-connection/02-06-SUMMARY.md`
+- FOUND commit `4572037` (feat: correlation/demux layer + socket-lifecycle rejection)
+- FOUND commit `d0687c5` (docs: plan summary + requirements)
