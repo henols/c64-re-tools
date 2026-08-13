@@ -138,8 +138,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Wave 2 (checkpoints): capture the three real-emulator VERIF-02 fixtures with provenance, and record what `--help` actually prints on both builds
-- [ ] 02-03-PLAN.md — Wave 2: backend-selected launch argv (`-binarymonitor`), and the orphan reap re-derived from the broker's own allocation record
+- [x] 02-02-PLAN.md — Wave 2 (checkpoints): capture the three real-emulator VERIF-02 fixtures with provenance, and record what `--help` actually prints on both builds
+- [x] 02-03-PLAN.md — Wave 2: backend-selected launch argv (`-binarymonitor`), and the orphan reap re-derived from the broker's own allocation record
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -364,7 +364,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
-| 2. Stock Backend Connection | 1/10 | In Progress|  |
+| 2. Stock Backend Connection | 3/10 | In Progress|  |
 | 3. Direct Tools | 0/TBD | Not started | - |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
