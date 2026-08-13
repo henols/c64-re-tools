@@ -655,6 +655,49 @@ test("WR-05 ping: the resolution flag defaults to false when nothing said otherw
   assert.equal(payload.resolvedBinaryPathIsResolved, false);
 });
 
+test("WR-06: a connect REFUSAL on the stock path names VICE_BROKER_BINMON_HOST and the loopback default", async () => {
+  const lease: HeldLease = makeLease({ host: "host.docker.internal", port: 6605, targetId: "grant-wr06", brokerControl: STUB_BROKER_CONTROL });
+  const result = await dispatchStock("vice_ping", {}, {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async () => {
+      throw new Error("connect ECONNREFUSED 172.17.0.1:6605");
+    },
+  });
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /VICE_BROKER_BINMON_HOST/, "the one variable that reconciles the bind and the dial must be named");
+  assert.match(text, /127\.0\.0\.1/, "the loopback default must be named, since that is what the operator has to change");
+  assert.match(text, /ECONNREFUSED 172\.17\.0\.1:6605/, "the underlying error must still be quoted verbatim");
+  assert.doesNotMatch(text, /wedge|hung|unresponsive/i, "an unreachable bind address is not an emulator fault");
+});
+
+test("WR-06: a non-connect handshake failure keeps the plain wording -- the binmon-host advice is not sprayed over unrelated causes", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6605, targetId: "grant-wr06b", brokerControl: STUB_BROKER_CONTROL });
+  const result = await dispatchStock("vice_ping", {}, {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async () => {
+      throw new Error("observed api_version 0x03, expected 0x02");
+    },
+  });
+  const text = result.content[0]!.text;
+  assert.match(text, /stock handshake failed \(observed api_version 0x03/);
+  assert.doesNotMatch(text, /VICE_BROKER_BINMON_HOST/);
+});
+
+test("WR-06: vice-proxy.ts strips the WHATWG bracket form when deriving the dial host, so an IPv6 URL is usable by net.connect()", () => {
+  // The behaviour under test lives in buildHeldLease(), in the file the
+  // automated gate cannot execute -- so the transform is asserted structurally
+  // AND the underlying quirk it exists for is asserted for real, here, against
+  // the same URL parser.
+  assert.equal(new URL("http://[::1]:6605/mcp").hostname, "[::1]", "WHATWG URL keeps the brackets -- this is the quirk");
+  assert.equal(new URL("http://[::1]:6605/mcp").hostname.replace(/^\[(.+)\]$/, "$1"), "::1");
+  assert.equal(new URL("http://127.0.0.1:6605/mcp").hostname.replace(/^\[(.+)\]$/, "$1"), "127.0.0.1", "an IPv4 host is unaffected");
+
+  const start = VICE_PROXY_SOURCE.indexOf("function buildHeldLease(");
+  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
+  assert.match(body, /hostname\.replace\(/, "buildHeldLease() must strip the bracket form where the dial host is derived");
+});
+
 test("ping: a MonitorOwnershipError from the handshake becomes isError:true naming the holder, without wedge/hung/unresponsive language", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-3", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {

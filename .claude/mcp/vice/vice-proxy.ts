@@ -2172,7 +2172,12 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  */
 function buildHeldLease(session: BrokerControlSession): HeldLease {
   const { url, port, epochFile } = activeInstance();
-  const host = new URL(url).hostname;
+  // WR-06: `new URL(url).hostname` returns a BRACKETED literal for IPv6
+  // ("[::1]"), which net.connect() will not accept -- so the brackets are
+  // stripped here, at the one place the dial host is derived, rather than by
+  // every eventual consumer. Deliberately not a general URL-parsing helper: the
+  // bracket form is the single documented WHATWG-URL quirk this seam meets.
+  const host = new URL(url).hostname.replace(/^\[(.+)\]$/, "$1");
   // CR-06: `epochFile` and `supervisorDir` are what make the stock handshake's
   // two BACK-04/reconnect mechanisms actually live on the real path -- before
   // this, no production call ever passed StockConnectDeps, so `baselineEpoch`

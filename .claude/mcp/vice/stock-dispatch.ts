@@ -374,6 +374,26 @@ function convertHandshakeError(toolName: string, err: unknown): StockErrorResult
     );
   }
   const message = err instanceof Error ? err.message : String(err);
+  // WR-06: a connect REFUSAL on the stock path has exactly one common cause, and
+  // a bare "connect ECONNREFUSED 172.17.0.1:6605" points at none of it. The
+  // broker binds VICE's binary monitor to 127.0.0.1 by default -- a deliberate,
+  // documented safety posture, since the binmon is unauthenticated and grants
+  // full memory read/write -- while the proxy derives its dial host from the
+  // CONTAINERIZED instance URL, i.e. host.docker.internal. In the default
+  // containerized topology those two never meet, and nothing in the resulting
+  // message named the one environment variable that reconciles them. Named
+  // here, at the one seam that converts a handshake failure into agent-facing
+  // text, rather than in a comment nobody reading the error will see.
+  if (/ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/.test(message)) {
+    return isErrorText(
+      `${toolName}: stock handshake failed -- nothing accepted a binary-monitor connection (${message}). ` +
+        `The broker binds VICE's binary monitor to 127.0.0.1 by DEFAULT (the safe posture: the binary monitor is ` +
+        `unauthenticated and grants full memory read/write plus process control to anything that can reach it), ` +
+        `so a containerized MCP server dialling the host cannot reach it. Set VICE_BROKER_BINMON_HOST on the ` +
+        `BROKER's own environment to an address the container can reach, then restart the broker so the emulator ` +
+        `is relaunched with the new bind address.`,
+    );
+  }
   return isErrorText(`${toolName}: stock handshake failed (${message}).`);
 }
 
