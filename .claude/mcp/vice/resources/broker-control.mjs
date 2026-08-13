@@ -378,11 +378,21 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     // Ownership conflict, named by holder -- deliberately worded to
                     // never suggest the emulator itself has stopped answering
                     // (T-02-18; the plan's own grep gate polices this).
+                    //
+                    // WR-08 (broker side): `holder` is REQUIRED by MonitorClaimOutcome for
+                    // this code, but this handler runs inside socket.on("data") with no
+                    // try/catch above it, so a producer that ever omitted it would throw a
+                    // TypeError out of the control listener and take the broker process
+                    // with it -- a type contract is not a runtime guarantee at a wire
+                    // boundary. The fallback names the holder as unknown rather than
+                    // fabricating one, matching what the container-side client now does
+                    // with a malformed holder payload.
+                    const holder = outcome.holder ?? { grantId: "unknown", claimedAt: 0, pid: null };
                     writeLine(socket, {
                         kind: "error",
                         code: "monitor_owned",
-                        message: `instance already has a monitor client (grant ${outcome.holder.grantId}, claimed at ${outcome.holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
-                        holder: outcome.holder,
+                        message: `instance already has a monitor client (grant ${holder.grantId}, claimed at ${holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
+                        holder,
                     });
                 }
                 else {

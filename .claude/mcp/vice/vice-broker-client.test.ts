@@ -954,6 +954,55 @@ test("monitor_claim ownership conflict: the failure outcome's own message, and M
   }
 });
 
+test("WR-08: a monitor_owned refusal whose holder payload is malformed keeps the ownership-conflict REASON, with the holder fields defaulted", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    // A holder shape extractHolder() rejects outright (claimedAt is not a
+    // number), so the wire carries `kind: "monitor_owned"` with no usable
+    // holder -- the exact partially-malformed refusal that used to collapse to
+    // reason "internal" and lose the ownership framing entirely.
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: "not-a-number", pid: null } } as unknown as MonitorClaimOutcome),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.reason, "monitor_owned", "an unnameable holder does not make this a different state");
+    if (result.reason !== "monitor_owned") return;
+    assert.equal(result.holder.grantId, "unknown", "the holder is admitted as unknown, never fabricated as a plausible grant id");
+    assert.equal(result.holder.pid, null);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-08: a monitor_owned refusal with NO holder field at all still reports reason monitor_owned, not internal", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned" } as unknown as MonitorClaimOutcome),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.reason, "monitor_owned");
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("monitor_claim: claimMonitor() never dials the binmon port itself, on success or on failure -- only the control-plane socket is ever touched", async () => {
   let acceptedConnections = 0;
   const { server, dir } = await startFullBrokerListener({

@@ -969,7 +969,21 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
-      if (raw.kind === "monitor_owned" && raw.holder) return { ok: false, reason: "monitor_owned", holder: raw.holder };
+      // WR-08: the `monitor_owned` REASON survives even when the wire's own
+      // `holder` payload is absent or malformed. This used to be
+      // `raw.kind === "monitor_owned" && raw.holder`, so a partially-malformed
+      // refusal collapsed to `{ ok: false, reason: "internal" }` -- stockConnect()
+      // then threw a generic ViceError, convertHandshakeError() produced "stock
+      // handshake failed (...)", and the ownership-conflict framing T-02-14
+      // requires (and MonitorOwnershipError exists to preserve) was lost. The
+      // broker has told us WHICH state this is; not being able to name the
+      // holder does not make it a different state. Holder fields default to
+      // "unknown"/0/null so the wording still reads as an ownership conflict
+      // rather than an emulator fault -- never fabricated as a plausible grant
+      // id, which would be worse than admitting it is unknown.
+      if (raw.kind === "monitor_owned") {
+        return { ok: false, reason: "monitor_owned", holder: raw.holder ?? { grantId: "unknown", claimedAt: 0, pid: null } };
+      }
       if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
