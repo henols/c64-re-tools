@@ -25,13 +25,13 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Protocol client
 
-- [ ] **PROTO-01**: Client reassembles messages from arbitrary TCP chunk boundaries, buffering until a full header plus body is present
+- [x] **PROTO-01**: Client reassembles messages from arbitrary TCP chunk boundaries, buffering until a full header plus body is present
 - [ ] **PROTO-02**: Client correlates each response to its request by request id, so concurrent in-flight commands cannot be confused
 - [ ] **PROTO-03**: Client demultiplexes all five unsolicited message types (`STOPPED`, `RESUMED`, `JAM`, `CHECKPOINT_INFO`, `REGISTER_INFO`) and never resolves a pending request with an event, including when the event shares a response type with a legitimate reply
-- [ ] **PROTO-04**: Client handles a zero-length `JAM` body without throwing and without desynchronising the stream
-- [ ] **PROTO-05**: Client surfaces a protocol error code as a distinguishable failure, not as an empty success
+- [x] **PROTO-04**: Client handles a zero-length `JAM` body without throwing and without desynchronising the stream
+- [x] **PROTO-05**: Client surfaces a protocol error code as a distinguishable failure, not as an empty success
 - [ ] **PROTO-06**: Client detects that the emulator died or restarted underneath it and reports that distinctly from a timeout
-- [ ] **PROTO-07**: Client handles the largest binary-monitor response (a full `DISPLAY_GET` frame, ~157 KB) without truncation
+- [x] **PROTO-07**: Client handles the largest binary-monitor response (a full `DISPLAY_GET` frame, ~157 KB) without truncation
 - [ ] **PROTO-08**: A second client connecting to an instance is prevented or reported as a conflict, never diagnosed as a wedged emulator
 
 ### Direct tools
@@ -160,13 +160,13 @@ and the sequencing rationale.
 | BACK-03 | Phase 2 | Pending |
 | BACK-04 | Phase 2 | Pending |
 | BACK-05 | Phase 8 | Pending |
-| PROTO-01 | Phase 2 | Pending |
+| PROTO-01 | Phase 2 | Complete |
 | PROTO-02 | Phase 2 | Pending |
 | PROTO-03 | Phase 2 | Pending |
-| PROTO-04 | Phase 2 | Pending |
-| PROTO-05 | Phase 2 | Pending |
+| PROTO-04 | Phase 2 | Complete |
+| PROTO-05 | Phase 2 | Complete |
 | PROTO-06 | Phase 2 | Pending |
-| PROTO-07 | Phase 2 | Pending |
+| PROTO-07 | Phase 2 | Complete |
 | PROTO-08 | Phase 2 | Pending |
 | DIRECT-01 | Phase 3 | Pending |
 | DIRECT-02 | Phase 3 | Pending |
