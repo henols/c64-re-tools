@@ -185,18 +185,35 @@ existing fork backend keeps working unchanged for the capabilities only it has.
 - Version detection (VICE ≥ 3.10) with graceful degradation
 - Empirical probe against a real build, and a two-process parity harness
 
-**Current state:** Phase 1 (Corrected Ground Truth) complete — 2026-08-12.
-The four protocol documents every later phase reads (`docs/phase0-binmon-findings.md`,
-`docs/stock-vice-parity.md`, `docs/roadmap-stock-vice.md`,
-`.planning/intel/constraints.md`) now agree with what the emulator actually does,
-and `probe-binmon.mjs` has been run against two real builds with the results
-recorded in `docs/phase1-probe-results.md`. Empirically established this phase:
-`CPUHISTORY_GET` returns `INVALID_TYPE` (`0x83`) on stock 3.9 and `OK` on the
-3.10-era fork, confirming VICE ≥ 3.10 — not a compile flag — as the real gate;
-`api_version` is `0x2` and `PALETTE_GET` returns 16 entries on both; drive-ROM
-`MEM_SET` is a silent no-op rather than a crash. One refinement for Phase 2's
-event demux: `REGISTER_INFO` recurs on **every** `STOPPED` transition, not only at
-monitor open. Next: Phase 2, stock backend connection.
+**Current state:** Phase 2 (Stock Backend Connection) complete — 2026-08-13.
+The server can now be pointed at a stock VICE and hold a correlated,
+event-demultiplexed conversation with it: `stock-protocol.ts` (framing, parsing,
+request-id-first demux), `stock-connect.ts` (the one connect handshake),
+`stock-dispatch.ts` + `tools-manifest.stock.json` (a trimmed, separately committed
+stock surface per D-07), `backend-detect.mts` (backend resolved once, cached per
+binary), and broker support for `-binarymonitor` launch plus broker-enforced
+single-monitor-client ownership. The fork path is untouched — `tools-manifest.json`
+is byte-identical to the phase-start commit. Verified 5/5 success criteria,
+16/16 requirements.
+
+Two things about this phase constrain how much it proved. **No stock VICE binary
+exists in this environment** (user ruling, 2026-08-13): every line is written
+against the normative spec, the three VERIF-02 fixtures are synthetic and stamped
+as such, locked decision D-19 was explicitly overridden
+(`docs/phase2-backend-probe-evidence.md`), and the `--help` backend discriminator
+is recorded as an OPEN question rather than an answered one. And a post-execution
+code review found **7 critical defects that all ten plans' green test suites had
+reported as passing** — including a connect handshake that halted the emulator
+with a bare `PING` and never sent the `EXIT` that resumes it, and a reap whose
+identity guard was vacuously true for an empty identity. All 20 Critical+Warning
+findings were fixed (`02-REVIEW-FIX.md`); the lesson worth carrying is that a
+green suite written by the same pass that wrote the code proves less than it
+looks like it does. Three follow-ups are tracked in `.planning/todos/pending/`:
+re-record the fixtures against hardware, confirm the discriminator against real
+stock and fork binaries, and settle whether CI's bare `npm test` or the narrowed
+`test:automated` gate is correct.
+
+Next: Phase 3, direct tools (every tool with a 1:1 binary-monitor opcode).
 
 ---
-*Last updated: 2026-08-12 after Phase 1 completion (corrected ground truth; empirical probe recorded against stock 3.9 and the 3.10-era fork)*
+*Last updated: 2026-08-13 after Phase 2 completion (stock backend connection; spec-driven with live validation deferred, 7 critical review defects fixed post-execution)*
