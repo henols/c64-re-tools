@@ -512,7 +512,11 @@ async function selectWarmInstance(
  * control.mts's own attemptAcquire()/enqueueAcquire() queue the request and
  * retry it later rather than refusing it. */
 export async function handleAcquire(requestId: string, stateDir: string, state: BrokerState, deps: HandleAcquireDeps = {}): Promise<AcquireOutcome> {
-  const probe = deps.probe ?? ((port: number) => probeReady(port));
+  // WR-01: the readiness probe is backend-aware, from the SAME threaded-down
+  // verdict handleAcquire already uses for buildViceArgs() -- on stock the port
+  // speaks the binary monitor, so an HTTP POST there can never succeed.
+  const backend = deps.backend ?? "fork";
+  const probe = deps.probe ?? ((port: number) => probeReady(port, { backend }));
   // Textually a verifiedKill( call site, not merely a reference -- reused
   // UNCHANGED from broker-kill.mts (Phase 01.6.2 criterion 6), never
   // re-derived, and never replaced by a bare process.kill().
@@ -783,7 +787,9 @@ function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, ba
       };
       return withCrashSupervision("spare", port, stashingSpawn, superviseDepsFor(stateDir, state));
     },
-    probe: (port: number) => probeReady(port),
+    // WR-01: same backend-aware probe route as handleAcquire's, from the SAME
+    // resolved verdict this function already receives for the launch argv.
+    probe: (port: number) => probeReady(port, { backend }),
     allocatePort: nextFreePort,
     countReady,
     countTotal,

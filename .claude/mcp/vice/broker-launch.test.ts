@@ -400,6 +400,224 @@ test("probeReady: the timeout default is 1000ms, and the seconds-valued knob sti
   assert.equal(timeoutsMs[1], 7000, "the seconds-valued timeout knob must still be honoured for a non-default value");
 });
 
+// ---------------------------------------------------------------------------
+// WR-01: probeReady() is backend-aware. On stock the port speaks the BINARY
+// MONITOR, so the HTTP POST could never succeed -- warm-floor instances stayed
+// `launching` forever, countLaunching(state) > 0 short-circuited every later
+// warm pass, and a never-usable emulator process was retained until shutdown
+// while still counting toward countTotal()/atCapacity().
+// ---------------------------------------------------------------------------
+
+test("WR-01 probeReady: the fork route is unchanged, including when backend is omitted entirely", async () => {
+  let httpCalls = 0;
+  let binmonCalls = 0;
+  const deps = {
+    httpProbe: () => {
+      httpCalls += 1;
+      return Promise.resolve(true);
+    },
+    binmonProbe: () => {
+      binmonCalls += 1;
+      return Promise.resolve(true);
+    },
+  };
+  assert.equal(await probeReady(6600, deps), true);
+  assert.equal(await probeReady(6600, { ...deps, backend: "fork" as const }), true);
+  assert.equal(httpCalls, 2, "an omitted backend and an explicit fork must both take the HTTP route");
+  assert.equal(binmonCalls, 0);
+});
+
+test("WR-01 probeReady: the stock route uses the binary-monitor probe and never the HTTP one", async () => {
+  let httpCalls = 0;
+  const seen: Array<{ port: number; timeoutMs: number }> = [];
+  const ready = await probeReady(6605, {
+    backend: "stock",
+    httpProbe: () => {
+      httpCalls += 1;
+      return Promise.resolve(true);
+    },
+    binmonProbe: (port, timeoutMs) => {
+      seen.push({ port, timeoutMs });
+      return Promise.resolve(true);
+    },
+  });
+  assert.equal(ready, true);
+  assert.equal(httpCalls, 0, "an HTTP POST at a binary-monitor port can never succeed and must not be attempted");
+  assert.deepEqual(seen, [{ port: 6605, timeoutMs: 1000 }], "the stock route gets the same port and the same timeout budget");
+});
+
+test("WR-01 probeReady: the seconds-valued timeout knob applies to the stock route too", async () => {
+  const timeoutsMs: number[] = [];
+  await probeReady(6605, {
+    backend: "stock",
+    probeTimeoutSEnv: "4",
+    binmonProbe: (_port, timeoutMs) => {
+      timeoutsMs.push(timeoutMs);
+      return Promise.resolve(true);
+    },
+  });
+  assert.deepEqual(timeoutsMs, [4000]);
+});
+
+// --- the REAL binmon probe, against a loopback stub emulator -----------------
+//
+// No real x64sc anywhere: the stub speaks the 11-byte request / 12-byte response
+// header layout from docs/phase0-binmon-findings.md §5 and nothing else.
+
+const BINMON_STX = 0x02;
+const BINMON_API = 0x02;
+const BINMON_REQ_HEADER_LEN = 11;
+
+interface BinmonStubOptions {
+  /** Build the reply for one decoded request; `null` means answer nothing. */
+  reply?: (commandType: number, requestId: number) => Buffer | null;
+  /** Accept the connection and then never read or answer anything. */
+  silent?: boolean;
+}
+
+async function withBinmonStub<T>(
+  opts: BinmonStubOptions,
+  fn: (port: number, received: () => number[]) => Promise<T>,
+): Promise<T> {
+  const { createServer } = await import("node:net");
+  const sockets = new Set<import("node:net").Socket>();
+  const received: number[] = [];
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => {
+      /* the probe destroys its socket; nothing to report */
+    });
+    if (opts.silent) return;
+    let buf = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        if (buf.length < BINMON_REQ_HEADER_LEN) break;
+        const bodyLength = buf.readUInt32LE(2);
+        const total = BINMON_REQ_HEADER_LEN + bodyLength;
+        if (buf.length < total) break;
+        const requestId = buf.readUInt32LE(6);
+        const commandType = buf[10]!;
+        buf = buf.subarray(total);
+        received.push(commandType);
+        const reply = opts.reply?.(commandType, requestId) ?? null;
+        if (reply) socket.write(reply);
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    return await fn(port, () => received);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+function binmonReply(responseType: number, errorCode: number, requestId: number): Buffer {
+  const header = Buffer.alloc(12);
+  header[0] = BINMON_STX;
+  header[1] = BINMON_API;
+  header.writeUInt32LE(0, 2);
+  header[6] = responseType;
+  header[7] = errorCode;
+  header.writeUInt32LE(requestId >>> 0, 8);
+  return header;
+}
+
+test("WR-01 binmon probe: a well-formed PING reply reports READY, and the probe RESUMES the machine its own PING halted", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x00, requestId) },
+    async (port, received) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), true);
+      // The EXIT is the whole point: any inbound byte halts the machine
+      // (docs/phase0-binmon-findings.md §4), so a probe that only pinged would
+      // leave every warm instance "ready" and frozen. probeReady() resolves as
+      // soon as its own write flushes, which can be before the peer has read it,
+      // so wait for the stub to actually observe both commands rather than
+      // asserting on a race.
+      const sawBoth = await waitFor(() => received().length >= 2, { timeoutMs: 2000 });
+      assert.ok(sawBoth, `the stub must observe both commands, saw ${JSON.stringify(received())}`);
+      assert.deepEqual(received(), [0x81, 0xaa], "exactly one PING then one EXIT, in that order");
+    },
+  );
+});
+
+test("WR-01 binmon probe: an accept with NO reply is NOT ready -- a bare TCP accept is insufficient", async () => {
+  await withBinmonStub({ silent: true }, async (port) => {
+    assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "1" }), false);
+  });
+});
+
+test("WR-01 binmon probe: a reply carrying a non-zero error code is NOT ready", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x8f, requestId) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply of the WRONG response type is NOT ready", async () => {
+  await withBinmonStub(
+    { reply: (_commandType, requestId) => binmonReply(0x62, 0x00, requestId) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply carrying a DIFFERENT request id is NOT ready -- a stray event must not read as an answer", async () => {
+  await withBinmonStub(
+    { reply: (commandType) => binmonReply(commandType, 0x00, 0xffffffff) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply with the wrong api_version is NOT ready", async () => {
+  await withBinmonStub(
+    {
+      reply: (commandType, requestId) => {
+        const frame = binmonReply(commandType, 0x00, requestId);
+        frame[1] = 0x03;
+        return frame;
+      },
+    },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: nothing listening at all reports not-ready without throwing", async () => {
+  // Port 1 on loopback: reserved, nothing binds it, so the connect is refused.
+  assert.equal(await probeReady(1, { backend: "stock", probeTimeoutSEnv: "1" }), false);
+});
+
+test("WR-01 binmon probe: the probe never leaves its socket open -- stock VICE has exactly one client slot", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x00, requestId) },
+    async (port) => {
+      const { createConnection } = await import("node:net");
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), true);
+      // A second client can connect immediately afterwards, which is only true
+      // if the probe released the slot.
+      await new Promise<void>((resolve, reject) => {
+        const socket = createConnection({ host: "127.0.0.1", port });
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.once("error", reject);
+      });
+    },
+  );
+});
+
 // ----------------------------------------------------------- maintainWarmFloor
 
 function makeWarmFloorDeps(state: BrokerState, overrides: Partial<Parameters<typeof maintainWarmFloor>[0]> = {}) {

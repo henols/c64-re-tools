@@ -273,6 +273,122 @@ async function defaultHttpProbe(port, timeoutMs) {
         clearTimeout(timer);
     }
 }
+// ---------------------------------------------------------------------------
+// WR-01: the STOCK readiness route.
+//
+// probeReady() below used to POST http://127.0.0.1:<port>/mcp unconditionally
+// and require both "version" and "machine" in the body. On the stock backend
+// that port speaks the BINARY MONITOR, so the probe could never succeed:
+// warm-floor instances stayed `launching` forever, countLaunching(state) > 0
+// short-circuited every later warm pass, and a never-usable emulator process was
+// retained until broker shutdown while still counting toward
+// countTotal()/atCapacity(). Cold acquires kept working only because the cold
+// arm grants without probing.
+//
+// WHY THE WIRE BYTES ARE HAND-BUILT HERE: stock-protocol.ts is the ONE place
+// this tree frames and DEMULTIPLEXES the binmon protocol, and this probe is
+// deliberately not a second copy of that -- it neither correlates request ids
+// nor decodes bodies. But it cannot reuse even the constants: this file is a
+// host-bound .mts compiled into resources/ by build.ts, and a .mts cannot
+// value-import a .ts module (TS5097). The same constraint already produced
+// hand-copied wire constants in binmon-fixtures.ts and a standalone client in
+// probe-binmon.mjs. What is written here is the minimum a READINESS check needs:
+// one request header out, one response header in, four bytes checked.
+// ---------------------------------------------------------------------------
+/** Hand-copied from docs/phase0-binmon-findings.md §5 -- see the block comment
+ * above for why these are not imported from stock-protocol.ts. */
+const BINMON_STX = 0x02;
+const BINMON_API_VERSION = 0x02;
+const BINMON_REQUEST_HEADER_LEN = 11;
+const BINMON_RESPONSE_HEADER_LEN = 12;
+const BINMON_CMD_PING = 0x81;
+const BINMON_CMD_EXIT = 0xaa;
+const BINMON_PROBE_REQUEST_ID = 0x0000ca11;
+function binmonRequest(commandType, requestId) {
+    const header = Buffer.alloc(BINMON_REQUEST_HEADER_LEN);
+    header[0] = BINMON_STX;
+    header[1] = BINMON_API_VERSION;
+    header.writeUInt32LE(0, 2); // no body
+    header.writeUInt32LE(requestId >>> 0, 6);
+    header[10] = commandType;
+    return header;
+}
+/**
+ * WR-01: one PING (0x81) over the binary monitor, requiring a WELL-FORMED 0x81
+ * reply -- STX, the expected api_version, response type 0x81, error code 0x00,
+ * and this probe's own request id. A bare TCP accept is explicitly insufficient
+ * here for exactly the reason probeReady()'s own comment gives for the HTTP
+ * route: a C64 can accept a connection before it has finished booting.
+ *
+ * Then EXIT (0xaa), unconditionally, before closing -- because the PING ITSELF
+ * HALTS THE MACHINE. Any inbound byte does (docs/phase0-binmon-findings.md §4,
+ * and CR-02, which fixed the same omission in the connect handshake). A
+ * readiness probe that left every warm instance frozen would be a worse defect
+ * than the one it fixes: the emulator would be "ready" and stopped.
+ *
+ * Never throws -- every failure (refused, timed out, wrong reply shape, socket
+ * error) is `false`, matching defaultHttpProbe()'s own posture, so a
+ * still-booting instance simply fails THIS pass and is re-probed on the next.
+ *
+ * The socket is ALWAYS destroyed before resolving: stock VICE services exactly
+ * one binmon client, so a probe that leaked its connection would occupy the
+ * single client slot the real session needs to claim.
+ */
+async function defaultBinmonProbe(port, timeoutMs) {
+    const { createConnection } = await import("node:net");
+    return new Promise((resolvePromise) => {
+        let settled = false;
+        let buffer = Buffer.alloc(0);
+        const socket = createConnection({ host: "127.0.0.1", port });
+        const finish = (result) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            try {
+                socket.destroy();
+            }
+            catch {
+                /* already gone */
+            }
+            resolvePromise(result);
+        };
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        socket.on("error", () => finish(false));
+        socket.on("close", () => finish(false));
+        socket.on("connect", () => {
+            socket.write(binmonRequest(BINMON_CMD_PING, BINMON_PROBE_REQUEST_ID));
+        });
+        socket.on("data", (chunk) => {
+            buffer = Buffer.concat([buffer, chunk]);
+            if (buffer.length < BINMON_RESPONSE_HEADER_LEN)
+                return;
+            const wellFormed = buffer[0] === BINMON_STX &&
+                buffer[1] === BINMON_API_VERSION &&
+                buffer[6] === BINMON_CMD_PING &&
+                buffer[7] === 0x00 &&
+                buffer.readUInt32LE(8) === BINMON_PROBE_REQUEST_ID;
+            if (!wellFormed) {
+                finish(false);
+                return;
+            }
+            // Resume the machine this probe's own PING halted, then close GRACEFULLY:
+            // socket.end(data, cb) writes the EXIT and then sends FIN, so the bytes
+            // are delivered before the connection goes away. A bare write() followed
+            // by destroy() can discard them (destroy may RST), which would leave the
+            // instance "ready" and frozen -- the exact outcome the EXIT exists to
+            // prevent. The resume is best-effort in its OUTCOME, though: a failed
+            // resume must not turn a READY instance into a not-ready one, since the
+            // emulator demonstrably answered, which is what this function reports on.
+            try {
+                socket.end(binmonRequest(BINMON_CMD_EXIT, BINMON_PROBE_REQUEST_ID + 1), () => finish(true));
+            }
+            catch {
+                finish(true);
+            }
+        });
+    });
+}
 /** D-05, AS AMENDED BY P-05 -- this comment is the amendment's record, kept
  * in the exact place a three-branch description used to sit, per this
  * plan's own instruction that a code reader must meet the amendment here,
@@ -310,6 +426,14 @@ async function defaultHttpProbe(port, timeoutMs) {
 export async function probeReady(port, deps = {}) {
     const timeoutS = Number(deps.probeTimeoutSEnv ?? process.env.VICE_BROKER_PROBE_TIMEOUT_S) || DEFAULT_PROBE_TIMEOUT_S;
     const timeoutMs = timeoutS * 1000;
+    // WR-01: the route is chosen by the backend, exactly like buildViceArgs()'s
+    // own argv choice, and from the SAME threaded-down verdict. The fork arm below
+    // is byte-identical to what this function always did, including the
+    // omitted-backend default -- a fork deployment sees no behaviour change.
+    if (deps.backend === "stock") {
+        const binmonProbe = deps.binmonProbe ?? defaultBinmonProbe;
+        return binmonProbe(port, timeoutMs);
+    }
     const httpProbe = deps.httpProbe ?? defaultHttpProbe;
     return httpProbe(port, timeoutMs);
 }
@@ -358,7 +482,11 @@ function resolveCeiling(override) {
 export async function maintainWarmFloor(deps) {
     const log = deps.log ?? defaultLog;
     const now = deps.now ?? (() => Date.now());
-    const probe = deps.probe ?? ((port) => probeReady(port));
+    // WR-01: the DEFAULT probe follows this call's own backend, so a caller that
+    // threads `backend` for the launch argv and omits `probe` gets a matching
+    // readiness route rather than an HTTP POST at a binary-monitor port. An
+    // explicitly injected `probe` still wins, unchanged.
+    const probe = deps.probe ?? ((port) => probeReady(port, { backend: deps.backend ?? "fork" }));
     // Step 1: promote every "launching" instance whose probe now succeeds.
     // Runs regardless of whether a launch is in flight -- promotion and
     // speculative warming are independent concerns; an already-launched
