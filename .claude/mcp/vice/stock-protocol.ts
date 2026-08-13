@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// This is the ONE authoritative place that frames, parses, and (in plan
-// 02-06's later addition to this same file) demultiplexes the stock binary
-// VICE binary-monitor wire protocol -- nothing else in this tree decodes
-// binmon bytes. Two seams live here: the pure byte-level framing/parsing
-// functions (parseBuffer/parseResponse/encodeRequestHeader), and a raw-socket
-// client (ViceMonitorClient) that drives them off a real net.Socket.
+// This is the ONE authoritative place that frames, parses, and demultiplexes
+// the stock binary VICE binary-monitor wire protocol -- nothing else in this
+// tree decodes binmon bytes. Two seams live here: the pure byte-level
+// framing/parsing functions (parseBuffer/parseResponse/encodeRequestHeader,
+// plan 02-04), and a raw-socket client (ViceMonitorClient) that drives them
+// off a real net.Socket and adds request-id correlation, demux, and
+// socket-lifecycle rejection (plan 02-06).
 //
 // Attribution: this module is derived from henrik/c64-debug-mcp's
 // src/vice-protocol.ts (v1.0.14, MIT, Henrik Olsson 2025). Three defects in
@@ -117,6 +118,14 @@ export const ResponseType = {
   MemoryGet: 0x01,
   MemorySet: 0x02,
   CheckpointInfo: 0x11,
+  // Added in plan 02-06 (was missing from 02-04's port): CHECKPOINT_DELETE
+  // replies with its own response type, not CHECKPOINT_INFO -- confirmed
+  // against monitor_binary.c's monitor_binary_process_checkpoint_delete(),
+  // which calls monitor_binary_response(..., e_MON_RESPONSE_CHECKPOINT_DELETE,
+  // ...). Without this entry EXPECTED_RESPONSE below would have no correct
+  // value to name for CHECKPOINT_DELETE, and every real delete reply would
+  // reject as a false mismatch.
+  CheckpointDelete: 0x13,
   CheckpointList: 0x14,
   CheckpointToggle: 0x15,
   ConditionSet: 0x22,
@@ -230,6 +239,94 @@ export class StockDesyncError extends ViceError {
     super(message);
     this.name = "StockDesyncError";
     this.bytesSkipped = bytesSkipped;
+  }
+}
+
+export interface StockResponseMismatchErrorOptions {
+  expected?: number;
+  received?: number;
+  requestId?: number;
+  command?: number;
+}
+
+/**
+ * Raised by the correlation layer's dispatch (plan 02-06) when a reply's
+ * response type is not the one `EXPECTED_RESPONSE` names for the pending
+ * command's type. Consulted before `pending.resolve()` -- nothing in the
+ * vendor or in plan 02-04's parser validates this, so a wrong-typed frame on
+ * a matching request id would otherwise be handed to the caller as that
+ * command's answer, unchecked.
+ */
+export class StockResponseMismatchError extends ViceError {
+  expected?: number;
+  received?: number;
+  requestId?: number;
+  command?: number;
+
+  constructor(message: string, { expected, received, requestId, command }: StockResponseMismatchErrorOptions = {}) {
+    super(message);
+    this.name = "StockResponseMismatchError";
+    this.expected = expected;
+    this.received = received;
+    this.requestId = requestId;
+    this.command = command;
+  }
+}
+
+export interface StockConnectionClosedErrorOptions {
+  port?: number | null;
+  abandoned?: number;
+  trigger?: "close" | "error";
+}
+
+/**
+ * Raised by the socket-lifecycle rejection path (plan 02-06, D-11) for every
+ * pending command still outstanding when the underlying socket closes or
+ * errors, and for any `send()` call issued after that point. This file
+ * answers "this socket died" only -- whether a freshly reconnected socket is
+ * the *same machine* is deliberately NOT decided here; plan 02-08's
+ * stock-connect.ts owns that and reuses vice.ts's existing
+ * MachineRestartedError rather than inventing a second restart type. A
+ * second restart-error type introduced in this file would be the regression
+ * to prevent.
+ */
+export class StockConnectionClosedError extends ViceError {
+  port?: number | null;
+  abandoned?: number;
+  trigger?: "close" | "error";
+
+  constructor(message: string, { port, abandoned, trigger }: StockConnectionClosedErrorOptions = {}) {
+    super(message);
+    this.name = "StockConnectionClosedError";
+    this.port = port;
+    this.abandoned = abandoned;
+    this.trigger = trigger;
+  }
+}
+
+export interface StockRequestTimeoutErrorOptions {
+  requestId?: number;
+  commandType?: number;
+  elapsedMs?: number;
+}
+
+/**
+ * A strictly separate class from StockConnectionClosedError (D-11): a TCP
+ * close is unambiguous and immediate ("this socket died"), while a timeout
+ * means "connected but silent" -- a caller must be able to tell them apart
+ * by type without parsing message text.
+ */
+export class StockRequestTimeoutError extends ViceError {
+  requestId?: number;
+  commandType?: number;
+  elapsedMs?: number;
+
+  constructor(message: string, { requestId, commandType, elapsedMs }: StockRequestTimeoutErrorOptions = {}) {
+    super(message);
+    this.name = "StockRequestTimeoutError";
+    this.requestId = requestId;
+    this.commandType = commandType;
+    this.elapsedMs = elapsedMs;
   }
 }
 
@@ -641,43 +738,190 @@ export function parseBuffer(buffer: Buffer, counters: ParseCounters = { desyncBy
 }
 
 // ---------------------------------------------------------------------------
-// Socket layer (Task 2) -- drives parseBuffer() off a real net.Socket. Does
-// NOT add correlation, a pending map, request minting, or event demux --
-// plan 02-06 builds that layer on top of this one, in this same file.
+// Correlation tables (plan 02-06) -- data-driven, not hardcoded branches
+// (D-16). These are consulted by ViceMonitorClient's #dispatch() below.
+// ---------------------------------------------------------------------------
+
+/**
+ * Command -> the set of ParsedResponse.type discriminants that arrive as
+ * interim frames under the same request id before the terminal reply. Today
+ * only CHECKPOINT_LIST (0x14) has this N+1 shape: each interim
+ * CHECKPOINT_INFO (ResponseType 0x11) frame accumulates into the pending
+ * command's `related[]` array before the terminal CHECKPOINT_LIST reply
+ * resolves it. The vendor hardcoded exactly this one case as a single `if`
+ * branch (`c64-debug-mcp/src/vice-protocol.ts:683`); this table exists so
+ * the next N+1-shaped command is a data entry here, not a fifth
+ * copy-pasted branch.
+ */
+const RELATED_RESPONSES: Partial<Record<CommandType, ReadonlySet<ParsedResponse["type"]>>> = {
+  [CommandType.CheckpointList]: new Set(["checkpoint_info"]),
+};
+
+/**
+ * Command -> the wire ResponseType its terminal reply must carry, per
+ * monitor_binary.c's monitor_binary_response(..., e_MON_RESPONSE_*, ...)
+ * call in each command's handler (confirmed by direct read of that source
+ * this session). Consulted by #dispatch() before `pending.resolve()`: a
+ * mismatch rejects with StockResponseMismatchError rather than handing the
+ * caller another command's payload. Nothing in the vendor or in plan
+ * 02-04's parser validates this today.
+ */
+const EXPECTED_RESPONSE: Partial<Record<CommandType, ResponseType>> = {
+  [CommandType.MemoryGet]: ResponseType.MemoryGet,
+  [CommandType.MemorySet]: ResponseType.MemorySet,
+  [CommandType.CheckpointGet]: ResponseType.CheckpointInfo,
+  [CommandType.CheckpointSet]: ResponseType.CheckpointInfo,
+  [CommandType.CheckpointDelete]: ResponseType.CheckpointDelete,
+  [CommandType.CheckpointList]: ResponseType.CheckpointList,
+  [CommandType.CheckpointToggle]: ResponseType.CheckpointToggle,
+  [CommandType.ConditionSet]: ResponseType.ConditionSet,
+  [CommandType.RegistersGet]: ResponseType.RegisterInfo,
+  [CommandType.RegistersSet]: ResponseType.RegisterInfo,
+  [CommandType.Dump]: ResponseType.Dump,
+  [CommandType.Undump]: ResponseType.Undump,
+  [CommandType.ResourceGet]: ResponseType.ResourceGet,
+  [CommandType.ResourceSet]: ResponseType.ResourceSet,
+  [CommandType.AdvanceInstructions]: ResponseType.AdvanceInstructions,
+  [CommandType.KeyboardFeed]: ResponseType.KeyboardFeed,
+  [CommandType.ExecuteUntilReturn]: ResponseType.ExecuteUntilReturn,
+  [CommandType.Ping]: ResponseType.Ping,
+  [CommandType.BanksAvailable]: ResponseType.BanksAvailable,
+  [CommandType.RegistersAvailable]: ResponseType.RegistersAvailable,
+  [CommandType.DisplayGet]: ResponseType.DisplayGet,
+  [CommandType.ViceInfo]: ResponseType.ViceInfo,
+  [CommandType.CpuHistoryGet]: ResponseType.CpuHistoryGet,
+  [CommandType.PaletteGet]: ResponseType.PaletteGet,
+  [CommandType.JoyportSet]: ResponseType.JoyportSet,
+  [CommandType.UserportSet]: ResponseType.UserportSet,
+  [CommandType.Exit]: ResponseType.Exit,
+  [CommandType.Quit]: ResponseType.Quit,
+  [CommandType.Reset]: ResponseType.Reset,
+  [CommandType.AutoStart]: ResponseType.AutoStart,
+};
+
+/**
+ * Reverse lookup: a parsed response's discriminant `.type` string back to
+ * the wire ResponseType byte it was parsed from. Needed only by the
+ * EXPECTED_RESPONSE check below -- parseResponse()'s named ParsedResponse
+ * shapes deliberately do not carry a redundant raw responseType field (see
+ * plan 02-04's shapes); the "unknown" fallback shape already carries its
+ * own responseType and is handled without this table (see
+ * responseTypeOfParsed() below).
+ */
+const RESPONSE_TYPE_OF_PARSED_KIND: Partial<Record<ParsedResponse["type"], ResponseType>> = {
+  memory_get: ResponseType.MemoryGet,
+  registers: ResponseType.RegisterInfo,
+  registers_available: ResponseType.RegistersAvailable,
+  vice_info: ResponseType.ViceInfo,
+  checkpoint_info: ResponseType.CheckpointInfo,
+  checkpoint_list: ResponseType.CheckpointList,
+  display: ResponseType.DisplayGet,
+  palette: ResponseType.PaletteGet,
+  stopped: ResponseType.Stopped,
+  resumed: ResponseType.Resumed,
+  jam: ResponseType.Jam,
+  undump: ResponseType.Undump,
+};
+
+/** The wire ResponseType byte a parsed response was decoded from, for
+ * EXPECTED_RESPONSE comparison. The "unknown" fallback already carries its
+ * own responseType field; every other shape is looked up in
+ * RESPONSE_TYPE_OF_PARSED_KIND above. */
+function responseTypeOfParsed(response: ParsedResponse): number | undefined {
+  if (response.type === "unknown") {
+    return response.responseType;
+  }
+  return RESPONSE_TYPE_OF_PARSED_KIND[response.type];
+}
+
+/** Bounded ring size for the settled-request-id memory (RESEARCH.md's
+ * duplicate-reply question, planner decision): large enough to catch a
+ * duplicate arriving shortly after its original settled, small enough to
+ * never grow unbounded (T-02-24). */
+const SETTLED_RING_SIZE = 256;
+
+/** A resolved response carries `related`: the pending command's accumulated
+ * interim frames (RELATED_RESPONSES above), always present (empty array when
+ * the command has no N+1 shape) so a caller never has to branch on whether
+ * the field exists. */
+export type ResolvedResponse = ParsedResponse & { related: ParsedResponse[] };
+
+interface PendingCommand {
+  commandType: CommandType;
+  resolve: (value: ResolvedResponse) => void;
+  reject: (reason: unknown) => void;
+  timer: NodeJS.Timeout;
+  related: ParsedResponse[];
+}
+
+// ---------------------------------------------------------------------------
+// Socket layer + correlation/demux (Tasks 1 and 2, plan 02-06) -- drives
+// parseBuffer() off a real net.Socket, mints request ids, keyed
+// request-id-first demux, N+1 related-frame accumulation,
+// expected-response validation, duplicate-reply detection, and
+// socket-lifecycle rejection. Plan 02-04 built parseBuffer()/parseResponse()
+// this class drives; this class adds everything above that.
 // ---------------------------------------------------------------------------
 
 export interface ConnectOptions {
   timeoutMs?: number;
 }
 
+export interface ViceMonitorClientOptions {
+  /** Override the request-id minter's starting value. Test-only knob to
+   * exercise the 0xfffffffe -> 1 wraparound (D-17) without minting ~4.3
+   * billion ids first; production callers should never need this (defaults
+   * to 1). */
+  initialRequestId?: number;
+}
+
 export interface ViceMonitorClientCounters {
   desyncBytes: number;
-  /** Reserved for plan 02-06's request-id correlation layer to increment on
-   * a duplicate reply for an already-resolved request id. Always 0 here --
-   * detecting a duplicate needs the pending-request map this plan
-   * deliberately does not build. */
+  /** Incremented by #dispatch() (plan 02-06) on a duplicate reply for an
+   * already-settled request id -- dropped, never emitted as 'event'
+   * (planner decision, RESEARCH.md's duplicate-reply question). */
   duplicateReplies: number;
 }
 
 /**
- * Raw binary-monitor socket client: connect/disconnect plus a 'response'
- * event per parsed frame. Wraps parseBuffer() in a try/catch that, on any
- * unexpected throw, drops the buffer to empty and emits 'desync' rather than
- * leaving a concatenated-but-unadvanced buffer that would repeat the same
- * throw on every subsequent chunk -- the structural, call-site-level fix for
- * the vendor's defect (b) failure mode, on top of parseBuffer()'s own
+ * Raw binary-monitor socket client: connect/disconnect, request-id minting
+ * (`mintRequestId()`), correlated command dispatch (`send()`), and a
+ * 'response'/'event'/'protocol-error'/'desync'/'close'/'transport-error'
+ * event surface. Wraps parseBuffer() in a try/catch that, on any unexpected
+ * throw, drops the buffer to empty and emits 'desync' rather than leaving a
+ * concatenated-but-unadvanced buffer that would repeat the same throw on
+ * every subsequent chunk -- the structural, call-site-level fix for the
+ * vendor's defect (b) failure mode, on top of parseBuffer()'s own
  * parser-level fix above. Also caps accumulated buffering: unparsed bytes
  * above MAX_BODY_LEN without a complete frame are a desync (reset + emit),
  * never an unbounded Buffer.concat growth path.
+ *
+ * D-11: this class answers "this socket died" only. It never decides
+ * whether a freshly reconnected socket is the *same machine* -- that is
+ * plan 02-08's stock-connect.ts, one layer up, reusing vice.ts's existing
+ * MachineRestartedError.
  */
 export class ViceMonitorClient extends EventEmitter {
   #socket: net.Socket | null = null;
   #buffer: Buffer = Buffer.alloc(0);
   #desyncBytes = 0;
   #duplicateReplies = 0;
+  #nextRequestId = 1;
+  #pending = new Map<number, PendingCommand>();
+  #settledRing: number[] = [];
+  #settledSet = new Set<number>();
+  #port: number | null = null;
+  #closed = false;
   #onDataBound = (chunk: Buffer) => this.#onData(chunk);
   #onCloseBound = () => this.#onClose();
   #onErrorBound = (err: Error) => this.#onError(err);
+
+  constructor({ initialRequestId }: ViceMonitorClientOptions = {}) {
+    super();
+    if (initialRequestId !== undefined) {
+      this.#nextRequestId = initialRequestId;
+    }
+  }
 
   get connected(): boolean {
     return this.#socket != null && !this.#socket.destroyed;
@@ -685,6 +929,26 @@ export class ViceMonitorClient extends EventEmitter {
 
   get counters(): ViceMonitorClientCounters {
     return { desyncBytes: this.#desyncBytes, duplicateReplies: this.#duplicateReplies };
+  }
+
+  /**
+   * D-17: never mint VICE_BROADCAST_REQUEST_ID (0xffffffff) -- five
+   * unsolicited types arrive at that id and two share a response type with a
+   * legitimate reply, so a minted collision would be indistinguishable from
+   * a real event. Wraps back to 1 at 0xfffffffe, explicitly skipping
+   * 0xffffffff, rather than relying on "49.7 days of continuous traffic
+   * before it could wrap" being the same as never. The `=== ` check below is
+   * a second, defensive skip in case #nextRequestId is ever set to the
+   * broadcast id by some other path.
+   */
+  mintRequestId(): number {
+    const id = this.#nextRequestId;
+    if (id === VICE_BROADCAST_REQUEST_ID) {
+      this.#nextRequestId = 1;
+      return this.mintRequestId();
+    }
+    this.#nextRequestId = id >= 0xfffffffe ? 1 : id + 1;
+    return id;
   }
 
   connect(host: string, port: number, { timeoutMs = 5000 }: ConnectOptions = {}): Promise<void> {
@@ -696,6 +960,8 @@ export class ViceMonitorClient extends EventEmitter {
         socket.removeListener("error", onConnectError);
         this.#socket = socket;
         this.#buffer = Buffer.alloc(0);
+        this.#port = port;
+        this.#closed = false;
         socket.on("data", this.#onDataBound);
         socket.on("close", this.#onCloseBound);
         socket.on("error", this.#onErrorBound);
@@ -717,7 +983,67 @@ export class ViceMonitorClient extends EventEmitter {
     });
   }
 
+  /**
+   * Send a command and correlate its terminal reply, per D-11/PROTO-02.
+   * Rejects immediately with StockConnectionClosedError if the client is not
+   * connected or has already seen its socket close/error -- never queues
+   * against a dead socket. Otherwise mints a request id (never
+   * VICE_BROADCAST_REQUEST_ID, D-17), tracks it in the pending map, and
+   * resolves/rejects it from #dispatch() as replies arrive.
+   */
+  send(commandType: CommandType, body: Buffer = Buffer.alloc(0), { timeoutMs = 5000 }: ConnectOptions = {}): Promise<ResolvedResponse> {
+    if (this.#closed || !this.connected || !this.#socket) {
+      return Promise.reject(
+        new StockConnectionClosedError("cannot send: binary monitor connection is not open", {
+          port: this.#port,
+          abandoned: 0,
+          trigger: this.#closed ? "close" : "error",
+        }),
+      );
+    }
+
+    const requestId = this.mintRequestId();
+    const packet = encodeRequestHeader({ commandType, requestId, body });
+    const socket = this.#socket;
+
+    return new Promise<ResolvedResponse>((resolve, reject) => {
+      const startedAt = Date.now();
+      const timer = setTimeout(() => {
+        this.#pending.delete(requestId);
+        reject(
+          new StockRequestTimeoutError(
+            `command 0x${commandType.toString(16).padStart(2, "0")} (request id ${requestId}) timed out waiting for a reply after ${timeoutMs}ms`,
+            { requestId, commandType, elapsedMs: Date.now() - startedAt },
+          ),
+        );
+      }, timeoutMs);
+
+      this.#pending.set(requestId, {
+        commandType,
+        resolve,
+        reject,
+        timer,
+        related: [],
+      });
+
+      socket.write(packet, (err) => {
+        if (err) {
+          clearTimeout(timer);
+          this.#pending.delete(requestId);
+          reject(
+            new StockConnectionClosedError(`socket write failed for request id ${requestId}: ${err.message}`, {
+              port: this.#port,
+              abandoned: 1,
+              trigger: "error",
+            }),
+          );
+        }
+      });
+    });
+  }
+
   disconnect(): Promise<void> {
+    this.#failAllPending("close");
     const socket = this.#socket;
     this.#socket = null;
     this.#buffer = Buffer.alloc(0);
@@ -761,11 +1087,7 @@ export class ViceMonitorClient extends EventEmitter {
       }
 
       for (const item of responses) {
-        if (item instanceof StockProtocolError || item instanceof StockFramingError) {
-          this.emit("protocol-error", item);
-        } else {
-          this.emit("response", item);
-        }
+        this.#dispatch(item);
       }
     } catch (err) {
       // Defensive backstop: parseBuffer() is designed to never throw, but if
@@ -778,13 +1100,146 @@ export class ViceMonitorClient extends EventEmitter {
     }
   }
 
+  /**
+   * Request-id-first demux (PROTO-03, D-16/D-17) -- the entire mechanism
+   * that keeps an unsolicited event from masquerading as a legitimate reply.
+   * Ported verbatim from the vendor's ordering
+   * (c64-debug-mcp/src/vice-protocol.ts:669-681, read this session): emit
+   * 'response'/'protocol-error' first, THEN check
+   * `requestId === VICE_BROADCAST_REQUEST_ID` and route to 'event' --
+   * BEFORE any #pending.get() lookup, and NEVER inspecting the response type
+   * byte. Do not restructure this to check response type first: a
+   * CHECKPOINT_INFO (0x11) or REGISTER_INFO (0x31) arriving mid-flight would
+   * otherwise resolve an in-flight CHECKPOINT_GET/REGISTERS_GET with some
+   * other checkpoint's or register dump's data, silently.
+   */
+  #dispatch(item: ParsedResponse | StockProtocolError | StockFramingError): void {
+    const isWireError = item instanceof StockProtocolError || item instanceof StockFramingError;
+
+    if (isWireError) {
+      this.emit("protocol-error", item);
+    } else {
+      this.emit("response", item);
+    }
+
+    const requestId = item.requestId;
+
+    if (requestId === undefined || requestId === VICE_BROADCAST_REQUEST_ID) {
+      this.emit("event", item);
+      return;
+    }
+
+    const pending = this.#pending.get(requestId);
+    if (!pending) {
+      if (this.#settledSet.has(requestId)) {
+        // Planner decision (RESEARCH.md's duplicate-reply question): a
+        // duplicate reply on an already-settled id is dropped and counted,
+        // never emitted on 'event' -- routing it there would let a future
+        // consumer treat a duplicate reply as a second, spurious
+        // STOPPED/RESUMED-shaped transition.
+        this.#duplicateReplies += 1;
+        console.error(`[framing] duplicate reply on already-settled request id ${requestId} -- dropped, not emitted as an event`);
+        return;
+      }
+      // Never pending and not a known-settled id: a genuine unsolicited
+      // frame arriving at a non-broadcast id.
+      this.emit("event", item);
+      return;
+    }
+
+    if (isWireError) {
+      this.#finishPending(requestId, pending);
+      pending.reject(item);
+      return;
+    }
+
+    const response = item;
+    const relatedTypes = RELATED_RESPONSES[pending.commandType];
+    if (relatedTypes?.has(response.type)) {
+      // Interim frame under an N+1-shaped command (today: CHECKPOINT_LIST's
+      // CHECKPOINT_INFO frames) -- accumulate, do not resolve yet.
+      pending.related.push(response);
+      return;
+    }
+
+    const expected = EXPECTED_RESPONSE[pending.commandType];
+    const received = responseTypeOfParsed(response);
+    if (expected !== undefined && received !== expected) {
+      this.#finishPending(requestId, pending);
+      pending.reject(
+        new StockResponseMismatchError(
+          `command 0x${pending.commandType.toString(16).padStart(2, "0")} (request id ${requestId}) expected response type 0x${expected.toString(16).padStart(2, "0")} but received 0x${(received ?? -1).toString(16).padStart(2, "0")}`,
+          { expected, received, requestId, command: pending.commandType },
+        ),
+      );
+      return;
+    }
+
+    this.#finishPending(requestId, pending);
+    pending.resolve({ ...response, related: pending.related });
+  }
+
+  /** Clears the timer, deletes the pending entry, and inserts it into the
+   * bounded settled-id ring, all together -- so the pending-map delete and
+   * the ring insert can never disagree (plan 02-06's action text). Call
+   * exactly once per settled request id, immediately before
+   * resolve()/reject(). */
+  #finishPending(requestId: number, pending: PendingCommand): void {
+    clearTimeout(pending.timer);
+    this.#pending.delete(requestId);
+    this.#markSettled(requestId);
+  }
+
+  #markSettled(requestId: number): void {
+    if (this.#settledSet.has(requestId)) {
+      return;
+    }
+    this.#settledRing.push(requestId);
+    this.#settledSet.add(requestId);
+    if (this.#settledRing.length > SETTLED_RING_SIZE) {
+      const evicted = this.#settledRing.shift();
+      if (evicted !== undefined) {
+        this.#settledSet.delete(evicted);
+      }
+    }
+  }
+
+  /**
+   * D-11: reject every pending command with StockConnectionClosedError and
+   * clear the pending map -- called from both #onClose() and #onError(), and
+   * from disconnect(), so no in-flight request is ever left unresolved by
+   * any path that tears down the socket. Idempotent: calling this with an
+   * already-empty pending map (e.g. 'close' firing after 'error' already
+   * rejected everything) is a harmless no-op abandoning 0 requests.
+   */
+  #failAllPending(trigger: "close" | "error"): void {
+    const abandoned = this.#pending.size;
+    if (abandoned > 0) {
+      const err = new StockConnectionClosedError(
+        `binary monitor connection ${trigger === "error" ? "errored" : "closed"} with ${abandoned} request(s) abandoned`,
+        { port: this.#port, abandoned, trigger },
+      );
+      for (const pending of this.#pending.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(err);
+      }
+      this.#pending.clear();
+    }
+    this.#closed = true;
+  }
+
   #onClose(): void {
+    this.#failAllPending("close");
     this.#socket = null;
     this.#buffer = Buffer.alloc(0);
     this.emit("close");
   }
 
   #onError(err: Error): void {
+    // D-11: an ECONNRESET or other socket 'error' is treated the same as a
+    // clean close -- every pending command rejects with the died-underneath
+    // error, distinguishable from a timeout by class.
+    this.#failAllPending("error");
     this.emit("transport-error", err);
   }
 }

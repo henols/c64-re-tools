@@ -26,13 +26,13 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 ### Protocol client
 
 - [x] **PROTO-01**: Client reassembles messages from arbitrary TCP chunk boundaries, buffering until a full header plus body is present
-- [ ] **PROTO-02**: Client correlates each response to its request by request id, so concurrent in-flight commands cannot be confused
-- [ ] **PROTO-03**: Client demultiplexes all five unsolicited message types (`STOPPED`, `RESUMED`, `JAM`, `CHECKPOINT_INFO`, `REGISTER_INFO`) and never resolves a pending request with an event, including when the event shares a response type with a legitimate reply
+- [x] **PROTO-02**: Client correlates each response to its request by request id, so concurrent in-flight commands cannot be confused
+- [x] **PROTO-03**: Client demultiplexes all five unsolicited message types (`STOPPED`, `RESUMED`, `JAM`, `CHECKPOINT_INFO`, `REGISTER_INFO`) and never resolves a pending request with an event, including when the event shares a response type with a legitimate reply
 - [x] **PROTO-04**: Client handles a zero-length `JAM` body without throwing and without desynchronising the stream
 - [x] **PROTO-05**: Client surfaces a protocol error code as a distinguishable failure, not as an empty success
-- [ ] **PROTO-06**: Client detects that the emulator died or restarted underneath it and reports that distinctly from a timeout
+- [x] **PROTO-06**: Client detects that the emulator died or restarted underneath it and reports that distinctly from a timeout
 - [x] **PROTO-07**: Client handles the largest binary-monitor response (a full `DISPLAY_GET` frame, ~157 KB) without truncation
-- [ ] **PROTO-08**: A second client connecting to an instance is prevented or reported as a conflict, never diagnosed as a wedged emulator
+- [x] **PROTO-08**: A second client connecting to an instance is prevented or reported as a conflict, never diagnosed as a wedged emulator
 
 ### Direct tools
 
@@ -112,7 +112,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 ### Verification
 
 - [x] **VERIF-01**: The binary-monitor probe has been run against a real stock VICE build and its results recorded
-- [ ] **VERIF-02**: Protocol client behaviour is unit-tested against recorded or stubbed frames, including the malformed and event-interleaved cases
+- [x] **VERIF-02**: Protocol client behaviour is unit-tested against recorded or stubbed frames, including the malformed and event-interleaved cases
 - [ ] **VERIF-03**: Tool output is compared between backends for a known program, with expected divergences documented rather than treated as failures
 - [x] **VERIF-04**: The five items the research flagged UNVERIFIED are resolved empirically or recorded as accepted unknowns
 
@@ -161,13 +161,13 @@ and the sequencing rationale.
 | BACK-04 | Phase 2 | Pending |
 | BACK-05 | Phase 8 | Pending |
 | PROTO-01 | Phase 2 | Complete |
-| PROTO-02 | Phase 2 | Pending |
-| PROTO-03 | Phase 2 | Pending |
+| PROTO-02 | Phase 2 | Complete |
+| PROTO-03 | Phase 2 | Complete |
 | PROTO-04 | Phase 2 | Complete |
 | PROTO-05 | Phase 2 | Complete |
-| PROTO-06 | Phase 2 | Pending |
+| PROTO-06 | Phase 2 | Complete |
 | PROTO-07 | Phase 2 | Complete |
-| PROTO-08 | Phase 2 | Pending |
+| PROTO-08 | Phase 2 | Complete |
 | DIRECT-01 | Phase 3 | Pending |
 | DIRECT-02 | Phase 3 | Pending |
 | DIRECT-03 | Phase 3 | Pending |
@@ -217,7 +217,7 @@ and the sequencing rationale.
 | DIST-03 | Phase 8 | Pending |
 | SKILL-01 | Phase 8 | Pending |
 | VERIF-01 | Phase 1 | Complete |
-| VERIF-02 | Phase 2 | Pending |
+| VERIF-02 | Phase 2 | Complete |
 | VERIF-03 | Phase 8 | Pending |
 | VERIF-04 | Phase 1 | Complete |
 
