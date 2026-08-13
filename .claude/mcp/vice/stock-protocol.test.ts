@@ -1,8 +1,11 @@
 // node:test coverage of stock-protocol.ts's framing/parsing seam --
 // VERIF-02's byte-at-a-time, JAM, DISPLAY_GET, error-code, desync, and
-// unknown-response-type cases (plan 02-04's five of the case's eight), plus
-// the socket-driven variants added in Task 2. Colocated, same harness shape
-// as vice-probe.test.ts and binmon-fixtures.test.ts.
+// unknown-response-type cases (plan 02-04's five of the case's eight), the
+// socket-driven variants added in plan 02-04's Task 2, and the
+// correlation/demux + socket-lifecycle-rejection layer added in plan 02-06
+// (VERIF-02's remaining three cases: duplicate reply, event-interleaved,
+// checkpoint-list correlation). Colocated, same harness shape as
+// vice-probe.test.ts and binmon-fixtures.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
@@ -16,6 +19,9 @@ import {
   StockProtocolError,
   StockFramingError,
   StockDesyncError,
+  StockResponseMismatchError,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
   CommandType,
   ResponseType,
   ErrorCode,
@@ -32,6 +38,7 @@ import {
   syntheticUnknownTypeFrame,
   syntheticDesyncStream,
   syntheticDisplayGetFrame,
+  syntheticDuplicateReplyStream,
   chunkBytes,
   loadCapturedFixture,
 } from "./binmon-fixtures.ts";
@@ -398,6 +405,470 @@ test("ViceMonitorClient: disconnect() closes the socket and leaves no listener a
       assert.equal(client.connected, true);
       await client.disconnect();
       assert.equal(client.connected, false);
+    },
+  );
+});
+
+// ===========================================================================
+// Task 1 (plan 02-06): correlation/demux layer -- pending map,
+// request-id-first routing, N+1 related-frame accumulation,
+// expected-response validation, duplicate-reply detection.
+// ===========================================================================
+
+/** Minimal CHECKPOINT_INFO body (23 bytes per monitor_binary.c's
+ * monitor_binary_response_checkpoint_info()) with only the checkpoint id
+ * field set -- every other field defaults to 0, which parseResponse()
+ * happily decodes without further validation. */
+function checkpointInfoBody(id: number): Buffer {
+  const body = Buffer.alloc(23);
+  body.writeUInt32LE(id, 0);
+  return body;
+}
+
+/** Minimal REGISTER_INFO body: a uint16LE register count with no entries. */
+function registerInfoBody(count = 0): Buffer {
+  const body = Buffer.alloc(2);
+  body.writeUInt16LE(count, 0);
+  return body;
+}
+
+test("correlat: two commands with distinct request ids each resolve with their own reply even when replies arrive out of order", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        // Reply to request id 2 first, then request id 1 -- out of order.
+        socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 2, body: Buffer.alloc(0) }));
+        socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) }));
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const first = client.send(CommandType.Ping);
+      const second = client.send(CommandType.Ping);
+      const [firstResult, secondResult] = await Promise.all([first, second]);
+      assert.equal((firstResult as { requestId: number }).requestId, 1);
+      assert.equal((secondResult as { requestId: number }).requestId, 2);
+      await client.disconnect();
+    },
+  );
+});
+
+test("correlat: the captured checkpoint-list fixture resolves exactly once, with every interim CHECKPOINT_INFO frame accumulated into related[]", async () => {
+  const { bytes } = loadCapturedFixture("checkpoint-list");
+  await withStubNetServer(
+    (socket) => socket.on("data", () => socket.write(bytes)),
+    async (port) => {
+      const client = new ViceMonitorClient({ initialRequestId: 4 });
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.CheckpointList);
+      const list = result as { type: string; related: Array<{ type: string }>; total: number };
+      assert.equal(list.type, "checkpoint_list");
+      assert.equal(list.related.length, 2);
+      assert.ok(list.related.every((entry) => entry.type === "checkpoint_info"));
+      // The captured stream's two earlier CHECKPOINT_INFO replies (request
+      // ids 2 and 3, from the CHECKPOINT_SET calls the fixture models) were
+      // never pending under this client -- emitted as events, not folded
+      // into related[].
+      assert.equal(events.length, 2);
+      await client.disconnect();
+    },
+  );
+});
+
+test("correlat: the captured event-interleaved fixture resolves the command it contains and emits at least one event, in that order", async () => {
+  const { bytes } = loadCapturedFixture("event-interleaved");
+  await withStubNetServer(
+    (socket) => socket.on("data", () => socket.write(bytes)),
+    async (port) => {
+      const client = new ViceMonitorClient({ initialRequestId: 2 });
+      const order: string[] = [];
+      client.on("event", () => order.push("event"));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.AdvanceInstructions).then((r) => {
+        order.push("resolved");
+        return r;
+      });
+      assert.equal((result as { requestId: number }).requestId, 2);
+      assert.ok(order.filter((entry) => entry === "event").length >= 1);
+      assert.equal(order[order.length - 1], "resolved");
+      await client.disconnect();
+    },
+  );
+});
+
+test("correlat: a reply whose response type is not in the command's expected set rejects with StockResponseMismatchError naming both the expected and the received type", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        // Ping (command 0x81) expects response type 0x81, but the reply
+        // carries checkpoint_info's response type (0x11) instead.
+        socket.write(encodeResponseFrame({ responseType: 0x11, errorCode: 0x00, requestId: 1, body: checkpointInfoBody(1) }));
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await assert.rejects(client.send(CommandType.Ping), (err: unknown) => {
+        assert.ok(err instanceof StockResponseMismatchError);
+        const mismatch = err as StockResponseMismatchError;
+        assert.equal(mismatch.expected, 0x81);
+        assert.equal(mismatch.received, 0x11);
+        assert.equal(mismatch.requestId, 1);
+        return true;
+      });
+      await client.disconnect();
+    },
+  );
+});
+
+test("correlat: mintRequestId never produces VICE_BROADCAST_REQUEST_ID across 1000 consecutive mints", () => {
+  const client = new ViceMonitorClient();
+  const seen = new Set<number>();
+  for (let i = 0; i < 1000; i += 1) {
+    seen.add(client.mintRequestId());
+  }
+  assert.equal(seen.has(VICE_BROADCAST_REQUEST_ID), false);
+  assert.equal(seen.size, 1000);
+});
+
+test("correlat: mintRequestId defensively skips VICE_BROADCAST_REQUEST_ID even when seeded exactly at it", () => {
+  const client = new ViceMonitorClient({ initialRequestId: VICE_BROADCAST_REQUEST_ID });
+  const first = client.mintRequestId();
+  assert.notEqual(first, VICE_BROADCAST_REQUEST_ID);
+  assert.equal(first, 1);
+});
+
+test("correlat: mintRequestId wraps back to 1 at 0xfffffffe, never minting 0xffffffff", () => {
+  const client = new ViceMonitorClient({ initialRequestId: 0xfffffffd });
+  assert.equal(client.mintRequestId(), 0xfffffffd);
+  assert.equal(client.mintRequestId(), 0xfffffffe);
+  assert.equal(client.mintRequestId(), 1); // 0xffffffff skipped entirely
+});
+
+test("demux/event: a JAM (0x61) frame at the broadcast id is emitted as an event and does not resolve an unrelated pending PING", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        socket.write(syntheticJamFrame());
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) })), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.Ping);
+      assert.equal((result as { type: string }).type, "unknown");
+      assert.equal(events.length, 1);
+      assert.equal((events[0] as { type: string }).type, "jam");
+      await client.disconnect();
+    },
+  );
+});
+
+test("demux/event: a STOPPED (0x62) frame at the broadcast id is emitted as an event and does not resolve an unrelated pending PING", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        socket.write(
+          encodeResponseFrame({ responseType: 0x62, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: Buffer.from([0x00, 0x10]) }),
+        );
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) })), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.Ping);
+      assert.equal((result as { type: string }).type, "unknown");
+      assert.equal(events.length, 1);
+      assert.equal((events[0] as { type: string }).type, "stopped");
+      await client.disconnect();
+    },
+  );
+});
+
+test("demux/event: a RESUMED (0x63) frame at the broadcast id is emitted as an event and does not resolve an unrelated pending PING", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        socket.write(
+          encodeResponseFrame({ responseType: 0x63, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: Buffer.from([0x00, 0x10]) }),
+        );
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) })), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.Ping);
+      assert.equal((result as { type: string }).type, "unknown");
+      assert.equal(events.length, 1);
+      assert.equal((events[0] as { type: string }).type, "resumed");
+      await client.disconnect();
+    },
+  );
+});
+
+test("demux/event: a CHECKPOINT_INFO (0x11) frame at the broadcast id is emitted as an event and does not resolve a pending CHECKPOINT_GET with the wrong checkpoint's data", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        // Broadcast CHECKPOINT_INFO for a DIFFERENT checkpoint (999) -- a
+        // demux that checked response type before request id could wrongly
+        // resolve the pending CHECKPOINT_GET below with this data instead.
+        socket.write(
+          encodeResponseFrame({ responseType: 0x11, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: checkpointInfoBody(999) }),
+        );
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x11, errorCode: 0x00, requestId: 1, body: checkpointInfoBody(7) })), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.CheckpointGet, Buffer.from([7, 0, 0, 0]));
+      const checkpoint = result as { type: string; checkpoint: { id: number } };
+      assert.equal(checkpoint.type, "checkpoint_info");
+      assert.equal(checkpoint.checkpoint.id, 7); // the pending command's OWN checkpoint, not 999
+      assert.equal(events.length, 1);
+      const event = events[0] as { type: string; checkpoint: { id: number } };
+      assert.equal(event.type, "checkpoint_info");
+      assert.equal(event.checkpoint.id, 999);
+      await client.disconnect();
+    },
+  );
+});
+
+test("demux/event: a REGISTER_INFO (0x31) frame at the broadcast id is emitted as an event and does not resolve a pending REGISTERS_GET", async () => {
+  await withStubNetServer(
+    (socket) => {
+      let replied = false;
+      socket.on("data", () => {
+        if (replied) return;
+        replied = true;
+        socket.write(
+          encodeResponseFrame({ responseType: 0x31, errorCode: 0x00, requestId: VICE_BROADCAST_REQUEST_ID, body: registerInfoBody(0) }),
+        );
+        setTimeout(() => socket.write(encodeResponseFrame({ responseType: 0x31, errorCode: 0x00, requestId: 1, body: registerInfoBody(0) })), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.RegistersGet, Buffer.from([0]));
+      assert.equal((result as { type: string }).type, "registers");
+      assert.equal((result as { requestId: number }).requestId, 1);
+      assert.equal(events.length, 1);
+      assert.equal((events[0] as { type: string }).type, "registers");
+      assert.equal((events[0] as { requestId: number }).requestId, VICE_BROADCAST_REQUEST_ID);
+      await client.disconnect();
+    },
+  );
+});
+
+test("demux/event: a frame at a non-broadcast id that was never pending and is not in the settled ring is emitted as an event", async () => {
+  await withStubNetServer(
+    (socket) => socket.write(encodeResponseFrame({ responseType: 0x62, errorCode: 0x00, requestId: 42, body: Buffer.from([0x00, 0x10]) })),
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(events.length, 1);
+      assert.equal((events[0] as { requestId: number }).requestId, 42);
+      await client.disconnect();
+    },
+  );
+});
+
+test("duplicate: syntheticDuplicateReplyStream(id) resolves the pending command exactly once, increments counters.duplicateReplies by one, and emits no 'event'", async () => {
+  await withStubNetServer(
+    (socket) => socket.on("data", () => socket.write(syntheticDuplicateReplyStream(1))),
+    async (port) => {
+      const client = new ViceMonitorClient();
+      const events: unknown[] = [];
+      client.on("event", (e) => events.push(e));
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.MemoryGet, Buffer.alloc(4));
+      assert.equal((result as { type: string }).type, "memory_get");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(client.counters.duplicateReplies, 1);
+      assert.equal(events.length, 0);
+      await client.disconnect();
+    },
+  );
+});
+
+// ===========================================================================
+// Task 2 (plan 02-06): socket-lifecycle rejection distinguishable from
+// timeout (D-11).
+// ===========================================================================
+
+test("closed: a stub server that closes the connection with two commands in flight rejects both with StockConnectionClosedError, and neither rejection is a timeout error", async () => {
+  await withStubNetServer(
+    (socket) => {
+      setTimeout(() => socket.end(), 20);
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const first = client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 5000 });
+      const second = client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 5000 });
+      await assert.rejects(first, (err: unknown) => {
+        assert.ok(err instanceof StockConnectionClosedError);
+        assert.ok(!(err instanceof StockRequestTimeoutError));
+        return true;
+      });
+      await assert.rejects(second, (err: unknown) => {
+        assert.ok(err instanceof StockConnectionClosedError);
+        return true;
+      });
+    },
+  );
+});
+
+test("timeout: a stub server that accepts a command and never replies rejects it with StockRequestTimeoutError after timeoutMs, a different class from the close-path error", async () => {
+  await withStubNetServer(
+    () => {
+      /* never write anything back, never close either */
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const startedAt = Date.now();
+      await assert.rejects(client.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 100 }), (err: unknown) => {
+        assert.ok(err instanceof StockRequestTimeoutError);
+        assert.ok(!(err instanceof StockConnectionClosedError));
+        return true;
+      });
+      assert.ok(Date.now() - startedAt >= 90);
+      await client.disconnect();
+    },
+  );
+});
+
+test("died: a socket 'error' (ECONNRESET) is treated the same as a close -- every pending command rejects with the died-underneath error", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        setTimeout(() => socket.resetAndDestroy(), 10);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      let transportErrored = false;
+      client.on("transport-error", () => {
+        transportErrored = true;
+      });
+      await client.connect("127.0.0.1", port);
+      await assert.rejects(client.send(CommandType.Ping), (err: unknown) => {
+        assert.ok(err instanceof StockConnectionClosedError);
+        assert.equal((err as StockConnectionClosedError).trigger, "error");
+        return true;
+      });
+      assert.equal(transportErrored, true);
+    },
+  );
+});
+
+test("closed: after a close, a new command issued on the closed client rejects immediately with the same died-underneath error rather than hanging", async () => {
+  await withStubNetServer(
+    (socket) => {
+      setTimeout(() => socket.end(), 10);
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await new Promise((resolve) => client.on("close", resolve));
+      await assert.rejects(client.send(CommandType.Ping), (err: unknown) => {
+        assert.ok(err instanceof StockConnectionClosedError);
+        return true;
+      });
+    },
+  );
+});
+
+test("closed: the close path clears the pending map, so a late frame for the abandoned request id on the next connection resolves nothing and is merely emitted as an event", async () => {
+  await withStubNetServer(
+    (socket) => setTimeout(() => socket.end(), 10),
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const abandoned = client.send(CommandType.Ping); // mints request id 1
+      await assert.rejects(abandoned, (err: unknown) => err instanceof StockConnectionClosedError);
+
+      await withStubNetServer(
+        (socket2) => {
+          socket2.on("data", () => {
+            // A "late" frame for the OLD abandoned request id (1) -- since
+            // the pending map was cleared on close, this finds no pending
+            // entry and is merely emitted as an event, not a stale
+            // resolution of a promise nothing still references.
+            socket2.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 1, body: Buffer.alloc(0) }));
+            socket2.write(encodeResponseFrame({ responseType: 0x81, errorCode: 0x00, requestId: 2, body: Buffer.alloc(0) }));
+          });
+        },
+        async (port2) => {
+          const events: unknown[] = [];
+          client.on("event", (e) => events.push(e));
+          await client.connect("127.0.0.1", port2);
+          const result = await client.send(CommandType.Ping); // mints request id 2 -- the minter never resets
+          assert.equal((result as { requestId: number }).requestId, 2);
+          assert.equal(events.length, 1);
+          assert.equal((events[0] as { requestId: number }).requestId, 1);
+          await client.disconnect();
+        },
+      );
+    },
+  );
+});
+
+test("closed: counters survive a close and report the desync and duplicate totals accumulated during the connection", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        // One garbage byte (a desync), then a duplicate reply pair, then close.
+        socket.write(Buffer.from([0x99]));
+        socket.write(syntheticDuplicateReplyStream(1));
+        setTimeout(() => socket.end(), 20);
+      });
+    },
+    async (port) => {
+      const client = new ViceMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const result = await client.send(CommandType.MemoryGet, Buffer.alloc(4));
+      assert.equal((result as { type: string }).type, "memory_get");
+      await new Promise((resolve) => client.on("close", resolve));
+      assert.ok(client.counters.desyncBytes >= 1);
+      assert.equal(client.counters.duplicateReplies, 1);
     },
   );
 });
