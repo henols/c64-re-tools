@@ -747,6 +747,93 @@ test("reapOrphanedInstances: verifiedKill is called with expectedIdentity set to
   }
 });
 
+// ---------------------------------------------------------------------------
+// CR-04 (code review 2026-08-13): an epoch record carrying a usable pid but no
+// `vice_bin` used to be killed with `expectedIdentity: ""`, and
+// verifiedKill()'s guard was `args.includes(expectedIdentity)` -- vacuously
+// true for the empty string. Pids in epoch.json outlive reboots and are freely
+// reused, and bumpEpochForInstanceDir() itself writes back `vice_bin: ""`
+// while preserving an existing `pid`, so the broker could manufacture exactly
+// that record and SIGTERM/SIGKILL an arbitrary host process at the next start.
+// Both layers now refuse.
+// ---------------------------------------------------------------------------
+
+test("CR-04 reapOrphanedInstances: an epoch record with a live pid but no vice_bin produces killed: 0 and never invokes the kill dep", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-no-identity-"));
+  const victim = realSpawn("/bin/sleep", ["300"]);
+  const victimPid = victim.pid!;
+  try {
+    await waitFor(() => isAlive(victimPid));
+    const dir = join(stateDir, "6607");
+    mkdirSync(dir, { recursive: true });
+    // Exactly what bumpEpochForInstanceDir() writes back for a directory it
+    // could not read a vice_bin from: a preserved pid, an empty identity.
+    writeEpochRecord({
+      supervisorDir: dir,
+      record: { epoch: 1, spawned_at: new Date().toISOString(), pid: victimPid, supervisor_pid: process.pid, vice_bin: "", vice_args: [], log: "", dry_run: false },
+    });
+
+    const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+    const lines: string[] = [];
+    const result = await reapOrphanedInstances(
+      makeReapDeps(stateDir, {
+        kill: async (opts) => {
+          killCalls.push({ pid: opts.pid, expectedIdentity: opts.expectedIdentity });
+          return "sigterm";
+        },
+        log: (line) => lines.push(line),
+      }),
+    );
+
+    assert.deepEqual(killCalls, [], "a record with no recorded identity must never reach the kill dep at all");
+    assert.equal(result.killed, 0);
+    assert.equal(result.found, 0, "an unidentifiable pid is not a kill candidate, so it is not counted as found either");
+    assert.ok(isAlive(victimPid), "the unrelated process owning that recorded pid must be left alive");
+    assert.ok(
+      lines.some((l) => l.includes("6607") && /no vice_bin/i.test(l)),
+      `the skip must be logged, naming the port: ${JSON.stringify(lines)}`,
+    );
+    // The void still has to reach the directory.
+    assert.ok(existsSync(join(dir, "epoch.json")));
+  } finally {
+    killIfAlive(victimPid);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("CR-04 verifiedKill: an empty expectedIdentity is identity_refused, never a match -- a live process is not signalled", async () => {
+  const victim = realSpawn("/bin/sleep", ["300"]);
+  const victimPid = victim.pid!;
+  try {
+    await waitFor(() => isAlive(victimPid));
+    const stage = await verifiedKill({ pid: victimPid, expectedIdentity: "" });
+    assert.equal(stage, "identity_refused", '"" must never satisfy the identity guard -- "".includes is true of every argv');
+    assert.ok(isAlive(victimPid), "an empty identity must leave the process untouched");
+  } finally {
+    killIfAlive(victimPid);
+  }
+});
+
+test("CR-04 verifiedKill: an empty expectedIdentity refuses BEFORE the argv is even read, and never signals", async () => {
+  let argvReads = 0;
+  const killCalls: Array<[number, string]> = [];
+  const stage = await verifiedKill({
+    pid: 4242,
+    expectedIdentity: "",
+    deps: {
+      isAlive: () => true,
+      readProcessArgs: () => {
+        argvReads += 1;
+        return "/usr/bin/x64sc -binarymonitor";
+      },
+      kill: (pid, signal) => killCalls.push([pid, signal]),
+    },
+  });
+  assert.equal(stage, "identity_refused");
+  assert.equal(argvReads, 0, "the refusal must not depend on what the argv happens to contain");
+  assert.deepEqual(killCalls, [], "no signal may be sent for an empty identity");
+});
+
 test("reapOrphanedInstances: every in-band instance directory on disk has its epoch bumped by exactly one; an out-of-band directory is untouched", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-reap-epoch-"));
   try {

@@ -115,10 +115,11 @@ function defaultLog(line: string): void {
 /** Implements the discipline exactly as signal_recorded_pid()/
  * signal_vice_child_pid() do. An empty/null/non-positive pid, or a pid
  * already gone, returns "already_exited" without ever signalling -- "the
- * machine being gone is the goal", per the bash version's own comment. A
- * live pid whose OWN argument string does not contain expectedIdentity is
- * REFUSED -- never signalled -- and returns "identity_refused", the one
- * outcome a caller must be able to tell apart from every other stage
+ * machine being gone is the goal", per the bash version's own comment. An
+ * EMPTY expectedIdentity is REFUSED outright (CR-04 -- see the guard's own
+ * comment below), as is a live pid whose OWN argument string does not contain
+ * expectedIdentity: both return "identity_refused" without ever signalling,
+ * the one outcome a caller must be able to tell apart from every other stage
  * (possible pid reuse). Only a genuine identity match proceeds: SIGTERM,
  * poll every 200ms up to killWaitS (default VICE_BROKER_KILL_WAIT_S / 5),
  * SIGKILL on a survivor. */
@@ -134,6 +135,25 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }: Verifie
   }
   if (!isAlive(pid)) {
     return "already_exited";
+  }
+
+  // CR-04 (code review 2026-08-13): an EMPTY expectedIdentity REFUSES, it
+  // never permits. `"".includes` is vacuously satisfied by every process's
+  // argv, so the guard below was unconditionally true for the empty string --
+  // which disabled it entirely and let the caller SIGTERM (then SIGKILL)
+  // whatever process happens to own a recorded pid today. Pids in epoch.json
+  // outlive reboots and are freely reused, and bumpEpochForInstanceDir() below
+  // itself writes back `vice_bin: ""` while preserving an existing `pid`, so
+  // the broker could manufacture exactly that record and act on it at the next
+  // start. That is the same class of incident (two unrelated processes killed
+  // on a developer's host) this section's own header comment claims to have
+  // closed. No identity is not a match; it is the absence of evidence, and
+  // this function's whole purpose is to refuse without evidence.
+  if (expectedIdentity === "") {
+    process.stderr.write(
+      `vice-broker: refusing to signal pid ${pid} -- no expected identity was recorded for it, so pid reuse cannot be ruled out\n`,
+    );
+    return "identity_refused";
   }
 
   const args = readProcessArgs(pid);
@@ -550,11 +570,15 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
  * pid for, which is the exact case this seed
  * (.planning/seeds/broker-restart-reaps-and-voids.md) flags -- the void has
  * to reach instances a registry-free restart never heard of. A record that
- * DOES carry a usable pid is killed via verifiedKill() with `expectedIdentity`
- * set to THAT record's own `vice_bin` -- never a globally resolved binary
- * name -- so a live pid whose own argv does not match what THIS broker
- * itself recorded launching there is refused (`identity_refused`), exactly
- * like every other verifiedKill() call site in this module.
+ * DOES carry a usable pid AND a non-empty `vice_bin` is killed via
+ * verifiedKill() with `expectedIdentity` set to THAT record's own `vice_bin`
+ * -- never a globally resolved binary name -- so a live pid whose own argv
+ * does not match what THIS broker itself recorded launching there is refused
+ * (`identity_refused`), exactly like every other verifiedKill() call site in
+ * this module. A record carrying a usable pid but NO `vice_bin` is NOT a kill
+ * candidate at all (CR-04): it contributes nothing to `found`/`killed`, the
+ * kill dep is never invoked, and only the epoch bump runs -- an unidentifiable
+ * pid is refused, never killed on the strength of the pid alone.
  *
  * Then bumps the epoch of EVERY instance directory under `stateDir` whose
  * port falls in the band, exactly as before this revision -- including
@@ -580,10 +604,22 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
     const epochFields = readExistingEpochFieldsMaybe(options.epochPathFor(options.stateDir, port));
     const pid = epochFields?.pid;
     if (typeof pid === "number" && Number.isFinite(pid) && pid > 0) {
-      found++;
       const expectedIdentity = typeof epochFields?.vice_bin === "string" ? epochFields.vice_bin : "";
-      const stage = await kill({ pid, expectedIdentity });
-      if (stage === "sigterm" || stage === "sigkill") killed++;
+      if (expectedIdentity === "") {
+        // CR-04: a record with a usable pid but NO recorded identity is not a
+        // kill candidate at all -- it is not counted in `found` and the kill
+        // dep is never invoked. verifiedKill() refuses an empty identity too
+        // (second layer, deliberately: removing either leaves the other
+        // standing), but the reap must not even ASK, so an injected kill
+        // recorder stays empty for this case. The epoch bump below still runs:
+        // a registry-free restart must void every in-band instance directory
+        // it finds, including one it has no usable identity for.
+        log(`vice-broker: startup reap -- port ${port} records pid ${pid} but no vice_bin, so pid reuse cannot be ruled out; kill skipped, epoch still voided`);
+      } else {
+        found++;
+        const stage = await kill({ pid, expectedIdentity });
+        if (stage === "sigterm" || stage === "sigkill") killed++;
+      }
     }
 
     bumpEpochForInstanceDir(options, options.stateDir, port);
