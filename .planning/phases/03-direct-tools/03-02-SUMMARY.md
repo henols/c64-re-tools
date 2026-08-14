@@ -109,6 +109,24 @@ None beyond the deviations above.
 
 None - no external service configuration required.
 
+## Requirements Tracking Note
+
+This plan's frontmatter lists `[DIRECT-01, DIRECT-02, DIRECT-03, DIRECT-04, DIRECT-06, DIRECT-07, DIRECT-08, DIRECT-09]`
+as requirements it contributes to, and this SUMMARY's own frontmatter
+`requirements-completed` field copies that list per the summary template's
+instructions. **`.planning/REQUIREMENTS.md`'s checkboxes were deliberately
+NOT flipped to complete for these IDs.** Cross-checking the other Wave-2+
+plans in this phase (`03-06` through `03-11`) shows every one of these
+requirement IDs is also declared in at least one handler-family plan's own
+frontmatter (e.g. `03-06: [DIRECT-01, DIRECT-09]`, `03-07: [DIRECT-02,
+DIRECT-09]`, `03-08: [DIRECT-03]`, `03-09: [DIRECT-04, DIRECT-05]`) --
+this plan builds only the wire-encoding layer those handler plans consume,
+not the tools themselves, so marking `REQUIREMENTS.md` complete here would
+be inaccurate until the corresponding handler plan(s) land. (An initial
+`requirements mark-complete` invocation did flip these checkboxes; it was
+reverted via `git checkout -- .planning/REQUIREMENTS.md` before committing,
+once the overlap with later plans was confirmed.)
+
 ## Next Phase Readiness
 
 - All sixteen encoders plus `CheckpointOperation`/`ResetMode` are exported from `stock-protocol.ts` and ready for plans 03-06 through 03-11 (the four family handler modules) to import directly.
