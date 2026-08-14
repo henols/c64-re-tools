@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import {
   emitCondition,
+  parseConditionString,
   conditionFromJson,
   StockConditionError,
   type ConditionNode,
@@ -204,4 +205,101 @@ test("conditionFromJson: nesting depth over 8 refuses", () => {
     node = { kind: "and", left: node, right: node };
   }
   assert.throws(() => conditionFromJson(node), StockConditionError);
+});
+
+// ---------------------------------------------------------------------------
+// parseConditionString() -- fork-compatible string input path
+// ---------------------------------------------------------------------------
+
+const ACCEPTED_ROUND_TRIP: Array<[string, string]> = [
+  ["A == $42", "(A == $42)"],
+  ["(PC == $c000)", "(PC == $c000)"],
+  ["(RL == $64) && (CY == $14)", "((RL == $64) && (CY == $14))"],
+  ["0x42 == A", "($42 == A)"],
+];
+
+for (const [input, expected] of ACCEPTED_ROUND_TRIP) {
+  test(`parseConditionString: "${input}" emits exactly "${expected}"`, () => {
+    assert.equal(emitCondition(parseConditionString(input)), expected);
+  });
+}
+
+test("parseConditionString: refuses bare decimal literal with a message containing 'hex'", () => {
+  assert.throws(() => parseConditionString("RL == 100"), (err: unknown) => {
+    assert.ok(err instanceof StockConditionError);
+    assert.match(err.message, /hex/);
+    return true;
+  });
+});
+
+test("parseConditionString: refuses LIN with a message containing 'RL'", () => {
+  assert.throws(() => parseConditionString("LIN == $64"), (err: unknown) => {
+    assert.ok(err instanceof StockConditionError);
+    assert.match(err.message, /RL/);
+    return true;
+  });
+});
+
+test("parseConditionString: refuses lowercase register with a message containing 'A'", () => {
+  assert.throws(() => parseConditionString("a == $42"), (err: unknown) => {
+    assert.ok(err instanceof StockConditionError);
+    assert.match(err.message, /A/);
+    return true;
+  });
+});
+
+test("parseConditionString: refuses unparenthesised multi-comparison with a message containing 'precedence'", () => {
+  assert.throws(() => parseConditionString("RL == $64 && CY == $14"), (err: unknown) => {
+    assert.ok(err instanceof StockConditionError);
+    assert.match(err.message, /precedence/);
+    return true;
+  });
+});
+
+test("parseConditionString: refuses empty string with a message containing 'empty'", () => {
+  assert.throws(() => parseConditionString(""), (err: unknown) => {
+    assert.ok(err instanceof StockConditionError);
+    assert.match(err.message, /empty/);
+    return true;
+  });
+});
+
+test("parseConditionString: refuses unbalanced parentheses", () => {
+  assert.throws(() => parseConditionString("(A == $42"), StockConditionError);
+});
+
+test("parseConditionString: refuses more than 8 comparisons", () => {
+  const parts = Array.from({ length: 9 }, (_, i) => `(A == $0${i})`);
+  assert.throws(() => parseConditionString(parts.join(" && ")), StockConditionError);
+});
+
+test("parseConditionString: refuses an unrecognised token", () => {
+  assert.throws(() => parseConditionString("Q == $42"), StockConditionError);
+});
+
+// ---------------------------------------------------------------------------
+// Structural test: the string path and the object path share one emitter
+// ---------------------------------------------------------------------------
+
+test("string path and object path produce byte-identical output for the same logical condition", () => {
+  const fromString = emitCondition(parseConditionString("(RL == $64) && (CY == $14)"));
+  const fromObject = emitCondition(
+    conditionFromJson({
+      kind: "and",
+      left: {
+        kind: "comparison",
+        left: { kind: "pseudo", name: "RL" },
+        op: "==",
+        right: { kind: "literal", value: 0x64 },
+      },
+      right: {
+        kind: "comparison",
+        left: { kind: "pseudo", name: "CY" },
+        op: "==",
+        right: { kind: "literal", value: 0x14 },
+      },
+    }),
+  );
+  assert.equal(fromString, fromObject);
+  assert.equal(fromString, "((RL == $64) && (CY == $14))");
 });

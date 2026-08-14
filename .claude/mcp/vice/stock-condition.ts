@@ -392,3 +392,245 @@ function narrowConditionNode(value: unknown, path: string, depth: number, state:
 export function conditionFromJson(value: unknown): ConditionNode {
   return narrowConditionNode(value, "condition", 0, { comparisons: 0 });
 }
+
+// ---------------------------------------------------------------------------
+// parseConditionString() -- D-09's fork-compatible string input path
+// ---------------------------------------------------------------------------
+
+const HEX_DOLLAR_RE = /^\$([0-9a-fA-F]+)$/;
+const HEX_0X_RE = /^0[xX]([0-9a-fA-F]+)$/;
+const DECIMAL_RE = /^[0-9]+$/;
+// Operand tokens never contain whitespace (grammar restriction below), so a
+// plain \S+ on each side of the operator is sufficient -- no need to track
+// paren depth within a single comparison.
+const COMPARISON_RE = /^(\S+)\s*(<=|>=|==|!=|<|>)\s*(\S+)$/;
+
+/** Strips exactly one pair of parentheses that wrap the ENTIRE string (not
+ * just start with "(" and end with ")" -- "(A) && (B)" must NOT be
+ * unwrapped by this, since its first "(" closes well before the end). */
+function stripFullyWrappingParens(s: string): string {
+  if (!(s.startsWith("(") && s.endsWith(")"))) return s;
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "(") depth++;
+    else if (s[i] === ")") {
+      depth--;
+      if (depth === 0 && i !== s.length - 1) return s;
+    }
+  }
+  return s.slice(1, -1).trim();
+}
+
+function assertBalancedParens(expr: string, original: string): void {
+  let depth = 0;
+  for (const ch of expr) {
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth < 0) {
+        throw new StockConditionError(
+          `"${original}" has unbalanced parentheses -- an extra ")" appears with no matching "("`,
+        );
+      }
+    }
+  }
+  if (depth !== 0) {
+    throw new StockConditionError(
+      `"${original}" has unbalanced parentheses -- ${depth} unmatched "("`,
+    );
+  }
+}
+
+/** Finds every depth-0 occurrence of `joiner` ("&&" or "||") in `s`, so a
+ * multi-comparison expression can be split at the boundaries between its
+ * individually-parenthesised comparisons without being fooled by a "&&"
+ * that appears nested inside one of them (it cannot today, since operands
+ * never contain "&&", but the scan is depth-aware regardless -- the same
+ * discipline as never assuming a wire frame's shape without checking it). */
+function findTopLevelJoins(s: string, joiner: "&&" | "||"): number[] {
+  const positions: number[] = [];
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && s.startsWith(joiner, i)) positions.push(i);
+  }
+  return positions;
+}
+
+/** Parses a single operand token -- a register name, a pseudo-register
+ * name, or a $hex/0x literal. This is where all three of the header
+ * comment's named traps are actually caught: LIN/CYC, wrong-case names, and
+ * bare-decimal literals. Refuses with a message naming the correct form,
+ * never a bare "syntax error" (D-09). */
+function parseOperandToken(token: string): ConditionOperand {
+  const dollarMatch = HEX_DOLLAR_RE.exec(token);
+  const zeroXMatch = HEX_0X_RE.exec(token);
+  const hexMatch = dollarMatch ?? zeroXMatch;
+  if (hexMatch) {
+    return { kind: "literal", value: parseInt(hexMatch[1], 16) };
+  }
+  if (DECIMAL_RE.test(token)) {
+    // Trap (2): bare integer literals are read as HEX by default
+    // (monitor.c:1597), so "RL == 100" would silently mean line 256 --
+    // the author's intent cannot be recovered, so this refuses rather
+    // than guesses.
+    throw new StockConditionError(
+      `"${token}" is a bare decimal literal -- VICE's condition lexer reads bare integers as hex by default ` +
+        `(monitor.c:1597), so it cannot recover whether you meant decimal ${token} or hex $${token}; write ` +
+        `"$${token}" or "0x${token}" explicitly to say which one you mean`,
+      { token },
+    );
+  }
+  const upper = token.toUpperCase();
+  if (upper === "LIN" || upper === "CYC") {
+    // Trap (3): LIN/CYC lex as BANKNAME in COND_MODE and fail with error
+    // 0x8f, with no socket diagnostic.
+    throw new StockConditionError(
+      `"${token}" is not a valid pseudo-register -- use "RL" (raster line) or "CY" (cycle within line); ` +
+        `"LIN"/"CYC" lex as BANKNAME in COND_MODE and fail with error 0x8f (no socket diagnostic)`,
+      { token },
+    );
+  }
+  if (REGISTER_NAMES.includes(upper)) {
+    if (token !== upper) {
+      throw new StockConditionError(
+        `register/pseudo names must be uppercase -- use "${upper}", not "${token}"`,
+        { token },
+      );
+    }
+    return { kind: "register", name: upper as ConditionRegister };
+  }
+  if (PSEUDO_NAMES.includes(upper)) {
+    if (token !== upper) {
+      throw new StockConditionError(
+        `register/pseudo names must be uppercase -- use "${upper}", not "${token}"`,
+        { token },
+      );
+    }
+    return { kind: "pseudo", name: upper as ConditionPseudo };
+  }
+  throw new StockConditionError(
+    `"${token}" is not a recognised operand -- expected a register (${REGISTER_NAMES.join(", ")}), a ` +
+      `pseudo-register (${PSEUDO_NAMES.join(", ")}), or a $hex/0x literal`,
+    { token },
+  );
+}
+
+function parseSingleComparison(text: string, originalExpr: string): ConditionNode {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    throw new StockConditionError(`"${originalExpr}" contains an empty comparison`);
+  }
+  const unwrapped = stripFullyWrappingParens(trimmed);
+  const match = COMPARISON_RE.exec(unwrapped);
+  if (!match) {
+    throw new StockConditionError(
+      `"${originalExpr}" is not a recognised comparison -- expected "OPERAND OP OPERAND" (e.g. "A == $42"), ` +
+        `operators are ==, !=, <, >, <=, >=`,
+    );
+  }
+  const [, leftTok, op, rightTok] = match;
+  return {
+    kind: "comparison",
+    left: parseOperandToken(leftTok),
+    op: op as ConditionOp,
+    right: parseOperandToken(rightTok),
+  };
+}
+
+/**
+ * D-09's fork-compatible input path. Parses into the SAME AST
+ * conditionFromJson() produces and returns it; it never emits text itself,
+ * so emitCondition() remains the only producer of wire text.
+ *
+ * Accepted input, deliberately narrow (widening this grammar is Phase 6's
+ * GAIN-06 decision, not a maintenance liberty -- do not implement a general
+ * expression parser):
+ *   - a single comparison, with or without surrounding parentheses:
+ *     "A == $42", "(PC == $c000)", "SP <= $ff", "RL == $64"
+ *   - a conjunction/disjunction where EVERY comparison is individually
+ *     parenthesised: "(RL == $64) && (CY == $14)", "(A == $42) || (X == $01)",
+ *     and the same with outer parentheses present
+ *   - operand forms: an uppercase register name, an uppercase pseudo name,
+ *     or a $hex / 0x literal, on either side of the operator
+ *   - arbitrary internal whitespace around operators and parentheses;
+ *     leading and trailing whitespace trimmed
+ *   - operators ==, !=, <, >, <=, >=
+ *
+ * Refuses (StockConditionError, message names the offending token AND the
+ * correct form, never a bare "syntax error"): LIN/CYC anywhere; a lowercase
+ * or mixed-case register/pseudo name; a bare decimal literal; a
+ * multi-comparison expression where any comparison is not individually
+ * parenthesised (no operator precedence exists, so this would silently
+ * mis-parse); a value out of range for its operand (delegated to
+ * emitCondition()'s own range checks, same message); an empty string,
+ * unknown operator, unbalanced parentheses, more than 8 comparisons, or any
+ * token outside the grammar above.
+ */
+export function parseConditionString(expr: string): ConditionNode {
+  const trimmed = expr.trim();
+  if (trimmed === "") {
+    throw new StockConditionError(`condition string is empty -- provide at least one comparison, e.g. "A == $42"`);
+  }
+
+  assertBalancedParens(trimmed, expr);
+
+  const unwrapped = stripFullyWrappingParens(trimmed);
+
+  const andPositions = findTopLevelJoins(unwrapped, "&&");
+  const orPositions = findTopLevelJoins(unwrapped, "||");
+  if (andPositions.length > 0 && orPositions.length > 0) {
+    throw new StockConditionError(
+      `"${expr}" mixes && and || in one string -- build this as a nested structured condition object instead ` +
+        `of a mixed string`,
+    );
+  }
+
+  const joiner: "&&" | "||" | null =
+    andPositions.length > 0 ? "&&" : orPositions.length > 0 ? "||" : null;
+
+  if (joiner === null) {
+    return parseSingleComparison(unwrapped, expr);
+  }
+
+  const positions = joiner === "&&" ? andPositions : orPositions;
+  const parts: string[] = [];
+  let start = 0;
+  for (const pos of positions) {
+    parts.push(unwrapped.slice(start, pos).trim());
+    start = pos + joiner.length;
+  }
+  parts.push(unwrapped.slice(start).trim());
+
+  if (parts.length > MAX_COMPARISON_COUNT) {
+    throw new StockConditionError(
+      `"${expr}" has ${parts.length} comparisons, exceeding the maximum of ${MAX_COMPARISON_COUNT} -- refused ` +
+        `to bound the wire-frame size and the parser's own stack`,
+    );
+  }
+
+  const nodes: ConditionNode[] = parts.map((part) => {
+    const isIndividuallyParenthesised =
+      part.startsWith("(") && part.endsWith(")") && stripFullyWrappingParens(part) !== part;
+    if (!isIndividuallyParenthesised) {
+      // Trap (1): no operator precedence at all (mon_parse.y:168). An
+      // unparenthesised multi-comparison expression parses left-to-right
+      // with no boolean grouping and is always false.
+      throw new StockConditionError(
+        `"${expr}" has no operator precedence (mon_parse.y:168) -- an unparenthesised multi-comparison ` +
+          `expression parses left-to-right with no boolean grouping (the canonical trap: ` +
+          `"RL == $64 && CY == $14" parses as "(((RL==$64) && CY) == $14)", always false); parenthesise ` +
+          `every comparison individually, e.g. "(RL == $64) && (CY == $14)"`,
+      );
+    }
+    return parseSingleComparison(part, expr);
+  });
+
+  let combined: ConditionNode = nodes[0];
+  for (let i = 1; i < nodes.length; i++) {
+    combined = { kind: joiner === "&&" ? "and" : "or", left: combined, right: nodes[i] };
+  }
+  return combined;
+}
