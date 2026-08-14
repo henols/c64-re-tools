@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-13T00:00:00.000Z",
+  "generated_at": "2026-08-14T00:00:00.000Z",
   "endpoint": "stock-binary-monitor",
   "tools": [
     {
@@ -8,6 +8,777 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "backend": { "type": "string" },
+          "viceVersion": { "type": "string" },
+          "resolvedBinaryPath": { "type": "string" },
+          "resolvedBinaryPathIsResolved": { "type": "boolean" },
+          "capabilities": { "type": "object" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["status", "backend", "viceVersion", "resolvedBinaryPath", "resolvedBinaryPathIsResolved", "capabilities", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_read",
+      "description": "Read a memory range (with optional bank selection). On stock this halts the machine (D-05); the answer's runState reports it. sideEffects defaults to false (DIRECT-01) -- side-effect-reading registers like $D019 requires opting in explicitly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "size": {
+            "type": "number",
+            "description": "Bytes to read (1-65535)"
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: Memory bank name (e.g., 'ram' to read RAM under ROM). Use vice_memory_banks to list available banks."
+          },
+          "encoding": {
+            "type": "string",
+            "description": "Optional: 'array' for legacy per-byte hex strings, or 'hex' for one compact hex string."
+          },
+          "sideEffects": {
+            "type": "boolean",
+            "description": "Stock-only, optional, default false: whether the read is permitted to have side effects (e.g. reading $D019 clears pending VIC-II IRQ flags). Defaults to side-effect-free."
+          }
+        },
+        "required": ["address", "size"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "number" },
+          "size": { "type": "number" },
+          "encoding": { "type": "string" },
+          "sideEffects": { "type": "boolean" },
+          "bank": {},
+          "memspace": { "type": "string" },
+          "hex": { "type": "string" },
+          "bytes": { "type": "array", "items": { "type": "number" } },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["address", "size", "encoding", "sideEffects", "bank", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_write",
+      "description": "Write to memory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "data": {
+            "type": "array",
+            "description": "Bytes to write (0-255 each)",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": ["address", "data"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "number" },
+          "bytesWritten": { "type": "number" },
+          "bank": {},
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["address", "bytesWritten", "bank", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_banks",
+      "description": "List available memory banks",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "banks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "name": { "type": "string" }
+              },
+              "required": ["id", "name"]
+            }
+          },
+          "count": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["banks", "count", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_get",
+      "description": "Get CPU registers",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": { "type": "object" },
+          "unknownIds": { "type": "array" },
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["registers", "unknownIds", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_set",
+      "description": "Set CPU register value",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "register": {
+            "type": "string",
+            "description": "Register name: PC|A|X|Y|SP|N|V|B|D|I|Z|C"
+          },
+          "value": {
+            "type": "number",
+            "description": "Register value"
+          }
+        },
+        "required": ["register", "value"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "register": { "type": "string" },
+          "id": { "type": "number" },
+          "requestedValue": { "type": "number" },
+          "observedValue": {},
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["register", "id", "requestedValue", "observedValue", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_available",
+      "description": "Stock-only, no fork counterpart -- the fork surface has no register-enumeration tool. Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name and byte size.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "name": { "type": "string" },
+                "size": { "type": "number" }
+              },
+              "required": ["id", "name", "size"]
+            }
+          },
+          "count": { "type": "number" },
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["registers", "count", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_pause",
+      "description": "Pause execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "sent": { "type": "boolean" },
+          "alreadyStopped": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "sent", "alreadyStopped", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_run",
+      "description": "Resume execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "sent": { "type": "boolean" },
+          "alreadyRunning": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "sent", "alreadyRunning", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_step",
+      "description": "Step one or more instructions. Refuses while runState is \"unknown\" (D-07) -- call vice_execution_pause or vice_execution_run first to establish a known state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Number of instructions to step"
+          },
+          "stepOver": {
+            "type": "boolean",
+            "description": "Step over subroutines"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "count": { "type": "number" },
+          "stepOver": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "programCounter": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "count", "stepOver", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_until_return",
+      "description": "Stock-only, no fork counterpart. Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "stateBefore": { "type": "string" },
+          "programCounter": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_checkpoint_add",
+      "description": "Add checkpoint/breakpoint. stop:false requires acknowledgeTraceRisk:true -- a non-stopping checkpoint emits a CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop and can stall the emulator on a hot address (D-11). No condition property here -- D-12 keeps the fork's add-then-vice_checkpoint_set_condition split.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start address: number, hex string ($1000), or symbol name"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address: number, hex, or symbol (optional, default=start)"
+          },
+          "stop": {
+            "type": "boolean",
+            "description": "Stop execution when hit (default=true)"
+          },
+          "load": {
+            "type": "boolean",
+            "description": "Break on memory read (default=false)"
+          },
+          "store": {
+            "type": "boolean",
+            "description": "Break on memory write (default=false)"
+          },
+          "exec": {
+            "type": "boolean",
+            "description": "Break on execution (default=true)"
+          },
+          "acknowledgeTraceRisk": {
+            "type": "boolean",
+            "description": "Stock-only, optional, default false: required (set true) when stop:false -- a non-stopping checkpoint emits one CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop, over the blocking monitor socket, and can stall the emulator on a hot address. The client rate-limits hits per second and auto-disables the checkpoint if the limit is exceeded."
+          }
+        },
+        "required": ["start"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "number" },
+          "start": { "type": "number" },
+          "end": { "type": "number" },
+          "stop": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "operation": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "number" },
+              "flags": { "type": "array", "items": { "type": "string" } },
+              "defaulted": { "type": "boolean" }
+            },
+            "required": ["value", "flags", "defaulted"]
+          },
+          "temporary": { "type": "boolean" },
+          "hitCount": { "type": "number" },
+          "ignoreCount": { "type": "number" },
+          "hasCondition": { "type": "boolean" },
+          "traceMode": { "type": "boolean" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["id", "start", "end", "stop", "enabled", "operation", "temporary", "hitCount", "ignoreCount", "hasCondition", "traceMode", "runState"]
+      }
+    },
+    {
+      "name": "vice_checkpoint_delete",
+      "description": "Delete checkpoint",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number to delete"
+          }
+        },
+        "required": ["checkpoint_num"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpointNum": { "type": "number" },
+          "deleted": { "type": "boolean" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["checkpointNum", "deleted", "runState"]
+      }
+    },
+    {
+      "name": "vice_checkpoint_list",
+      "description": "List all checkpoints",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "start": { "type": "number" },
+                "end": { "type": "number" },
+                "stop": { "type": "boolean" },
+                "enabled": { "type": "boolean" },
+                "operation": { "type": "object" },
+                "temporary": { "type": "boolean" },
+                "hitCount": { "type": "number" },
+                "ignoreCount": { "type": "number" },
+                "hasCondition": { "type": "boolean" },
+                "traceMode": { "type": "boolean" },
+                "condition": {},
+                "conditionTextKnown": { "type": "boolean" },
+                "conditionNote": { "type": "string" },
+                "autoDisabled": { "type": "object" }
+              },
+              "required": ["id", "start", "end", "stop", "enabled", "operation", "temporary", "hitCount", "ignoreCount", "hasCondition", "traceMode", "conditionTextKnown"]
+            }
+          },
+          "totalReported": { "type": "number" },
+          "entriesReceived": { "type": "number" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["checkpoints", "totalReported", "entriesReceived", "runState"]
+      }
+    },
+    {
+      "name": "vice_checkpoint_toggle",
+      "description": "Enable/disable checkpoint",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable (true) or disable (false)"
+          }
+        },
+        "required": ["checkpoint_num", "enabled"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpointNum": { "type": "number" },
+          "enabled": { "type": "boolean" },
+          "autoDisableCleared": { "type": "boolean" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["checkpointNum", "enabled", "runState"]
+      }
+    },
+    {
+      "name": "vice_checkpoint_set_condition",
+      "description": "Set checkpoint condition. Stock accepts EITHER a condition string (e.g. 'A == $42', using pseudo-registers RL/CY where relevant) OR a structured condition object with a 'kind' discriminator field -- see stock-condition.ts. Conditions are immutable once set: stock VICE cannot clear or replace one, so re-setting an existing checkpoint's condition is refused.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpoint_num": {
+            "type": "number",
+            "description": "Checkpoint number"
+          },
+          "condition": {
+            "description": "EITHER a condition expression string (e.g. 'A == $42') OR a structured condition object with a 'kind' discriminator field. This is the one inputSchema property in this manifest that deliberately omits \"type\" rather than contradicting the fork's own \"type\": \"string\" declaration -- the checker's supported subset has no union keyword (no oneOf/anyOf) to express \"string or object\"."
+          }
+        },
+        "required": ["checkpoint_num", "condition"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "checkpointNum": { "type": "number" },
+          "condition": { "type": "string" },
+          "immutable": { "type": "boolean" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["checkpointNum", "condition", "immutable", "runState"]
+      }
+    },
+    {
+      "name": "vice_watch_add",
+      "description": "Add memory watchpoint with optional condition (shorthand for checkpoint with store/load). stop:false requires acknowledgeTraceRisk:true, identically to vice_checkpoint_add (D-11).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "size": {
+            "type": "number",
+            "description": "Number of bytes to watch (default: 1)"
+          },
+          "type": {
+            "type": "string",
+            "description": "Watch type: 'read', 'write', or 'both' (default: 'write')"
+          },
+          "condition": {
+            "type": "string",
+            "description": "Condition expression for conditional watchpoint. Supported: 'A == $xx', 'X == $xx', 'Y == $xx', 'PC == $xxxx', 'SP == $xx'. For store watches, condition is evaluated after the store completes."
+          },
+          "stop": {
+            "type": "boolean",
+            "description": "Stock-only, optional, default true: stop execution when hit. Set false (with acknowledgeTraceRisk:true) for a non-stopping trace watchpoint."
+          },
+          "acknowledgeTraceRisk": {
+            "type": "boolean",
+            "description": "Stock-only, optional, default false: required (set true) when stop:false, identically to vice_checkpoint_add's acknowledgeTraceRisk."
+          }
+        },
+        "required": ["address"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "number" },
+          "start": { "type": "number" },
+          "end": { "type": "number" },
+          "watchType": { "type": "string" },
+          "size": { "type": "number" },
+          "operation": { "type": "object" },
+          "stop": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "condition": {},
+          "hitCount": { "type": "number" },
+          "hasCondition": { "type": "boolean" },
+          "traceMode": { "type": "boolean" },
+          "autoDisables": { "type": "array" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["id", "start", "end", "watchType", "size", "operation", "stop", "enabled", "condition", "hitCount", "hasCondition", "traceMode", "runState"]
+      }
+    },
+    {
+      "name": "vice_machine_reset",
+      "description": "Reset the machine (soft or hard reset). run_after defaults to false on stock (the fork defaults it true) -- D-05 forbids resuming a machine nobody asked to resume; pass run_after:true to resume explicitly after the reset.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "Reset mode: 'soft' (CPU reset, default) or 'hard' (power cycle)"
+          },
+          "run_after": {
+            "type": "boolean",
+            "description": "Stock default is FALSE (diverges from the fork's default of true) -- resume execution after reset only if explicitly requested (D-05)."
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": { "type": "string" },
+          "runAfter": { "type": "boolean" },
+          "resumed": { "type": "boolean" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["mode", "runAfter", "resumed", "runState"]
+      }
+    },
+    {
+      "name": "vice_autostart",
+      "description": "Autostart a PRG or disk image. On stock, program (load-by-name) is refused -- AUTOSTART supports only a numeric index field and has no load-by-name field; use index to select a program by position instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to PRG file or disk image (.d64, .g64, .prg)"
+          },
+          "program": {
+            "type": "string",
+            "description": "Refused on stock: AUTOSTART has no load-by-name field. Use index instead."
+          },
+          "run": {
+            "type": "boolean",
+            "description": "Run after loading (default: true)"
+          },
+          "index": {
+            "type": "number",
+            "description": "Program index on disk, 0-based (default: 0)"
+          }
+        },
+        "required": ["path"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "sentPath": { "type": "string" },
+          "run": { "type": "boolean" },
+          "index": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["path", "sentPath", "run", "index", "runState"]
+      }
+    },
+    {
+      "name": "vice_disk_attach",
+      "description": "Attach disk image to drive. Only unit 8 is reachable on stock -- AUTOSTART (the only wire route to attaching an image) has no drive-unit field, so units 9-11 are refused rather than silently retargeted to unit 8 (D-14). The attach is AUTOSTART with the run flag clear.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "number",
+            "description": "Drive unit (8-11). Only unit 8 is reachable on stock; units 9-11 are refused."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to disk image (.d64, .g64, etc)"
+          }
+        },
+        "required": ["unit", "path"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "unit": { "type": "number" },
+          "path": { "type": "string" },
+          "sentPath": { "type": "string" },
+          "approximation": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["unit", "path", "sentPath", "approximation", "runState"]
+      }
+    },
+    {
+      "name": "vice_snapshot_save",
+      "description": "Save complete emulator state to a named snapshot (DUMP). Use this to capture a debugging checkpoint that can be restored later with vice_snapshot_load. A JSON metadata sidecar is written alongside the snapshot as this client's own bookkeeping.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique name for this snapshot (alphanumeric, underscore, hyphen only). Choose descriptive names like 'before_crash' or 'level3_boss_fight'."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what state this snapshot captures."
+          },
+          "include_roms": {
+            "type": "boolean",
+            "description": "Include ROM images in snapshot (default: false)."
+          },
+          "include_disks": {
+            "type": "boolean",
+            "description": "Include disk drive state in snapshot (default: false)."
+          }
+        },
+        "required": ["name"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "sentPath": { "type": "string" },
+          "includeRoms": { "type": "boolean" },
+          "includeDisks": { "type": "boolean" },
+          "metadataWritten": { "type": "boolean" },
+          "metadataFailureReason": { "type": "string" },
+          "metadataPath": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["name", "path", "sentPath", "includeRoms", "includeDisks", "metadataWritten", "metadataPath", "runState"]
+      }
+    },
+    {
+      "name": "vice_snapshot_load",
+      "description": "Restore emulator state from a previously saved snapshot (UNDUMP). A missing snapshot refuses, naming the available snapshots found on disk (D-16 removed the separate enumeration tool).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the snapshot to load. Must match the name previously given to vice_snapshot_save."
+          }
+        },
+        "required": ["name"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "sentPath": { "type": "string" },
+          "programCounter": {},
+          "metadata": {},
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["name", "path", "sentPath", "programCounter", "metadata", "runState"]
+      }
+    },
+    {
+      "name": "vice_keyboard_type",
+      "description": "Type text (uppercase ASCII displays as uppercase on C64 by default). Bytes queue in the keyboard buffer of a now-halted machine (D-05) -- nothing consumes them until the agent explicitly resumes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to type (converts to PETSCII). Use \\n for Return."
+          },
+          "petscii_upper": {
+            "type": "boolean",
+            "description": "Default true: uppercase ASCII displays as uppercase on C64. Set false for raw PETSCII (uppercase ASCII maps to graphics)"
+          }
+        },
+        "required": ["text"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "petsciiUpper": { "type": "boolean" },
+          "byteCount": { "type": "number" },
+          "petsciiHex": { "type": "string" },
+          "note": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["text", "petsciiUpper", "byteCount", "petsciiHex", "note", "runState"]
+      }
+    },
+    {
+      "name": "vice_keyboard_petscii",
+      "description": "Feed exact PETSCII bytes into the KERNAL keyboard buffer",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "Exact PETSCII bytes to feed to the KERNAL keyboard buffer (1-255 each; 13 is Return)",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": ["data"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "byteCount": { "type": "number" },
+          "petsciiHex": { "type": "string" },
+          "note": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["byteCount", "petsciiHex", "note", "runState"]
+      }
+    },
+    {
+      "name": "vice_joystick_set",
+      "description": "Set joystick state. vice_joystick_tap is absent on stock: a tap needs the machine to run for a measured interval, which requires an unrequested resume (forbidden by D-05) plus a timing route stock does not have until Phase 7.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "number",
+            "description": "Joystick port 1 or 2 (default=1)"
+          },
+          "direction": {
+            "type": "string",
+            "description": "Direction: up, down, left, right, center, or array for diagonals"
+          },
+          "fire": {
+            "type": "boolean",
+            "description": "Fire button state (default=false)"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "port": { "type": "number" },
+          "directions": { "type": "array", "items": { "type": "string" } },
+          "fire": { "type": "boolean" },
+          "value": { "type": "number" },
+          "valueBits": { "type": "array", "items": { "type": "string" } },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["port", "directions", "fire", "value", "valueBits", "runState"]
       }
     }
   ]
