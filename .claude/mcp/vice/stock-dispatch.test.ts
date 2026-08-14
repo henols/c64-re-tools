@@ -68,6 +68,17 @@ function readManifest(path: string): Manifest {
 // never a silently loosened "every stock name needs a fork match" assertion.
 const STOCK_ONLY_TOOLS = new Set(["vice_execution_until_return", "vice_registers_available"]);
 
+// D-09/plan 03-13: the ONE inputSchema property permitted to omit "type"
+// entirely rather than matching the fork's declared type. The fork types
+// vice_checkpoint_set_condition's `condition` as a bare string; stock accepts
+// EITHER a condition string OR a structured condition object (D-09), which
+// checkAgainstSchema()'s supported subset cannot express as a union (no
+// oneOf/anyOf) -- so this one property deliberately has no "type" keyword at
+// all (see tools-manifest.stock.json's own entry and its description). A
+// second entry here would need the same D-09-style justification, never a
+// silent widening of the general type-equality rule below.
+const TYPE_CHECK_EXEMPT_PROPERTIES = new Set(["vice_checkpoint_set_condition.condition"]);
+
 // --------------------------------------------------------- manifestPathForBackend
 
 test("manifest/backend: fork with no override resolves to <hereDir>/tools-manifest.json", () => {
@@ -156,6 +167,9 @@ test("manifest/backend (D-03 input compatibility): every stock/fork pair has equ
     for (const [propName, forkProp] of Object.entries(forkProperties)) {
       const stockProp = stockProperties[propName];
       assert.ok(stockProp, `"${tool.name}.${propName}": the fork declares this property, but stock does not`);
+      if (TYPE_CHECK_EXEMPT_PROPERTIES.has(`${tool.name}.${propName}`)) {
+        continue; // D-09: this property deliberately omits "type" -- see the named exemption set above
+      }
       assert.equal(stockProp!.type, forkProp.type, `"${tool.name}.${propName}": type differs between backends`);
     }
     // Any property stock declares that the fork does not is an EXTRA -- D-03
@@ -210,19 +224,39 @@ test("manifest/backend: every outputSchema itself uses only checkAgainstSchema's
   const stock = readManifest(STOCK_MANIFEST_PATH);
   for (const tool of stock.tools) {
     if (!tool.outputSchema) continue; // covered by the presence test above
-    const properties = tool.outputSchema.properties ?? {};
-    const instance: Record<string, unknown> = {};
-    for (const [propName, propSchema] of Object.entries(properties)) {
-      if (propName === "runState") {
-        instance[propName] = "unknown";
-      } else {
-        instance[propName] = placeholderFor(propSchema.type);
-      }
-    }
+    const instance = buildSyntheticInstance(tool.outputSchema);
     const violations = checkAgainstSchema(instance, tool.outputSchema);
     assert.deepEqual(violations, [], `"${tool.name}"'s outputSchema rejects its own synthetic instance: ${JSON.stringify(violations)}`);
   }
 });
+
+/**
+ * Recursively builds a placeholder instance satisfying `schema`'s own
+ * declared shape -- object properties are populated one level (or more)
+ * deep by recursing into each property's OWN sub-schema, rather than a
+ * single flat `placeholderFor(type)` pass. A shallow, single-level
+ * placeholder (this test's original 03-12 shape) is not enough once an
+ * outputSchema entry nests a `required` object inside a `properties` object
+ * (e.g. vice_checkpoint_add's `operation` field) -- an empty `{}` placeholder
+ * for that nested object trips its own `required` check. Arrays are left
+ * empty deliberately: checkAgainstSchema()'s `items` check iterates the
+ * array's own elements, so an empty array can never violate an `items`
+ * sub-schema.
+ */
+function buildSyntheticInstance(schema: { type?: string; properties?: Record<string, { type?: string; properties?: Record<string, unknown>; enum?: unknown[] }>; enum?: unknown[] } | undefined): unknown {
+  if (!schema || typeof schema !== "object") return null;
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
+  if (schema.type === "object") {
+    const properties = schema.properties ?? {};
+    const instance: Record<string, unknown> = {};
+    for (const [propName, propSchema] of Object.entries(properties)) {
+      instance[propName] = buildSyntheticInstance(propSchema as typeof schema);
+    }
+    return instance;
+  }
+  if (schema.type === "array") return [];
+  return placeholderFor(schema.type);
+}
 
 function placeholderFor(type: string | undefined): unknown {
   switch (type) {
