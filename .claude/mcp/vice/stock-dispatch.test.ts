@@ -31,15 +31,24 @@ import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockSessionHandler } from "./stock-handler.ts";
+import { checkAgainstSchema } from "./stock-schema-check.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
 const STOCK_MANIFEST_PATH = join(HERE, "tools-manifest.stock.json");
 
+interface JsonSchemaObject {
+  type?: string;
+  properties?: Record<string, { type?: string } & Record<string, unknown>>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+
 interface ManifestToolEntry {
   name: string;
   description?: string;
-  inputSchema?: unknown;
+  inputSchema?: JsonSchemaObject;
+  outputSchema?: JsonSchemaObject;
 }
 
 interface Manifest {
@@ -51,6 +60,13 @@ interface Manifest {
 function readManifest(path: string): Manifest {
   return JSON.parse(readFileSync(path, "utf8"));
 }
+
+// D-03/Task 3 (plan 03-12): the two backends' advertised tool lists are
+// genuinely different, permanently (Phase 2 D-07) -- these are the ONLY
+// names permitted to exist on the stock manifest with no fork counterpart.
+// A future stock-only addition is a deliberate edit to this named list,
+// never a silently loosened "every stock name needs a fork match" assertion.
+const STOCK_ONLY_TOOLS = new Set(["vice_execution_until_return", "vice_registers_available"]);
 
 // --------------------------------------------------------- manifestPathForBackend
 
@@ -88,13 +104,166 @@ test("manifest/backend: tools-manifest.stock.json's tools array contains a vice_
   assert.ok(stock.tools.some((t) => t.name === "vice_ping"), "expected a vice_ping entry in the stock manifest");
 });
 
-test("manifest/backend: every stock tool name also exists in the fork manifest with an identical inputSchema", () => {
+// ---------------------------------------------------------------------------
+// Task 3 (plan 03-12): the manifest contract, reworked. The old "every stock
+// tool name also exists in the fork manifest with an IDENTICAL inputSchema"
+// test failed by construction the moment stock adds a stock-only tool or a
+// stock-only OPTIONAL argument (D-03) -- replaced by a compatibility test
+// (fork-required arguments must still be satisfiable, extras must be
+// optional) plus a named, explicit stock-only allow-list (STOCK_ONLY_TOOLS,
+// above).
+//
+// NOTE (handoff to plan 03-13): tools-manifest.stock.json today carries only
+// the vice_ping entry -- this plan (03-12) owns STOCK_DISPATCH_TABLE, never
+// the manifest file. Every test below that iterates the STOCK MANIFEST'S OWN
+// tools array is therefore only as complete as that file is; the 24 Phase 3
+// entries plan 03-13 adds are what make these assertions exercise the full
+// surface. Where a test below fails ONLY because a manifest entry does not
+// exist yet (not because of a real defect in this plan's own dispatch-table
+// wiring), the failure is recorded verbatim in this plan's SUMMARY as the
+// handoff to 03-13, per this plan's own verification section.
+// ---------------------------------------------------------------------------
+
+test("manifest/backend (D-03 name coverage): every non-stock-only stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const fork = readManifest(FORK_MANIFEST_PATH);
+  const forkNames = new Set(fork.tools.map((t) => t.name));
+  for (const tool of stock.tools) {
+    if (STOCK_ONLY_TOOLS.has(tool.name)) {
+      assert.ok(!forkNames.has(tool.name), `"${tool.name}" is in STOCK_ONLY_TOOLS but ALSO exists on the fork manifest -- it is not actually stock-only`);
+    } else {
+      assert.ok(forkNames.has(tool.name), `stock tool "${tool.name}" has no counterpart in the fork manifest, and is not in STOCK_ONLY_TOOLS`);
+    }
+  }
+  for (const name of STOCK_ONLY_TOOLS) {
+    assert.ok(stock.tools.some((t) => t.name === name), `STOCK_ONLY_TOOLS name "${name}" must be present in the stock manifest`);
+  }
+});
+
+test("manifest/backend (D-03 input compatibility): every stock/fork pair has equal required-argument SETS, and stock's extra properties are all optional on the fork side", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const fork = readManifest(FORK_MANIFEST_PATH);
   for (const tool of stock.tools) {
+    if (STOCK_ONLY_TOOLS.has(tool.name)) continue;
     const match = fork.tools.find((t) => t.name === tool.name);
-    assert.ok(match, `stock tool "${tool.name}" has no counterpart in the fork manifest`);
-    assert.deepEqual(tool.inputSchema, match!.inputSchema, `"${tool.name}" inputSchema differs between backends`);
+    if (!match) continue; // covered by the name-coverage test above
+    const stockRequired = new Set(tool.inputSchema?.required ?? []);
+    const forkRequired = new Set(match.inputSchema?.required ?? []);
+    assert.deepEqual(stockRequired, forkRequired, `"${tool.name}": required-argument sets differ between backends`);
+
+    const forkProperties = match.inputSchema?.properties ?? {};
+    const stockProperties = tool.inputSchema?.properties ?? {};
+    for (const [propName, forkProp] of Object.entries(forkProperties)) {
+      const stockProp = stockProperties[propName];
+      assert.ok(stockProp, `"${tool.name}.${propName}": the fork declares this property, but stock does not`);
+      assert.equal(stockProp!.type, forkProp.type, `"${tool.name}.${propName}": type differs between backends`);
+    }
+    // Any property stock declares that the fork does not is an EXTRA -- D-03
+    // permits this only when the extra is genuinely optional on stock's own
+    // side (never in stock's own required list, checked above already since
+    // the required SETS are asserted equal).
+    for (const propName of Object.keys(stockProperties)) {
+      if (!(propName in forkProperties)) {
+        assert.ok(!stockRequired.has(propName), `"${tool.name}.${propName}": a stock-only extra property must not be required`);
+      }
+    }
+  }
+});
+
+test("manifest/backend (bidirectional table/manifest agreement): every stock manifest entry has a dispatch handler, and every dispatch entry has a manifest entry", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    assert.equal(typeof stockHandlerFor(tool.name), "function", `stock manifest advertises "${tool.name}" but STOCK_DISPATCH_TABLE has no handler for it`);
+  }
+  const stockNames = new Set(stock.tools.map((t) => t.name));
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.ok(stockNames.has(name), `STOCK_DISPATCH_TABLE registers "${name}" but the stock manifest has no entry for it`);
+  }
+});
+
+test("manifest/backend (D-02 outputSchema presence): every stock manifest entry declares an outputSchema whose type is \"object\"", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    assert.ok(tool.outputSchema, `"${tool.name}" has no outputSchema at all`);
+    assert.equal(tool.outputSchema!.type, "object", `"${tool.name}"'s outputSchema.type must be "object"`);
+  }
+});
+
+test("manifest/backend (D-06 runState enum): every stock entry's outputSchema declares a required runState enum of [\"running\",\"stopped\",\"unknown\"]", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    const runState = tool.outputSchema?.properties?.runState as { type?: string; enum?: unknown[] } | undefined;
+    assert.ok(runState, `"${tool.name}"'s outputSchema has no properties.runState`);
+    assert.equal(runState!.type, "string", `"${tool.name}"'s runState property must be type "string"`);
+    assert.deepEqual(runState!.enum, ["running", "stopped", "unknown"], `"${tool.name}"'s runState enum must be exactly ["running","stopped","unknown"]`);
+    assert.ok(tool.outputSchema?.required?.includes("runState"), `"${tool.name}"'s outputSchema.required must include "runState"`);
+  }
+});
+
+test("manifest/backend: every outputSchema itself uses only checkAgainstSchema's supported keyword subset", () => {
+  // Verified by running checkAgainstSchema() over a small synthetic instance
+  // built from each entry's OWN declared shape (a runState of "unknown" plus
+  // a placeholder for every other declared property), rather than asserting
+  // on the schema's raw keys a second time -- this also doubles as a
+  // structural smoke test that checkAgainstSchema() itself does not choke on
+  // any real manifest entry.
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    if (!tool.outputSchema) continue; // covered by the presence test above
+    const properties = tool.outputSchema.properties ?? {};
+    const instance: Record<string, unknown> = {};
+    for (const [propName, propSchema] of Object.entries(properties)) {
+      if (propName === "runState") {
+        instance[propName] = "unknown";
+      } else {
+        instance[propName] = placeholderFor(propSchema.type);
+      }
+    }
+    const violations = checkAgainstSchema(instance, tool.outputSchema);
+    assert.deepEqual(violations, [], `"${tool.name}"'s outputSchema rejects its own synthetic instance: ${JSON.stringify(violations)}`);
+  }
+});
+
+function placeholderFor(type: string | undefined): unknown {
+  switch (type) {
+    case "string":
+      return "placeholder";
+    case "number":
+    case "integer":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    default:
+      return null;
+  }
+}
+
+// The twelve tool names this phase's own planner decisions trim -- each
+// entry names the decision id responsible, so a future re-addition is a
+// deliberate edit rather than a silent regression.
+const TRIMMED_TOOL_DECISIONS: Array<[string, string]> = [
+  ["vice_checkpoint_set_ignore_count", "D-15"],
+  ["vice_snapshot_list", "D-16"],
+  ["vice_disk_detach", "D-13"],
+  ["vice_joystick_tap", "needs a resume plus Phase 7's timing route"],
+  ["vice_disk_read_sector", "Phase 5"],
+  ["vice_sid_get_state", "hard loss -- SID is write-only in hardware"],
+  ["vice_key_press", "hard loss -- low-level keyboard family"],
+  ["vice_key_release", "hard loss -- low-level keyboard family"],
+  ["vice_keyboard_matrix", "hard loss -- low-level keyboard family"],
+  ["vice_keyboard_chord", "hard loss -- low-level keyboard family"],
+  ["vice_machine_config_get", "Phase 6"],
+  ["vice_machine_config_set", "Phase 6"],
+];
+
+test("manifest/backend (trimmed tools absent): none of the twelve decision-trimmed tools appears in tools-manifest.stock.json", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const [name, decisionId] of TRIMMED_TOOL_DECISIONS) {
+    assert.ok(!stock.tools.some((t) => t.name === name), `"${name}" must not appear in the stock manifest (${decisionId})`);
   }
 });
 
