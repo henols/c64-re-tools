@@ -663,14 +663,19 @@ emitCondition(node); // => "(RL == $64) && (CY == $14)" -- never "RL == $64 && C
 
 **Confirming this table is non-empty:** several claims in this document ARE user-confirmation candidates for `/gsd-discuss-phase` follow-up, chiefly A2/A3 (exact opcode behaviour never probed against a real binary in this session) and the AUTOSTART unit-field finding (which is `[CITED]`/HIGH confidence as a documentation fact but changes DIRECT-06's effective scope and may warrant an explicit user decision on unit-8-only vs. Phase-6 deferral).
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Both questions were settled during planning on 2026-08-14. Resolutions are
+recorded inline below and implemented in the named plans.
 
 1. **Should `vice_disk_attach` on stock be scoped to unit 8 only in Phase 3, or should multi-unit attach be deferred to Phase 6 entirely?**
+   - **RESOLVED (plan 03-10):** unit-8-only in Phase 3. The fork's `unit` argument shape is kept (D-03), unit 8 is honoured, and units 9–11 **refuse** with text naming `AUTOSTART`'s missing drive-unit field — never a silent no-op and never a silent retarget to unit 8, which would have an agent debugging the wrong drive. Recorded in `docs/stock-vice-parity.md` alongside D-14's approximation note by plan 03-05 task 2. Revisit if Phase 7's text-monitor work turns up a route to units 9–11.
    - What we know: `AUTOSTART` has no unit-selection field at all (confirmed against the official VICE manual this session); `RESOURCE_SET` is not documented as an attach mechanism either.
    - What's unclear: whether some other VICE mechanism (a resource name this research didn't surface, or a text-monitor `attach` command usable once Phase 7's text client exists) could reach units 9-11 at all, ever, without relaunching the instance.
    - Recommendation: scope Phase 3's `vice_disk_attach` to unit 8, refuse 9-11 explicitly with text naming this exact limitation, and record it in `docs/stock-vice-parity.md` alongside D-14's existing approximation note; revisit if Phase 7's text-monitor work turns up a route.
 
 2. **Where should the two new stock-only tool names land** (`EXECUTE_UNTIL_RETURN`'s tool name, and `REGISTERS_AVAILABLE`'s surface) **relative to the fork's naming conventions, for future parity-harness legibility (Phase 8, VERIF-03)?**
+   - **RESOLVED (plans 03-09 and 03-07):** `EXECUTE_UNTIL_RETURN` (0x73) becomes the stock-only tool `vice_execution_until_return` (plan 03-09) — it follows the existing `vice_execution_*` convention and reads as the operation, whereas `vice_execution_return` could be misread as "return from the tool". `REGISTERS_AVAILABLE` (0x83) becomes its own stock-only tool `vice_registers_available` (plan 03-07), **not** a field on `vice_registers_get`: enumeration and value-reading are different operations with different callers, and a fork-parity caller expects `registers_get` to keep returning values only. No `stockOnly:` manifest marker is added now — Phase 8 can add one later without renaming anything.
    - What we know: CONTEXT.md explicitly hands this naming decision to the planner; this research recommends `vice_execution_return`/`vice_execution_until_return` and a new `vice_registers_available` tool (not a field on `vice_registers_get`).
    - What's unclear: whether Phase 8's parity harness will want a naming convention that signals "stock-only, no fork counterpart" more visibly (e.g. a documented naming prefix or a manifest-level `stockOnly: true` flag) versus just relying on the tool being absent from the fork manifest.
    - Recommendation: use plain, convention-matching names now; Phase 8 can add a manifest-level marker later without renaming anything, since D-02's `outputSchema` addition already shows the manifest schema tolerates new optional fields.
