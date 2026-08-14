@@ -342,6 +342,29 @@ export class StockRequestTimeoutError extends ViceError {
   }
 }
 
+export interface StockEncodingErrorOptions {
+  field?: string;
+}
+
+/**
+ * Raised by the Phase 3 request-body encoders below (never by the
+ * parsing/demux seam above) for a caller-supplied argument that cannot be
+ * safely turned into wire bytes -- an out-of-range address, a memspace byte
+ * outside 0x00-0x04, a variable-length field whose declared size would
+ * disagree with its actual payload, or similar. Always thrown BEFORE any
+ * bytes are written, never after a partially-built Buffer -- see each
+ * encoder's own validate-then-build discipline.
+ */
+export class StockEncodingError extends ViceError {
+  field?: string;
+
+  constructor(message: string, { field }: StockEncodingErrorOptions = {}) {
+    super(message);
+    this.name = "StockEncodingError";
+    this.field = field;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Request encoding
 // ---------------------------------------------------------------------------
@@ -364,6 +387,538 @@ export function encodeRequestHeader({ commandType, requestId, body = Buffer.allo
   header[10] = commandType;
   return Buffer.concat([header, body]);
 }
+
+// ---------------------------------------------------------------------------
+// Request-body encoders (Phase 3)
+// ---------------------------------------------------------------------------
+//
+// The ONLY functions in this tree that turn tool arguments into
+// binary-monitor request body bytes -- a caller (stock-memory.ts,
+// stock-registers.ts, stock-checkpoints.ts, stock-execution.ts,
+// stock-machine.ts, plans 03-06..03-11) must never hand-assemble a body
+// Buffer itself. Five of the sixteen encoders below (memGetBody,
+// memSetBody, checkpointSetBody, cpNumBody, conditionSetBody) are ported
+// near-verbatim from probe-binmon.mjs:268-332 -- an already offline-tested
+// reference implementation (see that file's own --selftest mode) --
+// converted to a TypeScript options-object signature matching
+// encodeRequestHeader()'s own style above. The rest are derived fresh from
+// the official VICE manual (vice-emu.sourceforge.io/vice_13.html §13) and
+// docs/phase0-binmon-findings.md §5; every encoder whose runtime BEHAVIOUR
+// (not wire shape) is unconfirmed against a real binary says so explicitly
+// in its own JSDoc as [ASSUMED], naming the RESEARCH.md Assumptions Log
+// row -- never silently claimed as verified.
+//
+// Every encoder takes a single plain options object (never positional
+// args, matching stock-connect.ts's own convention), validates its
+// arguments and throws StockEncodingError BEFORE writing any bytes, and
+// returns a Buffer ready for ViceMonitorClient.send(commandType, body) --
+// the single exception is cpNumBody(), which mirrors probe-binmon.mjs's own
+// bare-number signature since it has nothing else to validate or name.
+// ---------------------------------------------------------------------------
+
+function requireU16(fieldName: string, value: number): void {
+  if (!Number.isInteger(value) || value < 0x0000 || value > 0xffff) {
+    throw new StockEncodingError(`${fieldName} must be an integer in 0x0000..0xffff, got ${value}`, { field: fieldName });
+  }
+}
+
+function requireU32(fieldName: string, value: number): void {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new StockEncodingError(`${fieldName} must be an integer in 0..0xffffffff, got ${value}`, { field: fieldName });
+  }
+}
+
+/**
+ * The shared memspace-byte validator every encoder below that takes a
+ * memspace routes through. Accepts `undefined` (defaults to `0x00`, main)
+ * and `0x00`-`0x04` (units 8-11). The wire memspace byte is NOT VICE's
+ * internal enum -- `0x08` (the internal main-memory enum value) is refused
+ * by the monitor itself (`monitor_binary.c:401-434`, CLAUDE.md's own
+ * "Protocol" constraint) and refused here too, before a single byte is
+ * ever sent.
+ */
+export function memspaceByte(memspace?: number): number {
+  if (memspace === undefined) {
+    return 0x00;
+  }
+  if (!Number.isInteger(memspace) || memspace < 0x00 || memspace > 0x04) {
+    throw new StockEncodingError(
+      `memspace byte must be 0x00 (main) or 0x01-0x04 (units 8-11) -- the wire memspace byte is not VICE's internal enum, and 0x08 is rejected by the monitor. Got 0x${memspace.toString(16).padStart(2, "0")}`,
+      { field: "memspace" },
+    );
+  }
+  return memspace;
+}
+
+export interface MemspaceBodyOptions {
+  memspace?: number;
+}
+
+/** The one-byte body shared by REGISTERS_GET (0x31) and REGISTERS_AVAILABLE
+ * (0x83). [CITED docs/phase0-binmon-findings.md §5] */
+export function memspaceBody({ memspace }: MemspaceBodyOptions = {}): Buffer {
+  return Buffer.from([memspaceByte(memspace)]);
+}
+
+export interface MemGetBodyOptions {
+  /** Default false -- DIRECT-01's side-effect-free-by-default read. Encoded
+   * as byte 0x00 when omitted, so a caller must opt IN to side effects. */
+  sidefx?: boolean;
+  start: number;
+  end: number;
+  memspace?: number;
+  bank?: number;
+}
+
+/**
+ * MEM_GET (0x01) request body -- ALWAYS EXACTLY 8 BYTES:
+ * `sidefx(1) start(u16LE) end(u16LE) memspace(1) bank(u16LE)`.
+ * [VERIFIED against probe-binmon.mjs:268-276, this repo's own
+ * offline-tested reference; CITED docs/phase0-binmon-findings.md §5]
+ *
+ * The body is always 8 bytes -- never shorter -- because stock VICE's
+ * `monitor_binary.c` handler dereferences every one of these fields before
+ * it ever checks the declared body length against what a shorter caller
+ * might try to send; a truncated body would be read past its own end on
+ * the VICE side, not rejected cleanly.
+ */
+export function memGetBody({ sidefx = false, start, end, memspace, bank = 0x0000 }: MemGetBodyOptions): Buffer {
+  requireU16("start", start);
+  requireU16("end", end);
+  requireU16("bank", bank);
+  if (end < start) {
+    throw new StockEncodingError(`memGetBody: end (0x${end.toString(16)}) must be >= start (0x${start.toString(16)})`);
+  }
+  const body = Buffer.alloc(8);
+  body[0] = sidefx ? 0x01 : 0x00;
+  body.writeUInt16LE(start, 1);
+  body.writeUInt16LE(end, 3);
+  body[5] = memspaceByte(memspace);
+  body.writeUInt16LE(bank, 6);
+  return body;
+}
+
+export interface MemSetBodyOptions {
+  start: number;
+  end: number;
+  memspace?: number;
+  bank?: number;
+  data: Buffer | Uint8Array;
+}
+
+/**
+ * MEM_SET (0x02) request body -- the same 8-byte header as memGetBody(),
+ * with `sidefx` forced to `0x00` (MEM_SET has no side-effect flag on the
+ * wire), then `data` appended at offset 8.
+ * [VERIFIED probe-binmon.mjs:278-287; CITED docs/phase0-binmon-findings.md §5]
+ */
+export function memSetBody({ start, end, memspace, bank = 0x0000, data }: MemSetBodyOptions): Buffer {
+  requireU16("start", start);
+  requireU16("end", end);
+  requireU16("bank", bank);
+  if (end < start) {
+    throw new StockEncodingError(`memSetBody: end (0x${end.toString(16)}) must be >= start (0x${start.toString(16)})`);
+  }
+  const expectedLength = end - start + 1;
+  if (data.length !== expectedLength) {
+    throw new StockEncodingError(
+      `memSetBody: data.length (${data.length}) must equal end - start + 1 (${expectedLength}) for start=0x${start.toString(16)}, end=0x${end.toString(16)}`,
+    );
+  }
+  const body = Buffer.alloc(8 + data.length);
+  body[0] = 0x00;
+  body.writeUInt16LE(start, 1);
+  body.writeUInt16LE(end, 3);
+  body[5] = memspaceByte(memspace);
+  body.writeUInt16LE(bank, 6);
+  Buffer.from(data).copy(body, 8);
+  return body;
+}
+
+/**
+ * Shared 4-byte `checkpointNum(u32LE)` body for CHECKPOINT_GET (0x11) and
+ * CHECKPOINT_DELETE (0x13). Not an options object (matching
+ * probe-binmon.mjs:314-318's own bare-number signature) since it has
+ * nothing else to validate offline.
+ * [VERIFIED probe-binmon.mjs:314-318; CITED docs/phase0-binmon-findings.md §5]
+ */
+export function cpNumBody(checkpointNum: number): Buffer {
+  requireU32("checkpointNum", checkpointNum);
+  const body = Buffer.alloc(4);
+  body.writeUInt32LE(checkpointNum, 0);
+  return body;
+}
+
+/** The op bitmask CHECKPOINT_SET's `operation` byte expects -- load/store/exec
+ * OR together. Exported so no family module hardcodes these three values. */
+export const CheckpointOperation = { Load: 0x01, Store: 0x02, Exec: 0x04 } as const;
+export type CheckpointOperation = (typeof CheckpointOperation)[keyof typeof CheckpointOperation];
+
+export interface CheckpointSetBodyOptions {
+  start: number;
+  end: number;
+  stop?: boolean;
+  enabled?: boolean;
+  operation: number;
+  temporary?: boolean;
+  memspace?: number;
+}
+
+/**
+ * CHECKPOINT_SET (0x12) request body -- 8 bytes, or 9 when `memspace` is
+ * supplied: `start(u16LE) end(u16LE) stop(1) enabled(1) operation(1)
+ * temporary(1) [memspace(1)]`.
+ * [VERIFIED probe-binmon.mjs:290-309; CITED docs/phase0-binmon-findings.md §5]
+ */
+export function checkpointSetBody({
+  start,
+  end,
+  stop = true,
+  enabled = true,
+  operation,
+  temporary = false,
+  memspace,
+}: CheckpointSetBodyOptions): Buffer {
+  requireU16("start", start);
+  requireU16("end", end);
+  if (operation === 0) {
+    throw new StockEncodingError(
+      "checkpointSetBody: operation must include at least one of CheckpointOperation.Load (0x01), Store (0x02), Exec (0x04) -- a checkpoint that watches nothing",
+    );
+  }
+  const withMemspace = memspace !== undefined;
+  const body = Buffer.alloc(withMemspace ? 9 : 8);
+  body.writeUInt16LE(start, 0);
+  body.writeUInt16LE(end, 2);
+  body[4] = stop ? 0x01 : 0x00;
+  body[5] = enabled ? 0x01 : 0x00;
+  body[6] = operation;
+  body[7] = temporary ? 0x01 : 0x00;
+  if (withMemspace) {
+    body[8] = memspaceByte(memspace);
+  }
+  return body;
+}
+
+export interface CheckpointToggleBodyOptions {
+  checkpointNum: number;
+  enabled: boolean;
+}
+
+/** CHECKPOINT_TOGGLE (0x15) request body -- 5 bytes,
+ * `checkpointNum(u32LE) enabled(1)`. [CITED docs/phase0-binmon-findings.md §5] */
+export function checkpointToggleBody({ checkpointNum, enabled }: CheckpointToggleBodyOptions): Buffer {
+  requireU32("checkpointNum", checkpointNum);
+  const body = Buffer.alloc(5);
+  body.writeUInt32LE(checkpointNum, 0);
+  body[4] = enabled ? 0x01 : 0x00;
+  return body;
+}
+
+export interface ConditionSetBodyOptions {
+  checkpointNum: number;
+  expression: string;
+}
+
+/**
+ * CONDITION_SET (0x22) request body -- `checkpointNum(u32LE) exprLen(1)
+ * expr(ASCII, NOT NUL-terminated)`.
+ * [VERIFIED probe-binmon.mjs:320-332, including its own >255-byte guard,
+ * ported verbatim; CITED docs/phase0-binmon-findings.md §5]
+ *
+ * This is the ONLY function in this tree that ever turns condition TEXT
+ * into wire bytes -- its `expression` argument must always come from
+ * stock-condition.ts's `emitCondition()`, never from a raw caller string
+ * (D-09/D-10). Throws BEFORE encoding, never truncates: an expression over
+ * 255 bytes would silently truncate `exprLen`, desyncing the stream this
+ * connection's demux depends on (probe-binmon.mjs's own comment frames
+ * this as an ASVS V5 input-validation control). Also refuses an empty
+ * expression and any non-ASCII byte, naming the offending character index
+ * -- the condition lexer is ASCII-only, and a multi-byte UTF-8 character
+ * would produce a byte length that disagrees with the character count the
+ * caller reasoned about.
+ */
+export function conditionSetBody({ checkpointNum, expression }: ConditionSetBodyOptions): Buffer {
+  requireU32("checkpointNum", checkpointNum);
+  if (expression.length === 0) {
+    throw new StockEncodingError("conditionSetBody: expression must not be empty");
+  }
+  for (let index = 0; index < expression.length; index += 1) {
+    const codePoint = expression.charCodeAt(index);
+    if (codePoint > 0x7f) {
+      throw new StockEncodingError(
+        `conditionSetBody: expression contains a non-ASCII character at index ${index} (code point ${codePoint}) -- the condition lexer is ASCII-only`,
+      );
+    }
+  }
+  const exprBuf = Buffer.from(expression, "ascii");
+  if (exprBuf.length > 255) {
+    throw new StockEncodingError(
+      `conditionSetBody: expression exceeds 255 bytes (${exprBuf.length}) -- exprLen is a uint8 and a silently truncated frame would desync the stream`,
+    );
+  }
+  const body = Buffer.alloc(5 + exprBuf.length);
+  body.writeUInt32LE(checkpointNum, 0);
+  body[4] = exprBuf.length;
+  exprBuf.copy(body, 5);
+  return body;
+}
+// Example, correctly parenthesised, hex literal, uppercase pseudo-registers:
+//   conditionSetBody({ checkpointNum, expression: "(RL == $64) && (CY == $14)" })
+
+export interface RegisterSetItem {
+  id: number;
+  value: number;
+  /** Present for symmetry with the fork's own per-register descriptors, but
+   * NOT written to the wire as a variable stride -- REGISTERS_SET's
+   * itemSize byte is always 3 (see below). Reserved for a future item
+   * shape this encoder does not yet need to support. */
+  size?: number;
+}
+
+export interface RegistersSetBodyOptions {
+  memspace?: number;
+  items: RegisterSetItem[];
+}
+
+/**
+ * REGISTERS_SET (0x32) request body -- `memspace(1) count(u16LE)` then per
+ * item `itemSize(1) regId(1) value(u16LE)`, with `itemSize` always `3`
+ * (the byte count following the itemSize byte itself: 1 id byte + 2 value
+ * bytes). [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * This is the structural inverse of this file's `ResponseType.RegisterInfo`
+ * parser case (below, in the response-parsing section -- grep `case
+ * ResponseType.RegisterInfo`), which walks items with the same `itemSize +
+ * 1` stride; keep the two in sync if VICE's item shape is ever probed and
+ * found to differ from the manual's description.
+ */
+export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): Buffer {
+  if (items.length === 0) {
+    throw new StockEncodingError("registersSetBody: items must not be empty");
+  }
+  const memspaceB = memspaceByte(memspace);
+  const itemBuffers: Buffer[] = [];
+  for (const item of items) {
+    if (!Number.isInteger(item.id) || item.id < 0x00 || item.id > 0xff) {
+      throw new StockEncodingError(`registersSetBody: id must be an integer in 0x00..0xff, got ${item.id}`);
+    }
+    if (!Number.isInteger(item.value) || item.value < 0x0000 || item.value > 0xffff) {
+      throw new StockEncodingError(`registersSetBody: value must be an integer in 0x0000..0xffff, got ${item.value}`);
+    }
+    const itemBuf = Buffer.alloc(4);
+    itemBuf[0] = 3; // itemSize -- always 3 (regId + value), see JSDoc above
+    itemBuf[1] = item.id;
+    itemBuf.writeUInt16LE(item.value, 2);
+    itemBuffers.push(itemBuf);
+  }
+  const header = Buffer.alloc(3);
+  header[0] = memspaceB;
+  header.writeUInt16LE(items.length, 1);
+  return Buffer.concat([header, ...itemBuffers]);
+}
+
+// ---------------------------------------------------------------------------
+// Execution and machine-control body encoders (Phase 3, Task 2). Every
+// body layout below is [CITED] against the official VICE manual (§13) but
+// has NOT been exercised against a real binary in this environment -- each
+// JSDoc says so explicitly, and where RESEARCH.md's Assumptions Log flags a
+// behavioural (not wire-shape) assumption, the JSDoc names the row (A2, A3,
+// A5) and points at .planning/todos/pending/ for the probe debt. None of
+// these are claimed as verified.
+// ---------------------------------------------------------------------------
+
+export interface AdvanceInstructionsBodyOptions {
+  stepOver?: boolean;
+  count?: number;
+}
+
+/**
+ * ADVANCE_INSTRUCTIONS (0x71) request body -- 3 bytes, `stepOver(1)
+ * count(u16LE)`. [CITED docs/phase0-binmon-findings.md §5; body SHAPE also
+ * exercised, with stepOver=0 only, in probe-binmon.mjs's async-events check]
+ *
+ * `stepOver = true`'s runtime meaning (skip a `JSR`'s subroutine as one
+ * step, matching the fork's own `stepOver` field name) is [ASSUMED] --
+ * RESEARCH.md Assumptions Log row A2 -- never probed against a real `JSR`.
+ * See `.planning/todos/pending/` for the outstanding probe debt.
+ */
+export function advanceInstructionsBody({ stepOver = false, count = 1 }: AdvanceInstructionsBodyOptions = {}): Buffer {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffff) {
+    throw new StockEncodingError(`advanceInstructionsBody: count must be an integer in 1..0xffff, got ${count}`);
+  }
+  const body = Buffer.alloc(3);
+  body[0] = stepOver ? 0x01 : 0x00;
+  body.writeUInt16LE(count, 1);
+  return body;
+}
+
+export interface KeyboardFeedBodyOptions {
+  /** Already-converted PETSCII bytes ONLY -- ASCII->PETSCII conversion
+   * happens in stock-petscii.ts. Passing a JS string here is a type error
+   * on purpose, so no call site can accidentally feed UTF-16 code units to
+   * the emulator. */
+  petscii: Uint8Array | Buffer;
+}
+
+/**
+ * KEYBOARD_FEED (0x72) request body -- `textLen(1) text(bytes)`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ */
+export function keyboardFeedBody({ petscii }: KeyboardFeedBodyOptions): Buffer {
+  if (petscii.length === 0) {
+    throw new StockEncodingError("keyboardFeedBody: petscii must not be empty");
+  }
+  if (petscii.length > 255) {
+    throw new StockEncodingError(`keyboardFeedBody: petscii exceeds 255 bytes (${petscii.length}) -- textLen is a uint8`);
+  }
+  const body = Buffer.alloc(1 + petscii.length);
+  body[0] = petscii.length;
+  Buffer.from(petscii).copy(body, 1);
+  return body;
+}
+
+export interface JoyportSetBodyOptions {
+  port: number;
+  value: number;
+}
+
+/**
+ * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * The body SHAPE is cited; the BIT MEANING of `value` (which bit is
+ * up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log row
+ * A3 -- and is mapped in stock-input.ts, not here. This encoder
+ * deliberately takes a raw, already-composed value so the assumed mapping
+ * lives in exactly one place a future probe session can correct.
+ */
+export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
+  requireU16("port", port);
+  requireU16("value", value);
+  const body = Buffer.alloc(4);
+  body.writeUInt16LE(port, 0);
+  body.writeUInt16LE(value, 2);
+  return body;
+}
+
+/** RESET's mode byte. `Soft`/`Hard` are [CITED]; `Drive8`-`Drive11` are
+ * [CITED] per the manual's `0x08`-`0x0b` drive-reset range. */
+export const ResetMode = { Soft: 0x00, Hard: 0x01, Drive8: 0x08, Drive9: 0x09, Drive10: 0x0a, Drive11: 0x0b } as const;
+export type ResetMode = (typeof ResetMode)[keyof typeof ResetMode];
+
+export interface ResetBodyOptions {
+  mode: number;
+}
+
+/**
+ * RESET (0xcc) request body -- 1 byte, `resetMode`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * NOT the RESOURCE_SET (0x52) power-cycle hazard CLAUDE.md warns about
+ * (`MachineVideoStandard`/`VICIIModel`/`MachinePowerFrequency`, Phase 6
+ * territory) -- this is a distinct opcode, and an agent-requested hard
+ * reset via RESET is exactly what DIRECT-06 asks for. It needs no
+ * deny-list. This is RESEARCH.md's Pitfall 1; this comment is what stops a
+ * later reviewer from "fixing" it by adding one.
+ */
+export function resetBody({ mode }: ResetBodyOptions): Buffer {
+  const validModes: readonly number[] = Object.values(ResetMode);
+  if (!validModes.includes(mode)) {
+    throw new StockEncodingError(
+      `resetBody: mode 0x${mode.toString(16).padStart(2, "0")} is not a recognised ResetMode (Soft 0x00, Hard 0x01, Drive8-Drive11 0x08-0x0b)`,
+    );
+  }
+  return Buffer.from([mode]);
+}
+
+export interface AutostartBodyOptions {
+  runAfter: boolean;
+  fileIndex?: number;
+  filename: string;
+}
+
+/**
+ * AUTOSTART (0xdd) request body -- `runAfter(1) fileIndex(u16LE)
+ * filenameLen(1) filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * AUTOSTART has NO drive-unit field at all -- a caller cannot target units
+ * 9-11 through this opcode (plan 03-10 owns the refusal for those units).
+ * `fileIndex`'s behaviour when `runAfter` is false is [ASSUMED] --
+ * RESEARCH.md Assumptions Log row A5.
+ */
+export function autostartBody({ runAfter, fileIndex = 0, filename }: AutostartBodyOptions): Buffer {
+  requireU16("fileIndex", fileIndex);
+  const filenameBuf = requireAsciiFilename("autostartBody", filename);
+  const body = Buffer.alloc(1 + 2 + 1 + filenameBuf.length);
+  body[0] = runAfter ? 0x01 : 0x00;
+  body.writeUInt16LE(fileIndex, 1);
+  body[3] = filenameBuf.length;
+  filenameBuf.copy(body, 4);
+  return body;
+}
+
+export interface DumpBodyOptions {
+  saveRoms: boolean;
+  saveDisks: boolean;
+  filename: string;
+}
+
+/**
+ * DUMP (0x41) request body -- `saveRoms(1) saveDisks(1) filenameLen(1)
+ * filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ */
+export function dumpBody({ saveRoms, saveDisks, filename }: DumpBodyOptions): Buffer {
+  const filenameBuf = requireAsciiFilename("dumpBody", filename);
+  const body = Buffer.alloc(1 + 1 + 1 + filenameBuf.length);
+  body[0] = saveRoms ? 0x01 : 0x00;
+  body[1] = saveDisks ? 0x01 : 0x00;
+  body[2] = filenameBuf.length;
+  filenameBuf.copy(body, 3);
+  return body;
+}
+
+export interface UndumpBodyOptions {
+  filename: string;
+}
+
+/** UNDUMP (0x42) request body -- `filenameLen(1) filename(ASCII)`.
+ * [CITED docs/phase0-binmon-findings.md §5] */
+export function undumpBody({ filename }: UndumpBodyOptions): Buffer {
+  const filenameBuf = requireAsciiFilename("undumpBody", filename);
+  const body = Buffer.alloc(1 + filenameBuf.length);
+  body[0] = filenameBuf.length;
+  filenameBuf.copy(body, 1);
+  return body;
+}
+
+/** Shared filename guard for autostartBody/dumpBody/undumpBody: refuses a
+ * length of 0 or over 255 (the length field is a uint8) and any non-ASCII
+ * byte, naming the offending index -- the same discipline as
+ * conditionSetBody()'s expression guard above. Returns the encoded ASCII
+ * Buffer so callers never re-encode. */
+function requireAsciiFilename(callerName: string, filename: string): Buffer {
+  if (filename.length === 0) {
+    throw new StockEncodingError(`${callerName}: filename must not be empty`);
+  }
+  for (let index = 0; index < filename.length; index += 1) {
+    const codePoint = filename.charCodeAt(index);
+    if (codePoint > 0x7f) {
+      throw new StockEncodingError(`${callerName}: filename contains a non-ASCII character at index ${index} (code point ${codePoint})`);
+    }
+  }
+  const filenameBuf = Buffer.from(filename, "ascii");
+  if (filenameBuf.length > 255) {
+    throw new StockEncodingError(`${callerName}: filename exceeds 255 bytes (${filenameBuf.length}) -- filenameLen is a uint8`);
+  }
+  return filenameBuf;
+}
+
+// CHECKPOINT_LIST (0x14), PING (0x81), BANKS_AVAILABLE (0x82),
+// EXECUTE_UNTIL_RETURN (0x73) and EXIT (0xaa) take EMPTY bodies --
+// deliberately no encoder for any of the five: ViceMonitorClient.send()
+// already defaults `body` to Buffer.alloc(0). Do not add a no-op builder
+// for any of these five opcodes.
 
 // ---------------------------------------------------------------------------
 // Parsed response shapes

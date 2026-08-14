@@ -22,6 +22,7 @@ import {
   StockResponseMismatchError,
   StockConnectionClosedError,
   StockRequestTimeoutError,
+  StockEncodingError,
   CommandType,
   ResponseType,
   ErrorCode,
@@ -32,6 +33,24 @@ import {
   REQUEST_HEADER_LEN,
   MAX_BODY_LEN,
   MAX_BUFFERED_LEN,
+  memspaceByte,
+  memspaceBody,
+  memGetBody,
+  memSetBody,
+  cpNumBody,
+  CheckpointOperation,
+  checkpointSetBody,
+  checkpointToggleBody,
+  conditionSetBody,
+  registersSetBody,
+  advanceInstructionsBody,
+  keyboardFeedBody,
+  joyportSetBody,
+  ResetMode,
+  resetBody,
+  autostartBody,
+  dumpBody,
+  undumpBody,
 } from "./stock-protocol.ts";
 import {
   encodeResponseFrame,
@@ -1210,6 +1229,300 @@ test("closed: counters survive a close and report the desync and duplicate total
       await new Promise((resolve) => client.on("close", resolve));
       assert.ok(client.counters.desyncBytes >= 1);
       assert.equal(client.counters.duplicateReplies, 1);
+    },
+  );
+});
+
+// ===========================================================================
+// Request-body encoders (Phase 3, plan 03-02) -- Task 1: memory, register,
+// checkpoint and condition encoders. Every assertion hand-decodes the
+// produced Buffer at its own literal byte offset rather than re-calling the
+// encoder, matching this suite's existing golden-table discipline.
+// ===========================================================================
+
+test("memGetBody: MEM_GET is always exactly 8 bytes, sidefx defaults to 0x00 (DIRECT-01, T-3-01)", () => {
+  const body = memGetBody({ start: 0xd019, end: 0xd019 });
+  assert.equal(body.length, 8);
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 0xd019);
+  assert.equal(body.readUInt16LE(3), 0xd019);
+  assert.equal(body[5], 0x00);
+  assert.equal(body.readUInt16LE(6), 0x0000);
+});
+
+test("memGetBody: sidefx: true sets byte 0 to 0x01", () => {
+  const body = memGetBody({ start: 0xd019, end: 0xd019, sidefx: true });
+  assert.equal(body[0], 0x01);
+});
+
+test("memGetBody: end < start is refused", () => {
+  assert.throws(() => memGetBody({ start: 0x10, end: 0x0f }), StockEncodingError);
+});
+
+test("memspaceByte: undefined defaults to 0x00 (main)", () => {
+  assert.equal(memspaceByte(undefined), 0x00);
+});
+
+test("memspaceByte: 0x01-0x04 (units 8-11) pass through unchanged", () => {
+  for (const value of [0x01, 0x02, 0x03, 0x04]) {
+    assert.equal(memspaceByte(value), value);
+  }
+});
+
+test("memspaceByte: 0x08 (VICE's internal enum value) throws naming 0x08", () => {
+  assert.throws(
+    () => memspaceByte(0x08),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /0x08/);
+      return true;
+    },
+  );
+});
+
+test("memspaceBody: encodes memspaceByte's result as a one-byte Buffer", () => {
+  assert.deepEqual(memspaceBody({ memspace: 0x02 }), Buffer.from([0x02]));
+  assert.deepEqual(memspaceBody(), Buffer.from([0x00]));
+});
+
+test("memSetBody: 8-byte header plus data, sidefx forced to 0x00", () => {
+  const data = Buffer.from([0xaa, 0xbb, 0xcc]);
+  const body = memSetBody({ start: 0x1000, end: 0x1002, memspace: 0x00, data });
+  assert.equal(body.length, 11);
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 0x1000);
+  assert.equal(body.readUInt16LE(3), 0x1002);
+  assert.equal(body[5], 0x00);
+  assert.ok(body.subarray(8).equals(data));
+});
+
+test("memSetBody: mismatched data length is refused, naming both numbers", () => {
+  assert.throws(
+    () => memSetBody({ start: 0x1000, end: 0x1002, data: Buffer.from([0x01]) }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /data\.length \(1\)/);
+      assert.match((err as Error).message, /end - start \+ 1 \(3\)/);
+      return true;
+    },
+  );
+});
+
+test("cpNumBody: 4-byte u32LE checkpoint number", () => {
+  const body = cpNumBody(0x42);
+  assert.equal(body.length, 4);
+  assert.equal(body.readUInt32LE(0), 0x42);
+});
+
+test("checkpointSetBody: 8 bytes without memspace, 9 with -- body[8] is the memspace byte", () => {
+  const withoutMemspace = checkpointSetBody({ start: 0x1000, end: 0x1010, operation: CheckpointOperation.Exec });
+  assert.equal(withoutMemspace.length, 8);
+  assert.equal(withoutMemspace[6], CheckpointOperation.Exec);
+
+  const withMemspace = checkpointSetBody({ start: 0x1000, end: 0x1010, operation: CheckpointOperation.Exec, memspace: 0x02 });
+  assert.equal(withMemspace.length, 9);
+  assert.equal(withMemspace[8], 0x02);
+});
+
+test("checkpointSetBody: hand-decoded field offsets match the documented layout", () => {
+  const body = checkpointSetBody({
+    start: 0x0800,
+    end: 0x0900,
+    stop: false,
+    enabled: false,
+    operation: CheckpointOperation.Load | CheckpointOperation.Store,
+    temporary: true,
+  });
+  assert.equal(body.readUInt16LE(0), 0x0800);
+  assert.equal(body.readUInt16LE(2), 0x0900);
+  assert.equal(body[4], 0x00); // stop: false
+  assert.equal(body[5], 0x00); // enabled: false
+  assert.equal(body[6], CheckpointOperation.Load | CheckpointOperation.Store);
+  assert.equal(body[7], 0x01); // temporary: true
+});
+
+test("checkpointSetBody: operation === 0 is refused, naming the three flags", () => {
+  assert.throws(
+    () => checkpointSetBody({ start: 0x1000, end: 0x1010, operation: 0 }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /Load.*Store.*Exec/s);
+      return true;
+    },
+  );
+});
+
+test("checkpointToggleBody: 5-byte checkpointNum(u32LE) + enabled(1)", () => {
+  const body = checkpointToggleBody({ checkpointNum: 7, enabled: true });
+  assert.equal(body.length, 5);
+  assert.equal(body.readUInt32LE(0), 7);
+  assert.equal(body[4], 0x01);
+});
+
+test("conditionSetBody: encodes checkpointNum(u32LE) exprLen(1) then ASCII bytes", () => {
+  const expression = "(RL == $64) && (CY == $14)";
+  const body = conditionSetBody({ checkpointNum: 1, expression });
+  assert.equal(body.readUInt32LE(0), 1);
+  // Deviation (Rule 1 auto-fix): the plan's own illustrative text claimed
+  // body[4] === 25 for this exact expression; the string is actually 26
+  // ASCII characters long (confirmed with `"...".length` -- an off-by-one
+  // in the plan's own worked example, the same class of drafting slip found
+  // in registersSetBody()'s illustrative offsets below). Hand-decoded here,
+  // not re-derived from the encoder.
+  assert.equal(expression.length, 26);
+  assert.equal(body[4], 26);
+  assert.equal(body.subarray(5).toString("ascii"), expression);
+});
+
+test("conditionSetBody: an expression over 255 bytes throws before encoding", () => {
+  assert.throws(() => conditionSetBody({ checkpointNum: 1, expression: "x".repeat(256) }), StockEncodingError);
+});
+
+test("conditionSetBody: an empty expression is refused", () => {
+  assert.throws(() => conditionSetBody({ checkpointNum: 1, expression: "" }), StockEncodingError);
+});
+
+test("conditionSetBody: a non-ASCII character is refused, naming its index", () => {
+  assert.throws(
+    () => conditionSetBody({ checkpointNum: 1, expression: "RL == é" }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /index 6/);
+      return true;
+    },
+  );
+});
+
+test("registersSetBody: memspace(1) count(u16LE) then itemSize(1) regId(1) value(u16LE) per item", () => {
+  const body = registersSetBody({
+    memspace: 0x00,
+    items: [
+      { id: 0x00, value: 0x1234 },
+      { id: 0x01, value: 0xabcd },
+    ],
+  });
+  // Deviation (Rule 1 auto-fix): the plan's own illustrative text claimed
+  // body[2]/body[6] === 3 for the two items' itemSize bytes. With the
+  // documented layout (memspace(1) + count(u16LE) = a 3-byte header before
+  // the first item, matching docs/phase0-binmon-findings.md §5's
+  // REGISTERS_SET layout and this file's own RegisterInfo parser inverse),
+  // the itemSize bytes actually land at offsets 3 and 7. The plan's total
+  // LENGTH assertion (3 + 2 * 4 = 11) is correct and is what this test uses.
+  assert.equal(body.length, 3 + 2 * 4);
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 2);
+  assert.equal(body[3], 3); // item 1's itemSize
+  assert.equal(body[4], 0x00); // item 1's regId
+  assert.equal(body.readUInt16LE(5), 0x1234); // item 1's value
+  assert.equal(body[7], 3); // item 2's itemSize
+  assert.equal(body[8], 0x01); // item 2's regId
+  assert.equal(body.readUInt16LE(9), 0xabcd); // item 2's value
+});
+
+test("registersSetBody: an empty items array is refused", () => {
+  assert.throws(() => registersSetBody({ memspace: 0x00, items: [] }), StockEncodingError);
+});
+
+test("registersSetBody: an out-of-range id or value is refused", () => {
+  assert.throws(() => registersSetBody({ items: [{ id: 0x100, value: 0 }] }), StockEncodingError);
+  assert.throws(() => registersSetBody({ items: [{ id: 0, value: 0x10000 }] }), StockEncodingError);
+});
+// ===========================================================================
+// Request-body encoders (Phase 3, plan 03-02) -- Task 2: execution and
+// machine-control encoders. Every [ASSUMED] behavioural claim named in the
+// source is confirmed present there (grep), not re-asserted here -- these
+// tests cover only wire SHAPE.
+// ===========================================================================
+
+test("advanceInstructionsBody: 3 bytes, stepOver(1) count(u16LE)", () => {
+  const body = advanceInstructionsBody({ stepOver: true, count: 3 });
+  assert.equal(body.length, 3);
+  assert.equal(body[0], 0x01);
+  assert.equal(body.readUInt16LE(1), 3);
+});
+
+test("advanceInstructionsBody: defaults to stepOver false, count 1", () => {
+  const body = advanceInstructionsBody();
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 1);
+});
+
+test("advanceInstructionsBody: count out of 1..0xffff is refused", () => {
+  assert.throws(() => advanceInstructionsBody({ count: 0 }), StockEncodingError);
+  assert.throws(() => advanceInstructionsBody({ count: 0x10000 }), StockEncodingError);
+});
+
+test("keyboardFeedBody: textLen(1) then the raw PETSCII bytes, unconverted", () => {
+  const petscii = Buffer.from([0x41, 0x42, 0x43]);
+  const body = keyboardFeedBody({ petscii });
+  assert.equal(body.length, 4);
+  assert.equal(body[0], 3);
+  assert.ok(body.subarray(1).equals(petscii));
+});
+
+test("keyboardFeedBody: a 256-byte payload throws", () => {
+  assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(256) }), StockEncodingError);
+});
+
+test("keyboardFeedBody: an empty payload throws", () => {
+  assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(0) }), StockEncodingError);
+});
+
+test("joyportSetBody: 4 bytes, port(u16LE) value(u16LE)", () => {
+  const body = joyportSetBody({ port: 1, value: 0x10 });
+  assert.equal(body.length, 4);
+  assert.equal(body.readUInt16LE(0), 1);
+  assert.equal(body.readUInt16LE(2), 0x10);
+});
+
+test("resetBody: an unrecognised mode throws", () => {
+  assert.throws(() => resetBody({ mode: 0x02 }), StockEncodingError);
+});
+
+test("resetBody: ResetMode.Hard encodes as the single byte 0x01", () => {
+  const body = resetBody({ mode: ResetMode.Hard });
+  assert.deepEqual(body, Buffer.from([0x01]));
+});
+
+test("resetBody: every ResetMode value round-trips to its own single byte", () => {
+  for (const mode of Object.values(ResetMode)) {
+    assert.deepEqual(resetBody({ mode }), Buffer.from([mode]));
+  }
+});
+
+test("autostartBody: runAfter(1) fileIndex(u16LE) filenameLen(1) filename(ASCII)", () => {
+  const body = autostartBody({ runAfter: false, filename: "/tmp/a.d64" });
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 0);
+  assert.equal(body[3], 10);
+  assert.equal(body.subarray(4).toString("ascii"), "/tmp/a.d64");
+});
+
+test("autostartBody: an empty filename is refused", () => {
+  assert.throws(() => autostartBody({ runAfter: true, filename: "" }), StockEncodingError);
+});
+
+test("dumpBody: saveRoms(1) saveDisks(1) filenameLen(1) filename(ASCII)", () => {
+  const body = dumpBody({ saveRoms: true, saveDisks: false, filename: "snap.vsf" });
+  assert.equal(body[0], 0x01);
+  assert.equal(body[1], 0x00);
+  assert.equal(body[2], 8);
+  assert.equal(body.subarray(3).toString("ascii"), "snap.vsf");
+});
+
+test("undumpBody: filenameLen(1) filename(ASCII)", () => {
+  const body = undumpBody({ filename: "snap.vsf" });
+  assert.equal(body[0], 8);
+  assert.equal(body.subarray(1).toString("ascii"), "snap.vsf");
+});
+
+test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
+  assert.throws(
+    () => undumpBody({ filename: "snép.vsf" }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /index 2/);
+      return true;
     },
   );
 });

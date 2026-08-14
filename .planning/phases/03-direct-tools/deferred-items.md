@@ -46,3 +46,8 @@ regression it actually guards -- the derived STATE directory living under
 harness should avoid the requirement entirely by not asserting this
 particular invariant when `isolation="worktree"` is active. Not something to
 resolve inside a phase-execution plan; needs its own investigation.
+
+**Independently reproduced by:** 03-02, 03-03, 03-04 and 03-05, each of which
+hit the identical failure from its own worktree and confirmed in isolation
+that the failure follows the checkout path, not the plan's changes. Confirmed
+absent on the merged main checkout (see the phase's post-merge test gate).
