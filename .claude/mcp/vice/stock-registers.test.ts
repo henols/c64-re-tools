@@ -12,7 +12,13 @@ import assert from "node:assert/strict";
 
 import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import { registerCatalogFor, resetRegisterCatalogsForTest, handleRegistersAvailable } from "./stock-registers.ts";
+import {
+  registerCatalogFor,
+  resetRegisterCatalogsForTest,
+  handleRegistersAvailable,
+  handleRegistersGet,
+  handleRegistersSet,
+} from "./stock-registers.ts";
 
 beforeEach(() => {
   resetRegisterCatalogsForTest();
@@ -40,9 +46,13 @@ interface SendCall {
 }
 
 /** Builds a fake client + session pair. `sendCalls` is a shared array the
- * test can inspect after invoking a handler/registerCatalogFor(). */
+ * test can inspect after invoking a handler/registerCatalogFor(). The
+ * REGISTERS_GET/REGISTERS_SET reply shapes are overridable per test. */
 function makeFakeSession(options: {
   registersAvailable?: typeof REGISTER_FIXTURE;
+  registersGetReply?: Array<{ id: number; value: number }>;
+  registersSetReply?: Array<{ id: number; value: number }>;
+  failRegistersSet?: Error;
 } = {}): { session: StockConnectSession; sendCalls: SendCall[] } {
   const sendCalls: SendCall[] = [];
   const registersAvailable = options.registersAvailable ?? REGISTER_FIXTURE;
@@ -56,6 +66,27 @@ function makeFakeSession(options: {
           requestId: 1,
           errorCode: 0,
           registers: registersAvailable,
+          related: [],
+        } as unknown as ResolvedResponse;
+      }
+      if (commandType === CommandType.RegistersGet) {
+        return {
+          type: "registers",
+          requestId: 1,
+          errorCode: 0,
+          registers: options.registersGetReply ?? [{ id: 1, value: 0x42 }],
+          related: [],
+        } as unknown as ResolvedResponse;
+      }
+      if (commandType === CommandType.RegistersSet) {
+        if (options.failRegistersSet) {
+          throw options.failRegistersSet;
+        }
+        return {
+          type: "registers",
+          requestId: 1,
+          errorCode: 0,
+          registers: options.registersSetReply ?? [{ id: 1, value: 0x42 }],
           related: [],
         } as unknown as ResolvedResponse;
       }
@@ -147,4 +178,105 @@ test("handleRegistersAvailable: refuses an unexpected argument by naming it", as
   const result = await handleRegistersAvailable({ bogus: 1 }, session, {} as never);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /bogus/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: handleRegistersGet / handleRegistersSet
+// ---------------------------------------------------------------------------
+
+test("handleRegistersGet: renders names from the catalog and reports unknown ids", async () => {
+  const { session } = makeFakeSession({
+    registersGetReply: [
+      { id: 1, value: 0x42 }, // A -- known
+      { id: 99, value: 0x07 }, // unknown to the catalog
+    ],
+  });
+  const result = await handleRegistersGet({}, session, {} as never);
+  assert.equal(result.isError, false);
+  const payload = parseAnswer(result);
+  assert.deepEqual(payload.registers, { A: 0x42 });
+  assert.deepEqual(payload.unknownIds, [{ id: 99, value: 0x07 }]);
+  assert.equal(payload.memspace, "main");
+  assert.ok("runState" in payload);
+});
+
+test("handleRegistersGet: refuses an unexpected argument by naming it", async () => {
+  const { session } = makeFakeSession();
+  const result = await handleRegistersGet({ extra: true }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /extra/);
+});
+
+test("handleRegistersSet: register 'a' resolves case-insensitively and encodes the correct wire body", async () => {
+  const { session, sendCalls } = makeFakeSession({ registersSetReply: [{ id: 1, value: 5 }] });
+  const result = await handleRegistersSet({ register: "a", value: 5 }, session, {} as never);
+  assert.equal(result.isError, false);
+
+  const setCall = sendCalls.find((c) => c.commandType === CommandType.RegistersSet);
+  assert.ok(setCall, "expected a REGISTERS_SET send");
+  const body = setCall!.body;
+  // Wire layout (stock-protocol.ts's registersSetBody(), matching this
+  // plan's own 03-02 sibling precedent): memspace(1) count(u16LE) then per
+  // item itemSize(1) regId(1) value(u16LE) -- a 3-byte header, so the
+  // FIRST item's itemSize byte sits at offset 3, not offset 2. (The plan's
+  // own illustrative acceptance-criteria text names offset 2 -- the same
+  // off-by-one already documented and corrected in 03-02-SUMMARY.md's own
+  // deviation log for this identical body shape; corrected here the same
+  // way, Rule 1 auto-fix.)
+  assert.equal(body.readUInt16LE(1), 1, "count field must be 1 (one item)");
+  assert.equal(body[3], 3, "itemSize byte for the first item must be 3");
+  assert.equal(body[4], 1, "the resolved wire id for register A must be 1");
+});
+
+test("handleRegistersSet: unknown register name refuses naming the available names, zero REGISTERS_SET sends", async () => {
+  const { session, sendCalls } = makeFakeSession();
+  const result = await handleRegistersSet({ register: "ZZ", value: 1 }, session, {} as never);
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.ok(REGISTER_FIXTURE.some((r) => text.includes(r.name)), "refusal must name at least one available register");
+  assert.equal(sendCalls.filter((c) => c.commandType === CommandType.RegistersSet).length, 0);
+});
+
+test("handleRegistersSet: a flag-bit name ('C') refuses with an explanatory 'status register' message", async () => {
+  const { session, sendCalls } = makeFakeSession();
+  const result = await handleRegistersSet({ register: "C", value: 1 }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /status register/);
+  assert.equal(sendCalls.filter((c) => c.commandType === CommandType.RegistersSet).length, 0);
+});
+
+test("handleRegistersSet: an out-of-range value for a size-1 register refuses, zero sends", async () => {
+  const { session, sendCalls } = makeFakeSession();
+  const result = await handleRegistersSet({ register: "A", value: 0x100 }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /range/);
+  assert.equal(sendCalls.filter((c) => c.commandType === CommandType.RegistersSet).length, 0);
+});
+
+test("handleRegistersSet: a read-back value differing from the requested value still answers ok, reporting both distinctly", async () => {
+  const { session } = makeFakeSession({ registersSetReply: [{ id: 1, value: 0x99 }] });
+  const result = await handleRegistersSet({ register: "A", value: 0x42 }, session, {} as never);
+  assert.equal(result.isError, false);
+  const payload = parseAnswer(result);
+  assert.equal(payload.requestedValue, 0x42);
+  assert.equal(payload.observedValue, 0x99);
+  assert.ok("runState" in payload);
+});
+
+test("handleRegistersSet: a send() rejection produces isError:true with no 'wedge' wording", async () => {
+  const { session } = makeFakeSession({ failRegistersSet: new Error("socket exploded") });
+  const result = await handleRegistersSet({ register: "A", value: 1 }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.doesNotMatch(result.content[0]!.text.toLowerCase(), /wedge|hung|unresponsive/);
+});
+
+test("handleRegistersSet: missing/invalid register or value refuses before any send", async () => {
+  const { session, sendCalls } = makeFakeSession();
+  const missingRegister = await handleRegistersSet({ value: 1 }, session, {} as never);
+  assert.equal(missingRegister.isError, true);
+
+  const missingValue = await handleRegistersSet({ register: "A" }, session, {} as never);
+  assert.equal(missingValue.isError, true);
+
+  assert.equal(sendCalls.length, 0, "argument validation must refuse before any wire traffic, including the catalog fetch");
 });

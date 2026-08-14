@@ -38,7 +38,7 @@
 //     manual invalidation needed) -- a handler that calls
 //     registerCatalogFor() more than once per session for the same
 //     enumeration is re-deriving the cache this function already is.
-import { CommandType, memspaceBody } from "./stock-protocol.ts";
+import { CommandType, memspaceBody, registersSetBody, type RegisterSetItem } from "./stock-protocol.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 
@@ -138,4 +138,171 @@ export const handleRegistersAvailable: StockSessionHandler = async (args, sessio
   const registers = [...catalog.byId.entries()].map(([id, reg]) => ({ id, name: reg.name, size: reg.size }));
 
   return stockAnswer(session.client, { registers, count: registers.length, memspace: "main" });
+};
+
+// ---------------------------------------------------------------------------
+// vice_registers_get -- fork-compatible, no required arguments.
+// ---------------------------------------------------------------------------
+
+export const handleRegistersGet: StockSessionHandler = async (args, session) => {
+  const unexpectedKeys = Object.keys(args);
+  if (unexpectedKeys.length > 0) {
+    return isErrorText(`vice_registers_get: unexpected argument(s): ${unexpectedKeys.join(", ")} -- this tool takes no arguments`);
+  }
+
+  let catalog: RegisterCatalog;
+  try {
+    catalog = await registerCatalogFor(session);
+  } catch (err) {
+    return convertWireError("vice_registers_get", err);
+  }
+
+  let response;
+  try {
+    response = await session.client.send(CommandType.RegistersGet, memspaceBody({ memspace: 0x00 }));
+  } catch (err) {
+    return convertWireError("vice_registers_get", err);
+  }
+  if (response.type !== "registers") {
+    return isErrorText(`vice_registers_get: expected a registers reply, got "${response.type}"`);
+  }
+
+  // D-01 (stock-native shape): `registers` is name -> value for every id the
+  // catalog resolves. The fork's `register` argument enumerates individual
+  // status-register flag bits (N|V|B|D|I|Z|C) -- those are NOT separate
+  // wire registers; the binary monitor exposes only the whole status
+  // register the catalog itself names (typically "FL" or similar). This
+  // handler reports that register's raw value as a number; it does not
+  // synthesise per-bit fields in Phase 3 (see handleRegistersSet's own
+  // flag-bit refusal for the write-side half of the same limitation).
+  const registers: Record<string, number> = {};
+  const unknownIds: Array<{ id: number; value: number }> = [];
+  for (const reg of response.registers) {
+    const known = catalog.byId.get(reg.id);
+    if (known) {
+      registers[known.name] = reg.value;
+    } else {
+      // Reported, never dropped -- a silently omitted register would be a
+      // wrong answer, not merely an incomplete one.
+      unknownIds.push({ id: reg.id, value: reg.value });
+    }
+  }
+
+  return stockAnswer(session.client, { registers, unknownIds, memspace: "main" });
+};
+
+// ---------------------------------------------------------------------------
+// vice_registers_set -- fork-compatible required arguments (register, value).
+// ---------------------------------------------------------------------------
+
+/** The 6502 status-register flag-bit names the fork's own `register`
+ * argument enumerates alongside the "real" wire registers. None of these
+ * are individually addressable on stock -- REGISTERS_SET can only write
+ * the whole status register the catalog itself names. Bit positions are
+ * the conventional 6502 layout (bit 7 down to bit 0), used only to make
+ * the explanatory refusal concrete, never to perform a read-modify-write. */
+const FLAG_BIT_POSITIONS: Record<string, number> = { N: 7, V: 6, B: 4, D: 3, I: 2, Z: 1, C: 0 };
+
+/** Candidate names a connected build might use for the whole processor
+ * status register -- checked in order against the resolved catalog so the
+ * flag-bit refusal can name the ACTUAL register this build reports,
+ * rather than guessing a name that might not exist on this build. */
+const STATUS_REGISTER_CANDIDATES = ["FL", "SR", "P", "STATUS", "FLAGS"];
+
+function findStatusRegisterName(catalog: RegisterCatalog): string | null {
+  for (const candidate of STATUS_REGISTER_CANDIDATES) {
+    const found = catalog.byName.get(candidate);
+    if (found) {
+      return found.name;
+    }
+  }
+  return null;
+}
+
+export const handleRegistersSet: StockSessionHandler = async (args, session) => {
+  const rawRegister = args.register;
+  const rawValue = args.value;
+
+  if (typeof rawRegister !== "string" || rawRegister.trim().length === 0) {
+    return isErrorText(`vice_registers_set: "register" is required and must be a non-empty string, got ${JSON.stringify(rawRegister)}`);
+  }
+  if (typeof rawValue !== "number" || !Number.isInteger(rawValue)) {
+    return isErrorText(`vice_registers_set: "value" is required and must be an integer, got ${JSON.stringify(rawValue)}`);
+  }
+
+  let catalog: RegisterCatalog;
+  try {
+    catalog = await registerCatalogFor(session);
+  } catch (err) {
+    return convertWireError("vice_registers_set", err);
+  }
+
+  const name = rawRegister.trim().toUpperCase();
+  const resolved = catalog.byName.get(name);
+  if (!resolved) {
+    if (name in FLAG_BIT_POSITIONS) {
+      const statusName = findStatusRegisterName(catalog);
+      const statusDescription = statusName
+        ? `reported by this catalog as "${statusName}"`
+        : "not identifiable by name in this catalog";
+      return isErrorText(
+        `vice_registers_set: "${rawRegister}" names an individual processor-status flag bit, not a wire register -- ` +
+          `the binary monitor exposes only the WHOLE status register (${statusDescription}), never per-bit access. ` +
+          `Read that register's value and test/set bit ${FLAG_BIT_POSITIONS[name]} yourself rather than writing "${rawRegister}" directly ` +
+          `(this is an explanatory refusal, not a silent read-modify-write).`,
+      );
+    }
+    const available = [...catalog.byName.keys()].sort().join(", ");
+    return isErrorText(`vice_registers_set: unknown register "${rawRegister}" -- available registers: ${available}`);
+  }
+
+  const { id, size } = resolved;
+  let max: number;
+  if (size === 1) {
+    max = 0xff;
+  } else if (size === 2) {
+    max = 0xffff;
+  } else {
+    return isErrorText(
+      `vice_registers_set: register "${resolved.name}" has an unexpected declared size (${size} byte(s)) -- only 1- or 2-byte registers are supported`,
+    );
+  }
+  if (rawValue < 0 || rawValue > max) {
+    return isErrorText(
+      `vice_registers_set: value ${rawValue} is out of range for register "${resolved.name}" (size ${size} byte(s), valid range 0..0x${max.toString(16)})`,
+    );
+  }
+
+  const items: RegisterSetItem[] = [{ id, value: rawValue }];
+  let body: Buffer;
+  try {
+    body = registersSetBody({ memspace: 0x00, items });
+  } catch (err) {
+    return convertWireError("vice_registers_set", err);
+  }
+
+  let response;
+  try {
+    response = await session.client.send(CommandType.RegistersSet, body);
+  } catch (err) {
+    return convertWireError("vice_registers_set", err);
+  }
+  if (response.type !== "registers") {
+    return isErrorText(`vice_registers_set: expected a registers reply after REGISTERS_SET, got "${response.type}"`);
+  }
+
+  // VICE answers REGISTERS_SET with a full RegisterInfo dump -- read the
+  // just-written register's value back out of THAT reply, so a write the
+  // emulator silently clamped or otherwise altered is visible rather than
+  // assumed identical to what was requested.
+  const observed = response.registers.find((reg) => reg.id === id);
+  const observedValue = observed ? observed.value : null;
+
+  return stockAnswer(session.client, {
+    register: resolved.name,
+    id,
+    requestedValue: rawValue,
+    observedValue,
+    memspace: "main",
+  });
 };

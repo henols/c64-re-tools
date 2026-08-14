@@ -87,3 +87,29 @@ gitignored). Worth a follow-up if parallel-executor worktrees become routine:
 either have the orchestrator run `ensure-mcp-deps.sh` per worktree at spawn
 time, or document that executors must self-provision before running any
 `.claude/mcp/vice` test.
+
+## 3. `build-atomic.test.ts`'s temp-directory cleanup test is intermittently flaky
+
+**Found during:** 03-07 (`npm run test:automated` full-suite run, after both
+tasks landed).
+
+**Symptom:** "the private temp directory is cleaned up on both the success
+and the failure path, leaving no sibling of the out-dir behind"
+(`build-atomic.test.ts`) failed once in a full `npm run test:automated` run.
+
+**Root cause:** unconfirmed -- not investigated further, since this test
+file is entirely unrelated to this plan's scope (`stock-registers.ts`,
+`stock-registers.test.ts`). Re-running `node --test build-atomic.test.ts` in
+isolation immediately after the failure passed 6/6 with no changes, so the
+failure is intermittent (likely a timing/ordering sensitivity in the
+temp-directory walk, possibly specific to the parallel-worktree filesystem),
+not a deterministic regression.
+
+**Disposition:** out of scope for 03-07 (Scope Boundary: only auto-fix issues
+directly caused by the current task's changes; this plan touches neither
+`build.ts` nor `build-atomic.test.ts`). Not fixed here, not re-run in a loop
+to "make it pass" per the executor's fix-attempt-limit guidance.
+
+**Suggested follow-up:** if this recurs across future phases' full-suite
+runs, worth a dedicated investigation into whether the temp-directory walk
+has a race independent of worktree execution.
