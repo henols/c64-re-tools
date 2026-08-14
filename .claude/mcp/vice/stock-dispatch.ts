@@ -27,9 +27,24 @@
 import { resolve, join } from "node:path";
 
 import type { ViceBackend } from "./backend-detect.mts";
-import { MonitorOwnershipError, type HeldLease } from "./vice-broker-client.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";
+import {
+  isErrorText,
+  convertHandshakeError,
+  convertWireError,
+  type StockToolResult,
+  type StockOkResult,
+  type StockErrorResult,
+} from "./stock-handler.ts";
+
+// Re-exported so Phase 2's existing import surface (and its 921-line test
+// file) keeps working unchanged -- these four names used to be DEFINED
+// here; stock-handler.ts (Task 3, this plan) is now their one true home,
+// broken out so a family module can import them without importing this
+// file back (see that file's own header comment on the cycle this avoids).
+export { isErrorText, convertHandshakeError, convertWireError };
+export type { StockToolResult, StockOkResult, StockErrorResult };
 
 // ---------------------------------------------------------------------------
 // manifestPathForBackend() -- the manifest selector.
@@ -317,30 +332,6 @@ export { stockDisconnect };
 // all; a source-structure test in stock-dispatch.test.ts and a grep gate in
 // this plan's own acceptance criteria both confirm it stays that way.
 
-/** The shape every stock dispatch handler returns -- structurally IDENTICAL
- * to vice-proxy.ts's own private ToolCallResult (ErrorTextResult |
- * OkTextResult), by field name and type, but declared here rather than
- * imported: vice-proxy.ts imports THIS file (Task 2), so importing back from
- * it would be the exact module-cycle this codebase's own "module-cycle
- * avoidance is deliberate" constraint forbids. TypeScript's structural
- * typing makes the two interchangeable at every call site that matters --
- * see vice-proxy.ts's own tools-construction loop, where a value of this
- * type flows into a parameter typed as vice-proxy.ts's ToolCallResult with
- * no adapter needed. */
-export interface StockErrorResult {
-  content: { type: "text"; text: string }[];
-  isError: true;
-}
-export interface StockOkResult {
-  content: { type: "text"; text: string }[];
-  isError: false;
-}
-export type StockToolResult = StockErrorResult | StockOkResult;
-
-function isErrorText(text: string): StockErrorResult {
-  return { content: [{ type: "text", text }], isError: true };
-}
-
 /** One stock dispatch table entry. `deps` is the SAME StockDispatchDeps
  * ensureStockSession() itself takes -- a handler that needs a live session
  * reaches it only through ensureStockSession(deps), never by resolving a
@@ -348,54 +339,6 @@ function isErrorText(text: string): StockErrorResult {
  * path, the exact thing ensureStockSession()'s own header comment
  * prohibits). */
 export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDeps) => Promise<StockToolResult>;
-
-/** Converts the two typed errors ensureStockSession()/stockConnect() can
- * propagate into well-formed refusal text, naming the tool. Never mentions
- * "wedge", "hung", or "unresponsive" -- a monitor-ownership conflict is the
- * broker's own enforcement of a DIFFERENT grant already holding this
- * instance, a state vice-wedge-triage's opening move must not be misdirected
- * by into treating as a wedged emulator (T-02-14, this file's own
- * prohibition list). Anything else escaping a handler is converted too,
- * generically, so no handler can ever let an exception reach the never-throw
- * boundary one layer up in vice-proxy.ts. */
-function convertHandshakeError(toolName: string, err: unknown): StockErrorResult {
-  if (err instanceof MonitorOwnershipError) {
-    return isErrorText(
-      `${toolName}: this instance's monitor socket is already claimed by a different grant ` +
-        `(grant ${err.holderGrantId ?? "unknown"}, claimed at ${err.holderClaimedAt ?? "unknown"}, port ${err.port ?? "unknown"}) -- ` +
-        `only one client may hold the stock monitor socket at a time.`,
-    );
-  }
-  if (err instanceof MachineRestartedError) {
-    return isErrorText(
-      `${toolName}: the emulator's identity could not be proven across a reconnect ` +
-        `(baseline epoch ${String(err.baselineEpoch)}, current epoch ${String(err.currentEpoch)}) -- ` +
-        `treat every result since the previous call as void and retry.`,
-    );
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  // WR-06: a connect REFUSAL on the stock path has exactly one common cause, and
-  // a bare "connect ECONNREFUSED 172.17.0.1:6605" points at none of it. The
-  // broker binds VICE's binary monitor to 127.0.0.1 by default -- a deliberate,
-  // documented safety posture, since the binmon is unauthenticated and grants
-  // full memory read/write -- while the proxy derives its dial host from the
-  // CONTAINERIZED instance URL, i.e. host.docker.internal. In the default
-  // containerized topology those two never meet, and nothing in the resulting
-  // message named the one environment variable that reconciles them. Named
-  // here, at the one seam that converts a handshake failure into agent-facing
-  // text, rather than in a comment nobody reading the error will see.
-  if (/ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/.test(message)) {
-    return isErrorText(
-      `${toolName}: stock handshake failed -- nothing accepted a binary-monitor connection (${message}). ` +
-        `The broker binds VICE's binary monitor to 127.0.0.1 by DEFAULT (the safe posture: the binary monitor is ` +
-        `unauthenticated and grants full memory read/write plus process control to anything that can reach it), ` +
-        `so a containerized MCP server dialling the host cannot reach it. Set VICE_BROKER_BINMON_HOST on the ` +
-        `BROKER's own environment to an address the container can reach, then restart the broker so the emulator ` +
-        `is relaunched with the new bind address.`,
-    );
-  }
-  return isErrorText(`${toolName}: stock handshake failed (${message}).`);
-}
 
 /**
  * The `vice_ping` table entry -- BACK-03's answer, on the tool an agent
