@@ -98,6 +98,13 @@ export function isLaunchInFlight(): boolean {
 // pattern, reused here.
 let warnedBinmonBindWidened = false;
 
+// Plan 03-04 (DIRECT-06, D-13): the SAME one-time-note idiom as
+// warnedBinmonBindWidened above, for the SECOND (`-remotemonitor`) port's
+// bind -- a separate boolean because the two flags widen independently (a
+// caller could widen one host override and not the other, though in
+// practice both resolve from the same `binmonHost` value below).
+let warnedRemoteMonitorBindWidened = false;
+
 /** Resolves the emulator's own argument vector for the given `backend`. The
  * `VICE_ARGS` full-override short-circuit (matching
  * resources/vice-supervisor.sh's own VICE_ARGS convention exactly) is
@@ -113,18 +120,40 @@ let warnedBinmonBindWidened = false;
  *
  * `backend: "stock"` returns `-binarymonitor -binarymonitoraddress
  * ip4://<host>:<port>` (docs/phase1-probe-results.md's confirmed real-world
- * command line) -- deliberately no `-remotemonitor` and no `-warp`; Phase 7
- * revisits launch flags when it picks a stopwatch route. The host resolves
- * from `binmonHost` or VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` --
- * deliberately narrower than the fork path's `0.0.0.0` default, because
- * VICE's binary monitor is unauthenticated by design and grants full
- * read/write over the emulated machine plus process control to anything
- * that can reach it (planner decision, `02-03-PLAN.md`). Widening the bind
- * away from loopback emits exactly one stderr note per process, naming the
- * resolved bind address and what the exposure grants. */
+ * command line). The host resolves from `binmonHost` or
+ * VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` -- deliberately
+ * narrower than the fork path's `0.0.0.0` default, because VICE's binary
+ * monitor is unauthenticated by design and grants full read/write over the
+ * emulated machine plus process control to anything that can reach it
+ * (planner decision, `02-03-PLAN.md`). Widening the bind away from loopback
+ * emits exactly one stderr note per process, naming the resolved bind
+ * address and what the exposure grants.
+ *
+ * Plan 03-04 (DIRECT-06, D-13): when `remoteMonitorPort` is a number, the
+ * stock branch APPENDS `-remotemonitor -remotemonitoraddress
+ * ip4://<host>:<remoteMonitorPort>`, reusing the SAME resolved `host` value
+ * the binmon address already used -- one resolution, not two. When
+ * `remoteMonitorPort` is omitted (undefined), the returned argv is
+ * byte-identical to what this function always returned -- no
+ * `-remotemonitor` at all. `-remotemonitoraddress`'s exact spelling is
+ * `[ASSUMED]` by symmetry with `-binarymonitoraddress` (RESEARCH.md
+ * Assumption A1) and is filed as probe debt under
+ * `.planning/todos/pending/`. Widening THIS bind away from loopback emits
+ * its own one-time stderr note (`warnedRemoteMonitorBindWidened`), naming
+ * the resolved address and stating that VICE's TEXT monitor accepts
+ * arbitrary monitor commands and is unauthenticated -- Phase 3 dials
+ * nothing on this port; only the launch flag lands now (see D-13's own
+ * rationale: adding the flag later would require relaunching a live
+ * instance, destroying all emulation state). */
 export function buildViceArgs(
   port: number,
-  { backend, mcpHost, binmonHost, viceArgsEnv }: { backend: ViceBackend; mcpHost?: string; binmonHost?: string; viceArgsEnv?: string },
+  {
+    backend,
+    mcpHost,
+    binmonHost,
+    viceArgsEnv,
+    remoteMonitorPort,
+  }: { backend: ViceBackend; mcpHost?: string; binmonHost?: string; viceArgsEnv?: string; remoteMonitorPort?: number },
 ): string[] {
   const rawViceArgs = viceArgsEnv ?? process.env.VICE_ARGS;
   if (typeof rawViceArgs === "string" && rawViceArgs.trim() !== "") {
@@ -141,7 +170,20 @@ export function buildViceArgs(
           `when the MCP server itself runs in a container that must reach the host emulator\n`,
       );
     }
-    return ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+    const args = ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+    if (typeof remoteMonitorPort === "number") {
+      if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
+        warnedRemoteMonitorBindWidened = true;
+        process.stderr.write(
+          `vice-broker: stock text (-remotemonitor) monitor bind widened to ${host} -- VICE's text monitor ` +
+            `accepts arbitrary monitor commands and is unauthenticated, exactly like the binary monitor; the ` +
+            `default of 127.0.0.1 is the safe posture for a host-native install, widen only when the MCP server ` +
+            `itself runs in a container that must reach the host emulator\n`,
+        );
+      }
+      args.push("-remotemonitor", "-remotemonitoraddress", `ip4://${host}:${remoteMonitorPort}`);
+    }
+    return args;
   }
   const host = mcpHost ?? process.env.VICE_BROKER_MCP_HOST ?? "0.0.0.0";
   return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
@@ -167,6 +209,13 @@ export interface TryLaunchDeps {
   /** Stock-only bind override -- see buildViceArgs()'s own doc comment.
    * Ignored entirely when `backend` is `"fork"` or omitted. */
   binmonHost?: string;
+  /** Plan 03-04 (DIRECT-06, D-13): the second, broker-allocated port stock's
+   * `-remotemonitor` text monitor binds -- threaded straight through to
+   * buildViceArgs() and mirrored onto the constructed InstanceRecord (key
+   * omitted when `undefined`). This function stays fully synchronous -- it
+   * must NOT allocate this port itself; the caller (acquirePortAndLaunch()
+   * below) resolves it before calling in. */
+  remoteMonitorPort?: number;
   /** Overrides the resolved-command-line log line's destination -- default
    * writes to stderr exactly like before this field existed. Added (plan
    * 03) so superviseChild()'s own tests can capture "the resolved spawn
@@ -193,7 +242,12 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   const now = deps.now ?? ((): number => Date.now());
   const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
   const backend = deps.backend ?? "fork";
-  const viceArgs = buildViceArgs(port, { backend, mcpHost: deps.mcpHost, binmonHost: deps.binmonHost });
+  const viceArgs = buildViceArgs(port, {
+    backend,
+    mcpHost: deps.mcpHost,
+    binmonHost: deps.binmonHost,
+    remoteMonitorPort: deps.remoteMonitorPort,
+  });
   const log = deps.log ?? defaultLog;
 
   log(`vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`);
@@ -213,6 +267,7 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
     viceBin,
     viceArgs,
     dryRun: false,
+    ...(deps.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: deps.remoteMonitorPort }),
   };
   deps.state.instances.set(port, record);
   return record;
@@ -257,6 +312,19 @@ export interface AcquirePortAndLaunchDeps {
    * fork-when-omitted default, threaded through to spawnAndRecordInstance(). */
   backend?: ViceBackend;
   binmonHost?: string;
+  /** Plan 03-04 (DIRECT-06, D-13): resolves the SECOND (`-remotemonitor`)
+   * port, given the primary port already allocated as `exclude` (so the
+   * second allocation can never return the SAME candidate the first one
+   * just claimed, before its InstanceRecord exists to make `exclude`
+   * redundant). Optional -- omitted entirely (the default for every
+   * pre-Phase-3 caller and every fork launch) means no second port is ever
+   * requested, and `buildViceArgs()`'s stock branch stays byte-identical to
+   * before this field existed. Called ONLY when `backend === "stock"` --
+   * this function gates that itself; a caller need not check the backend
+   * before providing it. A failed second allocation degrades to launching
+   * WITHOUT `-remotemonitor` rather than failing the whole acquire -- a
+   * port nothing uses yet must never make the backend unavailable. */
+  allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
   /** Overrides the launch-slot decision log line's destination -- default
    * writes to stderr, matching every other log seam in this module. */
   log?: (line: string) => void;
@@ -311,6 +379,41 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
     const supervisorDir = join(deps.stateDir, String(port));
     const epochFile = join(supervisorDir, "epoch.json");
     const spawn = deps.spawnFactory ? deps.spawnFactory(port) : deps.spawn;
+
+    // Plan 03-04 (DIRECT-06, D-13): the second (`-remotemonitor`) port is
+    // resolved HERE, still inside the single in_flight owner's own
+    // try-block, immediately after the primary allocation succeeds -- both
+    // awaits stay inside this SAME try, after the guard's synchronous
+    // check-and-set above; neither is moved, duplicated, or awaited around
+    // that guard. Only ever attempted for `backend === "stock"`, and only
+    // when the caller actually provided the allocator -- every fork launch
+    // and every pre-Phase-3 caller never reaches this branch at all.
+    let remoteMonitorPort: number | undefined;
+    if (deps.backend === "stock" && deps.allocateRemoteMonitorPort) {
+      const remoteResult = await deps.allocateRemoteMonitorPort(deps.state, new Set([port]));
+      if (remoteResult.ok) {
+        // Assigned directly (not via broker-state.mjs's blockPort()) -- this
+        // module's own type-only import of that sibling is load-bearing
+        // (see this file's own header comment): a VALUE import would turn
+        // "./broker-state.mjs" into a real runtime resolution this file
+        // cannot satisfy when loaded directly, as this file's own unit test
+        // does. `state.blockedPorts` is a plain Set the type import already
+        // describes, so mutating it directly needs no value import at all --
+        // exactly the same discipline handleExit()'s own
+        // `record.monitorClient = undefined` uses in place of
+        // clearMonitorClient().
+        deps.state.blockedPorts.add(remoteResult.port);
+        remoteMonitorPort = remoteResult.port;
+      } else {
+        // Degrade, never fail: a port nothing dials yet (Phase 3 builds no
+        // text-monitor client) must never make the backend unavailable.
+        log(
+          `vice-broker: second (-remotemonitor) port allocation failed (${remoteResult.reason}) -- ` +
+            `launching WITHOUT -remotemonitor; nothing in Phase 3 dials the text-monitor port anyway`,
+        );
+      }
+    }
+
     const record = spawnAndRecordInstance(reason, port, {
       state: deps.state,
       supervisorDir,
@@ -321,6 +424,7 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
       mcpHost: deps.mcpHost,
       backend: deps.backend,
       binmonHost: deps.binmonHost,
+      remoteMonitorPort,
     });
     return { ok: true, record };
   } finally {

@@ -112,6 +112,34 @@ export interface InstanceRecord {
    * PROCESS's pid (this instance's own `pid` field at claim time), not the
    * connecting client's pid, which this broker cannot observe over TCP. */
   monitorClient?: { grantId: string; claimedAt: number; pid: number | null };
+  // ------------------------------------------------------------------
+  // Plan 03-04 (DIRECT-06, D-13): the SECOND, broker-allocated port stock's
+  // `-remotemonitor` text monitor binds, alongside `-binarymonitor` on
+  // `port` above. Optional -- additive, same convention as every field
+  // group above: absent on the fork backend, and absent on stock when the
+  // second port allocation itself failed (broker-launch.mts's
+  // acquirePortAndLaunch() degrades to launching WITHOUT `-remotemonitor`
+  // rather than failing the whole acquire). NOTHING IN PHASE 3 DIALS THIS
+  // PORT -- there is no text-monitor client yet, and no protocol code
+  // anywhere in this tree opens a socket to it. It exists now, at launch
+  // time only, because adding the flag later would require relaunching a
+  // live instance, which destroys all emulation state (D-13's own
+  // rationale, `03-04-PLAN.md`).
+  //
+  // MONITOR-OWNERSHIP DECISION, stated out loud here so Phase 7 finds it:
+  // `monitorClient` above stays a SINGLE field per instance, keyed by
+  // grant, and it covers the BINARY-MONITOR socket ONLY. The
+  // `-remotemonitor` socket is deliberately UNCLAIMED in Phase 3 -- since
+  // nothing dials it, there is no ownership conflict to guard yet, so
+  // there is nothing for monitor_claim/monitor_release to enforce for this
+  // second socket. Phase 7, which builds the text-monitor client (Phase
+  // 2's D-13), is the right place to add a `channel: "binary" | "text"`
+  // discriminator to `monitorClient` -- do NOT add one speculatively here.
+  // ------------------------------------------------------------------
+  /** The second, broker-allocated port stock's `-remotemonitor` text
+   * monitor binds -- see the banner above for the full ownership decision
+   * this field's absence implies. */
+  remoteMonitorPort?: number;
 }
 
 /** Clears `monitorClient` as a side effect of release, recycle, or the
@@ -296,6 +324,16 @@ export function blockPort(state: BrokerState, port: number): void {
 export interface NextFreePortOptions {
   basePort?: number;
   portInUse?: PortInUseProbe;
+  /** Plan 03-04 (D-13): ports to skip that are NOT yet reflected in
+   * `state.instances` -- the primary port allocated for a stock launch's
+   * `-binarymonitor` bind has already been decided by the moment the SECOND
+   * (`-remotemonitor`) port is allocated, but its `InstanceRecord` does not
+   * exist yet (spawnAndRecordInstance() has not run), so without this
+   * option the second allocation could return the SAME candidate the first
+   * one just claimed. An excluded candidate is NOT added to
+   * `state.blockedPorts` -- it is not refused, only already spoken for by
+   * this same caller. */
+  exclude?: ReadonlySet<number>;
 }
 
 /** Allocates the lowest free port at or above the base port (default 6600
@@ -337,6 +375,7 @@ export async function nextFreePort(state: BrokerState, opts: NextFreePortOptions
   let checked = 0;
   for (let port = basePort; port < limit; port++) {
     if (state.instances.has(port)) continue;
+    if (opts.exclude?.has(port)) continue;
     if (isPortBlocked(state, port)) continue;
     if (await portInUse(port)) {
       blockPort(state, port);
