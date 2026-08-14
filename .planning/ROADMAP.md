@@ -196,12 +196,12 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-06-PLAN.md — Wave 2 (family A): memory read/write/banks, side-effect-free by default, with the per-session bank catalog
-- [ ] 03-07-PLAN.md — Wave 2 (family A): registers get/set plus the stock-only `vice_registers_available`, over a per-session register catalog
-- [ ] 03-08-PLAN.md — Wave 2 (family B): checkpoints and watchpoints, the D-10 condition registry with fail-closed cleanup, and the D-11 trace guard
-- [ ] 03-09-PLAN.md — Wave 2 (family C): pause/run with D-08 short-circuiting, step and the stock-only `vice_execution_until_return` with D-07 gating
-- [ ] 03-10-PLAN.md — Wave 2 (family D): reset, autostart, unit-8-only disk attach, snapshots, and D-17's declared path-translation table
-- [ ] 03-11-PLAN.md — Wave 2 (family D): the new ASCII↔PETSCII table, keyboard type/petscii, and joystick set
+- [x] 03-06-PLAN.md — Wave 2 (family A): memory read/write/banks, side-effect-free by default, with the per-session bank catalog
+- [x] 03-07-PLAN.md — Wave 2 (family A): registers get/set plus the stock-only `vice_registers_available`, over a per-session register catalog
+- [x] 03-08-PLAN.md — Wave 2 (family B): checkpoints and watchpoints, the D-10 condition registry with fail-closed cleanup, and the D-11 trace guard
+- [x] 03-09-PLAN.md — Wave 2 (family C): pause/run with D-08 short-circuiting, step and the stock-only `vice_execution_until_return` with D-07 gating
+- [x] 03-10-PLAN.md — Wave 2 (family D): reset, autostart, unit-8-only disk attach, snapshots, and D-17's declared path-translation table
+- [x] 03-11-PLAN.md — Wave 2 (family D): the new ASCII↔PETSCII table, keyboard type/petscii, and joystick set
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -390,7 +390,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 5/13 | In Progress|  |
+| 3. Direct Tools | 11/13 | In Progress|  |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
