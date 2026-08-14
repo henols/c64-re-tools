@@ -188,11 +188,11 @@ Notes:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Wave 1: shared seams — the `runState` projection (D-06/07/08), `parseAddress()` (D-04), and the cycle-free `stock-handler.ts` contract with both error converters
-- [ ] 03-02-PLAN.md — Wave 1: all 16 request-body encoders in `stock-protocol.ts`, ported from `probe-binmon.mjs` where a tested builder exists
-- [ ] 03-03-PLAN.md — Wave 1: the typed condition AST, the one canonical emitter, and the fork-compatible string parser with its refusal set (D-09)
-- [ ] 03-04-PLAN.md — Wave 1: broker `-remotemonitor` launch flag and second allocated port, with the monitor-ownership answer written down for Phase 7 (D-13's launch half)
-- [ ] 03-05-PLAN.md — Wave 1: D-16's fork-manifest deletion and the 62-tool gate, the parity register for every Phase 3 divergence, and the `[ASSUMED]` probe-debt todo
+- [x] 03-01-PLAN.md — Wave 1: shared seams — the `runState` projection (D-06/07/08), `parseAddress()` (D-04), and the cycle-free `stock-handler.ts` contract with both error converters
+- [x] 03-02-PLAN.md — Wave 1: all 16 request-body encoders in `stock-protocol.ts`, ported from `probe-binmon.mjs` where a tested builder exists
+- [x] 03-03-PLAN.md — Wave 1: the typed condition AST, the one canonical emitter, and the fork-compatible string parser with its refusal set (D-09)
+- [x] 03-04-PLAN.md — Wave 1: broker `-remotemonitor` launch flag and second allocated port, with the monitor-ownership answer written down for Phase 7 (D-13's launch half)
+- [x] 03-05-PLAN.md — Wave 1: D-16's fork-manifest deletion and the 62-tool gate, the parity register for every Phase 3 divergence, and the `[ASSUMED]` probe-debt todo
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -390,7 +390,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 0/TBD | Not started | - |
+| 3. Direct Tools | 5/13 | In Progress|  |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
