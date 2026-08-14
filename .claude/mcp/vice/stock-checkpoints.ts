@@ -20,13 +20,12 @@
 // are correctness-as-safety issues, not polish, so they belong in the same
 // module as the tools that create the hazard.
 //
-// This file is built up task by task (three tasks in this plan): Task 1
-// (this commit) adds checkpoint add/delete/list/toggle plus the minimal D-10/
-// D-11 plumbing those handlers already call into (a plain registry read/
-// write/delete, and a registration point for the trace guard); Task 2 adds
+// This file was built up task by task (three tasks in this plan): Task 1
+// adds checkpoint add/delete/list/toggle plus the D-10 condition registry's
+// read/write/delete plumbing those handlers call into; Task 2 adds
 // condition-setting (set-condition, watch-add, the fail-closed cleanup, and
-// condition immutability); Task 3 replaces the D-11 skeleton below with the
-// real rate-limited, deferred-auto-disable trace guard.
+// condition immutability); Task 3 (this file's current state) adds the D-11
+// trace guard's real rate limiting and deferred auto-disable, below.
 //
 // WHAT NOT TO DO:
 //   - Never string-concatenate a condition. Both input paths funnel through
@@ -41,7 +40,11 @@
 //     ignore count; the only implementation would resume the machine on each
 //     ignored hit, which is a carve-out in D-05's absolute halt policy this
 //     module must not create.
-//   - Never send from inside the trace guard's 'event' listener (Task 3).
+//   - Never send from inside the trace guard's 'event' listener -- the
+//     listener does pure arithmetic only (window counting, threshold check);
+//     the disabling CHECKPOINT_TOGGLE is deferred out of that call stack (one
+//     deferral site below) so a synchronous flood of hits can never itself
+//     trigger a synchronous send back onto the same blocking socket.
 //   - Never construct an ok-answer outside stockAnswer() -- that is exactly
 //     how an answer ships without `runState` (D-06).
 import {
@@ -52,6 +55,7 @@ import {
   cpNumBody,
   type ParsedCheckpoint,
   type ParsedCheckpointInfoResponse,
+  type ViceMonitorClient,
 } from "./stock-protocol.ts";
 // conditionSetBody() is imported through its own namespace binding, deliberately
 // NOT alongside the encoders above: this keeps the literal identifier
@@ -210,45 +214,160 @@ async function setConditionFailClosed(
 }
 
 // ---------------------------------------------------------------------------
-// D-11 trace guard -- Task 1 skeleton. Just enough state for
-// handleCheckpointAdd/List/Delete to call into: registration and a
-// (currently always-empty) auto-disable report. Task 3 replaces this with
-// the real per-client, rate-limited, deferred-auto-disable guard -- the
-// exported names below stay the same so Task 1's call sites need no changes.
+// D-11: the trace guard for `stop:false` checkpoints. Per-client state (a
+// checkpoint id is only ever unique within one emulator instance), attached
+// idempotently to the client's own 'event' stream -- exactly one listener per
+// client, matching stock-runstate.ts's attachRunStateTracker() discipline.
+//
+// Planner decision (RESEARCH.md Focus Item 5 offered two designs): the
+// disabling toggle send is deferred out of the event-listener's call stack
+// via the platform's own next-turn scheduling primitive (the one call site
+// below) rather than a next-dispatch check, because the flood this guards
+// against is synchronous and blocking the emulator thread -- promptness is
+// the point, and waiting for the agent's next unrelated tool call could be
+// arbitrarily long. RESEARCH.md flags this as an assumption (A4); the probe
+// debt is filed under .planning/todos/pending/.
 // ---------------------------------------------------------------------------
 
-let traceCheckpointsByTarget = new Map<string, Set<number>>();
+/** Deliberately conservative first guess -- change this single constant if
+ * empirical testing against real hardware shows a different threshold is
+ * appropriate. */
+export const TRACE_HITS_PER_SECOND_LIMIT = 20;
 
-/** Arms the trace guard for `checkpointId` on `session`'s target. Task 3
- * upgrades this to attach a real rate-limiting 'event' listener; for Task 1
- * this only records that the id is a `stop:false` checkpoint. */
-export function registerTraceCheckpoint(session: StockConnectSession, checkpointId: number): void {
-  let set = traceCheckpointsByTarget.get(session.targetId);
-  if (!set) {
-    set = new Set();
-    traceCheckpointsByTarget.set(session.targetId, set);
+interface TraceWindow {
+  windowStartMs: number;
+  hits: number;
+}
+
+interface AutoDisabledEntry {
+  reason: string;
+  at: number;
+  hitsPerSecond: number;
+}
+
+interface TraceGuardState {
+  traceCheckpoints: Set<number>;
+  window: Map<number, TraceWindow>;
+  disableScheduled: Set<number>;
+  autoDisabled: Map<number, AutoDisabledEntry>;
+  now: () => number;
+}
+
+let traceGuards = new WeakMap<ViceMonitorClient, TraceGuardState>();
+
+function isCheckpointInfoEvent(item: unknown): item is ParsedCheckpointInfoResponse {
+  return isPlainObject(item) && item.type === "checkpoint_info" && isPlainObject(item.checkpoint);
+}
+
+function attachTraceGuardListener(client: ViceMonitorClient, state: TraceGuardState): void {
+  client.on("event", (item: unknown) => {
+    if (!isCheckpointInfoEvent(item)) return;
+    const id = item.checkpoint.id;
+    if (!state.traceCheckpoints.has(id)) return;
+
+    // Pure arithmetic only, below this point until the deferred callback --
+    // no I/O, no send(), no await. The window rolls forward when the last
+    // window started 1000ms or more ago.
+    const now = state.now();
+    let w = state.window.get(id);
+    if (!w || now - w.windowStartMs >= 1000) {
+      w = { windowStartMs: now, hits: 0 };
+      state.window.set(id, w);
+    }
+    w.hits += 1;
+
+    if (w.hits > TRACE_HITS_PER_SECOND_LIMIT && !state.disableScheduled.has(id)) {
+      state.disableScheduled.add(id);
+      const observedHitsPerSecond = w.hits;
+      // The ONE deferral site in this module: schedules the disabling
+      // CHECKPOINT_TOGGLE for the NEXT turn of the event loop, out of this
+      // listener's own call stack. See the header comment above this
+      // section for why a deferred send, not a next-dispatch check.
+      setImmediate(() => {
+        void (async () => {
+          try {
+            await client.send(CommandType.CheckpointToggle, checkpointToggleBody({ checkpointNum: id, enabled: false }));
+            state.autoDisabled.set(id, {
+              reason:
+                `auto-disabled: exceeded ${TRACE_HITS_PER_SECOND_LIMIT} hits/second on a stop:false trace ` +
+                `checkpoint (observed ~${observedHitsPerSecond}/s) -- a non-stopping checkpoint emits ` +
+                `CHECKPOINT_INFO synchronously from inside the emulator's CPU loop and can deadlock this client ` +
+                `on a hot address`,
+              at: state.now(),
+              hitsPerSecond: observedHitsPerSecond,
+            });
+          } catch (err) {
+            // Must never throw out of this callback -- there is no handler
+            // above a bare callback queued this way, and doing so would
+            // reach vice-proxy.ts's never-throw boundary with nothing to
+            // catch it.
+            state.autoDisabled.set(id, {
+              reason: `auto-disable send failed: ${describeError(err)}`,
+              at: state.now(),
+              hitsPerSecond: observedHitsPerSecond,
+            });
+          } finally {
+            state.disableScheduled.delete(id);
+          }
+        })();
+      });
+    }
+  });
+}
+
+function traceGuardStateFor(client: ViceMonitorClient, now: () => number): TraceGuardState {
+  let state = traceGuards.get(client);
+  if (!state) {
+    state = {
+      traceCheckpoints: new Set(),
+      window: new Map(),
+      disableScheduled: new Set(),
+      autoDisabled: new Map(),
+      now,
+    };
+    traceGuards.set(client, state);
+    attachTraceGuardListener(client, state);
   }
-  set.add(checkpointId);
+  return state;
+}
+
+/** Arms the trace guard for `checkpointId` on `session`'s client -- attaches
+ * the guard's single 'event' listener idempotently (one listener per client,
+ * exactly like attachRunStateTracker()), then adds the id to the watched
+ * set. `opts.now` is a test-only clock override; production callers never
+ * pass it (the default is the platform clock). */
+export function registerTraceCheckpoint(session: StockConnectSession, checkpointId: number, opts: { now?: () => number } = {}): void {
+  const nowFn = opts.now ?? Date.now;
+  const state = traceGuardStateFor(session.client, nowFn);
+  state.traceCheckpoints.add(checkpointId);
 }
 
 function forgetTraceState(session: StockConnectSession, checkpointNum: number): void {
-  traceCheckpointsByTarget.get(session.targetId)?.delete(checkpointNum);
+  const state = traceGuards.get(session.client);
+  if (!state) return;
+  state.traceCheckpoints.delete(checkpointNum);
+  state.window.delete(checkpointNum);
+  state.disableScheduled.delete(checkpointNum);
+  state.autoDisabled.delete(checkpointNum);
 }
 
 /** Read by every handler in this module just before answering, so an
- * auto-disable is surfaced in the very next answer as `autoDisables: [...]`.
- * Always empty until Task 3 adds the mechanism that populates it. */
+ * auto-disable is surfaced in the very next answer as `autoDisables: [...]`
+ * (the caller omits the key entirely when this returns an empty array). */
 export function autoDisableReportFor(
-  _session: StockConnectSession,
+  session: StockConnectSession,
 ): Array<{ checkpointNum: number; reason: string; at: number; hitsPerSecond: number }> {
-  return [];
+  const state = traceGuards.get(session.client);
+  if (!state) return [];
+  return Array.from(state.autoDisabled.entries()).map(([checkpointNum, entry]) => ({ checkpointNum, ...entry }));
 }
 
-/** Test-only: resets the condition registry and the trace-guard's tables
- * together. */
+/** Test-only: resets the condition registry and every trace-guard table
+ * together, matching resetRunStateTrackersForTest()'s role in
+ * stock-runstate.ts. */
 export function resetCheckpointStateForTest(): void {
   conditionRegistry = new Map();
-  traceCheckpointsByTarget = new Map();
+  traceGuards = new WeakMap();
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +497,8 @@ export const handleCheckpointList: StockSessionHandler = async (_args, session, 
   const totalReported = response.total;
   const entriesReceived = relatedCheckpoints.length;
 
+  const traceState = traceGuards.get(session.client);
+
   const checkpoints = relatedCheckpoints.map((entry) => {
     const cp = entry.checkpoint;
     const recordedText = conditionTextFor(session, cp.id);
@@ -409,6 +530,10 @@ export const handleCheckpointList: StockSessionHandler = async (_args, session, 
       out.condition = recordedText ?? null;
       out.conditionTextKnown = recordedText !== undefined;
     }
+    const autoDisabled = traceState?.autoDisabled.get(cp.id);
+    if (autoDisabled) {
+      out.autoDisabled = { reason: autoDisabled.reason, at: autoDisabled.at, hitsPerSecond: autoDisabled.hitsPerSecond };
+    }
     return out;
   });
 
@@ -439,7 +564,17 @@ export const handleCheckpointToggle: StockSessionHandler = async (args, session,
     return convertWireError("vice_checkpoint_toggle", err);
   }
 
+  let autoDisableCleared = false;
+  if (enabled) {
+    const state = traceGuards.get(session.client);
+    if (state?.autoDisabled.has(checkpointNum)) {
+      state.autoDisabled.delete(checkpointNum);
+      autoDisableCleared = true;
+    }
+  }
+
   const payload: Record<string, unknown> = { checkpointNum, enabled };
+  if (autoDisableCleared) payload.autoDisableCleared = true;
   const autoDisables = autoDisableReportFor(session);
   if (autoDisables.length > 0) payload.autoDisables = autoDisables;
   return stockAnswer(session.client, payload);

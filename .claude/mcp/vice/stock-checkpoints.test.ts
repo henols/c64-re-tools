@@ -1,8 +1,9 @@
 // node:test coverage of stock-checkpoints.ts. Task 1: checkpoint add/delete/
-// list/toggle. Task 2 (added below): the D-10 condition registry,
-// fail-closed cleanup, and watch-add. Every client is a bare EventEmitter
-// with a spy `send()` -- no broker, no real socket, no emulator (matching
-// this repo's established DI-stub convention, stock-dispatch.test.ts:1-133).
+// list/toggle. Task 2: the D-10 condition registry, fail-closed cleanup, and
+// watch-add. Task 3 (added below): the D-11 trace guard's rate limit and
+// deferred auto-disable. Every client is a bare EventEmitter with a spy
+// `send()` -- no broker, no real socket, no emulator (matching this repo's
+// established DI-stub convention, stock-dispatch.test.ts:1-133).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -14,8 +15,11 @@ import {
   handleCheckpointToggle,
   handleCheckpointSetCondition,
   handleWatchAdd,
+  registerTraceCheckpoint,
+  autoDisableReportFor,
   conditionTextFor,
   resetCheckpointStateForTest,
+  TRACE_HITS_PER_SECOND_LIMIT,
 } from "./stock-checkpoints.ts";
 import { CheckpointOperation, type ParsedCheckpoint, type ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -396,4 +400,163 @@ test("after checkpoint delete, the registry entry is gone and a later list repor
   assertOk(listed);
   const entry = (okText(listed).checkpoints as Record<string, unknown>[])[0]!;
   assert.equal(entry.conditionTextKnown, false);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: the D-11 trace guard
+// ---------------------------------------------------------------------------
+
+function makeClock(startMs = 0): { now: () => number; advance: (ms: number) => void } {
+  let current = startMs;
+  return { now: () => current, advance: (ms: number) => { current += ms; } };
+}
+
+function emitHit(emitter: EventEmitter, checkpointId: number, hitCount: number): void {
+  emitter.emit("event", {
+    type: "checkpoint_info",
+    requestId: 0xffffffff,
+    errorCode: 0,
+    checkpoint: fakeCheckpoint({ id: checkpointId, stopWhenHit: false, hitCount }),
+  });
+}
+
+test("trace guard: 5 events within the window schedule no toggle", async () => {
+  const { client, calls, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 5; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.filter(([ct]) => ct === 0x15).length, 0);
+});
+
+test("trace guard: 21 events schedules exactly one CheckpointToggle, and NOT synchronously", async () => {
+  const { client, calls, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 21; i++) emitHit(emitter, 42, i);
+
+  // Immediately after the 21st emit() returns, no toggle has been sent yet --
+  // the send is deferred out of the listener's call stack.
+  assert.equal(calls.filter(([ct]) => ct === 0x15).length, 0);
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const toggleCalls = calls.filter(([ct]) => ct === 0x15);
+  assert.equal(toggleCalls.length, 1);
+  const [, body] = toggleCalls[0]!;
+  assert.equal(body.readUInt32LE(0), 42);
+  assert.equal(body[4], 0);
+});
+
+test("trace guard: 40 events still schedule exactly one toggle (in-flight guard)", async () => {
+  const { client, calls, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 40; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.filter(([ct]) => ct === 0x15).length, 1);
+});
+
+test("trace guard: events for an id NOT registered never schedule a toggle", async () => {
+  const { client, calls, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 40; i++) emitHit(emitter, 999, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.filter(([ct]) => ct === 0x15).length, 0);
+});
+
+test("trace guard: rolling window -- 15 events, advance clock past 1000ms, 15 more -> no toggle", async () => {
+  const { client, calls, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 15; i++) emitHit(emitter, 42, i);
+  clock.advance(1001);
+  for (let i = 1; i <= 15; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.filter(([ct]) => ct === 0x15).length, 0);
+});
+
+test("trace guard: an auto-disable is reported in the next answer's autoDisables array", async () => {
+  const { client, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 21; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const report = autoDisableReportFor(session);
+  assert.equal(report.length, 1);
+  assert.equal(report[0]!.checkpointNum, 42);
+  assert.ok(report[0]!.reason.includes(String(TRACE_HITS_PER_SECOND_LIMIT)));
+  assert.ok(typeof report[0]!.hitsPerSecond === "number");
+});
+
+test("trace guard: re-enabling an auto-disabled id via checkpoint toggle clears the entry", async () => {
+  const { client, emitter } = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 21; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(autoDisableReportFor(session).length, 1);
+
+  const result = await handleCheckpointToggle({ checkpoint_num: 42, enabled: true }, session, FAKE_DEPS);
+  assertOk(result);
+  assert.equal(okText(result).autoDisableCleared, true);
+  assert.equal(autoDisableReportFor(session).length, 0);
+});
+
+test("trace guard: a rejecting auto-disable send does not throw, and the reason names the send failure", async () => {
+  const { client, emitter } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x15) throw new Error("socket closed");
+    return { type: "checkpoint_toggle" as const };
+  });
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 21; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const report = autoDisableReportFor(session);
+  assert.equal(report.length, 1);
+  assert.match(report[0]!.reason, /socket closed/);
+});
+
+test("trace guard: after an auto-disable, handleCheckpointList's answer carries autoDisables and the entry's own autoDisabled", async () => {
+  const cp = fakeCheckpoint({ id: 42, stopWhenHit: false });
+  const { client, emitter } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x14) return checkpointListResponse(1, [checkpointInfoResponse(cp)]);
+    return { type: "checkpoint_toggle" as const };
+  });
+  const session = makeSession(client);
+  const clock = makeClock();
+  registerTraceCheckpoint(session, 42, { now: clock.now });
+
+  for (let i = 1; i <= 21; i++) emitHit(emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const listed = await handleCheckpointList({}, session, FAKE_DEPS);
+  assertOk(listed);
+  const payload = okText(listed);
+  assert.equal((payload.autoDisables as unknown[]).length, 1);
+  const entry = (payload.checkpoints as Record<string, unknown>[])[0]!;
+  assert.ok(entry.autoDisabled);
 });
