@@ -731,6 +731,13 @@ export interface MaintainWarmFloorDeps {
    * ability to run unbuilt under its unit tests). vice-broker.mts's real
    * wiring passes broker-state.mjs's actual exports; tests inject stubs. */
   allocatePort: (state: BrokerState) => Promise<PortAllocationResult>;
+  /** Plan 03-04 (DIRECT-06, D-13): same optional field and the same
+   * gate-inside-acquirePortAndLaunch() contract as
+   * AcquirePortAndLaunchDeps's own field of this name -- threaded straight
+   * through to the warm arm's own acquirePortAndLaunch() call below.
+   * Omitted entirely (every pre-Phase-3 caller) means no second port is
+   * ever requested for a warm launch, exactly like the cold arm. */
+  allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
   countReady: (state: BrokerState) => number;
   countTotal: (state: BrokerState) => number;
   countLaunching: (state: BrokerState) => number;
@@ -830,6 +837,7 @@ export async function maintainWarmFloor(deps: MaintainWarmFloorDeps): Promise<vo
     state: deps.state,
     stateDir: deps.stateDir,
     allocatePort: deps.allocatePort,
+    allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
     spawn: deps.spawn,
     spawnFactory: deps.spawnFactory,
     now: deps.now,
