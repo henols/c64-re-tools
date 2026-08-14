@@ -12,6 +12,7 @@ import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { EventEmitter } from "node:events";
 
 import {
   manifestPathForBackend,
@@ -20,6 +21,7 @@ import {
   stockHandlerFor,
   dispatchStock,
   stockDisconnect,
+  withStockSession,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
@@ -27,15 +29,26 @@ import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
+import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import type { StockSessionHandler } from "./stock-handler.ts";
+import { checkAgainstSchema } from "./stock-schema-check.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
 const STOCK_MANIFEST_PATH = join(HERE, "tools-manifest.stock.json");
 
+interface JsonSchemaObject {
+  type?: string;
+  properties?: Record<string, { type?: string } & Record<string, unknown>>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+
 interface ManifestToolEntry {
   name: string;
   description?: string;
-  inputSchema?: unknown;
+  inputSchema?: JsonSchemaObject;
+  outputSchema?: JsonSchemaObject;
 }
 
 interface Manifest {
@@ -47,6 +60,13 @@ interface Manifest {
 function readManifest(path: string): Manifest {
   return JSON.parse(readFileSync(path, "utf8"));
 }
+
+// D-03/Task 3 (plan 03-12): the two backends' advertised tool lists are
+// genuinely different, permanently (Phase 2 D-07) -- these are the ONLY
+// names permitted to exist on the stock manifest with no fork counterpart.
+// A future stock-only addition is a deliberate edit to this named list,
+// never a silently loosened "every stock name needs a fork match" assertion.
+const STOCK_ONLY_TOOLS = new Set(["vice_execution_until_return", "vice_registers_available"]);
 
 // --------------------------------------------------------- manifestPathForBackend
 
@@ -84,13 +104,166 @@ test("manifest/backend: tools-manifest.stock.json's tools array contains a vice_
   assert.ok(stock.tools.some((t) => t.name === "vice_ping"), "expected a vice_ping entry in the stock manifest");
 });
 
-test("manifest/backend: every stock tool name also exists in the fork manifest with an identical inputSchema", () => {
+// ---------------------------------------------------------------------------
+// Task 3 (plan 03-12): the manifest contract, reworked. The old "every stock
+// tool name also exists in the fork manifest with an IDENTICAL inputSchema"
+// test failed by construction the moment stock adds a stock-only tool or a
+// stock-only OPTIONAL argument (D-03) -- replaced by a compatibility test
+// (fork-required arguments must still be satisfiable, extras must be
+// optional) plus a named, explicit stock-only allow-list (STOCK_ONLY_TOOLS,
+// above).
+//
+// NOTE (handoff to plan 03-13): tools-manifest.stock.json today carries only
+// the vice_ping entry -- this plan (03-12) owns STOCK_DISPATCH_TABLE, never
+// the manifest file. Every test below that iterates the STOCK MANIFEST'S OWN
+// tools array is therefore only as complete as that file is; the 24 Phase 3
+// entries plan 03-13 adds are what make these assertions exercise the full
+// surface. Where a test below fails ONLY because a manifest entry does not
+// exist yet (not because of a real defect in this plan's own dispatch-table
+// wiring), the failure is recorded verbatim in this plan's SUMMARY as the
+// handoff to 03-13, per this plan's own verification section.
+// ---------------------------------------------------------------------------
+
+test("manifest/backend (D-03 name coverage): every non-stock-only stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const fork = readManifest(FORK_MANIFEST_PATH);
+  const forkNames = new Set(fork.tools.map((t) => t.name));
+  for (const tool of stock.tools) {
+    if (STOCK_ONLY_TOOLS.has(tool.name)) {
+      assert.ok(!forkNames.has(tool.name), `"${tool.name}" is in STOCK_ONLY_TOOLS but ALSO exists on the fork manifest -- it is not actually stock-only`);
+    } else {
+      assert.ok(forkNames.has(tool.name), `stock tool "${tool.name}" has no counterpart in the fork manifest, and is not in STOCK_ONLY_TOOLS`);
+    }
+  }
+  for (const name of STOCK_ONLY_TOOLS) {
+    assert.ok(stock.tools.some((t) => t.name === name), `STOCK_ONLY_TOOLS name "${name}" must be present in the stock manifest`);
+  }
+});
+
+test("manifest/backend (D-03 input compatibility): every stock/fork pair has equal required-argument SETS, and stock's extra properties are all optional on the fork side", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const fork = readManifest(FORK_MANIFEST_PATH);
   for (const tool of stock.tools) {
+    if (STOCK_ONLY_TOOLS.has(tool.name)) continue;
     const match = fork.tools.find((t) => t.name === tool.name);
-    assert.ok(match, `stock tool "${tool.name}" has no counterpart in the fork manifest`);
-    assert.deepEqual(tool.inputSchema, match!.inputSchema, `"${tool.name}" inputSchema differs between backends`);
+    if (!match) continue; // covered by the name-coverage test above
+    const stockRequired = new Set(tool.inputSchema?.required ?? []);
+    const forkRequired = new Set(match.inputSchema?.required ?? []);
+    assert.deepEqual(stockRequired, forkRequired, `"${tool.name}": required-argument sets differ between backends`);
+
+    const forkProperties = match.inputSchema?.properties ?? {};
+    const stockProperties = tool.inputSchema?.properties ?? {};
+    for (const [propName, forkProp] of Object.entries(forkProperties)) {
+      const stockProp = stockProperties[propName];
+      assert.ok(stockProp, `"${tool.name}.${propName}": the fork declares this property, but stock does not`);
+      assert.equal(stockProp!.type, forkProp.type, `"${tool.name}.${propName}": type differs between backends`);
+    }
+    // Any property stock declares that the fork does not is an EXTRA -- D-03
+    // permits this only when the extra is genuinely optional on stock's own
+    // side (never in stock's own required list, checked above already since
+    // the required SETS are asserted equal).
+    for (const propName of Object.keys(stockProperties)) {
+      if (!(propName in forkProperties)) {
+        assert.ok(!stockRequired.has(propName), `"${tool.name}.${propName}": a stock-only extra property must not be required`);
+      }
+    }
+  }
+});
+
+test("manifest/backend (bidirectional table/manifest agreement): every stock manifest entry has a dispatch handler, and every dispatch entry has a manifest entry", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    assert.equal(typeof stockHandlerFor(tool.name), "function", `stock manifest advertises "${tool.name}" but STOCK_DISPATCH_TABLE has no handler for it`);
+  }
+  const stockNames = new Set(stock.tools.map((t) => t.name));
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.ok(stockNames.has(name), `STOCK_DISPATCH_TABLE registers "${name}" but the stock manifest has no entry for it`);
+  }
+});
+
+test("manifest/backend (D-02 outputSchema presence): every stock manifest entry declares an outputSchema whose type is \"object\"", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    assert.ok(tool.outputSchema, `"${tool.name}" has no outputSchema at all`);
+    assert.equal(tool.outputSchema!.type, "object", `"${tool.name}"'s outputSchema.type must be "object"`);
+  }
+});
+
+test("manifest/backend (D-06 runState enum): every stock entry's outputSchema declares a required runState enum of [\"running\",\"stopped\",\"unknown\"]", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    const runState = tool.outputSchema?.properties?.runState as { type?: string; enum?: unknown[] } | undefined;
+    assert.ok(runState, `"${tool.name}"'s outputSchema has no properties.runState`);
+    assert.equal(runState!.type, "string", `"${tool.name}"'s runState property must be type "string"`);
+    assert.deepEqual(runState!.enum, ["running", "stopped", "unknown"], `"${tool.name}"'s runState enum must be exactly ["running","stopped","unknown"]`);
+    assert.ok(tool.outputSchema?.required?.includes("runState"), `"${tool.name}"'s outputSchema.required must include "runState"`);
+  }
+});
+
+test("manifest/backend: every outputSchema itself uses only checkAgainstSchema's supported keyword subset", () => {
+  // Verified by running checkAgainstSchema() over a small synthetic instance
+  // built from each entry's OWN declared shape (a runState of "unknown" plus
+  // a placeholder for every other declared property), rather than asserting
+  // on the schema's raw keys a second time -- this also doubles as a
+  // structural smoke test that checkAgainstSchema() itself does not choke on
+  // any real manifest entry.
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const tool of stock.tools) {
+    if (!tool.outputSchema) continue; // covered by the presence test above
+    const properties = tool.outputSchema.properties ?? {};
+    const instance: Record<string, unknown> = {};
+    for (const [propName, propSchema] of Object.entries(properties)) {
+      if (propName === "runState") {
+        instance[propName] = "unknown";
+      } else {
+        instance[propName] = placeholderFor(propSchema.type);
+      }
+    }
+    const violations = checkAgainstSchema(instance, tool.outputSchema);
+    assert.deepEqual(violations, [], `"${tool.name}"'s outputSchema rejects its own synthetic instance: ${JSON.stringify(violations)}`);
+  }
+});
+
+function placeholderFor(type: string | undefined): unknown {
+  switch (type) {
+    case "string":
+      return "placeholder";
+    case "number":
+    case "integer":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    default:
+      return null;
+  }
+}
+
+// The twelve tool names this phase's own planner decisions trim -- each
+// entry names the decision id responsible, so a future re-addition is a
+// deliberate edit rather than a silent regression.
+const TRIMMED_TOOL_DECISIONS: Array<[string, string]> = [
+  ["vice_checkpoint_set_ignore_count", "D-15"],
+  ["vice_snapshot_list", "D-16"],
+  ["vice_disk_detach", "D-13"],
+  ["vice_joystick_tap", "needs a resume plus Phase 7's timing route"],
+  ["vice_disk_read_sector", "Phase 5"],
+  ["vice_sid_get_state", "hard loss -- SID is write-only in hardware"],
+  ["vice_key_press", "hard loss -- low-level keyboard family"],
+  ["vice_key_release", "hard loss -- low-level keyboard family"],
+  ["vice_keyboard_matrix", "hard loss -- low-level keyboard family"],
+  ["vice_keyboard_chord", "hard loss -- low-level keyboard family"],
+  ["vice_machine_config_get", "Phase 6"],
+  ["vice_machine_config_set", "Phase 6"],
+];
+
+test("manifest/backend (trimmed tools absent): none of the twelve decision-trimmed tools appears in tools-manifest.stock.json", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  for (const [name, decisionId] of TRIMMED_TOOL_DECISIONS) {
+    assert.ok(!stock.tools.some((t) => t.name === name), `"${name}" must not appear in the stock manifest (${decisionId})`);
   }
 });
 
@@ -113,6 +286,7 @@ test("manifest/backend: no DENY_LIST name appears in tools-manifest.stock.json",
 
 beforeEach(() => {
   clearHeldStockSession();
+  resetRunStateTrackersForTest();
 });
 
 const STUB_BROKER_CONTROL = {
@@ -140,14 +314,21 @@ function makeLease(opts: Omit<HeldLease, "epochFile" | "supervisorDir"> & Partia
 
 /** The fake client carries a REAL disconnect() that flips `connected` to
  * false (CR-05): a session teardown that only drops the reference is exactly
- * the defect under test, so the stub has to be able to tell the two apart. */
+ * the defect under test, so the stub has to be able to tell the two apart.
+ *
+ * The client is a real `EventEmitter` (Task 1, plan 03-12), matching this
+ * codebase's own DI-stub convention (stock-memory.test.ts's makeSession() et
+ * al.) -- `attachRunStateTracker()` now calls `client.on("event", ...)` at
+ * every fresh connect/reconnect this seam produces, so a plain object
+ * literal with no `.on()` throws the moment ensureStockSession() attaches a
+ * tracker to it. */
 function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: FakeSessionBrokerControl; connected?: boolean }): StockConnectSession {
-  const client = {
+  const client = Object.assign(new EventEmitter(), {
     connected: opts.connected ?? true,
     disconnect: async (): Promise<void> => {
       client.connected = false;
     },
-  };
+  });
   return {
     client: client as unknown as StockConnectSession["client"],
     versionQuad: "3.9.0",
@@ -535,6 +716,109 @@ test("lease: MachineRestartedError out of a held session's reconnect clears the 
 });
 
 // ---------------------------------------------------------------------------
+// Task 1 (plan 03-12): the runState tracker attach points (RESEARCH.md
+// Pitfall 4) -- attached at exactly the two branches that produce a FRESH
+// ViceMonitorClient, never in the `heldSession.client.connected` reuse
+// branch. Every client below is the same real-EventEmitter fakeSession()
+// stub every other test in this file uses; `listenerCount("event")` is the
+// literal proof a second attach never registers a second listener.
+// ---------------------------------------------------------------------------
+
+test("runState/Pitfall4: a fresh connect attaches exactly one 'event' listener to the new client", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-1", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const outcome = await ensureStockSession(deps);
+  assert.ok(outcome.ok);
+  assert.equal(outcome.session.client.listenerCount("event"), 1);
+});
+
+test("runState/Pitfall4: a session-reuse call (same targetId, still connected) does NOT add a second listener", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-2", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const first = await ensureStockSession(deps);
+  const second = await ensureStockSession(deps);
+  assert.ok(first.ok && second.ok);
+  assert.equal(first.session.client, second.session.client, "precondition: the reuse branch returns the SAME client");
+  assert.equal(second.session.client.listenerCount("event"), 1, "the reuse branch must never call attachRunStateTracker a second time");
+});
+
+test("runState/Pitfall4: a reconnect (socket dead) attaches exactly one listener to the NEW client from stockReconnect", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-3", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession({ ...opts, connected: false }),
+    reconnect: async (session) => fakeSession({ targetId: session.targetId, host: session.host, port: session.port, brokerControl: session.brokerControl, connected: true }),
+  };
+  await ensureStockSession(deps); // connects, holds a not-connected session (no tracker assertion here -- see the fresh-connect test above)
+  const second = await ensureStockSession(deps); // triggers the reconnect branch
+  assert.ok(second.ok);
+  assert.equal(second.session.client.listenerCount("event"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Task 1 (plan 03-12): withStockSession() -- the one adapter every table
+// entry goes through.
+// ---------------------------------------------------------------------------
+
+test("withStockSession: returns convertHandshakeError's text when ensureStockSession throws MonitorOwnershipError", async () => {
+  const handler: StockSessionHandler = async () => {
+    throw new Error("must not be called -- the handshake itself failed");
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease: makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-1", brokerControl: STUB_BROKER_CONTROL }) }),
+    connect: async () => {
+      throw new MonitorOwnershipError("stockConnect: monitor for target grant-wss-1 on port 6502 is already claimed by grant grant-other", {
+        holderGrantId: "grant-other",
+        holderClaimedAt: 1700000000000,
+        port: 6502,
+      });
+    },
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /grant-other/);
+});
+
+test("withStockSession: returns outcome.message verbatim on an { ok: false } refusal, without touching the handler", async () => {
+  let handlerCalled = false;
+  const handler: StockSessionHandler = async () => {
+    handlerCalled = true;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (verbatim message)" }),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
+  assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
+});
+
+test("withStockSession: a family handler that throws yields isError:true rather than propagating", async () => {
+  const handler: StockSessionHandler = async () => {
+    throw new Error("boom: something the family handler let escape");
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-3", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /vice_test_tool/);
+  assert.match(JSON.stringify(result.content), /boom: something the family handler let escape/);
+});
+
+// ---------------------------------------------------------------------------
 // Task 1 (plan 02-10): the dispatch table, the hard refusal, and vice_ping.
 // Every deps.connect/deps.reconnect below is a spy stub, never
 // stock-connect.ts's real socket-touching implementation -- these tests
@@ -547,6 +831,100 @@ test("lease: MachineRestartedError out of a held session's reconnect clears the 
 test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFor(\"vice_mem_read\") returns undefined", () => {
   assert.equal(typeof stockHandlerFor("vice_ping"), "function");
   assert.equal(stockHandlerFor("vice_mem_read"), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (plan 03-12): all 24 Phase 3 family tools plus vice_ping are
+// registered in the ONE dispatch table, and the eight deliberately-absent
+// tools are refused without ever touching `deps`.
+// ---------------------------------------------------------------------------
+
+/** The 25 tool names this plan registers, driven from an explicit array
+ * literal (per this plan's own acceptance criteria) so a missing entry
+ * fails as a NAMED assertion rather than a generic count mismatch. */
+const REGISTERED_TOOL_NAMES = [
+  "vice_ping",
+  "vice_memory_read",
+  "vice_memory_write",
+  "vice_memory_banks",
+  "vice_registers_get",
+  "vice_registers_set",
+  "vice_registers_available",
+  "vice_checkpoint_add",
+  "vice_checkpoint_delete",
+  "vice_checkpoint_list",
+  "vice_checkpoint_toggle",
+  "vice_checkpoint_set_condition",
+  "vice_watch_add",
+  "vice_execution_pause",
+  "vice_execution_run",
+  "vice_execution_step",
+  "vice_execution_until_return",
+  "vice_machine_reset",
+  "vice_autostart",
+  "vice_disk_attach",
+  "vice_snapshot_save",
+  "vice_snapshot_load",
+  "vice_keyboard_type",
+  "vice_keyboard_petscii",
+  "vice_joystick_set",
+];
+
+/** The eight tools this plan deliberately does NOT register -- each name's
+ * absence is a planner decision (see the block comment above
+ * STOCK_DISPATCH_TABLE in stock-dispatch.ts), never an oversight. */
+const DELIBERATELY_ABSENT_TOOL_NAMES = [
+  "vice_checkpoint_set_ignore_count",
+  "vice_snapshot_list",
+  "vice_disk_detach",
+  "vice_joystick_tap",
+  "vice_disk_read_sector",
+  "vice_sid_get_state",
+  "vice_machine_config_get",
+  "vice_machine_config_set",
+];
+
+test("dispatch: stockHandlerFor returns a function for every one of the 25 registered tool names", () => {
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
+  }
+});
+
+test("dispatch: the table's key count is exactly 25", () => {
+  // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
+  // every name this plan knows about is the table's own public surface, so
+  // this test drives the same 25-name list rather than reaching into the
+  // module's private object.
+  const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
+  assert.equal(hits.length, 25);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 25);
+});
+
+test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.match(name, /^vice_[a-z0-9_]+$/, `${name} does not match the expected tool-name shape`);
+  }
+});
+
+test("dispatch: stockHandlerFor returns undefined for every deliberately-absent tool name", () => {
+  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
+    assert.equal(stockHandlerFor(name), undefined, `expected NO handler for ${name}`);
+  }
+});
+
+test("dispatch: dispatchStock refuses every deliberately-absent tool naming the tool and the fork backend, without reading deps", async () => {
+  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
+    const deps = {
+      ensureLease: () => {
+        throw new Error(`ensureLease must never be called for ${name} -- it has no dispatch entry`);
+      },
+    } as unknown as StockDispatchDeps;
+    const result = await dispatchStock(name, {}, deps);
+    assert.equal(result.isError, true);
+    const text = JSON.stringify(result.content);
+    assert.match(text, new RegExp(name));
+    assert.match(text, /fork/i);
+  }
 });
 
 test("refus: dispatchStock on a name with no handler refuses by name, names the fork, never calls forwardToVice, and never touches deps", async () => {
@@ -612,7 +990,7 @@ test("ping: a failing ensureLease yields isError:true carrying the provider's me
   assert.equal(connectCalls, 0);
 });
 
-test("ping: the success payload carries backend, viceVersion, and resolvedBinaryPath", async () => {
+test("ping: the success payload carries backend, viceVersion, resolvedBinaryPath, and runState (D-06)", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
@@ -628,6 +1006,11 @@ test("ping: the success payload carries backend, viceVersion, and resolvedBinary
   assert.match(payload.viceVersion, /3\.9\.0/);
   assert.equal(payload.resolvedBinaryPath, "/opt/vice/bin/x64sc");
   assert.equal(payload.resolvedBinaryPathIsResolved, true);
+  // D-06/Task 1 (plan 03-12): vice_ping now answers through stockAnswer(), so
+  // its answer carries runState alongside every field that was already
+  // there. A fresh connect's tracker starts at "unknown" (D-07) -- no
+  // stopped/resumed/jam event has arrived yet.
+  assert.equal(payload.runState, "unknown");
 });
 
 test("WR-05 ping: an UNRESOLVED binary path is reported as such, so a bare name is never presented as a resolved path", async () => {
