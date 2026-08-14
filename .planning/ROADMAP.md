@@ -184,7 +184,32 @@ Notes:
   3. A user can pause a freely-running emulator on demand and resume it, step instructions, and execute until return — with pause and resume idempotent, so an agent retry is a no-op rather than a second halt.
   4. A user can reset the machine, autostart a PRG or disk image, attach and detach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend.
 
-**Plans**: TBD
+**Plans**: 13 plans in 4 waves
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Wave 1: shared seams — the `runState` projection (D-06/07/08), `parseAddress()` (D-04), and the cycle-free `stock-handler.ts` contract with both error converters
+- [ ] 03-02-PLAN.md — Wave 1: all 16 request-body encoders in `stock-protocol.ts`, ported from `probe-binmon.mjs` where a tested builder exists
+- [ ] 03-03-PLAN.md — Wave 1: the typed condition AST, the one canonical emitter, and the fork-compatible string parser with its refusal set (D-09)
+- [ ] 03-04-PLAN.md — Wave 1: broker `-remotemonitor` launch flag and second allocated port, with the monitor-ownership answer written down for Phase 7 (D-13's launch half)
+- [ ] 03-05-PLAN.md — Wave 1: D-16's fork-manifest deletion and the 62-tool gate, the parity register for every Phase 3 divergence, and the `[ASSUMED]` probe-debt todo
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-06-PLAN.md — Wave 2 (family A): memory read/write/banks, side-effect-free by default, with the per-session bank catalog
+- [ ] 03-07-PLAN.md — Wave 2 (family A): registers get/set plus the stock-only `vice_registers_available`, over a per-session register catalog
+- [ ] 03-08-PLAN.md — Wave 2 (family B): checkpoints and watchpoints, the D-10 condition registry with fail-closed cleanup, and the D-11 trace guard
+- [ ] 03-09-PLAN.md — Wave 2 (family C): pause/run with D-08 short-circuiting, step and the stock-only `vice_execution_until_return` with D-07 gating
+- [ ] 03-10-PLAN.md — Wave 2 (family D): reset, autostart, unit-8-only disk attach, snapshots, and D-17's declared path-translation table
+- [ ] 03-11-PLAN.md — Wave 2 (family D): the new ASCII↔PETSCII table, keyboard type/petscii, and joystick set
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-12-PLAN.md — Wave 3: `withStockSession()`, the tracker attach points, all 25 dispatch-table entries, and the dependency-free `outputSchema` checker
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-13-PLAN.md — Wave 4: the 25-entry stock manifest with an `outputSchema` per tool, and the per-handler answer-conformance harness
 
 Notes:
 
