@@ -4,9 +4,9 @@
 // seam (ensureStockSession()). Every test in this file is pure/offline --
 // no broker process, no emulator, matching this plan's own environment
 // constraint.
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -29,9 +29,14 @@ import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
-import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
-import type { StockSessionHandler } from "./stock-handler.ts";
+import { resetRunStateTrackersForTest, attachRunStateTracker } from "./stock-runstate.ts";
+import type { StockSessionHandler, StockToolResult } from "./stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
+import { CommandType } from "./stock-protocol.ts";
+import { setIsInsideContainerForTest } from "./stock-paths.ts";
+import { resetBankCatalogsForTest } from "./stock-memory.ts";
+import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
+import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
@@ -321,6 +326,14 @@ test("manifest/backend: no DENY_LIST name appears in tools-manifest.stock.json",
 beforeEach(() => {
   clearHeldStockSession();
   resetRunStateTrackersForTest();
+  // Task 3 (plan 03-13): the conformance harness below dispatches through
+  // the real path, which means the family modules' own per-session/
+  // per-target caches (bank catalog, register catalog, the D-10 condition
+  // registry) are genuinely populated -- reset them here too so no
+  // conformance case can observe a stale catalog left by a prior test.
+  resetBankCatalogsForTest();
+  resetRegisterCatalogsForTest();
+  resetCheckpointStateForTest();
 });
 
 const STUB_BROKER_CONTROL = {
@@ -1335,4 +1348,572 @@ test("structure/proxy (CR-06): buildHeldLease() threads epochFile and supervisor
   // <stateDir>/<port>, where no record is ever written -- a silent permanent
   // capability-cache miss.
   assert.doesNotMatch(body, /supervisor_dir/, "the grant's per-instance supervisor_dir is NOT the capability-cache directory");
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 (plan 03-13): the D-02 answer-conformance harness. Every one of the
+// 25 stock tools is dispatched through dispatchStock() -- the REAL path,
+// exercising withStockSession()'s adapter and stockAnswer()'s runState stamp
+// -- against a stubbed session, never a family handler called directly. Each
+// case's actual answer is validated against ITS OWN declared outputSchema in
+// tools-manifest.stock.json. A completeness guard ties the case list to the
+// manifest's own name list; a negative control proves checkAgainstSchema()
+// is not vacuously passing.
+// ---------------------------------------------------------------------------
+
+const CONFORMANCE_BROKER_CONTROL = {
+  claimMonitor: async () => ({ ok: true as const }),
+  releaseMonitor: async () => ({ ok: true as const }),
+} as unknown as BrokerControlSession;
+
+type ConformanceSendImpl = (commandType: number, body: Buffer) => unknown;
+
+/**
+ * Builds a full StockConnectSession for the conformance harness: a real
+ * EventEmitter client (so attachRunStateTracker()'s client.on("event", ...)
+ * works unmodified) with a `send` stub driven by `sendImpl`, plus every
+ * other StockConnectSession field ensureStockSession()/the family handlers
+ * read. `preEmit`, when given, attaches the run-state tracker to THIS client
+ * immediately (idempotent -- ensureStockSession()'s own later
+ * attachRunStateTracker() call on the same client is then a no-op) and
+ * emits one stopped/resumed event synchronously, so a handler's
+ * runStateFor() read is never "unknown" for the execution-control cases
+ * that refuse on it (D-07).
+ */
+function buildConformanceSession(targetId: string, sendImpl: ConformanceSendImpl, preEmit?: "stopped" | "resumed"): StockConnectSession {
+  const client = Object.assign(new EventEmitter(), {
+    connected: true,
+    disconnect: async (): Promise<void> => {
+      client.connected = false;
+    },
+    send: async (commandType: number, body: Buffer = Buffer.alloc(0)) => sendImpl(commandType, body),
+  });
+  const session = {
+    client: client as unknown as StockConnectSession["client"],
+    versionQuad: "3.9.0",
+    capabilities: { cpuHistory: "absent" as const },
+    host: "127.0.0.1",
+    port: 6502,
+    targetId,
+    brokerControl: CONFORMANCE_BROKER_CONTROL,
+    deps: {},
+    baselineEpoch: null,
+  } as unknown as StockConnectSession;
+
+  if (preEmit) {
+    attachRunStateTracker(session.client);
+    (session.client as unknown as EventEmitter).emit("event", {
+      type: preEmit,
+      requestId: 0xffffffff,
+      errorCode: 0,
+      programCounter: 0x0801,
+    });
+  }
+  return session;
+}
+
+/** Builds the StockDispatchDeps for one conformance case: a fresh lease
+ * (the session's own unique targetId, so ensureStockSession() never reuses
+ * a DIFFERENT case's held session) and a `connect` stub that ignores the
+ * lease's coordinates and hands back the pre-built session. */
+function buildConformanceDeps(session: StockConnectSession): StockDispatchDeps {
+  return {
+    ensureLease: async () => ({
+      ok: true as const,
+      lease: {
+        host: session.host,
+        port: session.port,
+        targetId: session.targetId,
+        brokerControl: session.brokerControl,
+        epochFile: "",
+        supervisorDir: "",
+      } as HeldLease,
+    }),
+    connect: async () => session,
+  };
+}
+
+/** A generic acknowledgement reply -- the "unknown" parsed shape several
+ * commands in this phase fall through to (stock-protocol.ts has no named
+ * parsed shape for a bare ack), matching stock-memory.test.ts's own
+ * ackReply() convention. */
+function conformanceAckReply(responseType: number) {
+  return { type: "unknown" as const, requestId: 1, errorCode: 0, responseType, related: [] };
+}
+
+interface FakeCheckpointFields {
+  id: number;
+  currentlyHit: boolean;
+  start: number;
+  end: number;
+  stopWhenHit: boolean;
+  enabled: boolean;
+  operation: number;
+  temporary: boolean;
+  hitCount: number;
+  ignoreCount: number;
+  hasCondition: boolean;
+}
+
+/** A minimal, schema-valid ParsedCheckpoint -- reused by both
+ * vice_checkpoint_add and vice_watch_add's CHECKPOINT_SET replies, and by
+ * vice_checkpoint_list's N+1 `related` frame. */
+function fakeConformanceCheckpoint(overrides: Partial<FakeCheckpointFields> = {}): FakeCheckpointFields {
+  return {
+    id: 1,
+    currentlyHit: false,
+    start: 0xc000,
+    end: 0xc000,
+    stopWhenHit: true,
+    enabled: true,
+    operation: 0x04, // CheckpointOperation.Exec
+    temporary: false,
+    hitCount: 0,
+    ignoreCount: 0,
+    hasCondition: false,
+    ...overrides,
+  };
+}
+
+function checkpointInfoReply(checkpoint: FakeCheckpointFields = fakeConformanceCheckpoint()) {
+  return { type: "checkpoint_info" as const, requestId: 1, errorCode: 0, checkpoint, related: [] };
+}
+
+/** Stands in for stock-machine.test.ts's own withTempRepoRoot(): a fresh
+ * mkdtempSync() directory stands in for the repo root (CLAUDE_PROJECT_DIR
+ * unconditionally wins repoRoot()'s precedence ladder), so
+ * vice_snapshot_save/vice_snapshot_load's real filesystem reads/writes never
+ * touch this worktree's own tree. */
+async function withTempRepoRootForConformance<T>(fn: (repoRootDir: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "vice-conformance-test-"));
+  const prev = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  try {
+    return await fn(dir);
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// vice_autostart/vice_disk_attach/vice_snapshot_save/vice_snapshot_load all
+// route their filename through withEmulatorSidePath() (stock-paths.ts),
+// which branches on isInsideContainer() -- forced false here (matching
+// stock-machine.test.ts's own precedent) so every one of these four cases
+// takes the deterministic bare-host "send(containerPath) directly" branch,
+// never the mountinfo-guessing container branch a real container would
+// need. Restored after this whole file's tests finish.
+setIsInsideContainerForTest(() => false);
+after(() => setIsInsideContainerForTest(null));
+
+/** Shared post-dispatch assertions every conformance case makes: the real
+ * dispatchStock() answer must be a success, must validate against the
+ * manifest's own declared outputSchema for that tool, and its runState must
+ * be one of the three allowed values -- checked independently of the schema
+ * (a broken schema could otherwise mask a broken runState). */
+function assertAnswerConforms(toolName: string, result: StockToolResult): void {
+  assert.equal(result.isError, false, `"${toolName}" must answer isError:false against its conformance stub -- got: ${JSON.stringify(result.content)}`);
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const entry = stock.tools.find((t) => t.name === toolName);
+  assert.ok(entry?.outputSchema, `"${toolName}" must have a manifest entry with an outputSchema`);
+  const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  const violations = checkAgainstSchema(parsed, entry!.outputSchema);
+  assert.deepEqual(violations, [], `"${toolName}"'s real answer violates its own declared outputSchema: ${JSON.stringify(violations)}`);
+  assert.ok(
+    parsed.runState === "running" || parsed.runState === "stopped" || parsed.runState === "unknown",
+    `"${toolName}"'s runState must be one of running/stopped/unknown (independent check of D-06), got ${JSON.stringify(parsed.runState)}`,
+  );
+}
+
+// The completeness guard's own registry -- populated synchronously as each
+// conformanceTest() call below registers, so the guard test (which runs
+// later, at actual test-execution time) sees the complete list regardless
+// of test execution order.
+const CONFORMANCE_TOOL_NAMES: string[] = [];
+
+/** Registers one conformance test AND records its tool name in
+ * CONFORMANCE_TOOL_NAMES -- the one place both happen together, so the
+ * completeness guard below can never drift from the actual set of
+ * registered cases. */
+function conformanceTest(toolName: string, run: () => Promise<void>): void {
+  CONFORMANCE_TOOL_NAMES.push(toolName);
+  test(`conformance (D-02): dispatchStock("${toolName}", ...) answers, validating against its own declared outputSchema`, run);
+}
+
+// --------------------------------------------------------- memory
+
+conformanceTest("vice_memory_read", async () => {
+  const session = buildConformanceSession("conformance-vice_memory_read", (commandType) => {
+    if (commandType === CommandType.MemoryGet) {
+      return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x4c, 0x00]), related: [] };
+    }
+    throw new Error(`vice_memory_read: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_memory_read", { address: "$1000", size: 2 }, deps);
+  assertAnswerConforms("vice_memory_read", result);
+});
+
+conformanceTest("vice_memory_write", async () => {
+  const session = buildConformanceSession("conformance-vice_memory_write", (commandType) => {
+    if (commandType === CommandType.MemorySet) {
+      return conformanceAckReply(CommandType.MemorySet);
+    }
+    throw new Error(`vice_memory_write: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_memory_write", { address: "$1000", data: [0x01, 0x02] }, deps);
+  assertAnswerConforms("vice_memory_write", result);
+});
+
+conformanceTest("vice_memory_banks", async () => {
+  const session = buildConformanceSession("conformance-vice_memory_banks", (commandType) => {
+    if (commandType === CommandType.BanksAvailable) {
+      return { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [{ id: 0, name: "default" }], related: [] };
+    }
+    throw new Error(`vice_memory_banks: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_memory_banks", {}, deps);
+  assertAnswerConforms("vice_memory_banks", result);
+});
+
+// --------------------------------------------------------- registers
+
+conformanceTest("vice_registers_get", async () => {
+  const session = buildConformanceSession("conformance-vice_registers_get", (commandType) => {
+    if (commandType === CommandType.RegistersAvailable) {
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+    }
+    if (commandType === CommandType.RegistersGet) {
+      return { type: "registers" as const, requestId: 2, errorCode: 0, registers: [{ id: 0, value: 0x0801 }], related: [] };
+    }
+    throw new Error(`vice_registers_get: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_registers_get", {}, deps);
+  assertAnswerConforms("vice_registers_get", result);
+});
+
+conformanceTest("vice_registers_set", async () => {
+  const session = buildConformanceSession("conformance-vice_registers_set", (commandType) => {
+    if (commandType === CommandType.RegistersAvailable) {
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+    }
+    if (commandType === CommandType.RegistersSet) {
+      return { type: "registers" as const, requestId: 2, errorCode: 0, registers: [{ id: 0, value: 0x0801 }], related: [] };
+    }
+    throw new Error(`vice_registers_set: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_registers_set", { register: "PC", value: 0x0801 }, deps);
+  assertAnswerConforms("vice_registers_set", result);
+});
+
+conformanceTest("vice_registers_available", async () => {
+  const session = buildConformanceSession("conformance-vice_registers_available", (commandType) => {
+    if (commandType === CommandType.RegistersAvailable) {
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+    }
+    throw new Error(`vice_registers_available: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_registers_available", {}, deps);
+  assertAnswerConforms("vice_registers_available", result);
+});
+
+// --------------------------------------------------------- checkpoints and watchpoints
+
+conformanceTest("vice_checkpoint_add", async () => {
+  const session = buildConformanceSession("conformance-vice_checkpoint_add", (commandType) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoReply();
+    }
+    throw new Error(`vice_checkpoint_add: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_checkpoint_add", { start: "$c000" }, deps);
+  assertAnswerConforms("vice_checkpoint_add", result);
+});
+
+conformanceTest("vice_checkpoint_delete", async () => {
+  const session = buildConformanceSession("conformance-vice_checkpoint_delete", (commandType) => {
+    if (commandType === CommandType.CheckpointDelete) {
+      return conformanceAckReply(CommandType.CheckpointDelete);
+    }
+    throw new Error(`vice_checkpoint_delete: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_checkpoint_delete", { checkpoint_num: 1 }, deps);
+  assertAnswerConforms("vice_checkpoint_delete", result);
+});
+
+conformanceTest("vice_checkpoint_list", async () => {
+  const session = buildConformanceSession("conformance-vice_checkpoint_list", (commandType) => {
+    if (commandType === CommandType.CheckpointList) {
+      // A non-empty `related` array -- the N+1 accumulation path this plan's
+      // own Task 3 action explicitly calls out to exercise.
+      return { type: "checkpoint_list" as const, requestId: 1, errorCode: 0, total: 1, checkpoints: [], related: [checkpointInfoReply()] };
+    }
+    throw new Error(`vice_checkpoint_list: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_checkpoint_list", {}, deps);
+  assertAnswerConforms("vice_checkpoint_list", result);
+});
+
+conformanceTest("vice_checkpoint_toggle", async () => {
+  const session = buildConformanceSession("conformance-vice_checkpoint_toggle", (commandType) => {
+    if (commandType === CommandType.CheckpointToggle) {
+      return conformanceAckReply(CommandType.CheckpointToggle);
+    }
+    throw new Error(`vice_checkpoint_toggle: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_checkpoint_toggle", { checkpoint_num: 1, enabled: true }, deps);
+  assertAnswerConforms("vice_checkpoint_toggle", result);
+});
+
+conformanceTest("vice_checkpoint_set_condition", async () => {
+  const session = buildConformanceSession("conformance-vice_checkpoint_set_condition", (commandType) => {
+    if (commandType === CommandType.ConditionSet) {
+      return conformanceAckReply(CommandType.ConditionSet);
+    }
+    throw new Error(`vice_checkpoint_set_condition: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_checkpoint_set_condition", { checkpoint_num: 1, condition: "A == $42" }, deps);
+  assertAnswerConforms("vice_checkpoint_set_condition", result);
+});
+
+conformanceTest("vice_watch_add", async () => {
+  const session = buildConformanceSession("conformance-vice_watch_add", (commandType) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoReply(fakeConformanceCheckpoint({ operation: 0x02 })); // CheckpointOperation.Store (default watchType "write")
+    }
+    throw new Error(`vice_watch_add: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_watch_add", { address: "$c000" }, deps);
+  assertAnswerConforms("vice_watch_add", result);
+});
+
+// --------------------------------------------------------- execution
+
+conformanceTest("vice_execution_pause", async () => {
+  const session = buildConformanceSession(
+    "conformance-vice_execution_pause",
+    (commandType) => {
+      if (commandType === CommandType.Ping) {
+        return conformanceAckReply(CommandType.Ping);
+      }
+      throw new Error(`vice_execution_pause: unexpected commandType ${commandType}`);
+    },
+    "resumed", // known "running" pre-state, so this exercises the sent:true path
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_execution_pause", {}, deps);
+  assertAnswerConforms("vice_execution_pause", result);
+});
+
+conformanceTest("vice_execution_run", async () => {
+  const session = buildConformanceSession(
+    "conformance-vice_execution_run",
+    (commandType) => {
+      if (commandType === CommandType.Exit) {
+        return conformanceAckReply(CommandType.Exit);
+      }
+      throw new Error(`vice_execution_run: unexpected commandType ${commandType}`);
+    },
+    "stopped", // known "stopped" pre-state, so this exercises the sent:true path
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_execution_run", {}, deps);
+  assertAnswerConforms("vice_execution_run", result);
+});
+
+conformanceTest("vice_execution_step", async () => {
+  const session = buildConformanceSession(
+    "conformance-vice_execution_step",
+    (commandType) => {
+      if (commandType === CommandType.AdvanceInstructions) {
+        return conformanceAckReply(CommandType.AdvanceInstructions);
+      }
+      throw new Error(`vice_execution_step: unexpected commandType ${commandType}`);
+    },
+    "stopped", // D-07: a known state is required, or the handler refuses
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_execution_step", {}, deps);
+  assertAnswerConforms("vice_execution_step", result);
+});
+
+conformanceTest("vice_execution_until_return", async () => {
+  const session = buildConformanceSession(
+    "conformance-vice_execution_until_return",
+    (commandType) => {
+      if (commandType === CommandType.ExecuteUntilReturn) {
+        return conformanceAckReply(CommandType.ExecuteUntilReturn);
+      }
+      throw new Error(`vice_execution_until_return: unexpected commandType ${commandType}`);
+    },
+    "stopped", // D-07: a known state is required, or the handler refuses
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_execution_until_return", {}, deps);
+  assertAnswerConforms("vice_execution_until_return", result);
+});
+
+// --------------------------------------------------------- machine
+
+conformanceTest("vice_machine_reset", async () => {
+  const session = buildConformanceSession("conformance-vice_machine_reset", (commandType) => {
+    if (commandType === CommandType.Reset) {
+      return conformanceAckReply(CommandType.Reset);
+    }
+    throw new Error(`vice_machine_reset: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_machine_reset", {}, deps);
+  assertAnswerConforms("vice_machine_reset", result);
+});
+
+conformanceTest("vice_autostart", async () => {
+  const session = buildConformanceSession("conformance-vice_autostart", (commandType) => {
+    if (commandType === CommandType.AutoStart) {
+      return conformanceAckReply(CommandType.AutoStart);
+    }
+    throw new Error(`vice_autostart: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_autostart", { path: "/workspace/game.prg" }, deps);
+  assertAnswerConforms("vice_autostart", result);
+});
+
+conformanceTest("vice_disk_attach", async () => {
+  const session = buildConformanceSession("conformance-vice_disk_attach", (commandType) => {
+    if (commandType === CommandType.AutoStart) {
+      return conformanceAckReply(CommandType.AutoStart);
+    }
+    throw new Error(`vice_disk_attach: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_disk_attach", { unit: 8, path: "/workspace/disk.d64" }, deps);
+  assertAnswerConforms("vice_disk_attach", result);
+});
+
+conformanceTest("vice_snapshot_save", async () => {
+  await withTempRepoRootForConformance(async () => {
+    const session = buildConformanceSession("conformance-vice_snapshot_save", (commandType) => {
+      if (commandType === CommandType.Dump) {
+        return conformanceAckReply(CommandType.Dump);
+      }
+      throw new Error(`vice_snapshot_save: unexpected commandType ${commandType}`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_snapshot_save", { name: "conformance_snapshot" }, deps);
+    assertAnswerConforms("vice_snapshot_save", result);
+  });
+});
+
+conformanceTest("vice_snapshot_load", async () => {
+  await withTempRepoRootForConformance(async (dir) => {
+    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".vice-snapshots", "conformance_snapshot.vsf"), "");
+    const session = buildConformanceSession("conformance-vice_snapshot_load", (commandType) => {
+      if (commandType === CommandType.Undump) {
+        return { type: "undump" as const, requestId: 1, errorCode: 0, programCounter: 0x0801, related: [] };
+      }
+      throw new Error(`vice_snapshot_load: unexpected commandType ${commandType}`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_snapshot_load", { name: "conformance_snapshot" }, deps);
+    assertAnswerConforms("vice_snapshot_load", result);
+  });
+});
+
+// --------------------------------------------------------- input (keyboard, joystick)
+
+conformanceTest("vice_keyboard_type", async () => {
+  const session = buildConformanceSession("conformance-vice_keyboard_type", (commandType) => {
+    if (commandType === CommandType.KeyboardFeed) {
+      return conformanceAckReply(CommandType.KeyboardFeed);
+    }
+    throw new Error(`vice_keyboard_type: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_keyboard_type", { text: "RUN" }, deps);
+  assertAnswerConforms("vice_keyboard_type", result);
+});
+
+conformanceTest("vice_keyboard_petscii", async () => {
+  const session = buildConformanceSession("conformance-vice_keyboard_petscii", (commandType) => {
+    if (commandType === CommandType.KeyboardFeed) {
+      return conformanceAckReply(CommandType.KeyboardFeed);
+    }
+    throw new Error(`vice_keyboard_petscii: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_keyboard_petscii", { data: [0x52, 0x55, 0x4e, 0x0d] }, deps);
+  assertAnswerConforms("vice_keyboard_petscii", result);
+});
+
+conformanceTest("vice_joystick_set", async () => {
+  const session = buildConformanceSession("conformance-vice_joystick_set", (commandType) => {
+    if (commandType === CommandType.JoyportSet) {
+      return conformanceAckReply(CommandType.JoyportSet);
+    }
+    throw new Error(`vice_joystick_set: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_joystick_set", { port: 1, direction: "up", fire: true }, deps);
+  assertAnswerConforms("vice_joystick_set", result);
+});
+
+// --------------------------------------------------------- vice_ping
+
+conformanceTest("vice_ping", async () => {
+  const session = buildConformanceSession("conformance-vice_ping", () => {
+    throw new Error("vice_ping's handler must never call client.send()");
+  });
+  const deps: StockDispatchDeps = {
+    ...buildConformanceDeps(session),
+    resolvedBinaryPath: "/usr/local/bin/x64sc",
+    resolvedBinaryPathIsResolved: true,
+  };
+  const result = await dispatchStock("vice_ping", {}, deps);
+  assertAnswerConforms("vice_ping", result);
+});
+
+// --------------------------------------------------------- completeness guard and negative control
+
+test("conformance (D-02) completeness guard: CONFORMANCE_TOOL_NAMES covers exactly the stock manifest's tool names", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const manifestNames = stock.tools.map((t) => t.name).sort();
+  const caseNames = [...CONFORMANCE_TOOL_NAMES].sort();
+  assert.deepEqual(
+    caseNames,
+    manifestNames,
+    "every tool in tools-manifest.stock.json must have exactly one conformanceTest() case, and vice versa -- " +
+      "a tool added to the manifest with no matching conformance case must fail this guard rather than ship unvalidated",
+  );
+});
+
+test("conformance (D-02) negative control: checkAgainstSchema rejects a deliberately wrong answer, proving the checker is not vacuous", () => {
+  // This control exists precisely because a conformance harness whose
+  // checker always returns [] would still pass every test above -- proving
+  // nothing. An empty instance against vice_ping's own outputSchema (which
+  // requires status/backend/viceVersion/resolvedBinaryPath/
+  // resolvedBinaryPathIsResolved/capabilities/runState) must produce a
+  // NON-EMPTY violation list.
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const pingEntry = stock.tools.find((t) => t.name === "vice_ping")!;
+  const violations = checkAgainstSchema({}, pingEntry.outputSchema);
+  assert.ok(
+    violations.length > 0,
+    "checkAgainstSchema() must reject an empty instance against vice_ping's outputSchema -- an empty violation list " +
+      "here would mean the checker itself has regressed to a no-op, and every conformance case above would be " +
+      "vacuously passing",
+  );
 });
