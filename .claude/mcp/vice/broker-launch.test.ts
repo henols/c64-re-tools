@@ -35,6 +35,7 @@ import {
   maintainWarmFloor,
   runBrokerPass,
   acquirePortAndLaunch,
+  deleteInstanceRecord,
   superviseChild,
   withCrashSupervision,
   buildViceArgs,
@@ -1893,6 +1894,179 @@ test("acquirePortAndLaunch (D-13): a fork launch never calls allocateRemoteMonit
   assert.equal(secondAllocationCalls, 0, "a fork launch must never call allocateRemoteMonitorPort");
   const record = (result as { ok: true; record: InstanceRecord }).record;
   assert.equal(record.remoteMonitorPort, undefined);
+});
+
+// ===========================================================================
+// CR-02 (03-REVIEW.md): the D-13 second port across an instance's REPLACEMENT
+// and its TEARDOWN. Every test above covers only a fresh launch through
+// acquirePortAndLaunch(); the crash-supervision path reaches tryLaunchOne()
+// directly, which is exactly where both halves of CR-02 lived -- the
+// replacement silently lost `-remotemonitor`, and the old port stayed in
+// state.blockedPorts forever.
+// ===========================================================================
+
+/** Boots a supervised STOCK instance whose record carries a second port,
+ * exactly as acquirePortAndLaunch() would have left it (record field set,
+ * port blocked), and hands back the state plus the live child so a test can
+ * decide how it dies. */
+function bootStockInstanceWithSecondPort(
+  stateDir: string,
+  overrides: Partial<Parameters<typeof superviseChild>[2]> = {},
+): { deps: ReturnType<typeof makeSuperviseDeps>; children: ChildProcess[]; port: number; remotePort: number } {
+  const children: ChildProcess[] = [];
+  const port = 6600;
+  const remotePort = 6601;
+  const deps = makeSuperviseDeps(stateDir, {
+    backend: "stock",
+    spawn: () => {
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+    ...overrides,
+  });
+  const record = superviseChild("acquire", port, deps);
+  assert.ok(record, "the initial supervised launch must succeed");
+  // What acquirePortAndLaunch() does for a real stock cold launch: the record
+  // carries the second port and the port itself is blocked from reallocation.
+  record!.remoteMonitorPort = remotePort;
+  deps.state.blockedPorts.add(remotePort);
+  return { deps, children, port, remotePort };
+}
+
+test("CR-02: a crash-respawn keeps the instance's second (-remotemonitor) port, on the record and in the argv", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-respawn-second-port-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
+    children[0]!.emit("exit", 1, null);
+
+    const respawned = await waitFor(() => {
+      const rec = deps.state.instances.get(port);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(respawned, "the crashed stock instance must be respawned");
+    assert.equal(
+      respawned!.remoteMonitorPort,
+      remotePort,
+      "CR-02 REGRESSION: the replacement lost the second port, so D-13's 'the instance record carries it' stops being true the first time an instance is replaced",
+    );
+    assert.ok(respawned!.viceArgs.includes("-remotemonitor"), `CR-02 REGRESSION: the respawned argv lost -remotemonitor: ${JSON.stringify(respawned!.viceArgs)}`);
+    assert.ok(
+      respawned!.viceArgs.some((a) => a.includes(String(remotePort))),
+      `the respawned argv must bind the SAME second port the crashed instance held: ${JSON.stringify(respawned!.viceArgs)}`,
+    );
+    assert.ok(deps.state.blockedPorts.has(remotePort), "the second port must stay blocked while a live replacement is still using it");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-02: a recycle (deliberate death that wants a replacement) keeps the second port too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-recycle-second-port-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
+    const record = deps.state.instances.get(port)!;
+    record.deliberateKill = true;
+    record.respawnAfterKill = true;
+    children[0]!.emit("exit", 0, "SIGTERM");
+
+    const recycled = await waitFor(() => {
+      const rec = deps.state.instances.get(port);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(recycled, "a recycle must produce a replacement instance");
+    assert.equal(recycled!.remoteMonitorPort, remotePort, "CR-02 REGRESSION: a recycled instance lost its second port");
+    assert.ok(recycled!.viceArgs.includes("-remotemonitor"), "a recycled stock instance must still be launched with -remotemonitor");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-02: a deliberate teardown releases the second port back to the allocator instead of leaking it into blockedPorts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-teardown-release-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
+    const record = deps.state.instances.get(port)!;
+    record.deliberateKill = true;
+    record.respawnAfterKill = false;
+    children[0]!.emit("exit", 0, "SIGTERM");
+
+    const gone = await waitFor(() => (deps.state.instances.has(port) ? null : true));
+    assert.ok(gone, "a deliberately-torn-down instance must be dropped from the map");
+    assert.equal(
+      deps.state.blockedPorts.has(remotePort),
+      false,
+      "CR-02 REGRESSION: the torn-down instance's second port is still blocked -- nextFreePort() never reconsiders a blocked candidate, so every teardown would permanently shrink the allocation band",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-02: a crash-loop give-up releases the second port back to the allocator", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-giveup-release-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir, { maxRestarts: 1 });
+    children[0]!.emit("exit", 1, null);
+
+    const gone = await waitFor(() => (deps.state.instances.has(port) ? null : true));
+    assert.ok(gone, "the give-up path must drop the instance");
+    assert.equal(deps.state.blockedPorts.has(remotePort), false, "CR-02 REGRESSION: a given-up instance's second port stayed blocked for the life of the process");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("deleteInstanceRecord: releases only a record's OWN second port, never an unrelated bind-refused block (CR-02)", () => {
+  const state = createBrokerState();
+  // Population 1 (see BrokerState.blockedPorts' own doc comment): a port
+  // nextFreePort() refused because it failed to bind. Nothing may release it.
+  state.blockedPorts.add(6650);
+  // Population 2: a live stock instance's second port.
+  state.blockedPorts.add(6601);
+  state.instances.set(6600, {
+    port: 6600,
+    url: "http://127.0.0.1:6600/mcp",
+    state: "ready",
+    reason: "acquire",
+    epochFile: "/tmp/cr02-unit/epoch.json",
+    supervisorDir: "/tmp/cr02-unit",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    remoteMonitorPort: 6601,
+  });
+
+  deleteInstanceRecord(state, 6600);
+
+  assert.equal(state.instances.has(6600), false, "the record must be deleted");
+  assert.equal(state.blockedPorts.has(6601), false, "the record's own second port must be released");
+  assert.equal(state.blockedPorts.has(6650), true, "a bind-refused port must stay blocked for the lifetime of the process");
+
+  // Idempotent, and a no-op for a record that never had a second port.
+  deleteInstanceRecord(state, 6600);
+  state.instances.set(6602, {
+    port: 6602,
+    url: "http://127.0.0.1:6602/mcp",
+    state: "ready",
+    reason: "acquire",
+    epochFile: "/tmp/cr02-unit/epoch.json",
+    supervisorDir: "/tmp/cr02-unit",
+    pid: 4243,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+  });
+  deleteInstanceRecord(state, 6602);
+  assert.equal(state.instances.has(6602), false, "a fork record with no second port must still be deleted");
+  assert.equal(state.blockedPorts.has(6650), true, "and must still leave every unrelated block in place");
 });
 
 // The env-reading VICE_BACKEND function that used to live here is RETIRED as

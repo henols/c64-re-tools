@@ -433,6 +433,44 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
   }
 }
 
+/** The ONE way an instance record leaves `state.instances` for good --
+ * deleting the record AND handing its second (`-remotemonitor`) port back to
+ * the allocator in the same step.
+ *
+ * CR-02 (03-REVIEW.md): `acquirePortAndLaunch()` above adds every allocated
+ * remote-monitor port to `state.blockedPorts`, and until this function existed
+ * NOTHING ever removed one. `nextFreePort()` never reconsiders a blocked
+ * candidate for the lifetime of the process, so every teardown of a stock
+ * instance permanently consumed one more port out of the fixed
+ * PORT_SCAN_CEILING window even though the OS port was free again the instant
+ * the owning process exited -- a long-running broker (the explicit design goal
+ * of an on-demand pool with crash supervision and a warm floor) eventually
+ * exhausts its band and answers `no_free_port` to ordinary launches purely
+ * from routine churn, with no operator recourse short of a broker restart.
+ *
+ * A RESPAWN is deliberately NOT a call site: the replacement instance keeps
+ * BOTH the primary port and the remote-monitor port of the instance it
+ * replaces (launchSupervised() below threads the latter forward exactly like
+ * the port argument carries the former), so the block must stay in place for
+ * the whole chain of replacements rather than being released and immediately
+ * re-taken.
+ *
+ * Mutates `state.blockedPorts` directly rather than through a broker-state
+ * helper, for the SAME load-bearing reason acquirePortAndLaunch()'s own
+ * `blockedPorts.add` does (see this file's header comment): a VALUE import of
+ * "./broker-state.mjs" would turn a type-only dependency into a real runtime
+ * resolution this file cannot satisfy when loaded unbuilt, as its own unit
+ * test does. Callers outside this module import THIS function rather than
+ * re-deriving the pair of mutations. Idempotent, and safe for a record that
+ * never had a second port (every fork launch). */
+export function deleteInstanceRecord(state: BrokerState, port: number): void {
+  const record = state.instances.get(port);
+  if (record && typeof record.remoteMonitorPort === "number") {
+    state.blockedPorts.delete(record.remoteMonitorPort);
+  }
+  state.instances.delete(port);
+}
+
 // ---------------------------------------------------------------------------
 // Readiness probe (D-05's permitted-route note applies throughout this
 // section): this is HOST-SIDE broker code inspecting the emulator instance
@@ -1052,8 +1090,14 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       const preKillState = record.state;
       const preKillCrashTimes = record.crashTimes ?? [];
       const preKillBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
+      // CR-02 (03-REVIEW.md): the second (`-remotemonitor`) port is carried
+      // forward across the replacement exactly like the primary port is --
+      // captured BEFORE launchSupervised() overwrites this port's map entry
+      // with a brand new record, for the same reason the three values above
+      // are.
+      const preKillRemoteMonitorPort = record.remoteMonitorPort;
 
-      const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs);
+      const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs, preKillRemoteMonitorPort);
       if (respawned && preKillState === "granted") {
         respawned.state = "granted";
       }
@@ -1073,7 +1117,9 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       deps.onOutcome?.("recycled", port);
       return;
     }
-    deps.state.instances.delete(port);
+    // CR-02: a deliberate teardown is the END of this instance -- its
+    // remote-monitor port must go back to the allocator with it.
+    deleteInstanceRecord(deps.state, port);
     deps.onOutcome?.("deliberate_teardown", port);
     return;
   }
@@ -1089,7 +1135,9 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       `vice-broker: giving up on port ${port} after ${crashTimes.length} crashes within ${crashWindowMs}ms -- ` +
         `this is not a transient crash; check VICE_ARGS and whether the port is already bound`,
     );
-    deps.state.instances.delete(port);
+    // CR-02: giving up is likewise terminal for this instance -- release its
+    // remote-monitor port rather than leaking it out of the allocation band.
+    deleteInstanceRecord(deps.state, port);
     deps.onOutcome?.("given_up", port);
     return;
   }
@@ -1101,7 +1149,11 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
   const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
 
-  const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs);
+  // CR-02: same carry-forward as the recycle branch above -- a crash must not
+  // silently strip `-remotemonitor` (and its InstanceRecord field) off the
+  // replacement, which is what made D-13's "the instance record carries it"
+  // stop being true the first time an instance was replaced.
+  const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort);
   deps.onOutcome?.(respawned ? "respawned" : "given_up", port);
 }
 
@@ -1152,13 +1204,23 @@ export function withCrashSupervision(
  * crashTimes/backoffMs are threaded through explicitly (not reset to
  * defaults) so a respawn's crash history and doubling backoff survive the
  * fact that spawnAndRecordInstance() creates a BRAND NEW InstanceRecord
- * object on every launch, replacing the old one at the same port key. */
+ * object on every launch, replacing the old one at the same port key.
+ *
+ * CR-02 (03-REVIEW.md): `remoteMonitorPort` is threaded the SAME way and for
+ * the same reason -- it belongs to the instance, not to a single spawn of it.
+ * The replacement reuses the port the crashed/recycled process just vacated
+ * (already reserved in `state.blockedPorts`, so nothing else can have taken it
+ * meanwhile), exactly as it reuses the primary `port` argument; this function
+ * stays fully synchronous and never allocates. `undefined` is the correct
+ * value for a FIRST launch through superviseChild() and for every fork launch,
+ * which is why the parameter is optional. */
 function launchSupervised(
   reason: string,
   port: number,
   deps: SuperviseChildDeps,
   crashTimes: number[],
   backoffMs: number,
+  remoteMonitorPort?: number,
 ): InstanceRecord | null {
   const supervisorDir = join(deps.stateDir, String(port));
   const epochFile = deps.epoch.epochPathFor(deps.stateDir, port);
@@ -1194,6 +1256,7 @@ function launchSupervised(
     mcpHost: deps.mcpHost,
     backend: deps.backend,
     binmonHost: deps.binmonHost,
+    remoteMonitorPort,
     log: deps.log,
   });
   if (!record) return null;

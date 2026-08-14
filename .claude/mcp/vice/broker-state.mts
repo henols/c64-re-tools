@@ -177,8 +177,22 @@ export interface GrantRecord {
 export interface BrokerState {
   instances: Map<number, InstanceRecord>;
   grants: Map<string, GrantRecord>;
-  /** Process-scoped, never persisted -- ports blocked for the lifetime of
-   * this broker process only (e.g. a port that failed to bind once). */
+  /** Process-scoped, never persisted. Two distinct populations live here:
+   *
+   * 1. Ports that FAILED to bind, added by nextFreePort() itself and blocked
+   *    for the lifetime of this broker process -- never released, since a
+   *    port refused once is not worth re-probing until the next reboot.
+   * 2. The second (`-remotemonitor`) port of a live stock instance, added by
+   *    broker-launch.mts's acquirePortAndLaunch() -- this one IS released,
+   *    by that module's deleteInstanceRecord(), the moment the instance
+   *    holding it is torn down for good (CR-02, 03-REVIEW.md). It survives a
+   *    crash-respawn or a recycle, because the replacement instance reuses the
+   *    same second port exactly as it reuses the same primary port.
+   *
+   * Nothing here distinguishes the two: population 2's entries are simply
+   * removed by port number when their owning record is deleted, and a
+   * population-1 entry is never a candidate for that removal because it was
+   * never handed to an instance in the first place. */
   blockedPorts: Set<number>;
 }
 

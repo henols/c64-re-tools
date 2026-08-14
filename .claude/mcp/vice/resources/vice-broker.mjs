@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
 import { createBrokerState, nextFreePort, countReady, countTotal, countLaunching, atCapacity, resolveBasePort, clearMonitorClient, } from "./broker-state.mjs";
-import { acquirePortAndLaunch, maintainWarmFloor, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
+import { acquirePortAndLaunch, deleteInstanceRecord, maintainWarmFloor, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
 // Plan 02-07: resolvedBackend() is now the ONE reader of VICE_BACKEND in
 // this tree -- ViceBackend's own definition moved to backend-detect.mts too,
 // so broker-launch.mjs's own (type-only) re-import of it and this file's
@@ -365,7 +365,11 @@ async function selectWarmInstance(state, deps) {
         // WR-02 only changes what happens to the kill's own PROMISE next, never
         // this ordering.
         markDeliberateDeath(record, false);
-        state.instances.delete(record.port);
+        // CR-02 (03-REVIEW.md): dropping a record is also where its second
+        // (`-remotemonitor`) port stops being spoken for -- deleteInstanceRecord()
+        // is the ONE place both mutations happen together, so a drop can never
+        // leak a port out of the fixed allocation band.
+        deleteInstanceRecord(state, record.port);
         // Distinct wording from shutdown()'s own "shutdown complete" line
         // (broker-kill.mts) and from handleRecycleForRealBroker's own log-free
         // path -- D-07's standing constraint that a lifecycle decision must be
@@ -480,7 +484,10 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             // toward countTotal()/atCapacity() until crash supervision's own
             // delayed respawn/give-up machinery eventually noticed and freed it,
             // even though the caller was already told "internal" right now.
-            state.instances.delete(result.record.port);
+            // CR-02: deleteInstanceRecord(), not a bare map delete -- a stock launch
+            // that failed this way already had its second port allocated and
+            // blocked by acquirePortAndLaunch().
+            deleteInstanceRecord(state, result.record.port);
             return { ok: false, reason: "internal" };
         }
         record = result.record;
@@ -765,7 +772,9 @@ export function handleRelease(requestId, state) {
         // depend on silently continuing to hold.
         clearMonitorClient(instance);
         state.grants.delete(requestId);
-        state.instances.delete(grant.port);
+        // CR-02: kill-never-recycle means this instance is gone for good, so its
+        // second (`-remotemonitor`) port must go back to the allocator with it.
+        deleteInstanceRecord(state, grant.port);
         verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
             // best-effort; nothing further to report on this path this task
         });
