@@ -87,3 +87,42 @@ gitignored). Worth a follow-up if parallel-executor worktrees become routine:
 either have the orchestrator run `ensure-mcp-deps.sh` per worktree at spawn
 time, or document that executors must self-provision before running any
 `.claude/mcp/vice` test.
+
+## 3. `stock-execution.ts` deliberately NOT added to `package.json`'s `files` array yet
+
+**Found during:** 03-09, Task 1.
+
+**Context:** Plan 03-01's own precedent (see its Summary's Deviations
+section) proactively added `stock-runstate.ts`/`stock-address.ts` to
+`package.json`'s `files` array even before anything imported them at
+runtime, reasoning that leaving a shipped module unreachable at publish
+time is the same kind of shipping gap `stock-handler.ts`'s addition fixed
+for real. `stock-execution.ts` (this plan's own new module) is the same
+shape of gap in principle.
+
+**Why NOT applied here:** unlike 03-01 (the sole Wave-1 shared-seams plan),
+03-09 is one of SIX parallel Wave-2 sibling plans (03-06 through 03-11)
+each adding its own new family module (`stock-memory.ts`, `stock-registers.ts`,
+`stock-condition.ts`/`stock-checkpoints.ts`, `stock-execution.ts`,
+`stock-machine.ts`/`stock-petscii.ts`), every one of which would otherwise
+edit the SAME array in the SAME file concurrently across six different
+worktrees -- a near-certain wave-merge conflict for no behavioural gain,
+since none of these modules is dispatch-reachable (and therefore
+publish-relevant) until plans 03-12/03-13 wire them into
+`stock-dispatch.ts`. RESEARCH.md's own Focus Item 10 sizing table makes
+this exact call for `stock-dispatch.ts`/`tools-manifest.stock.json`
+("every family's plan touches this file; recommend each family's plan owns
+its own entries... or a final small integration plan"), and this plan's
+own objective text says the identical thing for dispatch/manifest edits
+("No dispatch or manifest edits -- plans 03-12 and 03-13 own those").
+Treating `package.json`'s `files` array the same way -- deferred to the
+integration plans that make these modules reachable -- avoids the
+conflict without losing anything, since the array addition and the
+dispatch wiring become correct in the same commit.
+
+**Disposition:** Deferred, not a bug. Plans 03-12/03-13 (or whichever
+plan wires `stock-execution.ts` into `stock-dispatch.ts`) must add
+`stock-execution.ts` to `package.json`'s `files` array in the SAME
+change that makes it dispatch-reachable, exactly mirroring how
+`stock-handler.ts` was added in 03-01 the moment `stock-dispatch.ts`
+started importing it at runtime.
