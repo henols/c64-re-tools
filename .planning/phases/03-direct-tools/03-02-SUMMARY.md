@@ -119,3 +119,10 @@ None - no external service configuration required.
 ---
 *Phase: 03-direct-tools*
 *Completed: 2026-08-14*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-protocol.ts`
+- FOUND: commit `4aa4ee7` (Task 1)
+- FOUND: commit `d25ee54` (Task 2)
+- FOUND: `.planning/phases/03-direct-tools/03-02-SUMMARY.md`
