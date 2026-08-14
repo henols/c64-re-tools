@@ -109,3 +109,9 @@ which `build-atomic.test.ts` does not exercise.
 
 **Disposition:** out of scope (Scope Boundary), not investigated further --
 same pre-existing, timing-sensitive flake class as 02-07's.
+
+**Independently reproduced by:** 03-07 and 03-11, each seeing the same
+test fail once in a full-suite run and pass 6/6 in isolation immediately
+after. If it recurs in later phases, it is worth a dedicated look at
+whether the temp-directory walk has a race independent of worktree
+execution.
