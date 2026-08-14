@@ -87,3 +87,33 @@ gitignored). Worth a follow-up if parallel-executor worktrees become routine:
 either have the orchestrator run `ensure-mcp-deps.sh` per worktree at spawn
 time, or document that executors must self-provision before running any
 `.claude/mcp/vice` test.
+
+## 3. `build-atomic.test.ts`'s temp-directory-cleanup test fails only inside
+the full `npm run test:automated` suite, not in isolation
+
+**Found during:** 03-11, Task 3 (`npm run test:automated` full-suite run
+after adding `stock-petscii.ts`/`stock-input.ts`).
+
+**Symptom:** "the private temp directory is cleaned up on both the success
+and the failure path, leaving no sibling of the out-dir behind"
+(`build-atomic.test.ts`) fails when the full `*.test.*` suite runs together,
+reproduced consistently across two consecutive full-suite runs.
+
+**Verified pre-existing and unrelated to this plan's files:** `node --test
+build-atomic.test.ts` run in isolation passes cleanly (6/6), including the
+exact test that fails inside the full suite. This plan's diff touches only
+`stock-petscii.ts`, `stock-petscii.test.ts`, `stock-input.ts`, and
+`stock-input.test.ts` -- none of which import, run, or otherwise interact
+with `build.ts`/`build-atomic.ts`. The failure is consistent with resource
+contention between concurrently-running test files under Node's default
+parallel `node --test` scheduling (this suite's own build-concurrency test
+in the same file spawns real child builds under a shared temp-staging
+root), not a regression this plan introduced.
+
+**Disposition:** out of scope for 03-11 (Scope Boundary: "Only auto-fix
+issues DIRECTLY caused by the current task's changes"). Not fixed here.
+
+**Suggested follow-up:** either serialize `build-atomic.test.ts` against the
+rest of the suite (`node --test --concurrency=1` for that file, or an
+in-file lock), or make its private-temp-directory assertion tolerant of a
+sibling test file's concurrently-running build under load.

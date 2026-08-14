@@ -32,7 +32,7 @@
 //   - Never construct an ok-answer outside stockAnswer(). Every successful
 //     result below is built through it, never a bare
 //     `{ content: [...], isError: false }` literal.
-import { CommandType, keyboardFeedBody } from "./stock-protocol.ts";
+import { CommandType, joyportSetBody, keyboardFeedBody } from "./stock-protocol.ts";
 import { asciiToPetscii, StockPetsciiError } from "./stock-petscii.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
 
@@ -150,5 +150,125 @@ export const handleKeyboardPetscii: StockSessionHandler = async (args, session) 
     byteCount: petscii.length,
     petsciiHex: petscii.toString("hex"),
     note: KEYBOARD_HALTED_NOTE,
+  });
+};
+
+// ---------------------------------------------------------------------------
+// vice_joystick_set -- and the deliberate absence of vice_joystick_tap
+// ---------------------------------------------------------------------------
+
+/**
+ * JOYPORT_SET's `value` bit layout. **[ASSUMED]** -- RESEARCH.md
+ * Assumptions Log row A3: derived from general VICE joystick-driver
+ * knowledge, never confirmed against the manual or a probe run against a
+ * real binary. Probe debt filed at
+ * .planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md.
+ * Do not remove the [ASSUMED] label until that todo's acceptance check
+ * closes it -- do not write a comment claiming this mapping is verified.
+ *
+ * Exported as a single named constant so a future probe session has
+ * exactly one place to correct it -- joyportSetBody() itself deliberately
+ * takes an already-composed raw `value` for the same reason.
+ */
+export const JOYPORT_BITS = { up: 0x01, down: 0x02, left: 0x04, right: 0x08, fire: 0x10 } as const;
+
+const VALID_DIRECTIONS = ["up", "down", "left", "right", "center"] as const;
+type JoystickDirection = (typeof VALID_DIRECTIONS)[number];
+
+function isValidDirection(value: string): value is JoystickDirection {
+  return (VALID_DIRECTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * vice_joystick_set -- composes a JOYPORT_SET value from `direction`
+ * (string or array of strings) and `fire`, and sends it. Arguments: `port`
+ * (optional number, default 1), `direction` (optional string or array of
+ * strings, default "center"), `fire` (optional boolean, default false) --
+ * the fork's exact names and documented string-or-array shape.
+ *
+ * vice_joystick_tap is deliberately absent from this module (and the whole
+ * stock manifest) -- a tap needs the machine to run for a measured
+ * interval, which is an unrequested EXIT (forbidden by D-05) plus a
+ * frame/cycle measurement stock does not have until Phase 7's timing route
+ * lands (docs/stock-vice-parity.md section A item 7). Do not approximate it
+ * with a sleep; do not implement it here.
+ */
+export const handleJoystickSet: StockSessionHandler = async (args, session) => {
+  if (!isPlainObject(args)) {
+    return isErrorText("vice_joystick_set: arguments must be an object");
+  }
+
+  const portArg = args.port === undefined ? 1 : args.port;
+  if (typeof portArg !== "number" || !Number.isInteger(portArg) || (portArg !== 1 && portArg !== 2)) {
+    return isErrorText(`vice_joystick_set: port must be 1 or 2, got ${JSON.stringify(args.port)}`);
+  }
+  const port = portArg;
+
+  const fireArg = args.fire === undefined ? false : args.fire;
+  if (typeof fireArg !== "boolean") {
+    return isErrorText("vice_joystick_set: fire must be a boolean");
+  }
+  const fire = fireArg;
+
+  const rawDirection = args.direction === undefined ? "center" : args.direction;
+  const directionInputs: unknown[] = Array.isArray(rawDirection) ? rawDirection : [rawDirection];
+
+  const directions: JoystickDirection[] = [];
+  for (let index = 0; index < directionInputs.length; index++) {
+    const rawValue = directionInputs[index];
+    const normalized = typeof rawValue === "string" ? rawValue.trim().toLowerCase() : undefined;
+    if (normalized === undefined || !isValidDirection(normalized)) {
+      return isErrorText(
+        `vice_joystick_set: direction[${index}] must be one of up, down, left, right, center -- got ${JSON.stringify(rawValue)}`,
+      );
+    }
+    directions.push(normalized);
+  }
+
+  const hasUp = directions.includes("up");
+  const hasDown = directions.includes("down");
+  const hasLeft = directions.includes("left");
+  const hasRight = directions.includes("right");
+  const hasCenter = directions.includes("center");
+
+  // A composed value asserting two opposite switches at once is a state no
+  // real joystick can produce -- refused before any send, per this module's
+  // own T-3-02 threat mitigation.
+  if (hasUp && hasDown) {
+    return isErrorText("vice_joystick_set: direction cannot contain both 'up' and 'down' -- no real joystick can assert two opposite switches at once");
+  }
+  if (hasLeft && hasRight) {
+    return isErrorText("vice_joystick_set: direction cannot contain both 'left' and 'right' -- no real joystick can assert two opposite switches at once");
+  }
+  if (hasCenter && directions.length > 1) {
+    return isErrorText("vice_joystick_set: 'center' cannot be combined with any other direction");
+  }
+
+  let value = 0;
+  const valueBits: string[] = [];
+  for (const direction of ["up", "down", "left", "right"] as const) {
+    if (directions.includes(direction)) {
+      value |= JOYPORT_BITS[direction];
+      valueBits.push(direction);
+    }
+  }
+  if (fire) {
+    value |= JOYPORT_BITS.fire;
+    valueBits.push("fire");
+  }
+
+  const body = joyportSetBody({ port, value });
+  try {
+    await session.client.send(CommandType.JoyportSet, body);
+  } catch (err) {
+    return convertWireError("vice_joystick_set", err);
+  }
+
+  return stockAnswer(session.client, {
+    port,
+    directions,
+    fire,
+    value,
+    valueBits,
   });
 };

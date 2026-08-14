@@ -6,8 +6,9 @@
 // resetRunStateTrackersForTest()'s own documented role.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { handleKeyboardType, handleKeyboardPetscii } from "./stock-input.ts";
+import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet, JOYPORT_BITS } from "./stock-input.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -145,4 +146,94 @@ test("handleKeyboardPetscii: the ok-answer carries runState and a petsciiHex fie
   const payload = JSON.parse(result.content[0].text);
   assert.equal(payload.runState, "unknown");
   assert.equal(payload.petsciiHex, sends[0].body.subarray(1).toString("hex"));
+});
+
+// ---------------------------------------------------------------------------
+// handleJoystickSet
+// ---------------------------------------------------------------------------
+
+test("handleJoystickSet: direction omitted records a JoyportSet body of length 4 with readUInt16LE(0) === 1 and readUInt16LE(2) === 0", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({}, session, {} as never);
+  assert.equal(result.isError, false);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].commandType, CommandType.JoyportSet);
+  assert.equal(sends[0].body.length, 4);
+  assert.equal(sends[0].body.readUInt16LE(0), 1);
+  assert.equal(sends[0].body.readUInt16LE(2), 0);
+});
+
+test("handleJoystickSet: direction: 'up', fire: true records readUInt16LE(2) === 0x11", async () => {
+  const { session, sends } = createFakeSession();
+  await handleJoystickSet({ direction: "up", fire: true }, session, {} as never);
+  assert.equal(sends[0].body.readUInt16LE(2), 0x11);
+});
+
+test("handleJoystickSet: direction: ['up', 'left'] records readUInt16LE(2) === 0x05", async () => {
+  const { session, sends } = createFakeSession();
+  await handleJoystickSet({ direction: ["up", "left"] }, session, {} as never);
+  assert.equal(sends[0].body.readUInt16LE(2), 0x05);
+});
+
+test("handleJoystickSet: direction: 'UP' is accepted case-insensitively", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ direction: "UP" }, session, {} as never);
+  assert.equal(result.isError, false);
+  assert.equal(sends[0].body.readUInt16LE(2), JOYPORT_BITS.up);
+});
+
+test("handleJoystickSet: direction: ['up', 'down'] refuses naming both, with zero sends", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ direction: ["up", "down"] }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /up/);
+  assert.match(result.content[0].text, /down/);
+  assert.equal(sends.length, 0);
+});
+
+test("handleJoystickSet: direction: ['left', 'right'] refuses naming both, with zero sends", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ direction: ["left", "right"] }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.equal(sends.length, 0);
+});
+
+test("handleJoystickSet: direction: ['center', 'up'] refuses, with zero sends", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ direction: ["center", "up"] }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.equal(sends.length, 0);
+});
+
+test("handleJoystickSet: direction: 'diagonal' refuses naming the five accepted values, with zero sends", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ direction: "diagonal" }, session, {} as never);
+  assert.equal(result.isError, true);
+  for (const word of ["up", "down", "left", "right", "center"]) {
+    assert.match(result.content[0].text, new RegExp(word));
+  }
+  assert.equal(sends.length, 0);
+});
+
+test("handleJoystickSet: port: 3 refuses naming 1 and 2, with zero sends", async () => {
+  const { session, sends } = createFakeSession();
+  const result = await handleJoystickSet({ port: 3 }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /\b1\b/);
+  assert.match(result.content[0].text, /\b2\b/);
+  assert.equal(sends.length, 0);
+});
+
+test("handleJoystickSet: the answer's valueBits for ['up','left'] with fire: true is exactly ['up','left','fire'] in that order", async () => {
+  const { session } = createFakeSession();
+  const result = await handleJoystickSet({ direction: ["up", "left"], fire: true }, session, {} as never);
+  assert.equal(result.isError, false);
+  const payload = JSON.parse(result.content[0].text);
+  assert.deepEqual(payload.valueBits, ["up", "left", "fire"]);
+  assert.equal(payload.runState, "unknown");
+});
+
+test("stock-input.ts exports no handleJoystickTap", () => {
+  const source = readFileSync(new URL("./stock-input.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /handleJoystickTap/);
 });
