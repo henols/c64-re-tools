@@ -43,6 +43,14 @@ import {
   checkpointToggleBody,
   conditionSetBody,
   registersSetBody,
+  advanceInstructionsBody,
+  keyboardFeedBody,
+  joyportSetBody,
+  ResetMode,
+  resetBody,
+  autostartBody,
+  dumpBody,
+  undumpBody,
 } from "./stock-protocol.ts";
 import {
   encodeResponseFrame,
@@ -1418,4 +1426,103 @@ test("registersSetBody: an empty items array is refused", () => {
 test("registersSetBody: an out-of-range id or value is refused", () => {
   assert.throws(() => registersSetBody({ items: [{ id: 0x100, value: 0 }] }), StockEncodingError);
   assert.throws(() => registersSetBody({ items: [{ id: 0, value: 0x10000 }] }), StockEncodingError);
+});
+// ===========================================================================
+// Request-body encoders (Phase 3, plan 03-02) -- Task 2: execution and
+// machine-control encoders. Every [ASSUMED] behavioural claim named in the
+// source is confirmed present there (grep), not re-asserted here -- these
+// tests cover only wire SHAPE.
+// ===========================================================================
+
+test("advanceInstructionsBody: 3 bytes, stepOver(1) count(u16LE)", () => {
+  const body = advanceInstructionsBody({ stepOver: true, count: 3 });
+  assert.equal(body.length, 3);
+  assert.equal(body[0], 0x01);
+  assert.equal(body.readUInt16LE(1), 3);
+});
+
+test("advanceInstructionsBody: defaults to stepOver false, count 1", () => {
+  const body = advanceInstructionsBody();
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 1);
+});
+
+test("advanceInstructionsBody: count out of 1..0xffff is refused", () => {
+  assert.throws(() => advanceInstructionsBody({ count: 0 }), StockEncodingError);
+  assert.throws(() => advanceInstructionsBody({ count: 0x10000 }), StockEncodingError);
+});
+
+test("keyboardFeedBody: textLen(1) then the raw PETSCII bytes, unconverted", () => {
+  const petscii = Buffer.from([0x41, 0x42, 0x43]);
+  const body = keyboardFeedBody({ petscii });
+  assert.equal(body.length, 4);
+  assert.equal(body[0], 3);
+  assert.ok(body.subarray(1).equals(petscii));
+});
+
+test("keyboardFeedBody: a 256-byte payload throws", () => {
+  assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(256) }), StockEncodingError);
+});
+
+test("keyboardFeedBody: an empty payload throws", () => {
+  assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(0) }), StockEncodingError);
+});
+
+test("joyportSetBody: 4 bytes, port(u16LE) value(u16LE)", () => {
+  const body = joyportSetBody({ port: 1, value: 0x10 });
+  assert.equal(body.length, 4);
+  assert.equal(body.readUInt16LE(0), 1);
+  assert.equal(body.readUInt16LE(2), 0x10);
+});
+
+test("resetBody: an unrecognised mode throws", () => {
+  assert.throws(() => resetBody({ mode: 0x02 }), StockEncodingError);
+});
+
+test("resetBody: ResetMode.Hard encodes as the single byte 0x01", () => {
+  const body = resetBody({ mode: ResetMode.Hard });
+  assert.deepEqual(body, Buffer.from([0x01]));
+});
+
+test("resetBody: every ResetMode value round-trips to its own single byte", () => {
+  for (const mode of Object.values(ResetMode)) {
+    assert.deepEqual(resetBody({ mode }), Buffer.from([mode]));
+  }
+});
+
+test("autostartBody: runAfter(1) fileIndex(u16LE) filenameLen(1) filename(ASCII)", () => {
+  const body = autostartBody({ runAfter: false, filename: "/tmp/a.d64" });
+  assert.equal(body[0], 0x00);
+  assert.equal(body.readUInt16LE(1), 0);
+  assert.equal(body[3], 10);
+  assert.equal(body.subarray(4).toString("ascii"), "/tmp/a.d64");
+});
+
+test("autostartBody: an empty filename is refused", () => {
+  assert.throws(() => autostartBody({ runAfter: true, filename: "" }), StockEncodingError);
+});
+
+test("dumpBody: saveRoms(1) saveDisks(1) filenameLen(1) filename(ASCII)", () => {
+  const body = dumpBody({ saveRoms: true, saveDisks: false, filename: "snap.vsf" });
+  assert.equal(body[0], 0x01);
+  assert.equal(body[1], 0x00);
+  assert.equal(body[2], 8);
+  assert.equal(body.subarray(3).toString("ascii"), "snap.vsf");
+});
+
+test("undumpBody: filenameLen(1) filename(ASCII)", () => {
+  const body = undumpBody({ filename: "snap.vsf" });
+  assert.equal(body[0], 8);
+  assert.equal(body.subarray(1).toString("ascii"), "snap.vsf");
+});
+
+test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
+  assert.throws(
+    () => undumpBody({ filename: "snép.vsf" }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /index 2/);
+      return true;
+    },
+  );
 });

@@ -719,6 +719,208 @@ export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): 
 }
 
 // ---------------------------------------------------------------------------
+// Execution and machine-control body encoders (Phase 3, Task 2). Every
+// body layout below is [CITED] against the official VICE manual (§13) but
+// has NOT been exercised against a real binary in this environment -- each
+// JSDoc says so explicitly, and where RESEARCH.md's Assumptions Log flags a
+// behavioural (not wire-shape) assumption, the JSDoc names the row (A2, A3,
+// A5) and points at .planning/todos/pending/ for the probe debt. None of
+// these are claimed as verified.
+// ---------------------------------------------------------------------------
+
+export interface AdvanceInstructionsBodyOptions {
+  stepOver?: boolean;
+  count?: number;
+}
+
+/**
+ * ADVANCE_INSTRUCTIONS (0x71) request body -- 3 bytes, `stepOver(1)
+ * count(u16LE)`. [CITED docs/phase0-binmon-findings.md §5; body SHAPE also
+ * exercised, with stepOver=0 only, in probe-binmon.mjs's async-events check]
+ *
+ * `stepOver = true`'s runtime meaning (skip a `JSR`'s subroutine as one
+ * step, matching the fork's own `stepOver` field name) is [ASSUMED] --
+ * RESEARCH.md Assumptions Log row A2 -- never probed against a real `JSR`.
+ * See `.planning/todos/pending/` for the outstanding probe debt.
+ */
+export function advanceInstructionsBody({ stepOver = false, count = 1 }: AdvanceInstructionsBodyOptions = {}): Buffer {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffff) {
+    throw new StockEncodingError(`advanceInstructionsBody: count must be an integer in 1..0xffff, got ${count}`);
+  }
+  const body = Buffer.alloc(3);
+  body[0] = stepOver ? 0x01 : 0x00;
+  body.writeUInt16LE(count, 1);
+  return body;
+}
+
+export interface KeyboardFeedBodyOptions {
+  /** Already-converted PETSCII bytes ONLY -- ASCII->PETSCII conversion
+   * happens in stock-petscii.ts. Passing a JS string here is a type error
+   * on purpose, so no call site can accidentally feed UTF-16 code units to
+   * the emulator. */
+  petscii: Uint8Array | Buffer;
+}
+
+/**
+ * KEYBOARD_FEED (0x72) request body -- `textLen(1) text(bytes)`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ */
+export function keyboardFeedBody({ petscii }: KeyboardFeedBodyOptions): Buffer {
+  if (petscii.length === 0) {
+    throw new StockEncodingError("keyboardFeedBody: petscii must not be empty");
+  }
+  if (petscii.length > 255) {
+    throw new StockEncodingError(`keyboardFeedBody: petscii exceeds 255 bytes (${petscii.length}) -- textLen is a uint8`);
+  }
+  const body = Buffer.alloc(1 + petscii.length);
+  body[0] = petscii.length;
+  Buffer.from(petscii).copy(body, 1);
+  return body;
+}
+
+export interface JoyportSetBodyOptions {
+  port: number;
+  value: number;
+}
+
+/**
+ * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * The body SHAPE is cited; the BIT MEANING of `value` (which bit is
+ * up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log row
+ * A3 -- and is mapped in stock-input.ts, not here. This encoder
+ * deliberately takes a raw, already-composed value so the assumed mapping
+ * lives in exactly one place a future probe session can correct.
+ */
+export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
+  requireU16("port", port);
+  requireU16("value", value);
+  const body = Buffer.alloc(4);
+  body.writeUInt16LE(port, 0);
+  body.writeUInt16LE(value, 2);
+  return body;
+}
+
+/** RESET's mode byte. `Soft`/`Hard` are [CITED]; `Drive8`-`Drive11` are
+ * [CITED] per the manual's `0x08`-`0x0b` drive-reset range. */
+export const ResetMode = { Soft: 0x00, Hard: 0x01, Drive8: 0x08, Drive9: 0x09, Drive10: 0x0a, Drive11: 0x0b } as const;
+export type ResetMode = (typeof ResetMode)[keyof typeof ResetMode];
+
+export interface ResetBodyOptions {
+  mode: number;
+}
+
+/**
+ * RESET (0xcc) request body -- 1 byte, `resetMode`.
+ * [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * NOT the RESOURCE_SET (0x52) power-cycle hazard CLAUDE.md warns about
+ * (`MachineVideoStandard`/`VICIIModel`/`MachinePowerFrequency`, Phase 6
+ * territory) -- this is a distinct opcode, and an agent-requested hard
+ * reset via RESET is exactly what DIRECT-06 asks for. It needs no
+ * deny-list. This is RESEARCH.md's Pitfall 1; this comment is what stops a
+ * later reviewer from "fixing" it by adding one.
+ */
+export function resetBody({ mode }: ResetBodyOptions): Buffer {
+  const validModes: readonly number[] = Object.values(ResetMode);
+  if (!validModes.includes(mode)) {
+    throw new StockEncodingError(
+      `resetBody: mode 0x${mode.toString(16).padStart(2, "0")} is not a recognised ResetMode (Soft 0x00, Hard 0x01, Drive8-Drive11 0x08-0x0b)`,
+    );
+  }
+  return Buffer.from([mode]);
+}
+
+export interface AutostartBodyOptions {
+  runAfter: boolean;
+  fileIndex?: number;
+  filename: string;
+}
+
+/**
+ * AUTOSTART (0xdd) request body -- `runAfter(1) fileIndex(u16LE)
+ * filenameLen(1) filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ *
+ * AUTOSTART has NO drive-unit field at all -- a caller cannot target units
+ * 9-11 through this opcode (plan 03-10 owns the refusal for those units).
+ * `fileIndex`'s behaviour when `runAfter` is false is [ASSUMED] --
+ * RESEARCH.md Assumptions Log row A5.
+ */
+export function autostartBody({ runAfter, fileIndex = 0, filename }: AutostartBodyOptions): Buffer {
+  requireU16("fileIndex", fileIndex);
+  const filenameBuf = requireAsciiFilename("autostartBody", filename);
+  const body = Buffer.alloc(1 + 2 + 1 + filenameBuf.length);
+  body[0] = runAfter ? 0x01 : 0x00;
+  body.writeUInt16LE(fileIndex, 1);
+  body[3] = filenameBuf.length;
+  filenameBuf.copy(body, 4);
+  return body;
+}
+
+export interface DumpBodyOptions {
+  saveRoms: boolean;
+  saveDisks: boolean;
+  filename: string;
+}
+
+/**
+ * DUMP (0x41) request body -- `saveRoms(1) saveDisks(1) filenameLen(1)
+ * filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ */
+export function dumpBody({ saveRoms, saveDisks, filename }: DumpBodyOptions): Buffer {
+  const filenameBuf = requireAsciiFilename("dumpBody", filename);
+  const body = Buffer.alloc(1 + 1 + 1 + filenameBuf.length);
+  body[0] = saveRoms ? 0x01 : 0x00;
+  body[1] = saveDisks ? 0x01 : 0x00;
+  body[2] = filenameBuf.length;
+  filenameBuf.copy(body, 3);
+  return body;
+}
+
+export interface UndumpBodyOptions {
+  filename: string;
+}
+
+/** UNDUMP (0x42) request body -- `filenameLen(1) filename(ASCII)`.
+ * [CITED docs/phase0-binmon-findings.md §5] */
+export function undumpBody({ filename }: UndumpBodyOptions): Buffer {
+  const filenameBuf = requireAsciiFilename("undumpBody", filename);
+  const body = Buffer.alloc(1 + filenameBuf.length);
+  body[0] = filenameBuf.length;
+  filenameBuf.copy(body, 1);
+  return body;
+}
+
+/** Shared filename guard for autostartBody/dumpBody/undumpBody: refuses a
+ * length of 0 or over 255 (the length field is a uint8) and any non-ASCII
+ * byte, naming the offending index -- the same discipline as
+ * conditionSetBody()'s expression guard above. Returns the encoded ASCII
+ * Buffer so callers never re-encode. */
+function requireAsciiFilename(callerName: string, filename: string): Buffer {
+  if (filename.length === 0) {
+    throw new StockEncodingError(`${callerName}: filename must not be empty`);
+  }
+  for (let index = 0; index < filename.length; index += 1) {
+    const codePoint = filename.charCodeAt(index);
+    if (codePoint > 0x7f) {
+      throw new StockEncodingError(`${callerName}: filename contains a non-ASCII character at index ${index} (code point ${codePoint})`);
+    }
+  }
+  const filenameBuf = Buffer.from(filename, "ascii");
+  if (filenameBuf.length > 255) {
+    throw new StockEncodingError(`${callerName}: filename exceeds 255 bytes (${filenameBuf.length}) -- filenameLen is a uint8`);
+  }
+  return filenameBuf;
+}
+
+// CHECKPOINT_LIST (0x14), PING (0x81), BANKS_AVAILABLE (0x82),
+// EXECUTE_UNTIL_RETURN (0x73) and EXIT (0xaa) take EMPTY bodies --
+// deliberately no encoder for any of the five: ViceMonitorClient.send()
+// already defaults `body` to Buffer.alloc(0). Do not add a no-op builder
+// for any of these five opcodes.
+
+// ---------------------------------------------------------------------------
 // Parsed response shapes
 // ---------------------------------------------------------------------------
 
