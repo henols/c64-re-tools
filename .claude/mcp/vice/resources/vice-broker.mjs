@@ -235,15 +235,45 @@ function writeEpochForLaunch(record, logRelPath) {
  * epoch record naming the wrong one. Leaving it unset means a respawn's
  * output lands in the supervision module's own log file under the same
  * per-instance logs directory D-23 requires, and the epoch record names
- * the file that actually received the output. */
-function superviseDepsFor(stateDir, state) {
+ * the file that actually received the output.
+ *
+ * CR-01 (03-REVIEW.md): `backend` is a REQUIRED positional parameter, not an
+ * optional field a call site may quietly omit. Before this, both real call
+ * sites built their deps here WITHOUT it, so `spawnAndRecordInstance()`'s own
+ * `deps.backend ?? "fork"` default silently took over the moment crash
+ * supervision replaced an instance -- a stock instance's crash-respawn or
+ * `vice_recycle` relaunched it with the FORK's `-mcpserver` argv, which stock
+ * upstream VICE does not understand at all, leaving a pool member that can
+ * never be reached over the binary monitor again while still counting toward
+ * countReady()/countTotal(). Making it positional and required is what makes
+ * that omission a compile error rather than a silent backend swap: the FIRST
+ * launch and every REPLACEMENT of it now build their argv from the SAME
+ * resolved verdict. `binmonHost` is threaded for the same reason, one step
+ * ahead of need -- no broker call site configures a stock bind override today
+ * (acquirePortAndLaunch()'s own `binmonHost` is likewise unset), so it is
+ * always `undefined` in production right now; the parameter exists so that
+ * adding one later cannot reintroduce exactly this divergence between a
+ * launch's argv and its respawn's argv. */
+function superviseDepsFor(stateDir, state, backend, binmonHost) {
     return {
         state,
         stateDir,
         epoch: { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord },
         log: (line) => process.stderr.write(`${line}\n`),
+        backend,
+        binmonHost,
     };
 }
+/** Exported ONLY so a test can install withCrashSupervision() through the
+ * REAL deps object this module actually uses in production, rather than a
+ * hand-built SuperviseChildDeps that can (and did) diverge from it -- the
+ * exact blind spot CR-01 (03-REVIEW.md) lived in: broker-launch.test.ts's own
+ * respawn/recycle tests each construct their deps inline and therefore pass
+ * `backend: "stock"` directly, so the production builder's missing field was
+ * invisible to the whole suite. Same discipline as broker-kill.mts's
+ * `_HANDLED_SIGNALS`: an underscore-prefixed alias, never called by any
+ * production code path in this module. */
+export const _superviseDepsFor = superviseDepsFor;
 /** Sets the deliberate-death marker and its respawn-after-kill answer
  * TOGETHER -- the single place in this module that ever writes either
  * field, so a call site can never set one and forget the other, which is
@@ -425,14 +455,18 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             state,
             stateDir,
             allocatePort: nextFreePort,
-            backend: deps.backend ?? "fork",
+            // CR-01 (03-REVIEW.md): the SAME local `backend` const resolved at the
+            // top of this function feeds BOTH the initial argv (here) and the
+            // supervision deps below, so a crash-respawn of this instance can never
+            // build a different backend's argv than the launch it replaces.
+            backend,
             allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
             spawnFactory: deps.buildColdSpawnFactory ??
                 ((port) => {
                     const supervisorDir = join(stateDir, String(port));
                     const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
                     lastLogRelPath = logRelPath;
-                    return withCrashSupervision("acquire", port, spawn, superviseDepsFor(stateDir, state));
+                    return withCrashSupervision("acquire", port, spawn, superviseDepsFor(stateDir, state, backend));
                 }),
         });
         if (!result.ok) {
@@ -655,7 +689,10 @@ function maintainWarmFloorForRealBroker(stateDir, state, backend) {
                 lastWarmLaunchLogRelPath = logRelPath;
                 return child;
             };
-            return withCrashSupervision("spare", port, stashingSpawn, superviseDepsFor(stateDir, state));
+            // CR-01 (03-REVIEW.md): the SAME resolved `backend` this function
+            // already receives for the launch argv is threaded into the supervision
+            // deps, so a warm instance's own crash-respawn stays on its backend.
+            return withCrashSupervision("spare", port, stashingSpawn, superviseDepsFor(stateDir, state, backend));
         },
         // WR-01: same backend-aware probe route as handleAcquire's, from the SAME
         // resolved verdict this function already receives for the launch argv.
