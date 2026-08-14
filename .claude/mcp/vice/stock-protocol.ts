@@ -944,6 +944,23 @@ export interface ParsedRegistersAvailableResponse extends ParsedBaseResponse {
   registers: Array<{ id: number; size: number; name: string }>;
 }
 
+/**
+ * BANKS_AVAILABLE (0x82) parsed shape. Added by plan 03-06 -- plan 03-02
+ * added CommandType.BanksAvailable/ResponseType.BanksAvailable and the
+ * EXPECTED_RESPONSE entry mapping the two, but never added this parser case
+ * or its RESPONSE_TYPE_OF_PARSED_KIND entry, so every BANKS_AVAILABLE reply
+ * fell through to the "unknown" fallback shape with no name/id pairs
+ * extractable at all -- a hard blocker for stock-memory.ts's bank catalog
+ * (03-06 Task 2). [CITED: official binary-monitor protocol documentation's
+ * BANKS_AVAILABLE response shape -- bank ids are a WORD, unlike
+ * REGISTERS_AVAILABLE's single-byte register ids, and there is no per-item
+ * "size" field the way registers have one.]
+ */
+export interface ParsedBanksAvailableResponse extends ParsedBaseResponse {
+  type: "banks_available";
+  banks: Array<{ id: number; name: string }>;
+}
+
 export interface ParsedViceInfoResponse extends ParsedBaseResponse {
   type: "vice_info";
   version: number[];
@@ -1042,6 +1059,7 @@ export type ParsedResponse =
   | ParsedMemoryGetResponse
   | ParsedRegistersResponse
   | ParsedRegistersAvailableResponse
+  | ParsedBanksAvailableResponse
   | ParsedViceInfoResponse
   | ParsedCheckpointInfoResponse
   | ParsedCheckpointListResponse
@@ -1164,6 +1182,30 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
         offset += itemSize + 1;
       }
       return { type: "registers_available", requestId, errorCode, registers };
+    }
+    case ResponseType.BanksAvailable: {
+      // BANKS_AVAILABLE (0x82): count(u16LE), then per item item_size(1)
+      // id(u16LE) nameLength(1) name(nameLength ASCII). Same
+      // item_size-is-the-wire's-own-stride discipline as RegistersAvailable
+      // just above (WR-09) -- a bank id is a WORD (unlike a register id,
+      // which is a single byte), and there is no per-item "size" field the
+      // way REGISTERS_AVAILABLE has one. [CITED: official binary-monitor
+      // protocol documentation's BANKS_AVAILABLE response shape]
+      need(body, 2, responseType, requestId);
+      const count = body.readUInt16LE(0);
+      let offset = 2;
+      const banks: Array<{ id: number; name: string }> = [];
+      for (let index = 0; index < count; index += 1) {
+        need(body, offset + 4, responseType, requestId);
+        const itemSize = body[offset]!;
+        const id = body.readUInt16LE(offset + 1);
+        const nameLength = body[offset + 3]!;
+        need(body, offset + 4 + nameLength, responseType, requestId);
+        const name = body.subarray(offset + 4, offset + 4 + nameLength).toString("ascii");
+        banks.push({ id, name });
+        offset += itemSize + 1;
+      }
+      return { type: "banks_available", requestId, errorCode, banks };
     }
     case ResponseType.ViceInfo: {
       const mainVersionLength = body[0] ?? 0;
@@ -1488,6 +1530,7 @@ const RESPONSE_TYPE_OF_PARSED_KIND: Partial<Record<ParsedResponse["type"], Respo
   memory_get: ResponseType.MemoryGet,
   registers: ResponseType.RegisterInfo,
   registers_available: ResponseType.RegistersAvailable,
+  banks_available: ResponseType.BanksAvailable,
   vice_info: ResponseType.ViceInfo,
   checkpoint_info: ResponseType.CheckpointInfo,
   checkpoint_list: ResponseType.CheckpointList,

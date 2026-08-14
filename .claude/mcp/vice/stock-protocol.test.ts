@@ -390,6 +390,62 @@ test("WR-09: a REGISTER_INFO body truncated mid-item is a returned StockFramingE
 });
 
 // ---------------------------------------------------------------------------
+// BANKS_AVAILABLE (0x82) -- added by plan 03-06 (Rule 3 blocking-issue fix):
+// plan 03-02 added CommandType.BanksAvailable/ResponseType.BanksAvailable and
+// the EXPECTED_RESPONSE entry mapping the two, but never added this parser
+// case, so every BANKS_AVAILABLE reply fell through to the "unknown"
+// fallback shape with no name/id pairs extractable -- a hard blocker for
+// stock-memory.ts's bank catalog (03-06 Task 2). A bank item is
+// [item_size:1][id:u16LE][nameLen:1][name...] -- no per-item "size" field
+// the way REGISTERS_AVAILABLE has one, and the id is a WORD rather than a
+// single byte.
+// ---------------------------------------------------------------------------
+
+function bankAvailableItem(id: number, name: string): Buffer {
+  const nameBytes = Buffer.from(name, "ascii");
+  const idBytes = Buffer.alloc(2);
+  idBytes.writeUInt16LE(id, 0);
+  const payload = Buffer.concat([idBytes, Buffer.from([nameBytes.length]), nameBytes]);
+  return Buffer.concat([Buffer.from([payload.length]), payload]);
+}
+
+function banksAvailableFrame(items: Buffer[], requestId = 24): Buffer {
+  const count = Buffer.alloc(2);
+  count.writeUInt16LE(items.length, 0);
+  return encodeResponseFrame({ responseType: 0x82, errorCode: 0x00, requestId, body: Buffer.concat([count, ...items]) });
+}
+
+test("BANKS_AVAILABLE: parses a wire response into a banks_available shape with id/name pairs", () => {
+  const frame = banksAvailableFrame([bankAvailableItem(0x00, "default"), bankAvailableItem(0x01, "cpu"), bankAvailableItem(0x0c, "ram")]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; banks: Array<{ id: number; name: string }> };
+  assert.equal(parsed.type, "banks_available");
+  assert.deepEqual(parsed.banks, [
+    { id: 0x00, name: "default" },
+    { id: 0x01, name: "cpu" },
+    { id: 0x0c, name: "ram" },
+  ]);
+});
+
+test("BANKS_AVAILABLE: a bank id above 0xff (only representable as a WORD) round-trips correctly", () => {
+  const frame = banksAvailableFrame([bankAvailableItem(0x0100, "wide-id")]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  const parsed = responses[0] as { banks: Array<{ id: number; name: string }> };
+  assert.deepEqual(parsed.banks, [{ id: 0x0100, name: "wide-id" }]);
+});
+
+test("BANKS_AVAILABLE: a body truncated mid-item is a returned StockFramingError, not a partial array", () => {
+  const count = Buffer.alloc(2);
+  count.writeUInt16LE(2, 0); // claims two items
+  const body = Buffer.concat([count, bankAvailableItem(0x00, "default")]); // supplies one
+  const frame = encodeResponseFrame({ responseType: 0x82, errorCode: 0x00, requestId: 25, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+// ---------------------------------------------------------------------------
 // error code / protocol error
 // ---------------------------------------------------------------------------
 

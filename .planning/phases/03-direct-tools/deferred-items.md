@@ -87,3 +87,25 @@ gitignored). Worth a follow-up if parallel-executor worktrees become routine:
 either have the orchestrator run `ensure-mcp-deps.sh` per worktree at spawn
 time, or document that executors must self-provision before running any
 `.claude/mcp/vice` test.
+
+## 3. `build-atomic.test.ts` transient failure during a full-suite run (03-06)
+
+**Found during:** 03-06, `npm run test:automated` full-suite run (after Task
+2's changes).
+
+**Symptom:** one run showed `not ok - the private temp directory is cleaned
+up on both the success and the failure path, leaving no sibling of the
+out-dir behind` in `build-atomic.test.ts`; an immediate re-run of the same
+`npm run test:automated` command showed 0 failures in that file (only the
+already-documented item #1 above remained). `node --test
+build-atomic.test.ts` in isolation also passed cleanly (6/6).
+
+**Root cause:** matches the identical class of flake already documented in
+`02-07-SUMMARY.md` ("One transient failure in `build-atomic.test.ts`'s own
+'concurrent builds' test... consistent with a timing-sensitive, pre-existing
+test (it spawns multiple real `tsc` processes concurrently)"). Not caused by
+`stock-memory.ts`/`stock-protocol.ts` (this plan's only source changes),
+which `build-atomic.test.ts` does not exercise.
+
+**Disposition:** out of scope (Scope Boundary), not investigated further --
+same pre-existing, timing-sensitive flake class as 02-07's.
