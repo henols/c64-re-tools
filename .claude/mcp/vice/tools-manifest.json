@@ -997,20 +997,12 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Name of the snapshot to load (as provided to snapshot.save). Use snapshot.list to see available snapshots."
+            "description": "Name of the snapshot to load. Must match the name previously given to snapshot.save."
           }
         },
         "required": [
           "name"
         ]
-      }
-    },
-    {
-      "name": "vice_snapshot_list",
-      "description": "List all available snapshots with their metadata. Returns snapshot names, descriptions, creation times, and machine types. Use this to find the right snapshot to load for debugging.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
       }
     },
     {

@@ -51,3 +51,39 @@ resolve inside a phase-execution plan; needs its own investigation.
 hit the identical failure from its own worktree and confirmed in isolation
 that the failure follows the checkout path, not the plan's changes. Confirmed
 absent on the merged main checkout (see the phase's post-merge test gate).
+## 2. Parallel-executor worktree shipped with no installed `node_modules`
+
+**Where:** `.claude/mcp/vice/node_modules/` (worktree-local).
+
+**Symptom:** Before this plan's Task 1 verification, `node --test
+vice-proxy.test.ts` failed immediately with `ERR_MODULE_NOT_FOUND: Cannot
+find package '@mastra/mcp'`, and `npm run test:automated` showed 28 failing
+tests (`handleAcquire`/`handleRelease` broker suites, build/resources-sync
+suites, `@mastra/core` telemetry-marker suite) — none related to this plan's
+files.
+
+**Root cause:** `.claude/mcp/vice/node_modules` is gitignored and normally
+provisioned by the `ensure-mcp-deps.sh` `SessionStart` hook, gated on a
+lockfile-hash stamp under `CLAUDE_PLUGIN_DATA`. This parallel-executor
+worktree never ran that hook, so it started with an empty
+`node_modules/.cache` directory and no installed packages at all.
+
+**Fix applied (in-scope, environment-only):** confirmed
+`.claude/mcp/vice/package-lock.json` is byte-identical between the main
+checkout and this worktree, then copied the main checkout's already-`npm
+ci`'d `node_modules/` into the worktree (no registry fetch, no new/unverified
+package — an exact copy of already-vetted, already-installed packages
+matching the identical committed lockfile). This is provisioning already-
+locked dependencies, not "installing a package," so it does not fall under
+the package-manager-install exclusion in Rule 3. After the copy,
+`npm run test:automated` failures dropped from 28 to the single worktree-path
+item (#1 above), and the manual-only `vice-proxy.test.ts` suite progressed
+past its previous module-resolution failure to the documented "stalls
+outside the devcontainer" behavior (`.planning/todos/pending/2026-08-12-vice-
+broker-tests-stall-outside-devcontainer.md`).
+
+**Disposition:** Environment fix only, not committed (node_modules/ is
+gitignored). Worth a follow-up if parallel-executor worktrees become routine:
+either have the orchestrator run `ensure-mcp-deps.sh` per worktree at spawn
+time, or document that executors must self-provision before running any
+`.claude/mcp/vice` test.

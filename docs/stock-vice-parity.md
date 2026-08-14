@@ -59,9 +59,86 @@ below is renumbered to stay contiguous.)
    won't match VICE's exactly) · `vice_display_screenshot` (INDEXED8 framebuffer +
    `PALETTE_GET` → encode PNG client-side) · `vice_disk_read_sector` (parse the
    `.d64` file, not the live drive) · `vice_snapshot_save` metadata/`mcp_snapshots/`
-   (DUMP writes state; JSON metadata + list is client bookkeeping) ·
-   `checkpoint_set_ignore_count` (no native ignore — client counts hits and
-   auto-resumes; a round-trip per ignored hit, not in-core).
+   (DUMP writes state; JSON metadata + list is client bookkeeping).
+   `vice_checkpoint_set_ignore_count` is **not** in this reproducible list —
+   see item 7 (D-15): there is no native ignore count on the wire, and the
+   only implementation would require the client to resume the machine on
+   each ignored hit, a carve-out in D-05's absolute no-unrequested-resume
+   policy that this milestone does not take. The tool is **trimmed** from the
+   stock manifest, not reimplemented. DIRECT-03 is therefore met **except**
+   for ignore counts, and BACK-05 reports the absence in Phase 8. Note that
+   `CHECKPOINT_INFO`'s reply *does* carry a read-only `ignoreCount` field, so
+   listing a checkpoint still reports whatever ignore count exists — only
+   *setting* one is unavailable.
+
+7. **Expected divergences licensed by design (Phase 3 — D-01, D-03, D-05, D-14)**
+   - **Every stock answer is stock-native (D-01).** A tool present on both
+     backends does not reproduce the fork's JSON answer shape. The fork
+     manifest carries no `outputSchema` on any tool, so there is no
+     documented fork shape to reproduce; the stock manifest declares an
+     `outputSchema` on every entry (D-02) and that schema is the contract. A
+     skill that parses fork answer *fields* breaks on stock — SKILL-01
+     (Phase 8) must cover answer-shape drift, not only capability gaps.
+   - **Every stock answer carries a `runState` field (D-06).** Values
+     `running`, `stopped`, `unknown`, derived only from the
+     `STOPPED`/`RESUMED`/`JAM` event stream. `unknown` is the honest
+     post-connect value and is not a failure.
+   - **Reading memory halts the machine, and the answer says so (D-05).** On
+     stock, `monitor_startup_trap()` fires on any inbound byte, so *every*
+     command halts the emulated machine and resume is a separate explicit
+     `EXIT`. The client never issues an `EXIT` the agent did not ask for.
+     **This is the single biggest behavioural divergence in the milestone.**
+     Name `c64-ram-capture` and `c64-program-recon` explicitly as the two
+     skills whose documented methodology reads memory mid-run and assumes
+     the machine keeps running — SKILL-01 (Phase 8) owns the playbook
+     revision; it is not Phase 3 work.
+   - **`vice_machine_reset`'s `run_after` default flips from `true` to
+     `false` (D-03/D-05).** `RESET` (0xcc) has no run-after field on the
+     wire, so honouring `run_after: true` means the client sends a follow-up
+     `EXIT` — fine when the agent asked for it, but a *default* of true would
+     resume a machine nobody asked to resume. Explicit `run_after: true` is
+     honoured; the omitted default is `false` on stock.
+   - **`vice_memory_read`'s `encoding` default is `hex` on stock.** Both
+     documented values (`array`, `hex`) are accepted so the fork's call still
+     works; only the omitted default differs.
+   - **`vice_keyboard_type` / `vice_keyboard_petscii` inject into the
+     keyboard buffer of a machine that is now halted.** Nothing consumes the
+     buffer until the agent resumes. The answer's `runState` reports
+     `stopped`; this is D-05's divergence applied to input, not a failure.
+   - **`vice_joystick_tap` is absent from the stock manifest** and is
+     deferred to Phase 7. A tap is "hold for N frames, then release", which
+     requires the machine to *run* for a measured interval — an unrequested
+     resume (D-05) plus a cycle/frame measurement that does not exist on
+     stock until Phase 7's timing route lands. `vice_joystick_set` (hold /
+     release / centre) ships in Phase 3 and satisfies DIRECT-07's joystick
+     half. BACK-05 reports the absence in Phase 8. Record this as the same
+     class of decision as D-15's ignore-count trim, reached by the same
+     reasoning.
+   - **`vice_disk_detach` is absent from the stock manifest** and ships in
+     Phase 7 through the text monitor (D-13). Phase 3 ships only the
+     `-remotemonitor` launch flag and a second broker-allocated port; it
+     builds no text client and dials nothing on that port.
+   - **Also absent from the stock manifest, permanently or until a later
+     phase:** `vice_checkpoint_set_ignore_count` (D-15), `vice_snapshot_list`
+     (D-16, deleted from **both** manifests), the low-level keyboard family
+     (`key_press`/`key_release`/`restore`/`matrix`/`chord` — hard loss, item
+     2), `vice_sid_get_state` (hard loss, item 1), `vice_disk_read_sector`
+     (Phase 5), `vice_machine_config_get`/`set` (Phase 6).
+   - **Two stock-only tool names with no fork counterpart:**
+     `vice_execution_until_return` (`EXECUTE_UNTIL_RETURN` 0x73) and
+     `vice_registers_available` (`REGISTERS_AVAILABLE` 0x83). Permitted by
+     Phase 2's D-07 (the two backends' advertised lists are genuinely
+     different). Phase 8's parity harness must expect these on stock only.
+   - **Disk attach is `AUTOSTART` with the run flag clear (D-14).**
+     `vice_disk_attach` on stock is `AUTOSTART` (0xdd) with the run flag
+     clear — a documented approximation, not an exact port. `AUTOSTART` has
+     **no drive-unit field at all**, so the fork's required `unit` argument
+     (8-11) can only be honoured for unit 8. Units 9-11 are **refused with an
+     explanation naming this exact protocol limit** — never a silent no-op
+     and never a silent retarget to unit 8. Likewise `vice_autostart`'s
+     optional `program` argument (load-by-name from a disk image) has no
+     wire equivalent — `AUTOSTART` supports only a numeric `fileIndex` — and
+     is refused when supplied rather than silently dropped.
 
 ## B. Extra stock features worth exposing (things stock does *more*)
 
