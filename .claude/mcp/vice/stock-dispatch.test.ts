@@ -12,6 +12,7 @@ import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { EventEmitter } from "node:events";
 
 import {
   manifestPathForBackend,
@@ -20,6 +21,7 @@ import {
   stockHandlerFor,
   dispatchStock,
   stockDisconnect,
+  withStockSession,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
@@ -27,6 +29,8 @@ import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
+import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import type { StockSessionHandler } from "./stock-handler.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
@@ -113,6 +117,7 @@ test("manifest/backend: no DENY_LIST name appears in tools-manifest.stock.json",
 
 beforeEach(() => {
   clearHeldStockSession();
+  resetRunStateTrackersForTest();
 });
 
 const STUB_BROKER_CONTROL = {
@@ -140,14 +145,21 @@ function makeLease(opts: Omit<HeldLease, "epochFile" | "supervisorDir"> & Partia
 
 /** The fake client carries a REAL disconnect() that flips `connected` to
  * false (CR-05): a session teardown that only drops the reference is exactly
- * the defect under test, so the stub has to be able to tell the two apart. */
+ * the defect under test, so the stub has to be able to tell the two apart.
+ *
+ * The client is a real `EventEmitter` (Task 1, plan 03-12), matching this
+ * codebase's own DI-stub convention (stock-memory.test.ts's makeSession() et
+ * al.) -- `attachRunStateTracker()` now calls `client.on("event", ...)` at
+ * every fresh connect/reconnect this seam produces, so a plain object
+ * literal with no `.on()` throws the moment ensureStockSession() attaches a
+ * tracker to it. */
 function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: FakeSessionBrokerControl; connected?: boolean }): StockConnectSession {
-  const client = {
+  const client = Object.assign(new EventEmitter(), {
     connected: opts.connected ?? true,
     disconnect: async (): Promise<void> => {
       client.connected = false;
     },
-  };
+  });
   return {
     client: client as unknown as StockConnectSession["client"],
     versionQuad: "3.9.0",
@@ -535,6 +547,109 @@ test("lease: MachineRestartedError out of a held session's reconnect clears the 
 });
 
 // ---------------------------------------------------------------------------
+// Task 1 (plan 03-12): the runState tracker attach points (RESEARCH.md
+// Pitfall 4) -- attached at exactly the two branches that produce a FRESH
+// ViceMonitorClient, never in the `heldSession.client.connected` reuse
+// branch. Every client below is the same real-EventEmitter fakeSession()
+// stub every other test in this file uses; `listenerCount("event")` is the
+// literal proof a second attach never registers a second listener.
+// ---------------------------------------------------------------------------
+
+test("runState/Pitfall4: a fresh connect attaches exactly one 'event' listener to the new client", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-1", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const outcome = await ensureStockSession(deps);
+  assert.ok(outcome.ok);
+  assert.equal(outcome.session.client.listenerCount("event"), 1);
+});
+
+test("runState/Pitfall4: a session-reuse call (same targetId, still connected) does NOT add a second listener", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-2", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const first = await ensureStockSession(deps);
+  const second = await ensureStockSession(deps);
+  assert.ok(first.ok && second.ok);
+  assert.equal(first.session.client, second.session.client, "precondition: the reuse branch returns the SAME client");
+  assert.equal(second.session.client.listenerCount("event"), 1, "the reuse branch must never call attachRunStateTracker a second time");
+});
+
+test("runState/Pitfall4: a reconnect (socket dead) attaches exactly one listener to the NEW client from stockReconnect", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-3", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession({ ...opts, connected: false }),
+    reconnect: async (session) => fakeSession({ targetId: session.targetId, host: session.host, port: session.port, brokerControl: session.brokerControl, connected: true }),
+  };
+  await ensureStockSession(deps); // connects, holds a not-connected session (no tracker assertion here -- see the fresh-connect test above)
+  const second = await ensureStockSession(deps); // triggers the reconnect branch
+  assert.ok(second.ok);
+  assert.equal(second.session.client.listenerCount("event"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Task 1 (plan 03-12): withStockSession() -- the one adapter every table
+// entry goes through.
+// ---------------------------------------------------------------------------
+
+test("withStockSession: returns convertHandshakeError's text when ensureStockSession throws MonitorOwnershipError", async () => {
+  const handler: StockSessionHandler = async () => {
+    throw new Error("must not be called -- the handshake itself failed");
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease: makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-1", brokerControl: STUB_BROKER_CONTROL }) }),
+    connect: async () => {
+      throw new MonitorOwnershipError("stockConnect: monitor for target grant-wss-1 on port 6502 is already claimed by grant grant-other", {
+        holderGrantId: "grant-other",
+        holderClaimedAt: 1700000000000,
+        port: 6502,
+      });
+    },
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /grant-other/);
+});
+
+test("withStockSession: returns outcome.message verbatim on an { ok: false } refusal, without touching the handler", async () => {
+  let handlerCalled = false;
+  const handler: StockSessionHandler = async () => {
+    handlerCalled = true;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (verbatim message)" }),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
+  assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
+});
+
+test("withStockSession: a family handler that throws yields isError:true rather than propagating", async () => {
+  const handler: StockSessionHandler = async () => {
+    throw new Error("boom: something the family handler let escape");
+  };
+  const wrapped = withStockSession("vice_test_tool", handler);
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-3", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /vice_test_tool/);
+  assert.match(JSON.stringify(result.content), /boom: something the family handler let escape/);
+});
+
+// ---------------------------------------------------------------------------
 // Task 1 (plan 02-10): the dispatch table, the hard refusal, and vice_ping.
 // Every deps.connect/deps.reconnect below is a spy stub, never
 // stock-connect.ts's real socket-touching implementation -- these tests
@@ -612,7 +727,7 @@ test("ping: a failing ensureLease yields isError:true carrying the provider's me
   assert.equal(connectCalls, 0);
 });
 
-test("ping: the success payload carries backend, viceVersion, and resolvedBinaryPath", async () => {
+test("ping: the success payload carries backend, viceVersion, resolvedBinaryPath, and runState (D-06)", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL });
   const deps: StockDispatchDeps = {
     ensureLease: async () => ({ ok: true, lease }),
@@ -628,6 +743,11 @@ test("ping: the success payload carries backend, viceVersion, and resolvedBinary
   assert.match(payload.viceVersion, /3\.9\.0/);
   assert.equal(payload.resolvedBinaryPath, "/opt/vice/bin/x64sc");
   assert.equal(payload.resolvedBinaryPathIsResolved, true);
+  // D-06/Task 1 (plan 03-12): vice_ping now answers through stockAnswer(), so
+  // its answer carries runState alongside every field that was already
+  // there. A fresh connect's tracker starts at "unknown" (D-07) -- no
+  // stopped/resumed/jam event has arrived yet.
+  assert.equal(payload.runState, "unknown");
 });
 
 test("WR-05 ping: an UNRESOLVED binary path is reported as such, so a bare name is never presented as a resolved path", async () => {

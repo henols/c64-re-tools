@@ -33,10 +33,13 @@ import {
   isErrorText,
   convertHandshakeError,
   convertWireError,
+  stockAnswer,
   type StockToolResult,
   type StockOkResult,
   type StockErrorResult,
+  type StockSessionHandler,
 } from "./stock-handler.ts";
+import { attachRunStateTracker } from "./stock-runstate.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -227,6 +230,16 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
     }
     try {
       heldSession = await reconnectFn(heldSession);
+      // D-06/RESEARCH.md Pitfall 4: attach HERE, at the fresh client a
+      // reconnect just produced -- never in the `heldSession.client.connected`
+      // reuse branch above. The tracker attach is idempotent (a stray extra
+      // call on the SAME client is harmless), but a reconnect always hands
+      // back a NEW ViceMonitorClient, so this is a genuinely fresh client
+      // that has never had one attached. Getting this placement wrong would
+      // mean the D-11 trace guard's rate-limiter listener could attach a
+      // second time on a client already tracked elsewhere and fire its side
+      // effect (a CHECKPOINT_TOGGLE) more than once per real event.
+      attachRunStateTracker(heldSession.client);
       return { ok: true, session: heldSession };
     } catch (err) {
       clearHeldStockSession();
@@ -274,6 +287,14 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
     brokerControl: lease.brokerControl,
     deps: stockConnectDepsFor(lease, deps),
   });
+  // D-06/RESEARCH.md Pitfall 4 (same placement rule as the reconnect branch
+  // above): attach the tracker to this BRAND NEW client, immediately after
+  // stockConnect() returns it -- never inside stockConnect() itself. The
+  // handshake stockConnect() just ran sends its own PING and a CR-02 EXIT;
+  // projecting that internal pair as the user's own run state would
+  // contradict D-07's honest "unknown" (the agent has not resumed anything
+  // yet, and a stale connect-time assumption is exactly what D-07 forbids).
+  attachRunStateTracker(session.client);
   heldSession = session;
   return { ok: true, session };
 }
@@ -341,31 +362,69 @@ export { stockDisconnect };
 export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDeps) => Promise<StockToolResult>;
 
 /**
- * The `vice_ping` table entry -- BACK-03's answer, on the tool an agent
- * already reaches for first. Obtains a live session SOLELY through
- * ensureStockSession(deps): no broker coordinates resolved, no socket
- * opened, and no stockConnect() call, here. On a refusal (`{ ok: false }`)
- * returns that refusal's own message verbatim -- never re-worded. On success
- * enriches the ordinary ping answer with the three BACK-03 fields: `backend`
+ * withStockSession() -- THE ONE adapter every STOCK_DISPATCH_TABLE entry goes
+ * through (Task 1, plan 03-12). Before this existed, `viceHandlerPing` was
+ * the only table entry and re-implemented, inline, the exact three-step
+ * preamble every one of the 24 Phase 3 family handlers also needs: acquire a
+ * session through ensureStockSession(deps), convert a thrown handshake error
+ * or a `{ ok: false }` refusal into well-formed refusal text, and only THEN
+ * hand off to the tool's own logic. This function performs that preamble
+ * exactly once, for every tool, so 24 handlers do not each re-implement
+ * session-acquisition and error conversion themselves -- a table entry that
+ * bypasses this adapter (calling ensureStockSession() or a family handler
+ * directly) is a bug, not a variant.
+ *
+ * Order, exactly as `viceHandlerPing` established:
+ *   1. `ensureStockSession(deps)`, wrapped in its own try/catch --
+ *      `convertHandshakeError(toolName, err)` on a thrown handshake error
+ *      (MonitorOwnershipError, MachineRestartedError, or anything else
+ *      stockConnect()/stockReconnect() can propagate).
+ *   2. `{ ok: false }` -- returns `outcome.message` verbatim, never re-worded
+ *      (the provider's own diagnostic, e.g. a broker liveness classification).
+ *   3. Otherwise delegates to `handler(args, outcome.session, deps)`, itself
+ *      wrapped in a SECOND try/catch: anything a family handler lets escape
+ *      becomes `convertWireError(toolName, err)` rather than an uncaught
+ *      rejection. vice-proxy.ts's stdio server is never restarted by Claude
+ *      Code for the rest of the session (T-3-04) -- a single escaped
+ *      exception here would silently end the session's entire tool surface,
+ *      not just this one call.
+ */
+export function withStockSession(toolName: string, handler: StockSessionHandler): StockHandler {
+  return async (args, deps) => {
+    let outcome: EnsureStockSessionOutcome;
+    try {
+      outcome = await ensureStockSession(deps);
+    } catch (err) {
+      return convertHandshakeError(toolName, err);
+    }
+
+    if (!outcome.ok) {
+      return isErrorText(outcome.message);
+    }
+
+    try {
+      return await handler(args, outcome.session, deps);
+    } catch (err) {
+      return convertWireError(toolName, err);
+    }
+  };
+}
+
+/**
+ * The `vice_ping` handler -- BACK-03's answer, on the tool an agent already
+ * reaches for first. A plain StockSessionHandler now that withStockSession()
+ * owns the session-acquisition/error-conversion preamble; this function's
+ * only job is to build the answer once a live session already exists.
+ * Enriches the ordinary ping answer with the three BACK-03 fields: `backend`
  * (always `"stock"` on this path), `viceVersion` (rendered from the
  * handshake's own version quad), and `resolvedBinaryPath` (threaded down
  * from deps, never resolved here -- see StockDispatchDeps's own header
- * comment on why).
+ * comment on why). Built through stockAnswer() so the answer now also
+ * carries `runState` (D-06: every stock answer, and `vice_ping` is a stock
+ * answer) alongside every field that was already there.
  */
-async function viceHandlerPing(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
-  let outcome: EnsureStockSessionOutcome;
-  try {
-    outcome = await ensureStockSession(deps);
-  } catch (err) {
-    return convertHandshakeError("vice_ping", err);
-  }
-
-  if (!outcome.ok) {
-    return isErrorText(outcome.message);
-  }
-
-  const session = outcome.session;
-  const payload = {
+const handlePing: StockSessionHandler = async (_args, session, deps) => {
+  return stockAnswer(session.client, {
     status: "ok",
     backend: "stock" as const,
     viceVersion: `VICE ${session.versionQuad}`,
@@ -375,9 +434,8 @@ async function viceHandlerPing(_args: Record<string, unknown>, deps: StockDispat
     // from "this is what we were told to look for, and we could not find it".
     resolvedBinaryPathIsResolved: deps.resolvedBinaryPathIsResolved ?? false,
     capabilities: session.capabilities,
-  };
-  return { content: [{ type: "text", text: JSON.stringify(payload) }], isError: false };
-}
+  });
+};
 
 /** The ONE dispatch table this whole module tree ever defines (D-09) --
  * keyed on manifest tool name. A later plan (phases 3-7) adds its own stock
@@ -385,7 +443,7 @@ async function viceHandlerPing(_args: Record<string, unknown>, deps: StockDispat
  * vice-proxy.ts (grep-gated to exactly one `dispatchStock(` call there,
  * plan 02-10 task 2's own acceptance criteria). */
 const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
-  vice_ping: viceHandlerPing,
+  vice_ping: withStockSession("vice_ping", handlePing),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a
