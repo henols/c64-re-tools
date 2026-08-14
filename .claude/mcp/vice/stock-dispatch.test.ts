@@ -664,6 +664,100 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
   assert.equal(stockHandlerFor("vice_mem_read"), undefined);
 });
 
+// ---------------------------------------------------------------------------
+// Task 2 (plan 03-12): all 24 Phase 3 family tools plus vice_ping are
+// registered in the ONE dispatch table, and the eight deliberately-absent
+// tools are refused without ever touching `deps`.
+// ---------------------------------------------------------------------------
+
+/** The 25 tool names this plan registers, driven from an explicit array
+ * literal (per this plan's own acceptance criteria) so a missing entry
+ * fails as a NAMED assertion rather than a generic count mismatch. */
+const REGISTERED_TOOL_NAMES = [
+  "vice_ping",
+  "vice_memory_read",
+  "vice_memory_write",
+  "vice_memory_banks",
+  "vice_registers_get",
+  "vice_registers_set",
+  "vice_registers_available",
+  "vice_checkpoint_add",
+  "vice_checkpoint_delete",
+  "vice_checkpoint_list",
+  "vice_checkpoint_toggle",
+  "vice_checkpoint_set_condition",
+  "vice_watch_add",
+  "vice_execution_pause",
+  "vice_execution_run",
+  "vice_execution_step",
+  "vice_execution_until_return",
+  "vice_machine_reset",
+  "vice_autostart",
+  "vice_disk_attach",
+  "vice_snapshot_save",
+  "vice_snapshot_load",
+  "vice_keyboard_type",
+  "vice_keyboard_petscii",
+  "vice_joystick_set",
+];
+
+/** The eight tools this plan deliberately does NOT register -- each name's
+ * absence is a planner decision (see the block comment above
+ * STOCK_DISPATCH_TABLE in stock-dispatch.ts), never an oversight. */
+const DELIBERATELY_ABSENT_TOOL_NAMES = [
+  "vice_checkpoint_set_ignore_count",
+  "vice_snapshot_list",
+  "vice_disk_detach",
+  "vice_joystick_tap",
+  "vice_disk_read_sector",
+  "vice_sid_get_state",
+  "vice_machine_config_get",
+  "vice_machine_config_set",
+];
+
+test("dispatch: stockHandlerFor returns a function for every one of the 25 registered tool names", () => {
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
+  }
+});
+
+test("dispatch: the table's key count is exactly 25", () => {
+  // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
+  // every name this plan knows about is the table's own public surface, so
+  // this test drives the same 25-name list rather than reaching into the
+  // module's private object.
+  const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
+  assert.equal(hits.length, 25);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 25);
+});
+
+test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
+  for (const name of REGISTERED_TOOL_NAMES) {
+    assert.match(name, /^vice_[a-z0-9_]+$/, `${name} does not match the expected tool-name shape`);
+  }
+});
+
+test("dispatch: stockHandlerFor returns undefined for every deliberately-absent tool name", () => {
+  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
+    assert.equal(stockHandlerFor(name), undefined, `expected NO handler for ${name}`);
+  }
+});
+
+test("dispatch: dispatchStock refuses every deliberately-absent tool naming the tool and the fork backend, without reading deps", async () => {
+  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
+    const deps = {
+      ensureLease: () => {
+        throw new Error(`ensureLease must never be called for ${name} -- it has no dispatch entry`);
+      },
+    } as unknown as StockDispatchDeps;
+    const result = await dispatchStock(name, {}, deps);
+    assert.equal(result.isError, true);
+    const text = JSON.stringify(result.content);
+    assert.match(text, new RegExp(name));
+    assert.match(text, /fork/i);
+  }
+});
+
 test("refus: dispatchStock on a name with no handler refuses by name, names the fork, never calls forwardToVice, and never touches deps", async () => {
   let depsTouched = false;
   const emptyDeps = new Proxy({} as StockDispatchDeps, {

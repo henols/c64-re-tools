@@ -41,6 +41,24 @@ import {
 } from "./stock-handler.ts";
 import { attachRunStateTracker } from "./stock-runstate.ts";
 
+// The six family modules (plans 03-06 through 03-11) -- each exports its
+// tools as StockSessionHandler-shaped values; this file (D-09) is the ONE
+// place they are registered into STOCK_DISPATCH_TABLE, below. Import order
+// mirrors the table's own family grouping (Task 2, plan 03-12).
+import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks } from "./stock-memory.ts";
+import { handleRegistersGet, handleRegistersSet, handleRegistersAvailable } from "./stock-registers.ts";
+import {
+  handleCheckpointAdd,
+  handleCheckpointDelete,
+  handleCheckpointList,
+  handleCheckpointToggle,
+  handleCheckpointSetCondition,
+  handleWatchAdd,
+} from "./stock-checkpoints.ts";
+import { handleExecutionPause, handleExecutionRun, handleExecutionStep, handleExecutionUntilReturn } from "./stock-execution.ts";
+import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
+import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet } from "./stock-input.ts";
+
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
 // here; stock-handler.ts (Task 3, this plan) is now their one true home,
@@ -362,7 +380,7 @@ export { stockDisconnect };
 export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDeps) => Promise<StockToolResult>;
 
 /**
- * withStockSession() -- THE ONE adapter every STOCK_DISPATCH_TABLE entry goes
+ * withStockSession -- THE ONE adapter every STOCK_DISPATCH_TABLE entry goes
  * through (Task 1, plan 03-12). Before this existed, `viceHandlerPing` was
  * the only table entry and re-implemented, inline, the exact three-step
  * preamble every one of the 24 Phase 3 family handlers also needs: acquire a
@@ -412,7 +430,7 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
 
 /**
  * The `vice_ping` handler -- BACK-03's answer, on the tool an agent already
- * reaches for first. A plain StockSessionHandler now that withStockSession()
+ * reaches for first. A plain StockSessionHandler now that withStockSession
  * owns the session-acquisition/error-conversion preamble; this function's
  * only job is to build the answer once a live session already exists.
  * Enriches the ordinary ping answer with the three BACK-03 fields: `backend`
@@ -437,13 +455,67 @@ const handlePing: StockSessionHandler = async (_args, session, deps) => {
   });
 };
 
+/**
+ * Deliberately NOT registered below -- each omission is a planner decision,
+ * not an oversight (Task 2, plan 03-12):
+ *   - `vice_checkpoint_set_ignore_count` (D-15)
+ *   - `vice_snapshot_list` (D-16 -- deleted from both manifests)
+ *   - `vice_disk_detach` (D-13 -- Phase 7, via the text monitor)
+ *   - `vice_joystick_tap` (needs a resume plus Phase 7's timing route)
+ *   - `vice_disk_read_sector` (Phase 5)
+ *   - `vice_sid_get_state` and the low-level keyboard family (hard losses)
+ *   - `vice_machine_config_get` / `vice_machine_config_set` (Phase 6)
+ * `dispatchStock()`'s miss branch already refuses any of these by name,
+ * without reading `deps` -- there is nothing else to add for them here.
+ */
+
 /** The ONE dispatch table this whole module tree ever defines (D-09) --
- * keyed on manifest tool name. A later plan (phases 3-7) adds its own stock
- * entries here, never a parallel table or a second dispatch site in
- * vice-proxy.ts (grep-gated to exactly one `dispatchStock(` call there,
- * plan 02-10 task 2's own acceptance criteria). */
+ * keyed on manifest tool name. All 24 Phase 3 family tools plus vice_ping
+ * are registered here, each through withStockSession (never called
+ * directly, never a parallel table, never a second dispatch site in
+ * vice-proxy.ts -- grep-gated to exactly one `dispatchStock(` call there,
+ * plan 02-10 task 2's own acceptance criteria). A later plan (phases 4-7)
+ * adds its own stock entries here as those phases' tools land. */
 const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   vice_ping: withStockSession("vice_ping", handlePing),
+
+  // memory (DIRECT-01, DIRECT-09)
+  vice_memory_read: withStockSession("vice_memory_read", handleMemoryRead),
+  vice_memory_write: withStockSession("vice_memory_write", handleMemoryWrite),
+  vice_memory_banks: withStockSession("vice_memory_banks", handleMemoryBanks),
+
+  // registers (DIRECT-02, DIRECT-09)
+  vice_registers_get: withStockSession("vice_registers_get", handleRegistersGet),
+  vice_registers_set: withStockSession("vice_registers_set", handleRegistersSet),
+  // stock-only, no fork counterpart (Phase 2 D-07)
+  vice_registers_available: withStockSession("vice_registers_available", handleRegistersAvailable),
+
+  // checkpoints and watchpoints (DIRECT-03)
+  vice_checkpoint_add: withStockSession("vice_checkpoint_add", handleCheckpointAdd),
+  vice_checkpoint_delete: withStockSession("vice_checkpoint_delete", handleCheckpointDelete),
+  vice_checkpoint_list: withStockSession("vice_checkpoint_list", handleCheckpointList),
+  vice_checkpoint_toggle: withStockSession("vice_checkpoint_toggle", handleCheckpointToggle),
+  vice_checkpoint_set_condition: withStockSession("vice_checkpoint_set_condition", handleCheckpointSetCondition),
+  vice_watch_add: withStockSession("vice_watch_add", handleWatchAdd),
+
+  // execution (DIRECT-04, DIRECT-05)
+  vice_execution_pause: withStockSession("vice_execution_pause", handleExecutionPause),
+  vice_execution_run: withStockSession("vice_execution_run", handleExecutionRun),
+  vice_execution_step: withStockSession("vice_execution_step", handleExecutionStep),
+  // stock-only, no fork counterpart
+  vice_execution_until_return: withStockSession("vice_execution_until_return", handleExecutionUntilReturn),
+
+  // machine and snapshots (DIRECT-06, DIRECT-08)
+  vice_machine_reset: withStockSession("vice_machine_reset", handleMachineReset),
+  vice_autostart: withStockSession("vice_autostart", handleAutostart),
+  vice_disk_attach: withStockSession("vice_disk_attach", handleDiskAttach),
+  vice_snapshot_save: withStockSession("vice_snapshot_save", handleSnapshotSave),
+  vice_snapshot_load: withStockSession("vice_snapshot_load", handleSnapshotLoad),
+
+  // input (DIRECT-07)
+  vice_keyboard_type: withStockSession("vice_keyboard_type", handleKeyboardType),
+  vice_keyboard_petscii: withStockSession("vice_keyboard_petscii", handleKeyboardPetscii),
+  vice_joystick_set: withStockSession("vice_joystick_set", handleJoystickSet),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a
