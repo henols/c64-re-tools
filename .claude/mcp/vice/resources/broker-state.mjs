@@ -118,6 +118,8 @@ export async function nextFreePort(state, opts = {}) {
     for (let port = basePort; port < limit; port++) {
         if (state.instances.has(port))
             continue;
+        if (opts.exclude?.has(port))
+            continue;
         if (isPortBlocked(state, port))
             continue;
         if (await portInUse(port)) {

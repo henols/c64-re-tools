@@ -1803,6 +1803,98 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
   assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
 });
 
+// ===========================================================================
+// 03-04-PLAN.md, Task 1: D-13 -- the -remotemonitor flag and its own
+// second, broker-allocated port. buildViceArgs()'s own three cases first
+// (pure argv construction, no process spawned), then acquirePortAndLaunch()'s
+// wiring of the real allocator below.
+// ===========================================================================
+
+test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the pre-plan argv, byte-identical", () => {
+  const args = buildViceArgs(6600, { backend: "stock" });
+  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
+});
+
+test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
+  const args = buildViceArgs(6600, { backend: "fork", mcpHost: "0.0.0.0" });
+  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6600"]);
+});
+
+test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remotemonitor and its address, same host as the binmon bind", () => {
+  const args = buildViceArgs(6600, { backend: "stock", remoteMonitorPort: 6601 });
+  assert.deepEqual(args, [
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6600",
+    "-remotemonitor",
+    "-remotemonitoraddress",
+    "ip4://127.0.0.1:6601",
+  ]);
+});
+
+test("acquirePortAndLaunch (D-13): a stock launch's second allocation receives an exclude set containing the primary port, and the record carries both the port and -remotemonitor", async () => {
+  const state = createBrokerState();
+  const excludeSeen: number[][] = [];
+  const result = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d13-stock-second-port",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async (_s, exclude) => {
+      excludeSeen.push(Array.from(exclude));
+      return { ok: true, port: 6601 };
+    },
+    spawn: () => stubChild(4242),
+  });
+  assert.ok(result.ok, "the launch must succeed");
+  assert.deepEqual(excludeSeen, [[6600]], "the second allocation must receive an exclude set containing exactly the primary port");
+  const record = (result as { ok: true; record: InstanceRecord }).record;
+  assert.equal(record.remoteMonitorPort, 6601, "the record must carry the second allocated port");
+  assert.ok(record.viceArgs.includes("-remotemonitor"), "the argv must include -remotemonitor");
+  assert.ok(state.blockedPorts.has(6601), "the second port must be blocked so it is never re-offered");
+});
+
+test("acquirePortAndLaunch (D-13): a second-port allocation failure still succeeds, with no remoteMonitorPort and no -remotemonitor in argv", async () => {
+  const state = createBrokerState();
+  let secondAllocationCalls = 0;
+  const result = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d13-stock-second-port-fail",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => {
+      secondAllocationCalls++;
+      return { ok: false, reason: "no_free_port" };
+    },
+    spawn: () => stubChild(4242),
+  });
+  assert.ok(result.ok, "the launch must still succeed even though the second allocation failed");
+  assert.equal(secondAllocationCalls, 1);
+  const record = (result as { ok: true; record: InstanceRecord }).record;
+  assert.equal(record.remoteMonitorPort, undefined, "remoteMonitorPort must be undefined on a failed second allocation");
+  assert.ok(!record.viceArgs.includes("-remotemonitor"), "the argv must not include -remotemonitor when the second allocation failed");
+});
+
+test("acquirePortAndLaunch (D-13): a fork launch never calls allocateRemoteMonitorPort, and the record carries no remoteMonitorPort", async () => {
+  const state = createBrokerState();
+  let secondAllocationCalls = 0;
+  const result = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d13-fork-no-second-port",
+    backend: "fork",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => {
+      secondAllocationCalls++;
+      return { ok: true, port: 6601 };
+    },
+    spawn: () => stubChild(4242),
+  });
+  assert.ok(result.ok);
+  assert.equal(secondAllocationCalls, 0, "a fork launch must never call allocateRemoteMonitorPort");
+  const record = (result as { ok: true; record: InstanceRecord }).record;
+  assert.equal(record.remoteMonitorPort, undefined);
+});
+
 // The env-reading VICE_BACKEND function that used to live here is RETIRED as
 // of plan 02-07 -- backend-detect.mts's resolvedBackend() is now the ONE
 // reader of VICE_BACKEND in this tree (its own test file,

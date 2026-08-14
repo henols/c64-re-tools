@@ -173,6 +173,25 @@ test("nextFreePort: yields to the event loop's check phase during a long run of 
   );
 });
 
+// ===========================================================================
+// 03-04-PLAN.md, Task 2: D-13 -- nextFreePort()'s exclude option and
+// remoteMonitorPort's survival through _snapshotState()'s deep copy.
+// ===========================================================================
+
+test("nextFreePort (D-13): an excluded port is skipped and is NOT added to the blocked set", async () => {
+  const state = createBrokerState();
+  const result = await nextFreePort(state, { portInUse: neverInUse, exclude: new Set([6600]) });
+  assert.deepEqual(result, { ok: true, port: 6601 }, "the excluded port must be skipped in favour of the next candidate");
+  assert.ok(!isPortBlocked(state, 6600), "an excluded port must NOT be added to the blocked set -- it is not refused, only already claimed by the caller");
+});
+
+test("_snapshotState (D-13): remoteMonitorPort survives the snapshot's deep copy", () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600, remoteMonitorPort: 6601 }));
+  const snapshot = _snapshotState(state);
+  assert.equal(snapshot.instances[0].remoteMonitorPort, 6601, "remoteMonitorPort must survive _snapshotState()'s deep copy");
+});
+
 // -------------------------------------------------------------------- counts
 
 test("counts: two ready, one granted and one launching instance yields ready=2, total=4, launching=1", () => {

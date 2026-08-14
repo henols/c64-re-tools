@@ -35,6 +35,7 @@ import {
   clearMonitorClient,
   type BrokerState,
   type InstanceRecord,
+  type PortAllocationResult,
 } from "./broker-state.mjs";
 import {
   acquirePortAndLaunch,
@@ -358,6 +359,15 @@ export interface HandleAcquireDeps {
    * pre-Phase-2 test in vice-broker-acquire.test.ts), so those tests keep
    * exercising the exact byte-identical fork argv they always have. */
   backend?: ViceBackend;
+  /** Plan 03-04 (DIRECT-06, D-13): threaded straight through to the
+   * cold-launch arm's own acquirePortAndLaunch() call -- see that
+   * function's own doc comment (broker-launch.mts) for the exclude/degrade
+   * contract. The real broker wiring (run()'s onAcquire callback below)
+   * passes `(state, exclude) => nextFreePort(state, { exclude })`; this
+   * function does NOT read VICE_BACKEND itself to decide whether to call
+   * it -- acquirePortAndLaunch() gates the second allocation on
+   * `deps.backend === "stock"` on its own. */
+  allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
   log?: (line: string) => void;
 }
 
@@ -546,6 +556,7 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       stateDir,
       allocatePort: nextFreePort,
       backend: deps.backend ?? "fork",
+      allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
       spawnFactory:
         deps.buildColdSpawnFactory ??
         ((port: number) => {
@@ -791,6 +802,12 @@ function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, ba
     // resolved verdict this function already receives for the launch argv.
     probe: (port: number) => probeReady(port, { backend }),
     allocatePort: nextFreePort,
+    // Plan 03-04 (DIRECT-06, D-13): same wiring as handleAcquire()'s own
+    // cold-launch arm -- acquirePortAndLaunch() (reached via
+    // maintainWarmFloor() below) gates the second allocation on
+    // `backend === "stock"` itself, so this function need not check the
+    // backend before passing it.
+    allocateRemoteMonitorPort: (s: BrokerState, exclude: ReadonlySet<number>) => nextFreePort(s, { exclude }),
     countReady,
     countTotal,
     countLaunching,
@@ -948,7 +965,14 @@ async function run(args: ParsedArgs): Promise<void> {
       host: controlHost,
       port: controlPort,
       token,
-      onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state, { backend }),
+      onAcquire: (requestId) =>
+        handleAcquire(requestId, args.stateDir, state, {
+          backend,
+          // Plan 03-04 (DIRECT-06, D-13): threaded down to
+          // acquirePortAndLaunch()'s own gate (backend === "stock"); this
+          // callback does NOT re-read VICE_BACKEND itself.
+          allocateRemoteMonitorPort: (s: BrokerState, exclude: ReadonlySet<number>) => nextFreePort(s, { exclude }),
+        }),
       onRelease: (requestId) => handleRelease(requestId, state),
       onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
       onStatus: () => handleStatus(state),

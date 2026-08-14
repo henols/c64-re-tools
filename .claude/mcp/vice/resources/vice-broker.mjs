@@ -426,6 +426,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             stateDir,
             allocatePort: nextFreePort,
             backend: deps.backend ?? "fork",
+            allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
             spawnFactory: deps.buildColdSpawnFactory ??
                 ((port) => {
                     const supervisorDir = join(stateDir, String(port));
@@ -660,6 +661,12 @@ function maintainWarmFloorForRealBroker(stateDir, state, backend) {
         // resolved verdict this function already receives for the launch argv.
         probe: (port) => probeReady(port, { backend }),
         allocatePort: nextFreePort,
+        // Plan 03-04 (DIRECT-06, D-13): same wiring as handleAcquire()'s own
+        // cold-launch arm -- acquirePortAndLaunch() (reached via
+        // maintainWarmFloor() below) gates the second allocation on
+        // `backend === "stock"` itself, so this function need not check the
+        // backend before passing it.
+        allocateRemoteMonitorPort: (s, exclude) => nextFreePort(s, { exclude }),
         countReady,
         countTotal,
         countLaunching,
@@ -805,7 +812,13 @@ async function run(args) {
             host: controlHost,
             port: controlPort,
             token,
-            onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state, { backend }),
+            onAcquire: (requestId) => handleAcquire(requestId, args.stateDir, state, {
+                backend,
+                // Plan 03-04 (DIRECT-06, D-13): threaded down to
+                // acquirePortAndLaunch()'s own gate (backend === "stock"); this
+                // callback does NOT re-read VICE_BACKEND itself.
+                allocateRemoteMonitorPort: (s, exclude) => nextFreePort(s, { exclude }),
+            }),
             onRelease: (requestId) => handleRelease(requestId, state),
             onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
