@@ -398,7 +398,21 @@ export const handleCheckpointAdd: StockSessionHandler = async (args, session, _d
     return isErrorText(`vice_checkpoint_add: end (${end}) must be >= start (${start})`);
   }
 
-  const stop = args.stop === undefined ? true : Boolean(args.stop);
+  // WR-01 (03-REVIEW.md): a STRICT type check, never Boolean() coercion.
+  // vice-proxy.ts's rawJsonSchemaAsStandardSchema() wraps every manifest
+  // inputSchema with a validate that performs no actual type checking, so a
+  // type-mismatched argument reaches this handler untouched and these checks
+  // are the ONLY enforcement there is. `Boolean("false")` is `true`, so the
+  // old coercion silently turned a caller's `stop: "false"` -- a plausible
+  // shape for an LLM-driven MCP client that formats values as strings -- into
+  // the opposite of the non-stopping trace mode it asked for, with no error
+  // and no warning. Every other boolean-shaped argument in this file and in
+  // its sibling family modules already refuses a non-boolean outright; this
+  // one was the sole exception.
+  if (args.stop !== undefined && typeof args.stop !== "boolean") {
+    return isErrorText(`vice_checkpoint_add: stop must be a boolean, got ${typeof args.stop}`);
+  }
+  const stop = args.stop === undefined ? true : args.stop;
   const acknowledgeTraceRisk = args.acknowledgeTraceRisk === true;
   if (!stop && !acknowledgeTraceRisk) {
     return isErrorText(`vice_checkpoint_add: ${STOP_FALSE_HAZARD_TEXT}`);
@@ -666,7 +680,13 @@ export const handleWatchAdd: StockSessionHandler = async (args, session, _deps) 
     return isErrorText(`vice_watch_add: address (${address}) + size (${size}) - 1 = ${end} exceeds 0xffff`);
   }
 
-  const stop = args.stop === undefined ? true : Boolean(args.stop);
+  // WR-01 (03-REVIEW.md): strict, for exactly the reason handleCheckpointAdd's
+  // own identical check above spells out -- `Boolean("false")` is `true`, and
+  // nothing upstream of this handler type-checks the argument.
+  if (args.stop !== undefined && typeof args.stop !== "boolean") {
+    return isErrorText(`vice_watch_add: stop must be a boolean, got ${typeof args.stop}`);
+  }
+  const stop = args.stop === undefined ? true : args.stop;
   const acknowledgeTraceRisk = args.acknowledgeTraceRisk === true;
   if (!stop && !acknowledgeTraceRisk) {
     return isErrorText(`vice_watch_add: ${STOP_FALSE_HAZARD_TEXT}`);

@@ -150,6 +150,45 @@ test("checkpoint add: stop:false with acknowledgeTraceRisk:true records byte 4 =
   assert.equal(body[4], 0);
 });
 
+// ---------------------------------------------------------------------------
+// WR-01 (03-REVIEW.md): `stop` is the one boolean-shaped argument in this file
+// that used to be Boolean()-coerced instead of strictly checked, so a caller
+// sending the STRING "false" silently got stop:true -- the opposite of what it
+// asked for, with no diagnostic. Nothing upstream type-checks it
+// (vice-proxy.ts's rawJsonSchemaAsStandardSchema() validates nothing), so
+// these handlers are the only enforcement there is.
+// ---------------------------------------------------------------------------
+
+test("checkpoint add (WR-01): a STRING stop is refused outright, never coerced, with zero sends", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+
+  const result = await handleCheckpointAdd({ start: "$c000", stop: "false", acknowledgeTraceRisk: true }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /stop must be a boolean, got string/);
+  assert.equal(calls.length, 0, "a refused argument must never reach the wire");
+});
+
+test("checkpoint add (WR-01): a non-boolean stop of any other shape is refused, naming the type it got", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+
+  const result = await handleCheckpointAdd({ start: "$c000", stop: 0 }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /stop must be a boolean, got number/);
+  assert.equal(calls.length, 0);
+});
+
+test("watch add (WR-01): a STRING stop is refused outright, never coerced, with zero sends", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+
+  const result = await handleWatchAdd({ address: "$d020", stop: "false", acknowledgeTraceRisk: true }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /stop must be a boolean, got string/);
+  assert.equal(calls.length, 0, "a refused argument must never reach the wire");
+});
+
 test("checkpoint add: end below start refuses with zero sends", async () => {
   const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
   const session = makeSession(client);
