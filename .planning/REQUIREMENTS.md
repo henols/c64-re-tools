@@ -38,12 +38,12 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 - [ ] **DIRECT-01**: User can read and write emulator memory on the stock backend, without triggering I/O side effects on read
 - [ ] **DIRECT-02**: User can read and write CPU registers on the stock backend
-- [ ] **DIRECT-03**: User can set, list, delete, toggle, and condition checkpoints and watchpoints on the stock backend
+- [x] **DIRECT-03**: User can set, list, delete, toggle, and condition checkpoints and watchpoints on the stock backend
 - [ ] **DIRECT-04**: User can step instructions and execute-until-return on the stock backend
 - [ ] **DIRECT-05**: User can pause a freely-running emulator on demand and resume it
-- [ ] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach or detach disks on the stock backend
-- [ ] **DIRECT-07**: User can type text and drive the joystick on the stock backend
-- [ ] **DIRECT-08**: User can save and restore emulator snapshots on the stock backend
+- [x] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach or detach disks on the stock backend
+- [x] **DIRECT-07**: User can type text and drive the joystick on the stock backend
+- [x] **DIRECT-08**: User can save and restore emulator snapshots on the stock backend
 - [ ] **DIRECT-09**: User can enumerate available memory banks and registers on the stock backend
 
 ### Derived tools
@@ -170,12 +170,12 @@ and the sequencing rationale.
 | PROTO-08 | Phase 2 | Complete |
 | DIRECT-01 | Phase 3 | Pending |
 | DIRECT-02 | Phase 3 | Pending |
-| DIRECT-03 | Phase 3 | Pending |
+| DIRECT-03 | Phase 3 | Complete |
 | DIRECT-04 | Phase 3 | Pending |
 | DIRECT-05 | Phase 3 | Pending |
-| DIRECT-06 | Phase 3 | Pending |
-| DIRECT-07 | Phase 3 | Pending |
-| DIRECT-08 | Phase 3 | Pending |
+| DIRECT-06 | Phase 3 | Complete |
+| DIRECT-07 | Phase 3 | Complete |
+| DIRECT-08 | Phase 3 | Complete |
 | DIRECT-09 | Phase 3 | Pending |
 | DERIV-01 | Phase 5 | Pending |
 | DERIV-02 | Phase 5 | Pending |
