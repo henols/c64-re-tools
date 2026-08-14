@@ -28,6 +28,8 @@
     "stock-handler.ts",
     "stock-runstate.ts",
     "stock-address.ts",
+    "stock-paths.ts",
+    "stock-machine.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
