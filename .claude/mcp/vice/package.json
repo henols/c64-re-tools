@@ -30,6 +30,8 @@
     "stock-address.ts",
     "stock-paths.ts",
     "stock-machine.ts",
+    "stock-petscii.ts",
+    "stock-input.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
