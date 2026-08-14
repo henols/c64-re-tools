@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-13T00:00:00.000Z",
+  "generated_at": "2026-08-14T00:00:00.000Z",
   "endpoint": "stock-binary-monitor",
   "tools": [
     {
@@ -8,6 +8,285 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "backend": { "type": "string" },
+          "viceVersion": { "type": "string" },
+          "resolvedBinaryPath": { "type": "string" },
+          "resolvedBinaryPathIsResolved": { "type": "boolean" },
+          "capabilities": { "type": "object" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["status", "backend", "viceVersion", "resolvedBinaryPath", "resolvedBinaryPathIsResolved", "capabilities", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_read",
+      "description": "Read a memory range (with optional bank selection). On stock this halts the machine (D-05); the answer's runState reports it. sideEffects defaults to false (DIRECT-01) -- side-effect-reading registers like $D019 requires opting in explicitly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "size": {
+            "type": "number",
+            "description": "Bytes to read (1-65535)"
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: Memory bank name (e.g., 'ram' to read RAM under ROM). Use vice_memory_banks to list available banks."
+          },
+          "encoding": {
+            "type": "string",
+            "description": "Optional: 'array' for legacy per-byte hex strings, or 'hex' for one compact hex string."
+          },
+          "sideEffects": {
+            "type": "boolean",
+            "description": "Stock-only, optional, default false: whether the read is permitted to have side effects (e.g. reading $D019 clears pending VIC-II IRQ flags). Defaults to side-effect-free."
+          }
+        },
+        "required": ["address", "size"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "number" },
+          "size": { "type": "number" },
+          "encoding": { "type": "string" },
+          "sideEffects": { "type": "boolean" },
+          "bank": {},
+          "memspace": { "type": "string" },
+          "hex": { "type": "string" },
+          "bytes": { "type": "array", "items": { "type": "number" } },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["address", "size", "encoding", "sideEffects", "bank", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_write",
+      "description": "Write to memory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address: number, hex string ($1000), or symbol name"
+          },
+          "data": {
+            "type": "array",
+            "description": "Bytes to write (0-255 each)",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": ["address", "data"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "number" },
+          "bytesWritten": { "type": "number" },
+          "bank": {},
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["address", "bytesWritten", "bank", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_memory_banks",
+      "description": "List available memory banks",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "banks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "name": { "type": "string" }
+              },
+              "required": ["id", "name"]
+            }
+          },
+          "count": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["banks", "count", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_get",
+      "description": "Get CPU registers",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": { "type": "object" },
+          "unknownIds": { "type": "array" },
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["registers", "unknownIds", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_set",
+      "description": "Set CPU register value",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "register": {
+            "type": "string",
+            "description": "Register name: PC|A|X|Y|SP|N|V|B|D|I|Z|C"
+          },
+          "value": {
+            "type": "number",
+            "description": "Register value"
+          }
+        },
+        "required": ["register", "value"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "register": { "type": "string" },
+          "id": { "type": "number" },
+          "requestedValue": { "type": "number" },
+          "observedValue": {},
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["register", "id", "requestedValue", "observedValue", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_registers_available",
+      "description": "Stock-only, no fork counterpart -- the fork surface has no register-enumeration tool. Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name and byte size.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "registers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "name": { "type": "string" },
+                "size": { "type": "number" }
+              },
+              "required": ["id", "name", "size"]
+            }
+          },
+          "count": { "type": "number" },
+          "memspace": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["registers", "count", "memspace", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_pause",
+      "description": "Pause execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "sent": { "type": "boolean" },
+          "alreadyStopped": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "sent", "alreadyStopped", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_run",
+      "description": "Resume execution",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "sent": { "type": "boolean" },
+          "alreadyRunning": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "sent", "alreadyRunning", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_step",
+      "description": "Step one or more instructions. Refuses while runState is \"unknown\" (D-07) -- call vice_execution_pause or vice_execution_run first to establish a known state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Number of instructions to step"
+          },
+          "stepOver": {
+            "type": "boolean",
+            "description": "Step over subroutines"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "count": { "type": "number" },
+          "stepOver": { "type": "boolean" },
+          "stateBefore": { "type": "string" },
+          "programCounter": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "count", "stepOver", "stateBefore", "runState"]
+      }
+    },
+    {
+      "name": "vice_execution_until_return",
+      "description": "Stock-only, no fork counterpart. Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": { "type": "string" },
+          "stateBefore": { "type": "string" },
+          "programCounter": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["requested", "stateBefore", "runState"]
       }
     }
   ]
