@@ -124,9 +124,54 @@ const STOP_FALSE_HAZARD_TEXT =
 // keying on the session object would silently lose condition text that is
 // still attached inside VICE. Keying on targetId keeps the registry aligned
 // with the machine identity guarantee the rest of this module tree relies on.
+//
+// WR-03 (03-REVIEW.md): keying on a STRING means this is a strong Map, so
+// nothing about a target going away can evict its entry on its own. That
+// design implicitly assumes a bounded population of live targets, but a
+// long-running proxy serving a broker that recycles, respawns and re-warms
+// instances routinely (exactly what this milestone's own broker machinery
+// exists to do) sees an unbounded succession of distinct targetIds, and every
+// one of them would keep its condition map forever. The eviction hook below --
+// called by stock-dispatch.ts's ensureStockSession() at the ONE point a
+// replacement acquisition proves the previous target is gone for good -- is
+// what bounds it, without weakening the survives-a-stockReconnect() guarantee
+// that motivated the targetId key in the first place (a reconnect to the SAME
+// machine reuses the SAME targetId and never reaches that call site).
 // ---------------------------------------------------------------------------
 
 let conditionRegistry = new Map<string, Map<number, string>>();
+
+/** Drops every registered target's condition map EXCEPT `activeTargetId`'s --
+ * the WR-03 eviction hook, and the only thing that ever shrinks this registry.
+ *
+ * Called from stock-dispatch.ts's ensureStockSession() immediately after a
+ * FRESH stockConnect() installs a new held session. At that moment exactly one
+ * target is reachable through this module (conditionTextFor() is only ever
+ * consulted with the live session), so every other key is unreachable
+ * bookkeeping for an instance that has already been torn down. Pruning "all
+ * but the live one" -- rather than only the single session that was just
+ * discarded -- also covers the path where the holder was cleared by a failed
+ * stockReconnect() and the stale targetId was therefore never handed to a
+ * teardown at all.
+ *
+ * Deliberately NOT called on the reuse or reconnect branches: a reconnect
+ * re-proves it is the SAME machine, whose checkpoints (and their attached
+ * conditions) are still armed on the wire, and stock cannot read condition
+ * text back off the wire to rebuild what this dropped. Idempotent, and a no-op
+ * the first time a session is established (the registry is empty). */
+export function forgetConditionsForOtherTargets(activeTargetId: string): void {
+  for (const targetId of conditionRegistry.keys()) {
+    if (targetId !== activeTargetId) {
+      conditionRegistry.delete(targetId);
+    }
+  }
+}
+
+/** Test-only: the current registry key set, so a test can assert eviction
+ * happened without reaching into module-private state any other way. */
+export function _conditionRegistryTargetsForTest(): string[] {
+  return Array.from(conditionRegistry.keys()).sort();
+}
 
 function conditionMapFor(session: StockConnectSession): Map<number, string> {
   let m = conditionRegistry.get(session.targetId);

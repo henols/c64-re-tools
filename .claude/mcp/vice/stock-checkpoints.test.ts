@@ -18,6 +18,8 @@ import {
   registerTraceCheckpoint,
   autoDisableReportFor,
   conditionTextFor,
+  forgetConditionsForOtherTargets,
+  _conditionRegistryTargetsForTest,
   resetCheckpointStateForTest,
   TRACE_HITS_PER_SECOND_LIMIT,
 } from "./stock-checkpoints.ts";
@@ -356,6 +358,38 @@ test("set condition: both ConditionSet and CheckpointDelete fail -- one refusal 
   assert.match(text, /set failed/);
   assert.match(text, /delete failed/);
   assert.match(text, /may still be armed/);
+});
+
+// ---------------------------------------------------------------------------
+// WR-03 (03-REVIEW.md): the condition registry's eviction hook. The registry is
+// a STRONG Map keyed on targetId (deliberately -- it must survive a
+// stockReconnect() to the same machine), so nothing about a target going away
+// evicts its entry on its own; without this hook a long-running proxy grows one
+// entry per distinct instance the broker ever hands it, forever.
+// ---------------------------------------------------------------------------
+
+test("WR-03: forgetConditionsForOtherTargets drops every other target's conditions and keeps the active target's", async () => {
+  const { client: clientA } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, makeSession(clientA, "target-a"), FAKE_DEPS));
+  const { client: clientB } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "X == $01" }, makeSession(clientB, "target-b"), FAKE_DEPS));
+  const { client: clientC } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "Y == $02" }, makeSession(clientC, "target-c"), FAKE_DEPS));
+
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-a", "target-b", "target-c"], "setup: three distinct targets have recorded conditions");
+
+  forgetConditionsForOtherTargets("target-b");
+
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-b"], "WR-03 REGRESSION: the registry still holds abandoned targets");
+  assert.equal(conditionTextFor(makeSession(clientB, "target-b"), 1), "(X == $01)", "the ACTIVE target's condition text must survive eviction");
+  assert.equal(conditionTextFor(makeSession(clientA, "target-a"), 1), undefined, "an abandoned target's condition text must be gone");
+});
+
+test("WR-03: forgetConditionsForOtherTargets is idempotent and a no-op on an empty registry", () => {
+  forgetConditionsForOtherTargets("target-never-seen");
+  assert.deepEqual(_conditionRegistryTargetsForTest(), []);
+  forgetConditionsForOtherTargets("target-never-seen");
+  assert.deepEqual(_conditionRegistryTargetsForTest(), []);
 });
 
 // ---------------------------------------------------------------------------

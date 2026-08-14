@@ -54,6 +54,7 @@ import {
   handleCheckpointToggle,
   handleCheckpointSetCondition,
   handleWatchAdd,
+  forgetConditionsForOtherTargets,
 } from "./stock-checkpoints.ts";
 import { handleExecutionPause, handleExecutionRun, handleExecutionStep, handleExecutionUntilReturn } from "./stock-execution.ts";
 import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
@@ -314,6 +315,21 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
   // yet, and a stale connect-time assumption is exactly what D-07 forbids).
   attachRunStateTracker(session.client);
   heldSession = session;
+  // WR-03 (03-REVIEW.md): THE eviction point for stock-checkpoints.ts's
+  // targetId-keyed condition registry. Reaching this line means a fresh
+  // handshake just installed a new held session, so every OTHER target this
+  // process has ever seen is an instance that has already been torn down and
+  // can never be consulted again -- without this, that registry (a strong Map,
+  // deliberately, so it survives a stockReconnect() to the same machine) would
+  // grow one entry per distinct instance for the life of the process, which a
+  // broker that recycles/respawns/re-warms routinely makes unbounded.
+  //
+  // Placed here rather than beside the stockDisconnect() teardown above so it
+  // also covers the path where the holder was cleared by a FAILED
+  // stockReconnect() and its stale targetId was never handed to a teardown at
+  // all. The reuse and reconnect branches return before this line, so a
+  // reconnect to the SAME machine never evicts anything.
+  forgetConditionsForOtherTargets(session.targetId);
   return { ok: true, session };
 }
 

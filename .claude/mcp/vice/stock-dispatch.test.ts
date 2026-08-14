@@ -36,7 +36,12 @@ import { CommandType } from "./stock-protocol.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
-import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
+import {
+  resetCheckpointStateForTest,
+  handleCheckpointSetCondition,
+  conditionTextFor,
+  _conditionRegistryTargetsForTest,
+} from "./stock-checkpoints.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
@@ -696,6 +701,67 @@ test("CR-05: a teardown failure on the replaced session does not stop the replac
   const third = await ensureStockSession(deps);
   assert.ok(third.ok);
   assert.equal(connectCalls, 2, "the replacement must be the held session, so a third call reuses it");
+});
+
+// ---------------------------------------------------------------------------
+// WR-03 (03-REVIEW.md): the wiring half of the condition-registry eviction
+// hook. stock-checkpoints.test.ts owns the hook's own semantics; these two
+// assert that this seam CALLS it at the one right moment and at no other --
+// the "correct module, never called" failure shape this module tree has been
+// bitten by before.
+// ---------------------------------------------------------------------------
+
+/** fakeSession() plus the `send` a condition-setting handler needs -- the
+ * dispatch harness's own client has no send() because nothing else in this
+ * file's tests reaches a family handler. */
+function conditionCapableSession(opts: Parameters<typeof fakeSession>[0]): StockConnectSession {
+  const session = fakeSession(opts);
+  (session.client as unknown as { send: unknown }).send = async () => ({ type: "condition_set" as const });
+  return session;
+}
+
+test("WR-03: a fresh handshake for a NEW targetId evicts the abandoned target's condition-registry entry", async () => {
+  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
+  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl: STUB_BROKER_CONTROL });
+  let currentLease: HeldLease = leaseA;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease: currentLease }),
+    connect: async (opts) => conditionCapableSession(opts),
+  };
+
+  const first = await ensureStockSession(deps);
+  assert.ok(first.ok);
+  const recorded = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, first.session, deps);
+  assert.equal(recorded.isError, false, `setup: the condition must be recorded, got ${recorded.content[0]!.text}`);
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["grant-1"], "setup: the first target's condition is registered");
+
+  currentLease = leaseB;
+  const second = await ensureStockSession(deps);
+  assert.ok(second.ok);
+  assert.equal(second.session.targetId, "grant-2");
+  assert.deepEqual(
+    _conditionRegistryTargetsForTest(),
+    [],
+    "WR-03 REGRESSION: the abandoned target's condition map is still held, so the registry grows one entry per instance the broker ever hands this process",
+  );
+});
+
+test("WR-03: reusing the held session for the SAME targetId never evicts its conditions", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => conditionCapableSession(opts),
+  };
+
+  const first = await ensureStockSession(deps);
+  assert.ok(first.ok);
+  assert.equal((await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, first.session, deps)).isError, false);
+
+  const second = await ensureStockSession(deps);
+  assert.ok(second.ok);
+  assert.equal(second.session, first.session, "precondition: this must be the reuse branch, not a fresh handshake");
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["grant-1"], "the live target's registry entry must never be evicted underneath it");
+  assert.equal(conditionTextFor(second.session, 1), "(A == $42)", "and its recorded condition text must still be readable");
 });
 
 test("CR-05: a FIRST acquisition with nothing held releases nothing -- no spurious releaseMonitor", async () => {
