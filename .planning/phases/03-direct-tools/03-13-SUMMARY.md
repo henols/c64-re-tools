@@ -147,3 +147,12 @@ That said: with this plan's manifest wiring landing, DIRECT-01 through DIRECT-09
 ---
 *Phase: 03-direct-tools*
 *Completed: 2026-08-14*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/tools-manifest.stock.json`
+- FOUND: `.claude/mcp/vice/stock-dispatch.test.ts` (modified)
+- FOUND: commit `497d85c` (Task 1)
+- FOUND: commit `a8fb65f` (Task 2)
+- FOUND: commit `2322d6f` (Task 3)
+- FOUND: commit `0b55a52` (plan metadata)
