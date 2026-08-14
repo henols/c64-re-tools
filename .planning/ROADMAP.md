@@ -76,7 +76,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE (completed 2026-08-12)
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
-- [ ] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend
+- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (completed 2026-08-14)
 - [ ] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it
 - [ ] **Phase 5: Client-Side Derivations and Screenshots** - Reimplement the tools the fork ran inside the emulator, and encode screenshots client-side from the framebuffer
 - [ ] **Phase 6: Stock-Only Gains** - CPU-history tracing, 1541 drive-CPU debugging, and raster-precise conditions / exact palette / full resources
@@ -205,11 +205,11 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-12-PLAN.md — Wave 3: `withStockSession()`, the tracker attach points, all 25 dispatch-table entries, and the dependency-free `outputSchema` checker
+- [x] 03-12-PLAN.md — Wave 3: `withStockSession()`, the tracker attach points, all 25 dispatch-table entries, and the dependency-free `outputSchema` checker
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03-13-PLAN.md — Wave 4: the 25-entry stock manifest with an `outputSchema` per tool, and the per-handler answer-conformance harness
+- [x] 03-13-PLAN.md — Wave 4: the 25-entry stock manifest with an `outputSchema` per tool, and the per-handler answer-conformance harness
 
 Notes:
 
@@ -390,7 +390,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 11/13 | In Progress|  |
+| 3. Direct Tools | 13/13 | Complete   | 2026-08-14 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
