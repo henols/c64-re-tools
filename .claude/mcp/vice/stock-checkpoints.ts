@@ -53,8 +53,22 @@ import {
   type ParsedCheckpoint,
   type ParsedCheckpointInfoResponse,
 } from "./stock-protocol.ts";
-import { parseAddress } from "./stock-address.ts";
-import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
+// conditionSetBody() is imported through its own namespace binding, deliberately
+// NOT alongside the encoders above: this keeps the literal identifier
+// "conditionSetBody" appearing exactly once in this module's non-comment
+// lines (the one call site inside setConditionFailClosed() below), matching
+// this file's own "ONE call site" header comment mechanically, not just in
+// prose.
+import * as StockConditionEncoder from "./stock-protocol.ts";
+import {
+  emitCondition,
+  parseConditionString,
+  conditionFromJson,
+  StockConditionError,
+  type ConditionNode,
+} from "./stock-condition.ts";
+import { parseAddress, parseByteCount } from "./stock-address.ts";
+import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not an
@@ -127,13 +141,72 @@ export function conditionTextFor(session: StockConnectSession, checkpointNum: nu
   return conditionRegistry.get(session.targetId)?.get(checkpointNum);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- consumed starting Task 2 (handleCheckpointSetCondition/handleWatchAdd)
 function recordCondition(session: StockConnectSession, checkpointNum: number, text: string): void {
   conditionMapFor(session).set(checkpointNum, text);
 }
 
 function forgetCondition(session: StockConnectSession, checkpointNum: number): void {
   conditionRegistry.get(session.targetId)?.delete(checkpointNum);
+}
+
+/** D-09's shared discriminator: an object goes through conditionFromJson(),
+ * a string through parseConditionString(). Any other type refuses naming
+ * both accepted forms. Reused by handleCheckpointSetCondition and
+ * handleWatchAdd so the discrimination logic lives in exactly one place. */
+function nodeFromConditionArg(condition: unknown): ConditionNode {
+  if (isPlainObject(condition)) {
+    return conditionFromJson(condition);
+  }
+  if (typeof condition === "string") {
+    return parseConditionString(condition);
+  }
+  throw new StockConditionError(
+    `condition must be a string (e.g. "A == $42") or a structured condition object, got ${typeof condition}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// D-10: fail-closed cleanup. The ONE call site for conditionSetBody() --
+// every condition-setting path in this module goes through this helper, so a
+// failed CONDITION_SET can never leave a full-range, UNCONDITIONED checkpoint
+// armed while the caller believes it is conditioned.
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends CONDITION_SET for `expression` against `checkpointNum`. On success,
+ * returns `null` (the caller records the condition text itself, since only
+ * the caller knows whether this is a fresh checkpoint or a rename). On a
+ * CONDITION_SET failure, issues CHECKPOINT_DELETE for the SAME checkpoint
+ * number before returning -- otherwise a full-range unconditioned breakpoint
+ * is left armed and the caller believes it is conditioned. If that
+ * CHECKPOINT_DELETE also fails, BOTH failures are named in the one refusal
+ * returned -- the second is never swallowed.
+ */
+async function setConditionFailClosed(
+  session: StockConnectSession,
+  checkpointNum: number,
+  expression: string,
+  toolName: string,
+): Promise<StockToolResult | null> {
+  try {
+    await session.client.send(CommandType.ConditionSet, StockConditionEncoder.conditionSetBody({ checkpointNum, expression }));
+    return null;
+  } catch (setErr) {
+    try {
+      await session.client.send(CommandType.CheckpointDelete, cpNumBody(checkpointNum));
+      return isErrorText(
+        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${describeError(setErr)}) -- ` +
+          `the checkpoint was DELETED to avoid leaving a full-range, UNCONDITIONED breakpoint armed; re-add the ` +
+          `checkpoint and try the condition again.`,
+      );
+    } catch (deleteErr) {
+      return isErrorText(
+        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${describeError(setErr)}), and ` +
+          `deleting that checkpoint to clean up ALSO failed (${describeError(deleteErr)}) -- checkpoint ` +
+          `${checkpointNum} may still be armed WITHOUT its condition and must be deleted manually.`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +440,154 @@ export const handleCheckpointToggle: StockSessionHandler = async (args, session,
   }
 
   const payload: Record<string, unknown> = { checkpointNum, enabled };
+  const autoDisables = autoDisableReportFor(session);
+  if (autoDisables.length > 0) payload.autoDisables = autoDisables;
+  return stockAnswer(session.client, payload);
+};
+
+// ---------------------------------------------------------------------------
+// Task 2: set-condition and watch-add
+// ---------------------------------------------------------------------------
+
+export const handleCheckpointSetCondition: StockSessionHandler = async (args, session, _deps) => {
+  if (!isPlainObject(args)) {
+    return isErrorText("vice_checkpoint_set_condition: arguments must be an object");
+  }
+  let checkpointNum: number;
+  try {
+    checkpointNum = parseCheckpointNum(args.checkpoint_num);
+  } catch (err) {
+    return isErrorText(`vice_checkpoint_set_condition: ${describeError(err)}`);
+  }
+
+  // D-10: conditions are immutable once set -- stock cannot clear or replace
+  // one, and a re-set would leak the old text inside VICE.
+  const existing = conditionTextFor(session, checkpointNum);
+  if (existing !== undefined) {
+    return isErrorText(
+      `vice_checkpoint_set_condition: checkpoint ${checkpointNum} already has a condition set ("${existing}") -- ` +
+        `stock VICE cannot clear or replace a condition once attached (re-setting it would leak the old condition ` +
+        `inside VICE); delete this checkpoint and re-add it with the new condition instead.`,
+    );
+  }
+
+  let node: ConditionNode;
+  let expression: string;
+  try {
+    node = nodeFromConditionArg(args.condition);
+    expression = emitCondition(node);
+  } catch (err) {
+    // A StockConditionError is returned as its own refusal text verbatim --
+    // never re-worded, and never a fallback to sending the raw input.
+    if (err instanceof StockConditionError) {
+      return isErrorText(err.message);
+    }
+    return isErrorText(`vice_checkpoint_set_condition: ${describeError(err)}`);
+  }
+
+  const failure = await setConditionFailClosed(session, checkpointNum, expression, "vice_checkpoint_set_condition");
+  if (failure) return failure;
+
+  recordCondition(session, checkpointNum, expression);
+
+  const payload: Record<string, unknown> = { checkpointNum, condition: expression, immutable: true };
+  const autoDisables = autoDisableReportFor(session);
+  if (autoDisables.length > 0) payload.autoDisables = autoDisables;
+  return stockAnswer(session.client, payload);
+};
+
+export const handleWatchAdd: StockSessionHandler = async (args, session, _deps) => {
+  if (!isPlainObject(args)) {
+    return isErrorText("vice_watch_add: arguments must be an object");
+  }
+
+  let address: number;
+  try {
+    address = parseAddress(args.address, { what: "address" });
+  } catch (err) {
+    return isErrorText(`vice_watch_add: ${describeError(err)}`);
+  }
+
+  let size = 1;
+  if (args.size !== undefined) {
+    try {
+      size = parseByteCount(args.size, { max: 0x100, what: "size" });
+    } catch (err) {
+      return isErrorText(`vice_watch_add: ${describeError(err)}`);
+    }
+  }
+
+  const watchType = args.type === undefined ? "write" : args.type;
+  let operation: number;
+  if (watchType === "read") operation = CheckpointOperation.Load;
+  else if (watchType === "write") operation = CheckpointOperation.Store;
+  else if (watchType === "both") operation = CheckpointOperation.Load | CheckpointOperation.Store;
+  else {
+    return isErrorText(`vice_watch_add: type must be one of "read", "write", "both", got ${JSON.stringify(watchType)}`);
+  }
+
+  const end = address + size - 1;
+  if (end > 0xffff) {
+    return isErrorText(`vice_watch_add: address (${address}) + size (${size}) - 1 = ${end} exceeds 0xffff`);
+  }
+
+  const stop = args.stop === undefined ? true : Boolean(args.stop);
+  const acknowledgeTraceRisk = args.acknowledgeTraceRisk === true;
+  if (!stop && !acknowledgeTraceRisk) {
+    return isErrorText(`vice_watch_add: ${STOP_FALSE_HAZARD_TEXT}`);
+  }
+
+  // Validate/emit the condition BEFORE arming anything -- a condition that
+  // fails to emit must never result in a CHECKPOINT_SET being sent at all.
+  let expression: string | undefined;
+  if (args.condition !== undefined) {
+    try {
+      const node = nodeFromConditionArg(args.condition);
+      expression = emitCondition(node);
+    } catch (err) {
+      if (err instanceof StockConditionError) {
+        return isErrorText(err.message);
+      }
+      return isErrorText(`vice_watch_add: ${describeError(err)}`);
+    }
+  }
+
+  const body = checkpointSetBody({ start: address, end, stop, enabled: true, operation, temporary: false });
+  let response;
+  try {
+    response = await session.client.send(CommandType.CheckpointSet, body);
+  } catch (err) {
+    return convertWireError("vice_watch_add", err);
+  }
+  if (response.type !== "checkpoint_info") {
+    return isErrorText(`vice_watch_add: unexpected reply type "${response.type}" from CHECKPOINT_SET`);
+  }
+  const checkpoint: ParsedCheckpoint = response.checkpoint;
+
+  if (expression !== undefined) {
+    const failure = await setConditionFailClosed(session, checkpoint.id, expression, "vice_watch_add");
+    if (failure) return failure;
+    recordCondition(session, checkpoint.id, expression);
+  }
+
+  if (!stop) {
+    registerTraceCheckpoint(session, checkpoint.id);
+  }
+
+  const payload: Record<string, unknown> = {
+    id: checkpoint.id,
+    start: checkpoint.start,
+    end: checkpoint.end,
+    watchType,
+    size,
+    operation: { value: checkpoint.operation, flags: decodeOperationFlags(checkpoint.operation) },
+    stop: checkpoint.stopWhenHit,
+    enabled: checkpoint.enabled,
+    condition: expression ?? null,
+    hitCount: checkpoint.hitCount,
+    hasCondition: checkpoint.hasCondition,
+    traceMode: !checkpoint.stopWhenHit,
+  };
   const autoDisables = autoDisableReportFor(session);
   if (autoDisables.length > 0) payload.autoDisables = autoDisables;
   return stockAnswer(session.client, payload);

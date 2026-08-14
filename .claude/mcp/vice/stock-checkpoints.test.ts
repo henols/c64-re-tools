@@ -1,7 +1,8 @@
 // node:test coverage of stock-checkpoints.ts. Task 1: checkpoint add/delete/
-// list/toggle. Every client is a bare EventEmitter with a spy `send()` -- no
-// broker, no real socket, no emulator (matching this repo's established
-// DI-stub convention, stock-dispatch.test.ts:1-133).
+// list/toggle. Task 2 (added below): the D-10 condition registry,
+// fail-closed cleanup, and watch-add. Every client is a bare EventEmitter
+// with a spy `send()` -- no broker, no real socket, no emulator (matching
+// this repo's established DI-stub convention, stock-dispatch.test.ts:1-133).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -11,6 +12,9 @@ import {
   handleCheckpointDelete,
   handleCheckpointList,
   handleCheckpointToggle,
+  handleCheckpointSetCondition,
+  handleWatchAdd,
+  conditionTextFor,
   resetCheckpointStateForTest,
 } from "./stock-checkpoints.ts";
 import { CheckpointOperation, type ParsedCheckpoint, type ViceMonitorClient } from "./stock-protocol.ts";
@@ -224,4 +228,172 @@ test("every ok-answer carries runState", async () => {
   const result = await handleCheckpointList({}, session, FAKE_DEPS);
   assertOk(result);
   assert.ok("runState" in okText(result));
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: handleCheckpointSetCondition
+// ---------------------------------------------------------------------------
+
+test("set condition: 'A == $42' sends ConditionSet with parenthesised, hex wire text", async () => {
+  const { client, calls } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const session = makeSession(client);
+
+  const result = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, session, FAKE_DEPS);
+  assertOk(result);
+  const [, body] = calls[0]!;
+  const exprLen = body[4]!;
+  const expr = body.subarray(5, 5 + exprLen).toString("ascii");
+  assert.equal(expr, "(A == $42)");
+});
+
+test("set condition: structured object produces byte-identical wire text to the equivalent string form", async () => {
+  const { client: clientA, calls: callsA } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const sessionA = makeSession(clientA, "target-a");
+  await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, sessionA, FAKE_DEPS);
+
+  const { client: clientB, calls: callsB } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const sessionB = makeSession(clientB, "target-b");
+  await handleCheckpointSetCondition(
+    { checkpoint_num: 1, condition: { kind: "comparison", left: { kind: "register", name: "A" }, op: "==", right: { kind: "literal", value: 0x42 } } },
+    sessionB,
+    FAKE_DEPS,
+  );
+
+  assert.deepEqual(callsA[0]![1], callsB[0]![1]);
+});
+
+test("set condition: unparenthesised multi-comparison refuses with the emitter's precedence message, zero sends", async () => {
+  const { client, calls } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const session = makeSession(client);
+
+  const result = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "RL == $64 && CY == $14" }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /precedence/);
+  assert.equal(calls.length, 0);
+});
+
+test("set condition: setting twice on the same checkpoint refuses the second time, only one ConditionSet send total", async () => {
+  const { client, calls } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const session = makeSession(client);
+
+  const first = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, session, FAKE_DEPS);
+  assertOk(first);
+  const second = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "X == $01" }, session, FAKE_DEPS);
+  assertErr(second);
+  assert.match(second.content[0]!.text, /\$42/);
+  assert.equal(calls.length, 1);
+});
+
+test("set condition: fail-closed -- a rejecting ConditionSet is followed by a CheckpointDelete for the same checkpoint number", async () => {
+  const { client, calls } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x22) throw new Error("CMD_FAILURE");
+    return { type: "checkpoint_delete" as const };
+  });
+  const session = makeSession(client);
+
+  const result = await handleCheckpointSetCondition({ checkpoint_num: 9, condition: "A == $42" }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /deleted/i);
+  assert.equal(calls.length, 2);
+  const [deleteCommandType, deleteBody] = calls[1]!;
+  assert.equal(deleteCommandType, 0x13);
+  assert.equal(deleteBody.readUInt32LE(0), 9);
+});
+
+test("set condition: both ConditionSet and CheckpointDelete fail -- one refusal names both failures", async () => {
+  const { client } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x22) throw new Error("set failed");
+    throw new Error("delete failed");
+  });
+  const session = makeSession(client);
+
+  const result = await handleCheckpointSetCondition({ checkpoint_num: 9, condition: "A == $42" }, session, FAKE_DEPS);
+  assertErr(result);
+  const text = result.content[0]!.text;
+  assert.match(text, /set failed/);
+  assert.match(text, /delete failed/);
+  assert.match(text, /may still be armed/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: handleWatchAdd
+// ---------------------------------------------------------------------------
+
+test("watch add: type 'both' records byte 6 = 0x03", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint({ operation: 0x03 })));
+  const session = makeSession(client);
+
+  const result = await handleWatchAdd({ address: "$d020", type: "both" }, session, FAKE_DEPS);
+  assertOk(result);
+  const [, body] = calls[0]!;
+  assert.equal(body[6], 0x03);
+});
+
+test("watch add: type 'peek' refuses naming read/write/both", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+
+  const result = await handleWatchAdd({ address: "$d020", type: "peek" }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.match(result.content[0]!.text, /read/);
+  assert.match(result.content[0]!.text, /write/);
+  assert.match(result.content[0]!.text, /both/);
+  assert.equal(calls.length, 0);
+});
+
+test("watch add: a condition that fails to emit records zero CheckpointSet sends", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+
+  const result = await handleWatchAdd({ address: "$d020", condition: "RL == $64 && CY == $14" }, session, FAKE_DEPS);
+  assertErr(result);
+  assert.equal(calls.length, 0);
+});
+
+test("watch add: after a successful set, checkpoint_list reports the recorded condition text", async () => {
+  const cp = fakeCheckpoint({ id: 11, hasCondition: true });
+  let listCall = false;
+  const { client } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x12) return checkpointInfoResponse(cp);
+    if (commandType === 0x22) return { type: "condition_set" as const };
+    if (commandType === 0x14) {
+      listCall = true;
+      return checkpointListResponse(1, [checkpointInfoResponse(cp)]);
+    }
+    throw new Error(`unexpected commandType ${commandType}`);
+  });
+  const session = makeSession(client);
+
+  const added = await handleWatchAdd({ address: "$d020", condition: "A == $42" }, session, FAKE_DEPS);
+  assertOk(added);
+  assert.equal(conditionTextFor(session, 11), "(A == $42)");
+
+  const listed = await handleCheckpointList({}, session, FAKE_DEPS);
+  assertOk(listed);
+  assert.ok(listCall);
+  const entry = (okText(listed).checkpoints as Record<string, unknown>[])[0]!;
+  assert.equal(entry.condition, "(A == $42)");
+  assert.equal(entry.conditionTextKnown, true);
+});
+
+test("after checkpoint delete, the registry entry is gone and a later list reports conditionTextKnown:false", async () => {
+  const cp = fakeCheckpoint({ id: 4, hasCondition: true });
+  const { client } = makeFakeClient(async (commandType) => {
+    if (commandType === 0x22) return { type: "condition_set" as const };
+    if (commandType === 0x13) return { type: "checkpoint_delete" as const };
+    if (commandType === 0x14) return checkpointListResponse(1, [checkpointInfoResponse(cp)]);
+    throw new Error(`unexpected commandType ${commandType}`);
+  });
+  const session = makeSession(client);
+
+  await handleCheckpointSetCondition({ checkpoint_num: 4, condition: "A == $42" }, session, FAKE_DEPS);
+  assert.equal(conditionTextFor(session, 4), "(A == $42)");
+
+  await handleCheckpointDelete({ checkpoint_num: 4 }, session, FAKE_DEPS);
+  assert.equal(conditionTextFor(session, 4), undefined);
+
+  const listed = await handleCheckpointList({}, session, FAKE_DEPS);
+  assertOk(listed);
+  const entry = (okText(listed).checkpoints as Record<string, unknown>[])[0]!;
+  assert.equal(entry.conditionTextKnown, false);
 });
