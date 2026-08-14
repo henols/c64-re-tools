@@ -6,8 +6,8 @@
 // `vice_snapshot_save` and `vice_snapshot_load`. Five tools that either
 // restart the machine (RESET, AUTOSTART) or hand VICE a filename THE HOST
 // opens (AUTOSTART, DUMP, UNDUMP) -- every filename-carrying send in this
-// file routes through stock-paths.ts's withEmulatorSidePath(), never a local
-// path heuristic.
+// file routes through stock-paths.ts's one translation wrapper (imported
+// below), never a local path heuristic.
 //
 // WHAT NOT TO DO:
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
@@ -24,16 +24,17 @@
 //     through the text monitor -- grep-gated to zero occurrences of its name
 //     in this file's own acceptance criteria.
 //   - Never build a host path outside stock-paths.ts. Every filename this
-//     file sends through the wire goes through withEmulatorSidePath() --
+//     file sends through the wire goes through that same one wrapper --
 //     grep-gated to zero direct hostPath()/hostPathCandidates() calls here.
 //   - Never construct an ok-answer outside stockAnswer(). D-06 requires
 //     every stock tool answer to carry runState, and stockAnswer() is the
 //     one place that is stamped.
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
 
-import { CommandType, ResetMode, resetBody, autostartBody } from "./stock-protocol.ts";
+import { CommandType, ResetMode, resetBody, autostartBody, dumpBody, undumpBody } from "./stock-protocol.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
-import { withEmulatorSidePath } from "./stock-paths.ts";
+import { withEmulatorSidePath, snapshotPathFor, snapshotMetaPathFor, sanitizeSnapshotName } from "./stock-paths.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -186,4 +187,171 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   } catch (err) {
     return convertWireError("vice_disk_attach", err);
   }
+};
+
+// ---------------------------------------------------------------------------
+// handleSnapshotSave / handleSnapshotLoad -- DUMP (0x41) / UNDUMP (0x42).
+// ---------------------------------------------------------------------------
+
+const MAX_DESCRIPTION_LENGTH = 512;
+
+/**
+ * `name` is sanitised through stock-paths.ts's sanitizeSnapshotName() into a
+ * workspace-internal path -- never treated as a path fragment. The client-
+ * side metadata sidecar (docs/stock-vice-parity.md item 6: "DUMP writes
+ * state; JSON metadata is our own bookkeeping") is written ONLY after a
+ * successful DUMP, so a failed save never leaves a sidecar claiming a
+ * snapshot that does not exist; a sidecar WRITE failure is reported in the
+ * answer as `metadataWritten: false` with a reason, never thrown -- the
+ * snapshot itself succeeded and the agent must be told exactly that (T-3-10).
+ */
+export const handleSnapshotSave: StockSessionHandler = async (args, session) => {
+  const a = isPlainObject(args) ? args : {};
+
+  let name: string;
+  try {
+    name = sanitizeSnapshotName(a.name);
+  } catch (err) {
+    return isErrorText(`vice_snapshot_save: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const descriptionArg = a.description;
+  if (descriptionArg !== undefined && typeof descriptionArg !== "string") {
+    return isErrorText(`vice_snapshot_save: description must be a string, got ${typeof descriptionArg}`);
+  }
+  if (typeof descriptionArg === "string" && descriptionArg.length > MAX_DESCRIPTION_LENGTH) {
+    return isErrorText(`vice_snapshot_save: description exceeds ${MAX_DESCRIPTION_LENGTH} characters (${descriptionArg.length})`);
+  }
+  const description: string | null = typeof descriptionArg === "string" ? descriptionArg : null;
+
+  const includeRomsArg = a.include_roms;
+  if (includeRomsArg !== undefined && typeof includeRomsArg !== "boolean") {
+    return isErrorText(`vice_snapshot_save: include_roms must be a boolean, got ${typeof includeRomsArg}`);
+  }
+  const includeRoms = includeRomsArg === true;
+
+  const includeDisksArg = a.include_disks;
+  if (includeDisksArg !== undefined && typeof includeDisksArg !== "boolean") {
+    return isErrorText(`vice_snapshot_save: include_disks must be a boolean, got ${typeof includeDisksArg}`);
+  }
+  const includeDisks = includeDisksArg === true;
+
+  const containerPath = snapshotPathFor(name);
+  // VICE opens the file for writing and will not create the directory --
+  // the same mkdirSync-before-translate ordering vice-sync.ts's screenshot()
+  // already uses.
+  mkdirSync(dirname(containerPath), { recursive: true });
+
+  let sentPath: string;
+  try {
+    const result = await withEmulatorSidePath("vice_snapshot_save", containerPath, (hostPath) =>
+      session.client.send(CommandType.Dump, dumpBody({ saveRoms: includeRoms, saveDisks: includeDisks, filename: hostPath })),
+    );
+    sentPath = result.sentPath;
+  } catch (err) {
+    return convertWireError("vice_snapshot_save", err);
+  }
+
+  // DUMP succeeded -- write the metadata sidecar. A write failure here is
+  // reported, never thrown: the snapshot itself is good.
+  const metadataPath = snapshotMetaPathFor(name);
+  let metadataWritten = true;
+  let metadataFailureReason: string | null = null;
+  try {
+    const metadata = {
+      name,
+      description,
+      createdAt: new Date().toISOString(),
+      includeRoms,
+      includeDisks,
+      viceVersion: session.versionQuad,
+      backend: "stock" as const,
+      snapshotPath: containerPath,
+    };
+    writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+  } catch (err) {
+    metadataWritten = false;
+    metadataFailureReason = err instanceof Error ? err.message : String(err);
+  }
+
+  return stockAnswer(session.client, {
+    name,
+    path: containerPath,
+    sentPath,
+    includeRoms,
+    includeDisks,
+    metadataWritten,
+    ...(metadataFailureReason !== null ? { metadataFailureReason } : {}),
+    metadataPath,
+  });
+};
+
+/**
+ * Refuses with an explanatory message, listing the `.vsf` basenames present
+ * in the snapshot directory, when the named snapshot file does not exist --
+ * the useful half of what the deleted `vice_snapshot_list` used to provide
+ * (D-16 deleted the tool because it had no consumer), delivered at the point
+ * of failure rather than as its own tool.
+ *
+ * Loading a snapshot REPLACES THE ENTIRE MACHINE STATE, so this handler's
+ * `runState` reflects whatever the event stream reports after UNDUMP and
+ * nothing is asserted about it here.
+ */
+export const handleSnapshotLoad: StockSessionHandler = async (args, session) => {
+  const a = isPlainObject(args) ? args : {};
+
+  let name: string;
+  try {
+    name = sanitizeSnapshotName(a.name);
+  } catch (err) {
+    return isErrorText(`vice_snapshot_load: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const containerPath = snapshotPathFor(name);
+  if (!existsSync(containerPath)) {
+    const dir = dirname(containerPath);
+    let available: string[] = [];
+    try {
+      available = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".vsf")) : [];
+    } catch {
+      available = [];
+    }
+    return isErrorText(
+      `vice_snapshot_load: no snapshot named "${name}" exists at ${containerPath}. ` +
+        (available.length > 0 ? `Available snapshots: ${available.join(", ")}` : "No snapshots exist yet."),
+    );
+  }
+
+  let sentPath: string;
+  let programCounter: number | null = null;
+  try {
+    const result = await withEmulatorSidePath("vice_snapshot_load", containerPath, (hostPath) =>
+      session.client.send(CommandType.Undump, undumpBody({ filename: hostPath })),
+    );
+    sentPath = result.sentPath;
+    const reply = result.result;
+    if (reply && typeof reply === "object" && "type" in reply && (reply as { type: unknown }).type === "undump") {
+      programCounter = (reply as { programCounter: number }).programCounter;
+    }
+  } catch (err) {
+    return convertWireError("vice_snapshot_load", err);
+  }
+
+  const metadataPath = snapshotMetaPathFor(name);
+  let metadata: { description?: string | null; createdAt?: string } | null = null;
+  try {
+    if (existsSync(metadataPath)) {
+      const parsed: unknown = JSON.parse(readFileSync(metadataPath, "utf8"));
+      if (isPlainObject(parsed)) {
+        metadata = {
+          description: typeof parsed.description === "string" ? parsed.description : null,
+          createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
+        };
+      }
+    }
+  } catch {
+    metadata = null; // a missing or unparsable sidecar is reported as null, never an error
+  }
+
+  return stockAnswer(session.client, { name, path: containerPath, sentPath, programCounter, metadata });
 };

@@ -9,8 +9,11 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, existsSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { handleMachineReset, handleAutostart, handleDiskAttach } from "./stock-machine.ts";
+import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
@@ -199,4 +202,161 @@ test("every ok-answer from this module carries runState", async () => {
   const { session: s3 } = makeSession();
   const r3 = await handleDiskAttach({ unit: 8, path: "/workspace/x.d64" }, s3, fakeDeps);
   assert.ok("runState" in JSON.parse(r3.content[0]!.text));
+});
+
+// --------------------------------------------------------- handleSnapshotSave / handleSnapshotLoad
+//
+// A temp directory stands in for the repo root (following
+// refresh-manifest.test.ts's own temp-dir discipline) so no real workspace
+// is ever touched: CLAUDE_PROJECT_DIR unconditionally wins repoRoot()'s
+// precedence ladder (branch 0), so pointing it at a fresh mkdtempSync()
+// directory per test makes snapshotPathFor()/snapshotMetaPathFor() resolve
+// entirely inside that throwaway directory.
+
+async function withTempRepoRoot<T>(fn: (repoRootDir: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "vice-snapshot-test-"));
+  const prev = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  try {
+    return await fn(dir);
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("handleSnapshotSave: name '../etc/passwd' refuses with zero sends", async () => {
+  await withTempRepoRoot(async () => {
+    const { session, sends } = makeSession();
+    const result = await handleSnapshotSave({ name: "../etc/passwd" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.equal(sends.length, 0);
+  });
+});
+
+test("handleSnapshotSave: records a Dump body with default include flags 0x00/0x00 and a filename tail ending in /.vice-snapshots/ok_1.vsf", async () => {
+  await withTempRepoRoot(async (dir) => {
+    const { session, sends } = makeSession();
+    const result = await handleSnapshotSave({ name: "ok_1" }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0]!.commandType, CommandType.Dump);
+    const body = sends[0]!.body;
+    assert.equal(body[0], 0x00);
+    assert.equal(body[1], 0x00);
+    const filenameLen = body[2]!;
+    const filename = body.subarray(3, 3 + filenameLen).toString("ascii");
+    assert.ok(filename.endsWith("/.vice-snapshots/ok_1.vsf"));
+    assert.ok(filename.startsWith(dir));
+  });
+});
+
+test("handleSnapshotSave: include_roms/include_disks true records bytes 0x01/0x01", async () => {
+  await withTempRepoRoot(async () => {
+    const { session, sends } = makeSession();
+    const result = await handleSnapshotSave({ name: "ok_2", include_roms: true, include_disks: true }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    assert.equal(sends[0]!.body[0], 0x01);
+    assert.equal(sends[0]!.body[1], 0x01);
+  });
+});
+
+test("handleSnapshotSave: a successful save writes a sidecar containing name, createdAt, backend: 'stock'", async () => {
+  await withTempRepoRoot(async (dir) => {
+    const { session } = makeSession();
+    const result = await handleSnapshotSave({ name: "ok_3", description: "a test snapshot" }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    const metaPath = join(dir, ".vice-snapshots", "ok_3.json");
+    assert.ok(existsSync(metaPath));
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    assert.equal(meta.name, "ok_3");
+    assert.equal(meta.backend, "stock");
+    assert.equal(typeof meta.createdAt, "string");
+    const payload = JSON.parse(result.content[0]!.text);
+    assert.equal(payload.metadataWritten, true);
+  });
+});
+
+test("handleSnapshotSave: a failing DUMP writes no sidecar", async () => {
+  await withTempRepoRoot(async (dir) => {
+    const { session } = makeSession(() => {
+      throw new Error("dump failed");
+    });
+    const result = await handleSnapshotSave({ name: "ok_4" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    const metaPath = join(dir, ".vice-snapshots", "ok_4.json");
+    assert.equal(existsSync(metaPath), false);
+  });
+});
+
+test("handleSnapshotSave: a sidecar write failure still answers ok with metadataWritten: false and a reason", async () => {
+  await withTempRepoRoot(async (dir) => {
+    // Pre-create the exact sidecar path AS A DIRECTORY -- writeFileSync then
+    // fails deterministically (EISDIR) regardless of uid/permissions, unlike
+    // a chmod-based approach which is a no-op when tests run as root.
+    const metaPath = join(dir, ".vice-snapshots", "ok_5.json");
+    mkdirSync(metaPath, { recursive: true });
+    const { session } = makeSession();
+    const result = await handleSnapshotSave({ name: "ok_5" }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    const payload = JSON.parse(result.content[0]!.text);
+    assert.equal(payload.metadataWritten, false);
+    assert.equal(typeof payload.metadataFailureReason, "string");
+  });
+});
+
+test("handleSnapshotLoad: a missing file refuses with a message listing the .vsf names present, records zero sends", async () => {
+  await withTempRepoRoot(async (dir) => {
+    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".vice-snapshots", "other.vsf"), "");
+    const { session, sends } = makeSession();
+    const result = await handleSnapshotLoad({ name: "missing" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /other\.vsf/);
+    assert.equal(sends.length, 0);
+  });
+});
+
+test("handleSnapshotLoad: a successful load records an Undump body and reports the reply's programCounter", async () => {
+  await withTempRepoRoot(async (dir) => {
+    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".vice-snapshots", "ok_6.vsf"), "");
+    const { session, sends } = makeSession((commandType) =>
+      commandType === CommandType.Undump ? { type: "undump", requestId: 1, errorCode: 0, programCounter: 0x0801 } : undefined,
+    );
+    const result = await handleSnapshotLoad({ name: "ok_6" }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0]!.commandType, CommandType.Undump);
+    assert.equal(sends[0]!.body[0], sends[0]!.body.length - 1); // filenameLen
+    const payload = JSON.parse(result.content[0]!.text);
+    assert.equal(payload.programCounter, 0x0801);
+  });
+});
+
+test("handleSnapshotLoad: a load whose sidecar is absent answers with metadata: null rather than erroring", async () => {
+  await withTempRepoRoot(async (dir) => {
+    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".vice-snapshots", "ok_7.vsf"), "");
+    const { session } = makeSession(() => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }));
+    const result = await handleSnapshotLoad({ name: "ok_7" }, session, fakeDeps);
+    assert.equal(result.isError, false);
+    const payload = JSON.parse(result.content[0]!.text);
+    assert.equal(payload.metadata, null);
+  });
+});
+
+test("handleSnapshotSave/Load: every ok-answer carries runState", async () => {
+  await withTempRepoRoot(async (dir) => {
+    const { session: s1 } = makeSession();
+    const r1 = await handleSnapshotSave({ name: "ok_8" }, s1, fakeDeps);
+    assert.ok("runState" in JSON.parse(r1.content[0]!.text));
+
+    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".vice-snapshots", "ok_9.vsf"), "");
+    const { session: s2 } = makeSession(() => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }));
+    const r2 = await handleSnapshotLoad({ name: "ok_9" }, s2, fakeDeps);
+    assert.ok("runState" in JSON.parse(r2.content[0]!.text));
+  });
 });
