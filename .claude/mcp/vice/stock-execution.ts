@@ -263,7 +263,16 @@ export const handleExecutionStep: StockSessionHandler = async (args, session) =>
     return convertWireError("vice_execution_step", err);
   }
   await settleEvents();
-  const programCounter = programCounterFromReply(response) ?? capture.finish();
+  // WR-02 (03-REVIEW.md): finish() is called UNCONDITIONALLY, and only its
+  // RETURN VALUE participates in the `??` fallback. Behind `??` the removal of
+  // the 'event' listener would be skipped on any call where the reply itself
+  // carried a program counter -- harmless today only because
+  // programCounterFromReply() always answers undefined for this opcode, but
+  // that function exists precisely so a future parser extension is picked up
+  // for free, and the day it is, this handler would leak one listener on the
+  // long-lived, reused session.client per call, forever.
+  const capturedProgramCounter = capture.finish();
+  const programCounter = programCounterFromReply(response) ?? capturedProgramCounter;
 
   const payload: Record<string, unknown> = { requested: "step", count, stepOver, stateBefore };
   if (programCounter !== undefined) {
@@ -305,7 +314,10 @@ export const handleExecutionUntilReturn: StockSessionHandler = async (args, sess
     return convertWireError("vice_execution_until_return", err);
   }
   await settleEvents();
-  const programCounter = programCounterFromReply(response) ?? capture.finish();
+  // WR-02: unconditional finish(), for exactly the reason handleExecutionStep's
+  // own identical line above spells out.
+  const capturedProgramCounter = capture.finish();
+  const programCounter = programCounterFromReply(response) ?? capturedProgramCounter;
 
   const payload: Record<string, unknown> = { requested: "untilReturn", stateBefore };
   if (programCounter !== undefined) {

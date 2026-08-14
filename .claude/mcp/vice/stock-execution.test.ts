@@ -325,3 +325,70 @@ test("untilReturn: an unexpected argument is refused, naming the key", async () 
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /bogus/);
 });
+
+// --------------------------------------------------------- WR-02 listener hygiene
+//
+// 03-REVIEW.md WR-02: `capture.finish()` -- the ONLY thing that removes the
+// scoped 'event' listener -- used to sit on the right-hand side of a `??`, so
+// it ran only when the reply itself carried NO program counter. Today's
+// parser never gives AdvanceInstructions/ExecuteUntilReturn a `programCounter`
+// field, which is the only reason the listener was always removed in practice;
+// programCounterFromReply() exists precisely so a future parser extension is
+// picked up for free, and on the day that lands, the short-circuit would leak
+// one listener per call on the long-lived, reused session.client. These tests
+// simulate exactly that future reply shape.
+
+/** A reply carrying its own program counter -- the shape stock-protocol.ts's
+ * parser does NOT produce today, and whose arrival is precisely what WR-02 is
+ * about. */
+function replyWithProgramCounter(programCounter: number) {
+  return async (commandType: number): Promise<ResolvedResponse> =>
+    ({ type: "unknown", requestId: 1, errorCode: 0, responseType: commandType, related: [], programCounter }) as unknown as ResolvedResponse;
+}
+
+test("step (WR-02): a reply that carries its own programCounter still removes the capture listener -- listener count is flat across many calls", async () => {
+  const { client } = fakeClient(replyWithProgramCounter(0x2000));
+  attachRunStateTracker(client);
+  client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const emitter = client as unknown as EventEmitter;
+  const baseline = emitter.listenerCount("event");
+  assert.equal(baseline, 1, "setup: exactly the run-state tracker's own persistent listener is attached");
+
+  for (let i = 0; i < 5; i++) {
+    const result = await handleExecutionStep({}, fakeSession(client), NO_DEPS);
+    assert.equal(result.isError, false);
+  }
+
+  assert.equal(
+    emitter.listenerCount("event"),
+    baseline,
+    "WR-02 REGRESSION: the scoped program-counter capture listener was not removed, so every step leaks one listener on a reused client",
+  );
+
+  const payload = payloadOf(await handleExecutionStep({}, fakeSession(client), NO_DEPS));
+  assert.equal(payload.programCounter, 0x2000, "the reply's own program counter must still win over the captured one");
+});
+
+test("untilReturn (WR-02): a reply that carries its own programCounter still removes the capture listener", async () => {
+  const { client } = fakeClient(replyWithProgramCounter(0x3000));
+  attachRunStateTracker(client);
+  client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const emitter = client as unknown as EventEmitter;
+  const baseline = emitter.listenerCount("event");
+
+  for (let i = 0; i < 5; i++) {
+    const result = await handleExecutionUntilReturn({}, fakeSession(client), NO_DEPS);
+    assert.equal(result.isError, false);
+  }
+
+  assert.equal(
+    emitter.listenerCount("event"),
+    baseline,
+    "WR-02 REGRESSION: the scoped program-counter capture listener was not removed on the until-return path",
+  );
+
+  const payload = payloadOf(await handleExecutionUntilReturn({}, fakeSession(client), NO_DEPS));
+  assert.equal(payload.programCounter, 0x3000, "the reply's own program counter must still win over the captured one");
+});
