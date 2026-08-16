@@ -119,3 +119,10 @@ None - no external service configuration required.
 ---
 *Phase: 03-direct-tools*
 *Completed: 2026-08-16*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/03-direct-tools/03-14-SUMMARY.md`
+- FOUND commit: `bbef8a4` (test - RED)
+- FOUND commit: `ff82edc` (fix - GREEN)
+- FOUND commit: `64cc753` (docs - summary)
