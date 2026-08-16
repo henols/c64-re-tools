@@ -178,3 +178,15 @@ None - no external service configuration required.
 ---
 *Phase: 03-direct-tools*
 *Completed: 2026-08-16*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/03-direct-tools/03-15-SUMMARY.md`
+- FOUND: `.claude/mcp/vice/vice-proxy.test.ts`
+- FOUND: `.claude/mcp/vice/README.md`
+- FOUND: `.claude/mcp/vice/broker-e2e.test.ts`
+- FOUND: `.claude/mcp/vice/vice-broker-launch.test.ts`
+- FOUND commit `14cf533` (task 1)
+- FOUND commit `831bb5f` (task 2)
+- FOUND commit `3a4075d` (task 3)
+- FOUND commit `8da192c` (summary)
