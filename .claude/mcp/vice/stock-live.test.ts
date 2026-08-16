@@ -282,3 +282,117 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 2: live re-verification of the register write and the flag-bit
+// refusal -- the evidence 03-UAT.md test 5 could not produce, because every
+// call there died on the width branch before reaching either.
+// ---------------------------------------------------------------------------
+
+/** The 6502 status-register flag-bit names and their conventional bit
+ * positions, mirroring stock-registers.ts's own FLAG_BIT_POSITIONS table --
+ * duplicated here (not imported) so this test proves the SHIPPED behaviour
+ * against its OWN independent expectation, not merely that the module
+ * agrees with itself. */
+const FLAG_BIT_POSITIONS: Record<string, number> = { N: 7, V: 6, B: 4, D: 3, I: 2, Z: 1, C: 0 };
+
+test(
+  "stock-live: a register write round-trips, the 16-bit path works, range refusal holds, the flag-bit refusal fires for all seven flags naming the live status register, and every answer's runState is stopped",
+  { skip: SKIP_REASON },
+  async () => {
+    // --- WIDTH CATALOG (also logged by Task 1's own test above; re-fetched
+    //     here from the SAME cached session, so this is a free call) ---
+    const availableResult = await dispatchStock("vice_registers_available", {}, liveDeps());
+    const availablePayload = parseOkPayload(availableResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const catalog = availablePayload.registers as Array<{ id: number; name: string; sizeBits: number }>;
+    assert.equal(availablePayload.runState, "stopped", "vice_registers_available's runState must be stopped");
+
+    const pcEntry = catalog.find((r) => r.name.toUpperCase() === "PC");
+    assert.ok(pcEntry, "the live catalog must contain a PC register");
+    assert.equal(pcEntry!.sizeBits, 16, `PC must report sizeBits=16, got ${pcEntry!.sizeBits}`);
+
+    // The status-register candidate THIS build actually reports -- resolved
+    // from the live catalog, never hardcoded, matching
+    // stock-registers.ts's own STATUS_REGISTER_CANDIDATES resolution order.
+    const STATUS_REGISTER_CANDIDATES = ["FL", "SR", "P", "STATUS", "FLAGS"];
+    const statusEntry = STATUS_REGISTER_CANDIDATES.map((name) => catalog.find((r) => r.name.toUpperCase() === name)).find(Boolean);
+    assert.ok(statusEntry, `the live catalog must contain a status register named one of: ${STATUS_REGISTER_CANDIDATES.join(", ")}`);
+    console.log(`stock-live: this build's status register is "${statusEntry!.name}"`);
+
+    // --- THE BLOCKER, LIVE: an ordinary 8-bit register write round-trips ---
+    const preGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const prePayload = parseOkPayload(preGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const preRegisters = prePayload.registers as Record<string, number>;
+    const preA = preRegisters.A;
+    console.log(`stock-live: A's pre-write value is ${preA}`);
+
+    const setAResult = await dispatchStock("vice_registers_set", { register: "A", value: 42 }, liveDeps());
+    const setAPayload = parseOkPayload(setAResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    console.log(`stock-live: vice_registers_set({register:"A", value:42}) -> ${JSON.stringify(setAPayload)}`);
+    assert.equal(setAPayload.observedValue, 42, `vice_registers_set({register:"A", value:42}) must echo observedValue:42, got ${JSON.stringify(setAPayload)}`);
+    assert.equal(setAPayload.runState, "stopped", "vice_registers_set's runState must be stopped");
+
+    const postGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const postPayload = parseOkPayload(postGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const postRegisters = postPayload.registers as Record<string, number>;
+    assert.equal(postRegisters.A, 42, `vice_registers_get must independently show A===42 after the write, got ${postRegisters.A}`);
+
+    // --- 16-BIT PATH: PC round-trips through the same width-derived check ---
+    const setPcResult = await dispatchStock("vice_registers_set", { register: "PC", value: 0xc000 }, liveDeps());
+    const setPcPayload = parseOkPayload(setPcResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    console.log(`stock-live: vice_registers_set({register:"PC", value:0xC000}) -> ${JSON.stringify(setPcPayload)}`);
+    assert.equal(setPcPayload.observedValue, 0xc000, `vice_registers_set({register:"PC", value:0xC000}) must echo observedValue:0xC000, got ${JSON.stringify(setPcPayload)}`);
+
+    // --- RANGE REFUSAL: an out-of-range 8-bit value is refused, and NO
+    //     write reaches the emulator (A must still read 42 from above) ---
+    const rangeResult = await dispatchStock("vice_registers_set", { register: "A", value: 256 }, liveDeps());
+    assert.equal(rangeResult.isError, true, "vice_registers_set({register:\"A\", value:256}) must be refused");
+    const rangeText = (rangeResult as { content: { type: "text"; text: string }[] }).content[0]!.text;
+    console.log(`stock-live: range refusal message -> ${rangeText}`);
+    assert.match(rangeText, /0\.\.0xff/, `range refusal must name the 0..0xff range, got: ${rangeText}`);
+
+    const afterRangeGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const afterRangePayload = parseOkPayload(afterRangeGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const afterRangeRegisters = afterRangePayload.registers as Record<string, number>;
+    assert.equal(afterRangeRegisters.A, 42, `A must still read 42 after a refused out-of-range write reached no wire command, got ${afterRangeRegisters.A}`);
+
+    // --- FLAG-BIT REFUSAL -- the never-reached path (03-UAT.md test 5) ---
+    // Read the status register's value once before the loop, and assert it
+    // is unchanged after: the refusal branch returns before REGISTERS_SET is
+    // ever sent, so nothing in this loop may perturb it.
+    const beforeFlagsGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const beforeFlagsPayload = parseOkPayload(beforeFlagsGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const beforeFlagsRegisters = beforeFlagsPayload.registers as Record<string, number>;
+    const statusBefore = beforeFlagsRegisters[statusEntry!.name];
+
+    for (const [flagName, bitPosition] of Object.entries(FLAG_BIT_POSITIONS)) {
+      const flagResult = await dispatchStock("vice_registers_set", { register: flagName, value: 1 }, liveDeps());
+      assert.equal(flagResult.isError, true, `vice_registers_set({register:"${flagName}", value:1}) must be refused`);
+      const flagText = (flagResult as { content: { type: "text"; text: string }[] }).content[0]!.text;
+      console.log(`stock-live: flag-bit refusal for "${flagName}" -> ${flagText}`);
+      assert.match(
+        flagText,
+        new RegExp(statusEntry!.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+        `flag-bit refusal for "${flagName}" must name the live status register "${statusEntry!.name}", got: ${flagText}`,
+      );
+      assert.match(
+        flagText,
+        new RegExp(`bit ${bitPosition}\\b`),
+        `flag-bit refusal for "${flagName}" must name its own bit position ${bitPosition}, got: ${flagText}`,
+      );
+    }
+
+    const afterFlagsGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const afterFlagsPayload = parseOkPayload(afterFlagsGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const afterFlagsRegisters = afterFlagsPayload.registers as Record<string, number>;
+    assert.equal(
+      afterFlagsRegisters[statusEntry!.name],
+      statusBefore,
+      `the status register "${statusEntry!.name}" must be unchanged after all seven flag-bit refusals (no REGISTERS_SET reached the wire), before=${statusBefore} after=${afterFlagsRegisters[statusEntry!.name]}`,
+    );
+
+    // --- RUNSTATE (D-06): confirmed live throughout, not merely asserted
+    //     per-answer above -- the tracker itself must agree. ---
+    await waitForStoppedRunState();
+  },
+);
