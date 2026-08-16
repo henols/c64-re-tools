@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-16T19:09:21.064Z"
-last_activity: 2026-08-16 -- Phase 03 execution started
+last_updated: "2026-08-16T21:02:53.164Z"
+last_activity: 2026-08-16
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 32
-  completed_plans: 27
+  completed_plans: 31
   percent: 25
 ---
 
@@ -27,11 +27,11 @@ inspect chip state — and keep working when the emulator misbehaves.
 ## Current Position
 
 Phase: 03 (direct-tools) — EXECUTING
-Plan: 1 of 18
-Status: Executing Phase 03
-Last activity: 2026-08-16 -- Phase 03 execution started
+Plan: 2 of 18
+Status: Ready to execute
+Last activity: 2026-08-16
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 03 P17 | N/A | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - Milestone: all three stock-only gain groups in scope (not parity-first).
 - Milestone: backend selected project-level, one per MCP server process; parity
   verification therefore requires two server processes.
+
+- [Phase ?]: Route authorised: pr-branch — push a branch and open a PR against main; no push/branch/tag/publish performed by 03-17 — milestone v0.2.0 is only 3 of 8 phases done; publishing now would ship a partial stock backend to real users
 
 ### Pending Todos
 
@@ -118,6 +121,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-14T06:22:46.806Z
+Last session: 2026-08-16T21:01:16.479Z
 Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-direct-tools/03-CONTEXT.md
+Resume file: None

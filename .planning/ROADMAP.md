@@ -216,7 +216,7 @@ Plans:
 - [x] 03-14-PLAN.md — Gap wave 1: BLOCKER — `vice_registers_set` refused every real register (REGISTERS_AVAILABLE reports width in BITS, not bytes); fix plus a wire-shaped regression fixture
 - [x] 03-15-PLAN.md — Gap wave 1: MAJOR — `npm test` hung forever on a bare host (listener leaked before its try); plus env-gated skips with named reasons and the widened `vice-proxy:` identity detector
 - [x] 03-16-PLAN.md — Gap wave 2: live re-verification of the register write and the never-reached flag-bit refusal against genuine stock VICE 3.9 (`/usr/bin/x64sc`), as a committed opt-in gate
-- [ ] 03-17-PLAN.md — Gap wave 3: MAJOR — CI has not validated the tree for 214 commits; local CI-equivalence run plus a blocking authorisation decision (a push to main auto-publishes both npm packages)
+- [x] 03-17-PLAN.md — Gap wave 3: MAJOR — CI has not validated the tree for 214 commits; local CI-equivalence run plus a blocking authorisation decision (a push to main auto-publishes both npm packages)
 - [ ] 03-18-PLAN.md — Gap wave 4: execute the authorised CI route and record the run URL, sha and conclusion
 
 Notes:
@@ -398,7 +398,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 16/18 | In Progress|  |
+| 3. Direct Tools | 17/18 | In Progress|  |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
