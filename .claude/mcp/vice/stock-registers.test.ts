@@ -10,7 +10,8 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
+import { CommandType, ResponseType, parseBuffer, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
+import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import {
   registerCatalogFor,
@@ -39,6 +40,64 @@ const REGISTER_FIXTURE = [
   { id: 4, size: 1, name: "SP" },
   { id: 5, size: 1, name: "FL" },
 ];
+
+/** The exact REGISTERS_AVAILABLE enumeration observed LIVE against genuine
+ * stock VICE 3.9 (/usr/bin/x64sc), recorded in 03-UAT.md test 5. `size` here
+ * is the wire's own size byte, taken verbatim -- and it is a BIT count (8 or
+ * 16 on a 6510), NEVER a byte count. This is the exact fact the pre-fix code
+ * (`stock-registers.ts:260-268`, comparing `size` against `1`/`2`) got
+ * wrong, and this fixture exists so that mistake cannot be silently
+ * reintroduced: see the provenance-guard test below, which fails loudly if
+ * this fixture is ever "corrected" back to 1/2. */
+const LIVE_REGISTER_FIXTURE_3_9 = [
+  { id: 3, size: 16, name: "PC" },
+  { id: 0, size: 8, name: "A" },
+  { id: 1, size: 8, name: "X" },
+  { id: 2, size: 8, name: "Y" },
+  { id: 4, size: 8, name: "SP" },
+  { id: 55, size: 8, name: "00" },
+  { id: 56, size: 8, name: "01" },
+  { id: 5, size: 8, name: "FL" },
+  { id: 53, size: 16, name: "LIN" },
+  { id: 54, size: 16, name: "CYC" },
+];
+
+/** Builds one REGISTERS_AVAILABLE (0x83) item exactly as
+ * stock-protocol.test.ts's own `availItem()` does:
+ * `[item_size][id][size][nameLen][name]`. Not imported across test files
+ * (this plan's own instruction) -- mirrored locally instead. */
+function availItem(id: number, size: number, name: string): Buffer {
+  const nameBytes = Buffer.from(name, "ascii");
+  const payload = Buffer.concat([Buffer.from([id, size, nameBytes.length]), nameBytes]);
+  return Buffer.concat([Buffer.from([payload.length]), payload]);
+}
+
+/** Wraps a list of {id, size, name} items into a real 0x83 response frame,
+ * mirroring stock-protocol.test.ts's own `encodeResponseFrame()` usage. */
+function registersAvailableFrame(items: Array<{ id: number; size: number; name: string }>, requestId = 1): Buffer {
+  const count = Buffer.alloc(2);
+  count.writeUInt16LE(items.length, 0);
+  return encodeResponseFrame({
+    responseType: ResponseType.RegistersAvailable,
+    errorCode: 0x00,
+    requestId,
+    body: Buffer.concat([count, ...items.map((it) => availItem(it.id, it.size, it.name))]),
+  });
+}
+
+/** Runs `items` through a REAL 0x83 frame and the REAL `parseBuffer()`,
+ * returning the decoded `{id, size, name}` triples -- so every test that
+ * consumes this (via `makeFakeSession({ registersAvailable: ... })`) sits
+ * downstream of the genuine wire parser, not a hand-asserted shape. */
+function decodeFixture(items: Array<{ id: number; size: number; name: string }>): Array<{ id: number; size: number; name: string }> {
+  const frame = registersAvailableFrame(items);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  const parsed = responses[0] as { type: string; registers: Array<{ id: number; size: number; name: string }> };
+  if (parsed.type !== "registers_available") {
+    throw new Error(`decodeFixture: expected a registers_available reply, got "${parsed.type}"`);
+  }
+  return parsed.registers;
+}
 
 interface SendCall {
   commandType: number;
@@ -279,4 +338,89 @@ test("handleRegistersSet: missing/invalid register or value refuses before any s
   assert.equal(missingValue.isError, true);
 
   assert.equal(sendCalls.length, 0, "argument validation must refuse before any wire traffic, including the catalog fetch");
+});
+
+// ---------------------------------------------------------------------------
+// DIRECT-02/DIRECT-09 gap closure (03-14): a wire-shaped REGISTERS_AVAILABLE
+// fixture that fails against today's bits-vs-bytes bug. Every test below
+// feeds `makeFakeSession({ registersAvailable: decodeFixture(...) })` --
+// never the raw LIVE_REGISTER_FIXTURE_3_9 literal -- so the real parser
+// sits inside the regression path (per this plan's Task 1 action).
+// ---------------------------------------------------------------------------
+
+test("LIVE_REGISTER_FIXTURE_3_9: every declared width is a BIT count (8 or 16), never a byte count (1 or 2)", () => {
+  for (const reg of LIVE_REGISTER_FIXTURE_3_9) {
+    assert.ok(
+      reg.size === 8 || reg.size === 16,
+      `register "${reg.name}" declares size ${reg.size} -- REGISTERS_AVAILABLE reports width in BITS (8 or 16 on a 6510), not bytes`,
+    );
+    assert.notEqual(reg.size, 1, `register "${reg.name}" must not declare a byte count (1) -- the wire reports BITS, not bytes`);
+    assert.notEqual(reg.size, 2, `register "${reg.name}" must not declare a byte count (2) -- the wire reports BITS, not bytes`);
+  }
+});
+
+test("LIVE_REGISTER_FIXTURE_3_9: round-trips through a real 0x83 response frame and the real parseBuffer()", () => {
+  const decoded = decodeFixture(LIVE_REGISTER_FIXTURE_3_9);
+  assert.deepEqual(decoded, LIVE_REGISTER_FIXTURE_3_9, "decoding a real 0x83 frame built from the fixture must yield the identical {id, size, name} triples");
+});
+
+test("handleRegistersSet: an ordinary 8-bit register write (A=42) is accepted against a live-shaped catalog (THE BLOCKER)", async () => {
+  const { session } = makeFakeSession({
+    registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9),
+    registersSetReply: [{ id: 0, value: 42 }],
+  });
+  const result = await handleRegistersSet({ register: "A", value: 42 }, session, {} as never);
+  assert.equal(result.isError, false, `expected success, got: ${result.isError ? result.content[0]!.text : ""}`);
+  const payload = parseAnswer(result);
+  assert.equal(payload.register, "A");
+  assert.equal(payload.requestedValue, 42);
+  assert.equal(payload.observedValue, 42);
+});
+
+test("handleRegistersSet: a 16-bit register write (PC=0xffff) is accepted against a live-shaped catalog", async () => {
+  const { session } = makeFakeSession({
+    registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9),
+    registersSetReply: [{ id: 3, value: 0xffff }],
+  });
+  const result = await handleRegistersSet({ register: "PC", value: 0xffff }, session, {} as never);
+  assert.equal(result.isError, false, `expected success, got: ${result.isError ? result.content[0]!.text : ""}`);
+  const payload = parseAnswer(result);
+  assert.equal(payload.register, "PC");
+  assert.equal(payload.requestedValue, 0xffff);
+  assert.equal(payload.observedValue, 0xffff);
+});
+
+test("handleRegistersSet: out-of-range values still refuse at the correct per-width boundary (256 / 0x10000), naming the range not 'byte'", async () => {
+  const { session: session8 } = makeFakeSession({ registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9) });
+  const result8 = await handleRegistersSet({ register: "A", value: 256 }, session8, {} as never);
+  assert.equal(result8.isError, true);
+  assert.match(result8.content[0]!.text, /0\.\.0xff\b/, "an 8-bit register's refusal must name the range 0..0xff");
+
+  const { session: session16 } = makeFakeSession({ registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9) });
+  const result16 = await handleRegistersSet({ register: "PC", value: 0x10000 }, session16, {} as never);
+  assert.equal(result16.isError, true);
+  assert.match(result16.content[0]!.text, /0\.\.0xffff\b/, "a 16-bit register's refusal must name the range 0..0xffff");
+});
+
+test("handleRegistersSet: a flag-bit name ('N') refuses naming FL under the live-shaped catalog, mentioning bit 7", async () => {
+  const { session, sendCalls } = makeFakeSession({ registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9) });
+  const result = await handleRegistersSet({ register: "N", value: 1 }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /FL/, "the refusal must name FL -- this fixture's build's own status register");
+  assert.match(result.content[0]!.text, /bit 7/);
+  assert.equal(sendCalls.filter((c) => c.commandType === CommandType.RegistersSet).length, 0);
+});
+
+test("handleRegistersAvailable: reports each register's live-shaped width unchanged, under the field name sizeBits", async () => {
+  const { session } = makeFakeSession({ registersAvailable: decodeFixture(LIVE_REGISTER_FIXTURE_3_9) });
+  const result = await handleRegistersAvailable({}, session, {} as never);
+  assert.equal(result.isError, false);
+  const payload = parseAnswer(result);
+  const registers = payload.registers as Array<{ id: number; name: string; sizeBits: number }>;
+  assert.equal(registers.length, LIVE_REGISTER_FIXTURE_3_9.length);
+  for (const reg of registers) {
+    const expected = LIVE_REGISTER_FIXTURE_3_9.find((r) => r.id === reg.id);
+    assert.ok(expected, `unexpected register id ${reg.id} in the answer`);
+    assert.equal(reg.sizeBits, expected!.size, `register "${reg.name}" must report its wire-reported width unchanged under "sizeBits"`);
+  }
 });
