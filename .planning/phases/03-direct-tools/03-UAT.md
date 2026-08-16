@@ -1,14 +1,14 @@
 ---
-status: partial
+status: diagnosed
 phase: 03-direct-tools
 source: 03-01-SUMMARY.md, 03-02-SUMMARY.md, 03-03-SUMMARY.md, 03-04-SUMMARY.md, 03-05-SUMMARY.md, 03-06-SUMMARY.md, 03-07-SUMMARY.md, 03-08-SUMMARY.md, 03-09-SUMMARY.md, 03-10-SUMMARY.md, 03-11-SUMMARY.md, 03-12-SUMMARY.md, 03-13-SUMMARY.md
 started: 2026-08-15T06:28:31Z
-updated: 2026-08-15T08:05:00Z
+updated: 2026-08-16T18:40:00Z
 ---
 
 ## Current Test
 
-[testing paused -- 9 items outstanding, all blocked on live-emulator validation]
+[testing complete -- all 12 tests resolved; 4 gaps diagnosed, awaiting fix plans]
 
 ## Tests
 
@@ -201,9 +201,46 @@ evidence: |
 
 ### 11. Second Monitor Port Survives Respawn and Teardown (D-13)
 expected: A stock instance launches with `-remotemonitor` on a second broker-allocated port. After a crash-respawn or `vice_recycle`, the replacement instance still launches with stock argv (`-binarymonitor`, not `-mcpserver`) and still carries its `-remotemonitor` port. Repeatedly recycling does not permanently exhaust the port band.
-result: blocked
-blocked_by: other
-reason: "Requires launching, crashing and recycling real stock instances through the broker; live emulator validation not authorized this session."
+result: pass
+evidence: |
+  Driven live end-to-end against a REAL broker running the genuine stock binary. Started an
+  isolated second broker (VICE_BACKEND=stock, VICE_BIN=/usr/bin/x64sc -- the unpatched VICE 3.9
+  package build, VICE_BROKER_CONTROL_PORT=19513, VICE_BROKER_BASE_PORT=6900, its own --state-dir)
+  so the user's live fork broker on 19510/6600 was never touched. Confirmed untouched at teardown.
+
+  (a) LAUNCH. Warm-floor pass launched:
+        /usr/bin/x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6900
+                       -remotemonitor  -remotemonitoraddress ip4://127.0.0.1:6901
+      Both sockets verified genuinely LISTENing via `ss -ltnp` on the same pid -- the second
+      broker-allocated port is real, not just an argv string.
+
+  (b) CRASH-RESPAWN. `kill -9` on the emulator pid. The broker respawned with a NEW pid and
+      byte-identical stock argv, keeping BOTH the primary port (6900) and the SAME
+      remote-monitor port (6901) -- exactly deleteInstanceRecord()'s documented
+      "a RESPAWN is deliberately NOT a call site" contract. Both ports LISTENing again.
+
+  (c) RECYCLE. Acquired a grant over the real TCP control plane (op:acquire) -> port 6902 with
+      -remotemonitor on 6903, then issued three consecutive op:recycle calls. Every ack came back
+      outcome:"ok", vice_bin:"/usr/bin/x64sc", kill_stage:"sigterm", with epoch_before incrementing
+      2 -> 3 -> 4. Each replacement relaunched with stock argv and the SAME second port 6903.
+
+  (d) NO FORK-ARGV REGRESSION (the specific D-13 hazard). Across the whole session the broker log
+      contains ZERO occurrences of "mcpserver" -- a recycled stock instance never comes back
+      wearing the fork's launch argv.
+
+  (e) PORT BAND NOT EXHAUSTED (CR-02). Ran 6 full acquire -> recycle -> release churn cycles,
+      each on its own control connection (connection close = release = teardown). Every cycle was
+      granted port 6902 again, with 6903 as its remote-monitor port -- 12 launches on 6902/6903
+      total, zero drift upward. Had the blockedPorts leak still existed, cycle N would have marched
+      to 6904, 6906, 6908... Ports are genuinely handed back on teardown.
+
+incidental_finding: |
+  Spawning the stock 3.9 binary raised a modal VICE dialog: "Configuration file version mismatch
+  (is '3.10', expected '3.9')" -- both builds share $HOME/.config/vice/vicerc, and the fork 3.10
+  had written it. Host-environment collision from having two VICE versions installed, NOT a Phase 3
+  defect: the monitor sockets bound and served normally with the dialog up, and respawn/recycle were
+  unaffected. Re-ran the churn probe with XDG_CONFIG_HOME pointed at a scratch dir, which silences it.
+  Worth knowing for anyone else driving stock alongside the fork on one machine.
 
 ### 12. Backend Switch Is Per-Project and Reversible
 expected: Selecting the stock backend for a project makes Claude Code see only the 25 stock tools; switching back to the fork restores the full 62-tool surface, with no leftover state from the other backend.
@@ -259,11 +296,11 @@ incidental_finding: |
 ## Summary
 
 total: 12
-passed: 9
+passed: 10
 issues: 2
 pending: 0
 skipped: 0
-blocked: 1
+blocked: 0
 
 ## Gaps
 
