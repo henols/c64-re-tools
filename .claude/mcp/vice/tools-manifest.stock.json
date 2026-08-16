@@ -177,7 +177,7 @@
     },
     {
       "name": "vice_registers_available",
-      "description": "Stock-only, no fork counterpart -- the fork surface has no register-enumeration tool. Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name and byte size.",
+      "description": "Stock-only, no fork counterpart -- the fork surface has no register-enumeration tool. Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name, and width -- the width the emulator itself reports, in BITS (8 or 16 on a 6510), taken verbatim from REGISTERS_AVAILABLE's size byte.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -192,9 +192,9 @@
               "properties": {
                 "id": { "type": "number" },
                 "name": { "type": "string" },
-                "size": { "type": "number" }
+                "sizeBits": { "type": "number" }
               },
-              "required": ["id", "name", "size"]
+              "required": ["id", "name", "sizeBits"]
             }
           },
           "count": { "type": "number" },
