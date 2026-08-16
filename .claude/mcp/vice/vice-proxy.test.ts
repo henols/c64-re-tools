@@ -3806,27 +3806,117 @@ test("structural: no message quotes the launcher with a subcommand -- vice-launc
 // "vice-proxy:" is agent-visible tool-result `content` in every case in
 // this file EXCEPT when it is an argument to `console.error(...)` (stderr
 // only, never read by the model, and deliberately out of this todo's
-// scope). The check below is proximity-based (does "console.error(" appear,
-// modulo whitespace/newlines, immediately before the backtick?), matching
-// this suite's own existing regex-based structural-test idiom (e.g. the
-// DENY_LIST-membership checks above) rather than a full parse -- sufficient
-// because every console.error call site in this file already writes its
-// template literal as either `console.error(\`...\`)` on one line or
-// `console.error(\n    \`...\`)` on the next, with nothing else between the
-// open-paren and the backtick.
+// scope).
+//
+// Plan 03-15 task 3: the ORIGINAL rule here was proximity-based ("does
+// console.error( appear, modulo whitespace/newlines, within 40 chars
+// immediately before the backtick?"). Commit 1c87d16 broke it: it rewrote a
+// single-line `console.error(\`vice-proxy: ...\`)` call into a multi-line
+// ternary --
+//   console.error(
+//     COND
+//       ? `vice-proxy: ready, forwarding to ...`
+//       : `vice-proxy: ready, stock backend active ...`,
+//   );
+// -- so neither arm has `console.error(` within 40 chars of its own
+// backtick (the ternary's own condition and `?`/`:` tokens sit in between),
+// and a template literal on an earlier ternary arm also contains its own
+// parens, further defeating a fixed-width lookback. The detector was wrong,
+// not the source (planner decision, this plan's own objective) -- widening
+// it here, in the test, is the fix.
+//
+// THE NEW RULE (still a heuristic, not a full parse -- documented as one so
+// the next refactor that defeats it knows where to look): for each
+// `` `vice-proxy: `` match, compare the nearest PRECEDING `console.error(`
+// against the nearest PRECEDING agent-visible marker (`text:`, `content:`,
+// `isErrorText(`). The match is exempt only when `console.error(` is the
+// NEARER of the two -- i.e. no agent-visible marker sits between it and the
+// literal. This survives an arbitrarily long/multi-line console.error(...)
+// argument (the ternary above), while still catching a literal that comes
+// AFTER a marker (meaning some earlier console.error( on the page is not
+// actually this literal's own enclosing call).
+//
+// WHAT WOULD DEFEAT THIS: a `console.error(...)` call sitting textually
+// between an agent-visible marker and a `vice-proxy:` literal that is
+// actually part of THAT marker's own object (e.g. interleaved unrelated
+// console.error() noise between `text:` and its own template literal) would
+// wrongly exempt a real violation -- this file's own style (one call, one
+// literal, no interleaving) does not do this, but a future refactor could.
 // ---------------------------------------------------------------------------
-test("structural: no agent-visible template literal begins with the vice-proxy: prefix", () => {
-  const src = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+
+/**
+ * Finds every `` `vice-proxy: `` template-literal start in `src` that is
+ * NOT the argument of a `console.error(...)` call -- i.e. every
+ * agent-visible violation of the "vice-proxy: is stderr-only" invariant.
+ * Returns the list of source offsets (one per violation), empty when clean.
+ * Exported as a named function (not inlined in the test body) so the three
+ * control assertions below can exercise it directly against synthetic
+ * snippets, proving the widened rule is neither vacuous nor over-broad.
+ */
+function viceProxyIdentityViolations(src: string): number[] {
   const violations: number[] = [];
   const pattern = /`vice-proxy:/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(src))) {
     const idx = m.index;
-    const before = src.slice(Math.max(0, idx - 40), idx);
-    if (!/console\.error\(\s*$/.test(before)) {
+    const before = src.slice(0, idx);
+    const lastConsoleError = before.lastIndexOf("console.error(");
+    const lastMarker = Math.max(
+      before.lastIndexOf("text:"),
+      before.lastIndexOf("content:"),
+      before.lastIndexOf("isErrorText(")
+    );
+    // Exempt only when console.error( is the NEARER of the two preceding
+    // landmarks (or no agent-visible marker precedes this literal at all).
+    const exempt = lastConsoleError !== -1 && lastConsoleError > lastMarker;
+    if (!exempt) {
       violations.push(idx);
     }
   }
+  return violations;
+}
+
+test("structural: no agent-visible template literal begins with the vice-proxy: prefix", () => {
+  // Positive control: a real agent-visible violation (the literal shape a
+  // tool-result handler actually returns) MUST be flagged -- proves the
+  // widened rule still catches the thing this test exists to catch.
+  const positiveControl = 'return { content: [{ type: "text", text: `vice-proxy: boom` }] };';
+  assert.equal(
+    viceProxyIdentityViolations(positiveControl).length,
+    1,
+    "a vice-proxy: literal reached through content/text must still be flagged"
+  );
+
+  // Negative control: the EXACT ternary shape from vice-proxy.ts (the one
+  // that broke the old proximity rule) must NOT be flagged -- both arms are
+  // console.error(...)'s own argument, just multi-line.
+  const negativeControl = `console.error(
+  ACTIVE_BACKEND.backend === "fork"
+    ? \`vice-proxy: ready, forwarding to \${activeInstance().url} (port \${activeInstance().port})\`
+    : \`vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: \${ACTIVE_BACKEND.binPath})\`,
+);`;
+  assert.equal(
+    viceProxyIdentityViolations(negativeControl).length,
+    0,
+    "the real multi-line console.error(...) ternary must not be flagged"
+  );
+
+  // Regression control: a console.error(...) call EARLIER on the page must
+  // not exempt a LATER, unrelated agent-visible literal -- proves the
+  // "nearest preceding console.error(" comparison does not leak forward
+  // past the call it actually belongs to.
+  const regressionControl = `console.error(\`something unrelated\`);
+return { content: [{ type: "text", text: \`vice-proxy: leaked\` }] };`;
+  assert.equal(
+    viceProxyIdentityViolations(regressionControl).length,
+    1,
+    "an earlier, unrelated console.error( call must not exempt a later agent-visible vice-proxy: literal"
+  );
+
+  // The real detector, run over the real source, with the same failure
+  // message the original (narrower) rule used.
+  const src = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+  const violations = viceProxyIdentityViolations(src);
   assert.deepEqual(
     violations,
     [],
