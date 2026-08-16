@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 03-direct-tools
 source: 03-01-SUMMARY.md, 03-02-SUMMARY.md, 03-03-SUMMARY.md, 03-04-SUMMARY.md, 03-05-SUMMARY.md, 03-06-SUMMARY.md, 03-07-SUMMARY.md, 03-08-SUMMARY.md, 03-09-SUMMARY.md, 03-10-SUMMARY.md, 03-11-SUMMARY.md, 03-12-SUMMARY.md, 03-13-SUMMARY.md
 started: 2026-08-15T06:28:31Z
-updated: 2026-08-16T18:40:00Z
+updated: 2026-08-16T21:30:00Z
 ---
 
 ## Current Test
@@ -305,7 +305,8 @@ blocked: 0
 ## Gaps
 
 - truth: "vice_registers_set writes a register and echoes back the value the emulator confirmed (DIRECT-02)"
-  status: failed
+  status: resolved
+  resolved_by: "03-14 (sizeBits rename + width check derived from it, wire-shaped LIVE_REGISTER_FIXTURE_3_9 regression test) and 03-16 (live re-verification). Live against /usr/bin/x64sc: vice_registers_set({register:\"A\", value:42}) -> observedValue 42, confirmed by an independent vice_registers_get; PC -> 0xC000 echoed 49152; value 256 on A still refused naming 0..0xff. The individual flag-bit refusal path fired live for all seven flags (N/V/B/D/I/Z/C), each naming the real status register FL and its own bit position -- the path this probe never reached."
   reason: "Live-confirmed against genuine stock VICE 3.9: vice_registers_set({register:\"A\", value:42}) -- an ordinary, valid write -- was refused: \"register \\\"A\\\" has an unexpected declared size (8 byte(s)) -- only 1- or 2-byte registers are supported\""
   severity: blocker
   test: 5
@@ -319,7 +320,8 @@ blocked: 0
     - "Once fixed, live-verify the individual-flag-bit refusal path (N/V/B/D/I/Z/C), which was never reached in this probe since every call hit the size-check branch first"
 
 - truth: "The full test suite runs to completion and passes from a clean tree"
-  status: failed
+  status: resolved
+  resolved_by: "03-15. Both verified open-before-try sites fixed, plus an after() safety-net registry (OPEN_SERVERS/OPEN_CHILDREN) so a leak reports instead of hanging. Nine clean-env-only failures now skip with named reasons, and the README documents the two required env vars. Verified: `env -u CONTAINER_WORKSPACE_PATH -u HOST_WORKSPACE_PATH timeout 600 npm test` reaches its summary line every time (never exit 124). Orchestrator post-merge gates on the primary checkout: 1097/0 fail, then 1099/0 fail."
   reason: "User reported: npm test never terminates on a bare host -- runs all 1090 tests then hangs indefinitely with no diagnostic"
   severity: major
   test: 1
@@ -334,7 +336,8 @@ blocked: 0
     - "Audit every startStandInServer()/startProxy() call site in vice-proxy.test.ts for the same open-before-try shape"
 
 - truth: "Every agent-visible message in vice-proxy.ts uses the 'vice:' identity, enforced by a structural test"
-  status: failed
+  status: resolved
+  resolved_by: "03-15 task 3. Resolved on the detector side, not by editing the source: the identity detector was widened with a nearest-marker rule so it sees through a multi-line console.error() ternary argument. Loosened with proof rather than until-green -- positive, negative and regression controls were added, so it still catches a real agent-visible violation. vice-proxy.ts is byte-for-byte unmodified (git diff --stat confirms)."
   reason: "Test 1017 fails in both host and CI-env runs -- two `vice-proxy:` template literals at vice-proxy.ts:3275-3276"
   severity: minor
   test: 1
@@ -348,7 +351,8 @@ blocked: 0
     - "Decide which side is wrong: either switch the two literals to the 'vice:' identity, or widen the detector to recognise a literal anywhere inside a console.error() argument list"
 
 - truth: "CI validates the tree before a phase is verified"
-  status: failed
+  status: resolved
+  resolved_by: "03-17 (local CI-equivalence run, 6/6 build-job steps accounted for) and 03-18 (real CI run via the developer-authorised pr-branch route). GitHub Actions run https://github.com/henols/c64-re-tools/actions/runs/31972421757 against sha f040d79efdfe02fc5a22a77589052c138f5cdc20 -- conclusion: success, build job green. publish-npm, release and release-on-merge all skipped, so no npm publish occurred; origin/main untouched and no new tag created. PR #9 (ci/phase-03-validation -> main) left open, unmerged. Note: the ahead-count recorded here (214) was stale; it was 237 at execution time."
   reason: "Local main is 214 commits ahead of origin/main; last CI run was 2026-08-11 (commit 68b0a79), predating all Phase 01/02/03 work"
   severity: major
   test: 1
