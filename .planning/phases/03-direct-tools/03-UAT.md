@@ -19,7 +19,9 @@ reported: "npm test never terminates on a bare host (hangs indefinitely after th
 severity: major
 detail: |
   Verified green: `npx tsc --noEmit` clean; `node build.ts` -> zero git drift in
-  `resources/*.mjs`; `tools-manifest.stock.json` = 25 tools; `tools-manifest.json` = 62 tools.
+  `resources/*.mjs`; `tools-manifest.stock.json` = 25 tools; `tools-manifest.json` = 62 raw
+  entries (see test 12's evidence for why the live-advertised fork count is actually 61, a
+  pre-existing distinction unrelated to this issue).
 
   Verified red, three distinct problems:
 
@@ -78,6 +80,9 @@ evidence: |
   ok 223 (fork backend returns the exact byte-identical pre-Phase-2 argv),
   ok 224 (VICE_ARGS override unchanged for both backends), and
   ok 228 (stock backend without a remoteMonitorPort returns byte-identical pre-plan argv, D-13).
+  Note: 62 is the raw manifest FILE's array length, not the live tools/list count a client sees
+  (61) -- see test 12's evidence for the reconciliation. Both are correct for what they measure;
+  D-16's own regression test asserts the file-length invariant, which is what this test checks.
 
 ### 4. Memory Read/Write on Stock Backend (DIRECT-01, DIRECT-09)
 expected: Against a stock (`-binarymonitor`) instance, `vice_memory_read` returns the requested bytes, `vice_memory_write` writes them back readably, a default read of an I/O register like $D019 does NOT trigger side effects (sidefx byte 0x00), and `vice_memory_banks` enumerates the connected build's real bank list.
@@ -129,18 +134,53 @@ reason: "Requires launching, crashing and recycling real stock instances through
 
 ### 12. Backend Switch Is Per-Project and Reversible
 expected: Selecting the stock backend for a project makes Claude Code see only the 25 stock tools; switching back to the fork restores the full 62-tool surface, with no leftover state from the other backend.
-result: blocked
-blocked_by: other
-reason: "Requires two live Claude Code MCP sessions (one per backend) to observe the advertised tool list change; live emulator validation not authorized this session."
+result: pass
+evidence: |
+  Driven live against a real host broker (started by the user via tools/vice-launcher.sh on a
+  non-default control port, VICE_BROKER_CONTROL_PORT=19511, after an unrelated pre-existing
+  broker for a different, now-deleted worktree was found squatting the default port 19510 --
+  see the incidental finding below). Spawned vice-proxy.ts three times as a real child process,
+  speaking real MCP stdio JSON-RPC (initialize + tools/list), exactly as vice-proxy.test.ts's own
+  harness does:
+
+    1. VICE_BACKEND=fork  -> 61 tools advertised
+    2. VICE_BACKEND=stock -> 28 tools advertised
+    3. VICE_BACKEND=fork  -> 61 tools, byte-identical tool-name array to run 1
+
+  Run 3 being byte-identical to run 1 confirms full reversibility with no leftover state, and
+  .vice-supervisor/backend.json (the auto-probe cache) was untouched by either explicit
+  VICE_BACKEND override across all three runs -- switching leaves no residue.
+
+  This also corrects the "advertises 62 tools" wording used in tests 1 and 3: 62 is the raw
+  tools-manifest.json array length (a pre-existing artifact since the tree's first commit,
+  b0975f4 -- 4 of those 62 entries are non-tool protocol-method placeholders --
+  "initialize"/"tools_list"/"tools_call"/"notifications_initialized" -- that the underlying
+  MCP layer silently declines to register as callable tools). The actual live-advertised fork
+  surface is 58 real vice_* tools. Three backend-agnostic derived tools (vice_diagnose,
+  vice_recycle, vice_result_continue, defined in vice-proxy.ts itself, never in either manifest
+  file) layer on top of BOTH backends identically: 58+3=61 for fork, 25+3=28 for stock. Not a
+  Phase 3 regression -- the 4 placeholder entries predate this milestone entirely and BACK-02's
+  own gate (fork argv/manifest-file byte-identity) still holds exactly as tested in test 3.
+
+incidental_finding: |
+  Launching the broker on the host (per the user's own attempt) hit a FATAL: control port 19510
+  already held by a live, unrelated broker (pid 631762, up 1d15h+, --repo-root pointing at a
+  Claude Code agent worktree whose files have since been deleted) that was NOT idle -- it had a
+  real x64sc child spawned ~90s before discovery, implying another session was actively using it.
+  Not touched. Resolved per the codebase's own documented escape hatch (D-18: two brokers on
+  different control ports are two brokers, by design) via VICE_BROKER_CONTROL_PORT=19511. Not
+  filed as a UAT gap since it is host-environment state predating this session, not a defect in
+  Phase 3's code -- worth the user's own cleanup attention separately (an orphaned broker from a
+  deleted worktree, still live).
 
 ## Summary
 
 total: 12
-passed: 2
+passed: 3
 issues: 1
 pending: 0
 skipped: 0
-blocked: 9
+blocked: 8
 
 ## Gaps
 
