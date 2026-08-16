@@ -184,7 +184,7 @@ Notes:
   3. A user can pause a freely-running emulator on demand and resume it, step instructions, and execute until return — with pause and resume idempotent, so an agent retry is a no-op rather than a second halt.
   4. A user can reset the machine, autostart a PRG or disk image, attach and detach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend.
 
-**Plans**: 13 plans in 4 waves
+**Plans**: 13 plans in 4 waves, plus 5 gap-closure plans in 4 waves (03-UAT.md)
 Plans:
 **Wave 1**
 
@@ -210,6 +210,14 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 03-13-PLAN.md — Wave 4: the 25-entry stock manifest with an `outputSchema` per tool, and the per-handler answer-conformance harness
+
+**Gap closure** *(from 03-UAT.md — run with `/gsd-execute-phase 03 --gaps-only`)*
+
+- [ ] 03-14-PLAN.md — Gap wave 1: BLOCKER — `vice_registers_set` refused every real register (REGISTERS_AVAILABLE reports width in BITS, not bytes); fix plus a wire-shaped regression fixture
+- [ ] 03-15-PLAN.md — Gap wave 1: MAJOR — `npm test` hung forever on a bare host (listener leaked before its try); plus env-gated skips with named reasons and the widened `vice-proxy:` identity detector
+- [ ] 03-16-PLAN.md — Gap wave 2: live re-verification of the register write and the never-reached flag-bit refusal against genuine stock VICE 3.9 (`/usr/bin/x64sc`), as a committed opt-in gate
+- [ ] 03-17-PLAN.md — Gap wave 3: MAJOR — CI has not validated the tree for 214 commits; local CI-equivalence run plus a blocking authorisation decision (a push to main auto-publishes both npm packages)
+- [ ] 03-18-PLAN.md — Gap wave 4: execute the authorised CI route and record the run URL, sha and conclusion
 
 Notes:
 
