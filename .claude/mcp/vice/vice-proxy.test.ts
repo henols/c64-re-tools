@@ -29,7 +29,7 @@
 // cleanup has to play that same role or the child is left running,
 // hanging the file on a dangling stdio pipe. No assertion anywhere in
 // this file was altered by this change.
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -64,6 +64,17 @@ import { startControlListener, newControlToken, type AcquireOutcome, type Recycl
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_PATH = join(HERE, "vice-proxy.ts");
+
+// Plan 03-15 task 2: env-gated skip. A handful of tests below only exercise
+// real container-path-translation behaviour when CONTAINER_WORKSPACE_PATH
+// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
+// them) -- on a bare host with neither set they used to fail anonymously
+// (an assertion error with no hint of why) instead of skipping with a named
+// reason. Local to this file by design (see plan -- no shared module, and
+// this list does not belong in test-gate.mjs either).
+const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
+const WORKSPACE_ENV_SKIP_REASON =
+  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
 
 // ---------------------------------------------------------------------------
 // Shared test-local types. vice-proxy.ts exports nothing (it is a stdio
@@ -109,6 +120,52 @@ interface StandInServer {
  * takes -- `args` stays `any` for the same reason `params`/`result` do
  * above (each tool's own argument shape differs per fixture). */
 type RespondFn = (name: string, args: any) => any;
+
+// ---------------------------------------------------------------------------
+// Plan 03-15 task 1 safety net. WHY this exists: the 2026-08-16 UAT hang --
+// two tests (see "containerize: a loopback grant url..." and "containerize:
+// a host-rooted grant epoch_file..." below) called startStandInServer()/
+// listenOn() BEFORE their own `try`, then threw on a precondition assertion.
+// `finally { server.close() }` never ran, the orphaned LISTEN socket kept
+// node's event loop alive, and `npm test` never reached its summary line --
+// no diagnostic, just silence. Task 1(b) fixed those two sites directly by
+// moving acquisition inside `try`; THIS registry is the net underneath that
+// fix, not a replacement for it -- it exists so that if a FUTURE test
+// reintroduces the same open-before-try shape, the suite still terminates
+// (with a loud, attributable warning) instead of hanging again with no
+// evidence. Do NOT treat a warning from this net as "handled" -- it means
+// some test's own teardown is broken and that test already failed on its
+// own merits; fix the leaking test, don't lean on the net.
+// ---------------------------------------------------------------------------
+const OPEN_SERVERS = new Set<Server | NetServer>();
+const OPEN_CHILDREN = new Set<ChildProcessWithoutNullStreams>();
+
+after(() => {
+  let closedServers = 0;
+  let killedChildren = 0;
+  for (const server of OPEN_SERVERS) {
+    if (server.listening) {
+      (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+      server.close();
+      closedServers++;
+    }
+  }
+  OPEN_SERVERS.clear();
+  for (const child of OPEN_CHILDREN) {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      killedChildren++;
+    }
+  }
+  OPEN_CHILDREN.clear();
+  if (closedServers > 0 || killedChildren > 0) {
+    console.error(
+      `vice-proxy.test: after() force-closed ${closedServers} leaked server(s) and killed ${killedChildren} ` +
+        `leaked child(ren) -- a test threw before its own teardown ran; this is the net, not the fix -- ` +
+        `find and repair that test's try/finally shape.`
+    );
+  }
+});
 
 /**
  * A minimal in-process stand-in for the host VICE MCP server. Answers
@@ -161,6 +218,8 @@ function startStandInServer(): StandInServer {
       );
     });
   });
+  OPEN_SERVERS.add(server);
+  server.once("close", () => OPEN_SERVERS.delete(server));
   return { server, requests };
 }
 
@@ -211,6 +270,8 @@ function startProxy(env: Record<string, string>): ProxyHandle {
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"] as const,
   });
+  OPEN_CHILDREN.add(child);
+  child.once("exit", () => OPEN_CHILDREN.delete(child));
 
   const messages: JsonRpcMessage[] = [];
   let consumed = 0;
@@ -1687,7 +1748,7 @@ test("three states: each unreachable shape gets its own message and fix", async 
 // --name-only -- .claude/skills/devcontainer-host-path`).
 // -----------------------------------------------------------------------
 
-test("path translation: container paths cannot reach the host", async () => {
+test("path translation: container paths cannot reach the host", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const { server, requests } = startStandInServer();
   const port = await listen(server);
   const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
@@ -1800,7 +1861,7 @@ test("path translation: container paths cannot reach the host", async () => {
 // pin the narrower residual so it cannot silently widen back.
 // -----------------------------------------------------------------------
 
-test("path translation: relative paths resolve for declared path arguments only", async () => {
+test("path translation: relative paths resolve for declared path arguments only", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const { server, requests } = startStandInServer();
   const port = await listen(server);
   const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
@@ -2771,25 +2832,35 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-url-"));
   const eth0 = firstNonInternalIPv4();
   assert.ok(eth0, "this environment must expose a non-internal IPv4 address for this test to be meaningful");
-  const { server } = startStandInServer();
-  const stubPort = await listenOn(server, eth0);
-
-  const proxy = startProxy({
-    VICE_POOL_DIR: dir,
-    VICE_MCP_HOST: eth0, // the alias this test's rewrite must land on
-    VICE_EPOCH_FILE: join(dir, "epoch.json"),
-    // quick-260805-9ha deviation (Rule 3): VICE_MCP_HOST above governs the
-    // DATA-plane alias this test is actually about (the grant url rewrite);
-    // it is ALSO resolveControlTarget()'s default source, which would now
-    // send the CONTROL-plane connect to eth0 too -- but startControlBroker()
-    // below binds its real listener to 127.0.0.1 only, so that connect
-    // would fail with nothing listening on eth0. This override keeps the
-    // control-plane dial on loopback (where the listener actually is)
-    // without touching the eth0 alias the rest of this test exercises.
-    VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
-  });
+  // Plan 03-15 task 1(b): server/proxy are declared nullable BEFORE the try
+  // and only assigned as each is actually created INSIDE it -- previously
+  // startStandInServer()/listenOn()/startProxy() ran before this try, so a
+  // throw from any of them (listenOn() rejects on a bind error; this is the
+  // same open-before-try shape as the epoch-drift test below) leaked the
+  // listener/child with nothing to close it. This is a lifetime fix only --
+  // no assertion or message text changed.
+  let server: Server | null = null;
+  let proxy: ProxyHandle | null = null;
   let controlServer: NetServer | null = null;
   try {
+    const standIn = startStandInServer();
+    server = standIn.server;
+    const stubPort = await listenOn(server, eth0);
+
+    proxy = startProxy({
+      VICE_POOL_DIR: dir,
+      VICE_MCP_HOST: eth0, // the alias this test's rewrite must land on
+      VICE_EPOCH_FILE: join(dir, "epoch.json"),
+      // quick-260805-9ha deviation (Rule 3): VICE_MCP_HOST above governs the
+      // DATA-plane alias this test is actually about (the grant url rewrite);
+      // it is ALSO resolveControlTarget()'s default source, which would now
+      // send the CONTROL-plane connect to eth0 too -- but startControlBroker()
+      // below binds its real listener to 127.0.0.1 only, so that connect
+      // would fail with nothing listening on eth0. This override keeps the
+      // control-plane dial on loopback (where the listener actually is)
+      // without touching the eth0 alias the rest of this test exercises.
+      VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
+    });
     await handshake(proxy);
     // A loopback url on the stub's port -- nothing listens on loopback at
     // this port (the stub is bound ONLY to eth0), so a successful response
@@ -2820,42 +2891,55 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
 
     assert.match(proxy.stderr.join(""), /containerized grant/, "the one translation stderr line must be emitted");
   } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolveClose) => server.close(resolveClose));
+    if (proxy) proxy.child.kill("SIGKILL");
+    if (server) await new Promise((resolveClose) => server!.close(resolveClose));
     if (controlServer) await new Promise((resolveClose) => controlServer!.close(resolveClose));
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift is actually detected, and the translation line names all three fields", async () => {
+test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift is actually detected, and the translation line names all three fields", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-epoch-"));
   const eth0 = firstNonInternalIPv4();
   assert.ok(eth0, "this environment must expose a non-internal IPv4 address for this test to be meaningful");
-  const { server } = startStandInServer();
-  const stubPort = await listenOn(server, eth0);
-
-  // A REAL epoch file inside the container workspace's own .vice-supervisor/
-  // (gitignored) -- proves the path inverse is actually READ, not merely
-  // computed.
-  const epochContainerDir = join(repoRoot(), ".vice-supervisor", `test-ccn-${process.pid}-${Date.now()}`);
-  mkdirSync(epochContainerDir, { recursive: true });
-  const epochContainerFile = join(epochContainerDir, "epoch.json");
-  writeFileSync(epochContainerFile, JSON.stringify({ epoch: 1, pid: 4242, spawned_at: new Date().toISOString() }), "utf8");
-  const epochHostPath = hostPath(epochContainerFile);
-  assert.notEqual(epochHostPath, epochContainerFile, "hostPath() must actually translate in this environment for this test to be meaningful");
-
-  const proxy = startProxy({
-    VICE_POOL_DIR: dir,
-    VICE_MCP_HOST: eth0,
-    // Deliberately NOT setting VICE_EPOCH_FILE -- the granted epoch_file
-    // must be the only path in play.
-    // quick-260805-9ha deviation (Rule 3): see the sibling loopback-url test
-    // above for why this is needed alongside VICE_MCP_HOST -- the control
-    // listener startControlBroker() binds below is loopback-only.
-    VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
-  });
+  // Plan 03-15 task 1(b): this is the verified 2026-08-16 UAT hang site --
+  // startStandInServer()/listenOn() ran BEFORE this try, the epoch dir
+  // mkdirSync/writeFileSync ran BEFORE this try, and the hostPath()
+  // precondition assertion (which throws outside a container) ran BEFORE
+  // this try too. Any one of those throwing left the LISTEN socket orphaned
+  // with nothing to close it, keeping node's event loop alive forever.
+  // server/proxy/epochContainerDir are now declared nullable before the try
+  // and assigned only as each resource is actually created INSIDE it. This
+  // is a lifetime fix only -- no assertion or message text changed.
+  let server: Server | null = null;
+  let proxy: ProxyHandle | null = null;
+  let epochContainerDir: string | null = null;
   let controlServer: NetServer | null = null;
   try {
+    const standIn = startStandInServer();
+    server = standIn.server;
+    const stubPort = await listenOn(server, eth0);
+
+    // A REAL epoch file inside the container workspace's own .vice-supervisor/
+    // (gitignored) -- proves the path inverse is actually READ, not merely
+    // computed.
+    epochContainerDir = join(repoRoot(), ".vice-supervisor", `test-ccn-${process.pid}-${Date.now()}`);
+    mkdirSync(epochContainerDir, { recursive: true });
+    const epochContainerFile = join(epochContainerDir, "epoch.json");
+    writeFileSync(epochContainerFile, JSON.stringify({ epoch: 1, pid: 4242, spawned_at: new Date().toISOString() }), "utf8");
+    const epochHostPath = hostPath(epochContainerFile);
+    assert.notEqual(epochHostPath, epochContainerFile, "hostPath() must actually translate in this environment for this test to be meaningful");
+
+    proxy = startProxy({
+      VICE_POOL_DIR: dir,
+      VICE_MCP_HOST: eth0,
+      // Deliberately NOT setting VICE_EPOCH_FILE -- the granted epoch_file
+      // must be the only path in play.
+      // quick-260805-9ha deviation (Rule 3): see the sibling loopback-url test
+      // above for why this is needed alongside VICE_MCP_HOST -- the control
+      // listener startControlBroker() binds below is loopback-only.
+      VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
+    });
     await handshake(proxy);
     const acquired = await startControlBroker(dir, {
       onAcquire: async () => ({
@@ -2895,11 +2979,11 @@ test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift i
     );
     assert.match(second.result.content[0].text, /epoch drift/i);
   } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolveClose) => server.close(resolveClose));
+    if (proxy) proxy.child.kill("SIGKILL");
+    if (server) await new Promise((resolveClose) => server!.close(resolveClose));
     if (controlServer) await new Promise((resolveClose) => controlServer!.close(resolveClose));
     rmSync(dir, { recursive: true, force: true });
-    rmSync(epochContainerDir, { recursive: true, force: true });
+    if (epochContainerDir) rmSync(epochContainerDir, { recursive: true, force: true });
   }
 });
 
@@ -3722,27 +3806,117 @@ test("structural: no message quotes the launcher with a subcommand -- vice-launc
 // "vice-proxy:" is agent-visible tool-result `content` in every case in
 // this file EXCEPT when it is an argument to `console.error(...)` (stderr
 // only, never read by the model, and deliberately out of this todo's
-// scope). The check below is proximity-based (does "console.error(" appear,
-// modulo whitespace/newlines, immediately before the backtick?), matching
-// this suite's own existing regex-based structural-test idiom (e.g. the
-// DENY_LIST-membership checks above) rather than a full parse -- sufficient
-// because every console.error call site in this file already writes its
-// template literal as either `console.error(\`...\`)` on one line or
-// `console.error(\n    \`...\`)` on the next, with nothing else between the
-// open-paren and the backtick.
+// scope).
+//
+// Plan 03-15 task 3: the ORIGINAL rule here was proximity-based ("does
+// console.error( appear, modulo whitespace/newlines, within 40 chars
+// immediately before the backtick?"). Commit 1c87d16 broke it: it rewrote a
+// single-line `console.error(\`vice-proxy: ...\`)` call into a multi-line
+// ternary --
+//   console.error(
+//     COND
+//       ? `vice-proxy: ready, forwarding to ...`
+//       : `vice-proxy: ready, stock backend active ...`,
+//   );
+// -- so neither arm has `console.error(` within 40 chars of its own
+// backtick (the ternary's own condition and `?`/`:` tokens sit in between),
+// and a template literal on an earlier ternary arm also contains its own
+// parens, further defeating a fixed-width lookback. The detector was wrong,
+// not the source (planner decision, this plan's own objective) -- widening
+// it here, in the test, is the fix.
+//
+// THE NEW RULE (still a heuristic, not a full parse -- documented as one so
+// the next refactor that defeats it knows where to look): for each
+// `` `vice-proxy: `` match, compare the nearest PRECEDING `console.error(`
+// against the nearest PRECEDING agent-visible marker (`text:`, `content:`,
+// `isErrorText(`). The match is exempt only when `console.error(` is the
+// NEARER of the two -- i.e. no agent-visible marker sits between it and the
+// literal. This survives an arbitrarily long/multi-line console.error(...)
+// argument (the ternary above), while still catching a literal that comes
+// AFTER a marker (meaning some earlier console.error( on the page is not
+// actually this literal's own enclosing call).
+//
+// WHAT WOULD DEFEAT THIS: a `console.error(...)` call sitting textually
+// between an agent-visible marker and a `vice-proxy:` literal that is
+// actually part of THAT marker's own object (e.g. interleaved unrelated
+// console.error() noise between `text:` and its own template literal) would
+// wrongly exempt a real violation -- this file's own style (one call, one
+// literal, no interleaving) does not do this, but a future refactor could.
 // ---------------------------------------------------------------------------
-test("structural: no agent-visible template literal begins with the vice-proxy: prefix", () => {
-  const src = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+
+/**
+ * Finds every `` `vice-proxy: `` template-literal start in `src` that is
+ * NOT the argument of a `console.error(...)` call -- i.e. every
+ * agent-visible violation of the "vice-proxy: is stderr-only" invariant.
+ * Returns the list of source offsets (one per violation), empty when clean.
+ * Exported as a named function (not inlined in the test body) so the three
+ * control assertions below can exercise it directly against synthetic
+ * snippets, proving the widened rule is neither vacuous nor over-broad.
+ */
+function viceProxyIdentityViolations(src: string): number[] {
   const violations: number[] = [];
   const pattern = /`vice-proxy:/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(src))) {
     const idx = m.index;
-    const before = src.slice(Math.max(0, idx - 40), idx);
-    if (!/console\.error\(\s*$/.test(before)) {
+    const before = src.slice(0, idx);
+    const lastConsoleError = before.lastIndexOf("console.error(");
+    const lastMarker = Math.max(
+      before.lastIndexOf("text:"),
+      before.lastIndexOf("content:"),
+      before.lastIndexOf("isErrorText(")
+    );
+    // Exempt only when console.error( is the NEARER of the two preceding
+    // landmarks (or no agent-visible marker precedes this literal at all).
+    const exempt = lastConsoleError !== -1 && lastConsoleError > lastMarker;
+    if (!exempt) {
       violations.push(idx);
     }
   }
+  return violations;
+}
+
+test("structural: no agent-visible template literal begins with the vice-proxy: prefix", () => {
+  // Positive control: a real agent-visible violation (the literal shape a
+  // tool-result handler actually returns) MUST be flagged -- proves the
+  // widened rule still catches the thing this test exists to catch.
+  const positiveControl = 'return { content: [{ type: "text", text: `vice-proxy: boom` }] };';
+  assert.equal(
+    viceProxyIdentityViolations(positiveControl).length,
+    1,
+    "a vice-proxy: literal reached through content/text must still be flagged"
+  );
+
+  // Negative control: the EXACT ternary shape from vice-proxy.ts (the one
+  // that broke the old proximity rule) must NOT be flagged -- both arms are
+  // console.error(...)'s own argument, just multi-line.
+  const negativeControl = `console.error(
+  ACTIVE_BACKEND.backend === "fork"
+    ? \`vice-proxy: ready, forwarding to \${activeInstance().url} (port \${activeInstance().port})\`
+    : \`vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: \${ACTIVE_BACKEND.binPath})\`,
+);`;
+  assert.equal(
+    viceProxyIdentityViolations(negativeControl).length,
+    0,
+    "the real multi-line console.error(...) ternary must not be flagged"
+  );
+
+  // Regression control: a console.error(...) call EARLIER on the page must
+  // not exempt a LATER, unrelated agent-visible literal -- proves the
+  // "nearest preceding console.error(" comparison does not leak forward
+  // past the call it actually belongs to.
+  const regressionControl = `console.error(\`something unrelated\`);
+return { content: [{ type: "text", text: \`vice-proxy: leaked\` }] };`;
+  assert.equal(
+    viceProxyIdentityViolations(regressionControl).length,
+    1,
+    "an earlier, unrelated console.error( call must not exempt a later agent-visible vice-proxy: literal"
+  );
+
+  // The real detector, run over the real source, with the same failure
+  // message the original (narrower) rule used.
+  const src = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+  const violations = viceProxyIdentityViolations(src);
   assert.deepEqual(
     violations,
     [],
@@ -4482,7 +4656,7 @@ function healthyEvidenceRespond(overrides: HealthyEvidenceOverrides = {}): Respo
   };
 }
 
-test("vice_recycle: a healthy capture produces a full evidence object -- bracket, registers, checkpoints, IRQ handler and a translated screenshot path", async () => {
+test("vice_recycle: a healthy capture produces a full evidence object -- bracket, registers, checkpoints, IRQ handler and a translated screenshot path", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-recycle-evidence-healthy-"));
   const evidenceDir = tmpWorkspaceIncidentsDir();
   const respond = healthyEvidenceRespond({

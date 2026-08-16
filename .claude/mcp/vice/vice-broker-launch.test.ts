@@ -28,6 +28,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 const LAUNCHER = join(HERE, "resources", "vice-launcher.sh");
 
+// Plan 03-15 task 2: env-gated skip. The four container-guard tests below
+// only exercise the real in-container refusal path when CONTAINER_WORKSPACE_PATH
+// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
+// them) -- without them they used to fail anonymously instead of skipping
+// with a named reason. Local to this file by design (see plan -- no shared
+// module, and this list does not belong in test-gate.mjs either).
+const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
+const WORKSPACE_ENV_SKIP_REASON =
+  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+
 /** Copies EVERY emitted host-bound artifact (the broker plus its sibling
  * .mjs modules -- container-guard.mjs, broker-state.mjs, etc.) into a fresh
  * temp directory with nothing else in it -- in particular, no node_modules
@@ -370,7 +380,7 @@ test("missing --repo-root exits non-zero with a usage line, writing nothing, nev
 // artifact DIRECTLY, bypassing vice-launcher.sh entirely, closing the
 // invocation-scoped hole recorded in RE-FINDINGS.md 2026-08-03.
 
-test("running the emitted broker artifact directly (no launcher) inside this container, with no escape hatch, exits 2 and names the fired signals", () => {
+test("running the emitted broker artifact directly (no launcher) inside this container, with no escape hatch, exits 2 and names the fired signals", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
   const deployDir = freshDeployDir();
   try {
     const result = runBrokerSync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")]);
@@ -382,7 +392,7 @@ test("running the emitted broker artifact directly (no launcher) inside this con
   }
 });
 
-test("running the emitted broker artifact directly (no launcher) with --check-container exits 3 and prints one report line per signal", () => {
+test("running the emitted broker artifact directly (no launcher) with --check-container exits 3 and prints one report line per signal", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
   const deployDir = freshDeployDir();
   try {
     const result = runBrokerSync(deployDir, ["--check-container"]);
@@ -400,13 +410,13 @@ test("bash -n exits 0 for the launcher (syntax check only, no execution)", () =>
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("running the launcher inside this container exits 2 (container guard refusal, now answered by the Node entry point)", () => {
+test("running the launcher inside this container exits 2 (container guard refusal, now answered by the Node entry point)", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
   const result = spawnSync(LAUNCHER, [], { encoding: "utf8" });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /refuses to run inside a container/);
 });
 
-test("running the launcher with --check-container exits 3 (container verdict, reporting only, now answered by the Node entry point)", () => {
+test("running the launcher with --check-container exits 3 (container verdict, reporting only, now answered by the Node entry point)", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
   const result = spawnSync(LAUNCHER, ["--check-container"], { encoding: "utf8" });
   assert.equal(result.status, 3);
 });

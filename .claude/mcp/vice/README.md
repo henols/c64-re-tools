@@ -53,10 +53,25 @@ VICE MCP server.
 
 ## Development
 
+`npm test` assumes it is running inside the devcontainer. On a bare host, set
+`CONTAINER_WORKSPACE_PATH` (the repo root) and `HOST_WORKSPACE_PATH` (any
+consistent host-side mirror) exactly as `.github/workflows/ci.yml` does, or
+the path-translation and container-guard tests skip with a reason naming
+both variables instead of running:
+
+```sh
+export CONTAINER_WORKSPACE_PATH="$(git rev-parse --show-toplevel)"
+export HOST_WORKSPACE_PATH="/host$(git rev-parse --show-toplevel)"
+```
+
+`npm run test:automated` is the subset of `npm test` that excludes the three
+manual-only files (see `test-gate.mjs`'s own header).
+
 ```sh
 npm ci
 npm run typecheck
 npm test
+npm run test:automated  # the automated subset (excludes manual-only files)
 npm run smoke     # boots the server and completes an MCP initialize + tools/list handshake
 npm run build     # recompiles the host-bound .mts launchers into resources/
 ```
