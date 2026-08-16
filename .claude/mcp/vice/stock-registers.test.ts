@@ -29,16 +29,18 @@ beforeEach(() => {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** A representative REGISTERS_AVAILABLE enumeration: PC (2 bytes), four
- * 1-byte GP registers, and FL (the whole processor status register --
- * standing in for whichever name a real build actually uses). */
+/** A representative REGISTERS_AVAILABLE enumeration: PC (16 bits), four
+ * 8-bit GP registers, and FL (the whole processor status register --
+ * standing in for whichever name a real build actually uses). `size` here
+ * is the wire's own size byte and is a BIT count (8/16 on a 6510), matching
+ * the live enumeration below -- not a hand-converted byte count. */
 const REGISTER_FIXTURE = [
-  { id: 0, size: 2, name: "PC" },
-  { id: 1, size: 1, name: "A" },
-  { id: 2, size: 1, name: "X" },
-  { id: 3, size: 1, name: "Y" },
-  { id: 4, size: 1, name: "SP" },
-  { id: 5, size: 1, name: "FL" },
+  { id: 0, size: 16, name: "PC" },
+  { id: 1, size: 8, name: "A" },
+  { id: 2, size: 8, name: "X" },
+  { id: 3, size: 8, name: "Y" },
+  { id: 4, size: 8, name: "SP" },
+  { id: 5, size: 8, name: "FL" },
 ];
 
 /** The exact REGISTERS_AVAILABLE enumeration observed LIVE against genuine
@@ -226,7 +228,7 @@ test("handleRegistersAvailable: lists every register in wire order and carries r
   assert.ok("runState" in payload, "answer must carry runState (D-06)");
   assert.deepEqual(
     payload.registers,
-    REGISTER_FIXTURE.map((r) => ({ id: r.id, name: r.name, size: r.size })),
+    REGISTER_FIXTURE.map((r) => ({ id: r.id, name: r.name, sizeBits: r.size })),
     "registers must appear in the wire's own order",
   );
   assert.equal(sendCalls.length, 1);
@@ -304,7 +306,7 @@ test("handleRegistersSet: a flag-bit name ('C') refuses with an explanatory 'sta
   assert.equal(sendCalls.filter((c) => c.commandType === CommandType.RegistersSet).length, 0);
 });
 
-test("handleRegistersSet: an out-of-range value for a size-1 register refuses, zero sends", async () => {
+test("handleRegistersSet: an out-of-range value for an 8-bit register refuses, zero sends", async () => {
   const { session, sendCalls } = makeFakeSession();
   const result = await handleRegistersSet({ register: "A", value: 0x100 }, session, {} as never);
   assert.equal(result.isError, true);

@@ -38,6 +38,13 @@
 //     manual invalidation needed) -- a handler that calls
 //     registerCatalogFor() more than once per session for the same
 //     enumeration is re-deriving the cache this function already is.
+//   - Never compare the catalog's `sizeBits` against a byte count (1 or 2).
+//     It is REGISTERS_AVAILABLE's own wire size byte, taken verbatim, and
+//     it is a BIT count (8 or 16 on a 6510) -- live evidence from genuine
+//     stock VICE 3.9 (03-UAT.md test 5): `PC size16`, `A size8`, `LIN
+//     size16`. The original width ladder read this as a byte count and
+//     refused every real register (03-14-PLAN.md); the field is named
+//     `sizeBits` specifically so the unit cannot be misread silently again.
 import { CommandType, memspaceBody, registersSetBody, type RegisterSetItem } from "./stock-protocol.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -49,11 +56,13 @@ import type { StockConnectSession } from "./stock-connect.ts";
 export interface RegisterCatalog {
   /** Keyed on the wire's own register NAME, uppercased -- the value keeps
    * the wire's original spelling (`name`) for reporting, so an answer never
-   * silently re-cases what the emulator itself called the register. */
-  byName: Map<string, { id: number; size: number; name: string }>;
+   * silently re-cases what the emulator itself called the register.
+   * `sizeBits` is REGISTERS_AVAILABLE's own wire size byte, taken verbatim
+   * -- a BIT count (8/16 on a 6510), never a byte count. */
+  byName: Map<string, { id: number; sizeBits: number; name: string }>;
   /** Keyed on the wire's numeric register id -- REGISTERS_GET/SET's own
    * per-item identifier. */
-  byId: Map<number, { size: number; name: string }>;
+  byId: Map<number, { sizeBits: number; name: string }>;
 }
 
 /** The one module-level catalog map, keyed on the session object itself --
@@ -104,11 +113,15 @@ export async function registerCatalogFor(session: StockConnectSession): Promise<
     );
   }
 
-  const byName = new Map<string, { id: number; size: number; name: string }>();
-  const byId = new Map<number, { size: number; name: string }>();
+  const byName = new Map<string, { id: number; sizeBits: number; name: string }>();
+  const byId = new Map<number, { sizeBits: number; name: string }>();
   for (const reg of response.registers) {
-    byName.set(reg.name.toUpperCase(), { id: reg.id, size: reg.size, name: reg.name });
-    byId.set(reg.id, { size: reg.size, name: reg.name });
+    // reg.size is stock-protocol.ts's own field name for the wire's size
+    // byte (its parser is unchanged by this plan); this module renames it
+    // to sizeBits at the point it enters the catalog so every downstream
+    // reader sees the unit named in the type.
+    byName.set(reg.name.toUpperCase(), { id: reg.id, sizeBits: reg.size, name: reg.name });
+    byId.set(reg.id, { sizeBits: reg.size, name: reg.name });
   }
   const catalog: RegisterCatalog = { byName, byId };
   catalogs.set(session, catalog);
@@ -135,7 +148,7 @@ export const handleRegistersAvailable: StockSessionHandler = async (args, sessio
   // catalog.byId preserves insertion order, which is the order registers
   // were pushed while walking REGISTERS_AVAILABLE's own reply -- i.e. the
   // wire's own order, never re-sorted.
-  const registers = [...catalog.byId.entries()].map(([id, reg]) => ({ id, name: reg.name, size: reg.size }));
+  const registers = [...catalog.byId.entries()].map(([id, reg]) => ({ id, name: reg.name, sizeBits: reg.sizeBits }));
 
   return stockAnswer(session.client, { registers, count: registers.length, memspace: "main" });
 };
@@ -256,20 +269,23 @@ export const handleRegistersSet: StockSessionHandler = async (args, session) => 
     return isErrorText(`vice_registers_set: unknown register "${rawRegister}" -- available registers: ${available}`);
   }
 
-  const { id, size } = resolved;
-  let max: number;
-  if (size === 1) {
-    max = 0xff;
-  } else if (size === 2) {
-    max = 0xffff;
-  } else {
+  const { id, sizeBits } = resolved;
+  // sizeBits is REGISTERS_AVAILABLE's own wire size byte -- a BIT count,
+  // never a byte count (see this file's WHAT NOT TO DO list). The max is
+  // derived from the width itself rather than a two-branch byte-count
+  // ladder; the 16-bit ceiling is not arbitrary -- REGISTERS_SET's wire
+  // item carries the value as a u16 (registersSetBody(), stock-protocol.ts),
+  // so no width wider than 16 bits could ever be written regardless.
+  if (!Number.isInteger(sizeBits) || sizeBits < 1 || sizeBits > 16) {
     return isErrorText(
-      `vice_registers_set: register "${resolved.name}" has an unexpected declared size (${size} byte(s)) -- only 1- or 2-byte registers are supported`,
+      `vice_registers_set: register "${resolved.name}" has an unexpected declared width (${sizeBits} bit(s)) -- ` +
+        `only registers of 1..16 bits are supported (REGISTERS_SET's wire item carries a u16 value, so 16 bits is the ceiling)`,
     );
   }
+  const max = 2 ** sizeBits - 1;
   if (rawValue < 0 || rawValue > max) {
     return isErrorText(
-      `vice_registers_set: value ${rawValue} is out of range for register "${resolved.name}" (size ${size} byte(s), valid range 0..0x${max.toString(16)})`,
+      `vice_registers_set: value ${rawValue} is out of range for register "${resolved.name}" (width ${sizeBits} bit(s), valid range 0..0x${max.toString(16)})`,
     );
   }
 

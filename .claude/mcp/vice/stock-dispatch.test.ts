@@ -1650,7 +1650,7 @@ conformanceTest("vice_memory_banks", async () => {
 conformanceTest("vice_registers_get", async () => {
   const session = buildConformanceSession("conformance-vice_registers_get", (commandType) => {
     if (commandType === CommandType.RegistersAvailable) {
-      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 16, name: "PC" }], related: [] };
     }
     if (commandType === CommandType.RegistersGet) {
       return { type: "registers" as const, requestId: 2, errorCode: 0, registers: [{ id: 0, value: 0x0801 }], related: [] };
@@ -1665,7 +1665,7 @@ conformanceTest("vice_registers_get", async () => {
 conformanceTest("vice_registers_set", async () => {
   const session = buildConformanceSession("conformance-vice_registers_set", (commandType) => {
     if (commandType === CommandType.RegistersAvailable) {
-      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 16, name: "PC" }], related: [] };
     }
     if (commandType === CommandType.RegistersSet) {
       return { type: "registers" as const, requestId: 2, errorCode: 0, registers: [{ id: 0, value: 0x0801 }], related: [] };
@@ -1680,7 +1680,7 @@ conformanceTest("vice_registers_set", async () => {
 conformanceTest("vice_registers_available", async () => {
   const session = buildConformanceSession("conformance-vice_registers_available", (commandType) => {
     if (commandType === CommandType.RegistersAvailable) {
-      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 2, name: "PC" }], related: [] };
+      return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 16, name: "PC" }], related: [] };
     }
     throw new Error(`vice_registers_available: unexpected commandType ${commandType}`);
   });
