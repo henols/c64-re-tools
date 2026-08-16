@@ -1,9 +1,29 @@
 ---
 phase: 03-direct-tools
 verified: 2026-08-16T22:15:00Z
-status: gaps_found
-score: 8/9 must-haves verified (1 partial — deliberately deferred, not a defect)
-overrides_applied: 0
+status: passed
+score: 8/9 must-haves verified + 1 accepted override = 9/9 accounted for
+overrides_applied: 1
+overrides:
+  - gap: "DIRECT-06 / success criterion 4 — disk detach absent on the stock backend"
+    accepted_by: "developer (henrik), 2026-08-16, via /gsd-execute-phase 03 --gaps-only checkpoint"
+    route: "verifier's option (a) AND option (b) — both applied"
+    rationale: >
+      The phase goal is scoped to "every tool with a 1:1 binary-monitor equivalent".
+      Stock VICE's binary monitor exposes no detach opcode, so disk detach has no 1:1
+      equivalent and is out of this phase's scope by the goal's own wording. This was a
+      locked, deliberate deferral from the outset (D-13 in 03-CONTEXT.md), not a defect
+      discovered late and not a regression.
+    paperwork_closed: >
+      The verifier's objection was that no formal phase owned the deferral. That is now
+      fixed, so the deferral is tracked rather than orphaned:
+      (1) ROADMAP.md Phase 3 success criterion 4 no longer promises detach and states why;
+      (2) ROADMAP.md Phase 7 now lists DIRECT-06 (detach half) in its Requirements and adds
+          success criterion 4 making Phase 7 the formal owner — chosen because Phase 7 is the
+          first phase that stands up the concurrent -remotemonitor text-monitor route detach
+          would need;
+      (3) REQUIREMENTS.md's DIRECT-06 line and traceability row now read attach-complete /
+          detach-deferred-to-Phase-7 instead of a bare unchecked box.
 re_verification:
   previous_status: gaps_found
   previous_score: 8/9 must-haves verified (1 partial, 2 systemic blockers carried from broker layer)
@@ -19,7 +39,13 @@ re_verification:
   regressions: []
 gaps:
   - truth: "A user can reset the machine, autostart a PRG or disk image, attach and detach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend (roadmap success criterion 4 / DIRECT-06)"
-    status: partial
+    status: accepted_override
+    resolution: >
+      Accepted by the developer on 2026-08-16 — see `overrides` in this file's frontmatter.
+      The verifier's stated precondition for accepting (a formal later-phase owner) has been
+      satisfied: Phase 7 now owns the detach half of DIRECT-06 in both ROADMAP.md and
+      REQUIREMENTS.md. No code change was made or required; detach remains unimplemented on
+      the stock backend by design.
     reason: >
       Reset, autostart, disk attach (unit 8 only), snapshots, keyboard, joystick, and bank/register
       enumeration are all implemented, wired, tested, and (for reset/attach/keyboard/registers)

@@ -182,7 +182,7 @@ Notes:
   1. A user can read and write emulator memory and CPU registers on the stock backend, with reads side-effect-free by default — reading `$D019` does not acknowledge the IRQ — and no read forces a pause/resume round trip it does not need.
   2. A user can set, list, delete, toggle and condition checkpoints and watchpoints; conditions are emitted through a typed builder that parenthesises every comparison, emits `$hex` literals, and uses `RL`/`CY`, so a silently-always-false condition cannot be produced.
   3. A user can pause a freely-running emulator on demand and resume it, step instructions, and execute until return — with pause and resume idempotent, so an agent retry is a no-op rather than a second halt.
-  4. A user can reset the machine, autostart a PRG or disk image, attach and detach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend.
+  4. A user can reset the machine, autostart a PRG or disk image, attach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend. *(Disk **detach** is explicitly out of scope for this phase: stock VICE's binary monitor exposes no detach opcode, so it has no 1:1 equivalent and falls outside this phase's goal. Deferred to Phase 7 — see D-13 in `03-CONTEXT.md` and `docs/stock-vice-parity.md`.)*
 
 **Plans**: 13 plans in 4 waves, plus 5 gap-closure plans in 4 waves (03-UAT.md)
 Plans:
@@ -304,12 +304,13 @@ Notes:
 
 **Goal**: "How long did that take" and "is the emulator still advancing" work on the stock backend
 **Depends on**: Phase 6
-**Requirements**: TIME-01, TIME-02, TIME-03, TIME-04
+**Requirements**: TIME-01, TIME-02, TIME-03, TIME-04, DIRECT-06 *(detach half only — see criterion 4)*
 **Success Criteria** (what must be TRUE):
 
   1. A user can measure elapsed CPU cycles on the stock backend on any supported VICE version, by a route whose socket cost has been measured against a real build rather than assumed.
   2. A user can run until an address is reached exactly, and cycle-bounded execution either works or reports its approximation and error bound honestly rather than implying precision it does not have.
   3. `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend: two samples straddling a resume, distinguishing advancing-but-jiffy-frozen from a tight loop.
+  4. **DIRECT-06 (detach half, inherited from Phase 3):** disk *detach* on the stock backend either works via the concurrent `-remotemonitor` text-monitor route this phase already stands up, or is closed out as a permanent, documented divergence in `docs/stock-vice-parity.md`. Stock VICE's binary monitor has no detach opcode, so Phase 3 correctly scoped it out (D-13); this phase owns the decision because it is the first phase that establishes the text-monitor route detach would need. Attach itself already works on stock and is not in question.
 
 **Plans**: TBD
 
@@ -398,7 +399,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 18/18 | Complete   | 2026-08-16 |
+| 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |

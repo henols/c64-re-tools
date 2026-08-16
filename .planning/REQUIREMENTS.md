@@ -41,7 +41,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [x] **DIRECT-03**: User can set, list, delete, toggle, and condition checkpoints and watchpoints on the stock backend
 - [x] **DIRECT-04**: User can step instructions and execute-until-return on the stock backend
 - [x] **DIRECT-05**: User can pause a freely-running emulator on demand and resume it
-- [ ] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach or detach disks on the stock backend
+- [~] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach disks on the stock backend — *attach half delivered in Phase 3; **detach** deferred to Phase 7, because stock VICE's binary monitor exposes no detach opcode (D-13 in `03-CONTEXT.md`, `docs/stock-vice-parity.md`). Phase 7 owns it as its success criterion 4.*
 - [x] **DIRECT-07**: User can type text and drive the joystick on the stock backend
 - [x] **DIRECT-08**: User can save and restore emulator snapshots on the stock backend
 - [x] **DIRECT-09**: User can enumerate available memory banks and registers on the stock backend
@@ -173,7 +173,7 @@ and the sequencing rationale.
 | DIRECT-03 | Phase 3 | Complete |
 | DIRECT-04 | Phase 3 | Complete |
 | DIRECT-05 | Phase 3 | Complete |
-| DIRECT-06 | Phase 3 | Pending |
+| DIRECT-06 | Phase 3 (attach) / Phase 7 (detach) | Partial — attach complete; detach deferred, no stock opcode |
 | DIRECT-07 | Phase 3 | Complete |
 | DIRECT-08 | Phase 3 | Complete |
 | DIRECT-09 | Phase 3 | Complete |
