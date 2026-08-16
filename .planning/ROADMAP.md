@@ -76,7 +76,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE (completed 2026-08-12)
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
-- [ ] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (all 13 plans executed 2026-08-14; verification found gaps — 2 Critical broker defects + DIRECT-06 partial)
+- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (all 13 plans executed 2026-08-14; verification found gaps — 2 Critical broker defects + DIRECT-06 partial) (completed 2026-08-16)
 - [ ] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it
 - [ ] **Phase 5: Client-Side Derivations and Screenshots** - Reimplement the tools the fork ran inside the emulator, and encode screenshots client-side from the framebuffer
 - [ ] **Phase 6: Stock-Only Gains** - CPU-history tracing, 1541 drive-CPU debugging, and raster-precise conditions / exact palette / full resources
@@ -217,7 +217,7 @@ Plans:
 - [x] 03-15-PLAN.md — Gap wave 1: MAJOR — `npm test` hung forever on a bare host (listener leaked before its try); plus env-gated skips with named reasons and the widened `vice-proxy:` identity detector
 - [x] 03-16-PLAN.md — Gap wave 2: live re-verification of the register write and the never-reached flag-bit refusal against genuine stock VICE 3.9 (`/usr/bin/x64sc`), as a committed opt-in gate
 - [x] 03-17-PLAN.md — Gap wave 3: MAJOR — CI has not validated the tree for 214 commits; local CI-equivalence run plus a blocking authorisation decision (a push to main auto-publishes both npm packages)
-- [ ] 03-18-PLAN.md — Gap wave 4: execute the authorised CI route and record the run URL, sha and conclusion
+- [x] 03-18-PLAN.md — Gap wave 4: execute the authorised CI route and record the run URL, sha and conclusion
 
 Notes:
 
@@ -398,7 +398,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 |-------|----------------|--------|-----------|
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
-| 3. Direct Tools | 17/18 | In Progress|  |
+| 3. Direct Tools | 18/18 | Complete   | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
