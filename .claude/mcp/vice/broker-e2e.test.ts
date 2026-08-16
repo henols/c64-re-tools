@@ -24,6 +24,15 @@ import { verifiedKill } from "./broker-kill.mts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 
+// Plan 03-15 task 2: env-gated skip. The container-guard refusal test below
+// only exercises the real in-container code path when CONTAINER_WORKSPACE_PATH
+// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
+// them) -- without them it used to fail anonymously instead of skipping with
+// a named reason. Local to this file by design (see plan -- no shared module).
+const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
+const WORKSPACE_ENV_SKIP_REASON =
+  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+
 // quick-260805-9ha: the broker this file spawns (startBroker() below) binds
 // its control listener INSIDE this container -- nothing here may ever dial
 // the real host. openBrokerControl()/acquireOverControlPlane() no longer
@@ -1068,7 +1077,7 @@ test("a control request with no token, and one with a wrong token, both return t
 // establishes that), so this is a real, not simulated, in-container run.
 // ---------------------------------------------------------------------------
 
-test("the emitted broker artifact refuses to start in-container without the escape hatch (exit 2), and --check-container reports the same verdict without refusing (exit 3)", { timeout: 20000 }, async () => {
+test("the emitted broker artifact refuses to start in-container without the escape hatch (exit 2), and --check-container reports the same verdict without refusing (exit 3)", { timeout: 20000, skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-guard-"));
   try {

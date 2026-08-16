@@ -65,6 +65,17 @@ import { startControlListener, newControlToken, type AcquireOutcome, type Recycl
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_PATH = join(HERE, "vice-proxy.ts");
 
+// Plan 03-15 task 2: env-gated skip. A handful of tests below only exercise
+// real container-path-translation behaviour when CONTAINER_WORKSPACE_PATH
+// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
+// them) -- on a bare host with neither set they used to fail anonymously
+// (an assertion error with no hint of why) instead of skipping with a named
+// reason. Local to this file by design (see plan -- no shared module, and
+// this list does not belong in test-gate.mjs either).
+const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
+const WORKSPACE_ENV_SKIP_REASON =
+  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+
 // ---------------------------------------------------------------------------
 // Shared test-local types. vice-proxy.ts exports nothing (it is a stdio
 // entry point, spawned as a subprocess or driven over a bare HTTP stand-in --
@@ -1737,7 +1748,7 @@ test("three states: each unreachable shape gets its own message and fix", async 
 // --name-only -- .claude/skills/devcontainer-host-path`).
 // -----------------------------------------------------------------------
 
-test("path translation: container paths cannot reach the host", async () => {
+test("path translation: container paths cannot reach the host", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const { server, requests } = startStandInServer();
   const port = await listen(server);
   const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
@@ -1850,7 +1861,7 @@ test("path translation: container paths cannot reach the host", async () => {
 // pin the narrower residual so it cannot silently widen back.
 // -----------------------------------------------------------------------
 
-test("path translation: relative paths resolve for declared path arguments only", async () => {
+test("path translation: relative paths resolve for declared path arguments only", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const { server, requests } = startStandInServer();
   const port = await listen(server);
   const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
@@ -2887,7 +2898,7 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
   }
 });
 
-test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift is actually detected, and the translation line names all three fields", async () => {
+test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift is actually detected, and the translation line names all three fields", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-epoch-"));
   const eth0 = firstNonInternalIPv4();
   assert.ok(eth0, "this environment must expose a non-internal IPv4 address for this test to be meaningful");
@@ -4555,7 +4566,7 @@ function healthyEvidenceRespond(overrides: HealthyEvidenceOverrides = {}): Respo
   };
 }
 
-test("vice_recycle: a healthy capture produces a full evidence object -- bracket, registers, checkpoints, IRQ handler and a translated screenshot path", async () => {
+test("vice_recycle: a healthy capture produces a full evidence object -- bracket, registers, checkpoints, IRQ handler and a translated screenshot path", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-recycle-evidence-healthy-"));
   const evidenceDir = tmpWorkspaceIncidentsDir();
   const respond = healthyEvidenceRespond({
