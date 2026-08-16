@@ -185,7 +185,7 @@ existing fork backend keeps working unchanged for the capabilities only it has.
 - Version detection (VICE ≥ 3.10) with graceful degradation
 - Empirical probe against a real build, and a two-process parity harness
 
-**Current state:** Phase 2 (Stock Backend Connection) complete — 2026-08-13.
+**Previously:** Phase 2 (Stock Backend Connection) complete — 2026-08-13.
 The server can now be pointed at a stock VICE and hold a correlated,
 event-demultiplexed conversation with it: `stock-protocol.ts` (framing, parsing,
 request-id-first demux), `stock-connect.ts` (the one connect handshake),
@@ -213,7 +213,45 @@ re-record the fixtures against hardware, confirm the discriminator against real
 stock and fork binaries, and settle whether CI's bare `npm test` or the narrowed
 `test:automated` gate is correct.
 
-Next: Phase 3, direct tools (every tool with a 1:1 binary-monitor opcode).
+**Current state:** Phase 3 (Direct Tools) complete — 2026-08-16. Every tool with a
+1:1 binary-monitor opcode now works on the stock backend: memory and registers,
+checkpoints and watchpoints with a typed condition builder, pause/resume/step/
+until-return, and machine control (reset, autostart, disk attach, keyboard,
+joystick, snapshots, bank/register enumeration). 18 plans across 4 waves, plus 5
+gap-closure plans answering `03-UAT.md`.
+
+**Phase 2's central constraint no longer holds.** That phase was written entirely
+against the spec because "no stock VICE binary exists in this environment" (user
+ruling, 2026-08-13). It does exist: a genuine unpatched stock VICE 3.9 at
+`/usr/bin/x64sc`, distinct from the fork build at `/usr/local/bin/x64sc` that
+shadows it on `$PATH`. Phase 3 therefore validated against real hardware-equivalent
+behaviour rather than against the spec alone, and that is what caught the phase's
+blocker: `vice_registers_set` refused **every** register, because the catalog read
+VICE's `REGISTERS_AVAILABLE` size byte as *bytes* when the wire reports *bits*.
+Unit tests had missed it for exactly the reason Phase 2's post-mortem warned about
+— the fixtures stubbed the same wrong assumption the code made. The fix renames the
+field `sizeBits`, derives the range check from it, and pins it with a wire-shaped
+fixture built from the real 3.9 enumeration. `stock-live.test.ts` now re-verifies it
+against the real binary on demand, and skips cleanly where none exists.
+
+Two further gap-closure results worth carrying: `npm test` could previously hang
+forever on a bare host (a listener opened before its `try` leaked when a precondition
+threw), which silently converted a *failure* into an *infinite wait* — now fixed with
+an `after()` registry and env-gated skips. And CI had not run against any Phase 01/02/03
+commit since 2026-08-11; it now has — run `31972421757` against sha `f040d79`, conclusion
+**success**, via a PR branch deliberately chosen over pushing `main`, since a push to
+`main` auto-publishes both npm packages and the milestone is only 3 of 8 phases done.
+
+Verified 8/9 must-haves plus one accepted override: disk **detach** is not implemented
+on stock and will not be — the binary monitor has no detach opcode, so it falls outside
+this phase's "1:1 equivalent" goal by definition. It is no longer an orphaned deferral;
+Phase 7 now formally owns it in both ROADMAP.md and REQUIREMENTS.md. Three items still
+need a human at a real emulator, tracked in `03-HUMAN-UAT.md`. A code review of the
+gap-closure diff returned 0 critical / 8 warning; the two most useful are that the stock
+manifest still advertises flag-bit register names the handler always refuses, and that
+the new leak-prevention net covers only 1 of 4 server factories.
+
+Next: Phase 4, the client-side tool seam and 6510 disassembler.
 
 ---
-*Last updated: 2026-08-13 after Phase 2 completion (stock backend connection; spec-driven with live validation deferred, 7 critical review defects fixed post-execution)*
+*Last updated: 2026-08-16 after Phase 3 completion (direct tools; live-validated against genuine stock VICE 3.9, DIRECT-02 blocker found and fixed, CI green on a PR branch, detach deferred to Phase 7)*
