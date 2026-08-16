@@ -76,7 +76,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE (completed 2026-08-12)
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
-- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (all 13 plans executed 2026-08-14; verification found gaps — 2 Critical broker defects + DIRECT-06 partial) (completed 2026-08-16)
+- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (18 plans: 13 executed 2026-08-14 + 5 gap-closure 2026-08-16; all four 03-UAT gaps closed and the 2 Critical broker defects fixed and re-confirmed; verified 8/9 + 1 accepted override — disk detach has no stock opcode and is owned by Phase 7) (completed 2026-08-16)
 - [ ] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it
 - [ ] **Phase 5: Client-Side Derivations and Screenshots** - Reimplement the tools the fork ran inside the emulator, and encode screenshots client-side from the framebuffer
 - [ ] **Phase 6: Stock-Only Gains** - CPU-history tracing, 1541 drive-CPU debugging, and raster-precise conditions / exact palette / full resources
