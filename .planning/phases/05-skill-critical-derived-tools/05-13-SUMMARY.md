@@ -132,3 +132,15 @@ None - no external service configuration required.
 ---
 *Phase: 05-skill-critical-derived-tools*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+- FOUND: `docs/stock-vice-parity.md`
+- FOUND: `.claude/skills/c64-program-recon/references/observation-hazards.md`
+- FOUND: `.planning/REQUIREMENTS.md`
+- FOUND: `.claude/mcp/vice/stock-dispatch.ts`
+- FOUND: `.claude/mcp/vice/stock-dispatch.test.ts`
+- FOUND: `.planning/phases/05-skill-critical-derived-tools/05-13-SUMMARY.md`
+- FOUND commit `271f26e` (Task 1)
+- FOUND commit `7bfae11` (Task 2)
+- FOUND commit `cfcfbef` (SUMMARY.md)
