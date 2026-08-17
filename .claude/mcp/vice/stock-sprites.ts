@@ -397,3 +397,212 @@ export const handleSpriteGet: StockSessionHandler = async (args, session, _deps)
 
   return stockAnswer(session.client, payload);
 };
+
+// ---------------------------------------------------------------------------
+// Renderers -- mode-independent bit dump (renderSpriteBinary) and the two
+// native-resolution ASCII modes (renderSpriteAscii), per D-05-04: 24 columns
+// for hi-res, 12 for multicolour, always 21 rows. No normalisation, no
+// expansion scaling -- these render the sprite's 63-byte DATA BLOCK, which
+// is fixed-size regardless of how the VIC-II stretches it on screen via the
+// X/Y expansion bits.
+// ---------------------------------------------------------------------------
+
+/** Bit-pair value (0..3) -> ASCII legend character. NOT the natural numeric
+ * order -- the fork's own legend assigns %10 (2) to the sprite colour ('#')
+ * and %01 (1) to multicolour 1 ('@'), so a "simplification" that maps
+ * 0,1,2,3 to '.','@','#','%' in a naively-derived order would coincidentally
+ * match here, but do not re-derive this table from "the numeric value" --
+ * it is the fork's fixed legend, quoted, not computed. */
+const MULTICOLOUR_LEGEND: Record<number, string> = { 0: ".", 1: "@", 2: "#", 3: "%" };
+
+/** 21 strings of 24 "0"/"1" characters, MSB first within each byte, three
+ * bytes per row. Mode-independent -- this is the raw bit dump. */
+export function renderSpriteBinary(bytes: Uint8Array): string[] {
+  if (bytes.length !== SPRITE_DATA_BYTES) {
+    throw new Error(`renderSpriteBinary: expected ${SPRITE_DATA_BYTES} bytes, got ${bytes.length}`);
+  }
+  const rows: string[] = [];
+  for (let row = 0; row < SPRITE_ROWS; row += 1) {
+    let line = "";
+    for (let col = 0; col < 3; col += 1) {
+      const byte = bytes[row * 3 + col]!;
+      for (let bit = 7; bit >= 0; bit -= 1) {
+        line += (byte >> bit) & 1 ? "1" : "0";
+      }
+    }
+    rows.push(line);
+  }
+  return rows;
+}
+
+/**
+ * 21 strings, native resolution per mode. Hi-res (multicolour === false): 24
+ * characters per row, one per bit, MSB first; a set bit renders '#', a clear
+ * bit renders '.'. Multicolour (multicolour === true): 12 characters per
+ * row, one per bit PAIR, taken MSB-first in pairs across the three bytes,
+ * mapped through MULTICOLOUR_LEGEND.
+ */
+export function renderSpriteAscii(bytes: Uint8Array, multicolour: boolean): string[] {
+  if (bytes.length !== SPRITE_DATA_BYTES) {
+    throw new Error(`renderSpriteAscii: expected ${SPRITE_DATA_BYTES} bytes, got ${bytes.length}`);
+  }
+  const rows: string[] = [];
+  for (let row = 0; row < SPRITE_ROWS; row += 1) {
+    let line = "";
+    if (!multicolour) {
+      for (let col = 0; col < 3; col += 1) {
+        const byte = bytes[row * 3 + col]!;
+        for (let bit = 7; bit >= 0; bit -= 1) {
+          line += (byte >> bit) & 1 ? "#" : ".";
+        }
+      }
+    } else {
+      for (let col = 0; col < 3; col += 1) {
+        const byte = bytes[row * 3 + col]!;
+        for (let pair = 3; pair >= 0; pair -= 1) {
+          const value = (byte >> (pair * 2)) & 0b11;
+          line += MULTICOLOUR_LEGEND[value];
+        }
+      }
+    }
+    rows.push(line);
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
+// vice_sprite_inspect
+// ---------------------------------------------------------------------------
+
+export const handleSpriteInspect: StockSessionHandler = async (args, session, _deps) => {
+  const toolName = "vice_sprite_inspect";
+
+  if (!isPlainObject(args)) {
+    return isErrorText(`${toolName}: arguments must be an object`);
+  }
+
+  const unexpected = Object.keys(args).filter((key) => key !== "sprite_number" && key !== "format");
+  if (unexpected.length > 0) {
+    return isErrorText(
+      `${toolName}: unexpected argument(s): ${unexpected.join(", ")} -- the only accepted arguments are "sprite_number" and "format"`,
+    );
+  }
+
+  if (args.sprite_number === undefined) {
+    return isErrorText(`${toolName}: sprite_number is required`);
+  }
+  let spriteIndex: number;
+  try {
+    spriteIndex = parseSpriteIndex(args.sprite_number, toolName);
+  } catch (err) {
+    return isErrorText(err instanceof Error ? err.message : String(err));
+  }
+
+  // All `format` refusals happen before any wire send.
+  let format = "ascii";
+  if (args.format !== undefined) {
+    if (typeof args.format !== "string") {
+      return isErrorText(`${toolName}: format must be a string, got ${typeof args.format}`);
+    }
+    if (REFUSED_INSPECT_FORMATS.includes(args.format)) {
+      return isErrorText(
+        `${toolName}: format "png_base64" was cut from this milestone with SHOT-01..SHOT-05 -- no skill calls it. ` +
+          `Served formats are: ${SERVED_INSPECT_FORMATS.join(", ")}.`,
+      );
+    }
+    if (!SERVED_INSPECT_FORMATS.includes(args.format)) {
+      return isErrorText(
+        `${toolName}: format must be one of ${SERVED_INSPECT_FORMATS.join(", ")}, got ${JSON.stringify(args.format)}`,
+      );
+    }
+    format = args.format;
+  }
+
+  const context = await readSpriteContext(toolName, session);
+  if (!context.ok) {
+    return context.result;
+  }
+
+  const bytes = context.viciiBytes;
+  const d015 = bytes[0xd015 - VICII_BASE]!;
+  const d010 = bytes[0xd010 - VICII_BASE]!;
+  const d017 = bytes[0xd017 - VICII_BASE]!;
+  const d01b = bytes[0xd01b - VICII_BASE]!;
+  const d01c = bytes[0xd01c - VICII_BASE]!;
+  const d01d = bytes[0xd01d - VICII_BASE]!;
+  const d025 = bytes[0xd025 - VICII_BASE]!;
+  const d026 = bytes[0xd026 - VICII_BASE]!;
+
+  const pointer = context.pointerBytes[spriteIndex]!;
+  const dataAddress = spriteDataAddress(context.dd00, pointer);
+  const dataEnd = dataAddress + SPRITE_DATA_BYTES - 1;
+  if (dataEnd > 0xffff) {
+    return isErrorText(
+      `${toolName}: sprite ${spriteIndex}'s resolved data address (pointer 0x${pointer.toString(16)} -> ` +
+        `0x${dataAddress.toString(16)}) would end at 0x${dataEnd.toString(16)}, past the 16-bit address space -- refusing before sending`,
+    );
+  }
+
+  const dataBody = memGetBody({ sidefx: false, start: dataAddress, end: dataEnd, memspace: 0x00, bank: 0x0000 });
+  let dataResponse;
+  try {
+    dataResponse = await session.client.send(CommandType.MemoryGet, dataBody);
+  } catch (err) {
+    return convertWireError(toolName, err);
+  }
+  if (dataResponse.type !== "memory_get") {
+    return isErrorText(
+      `${toolName}: the binary monitor replied with an unexpected response type ("${dataResponse.type}"), expected "memory_get"`,
+    );
+  }
+  if (dataResponse.bytes.length !== SPRITE_DATA_BYTES) {
+    return isErrorText(
+      `${toolName}: expected ${SPRITE_DATA_BYTES} byte(s) for the sprite data block, got ${dataResponse.bytes.length} -- a short read is a wrong answer, not a partial success`,
+    );
+  }
+
+  const multicolour = ((d01c >> spriteIndex) & 1) === 1;
+  const expandX = ((d01d >> spriteIndex) & 1) === 1;
+  const expandY = ((d017 >> spriteIndex) & 1) === 1;
+
+  const notes = [...context.notes];
+  const dataNote = spriteRomWindowNote(dataAddress, context.bank);
+  if (dataNote !== null && !notes.includes(dataNote)) {
+    notes.push(dataNote);
+  }
+  if (expandX || expandY) {
+    notes.push(
+      "the rendered grid is the sprite's 24x21 data block and is NOT scaled by the X/Y expansion bits -- " +
+        "the VIC-II stretches the sprite on screen, but MEM_GET returns the unscaled 63-byte block",
+    );
+  }
+
+  const rows = format === "binary" ? renderSpriteBinary(dataResponse.bytes) : renderSpriteAscii(dataResponse.bytes, multicolour);
+  const width = multicolour ? SPRITE_MULTICOLOUR_COLUMNS : SPRITE_HIRES_COLUMNS;
+
+  const payload: Record<string, unknown> = {
+    sprite: spriteIndex,
+    format,
+    multicolour,
+    enabled: ((d015 >> spriteIndex) & 1) === 1,
+    x: bytes[spriteIndex * 2]! | (((d010 >> spriteIndex) & 1) << 8),
+    y: bytes[1 + spriteIndex * 2]!,
+    colour: bytes[0x27 + spriteIndex]! & 0x0f,
+    expandX,
+    expandY,
+    priorityBehindBackground: ((d01b >> spriteIndex) & 1) === 1,
+    spriteMulticolour1: d025 & 0x0f,
+    spriteMulticolour2: d026 & 0x0f,
+    vicBank: context.bank,
+    pointer,
+    dataAddress,
+    width,
+    height: SPRITE_ROWS,
+    bytes: Array.from(dataResponse.bytes),
+    rows,
+    ...(format === "ascii" ? { ascii: rows.join("\n"), legend: SPRITE_ASCII_LEGEND } : {}),
+    notes,
+  };
+
+  return stockAnswer(session.client, payload);
+};
