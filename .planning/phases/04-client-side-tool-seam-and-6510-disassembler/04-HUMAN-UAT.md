@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 04-client-side-tool-seam-and-6510-disassembler
 source: [04-VERIFICATION.md]
 started: 2026-08-17T13:53:42Z
-updated: 2026-08-17T13:53:42Z
+updated: 2026-08-17T15:05:00Z
 ---
 
 ## Current Test
 
-[awaiting human testing]
+[none — all tests resolved]
 
 ## Tests
 
@@ -31,15 +31,42 @@ non-vacuous — with ACME absent and `VICE_REQUIRE_ACME=1` set, the suite hard-f
 than skipping. The only unproven link is that `sudo apt-get install -y acme` resolves on
 the GitHub runner image.
 
-result: [pending]
+result: **PASSED** — confirmed 2026-08-17 against GitHub Actions run
+[32039853822](https://github.com/henols/c64-re-tools/actions/runs/32039853822), commit
+`4fb36a6`, conclusion `success`.
+
+Evidence from the Actions log, all four links in the chain:
+
+1. **ACME resolves on the runner image.** The `Install ACME cross-assembler (DISASM-03
+   round-trip gate)` step reports `Setting up acme (1:0.97~svn20211115+ds-1) ...` and
+   `command -v acme` → `/usr/bin/acme`. This was the only unproven link — `apt-get install
+   -y acme` does resolve on `ubuntu-latest`.
+2. **The gate env is actually set.** The `Test` step's env block shows `VICE_REQUIRE_ACME: 1`.
+3. **All five round-trip entries executed and passed, zero skips:**
+
+   ```
+   ok 308 - ACME availability gate (D-08)
+   ok 309 - Suite A: full 256-opcode round-trip through vice_disassemble's own listing (D-13, D-09)
+   ok 310 - Suite B: a realistic fragment round-trips byte-exact (branches, D-11 shrink hazard, D-10 page-wrap, jsr, illegal-but-expressible opcodes)
+   ok 311 - Suite C: the acmeExpressible substitution table is byte-faithful in BOTH directions, driven from OPCODES (D-09)
+   ok 312 - Suite D: the +2 size-force spelling is understood by ACME and produces the correct wide encoding (D-11)
+   ```
+
+   None carries a `# SKIP` marker.
+4. **The run's only two skips are unrelated.** Suite totals were `# tests 1337 / # pass 1330
+   / # fail 0 / # skipped 2`, and both skips are `stock-live.test.ts` entries 716-717,
+   which are opt-in by design and require `VICE_LIVE_STOCK_BIN` to be set. Neither touches
+   the round-trip.
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+None. The single human-verification item is closed by direct observation of the Actions log.

@@ -1,9 +1,10 @@
 ---
 phase: 04-client-side-tool-seam-and-6510-disassembler
 verified: 2026-08-17T13:53:42Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
+human_verification_resolved: 2026-08-17 -- CI run 32039853822 on 4fb36a6 concluded success; ACME installed (0.97~svn20211115, /usr/bin/acme), VICE_REQUIRE_ACME=1 set, and disasm-roundtrip entries 308-312 all report ok with zero SKIP markers. The run's only 2 skips are opt-in stock-live tests. See 04-HUMAN-UAT.md.
 human_verification:
   - test: "Push Phase 4's commits to a branch/PR and confirm .github/workflows/ci.yml's build job actually executes (not skips) the ACME install step and disasm-roundtrip.test.ts's five suites in the real GitHub Actions environment"
     expected: "The 'Install ACME cross-assembler' step succeeds and the Test step (VICE_REQUIRE_ACME=1) reports disasm-roundtrip.test.ts's 5 tests as executed and passing, not skipped"

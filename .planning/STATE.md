@@ -3,15 +3,16 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: ready_to_plan
-last_updated: 2026-08-17T14:03:36.487Z
-last_activity: 2026-08-17 -- Phase 04 execution started
+last_updated: 2026-08-17T15:10:00.000Z
+last_activity: 2026-08-17 -- Phase 04 verified (CI confirmed ACME round-trip); scope cut; quick task 260817-n6p
 progress:
-  total_phases: 8
-  completed_phases: 3
+  total_phases: 7
+  completed_phases: 4
   total_plans: 39
   completed_plans: 39
-  percent: 38
-stopped_at: Phase 04 complete (7/7) — ready to discuss Phase 5
+  percent: 57
+scope_note: "Phase 6 CUT 2026-08-17 — total_phases counts 7 executable phases (1-5, 7, 8). Open requirements 29 -> 14."
+stopped_at: Phase 04 verified and closed — ready to plan Phase 5 (now 4 requirements, was 11)
 ---
 
 # Project State
@@ -23,14 +24,22 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 5 — client side derivations and screenshots
+**Current focus:** Phase 5 — skill-critical derived tools (8 tools: memory search/compare, symbol store, VIC-II/CIA read, sprite read)
 
 ## Current Position
 
-Phase: 5
+Phase: 5 (skill-critical-derived-tools) — READY TO PLAN
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-08-17
+Last activity: 2026-08-17 -- Phase 04 closed (verification passed, UAT confirmed against CI run 32039853822)
+
+**Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
+does something a skill calls depend on it? The six skills call 28 tools -- 16 already
+work on stock, 10 are buildable (8 in Phase 5, 2 in Phase 7), and 2 are provably
+impossible (`vice_sid_get_state`, `vice_keyboard_matrix`) and route to the fork via
+Phase 8. The fork's other 34 tools are called by no skill. Phase 6 was cut wholesale;
+screenshots, backtrace, checkpoint groups, disk detach and the parity harness came out.
+See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 21 CUT-marked items.
 
 Progress: [██████████] 100%
 
@@ -89,6 +98,12 @@ Recent decisions affecting current work:
 
 1 pending — `.planning/todos/pending/2026-08-11-correct-phase0-binmon-findings-three-verified-errors.md`
 (subsumed by Phase 1's DOC-01..03; close it when Phase 1 lands).
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260817-n6p | Fix WR-01 — bound `decode()`'s `startAddress` to `0..0xffff` in `disasm-decoder.ts` | 2026-08-17 | e19d8eb | [260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i](./quick/260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i/) |
 
 ### Blockers/Concerns
 
