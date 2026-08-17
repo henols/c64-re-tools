@@ -955,11 +955,11 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 30 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
- * tools, 04-05's vice_disassemble, and Phase 5's four DERIV-01/DERIV-04
- * derived tools), driven from an explicit array literal (per this plan's
- * own acceptance criteria) so a missing entry fails as a NAMED assertion
- * rather than a generic count mismatch. */
+/** The 34 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+ * tools, 04-05's vice_disassemble, and Phase 5's eight DERIV-01/DERIV-04/
+ * DERIV-05/DERIV-06 derived tools), driven from an explicit array literal
+ * (per this plan's own acceptance criteria) so a missing entry fails as a
+ * NAMED assertion rather than a generic count mismatch. */
 const REGISTERED_TOOL_NAMES = [
   "vice_ping",
   "vice_memory_read",
@@ -991,6 +991,10 @@ const REGISTERED_TOOL_NAMES = [
   "vice_memory_compare",
   "vice_symbols_load",
   "vice_symbols_lookup",
+  "vice_vicii_get_state",
+  "vice_cia_get_state",
+  "vice_sprite_get",
+  "vice_sprite_inspect",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -1007,20 +1011,20 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-test("dispatch: stockHandlerFor returns a function for every one of the 30 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 34 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 30", () => {
+test("dispatch: the table's key count is exactly 34", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 30-name list rather than reaching into the
+  // this test drives the same 34-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 30);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 30);
+  assert.equal(hits.length, 34);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 34);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
@@ -2102,6 +2106,139 @@ test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REA
     if (prevHostWs === undefined) delete process.env.HOST_WORKSPACE_PATH;
     else process.env.HOST_WORKSPACE_PATH = prevHostWs;
   }
+});
+
+// --------------------------------------------------------- vice_vicii_get_state / vice_cia_get_state / vice_sprite_get / vice_sprite_inspect (05-03/05-04/05-05, DERIV-05/DERIV-06)
+
+/** Dispatches a MEM_GET reply by the request's own `start` address
+ * (`body.readUInt16LE(1)`, matching memGetBody()'s own encoding at
+ * stock-protocol.ts:494) rather than one fixed reply for every call -- all
+ * four of these handlers issue MULTIPLE reads of different ranges, so a
+ * single fixed reply would let a wrong-address bug pass silently. Throws on
+ * an unmapped start address so an unexpected read is a loud test failure,
+ * never a silent empty buffer. */
+function chipStateSendImpl(map: Map<number, number[]>): ConformanceSendImpl {
+  return (commandType, body) => {
+    if (commandType !== CommandType.MemoryGet) {
+      throw new Error(`chipStateSendImpl: unexpected commandType ${commandType}`);
+    }
+    const start = body.readUInt16LE(1);
+    const bytes = map.get(start);
+    if (bytes === undefined) {
+      throw new Error(`chipStateSendImpl: unmapped start address 0x${start.toString(16)} -- a read at an unexpected address must fail loudly`);
+    }
+    return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from(bytes), related: [] };
+  };
+}
+
+conformanceTest("vice_vicii_get_state", async () => {
+  const viciiBytes = new Array(47).fill(0);
+  viciiBytes[0x18] = 0x31; // $D018 -- arbitrary but non-zero, exercising memorySetup's decode
+  const session = buildConformanceSession("conformance-vice_vicii_get_state", chipStateSendImpl(new Map([[0xd000, viciiBytes]])));
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_vicii_get_state", {}, deps);
+  assertAnswerConforms("vice_vicii_get_state", result);
+
+  // Belt-and-braces (T-05-07-02): the schema pin and the REAL answer must
+  // agree through the real dispatch path, not only in stock-vicii.test.ts.
+  const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  const unavailable = parsed.unavailable as Record<string, { available: boolean; reason: string }>;
+  for (const name of ["rasterIrqLine", "videoCounter", "rowCounter", "badLineCondition", "borderFlipFlops", "spriteDmaState"]) {
+    assert.equal(unavailable[name]?.available, false, `vice_vicii_get_state's unavailable.${name}.available must be false`);
+    assert.ok(
+      typeof unavailable[name]?.reason === "string" && unavailable[name]!.reason.length > 0,
+      `vice_vicii_get_state's unavailable.${name}.reason must be a non-empty string`,
+    );
+  }
+});
+
+conformanceTest("vice_cia_get_state", async () => {
+  const cia1Bytes = new Array(16).fill(0);
+  const cia2Bytes = new Array(16).fill(0);
+  const session = buildConformanceSession(
+    "conformance-vice_cia_get_state",
+    chipStateSendImpl(
+      new Map([
+        [0xdc00, cia1Bytes],
+        [0xdd00, cia2Bytes],
+      ]),
+    ),
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_cia_get_state", {}, deps);
+  assertAnswerConforms("vice_cia_get_state", result);
+
+  // Belt-and-braces (T-05-07-02): both chips' unavailable pins must agree
+  // with the real answer through the real dispatch path.
+  const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  const cias = parsed.cias as Record<string, unknown>[];
+  assert.equal(cias.length, 2, "vice_cia_get_state with {} (both chips) must return a two-element cias array");
+  for (const chipEntry of cias) {
+    const unavailable = chipEntry.unavailable as Record<string, { available: boolean; reason: string }>;
+    for (const name of ["timerALatch", "timerBLatch", "interruptEnableMask", "todAlarmTime", "todLatchState"]) {
+      assert.equal(unavailable[name]?.available, false, `vice_cia_get_state's cias[].unavailable.${name}.available must be false`);
+      assert.ok(
+        typeof unavailable[name]?.reason === "string" && unavailable[name]!.reason.length > 0,
+        `vice_cia_get_state's cias[].unavailable.${name}.reason must be a non-empty string`,
+      );
+    }
+  }
+});
+
+/** The same $DD00=193 (0xC1) / $D018=0x31 pair 05-05's own stock-sprites.test.ts
+ * verifies against dump-artifacts.mjs's committed fixture, so the pointer
+ * table (36856) and sprite 0's data address (40960) are the SAME constants in
+ * two independent test files -- a drift in the arithmetic fails both. */
+function spriteConformanceFixtures(): { vicii: number[]; dd00: number[]; pointers: number[]; data: number[] } {
+  const vicii = new Array(47).fill(0);
+  vicii[0x18] = 0x31; // $D018
+  return {
+    vicii,
+    dd00: [0xc1], // $DD00 = 193
+    pointers: [0x80, 0, 0, 0, 0, 0, 0, 0], // sprite 0's pointer byte -> dataAddress 40960
+    data: new Array(63).fill(0),
+  };
+}
+
+conformanceTest("vice_sprite_get", async () => {
+  const { vicii, dd00, pointers } = spriteConformanceFixtures();
+  const session = buildConformanceSession(
+    "conformance-vice_sprite_get",
+    chipStateSendImpl(
+      new Map([
+        [0xd000, vicii],
+        [0xdd00, dd00],
+        [36856, pointers],
+      ]),
+    ),
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_sprite_get", {}, deps);
+  assertAnswerConforms("vice_sprite_get", result);
+  const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  assert.equal(parsed.pointerTableAddress, 36856, "the resolved pointer table address must match the $DD00/$D018 fixture pair");
+  const sprites = parsed.sprites as Record<string, unknown>[];
+  assert.equal(sprites[0]!.dataAddress, 40960, "sprite 0's resolved dataAddress must match the fixture's pointer byte");
+});
+
+conformanceTest("vice_sprite_inspect", async () => {
+  const { vicii, dd00, pointers, data } = spriteConformanceFixtures();
+  const session = buildConformanceSession(
+    "conformance-vice_sprite_inspect",
+    chipStateSendImpl(
+      new Map([
+        [0xd000, vicii],
+        [0xdd00, dd00],
+        [36856, pointers],
+        [40960, data],
+      ]),
+    ),
+  );
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_sprite_inspect", { sprite_number: 0 }, deps);
+  assertAnswerConforms("vice_sprite_inspect", result);
+  const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+  assert.equal(parsed.dataAddress, 40960, "sprite 0's resolved dataAddress must match the fixture's pointer byte");
 });
 
 test("structure: stock-dispatch.ts contains zero CODE references to the fork-forwarding function's name, pairing the vice-proxy.ts structural assertion above with this module's own", () => {

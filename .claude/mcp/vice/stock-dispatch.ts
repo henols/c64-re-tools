@@ -63,6 +63,9 @@ import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet } from "./
 import { handleDisassemble } from "./stock-disassemble.ts";
 import { handleMemorySearch, handleMemoryCompare } from "./stock-memory-search.ts";
 import { handleSymbolsLoad, handleSymbolsLookup } from "./stock-symbols.ts";
+import { handleViciiGetState } from "./stock-vicii.ts";
+import { handleCiaGetState } from "./stock-cia.ts";
+import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -616,6 +619,14 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   // derived (DERIV-04) -- needsSession:false: pure client-side state, never touches the wire
   vice_symbols_load: withDerivedTool("vice_symbols_load", { needsSession: false }, handleSymbolsLoad),
   vice_symbols_lookup: withDerivedTool("vice_symbols_lookup", { needsSession: false }, handleSymbolsLookup),
+
+  // derived (DERIV-05)
+  vice_vicii_get_state: withDerivedTool("vice_vicii_get_state", { needsSession: true }, handleViciiGetState),
+  vice_cia_get_state: withDerivedTool("vice_cia_get_state", { needsSession: true }, handleCiaGetState),
+
+  // derived (DERIV-06)
+  vice_sprite_get: withDerivedTool("vice_sprite_get", { needsSession: true }, handleSpriteGet),
+  vice_sprite_inspect: withDerivedTool("vice_sprite_inspect", { needsSession: true }, handleSpriteInspect),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a

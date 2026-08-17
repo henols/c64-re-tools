@@ -280,7 +280,7 @@ test("cia:1 reads only $DC00-$DC0F", async () => {
   assert.equal(calls.length, 1);
   const answer = parseAnswer(result as { content: { text: string }[] });
   assert.equal((answer.cias as unknown[]).length, 1);
-  assert.equal(answer.requested, 1);
+  assert.equal(answer.requested, "1");
 });
 
 test("cia:2 reads only $DD00-$DD0F", async () => {
@@ -295,7 +295,7 @@ test('cia:"2" (string form) is accepted and normalised to 2', async () => {
   const { session } = makeSession(ciaSendImpl);
   const result = await handleCiaGetState({ cia: "2" }, session, DEPS);
   const answer = parseAnswer(result as { content: { text: string }[] });
-  assert.equal(answer.requested, 2);
+  assert.equal(answer.requested, "2");
 });
 
 test("sidefx regression guard: every call's body has length 8 and body[0] === 0x00", async () => {
