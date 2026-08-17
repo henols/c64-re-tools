@@ -283,15 +283,65 @@ test("tod decodes BCD -- a raw pass-through would give seconds:66, not 42", () =
 // overridden, distinct from CIA1_BYTES's own valid 0x91 hours byte.
 // ---------------------------------------------------------------------------
 
-/** Clones a fixture, overriding the TOD seconds/minutes/hours bytes
- * (offsets 0x09/0x0a/0x0b) that are omitted from the override object. */
-function withTod(bytes: number[], overrides: { seconds?: number; minutes?: number; hours?: number }): number[] {
+/** Clones a fixture, overriding the TOD tenths/seconds/minutes/hours bytes
+ * (offsets 0x08/0x09/0x0a/0x0b) that are omitted from the override object. */
+function withTod(
+  bytes: number[],
+  overrides: { tenths?: number; seconds?: number; minutes?: number; hours?: number },
+): number[] {
   const clone = [...bytes];
+  if (overrides.tenths !== undefined) clone[0x08] = overrides.tenths;
   if (overrides.seconds !== undefined) clone[0x09] = overrides.seconds;
   if (overrides.minutes !== undefined) clone[0x0a] = overrides.minutes;
   if (overrides.hours !== undefined) clone[0x0b] = overrides.hours;
   return clone;
 }
+
+// CR-01 (re-review) -- tenths is the fourth TOD field, and it goes through the
+// SAME fromBcd()/omit/invalidBcd path as its three siblings. Before this fix it
+// reported `todTenthsRaw & 0x0f` raw, so 0x0f became an impossible `tenths: 15`
+// with an empty invalidBcd and no note.
+
+test("CR-01: an invalid tenths byte (0x0f) omits tod.tenths, lists it in invalidBcd, keeps rawHex, and notes $DC08", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { tenths: 0x0f })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.ok(!("tenths" in tod), "tod.tenths must be omitted, never the fabricated 15");
+  assert.deepEqual(tod.invalidBcd, ["tenths"]);
+  assert.match(tod.rawHex as string, /^0f/);
+  const notes = decoded.notes as string[];
+  assert.ok(notes.some((n) => n.includes("$DC08") && n.includes("0f")), "notes must name $DC08 and the raw byte 0f");
+});
+
+test("CR-01: every low nibble 0x0a-0x0f is refused and 0x00-0x09 decode straight through", () => {
+  for (let nibble = 0x0a; nibble <= 0x0f; nibble += 1) {
+    const tod = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { tenths: nibble }))).tod as Record<string, unknown>;
+    assert.ok(!("tenths" in tod), `tenths must be omitted for a low nibble of 0x${nibble.toString(16)}`);
+    assert.deepEqual(tod.invalidBcd, ["tenths"]);
+  }
+  for (let nibble = 0x00; nibble <= 0x09; nibble += 1) {
+    const tod = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { tenths: nibble }))).tod as Record<string, unknown>;
+    assert.equal(tod.tenths, nibble);
+    assert.deepEqual(tod.invalidBcd, []);
+  }
+});
+
+test("CR-01: the unused high nibble of $xx08 never invalidates tenths -- 0xf5 still decodes to 5", () => {
+  const tod = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { tenths: 0xf5 }))).tod as Record<string, unknown>;
+  assert.equal(tod.tenths, 5);
+  assert.deepEqual(tod.invalidBcd, []);
+});
+
+test("CR-01: invalidBcd lists all four names in register order tenths/seconds/minutes/hours", () => {
+  const decoded = decodeCia(
+    1,
+    new Uint8Array(withTod(CIA1_BYTES, { tenths: 0x0c, seconds: 0x9f, minutes: 0xaa, hours: 0x1b })),
+  );
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.deepEqual(tod.invalidBcd, ["tenths", "seconds", "minutes", "hours"]);
+  // pm and rawHex survive every refusal -- they are the caller's escape hatch.
+  assert.equal(tod.pm, false);
+  assert.equal(tod.rawHex, "0c9faa1b");
+});
 
 test("WR-03: hours byte 0x91 decodes to 11 PM (tens digit genuinely exercised)", () => {
   const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { hours: 0x91 })));

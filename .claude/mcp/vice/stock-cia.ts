@@ -126,7 +126,9 @@ export const CIA_UNAVAILABLE_FIELDS: ReadonlyArray<readonly [string, string]> = 
 ]);
 
 /** Converts one BCD-encoded byte (e.g. `$42`) to its decimal value (`42`).
- * Used for TOD seconds/minutes/hours. Originally written to stop a raw-byte
+ * Used for TOD tenths/seconds/minutes/hours -- EVERY TOD field goes through
+ * it (CR-01, 2026-08-17: `tenths` used to bypass it and report a masked raw
+ * nibble, so 0x0f decoded to an impossible `15`). Originally written to stop a raw-byte
  * pass-through from reporting `0x42` as `66`. WR-03 (2026-08-17): that is
  * not the only invention this helper must refuse -- a byte whose nibble
  * exceeds 9 is not valid BCD at all, and the naive `tens*10+units` formula
@@ -282,14 +284,28 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   const todSecondsRaw = bytes[0x09]!;
   const todMinutesRaw = bytes[0x0a]!;
   const todHoursRaw = bytes[0x0b]!;
+  // CR-01 (2026-08-17, re-review): tenths was the one TOD field the original
+  // WR-03 fix skipped -- it masked the low nibble and reported it raw, so a
+  // register holding 0x0f produced `tenths: 15`, an impossible decimal with
+  // no marker at all while its three siblings were correctly refusing. The
+  // high nibble of $xx08 is unused and reads 0, so masking first and then
+  // routing through fromBcd() validates exactly the one nibble that carries
+  // data.
+  const todTenths = fromBcd(todTenthsRaw & 0x0f);
   const todSeconds = fromBcd(todSecondsRaw);
   const todMinutes = fromBcd(todMinutesRaw);
   const todHours = fromBcd(todHoursRaw & 0x1f);
 
   const invalidBcd: string[] = [];
-  const tod: Record<string, unknown> = {
-    tenths: todTenthsRaw & 0x0f,
-  };
+  const tod: Record<string, unknown> = {};
+  if (todTenths !== null) {
+    tod.tenths = todTenths;
+  } else {
+    invalidBcd.push("tenths");
+    notes.push(
+      `$${basePrefix}08 (TOD tenths) reads 0x${todTenthsRaw.toString(16).padStart(2, "0")}, whose low nibble is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
   if (todSeconds !== null) {
     tod.seconds = todSeconds;
   } else {

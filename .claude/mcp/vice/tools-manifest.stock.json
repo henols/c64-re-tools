@@ -2665,7 +2665,6 @@
                     }
                   },
                   "required": [
-                    "tenths",
                     "pm",
                     "rawHex",
                     "invalidBcd"
