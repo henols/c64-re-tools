@@ -8,15 +8,29 @@
 // never a write into this worktree itself.
 import { test, afterEach, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleSymbolsLoad, handleSymbolsLookup, resetSymbolStoreForTest } from "./stock-symbols.ts";
 import { parseAddress, symbolNameFor, hasSymbolStore, setSymbolResolver } from "./stock-address.ts";
+import { checkAgainstSchema } from "./stock-schema-check.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 const DEPS = {} as unknown as StockDispatchDeps;
+
+/** The shipped manifest's own declared `outputSchema` for `vice_symbols_lookup`
+ * -- read directly with node:fs (relative to this test file, matching the
+ * plan's instruction) rather than duplicating the schema by hand, so this
+ * assertion tracks the real, committed contract rather than a copy of it. */
+function symbolsLookupOutputSchema(): unknown {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, "tools-manifest.stock.json"), "utf8")) as {
+    tools: { name: string; outputSchema: unknown }[];
+  };
+  const entry = manifest.tools.find((t) => t.name === "vice_symbols_lookup");
+  assert.ok(entry, "tools-manifest.stock.json must declare vice_symbols_lookup");
+  return entry!.outputSchema;
+}
 
 function parseAnswer(result: { content: { text: string }[] }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text);
@@ -353,6 +367,67 @@ test(
     assert.equal(parseAnswer(byNumber).name, "vic_cborder");
     assert.equal(parseAnswer(byDollarHex).name, "vic_cborder");
     assert.equal(parseAnswer(byZeroX).name, "vic_cborder");
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// WR-01: query.address echoes the PARSED number for every accepted form,
+// never the caller's raw argument -- and the address branch is schema-
+// checked against the shipped manifest so it cannot pass vacuously.
+// ---------------------------------------------------------------------------
+
+test(
+  "vice_symbols_lookup: query.address is the parsed number 53280 for every accepted address form",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+
+    for (const form of [53280, "$d020", "0xd020"]) {
+      const result = await handleSymbolsLookup({ address: form }, DEPS);
+      const payload = parseAnswer(result);
+      const query = payload.query as Record<string, unknown>;
+      assert.equal(typeof query.address, "number", `form ${JSON.stringify(form)}: query.address must be a number`);
+      assert.equal(query.address, 53280, `form ${JSON.stringify(form)}: query.address must be 53280`);
+      assert.equal(payload.found, true, `form ${JSON.stringify(form)}: address is defined in the fixture`);
+    }
+  }),
+);
+
+test(
+  "vice_symbols_lookup: the address branch's real answer validates against the shipped manifest outputSchema",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+    const schema = symbolsLookupOutputSchema();
+
+    const addressResult = await handleSymbolsLookup({ address: "$d020" }, DEPS);
+    const addressPayload = parseAnswer(addressResult);
+    assert.deepEqual(checkAgainstSchema(addressPayload, schema), []);
+
+    const nameResult = await handleSymbolsLookup({ name: "main" }, DEPS);
+    const namePayload = parseAnswer(nameResult);
+    assert.deepEqual(checkAgainstSchema(namePayload, schema), []);
+    assert.equal(typeof namePayload.query, "object");
+    assert.equal(typeof (namePayload.query as Record<string, unknown>).name, "string");
+  }),
+);
+
+test(
+  "vice_symbols_lookup: non-vacuity control -- forcing query.address back to a string DOES fail the schema check",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+    const schema = symbolsLookupOutputSchema();
+
+    const result = await handleSymbolsLookup({ address: "$d020" }, DEPS);
+    const payload = parseAnswer(result);
+    const corrupted = { ...payload, query: { address: "$d020" } };
+    const violations = checkAgainstSchema(corrupted, schema);
+    assert.notDeepEqual(violations, []);
+    assert.ok(
+      violations.some((v) => v.includes("query.address")),
+      `expected a violation mentioning query.address, got: ${JSON.stringify(violations)}`,
+    );
   }),
 );
 

@@ -377,7 +377,13 @@ export const handleSymbolsLookup: DerivedPureHandler = async (args, _deps) => {
     return isErrorText(`vice_symbols_lookup: ${err instanceof Error ? err.message : String(err)}`);
   }
   const name = loadedTable?.byAddress.get(address);
-  const payload: Record<string, unknown> = { query: { address: args.address }, found: name !== undefined, symbolCount: loadedSymbolCount };
+  // `query` echoes the value the lookup was PERFORMED AGAINST -- the parsed
+  // `address` local -- never the caller's raw `args.address`. parseAddress()
+  // accepts "$d020"/"0xd020" strings as well as numbers, but this tool's
+  // declared outputSchema pins `query.address` to `type: "number"`; echoing
+  // the raw argument would make the answer's own shape depend on the
+  // caller's formatting choice and violate that schema (WR-01, D-05-18).
+  const payload: Record<string, unknown> = { query: { address }, found: name !== undefined, symbolCount: loadedSymbolCount };
   if (name !== undefined) {
     payload.name = name;
     payload.address = address;
