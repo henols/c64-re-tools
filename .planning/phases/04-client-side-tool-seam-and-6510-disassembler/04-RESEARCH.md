@@ -599,7 +599,10 @@ until the deferred swap.
 **If this table is empty:** N/A — three items above need light confirmation, none
 blocks planning.
 
-## Open Questions
+## Open Questions (RESOLVED during planning, 2026-08-17)
+
+Both questions below were closed by the planner as explicit plan decisions; each
+carries an inline `RESOLVED:` marker naming the plan that owns the resolution.
 
 1. **Exact Debian/Ubuntu apt package name for ACME**
    - What we know: ACME 0.97 "Zem" was verified present in this container's history
@@ -613,6 +616,16 @@ blocks planning.
      policy acme` (or attempt the install and check `acme --version` immediately after)
      before trusting the package name; if it does not exist under that name, fall back
      to a source build or a GitHub release download step instead.
+   - **RESOLVED: `04-06-PLAN.md` (task 1, and its `research_corrections_resolved_here`
+     block).** Verified live during planning against this container's Debian trixie
+     archive: `apt-cache policy acme` returns candidate `1:0.97~svn20211115+ds-2` and
+     `apt-cache show acme` describes it as "Multi-platform cross assembler for
+     6502/6510/65816 CPU" — so `acme` is the correct package and is the real ACME
+     cross-assembler. `ubuntu-latest` specifically remains unverified (Ubuntu ships the
+     same source package in `universe`), so 04-06's CI step does not assume: it installs
+     under `set -euo pipefail`, runs the binary, and `grep -qi acme` on its own banner,
+     failing the job if that does not hold. A second layer, `VICE_REQUIRE_ACME=1` on the
+     `Test` step, turns the round-trip's skip into a hard failure.
 
 2. **Where exactly should `THIRD-PARTY-NOTICES.md` live, given the packaging gap in
    Pitfall 2**
@@ -624,6 +637,15 @@ blocks planning.
    - Recommendation: the planner should pick one of Pitfall 2's two options explicitly
      as a plan decision, rather than leaving "gated by the packaging check" ambiguous
      about which file the check actually gates on.
+   - **RESOLVED: `04-07-PLAN.md` (its `research_corrections_resolved_here` block).**
+     Option 2 chosen explicitly: the canonical file lives at
+     `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` and is added to that package's `files[]`
+     (no `prepack`, no copy step, no moving part), with a licence-text-free repo-root
+     `THIRD-PARTY-NOTICES.md` pointer so D-07's "at the repo root" and GitHub's repo-page
+     convention are both satisfied. `check-npm-packages.mjs` asserts presence in the
+     **packed tarball's** file list via `vice.files.includes(...)`, never `existsSync()`
+     against the repo root — the warning sign Pitfall 2 names. Option 1 (a `prepack`
+     copy mirroring `installer/package.json`) is recorded as rejected there.
 
 ## Validation Architecture
 
@@ -749,7 +771,7 @@ already-precedented fallback (the env-gated skip pattern).
 - Standard stack (no new npm deps, ACME as the one external tool): HIGH — directly verified live, no external doc needed
 - Architecture / seam design: HIGH — `buildBackendAwareTool()`, `withStockSession()`, `stock-paths.ts`'s mirror-image precedent all read directly from the real files
 - Opcode data (NOP variants, JAM count, illegal opcode addressing modes, page-wrap bug): HIGH — cross-verified against two independent live sources (cc65 GitHub raw source, masswerk.at)
-- Packaging mechanics (D-07's notices-file gate): MEDIUM — a real gap was found and two concrete resolutions proposed, but the planner must pick one
+- Packaging mechanics (D-07's notices-file gate): MEDIUM at research time — a real gap was found and two concrete resolutions proposed. **Now closed:** the planner picked Option 2 in `04-07-PLAN.md`. Planning also found a *second*, larger packaging defect this research did not: deferring the new modules' `files[]` entries to the last wave would have published a tarball throwing `ERR_MODULE_NOT_FOUND` for five of six waves, because `release-on-merge` auto-publishes on every push to `main`. Fixed by carrying Phase 3's Rule 2 forward — each module is listed in the same plan that makes it reachable (`04-02`, `04-05`), with a transitive-closure gate added in `04-07`
 - `fluffy-6502` provenance: LOW — could not be found; flagged, not blocking
 
 **Research date:** 2026-08-17
