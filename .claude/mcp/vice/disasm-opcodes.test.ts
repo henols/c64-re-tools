@@ -289,17 +289,29 @@ const JAM_OPCODES = [0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2,
 
 describe("JAM class -- exactly 12 opcodes", () => {
   for (const op of JAM_OPCODES) {
-    test(`$${op.toString(16).padStart(2, "0")}: jam, implicit, length 1, illegal, acmeExpressible`, () => {
+    test(`$${op.toString(16).padStart(2, "0")}: jam, implicit, length 1, illegal`, () => {
       const entry = OPCODES[op]!;
       assert.equal(entry.mnemonic, "jam");
       assert.equal(entry.mode, "implicit");
       assert.equal(entry.length, 1);
       assert.equal(entry.illegal, true);
-      // "jam" is in acme-build/SKILL.md's 18 verified !cpu 6510 illegal
-      // mnemonics, so ACME accepts it.
-      assert.equal(entry.acmeExpressible, true);
     });
   }
+
+  // "jam" is in acme-build/SKILL.md's 18 verified !cpu 6510 illegal
+  // mnemonics, so ACME's parser accepts the bare mnemonic -- but ALL 12 jam
+  // opcodes share the identical (mnemonic, mode) pair with no operand to
+  // disambiguate them, and 04-06's real-ACME round-trip found that ACME
+  // always resolves bare "jam" to exactly $02, regardless of which of the
+  // 12 opcodes a decoder produced it from. Only $02 is genuinely
+  // byte-faithful; the other 11 would silently substitute the WRONG opcode
+  // byte if trusted, so acmeExpressible is corrected to false for them
+  // (04-06-SUMMARY.md).
+  test("only $02 is acmeExpressible -- the other 11 jam opcodes are not (04-06: ACME always resolves bare \"jam\" to $02)", () => {
+    for (const op of JAM_OPCODES) {
+      assert.equal(OPCODES[op]!.acmeExpressible, op === 0x02, `$${op.toString(16).padStart(2, "0")}`);
+    }
+  });
 
   test("exactly 12 jam entries across the whole table", () => {
     const jams = OPCODES.filter((e) => e.mnemonic === "jam");
@@ -328,18 +340,36 @@ describe("acmeExpressible seed sanity (D-09: 04-06's real-ACME assertion test is
     }
   });
 
-  test("$8B (ane), $AB (lxa), $EB (duplicate sbc) are seeded not acmeExpressible", () => {
-    assert.equal(OPCODES[0x8b]!.acmeExpressible, false);
-    assert.equal(OPCODES[0xab]!.acmeExpressible, false);
+  // 04-06's real-ACME round-trip found that ACME 0.97 ("Zem") genuinely
+  // accepts "ane #imm" and "lxa #imm" (each with a documented "unstable"
+  // WARNING, not an error) and reproduces $8B/$AB exactly -- both are
+  // corrected from an earlier, untested `false` seed to `true`. $EB (the
+  // illegal duplicate of the legal $E9 "sbc #imm") stays `false`: ACME's
+  // bare "sbc #imm" always resolves to $E9, never $EB.
+  test("$8B (ane) and $AB (lxa) are acmeExpressible; $EB (duplicate sbc) is not (04-06)", () => {
+    assert.equal(OPCODES[0x8b]!.acmeExpressible, true);
+    assert.equal(OPCODES[0xab]!.acmeExpressible, true);
     assert.equal(OPCODES[0xeb]!.acmeExpressible, false);
   });
 
-  test("all 21 multi-byte NOP-class opcodes are seeded not acmeExpressible", () => {
+  // 04-06's real-ACME round-trip found that four of the five multi-byte
+  // duplicate-mode NOP subgroups (immediate, zeropage, zeropage_x,
+  // absolute_x) each have exactly one byte-faithful, canonical member --
+  // the lowest-numbered opcode in the group, which ACME's bare
+  // "nop <operand>" always resolves to regardless of which duplicate a
+  // decoder produced it from. $0C (absolute) has no duplicate at all and
+  // was simply an untested, over-conservative `false` seed. All five are
+  // corrected to `true`; every other member of a duplicate group stays
+  // `false` (04-06-SUMMARY.md).
+  const NOP_CANONICAL_TRUE = new Set([0x04, 0x0c, 0x14, 0x1c, 0x80]);
+
+  test("16 of the 21 multi-byte NOP-class opcodes are not acmeExpressible; the 5 group-canonical members are (04-06)", () => {
     const multiByteNops = NOP_CLASS.filter((g) => g.length > 1).flatMap((g) => g.opcodes);
     assert.equal(multiByteNops.length, 21);
     for (const op of multiByteNops) {
-      assert.equal(OPCODES[op]!.acmeExpressible, false, `$${op.toString(16).padStart(2, "0")}`);
+      assert.equal(OPCODES[op]!.acmeExpressible, NOP_CANONICAL_TRUE.has(op), `$${op.toString(16).padStart(2, "0")}`);
     }
+    assert.equal(multiByteNops.filter((op) => OPCODES[op]!.acmeExpressible).length, 5);
   });
 
   test("the 6 implied 1-byte NOPs are seeded per the table -- 04-06's real-ACME assertion test is the authority, not this assertion", () => {

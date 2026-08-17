@@ -51,12 +51,51 @@
 //   - `$AB` -- cc65 calls this "lax" (an immediate-mode ANE/ATX/LXA/OAL
 //     family member). Renamed here to "lxa" so it is never confused with the
 //     genuine indexed-addressing LAX family (`$A3/$A7/$AF/$B3/$B7/$BF`),
-//     which ACME DOES accept as "lax". ACME does not accept "lxa"; this
-//     entry's `acmeExpressible` is `false`.
+//     which ACME DOES accept as "lax". 04-06's real-ACME round-trip found
+//     that ACME 0.97 ("Zem") ALSO accepts "lxa" (with a documented "unstable
+//     LXA #NONZERO" warning, not an error) and reproduces exactly `$AB` --
+//     this entry's `acmeExpressible` is `true`, corrected from an earlier,
+//     untested `false` seed.
 //   - `$CB` -- cc65 calls this "axs". Renamed here to "sbx" (SBX/AXS/SAX2
 //     are all names for the same opcode; masswerk.at and oxyron.de both use
 //     "SBX"), matching ACME's verified list. `acmeExpressible` is `true`.
 // No other mnemonic in this table differs from cc65's spelling.
+//
+// ---------------------------------------------------------------------------
+// `acmeExpressible` corrections made by 04-06's real-ACME round-trip
+// ---------------------------------------------------------------------------
+// D-09 says the seed above is not the authority -- `disasm-roundtrip.test.ts`
+// asserting against a real installed ACME 0.97 ("Zem") is. Two duplicate
+// (mnemonic, addressing-mode) groups exist among the illegal opcodes, where
+// ACME's assembler resolves the bare mnemonic to exactly ONE canonical
+// opcode byte regardless of which of the several opcodes sharing that
+// mnemonic+mode a decoder produced it from -- so only that one canonical
+// member can be `true`; every other member of the group is unfaithful
+// (ACME accepts the syntax but silently emits the WRONG opcode byte) and
+// must be `false`:
+//   - `jam` (implicit, no operand -- 12 opcodes: $02 $12 $22 $32 $42 $52 $62
+//     $72 $92 $B2 $D2 $F2): ACME always assembles bare `jam` to `$02`.
+//     Corrected: only `$02` is `true`; the other 11 are `false`.
+//   - `anc` (immediate -- $0B and $2B): ACME always assembles `anc #imm` to
+//     `$0B`. Corrected: `$0B` stays `true`; `$2B` is now `false`.
+// A third group -- the illegal `nop` family, which spans FIVE duplicate
+// (mode) subgroups (immediate: $80/$82/$89/$C2/$E2; zeropage: $04/$44/$64;
+// zeropage,X: $14/$34/$54/$74/$D4/$F4; absolute,X: $1C/$3C/$5C/$7C/$DC/$FC;
+// implied: $1A/$3A/$5A/$7A/$DA/$FA) -- was already ALL-`false` in the
+// original seed, but for four of those five subgroups that was
+// over-conservative: ACME's bare `nop <operand>` DOES faithfully reproduce
+// the group's lowest-numbered member. Corrected: `$04`, `$14`, `$1C`, `$80`
+// (each the lowest opcode in its subgroup) are now `true`; every other
+// member of those same four subgroups stays `false`. The implied subgroup
+// ($1A/$3A/.../$FA) stays entirely `false` for a different reason: ACME's
+// bare `nop` mnemonic with NO operand always resolves to the pre-existing
+// LEGAL opcode `$EA`, never to any illegal implied-mode member, so none of
+// them can ever be faithfully expressed via the plain "nop" mnemonic.
+// `nop` absolute ($0C) has no duplicate partner at all (it is the only
+// illegal absolute-mode nop) and was ALSO corrected from `false` to `true`
+// -- it was unconditionally byte-faithful and unambiguous; the original
+// `false` was simply an untested, over-conservative seed value, not a
+// disagreement about ambiguity.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -170,7 +209,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "ora", mode: "indirect_x", length: 2, illegal: false, acmeExpressible: true }, // $01
   { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $02
   { mnemonic: "slo", mode: "indirect_x", length: 2, illegal: true, acmeExpressible: true }, // $03
-  { mnemonic: "nop", mode: "zeropage", length: 2, illegal: true, acmeExpressible: false }, // $04
+  { mnemonic: "nop", mode: "zeropage", length: 2, illegal: true, acmeExpressible: true }, // $04 (04-06: canonical zeropage nop, ACME's "nop $xx" always yields this byte)
   { mnemonic: "ora", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $05
   { mnemonic: "asl", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $06
   { mnemonic: "slo", mode: "zeropage", length: 2, illegal: true, acmeExpressible: true }, // $07
@@ -178,15 +217,15 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "ora", mode: "immediate", length: 2, illegal: false, acmeExpressible: true }, // $09
   { mnemonic: "asl", mode: "accumulator", length: 1, illegal: false, acmeExpressible: true }, // $0a
   { mnemonic: "anc", mode: "immediate", length: 2, illegal: true, acmeExpressible: true }, // $0b
-  { mnemonic: "nop", mode: "absolute", length: 3, illegal: true, acmeExpressible: false }, // $0c
+  { mnemonic: "nop", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $0c (04-06: unique, unambiguous, ACME reproduces exactly)
   { mnemonic: "ora", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $0d
   { mnemonic: "asl", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $0e
   { mnemonic: "slo", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $0f
   { mnemonic: "bpl", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $10
   { mnemonic: "ora", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $11
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $12
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $12 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "slo", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $13
-  { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $14
+  { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: true }, // $14 (04-06: canonical zeropage,x nop)
   { mnemonic: "ora", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $15
   { mnemonic: "asl", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $16
   { mnemonic: "slo", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: true }, // $17
@@ -194,13 +233,13 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "ora", mode: "absolute_y", length: 3, illegal: false, acmeExpressible: true }, // $19
   { mnemonic: "nop", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $1a
   { mnemonic: "slo", mode: "absolute_y", length: 3, illegal: true, acmeExpressible: true }, // $1b
-  { mnemonic: "nop", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: false }, // $1c
+  { mnemonic: "nop", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: true }, // $1c (04-06: canonical absolute,x nop)
   { mnemonic: "ora", mode: "absolute_x", length: 3, illegal: false, acmeExpressible: true }, // $1d
   { mnemonic: "asl", mode: "absolute_x", length: 3, illegal: false, acmeExpressible: true }, // $1e
   { mnemonic: "slo", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: true }, // $1f
   { mnemonic: "jsr", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $20
   { mnemonic: "and", mode: "indirect_x", length: 2, illegal: false, acmeExpressible: true }, // $21
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $22
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $22 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "rla", mode: "indirect_x", length: 2, illegal: true, acmeExpressible: true }, // $23
   { mnemonic: "bit", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $24
   { mnemonic: "and", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $25
@@ -209,14 +248,14 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "plp", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $28
   { mnemonic: "and", mode: "immediate", length: 2, illegal: false, acmeExpressible: true }, // $29
   { mnemonic: "rol", mode: "accumulator", length: 1, illegal: false, acmeExpressible: true }, // $2a
-  { mnemonic: "anc", mode: "immediate", length: 2, illegal: true, acmeExpressible: true }, // $2b
+  { mnemonic: "anc", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $2b (04-06: "anc #imm" always assembles to $0b, not this byte)
   { mnemonic: "bit", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $2c
   { mnemonic: "and", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $2d
   { mnemonic: "rol", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $2e
   { mnemonic: "rla", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $2f
   { mnemonic: "bmi", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $30
   { mnemonic: "and", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $31
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $32
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $32 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "rla", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $33
   { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $34
   { mnemonic: "and", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $35
@@ -232,7 +271,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "rla", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: true }, // $3f
   { mnemonic: "rti", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $40
   { mnemonic: "eor", mode: "indirect_x", length: 2, illegal: false, acmeExpressible: true }, // $41
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $42
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $42 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "sre", mode: "indirect_x", length: 2, illegal: true, acmeExpressible: true }, // $43
   { mnemonic: "nop", mode: "zeropage", length: 2, illegal: true, acmeExpressible: false }, // $44
   { mnemonic: "eor", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $45
@@ -248,7 +287,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "sre", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $4f
   { mnemonic: "bvc", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $50
   { mnemonic: "eor", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $51
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $52
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $52 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "sre", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $53
   { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $54
   { mnemonic: "eor", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $55
@@ -264,7 +303,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "sre", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: true }, // $5f
   { mnemonic: "rts", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $60
   { mnemonic: "adc", mode: "indirect_x", length: 2, illegal: false, acmeExpressible: true }, // $61
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $62
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $62 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "rra", mode: "indirect_x", length: 2, illegal: true, acmeExpressible: true }, // $63
   { mnemonic: "nop", mode: "zeropage", length: 2, illegal: true, acmeExpressible: false }, // $64
   { mnemonic: "adc", mode: "zeropage", length: 2, illegal: false, acmeExpressible: true }, // $65
@@ -280,7 +319,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "rra", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $6f
   { mnemonic: "bvs", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $70
   { mnemonic: "adc", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $71
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $72
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $72 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "rra", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $73
   { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $74
   { mnemonic: "adc", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $75
@@ -294,7 +333,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "adc", mode: "absolute_x", length: 3, illegal: false, acmeExpressible: true }, // $7d
   { mnemonic: "ror", mode: "absolute_x", length: 3, illegal: false, acmeExpressible: true }, // $7e
   { mnemonic: "rra", mode: "absolute_x", length: 3, illegal: true, acmeExpressible: true }, // $7f
-  { mnemonic: "nop", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $80
+  { mnemonic: "nop", mode: "immediate", length: 2, illegal: true, acmeExpressible: true }, // $80 (04-06: canonical immediate nop)
   { mnemonic: "sta", mode: "indirect_x", length: 2, illegal: false, acmeExpressible: true }, // $81
   { mnemonic: "nop", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $82
   { mnemonic: "sax", mode: "indirect_x", length: 2, illegal: true, acmeExpressible: true }, // $83
@@ -305,14 +344,14 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "dey", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $88
   { mnemonic: "nop", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $89
   { mnemonic: "txa", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $8a
-  { mnemonic: "ane", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $8b
+  { mnemonic: "ane", mode: "immediate", length: 2, illegal: true, acmeExpressible: true }, // $8b (04-06: ACME accepts "ane #imm" with a documented "unstable" warning, not an error, and reproduces $8b exactly)
   { mnemonic: "sty", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $8c
   { mnemonic: "sta", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $8d
   { mnemonic: "stx", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $8e
   { mnemonic: "sax", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $8f
   { mnemonic: "bcc", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $90
   { mnemonic: "sta", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $91
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $92
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $92 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "sha", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $93
   { mnemonic: "sty", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $94
   { mnemonic: "sta", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $95
@@ -337,14 +376,14 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "tay", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $a8
   { mnemonic: "lda", mode: "immediate", length: 2, illegal: false, acmeExpressible: true }, // $a9
   { mnemonic: "tax", mode: "implicit", length: 1, illegal: false, acmeExpressible: true }, // $aa
-  { mnemonic: "lxa", mode: "immediate", length: 2, illegal: true, acmeExpressible: false }, // $ab
+  { mnemonic: "lxa", mode: "immediate", length: 2, illegal: true, acmeExpressible: true }, // $ab (04-06: ACME accepts "lxa #imm" with a documented "unstable" warning, not an error, and reproduces $ab exactly)
   { mnemonic: "ldy", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $ac
   { mnemonic: "lda", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $ad
   { mnemonic: "ldx", mode: "absolute", length: 3, illegal: false, acmeExpressible: true }, // $ae
   { mnemonic: "lax", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $af
   { mnemonic: "bcs", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $b0
   { mnemonic: "lda", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $b1
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $b2
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $b2 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "lax", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $b3
   { mnemonic: "ldy", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $b4
   { mnemonic: "lda", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $b5
@@ -376,7 +415,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "dcp", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $cf
   { mnemonic: "bne", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $d0
   { mnemonic: "cmp", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $d1
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $d2
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $d2 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "dcp", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $d3
   { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $d4
   { mnemonic: "cmp", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $d5
@@ -408,7 +447,7 @@ export const OPCODES: readonly OpcodeEntry[] = [
   { mnemonic: "isc", mode: "absolute", length: 3, illegal: true, acmeExpressible: true }, // $ef
   { mnemonic: "beq", mode: "relative", length: 2, illegal: false, acmeExpressible: true }, // $f0
   { mnemonic: "sbc", mode: "indirect_y", length: 2, illegal: false, acmeExpressible: true }, // $f1
-  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: true }, // $f2
+  { mnemonic: "jam", mode: "implicit", length: 1, illegal: true, acmeExpressible: false }, // $f2 (04-06: bare "jam" always assembles to $02, not this byte)
   { mnemonic: "isc", mode: "indirect_y", length: 2, illegal: true, acmeExpressible: true }, // $f3
   { mnemonic: "nop", mode: "zeropage_x", length: 2, illegal: true, acmeExpressible: false }, // $f4
   { mnemonic: "sbc", mode: "zeropage_x", length: 2, illegal: false, acmeExpressible: true }, // $f5

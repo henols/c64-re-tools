@@ -42,8 +42,36 @@ jobs:
         working-directory: .claude/mcp/vice
         run: npm run typecheck
 
+      - name: Install ACME cross-assembler (DISASM-03 round-trip gate)
+        # DISASM-03/criterion 4: the round-trip in disasm-roundtrip.test.ts
+        # must run as a real gate, not silently skip. This step installs
+        # ACME from the distribution archive (verified package name against
+        # Debian trixie during planning: `acme`, "Multi-platform cross
+        # assembler for 6502/6510/65816 CPU") and then PROVES the installed
+        # binary really is ACME by running it and grepping its own banner --
+        # `set -euo pipefail` plus the final grep make a wrong package name
+        # or a broken install fail this job loudly, rather than letting the
+        # Test step below silently skip the round-trip.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y acme
+          command -v acme
+          { acme --version || acme --help; } 2>&1 | head -5 | tee /tmp/acme-banner.txt
+          grep -qi acme /tmp/acme-banner.txt
+
       - name: Test
         working-directory: .claude/mcp/vice
+        env:
+          # Second half of the loud-failure gate: with this set,
+          # disasm-roundtrip.test.ts turns "ACME absent" from a named SKIP
+          # into a hard FAIL. This step runs `npm test`, the full `*.test.*`
+          # glob (not the narrower `npm run test:automated`), so the
+          # round-trip runs here either way -- see the pending todo
+          # .planning/todos/pending/2026-08-13-reconcile-ci-test-command-with-narrowed-gate.md
+          # for the separate, deliberately-not-folded-in question of which
+          # command CI should run.
+          VICE_REQUIRE_ACME: "1"
         run: npm test
 
       - name: Smoke-test the MCP server (boots under type-stripping + MCP handshake)
