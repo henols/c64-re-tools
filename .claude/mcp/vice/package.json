@@ -25,6 +25,7 @@
     "container-guard.mts",
     "backend-detect.mts",
     "stock-dispatch.ts",
+    "stock-derived.ts",
     "stock-handler.ts",
     "stock-runstate.ts",
     "stock-address.ts",

@@ -40,6 +40,7 @@ import {
   type StockSessionHandler,
 } from "./stock-handler.ts";
 import { attachRunStateTracker } from "./stock-runstate.ts";
+import { STOCK_DERIVED_TOOLS, type DerivedPureHandler } from "./stock-derived.ts";
 
 // The six family modules (plans 03-06 through 03-11) -- each exports its
 // tools as StockSessionHandler-shaped values; this file (D-09) is the ONE
@@ -438,6 +439,75 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
 
     try {
       return await handler(args, outcome.session, deps);
+    } catch (err) {
+      return convertWireError(toolName, err);
+    }
+  };
+}
+
+/**
+ * withDerivedTool -- THE ONE adapter for a tool whose answer is computed
+ * CLIENT-SIDE (DERIV-07), sitting immediately beside withStockSession()
+ * above. Derived-ness is a property of WHICH ADAPTER wraps a handler, NEVER
+ * a routing decision (D-03) -- there is still exactly one
+ * STOCK_DISPATCH_TABLE and exactly one dispatchStock( call site in
+ * vice-proxy.ts. A derived tool registers into the SAME table a direct tool
+ * does, through this adapter instead of withStockSession().
+ *
+ * Refuses any `toolName` not declared in STOCK_DERIVED_TOOLS -- at CALL
+ * TIME, inside the returned handler, never as a module-scope throw (the
+ * table literal below is evaluated at import time, and a throw there would
+ * kill the whole stdio server before it starts).
+ *
+ * `needsSession: false` exists because D-05 of Phase 3 makes every touch of
+ * the wire a machine halt, so an emulator-free derived tool must not stop
+ * the user's running program for nothing (D-04). Its returned handler NEVER
+ * calls ensureStockSession() at all -- not a lighter-weight variant of it
+ * (04-RESEARCH.md Pitfall 3) -- and invokes `handler(args, deps)` inside a
+ * single try/catch converting through convertWireError(), so the
+ * never-throw boundary still holds.
+ *
+ * `needsSession: true` runs the EXACT same three-step preamble
+ * withStockSession() runs, reusing the same imported converters -- never a
+ * third error converter (stock-handler.ts's standing rule): ensureStockSession(deps)
+ * inside its own try/catch -> convertHandshakeError(toolName, err); a
+ * `{ ok: false }` outcome returns outcome.message verbatim through
+ * isErrorText(), never re-worded; otherwise handler(args, outcome.session, deps)
+ * inside a SECOND try/catch -> convertWireError(toolName, err).
+ */
+export function withDerivedTool(toolName: string, opts: { needsSession: true }, handler: StockSessionHandler): StockHandler;
+export function withDerivedTool(toolName: string, opts: { needsSession: false }, handler: DerivedPureHandler): StockHandler;
+export function withDerivedTool(
+  toolName: string,
+  opts: { needsSession: boolean },
+  handler: StockSessionHandler | DerivedPureHandler,
+): StockHandler {
+  return async (args, deps) => {
+    if (!STOCK_DERIVED_TOOLS.has(toolName)) {
+      return isErrorText(`${toolName} is not declared in STOCK_DERIVED_TOOLS -- withDerivedTool refuses any undeclared tool.`);
+    }
+
+    if (!opts.needsSession) {
+      try {
+        return await (handler as DerivedPureHandler)(args, deps);
+      } catch (err) {
+        return convertWireError(toolName, err);
+      }
+    }
+
+    let outcome: EnsureStockSessionOutcome;
+    try {
+      outcome = await ensureStockSession(deps);
+    } catch (err) {
+      return convertHandshakeError(toolName, err);
+    }
+
+    if (!outcome.ok) {
+      return isErrorText(outcome.message);
+    }
+
+    try {
+      return await (handler as StockSessionHandler)(args, outcome.session, deps);
     } catch (err) {
       return convertWireError(toolName, err);
     }
