@@ -53,7 +53,11 @@ One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
   writing `$DD00` is usually talking to the drive.
 - **`$DC0D`/`$DD0D` clear the interrupt flags on read**, the same shape as `$D01E`/`$D01F`. Reading
   one steals an interrupt the game was about to service. Prefer `vice_cia_get_state`. The VICE
-  monitor's exact behaviour here is **unverified** — verify, don't assume.
+  monitor's exact behaviour here is **unverified** — verify, don't assume. On stock,
+  `vice_cia_get_state` reports the **read** side of `$xx0D` as `interruptStatus` and marks the
+  write-side enable mask `unavailable` — the two share one address with different meanings, so a
+  reader looking for "which interrupts are enabled" is not silently handed the flags that have
+  fired.
 - **Direct `$DC00`/`$DC01` polling is the norm, and it defeats `vice_keyboard_type`.**
   **Evidence: live, established on this project during recovery work. Confidence: HIGH. Cost: an
   afternoon.** Games and cracks bypass the KERNAL keyboard buffer and read the matrix directly.

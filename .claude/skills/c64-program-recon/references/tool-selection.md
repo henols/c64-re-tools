@@ -14,10 +14,11 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | What does the handler at this vector do? | `vice_disassemble` — the emulator's own decoder, not a dead listing |
 | Is this really the main loop? | `vice_checkpoint_add` + `vice_run_until` + `vice_registers_get` — fires once per frame ⇒ proven |
 | What code writes this? | `vice_watch_add` — finds **writers**. Best targets: `$D018`, VM+`$03F8`, `$D404` |
-| Whole-chip state without the read hazards | `vice_vicii_get_state` / `vice_sid_get_state` / `vice_cia_get_state` — **prefer these over raw register reads** |
-| Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` |
-| Find a known byte pattern | `vice_memory_search` |
-| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` and regenerator2000 output share this channel |
+| Whole-chip VIC-II/CIA state without the read hazards | `vice_vicii_get_state` / `vice_cia_get_state` (**both backends**) — prefer these over raw register reads |
+| Whole-chip SID state without the read hazards | `vice_sid_get_state` (**requires the fork** — SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command; unrecoverable on stock) |
+| Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` (**both backends**) |
+| Find a known byte pattern | `vice_memory_search` (**both backends**) |
+| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` and regenerator2000 output share this channel |
 | Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence. **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.planning/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |

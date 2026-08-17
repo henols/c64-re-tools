@@ -87,6 +87,11 @@ address to checkpoint when the emulator is next available — press RESTORE with
 until the line is released, so it is a press→release **edge**), then `vice_machine_reset` soft and
 hard, and record where the PC actually lands.
 
+**`vice_keyboard_restore` requires the fork backend.** The RESTORE key pulses the NMI line
+directly and is not part of the keyboard matrix, so stock's `KEYBOARD_FEED` (which only injects
+PETSCII text into the buffer) cannot produce it. This call is unavailable on stock; Phase 8's
+`BACK-05` is what reports the absence at runtime.
+
 **Evidence:** derived mechanically from six three-run-verified captures; every value identical
 across all three runs of its release, so none of it is drift.
 **Confidence:** HIGH for the values and for the cross-release divergence. The *interpretation* of
@@ -155,6 +160,10 @@ Finding the state variable gives a high-level map of the whole program. A practi
 at a title screen and again in gameplay, diff the two captures, and look for a single byte that
 changed in zero page or low RAM. `vice_memory_compare` narrows this; `c64-ram-capture` § Compare
 two captures gives the volatility rules that stop you chasing drift.
+
+On stock, only `mode: 'ranges'` is served — capture the two states at different points in time and
+compare two live ranges. `mode: 'snapshot'` is refused with an explanatory message; there is no
+memory-only snapshot producer on either backend.
 
 ## Verified against this project — 2026-08-04
 

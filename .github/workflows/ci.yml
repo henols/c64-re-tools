@@ -81,6 +81,13 @@ jobs:
       - name: Validate npm package contents
         run: node scripts/check-npm-packages.mjs
 
+      # Blocking: a skill that documents a tool the active backend does not
+      # advertise fails at runtime for the user with an unknown-tool error,
+      # and the six skills are the product surface this milestone exists to
+      # keep working (Phase 5 criterion 5).
+      - name: Validate skill tool coverage against the stock manifest (Phase 5 criterion 5)
+        run: node scripts/check-skill-tool-coverage.mjs
+
       - name: Build installable package
         run: bash scripts/package.sh
 

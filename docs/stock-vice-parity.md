@@ -47,19 +47,45 @@ below is renumbered to stay contiguous.)
    reset either way, so "atomic reset_and_read" becomes client-side baseline math
    regardless of which route is used. Functionally close via either route.
 
-5. **`vice_vicii_get_state` ("internal") / `vice_cia_get_state` (timers) → partial loss.**
-   Memory-mapped bits read fine — and `MEM_GET` can read **without side effects**,
-   so it won't clear collision/latch registers. But truly *internal* state
-   (raster-IRQ latch, timer **latch** vs. current count, internal flip-flops) isn't
-   in the register map and can't be read. Current CIA timer *counts* are readable;
-   their latches aren't.
+5. **`vice_vicii_get_state` ("internal") / `vice_cia_get_state` (timers) → partial loss, and a stock GAIN in the same breath (Phase 5, DERIV-05).**
+   Phase 5 shipped both tools reading their chip's memory-mapped register block
+   with **one `sidefx: false` `MEM_GET`** (VIC-II `$D000-$D02E`, 47 bytes; CIA1
+   `$DC00-$DC0F` / CIA2 `$DD00-$DD0F`, 16 bytes each); every readable field is
+   decoded and named. Truly *internal* state (raster-IRQ latch, timer **latch**
+   vs. current count, internal flip-flops) isn't in the register map and can't be
+   read — reported as `{ available: false, reason }`, six fields on VIC-II
+   (`rasterIrqLine`, `videoCounter`, `rowCounter`, `badLineCondition`,
+   `borderFlipFlops`, `spriteDmaState`) and five on CIA (`timerALatch`,
+   `timerBLatch`, `interruptEnableMask`, `todAlarmTime`, `todLatchState`) —
+   **never as `0` and never as an absent key**, pinned in the stock manifest with
+   `enum: [false]` so the answer-conformance harness enforces it, never only a
+   hand-written decoder test. `$D018`'s pointers are reported bank-relative;
+   `vice_sprite_get` resolves the absolute `screenBase`/`dataAddress` form
+   (DERIV-06).
+
+   **The DERIV-05 stock GAIN.** On stock, these reads are **provably**
+   side-effect-free — `sidefx: false` is hardcoded with no argument to override
+   it, asserted directly on the wire body by a regression test for both chips —
+   whereas the fork's own chip-state read path is, per this project's own skill
+   docs (`c64-program-recon/references/observation-hazards.md`: "Whether the
+   VICE monitor's own read path is side-effect-free is **unverified**: treat it
+   as verify-don't-assume rather than taking it on faith"), **unverified** rather
+   than proven. Reading `$D01E`/`$D01F`/`$DC0D`/`$DD0D` through the stock tools
+   therefore cannot steal a collision flag or an interrupt the running program
+   has not yet serviced. This is the one place in the milestone where the stock
+   backend is the **safer** one, not merely a
+   smaller loss — record it as a gain, not only a partial loss.
 
 6. **Reproducible but not byte-identical (reimplementation, not lost capability):**
    `vice_disassemble` (ship a client 6502 disassembler; formatting/illegal opcodes
    won't match VICE's exactly — see item 7's D-09/D-13/D-12/D-14 bullets below for
-   the specific, enumerated divergences Phase 4 landed) · `vice_display_screenshot` (INDEXED8 framebuffer +
-   `PALETTE_GET` → encode PNG client-side) · `vice_disk_read_sector` (parse the
-   `.d64` file, not the live drive) · `vice_snapshot_save` metadata/`mcp_snapshots/`
+   the specific, enumerated divergences Phase 4 landed) · `vice_display_screenshot`
+   (INDEXED8 framebuffer + `PALETTE_GET` → encode PNG client-side — **CUT from
+   scope 2026-08-17** as `SHOT-01`..`SHOT-05`; no skill calls it, see
+   ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)") · `vice_disk_read_sector`
+   (parse the `.d64` file, not the live drive — **CUT from scope 2026-08-17**;
+   no skill calls it, see ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)") ·
+   `vice_snapshot_save` metadata/`mcp_snapshots/`
    (DUMP writes state; JSON metadata + list is client bookkeeping).
    `vice_checkpoint_set_ignore_count` is **not** in this reproducible list —
    see item 7 (D-15): there is no native ignore count on the wire, and the
@@ -119,12 +145,55 @@ below is renumbered to stay contiguous.)
      Phase 7 through the text monitor (D-13). Phase 3 ships only the
      `-remotemonitor` launch flag and a second broker-allocated port; it
      builds no text client and dials nothing on that port.
+   - **`vice_memory_compare`'s `mode: 'snapshot'` is refused by name (D-05-01,
+     Phase 5).** No memory-only snapshot producer exists on either backend;
+     `vice_snapshot_save` writes a whole-machine `.vsf`. The alternatives were
+     a destructive restore or an unverified `.vsf` parse. `snapshot_name`/
+     `start`/`end` remain **declared** in the stock `inputSchema` for D-03
+     argument compatibility — the trim is a runtime refusal named in the
+     description, not a missing argument. Exact refusal text: "`vice_memory_compare:
+     mode:'snapshot' is not implemented on the stock backend -- there is no
+     memory-only snapshot producer tool on either backend (vice_snapshot_save
+     writes a whole-machine .vsf), so serving it would mean either
+     destructively restoring the machine to read memory out of it, or parsing
+     an unverified binary snapshot format. Use mode:'ranges' to compare two
+     live ranges captured at different points in time, or use the
+     c64-ram-capture skill's own full-image diff.`"
+   - **`vice_symbols_load`'s `format: 'kickasm'` and `format: 'simple'` are
+     refused by name (D-05-02, Phase 5).** No in-repo producer emits either.
+     `'auto'` and `'vice'` parse the confirmed `al C:xxxx .Name` VICE
+     label-file syntax; a 0-symbol load is an explained success, not an
+     error. `regenerator2000`'s `--export_lbl` is **assumed** to emit the same
+     syntax, unverified pending `R2000-16(c)`, and the parser skips
+     unrecognised lines rather than refusing the file because of it.
+   - **`vice_sprite_inspect`'s `format: 'png_base64'` is omitted from the
+     stock enum and refused by name (D-05-03, Phase 5).** Same "no skill
+     calls it" reasoning that cut `SHOT-01`..`SHOT-05` from this milestone.
+     The `format` property stays declared with `type: "string"`; only the
+     enum and description narrow. Also, per D-05-04, the ASCII grid renders
+     at native resolution per mode (24x21 hi-res, 12x21 multicolour) and is
+     **not** scaled by the `$D017`/`$D01D` expansion bits.
+   - **Criterion 5's exception count is three, not two (D-05-08, Phase 5).**
+     `vice_keyboard_restore` is a third skill-called tool that is provably
+     unrecoverable on stock — it is in the same hard-loss family as `matrix`
+     and `chord` (item 2 above), and
+     `c64-program-recon/references/control-flow.md` calls it. The ROADMAP's
+     Phase 5 criterion 5 names only two provably-unrecoverable tools
+     (`vice_sid_get_state`, `vice_keyboard_matrix`); the extraction behind
+     `scripts/check-skill-tool-coverage.mjs` finds a third. It routes to
+     Phase 8 exactly like the other two (`BACK-05` for the runtime error,
+     `SKILL-01` for the playbook note). The ROADMAP's criterion text is
+     **not** amended by this correction — that is a developer decision,
+     flagged here for Phase 8 planning.
    - **Also absent from the stock manifest, permanently or until a later
      phase:** `vice_checkpoint_set_ignore_count` (D-15), `vice_snapshot_list`
      (D-16, deleted from **both** manifests), the low-level keyboard family
      (`key_press`/`key_release`/`restore`/`matrix`/`chord` — hard loss, item
      2), `vice_sid_get_state` (hard loss, item 1), `vice_disk_read_sector`
-     (Phase 5), `vice_machine_config_get`/`set` (Phase 6).
+     (**CUT from scope 2026-08-17** — no skill calls it; see ROADMAP.md "Cut
+     from scope (v0.2.0, 2026-08-17)"), `vice_machine_config_get`/`set`
+     (**CUT from scope 2026-08-17** along with the whole of Phase 6; see
+     ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)").
    - **Two stock-only tool names with no fork counterpart:**
      `vice_execution_until_return` (`EXECUTE_UNTIL_RETURN` 0x73) and
      `vice_registers_available` (`REGISTERS_AVAILABLE` 0x83). Permitted by

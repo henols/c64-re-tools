@@ -71,3 +71,9 @@ hardware registers are what the game uses.
 `vice_sprite_get` / `vice_sprite_inspect` do the pointer arithmetic and the multicolor bit-pair
 unpacking. Verify what they return once against a hand-resolved pointer — `derive.mjs sprites`
 gives you that hand resolution — then trust them.
+
+On stock, `vice_vicii_get_state`'s `$D018` pointers are reported **bank-relative**;
+`vice_sprite_get` resolves the absolute `screenBase` and per-sprite `dataAddress` for you.
+`vice_sprite_inspect`'s ASCII grid is the sprite's native 24x21 (hi-res) or 12x21 (multicolour)
+**data block** — it is **not** scaled by the `$D017`/`$D01D` expansion bits, so a sprite shown
+double-size on screen still renders at its native resolution in the grid.

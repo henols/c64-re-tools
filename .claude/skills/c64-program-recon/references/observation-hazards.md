@@ -80,6 +80,14 @@ Prefer the whole-chip reads — `vice_vicii_get_state`, `vice_cia_get_state`, `v
 — over raw register reads. Whether the VICE monitor's own read path is side-effect-free is
 **unverified**: treat it as verify-don't-assume rather than taking it on faith.
 
+On the stock backend, `vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` and
+therefore **provably** cannot clear `$D01E`/`$D01F`/`$DC0D`/`$DD0D` — a stronger guarantee than
+"unverified," not merely a smaller risk; `vice_sid_get_state` is **fork-only**, since SID
+`$D400-$D418` is write-only in hardware and the binary monitor has no SID command. Also: on
+stock, an internal field the register map cannot expose is marked `{ available: false, reason }`
+in the answer, never a bare `0` — do not record a stock `0` from one of these fields as a
+measurement; check `available` first.
+
 ## 4. The keyboard buffer is not how games read keys
 
 **Evidence: live. Confidence: HIGH. Cost: an afternoon.**
