@@ -6,7 +6,7 @@
 // constraint.
 import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -1565,7 +1565,14 @@ function checkpointInfoReply(checkpoint: FakeCheckpointFields = fakeConformanceC
  * vice_snapshot_save/vice_snapshot_load's real filesystem reads/writes never
  * touch this worktree's own tree. */
 async function withTempRepoRootForConformance<T>(fn: (repoRootDir: string) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "vice-conformance-test-"));
+  // realpathSync is load-bearing, not tidiness (05-SECURITY.md W-03, 2026-08-17):
+  // `vice_symbols_load` now reports the fully-canonical path it containment-checked
+  // (WR-08), so the `resolvedPath.startsWith(repoRootDir)` assertion below only holds
+  // if this stand-in root is canonical too. `tmpdir()` is itself a symlink on macOS
+  // (`/var/folders/...` -> `/private/var/folders/...`), where the un-canonicalised
+  // spelling would make that assertion fail on a correct implementation. Linux-only
+  // CI hides this today; do not "simplify" it away.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "vice-conformance-test-")));
   const prev = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = dir;
   try {
