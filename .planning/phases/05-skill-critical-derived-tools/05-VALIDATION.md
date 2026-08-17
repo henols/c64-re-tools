@@ -4,6 +4,7 @@ slug: skill-critical-derived-tools
 status: planned
 nyquist_compliant: true
 wave_0_complete: false
+gap_closure_waves: [5, 6, 7, 8]
 created: 2026-08-17
 updated: 2026-08-17
 ---
@@ -15,6 +16,12 @@ updated: 2026-08-17
 > Map** below was filled by the planner once the eight PLAN.md files existed — every task
 > lands in it with an `<automated>` command, and no command references a test file its own
 > plan (or an earlier wave's plan) does not create.
+>
+> **This document covers two planning passes.** Everything down to "Validation Sign-Off"
+> describes the original eight plans (waves 1-4, shipped). The **Gap-Closure Addendum** at the
+> end covers plans 05-09..05-13 (waves 5-8), planned 2026-08-17 after `05-VERIFICATION.md`
+> returned `gaps_found` on criteria 3 and 4. Read both halves: the tables above are not the
+> phase's whole sampling map any more.
 
 ---
 
@@ -234,3 +241,95 @@ phase boundary rather than as in-plan checkpoints.
 - [x] Every requirement id (DERIV-01, DERIV-04, DERIV-05, DERIV-06) appears in at least one plan's `requirements` field
 
 **Approval:** planner-approved 2026-08-17
+
+
+---
+
+## Gap-Closure Addendum (plans 05-09..05-13, waves 5-8)
+
+Added 2026-08-17 alongside the gap-closure plans, after `05-VERIFICATION.md` returned
+`gaps_found` (2/5 must-haves): criteria 3 and 4 failed on CR-01/CR-02 — all four chip/sprite
+reads hardcoded `bank: 0x0000`, the banking-dependent CPU view. Same table shapes as above so
+this file stays the phase's single sampling source of truth.
+
+### Test Infrastructure delta
+
+| Property | Value |
+|----------|-------|
+| **Quick run command (waves 5-8)** | `cd .claude/mcp/vice && node --test stock-memory.test.ts stock-vicii.test.ts stock-cia.test.ts stock-sprites.test.ts stock-symbols.test.ts` |
+| **Live regression command (opt-in, manual-only)** | `cd .claude/mcp/vice && VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts` — genuine unpatched stock VICE; the fork shadows `x64sc` on `PATH`, and `-default` must precede `-binarymonitor` |
+| **Default-skip control** | `cd .claude/mcp/vice && node --test stock-live.test.ts` with no env var must report every case SKIPPED and 0 failures |
+| **New test files** | **none** — every gap-closure command targets a test file that already exists on `main`, so waves 5-8 have **no Wave 0 requirement** (`wave_0_complete` in the frontmatter refers to waves 1-4 and does not gate these waves) |
+| **Automated-suite effect** | `npm run test:automated`'s *pass* count rises with each plan; **0 fail** is the invariant. `stock-live.test.ts` stays in `test-gate.mjs`'s frozen `MANUAL_ONLY_TESTS`, so the live cases never enter the automated run |
+
+### Per-Task Verification Map — waves 5-8
+
+| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| 05-09 T1 | 05-09 | 5 | DERIV-05 | T-05-09-02, T-05-09-03 | `resolveRequiredBank()` is the one name-to-wire-id seam: mandatory name, refusal (never a `0x0000` fallback) when the catalog lacks it, at most one `BANKS_AVAILABLE` per session | unit, fake session | `cd .claude/mcp/vice && npm run typecheck && node --test stock-memory.test.ts` + the single-export node check | ✅ extend | ⬜ pending |
+| 05-09 T2 | 05-09 | 5 | DERIV-05 | **T-05-09-01**, T-05-09-02, T-05-09-05 | VIC-II/CIA read through the resolved `io` id; no literal bank id in either module; `bank:{id,name:"io"}` on the answer pinned with `enum:["io"]`; zero MEM_GET on refusal | unit (wire-body bank assertion) + manifest gate | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the `readUInt16LE(6)`/no-literal-bank/manifest-pin node check + `node scripts/check-skill-tool-coverage.mjs` | ✅ extend | ⬜ pending |
+| 05-09 T3 | 05-09 | 5 | DERIV-05 | **T-05-09-01**, T-05-09-04 | Live at `$01 = $34`: `borderColour 14`, `backgroundColour 6`, CIA1 `portBDirection.raw 0`; an independent CPU-view-vs-`bank:"io"` control proves the banking write took effect; `$01` restored in a `finally` | **live, real stock VICE** (opt-in) + default-skip control | `cd .claude/mcp/vice && node --test stock-live.test.ts && VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts && npm run test:automated` | ✅ extend | ⬜ pending |
+| 05-10 T1 | 05-10 | 6 | DERIV-06 | **T-05-10-01**, T-05-10-02, T-05-10-04 | Registers via `io`, pointer table and sprite data via `ram`; `registerBank`/`dataBank` reported and `enum`-pinned; bank-3 `$D000-$DFFF` I/O-window note; char-ROM note unchanged; zero MEM_GET on refusal | unit (per-read wire-body bank) + manifest gate | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the no-literal-bank/two-call-site/rename/manifest-pin node check | ✅ extend | ⬜ pending |
+| 05-10 T2 | 05-10 | 6 | DERIV-06 | T-05-10-03 | Two legend constants selected on the per-sprite `multicolour` flag; the hi-res legend names no `@`/`%`; every character the render actually emits appears in its legend; `format:"binary"` carries none | unit (render-vs-legend cross-check) | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the legend-constant node check | ✅ extend | ⬜ pending |
+| 05-10 T3 | 05-10 | 6 | DERIV-06 | **T-05-10-01**, T-05-10-03, T-05-10-05 | Live: `vicBank 0` / `screenBase 1024` / `pointerTableAddress 2040` identical with `$01 = $37` and `$01 = $34`, with the `$dd00` CPU-view-vs-`io` control; live hi-res legend carries no `@`/`%` | **live, real stock VICE** (opt-in) + default-skip control | `cd .claude/mcp/vice && node --test stock-live.test.ts && VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts && npm run test:automated` | ✅ extend | ⬜ pending |
+| 05-11 T1 | 05-11 | 6 | DERIV-04 | T-05-11-03 | `query.address` echoes the parsed number for every accepted form; the answer validated against the **shipped** `outputSchema`, with a control proving the validator is not vacuous | unit + schema conformance (in-file) | `cd .claude/mcp/vice && npm run typecheck && node --test stock-symbols.test.ts stock-dispatch.test.ts` + the raw-echo-absent node check | ✅ extend | ⬜ pending |
+| 05-11 T2 | 05-11 | 6 | DERIV-04 | **T-05-11-01**, T-05-11-02, T-05-11-05 | One canonical path is checked, stat'ed, read and reported; a symlink escaping the workspace is refused with the target named and installs no table; `loadedPath` write-only state removed | unit (symlink escape + canonical path) | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the `return resolved`/`loadedPath` absence node check | ✅ extend | ⬜ pending |
+| 05-12 T1 | 05-12 | 7 | DERIV-05 | **T-05-12-01**, T-05-12-03 | CIA1 joystick `confounded` derived from the DDR byte already in the buffer (any output bit, not all); raw booleans annotated not altered; CIA2 never confounded; every new field manifest-declared | unit (per-DDR-state) + manifest gate | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the `notes`/`confounded` manifest-shape node check | ✅ extend | ⬜ pending |
+| 05-12 T2 | 05-12 | 7 | DERIV-05 | **T-05-12-02**, T-05-12-03 | `fromBcd` returns `null` on either nibble > 9; invalid fields omitted and listed in `tod.invalidBcd` with the register and raw byte in `notes`; `rawHex` always present; no out-of-range decimal reachable | unit (invalid-nibble + range sweep) + manifest gate | `cd .claude/mcp/vice && npm run typecheck && npm run test:automated` + the `tod.required` deep-equal / `0x8b`-absent node check + `node scripts/check-skill-tool-coverage.mjs` | ✅ extend | ⬜ pending |
+| 05-13 T1 | 05-13 | 8 | DERIV-04, DERIV-05, DERIV-06 | **T-05-13-01**, T-05-13-04 | The banking hazard, the reported bank fields, the refusal behaviour and the VIC-bank-3 window note recorded; the side-effect claim split VERIFIED (wire body) / ASSUMED (emulator read path) — "provably" gone from both files | doc assertion + CLI gate | the parity/hazards token + anti-token grep chain, then `node scripts/check-skill-tool-coverage.mjs && npm run test:automated` | ✅ extend | ⬜ pending |
+| 05-13 T2 | 05-13 | 8 | DERIV-04, DERIV-05, DERIV-06 | **T-05-13-02**, T-05-13-03 | DERIV-04/05/06 marks, traceability rows and the open count agree, with DERIV-05's premature mark annotated; `vice_disk_read_sector` reads CUT in the source doc comment **and** in `TRIMMED_TOOL_DECISIONS`'s decision-id string (D-05-24); `stock-dispatch.ts` diff comment-only, test diff exactly 1+/1- | doc assertion + diff-shape gate + full suite | the REQUIREMENTS/CUT grep chain + `git diff --numstat` shape check + `node scripts/check-skill-tool-coverage.mjs && npm run typecheck && npm run test:automated` + the invariant-count node check | ✅ extend | ⬜ pending |
+
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+### Requirement → Behavior → Proof — gap closure
+
+| Req ID | Behavior | Test Type | Automated Command | Owning Task |
+|--------|----------|-----------|-------------------|-------------|
+| DERIV-05 (criterion 3) | With I/O banked out (`$01 = $34`) on genuine stock VICE, `vice_vicii_get_state` still reports the true `borderColour`/`backgroundColour` and `vice_cia_get_state` the true CIA1 `portBDirection.raw` — the RAM underneath cannot produce those values | **live** (opt-in), with a CPU-view-vs-`io` non-vacuity control | `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts` | 05-09 T3 |
+| DERIV-05 (criterion 3) | The read goes through the emulator's own resolved `io` bank id, never a literal, and a build with no `io` bank is refused with zero MEM_GET sent | unit (wire body) + source assertion | `node --test stock-memory.test.ts stock-vicii.test.ts stock-cia.test.ts` | 05-09 T1, 05-09 T2 |
+| DERIV-05 (criterion 3) | The bank the answer read is stated and enforced from the **manifest** side, so a regression to another view fails a gate not derived from the handler | manifest gate (conformance harness, `enum:["io"]`) | `node --test stock-dispatch.test.ts` | 05-09 T2 |
+| DERIV-05 (criterion 3) | No CIA field reports a confident value the bytes do not support: joystick state marked `confounded` from the DDR, and a non-BCD TOD byte listed in `invalidBcd` instead of an impossible decimal | unit, per-state + range sweep | `node --test stock-cia.test.ts stock-dispatch.test.ts` | 05-12 T1, 05-12 T2 |
+| DERIV-06 (criterion 4) | Sprite geometry is identical with I/O banked in and banked out, and pointer/data reads use the `ram` view the VIC-II itself fetches | **live** (opt-in) + unit (per-read wire body) | `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts`; `node --test stock-sprites.test.ts` | 05-10 T1, 05-10 T3 |
+| DERIV-06 (criterion 4) | An address resolved into `$D000-$DFFF` under VIC bank 3 carries an explicit I/O-window note alongside the unchanged char-ROM note | unit, bank-3 fixture | `node --test stock-sprites.test.ts` | 05-10 T1 |
+| DERIV-06 (criterion 4) | An ASCII render's legend names exactly the symbols that render emits — cross-checked against the characters actually produced, not only against the constants | unit + **live** | `node --test stock-sprites.test.ts`; `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts` | 05-10 T2, 05-10 T3 |
+| DERIV-04 (criterion 2) | `vice_symbols_lookup`'s answer satisfies its own declared `outputSchema` on the `address` branch, proven against the shipped manifest with a non-vacuity control | unit (schema conformance, in-file) | `node --test stock-symbols.test.ts` | 05-11 T1 |
+| DERIV-04 (ASVS V12) | The containment-checked canonical path is the one opened and reported; a symlink escaping the workspace is refused and installs no table | unit (symlink escape) | `node --test stock-symbols.test.ts stock-dispatch.test.ts` | 05-11 T2 |
+| Traceability (process) | `REQUIREMENTS.md`'s DERIV-04/05/06 checkboxes, traceability rows and open count agree with the landed, live-verified reality | doc assertion | the REQUIREMENTS grep chain in 05-13 T2 | 05-13 T2 |
+| BACK-02 + baseline invariants (standing) | Stock manifest 34 tools, fork manifest 62, `files[]` 44, `STOCK_DERIVED_TOOLS` 9, criterion-5 gate exit 0, `test:automated` 0 fail — unmoved by every gap-closure plan | manifest/packaging gates | `node --test fork-manifest-surface.test.ts hostpath-consumers.test.ts`; `node scripts/check-skill-tool-coverage.mjs`; the invariant-count node check in each plan | every gap-closure plan's verification block |
+
+### Shared-file ownership, waves 5-8
+
+| File | Wave 5 (05-09) | Wave 6 (05-10 / 05-11) | Wave 7 (05-12) | Wave 8 (05-13) |
+|------|----------------|------------------------|----------------|----------------|
+| `stock-memory.ts` / `.test.ts` | **05-09** | — | — | — |
+| `stock-vicii.ts` / `.test.ts` | **05-09** | — | — | — |
+| `stock-cia.ts` / `.test.ts` | **05-09** | — | **05-12** | — |
+| `stock-sprites.ts` / `.test.ts` | — | **05-10** | — | — |
+| `stock-symbols.ts` / `.test.ts` | — | **05-11** | — | — |
+| `tools-manifest.stock.json` | **05-09** (chip entries) | **05-10** (sprite entries) | **05-12** (CIA entry) | — |
+| `stock-dispatch.test.ts` | **05-09** (harness + chip cases) | — | — | **05-13** (one data literal) |
+| `stock-live.test.ts` | **05-09** | **05-10** | — | — |
+| `stock-dispatch.ts` | — | — | — | **05-13** (comment) |
+| `docs/stock-vice-parity.md` | — | — | — | **05-13** |
+| `.claude/skills/**` | — | — | — | **05-13** |
+| `.planning/REQUIREMENTS.md` | — | — | — | **05-13** |
+| `package.json` | — | — | — | — (no module becomes newly reachable; `files[]` stays 44) |
+
+**No same-wave write conflict.** Wave 6 is the only multi-plan wave, and its two plans are
+disjoint: 05-10 owns `stock-sprites.*`, the sprite manifest entries and `stock-live.test.ts`;
+05-11 owns `stock-symbols.*` and nothing else. `stock-sprites.ts` needs both the bank fix and
+the legend fix, and both are in 05-10 for exactly this reason. `stock-cia.*`,
+`tools-manifest.stock.json`, `stock-dispatch.test.ts` and `stock-live.test.ts` are each written
+in more than one wave but never twice in one wave.
+
+### Sign-Off — gap closure
+
+- [x] All 12 gap-closure tasks carry a runnable `<automated>` verify command (Dimension 8)
+- [x] No new test file is created, so waves 5-8 add no Wave 0 requirement — every command targets a file already on `main`
+- [x] No new file joins `MANUAL_ONLY_TESTS`; `stock-live.test.ts` was already the fourth member
+- [x] The two BLOCKER fixes (CR-01, CR-02) each carry a **live** behavioural check with an independent non-vacuity control, not only a source or wire-body assertion
+- [x] Every gap in `05-VERIFICATION.md`'s `gaps:` block maps to a task: criterion 3 → 05-09 T1-T3 (+ 05-12); criterion 4 → 05-10 T1-T3
+- [x] Baseline invariants (34 / 62 / 44 / 9 / criterion-5 exit 0 / 0 fail) re-asserted in every plan that could move them
+- [x] No `.mts` file is touched by any gap-closure plan, so `build.ts` runs no recompile and `resources-sync.test.ts` cannot drift
+
+**Approval:** planner-approved 2026-08-17 (gap-closure addendum; revised after plan-checker review)
