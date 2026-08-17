@@ -22,8 +22,10 @@ import {
   dispatchStock,
   stockDisconnect,
   withStockSession,
+  withDerivedTool,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
+import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { DENY_LIST, MachineRestartedError } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -1982,4 +1984,109 @@ test("conformance (D-02) negative control: checkAgainstSchema rejects a delibera
       "here would mean the checker itself has regressed to a no-op, and every conformance case above would be " +
       "vacuously passing",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (plan 04-02): withDerivedTool() -- the adapter for a client-side
+// derived tool, sitting beside withStockSession(). Every deps.ensureLease
+// below that must never be called is a THROWING stub, never a spy that
+// merely records -- an unreachable stub proves the pure branch never
+// touches the wire far more strongly than a call counter would.
+// ---------------------------------------------------------------------------
+
+const THROWING_ENSURE_LEASE: StockDispatchDeps["ensureLease"] = async () => {
+  throw new Error("ensureLease must never be called for this test");
+};
+
+test("withDerivedTool: an undeclared tool name is refused by name, without ever reaching ensureLease", async () => {
+  const handler: DerivedPureHandler = async () => {
+    throw new Error("must not be called -- the tool is not declared in STOCK_DERIVED_TOOLS");
+  };
+  const wrapped = withDerivedTool("vice_not_a_derived_tool", { needsSession: false }, handler);
+  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /vice_not_a_derived_tool/);
+  assert.match(JSON.stringify(result.content), /STOCK_DERIVED_TOOLS/);
+});
+
+test("withDerivedTool: needsSession:false invokes the handler with (args, deps) and never calls ensureLease", async () => {
+  let receivedArgs: Record<string, unknown> | undefined;
+  const handler: DerivedPureHandler = async (args) => {
+    receivedArgs = args;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const wrapped = withDerivedTool("vice_disassemble", { needsSession: false }, handler);
+  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+  const result = await wrapped({ address: "$c000" }, deps);
+  assert.equal(result.isError, false);
+  assert.deepEqual(receivedArgs, { address: "$c000" });
+});
+
+test("withDerivedTool: needsSession:true delegates to ensureStockSession and hands the handler the resolved session", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-derived-1", brokerControl: STUB_BROKER_CONTROL });
+  let receivedSession: StockConnectSession | undefined;
+  const handler: StockSessionHandler = async (_args, session) => {
+    receivedSession = session;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, false);
+  assert.ok(receivedSession);
+  assert.equal(receivedSession!.targetId, "grant-derived-1");
+});
+
+test("withDerivedTool: a handler that throws is converted via convertWireError, not propagated", async () => {
+  const handler: DerivedPureHandler = async () => {
+    throw new Error("boom: something the derived handler let escape");
+  };
+  const wrapped = withDerivedTool("vice_disassemble", { needsSession: false }, handler);
+  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /vice_disassemble/);
+  assert.match(JSON.stringify(result.content), /boom: something the derived handler let escape/);
+});
+
+test("withDerivedTool: needsSession:true converts a handshake failure via convertHandshakeError, naming the tool", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-derived-2", brokerControl: STUB_BROKER_CONTROL });
+  const handler: StockSessionHandler = async () => {
+    throw new Error("must not be called -- the handshake itself failed");
+  };
+  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async () => {
+      throw new MonitorOwnershipError("stockConnect: monitor for target grant-derived-2 on port 6502 is already claimed by grant grant-other", {
+        holderGrantId: "grant-other",
+        holderClaimedAt: 1700000000000,
+        port: 6502,
+      });
+    },
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /vice_disassemble/);
+  assert.match(JSON.stringify(result.content), /grant-other/);
+});
+
+test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal verbatim, without touching the handler", async () => {
+  let handlerCalled = false;
+  const handler: StockSessionHandler = async () => {
+    handlerCalled = true;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (verbatim message)" }),
+  };
+  const result = await wrapped({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
+  assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
 });

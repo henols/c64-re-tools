@@ -54,7 +54,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [ ] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names
 - [ ] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero
 - [ ] **DERIV-06**: User can inspect and set sprites, including ASCII rendering, on the stock backend
-- [ ] **DERIV-07**: Derived tools are implemented in sibling modules, not appended to `vice-proxy.ts`, and are intercepted before argument rewriting so they never receive host-translated paths
+- [x] **DERIV-07**: Derived tools are implemented in sibling modules, not appended to `vice-proxy.ts`, and are intercepted before argument rewriting so they never receive host-translated paths
 
 ### Disassembler
 
@@ -183,7 +183,7 @@ and the sequencing rationale.
 | DERIV-04 | Phase 5 | Pending |
 | DERIV-05 | Phase 5 | Pending |
 | DERIV-06 | Phase 5 | Pending |
-| DERIV-07 | Phase 4 | Pending |
+| DERIV-07 | Phase 4 | Complete |
 | DISASM-01 | Phase 4 | Pending |
 | DISASM-02 | Phase 4 | Complete |
 | DISASM-03 | Phase 4 | Pending |

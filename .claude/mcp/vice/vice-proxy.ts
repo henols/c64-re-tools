@@ -105,15 +105,16 @@ import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
 // own host-local coordinates before useInstance() ever adopts them (this
 // task, quick-260801-ccn). Consuming this from the proxy -- rather than
 // hand-translating a host path here -- is what keeps the host-path consumer
-// set closed to a fixed, traced list (vice-mcp-selector-docs.test.mjs's
-// assertion 4, amended by this task to include containerpath.ts itself as
-// a fifth, sibling consumer of hostpath.mjs's own knowledge).
+// set closed to a fixed, traced list of exactly five production modules
+// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts,
+// vice-sync.ts), pinned by hostpath-consumers.test.ts.
 import { containerizeRecord } from "./containerpath.ts";
 // The container-side half of the on-demand broker protocol (Phase 01.2).
 // This module deliberately does NOT import hostpath.mjs itself -- the
-// host-path consumer set stays closed to four production modules
-// (vice-mcp-selector-docs.test.mjs's assertion 4), and this file is already
-// on that list, so any broker-related host path text is built HERE.
+// host-path consumer set stays closed to exactly five production modules
+// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts,
+// vice-sync.ts), pinned by hostpath-consumers.test.ts, and this file is
+// already on that list, so any broker-related host path text is built HERE.
 // Tasks 1+2 (this plan) swap acquisition, release AND recycle onto the TCP
 // control session (openBrokerControl()/BrokerControlSession, plan 06's
 // completed client) -- writeRequest/createLease/touchLease/releaseLease/
