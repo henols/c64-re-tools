@@ -283,6 +283,18 @@ describe("never throws", () => {
   test("a non-integer startAddress returns [] rather than throwing", () => {
     assert.deepEqual(decode(new Uint8Array([0xea]), 1.5), []);
   });
+
+  test("WR-01: a startAddress above 0xffff returns [] rather than silently wrapping", () => {
+    // Previously observed wrapped output before this guard existed: two
+    // `nop`s at $FFFF and $0000, from (0x1ffff + offset) & 0xffff.
+    assert.deepEqual(decode(new Uint8Array([0xea, 0xea]), 0x1ffff), []);
+  });
+
+  test("0xffff itself is the inclusive upper boundary, still decodes one instruction", () => {
+    const result = decode(new Uint8Array([0xea]), 0xffff);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]!.address, 0xffff);
+  });
 });
 
 // ------------------------------------------------- 8. Purity

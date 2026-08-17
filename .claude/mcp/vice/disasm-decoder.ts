@@ -5,7 +5,10 @@
 // CPU-history decode (GAIN-01) import THIS file directly, never a tool
 // module, so a protocol import here would force those consumers to pull in
 // transport code they do not need. This module has no emulator, no
-// protocol, no network -- its only input is a byte array.
+// protocol, no network -- its only input is a byte array. Note: DERIV-02 and
+// GAIN-01 were both cut from v0.2.0 scope on 2026-08-17 -- see the
+// startAddress bound below, which is now defense-in-depth on a currently
+// unreachable path rather than a guard against a live in-process caller.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS RATHER THAN LIVING INSIDE THE TOOL HANDLER
@@ -30,6 +33,13 @@
 //   - Never add recursion or an unbounded loop -- the bound is what makes an
 //     attacker-controlled memory image safe to decode (04-RESEARCH.md
 //     Security Domain, T-04-03-01).
+//   - Never fold the `<= 0xffff` upper bound into `isNonNegativeSafeInteger()`
+//     or apply it to `opts.count`/`opts.end` -- those two stay unbounded by
+//     design (04-REVIEW.md IN-03: the loop is always bounded by
+//     `bytes.length`, so an absurd value degrades to "no effective limit",
+//     never a crash or hang). Bounding them would be a behaviour change
+//     dressed up as a consistency fix. The upper bound belongs only in the
+//     separate `isValidStartAddress()` guard below.
 
 import { OPCODES, type AddressingMode } from "./disasm-opcodes.ts";
 
@@ -94,6 +104,18 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** True iff `value` is a valid `startAddress` -- a safe, non-negative integer
+ * that additionally fits in the C64's 16-bit address space (`<= 0xffff`).
+ * Deliberately separate from `isNonNegativeSafeInteger()` rather than an
+ * upper bound folded into it: `opts.count`/`opts.end` must stay unbounded
+ * (see the `WHAT NOT TO DO` block above and 04-REVIEW.md IN-03), so only
+ * `startAddress` gets this stricter narrowing. Mirrors `stock-address.ts`'s
+ * `inAddressRange()` without importing it -- D-05 keeps this module's only
+ * import to `./disasm-opcodes.ts`. */
+function isValidStartAddress(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0xffff;
+}
+
 /** Interprets `b` as an 8-bit two's-complement signed byte, per DISASM-04's
  * branch resolution rule: `signed8(b) = b < 0x80 ? b : b - 0x100`. */
 function signed8(b: number): number {
@@ -118,12 +140,14 @@ function buildNotes(flags: { truncated: boolean; pageWrap: boolean; illegal: boo
  * `startAddress`. Bounded by construction (T-04-03-01): a single `while`
  * loop over a byte cursor, every iteration consumes at least one byte, no
  * recursion anywhere in this file. Never throws -- malformed input (a
- * non-`Uint8Array` `bytes`, a negative or non-integer `startAddress`)
- * returns `[]`.
+ * non-`Uint8Array` `bytes`, a negative or non-integer `startAddress`, or a
+ * `startAddress` above `0xffff`, the top of the 16-bit address space)
+ * returns `[]` rather than wrapping the address into range and returning a
+ * plausible-looking but wrong listing.
  */
 export function decode(bytes: Uint8Array, startAddress: number, opts: DecodeOptions = {}): Instruction[] {
   if (!(bytes instanceof Uint8Array)) return [];
-  if (!isNonNegativeSafeInteger(startAddress)) return [];
+  if (!isValidStartAddress(startAddress)) return [];
 
   const options = isPlainObject(opts) ? opts : {};
   const count = isNonNegativeSafeInteger(options.count) ? options.count : undefined;
