@@ -99,12 +99,15 @@ function parseAnswer(result: { content: { text: string }[] }): Record<string, un
 //     group below and the two joystick decode tests above, which assert
 //     confounded:true rather than deepEqual-ing a plain joystick shape.
 //   timerA=0x1234 (bytes 0x34,0x12), timerB=0x5678 (bytes 0x78,0x56)
-//   TOD: tenths=5, seconds=0x42(BCD 42), minutes=0x59(BCD 59), hours=0x8b (pm, BCD->11)
+//   TOD: tenths=5, seconds=0x42(BCD 42), minutes=0x59(BCD 59), hours=0x91
+//     (BCD 11, bit7 set -> PM) -- WR-03: this replaces the previous coincidence
+//     fixture, whose masked low nibble was NOT valid BCD and only decoded to
+//     11 by luck under the old, unvalidated formula.
 //   SDR=0xa5
 //   ICR=0b10000011 (timer A + timer B underflow, interruptGenerated)
 //   CRA=0b10000001 (started, TOD 50Hz)
 //   CRB=0b01000000 (countSource 2 -- "timer a underflows")
-const CIA1_BYTES = [0xef, 0xfe, 0xff, 0x00, 0x34, 0x12, 0x78, 0x56, 0x05, 0x42, 0x59, 0x8b, 0xa5, 0x83, 0x81, 0x40];
+const CIA1_BYTES = [0xef, 0xfe, 0xff, 0x00, 0x34, 0x12, 0x78, 0x56, 0x05, 0x42, 0x59, 0x91, 0xa5, 0x83, 0x81, 0x40];
 
 // CIA2 ($DD00):
 //   portA=0xc1 (bank bits %01 -> vicBank:2, vicBankBase:32768; bits6-7 set -> serialClockIn/serialDataIn)
@@ -270,6 +273,103 @@ test("tod decodes BCD -- a raw pass-through would give seconds:66, not 42", () =
   assert.equal(tod.minutes, 59);
   assert.equal(tod.hours, 11);
   assert.equal(tod.pm, true);
+  assert.deepEqual(tod.invalidBcd, []);
+});
+
+// ---------------------------------------------------------------------------
+// WR-03 -- fromBcd() never invents a decimal from a non-BCD byte; the tod
+// object omits the field and names it in invalidBcd instead, with rawHex
+// always present. A dedicated helper builds fixtures with TOD bytes
+// overridden, distinct from CIA1_BYTES's own valid 0x91 hours byte.
+// ---------------------------------------------------------------------------
+
+/** Clones a fixture, overriding the TOD seconds/minutes/hours bytes
+ * (offsets 0x09/0x0a/0x0b) that are omitted from the override object. */
+function withTod(bytes: number[], overrides: { seconds?: number; minutes?: number; hours?: number }): number[] {
+  const clone = [...bytes];
+  if (overrides.seconds !== undefined) clone[0x09] = overrides.seconds;
+  if (overrides.minutes !== undefined) clone[0x0a] = overrides.minutes;
+  if (overrides.hours !== undefined) clone[0x0b] = overrides.hours;
+  return clone;
+}
+
+test("WR-03: hours byte 0x91 decodes to 11 PM (tens digit genuinely exercised)", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { hours: 0x91 })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.equal(tod.hours, 11);
+  assert.equal(tod.pm, true);
+  assert.deepEqual(tod.invalidBcd, []);
+});
+
+test("WR-03: hours byte 0x12 decodes to 12 AM (a different tens digit than 0x91)", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { hours: 0x12 })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.equal(tod.hours, 12);
+  assert.equal(tod.pm, false);
+  assert.deepEqual(tod.invalidBcd, []);
+});
+
+test("WR-03: an invalid seconds byte (0x9f) omits tod.seconds, lists it in invalidBcd, keeps rawHex, and notes $DC09", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x9f })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.ok(!("seconds" in tod), "tod.seconds must be omitted, never a fabricated number");
+  assert.deepEqual(tod.invalidBcd, ["seconds"]);
+  assert.match(tod.rawHex as string, /9f/);
+  const notes = decoded.notes as string[];
+  assert.ok(notes.some((n) => n.includes("$DC09") && n.includes("9f")), "notes must name $DC09 and the raw byte 9f");
+});
+
+test("WR-03: an invalid minutes byte (0xaa) omits tod.minutes and lists it in invalidBcd", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { minutes: 0xaa })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.ok(!("minutes" in tod));
+  assert.deepEqual(tod.invalidBcd, ["minutes"]);
+  const notes = decoded.notes as string[];
+  assert.ok(notes.some((n) => n.includes("$DC0A") && n.includes("aa")));
+});
+
+test("WR-03: an hours byte whose masked low nibble is 0xb (e.g. 0x1b) omits tod.hours and lists it in invalidBcd", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { hours: 0x1b })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.ok(!("hours" in tod));
+  assert.deepEqual(tod.invalidBcd, ["hours"]);
+  const notes = decoded.notes as string[];
+  assert.ok(notes.some((n) => n.includes("$DC0B") && n.includes("1b")));
+});
+
+test("WR-03: two invalid TOD bytes list both names in invalidBcd, in the fixed order seconds/minutes/hours", () => {
+  const decoded = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x9f, minutes: 0xaa })));
+  const tod = decoded.tod as Record<string, unknown>;
+  assert.deepEqual(tod.invalidBcd, ["seconds", "minutes"]);
+});
+
+test("WR-03: fromBcd's behaviour asserted through decodeCia's tod object -- valid and invalid bytes", () => {
+  const valid42 = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x42 })));
+  assert.equal((valid42.tod as Record<string, unknown>).seconds, 42);
+
+  const valid00 = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x00 })));
+  assert.equal((valid00.tod as Record<string, unknown>).seconds, 0);
+
+  const valid99 = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x99 })));
+  assert.equal((valid99.tod as Record<string, unknown>).seconds, 99);
+
+  const invalid9f = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0x9f })));
+  assert.ok(!("seconds" in (invalid9f.tod as Record<string, unknown>)));
+
+  const invalidA0 = decodeCia(1, new Uint8Array(withTod(CIA1_BYTES, { seconds: 0xa0 })));
+  assert.ok(!("seconds" in (invalidA0.tod as Record<string, unknown>)));
+});
+
+test("WR-03: every fixture's decoded tod.seconds/minutes/hours (when present) is within its valid range", () => {
+  const fixtures = [new Uint8Array(CIA1_BYTES), new Uint8Array(CIA2_BYTES)];
+  for (const bytes of fixtures) {
+    for (const chip of [1, 2] as const) {
+      const tod = decodeCia(chip, bytes).tod as Record<string, unknown>;
+      if ("seconds" in tod) assert.ok((tod.seconds as number) >= 0 && (tod.seconds as number) <= 59);
+      if ("minutes" in tod) assert.ok((tod.minutes as number) >= 0 && (tod.minutes as number) <= 59);
+      if ("hours" in tod) assert.ok((tod.hours as number) >= 0 && (tod.hours as number) <= 12);
+    }
+  }
 });
 
 test("serialShiftRegister is the raw SDR byte", () => {

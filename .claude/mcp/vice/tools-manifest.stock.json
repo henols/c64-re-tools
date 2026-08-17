@@ -2656,15 +2656,19 @@
                     },
                     "rawHex": {
                       "type": "string"
+                    },
+                    "invalidBcd": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "tenths",
-                    "seconds",
-                    "minutes",
-                    "hours",
                     "pm",
-                    "rawHex"
+                    "rawHex",
+                    "invalidBcd"
                   ]
                 },
                 "serialShiftRegister": {

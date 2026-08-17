@@ -126,10 +126,21 @@ export const CIA_UNAVAILABLE_FIELDS: ReadonlyArray<readonly [string, string]> = 
 ]);
 
 /** Converts one BCD-encoded byte (e.g. `$42`) to its decimal value (`42`).
- * Used for TOD seconds/minutes/hours -- a raw-byte pass-through would give
- * `0x42 = 66`, which is exactly the bug this helper exists to prevent. */
-function fromBcd(raw: number): number {
-  return ((raw >> 4) & 0x0f) * 10 + (raw & 0x0f);
+ * Used for TOD seconds/minutes/hours. Originally written to stop a raw-byte
+ * pass-through from reporting `0x42` as `66`. WR-03 (2026-08-17): that is
+ * not the only invention this helper must refuse -- a byte whose nibble
+ * exceeds 9 is not valid BCD at all, and the naive `tens*10+units` formula
+ * happily turns `0x9f` into a fabricated `105`. Returns `null`, never a
+ * fabricated decimal, when either nibble is out of BCD range; the caller
+ * omits the field and names it in `tod.invalidBcd` rather than reporting an
+ * impossible value. */
+function fromBcd(raw: number): number | null {
+  const tens = (raw >> 4) & 0x0f;
+  const units = raw & 0x0f;
+  if (tens > 9 || units > 9) {
+    return null;
+  }
+  return tens * 10 + units;
 }
 
 function bit(byte: number, n: number): number {
@@ -166,6 +177,9 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   }
 
   const base = chip === 1 ? CIA1_BASE : CIA2_BASE;
+  // "DC" or "DD" -- the two hex digits shared by every register address in
+  // this chip's block, substituted into WR-02/WR-03's note strings below.
+  const basePrefix = base.toString(16).toUpperCase().slice(0, 2);
   const registersHex = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -259,18 +273,50 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   const timerA = { current: bytes[0x04]! | (bytes[0x05]! << 8) };
   const timerB = { current: bytes[0x06]! | (bytes[0x07]! << 8) };
 
+  // WR-03: fromBcd() returns `null`, never a fabricated decimal, when a byte
+  // is not valid BCD. The `tod` object OMITS the corresponding key and lists
+  // its name in `invalidBcd` (D-05-20) -- `rawHex` is always present so the
+  // caller can always re-derive the truth for a field this decoder declines
+  // to interpret.
   const todTenthsRaw = bytes[0x08]!;
   const todSecondsRaw = bytes[0x09]!;
   const todMinutesRaw = bytes[0x0a]!;
   const todHoursRaw = bytes[0x0b]!;
-  const tod = {
+  const todSeconds = fromBcd(todSecondsRaw);
+  const todMinutes = fromBcd(todMinutesRaw);
+  const todHours = fromBcd(todHoursRaw & 0x1f);
+
+  const invalidBcd: string[] = [];
+  const tod: Record<string, unknown> = {
     tenths: todTenthsRaw & 0x0f,
-    seconds: fromBcd(todSecondsRaw),
-    minutes: fromBcd(todMinutesRaw),
-    hours: fromBcd(todHoursRaw & 0x1f),
-    pm: bit(todHoursRaw, 7) === 1,
-    rawHex: [todTenthsRaw, todSecondsRaw, todMinutesRaw, todHoursRaw].map((b) => b.toString(16).padStart(2, "0")).join(""),
   };
+  if (todSeconds !== null) {
+    tod.seconds = todSeconds;
+  } else {
+    invalidBcd.push("seconds");
+    notes.push(
+      `$${basePrefix}09 (TOD seconds) reads 0x${todSecondsRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  if (todMinutes !== null) {
+    tod.minutes = todMinutes;
+  } else {
+    invalidBcd.push("minutes");
+    notes.push(
+      `$${basePrefix}0A (TOD minutes) reads 0x${todMinutesRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  if (todHours !== null) {
+    tod.hours = todHours;
+  } else {
+    invalidBcd.push("hours");
+    notes.push(
+      `$${basePrefix}0B (TOD hours) reads 0x${todHoursRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  tod.pm = bit(todHoursRaw, 7) === 1;
+  tod.rawHex = [todTenthsRaw, todSecondsRaw, todMinutesRaw, todHoursRaw].map((b) => b.toString(16).padStart(2, "0")).join("");
+  tod.invalidBcd = invalidBcd;
 
   const serialShiftRegister = bytes[0x0c]!;
 
