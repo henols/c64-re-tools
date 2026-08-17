@@ -314,7 +314,7 @@ export const handleCiaGetState: StockSessionHandler = async (args, session, _dep
   }
 
   let chips: (1 | 2)[];
-  let requested: 1 | 2 | "both";
+  let requested: string;
   if (args.cia === undefined) {
     chips = [1, 2];
     requested = "both";
@@ -326,7 +326,11 @@ export const handleCiaGetState: StockSessionHandler = async (args, session, _dep
       return isErrorText(`vice_cia_get_state: ${err instanceof Error ? err.message : String(err)}`);
     }
     chips = [parsed];
-    requested = parsed;
+    // Rendered as a string ("1"/"2"/"both"), never the bare number, so
+    // outputSchema can declare `requested` with a single `type: "string"`
+    // rather than a union checkAgainstSchema() cannot express (D-05-07,
+    // 05-07 Task 2).
+    requested = String(parsed);
   }
 
   const cias: Record<string, unknown>[] = [];

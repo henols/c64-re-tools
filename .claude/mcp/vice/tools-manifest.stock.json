@@ -1949,6 +1949,1229 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_vicii_get_state",
+      "description": "Get the VIC-II chip state, computed client-side (DERIV-05) from a single sidefx:false MEM_GET over the $D000-$D02E register block -- the binary monitor has no VIC-II command. $D018's screen/charset/bitmap pointers are reported BANK-RELATIVE; vice_cia_get_state (cia:2) or vice_sprite_get resolves them to absolute addresses (D-05-10). Six internal-only fields (raster IRQ latch, video/row counters, bad-line condition, border flip-flops, sprite DMA state) are not exposed by the binary monitor's register map at all and are reported under `unavailable` as {available:false, reason} rather than as 0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "registersHex": {
+            "type": "string"
+          },
+          "spriteX": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "spriteY": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "spriteEnabled": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "spriteExpandY": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "spritePriorityBehindBackground": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "spriteMulticolour": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "spriteExpandX": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "spriteColour": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "control1": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "yScroll": {
+                "type": "number"
+              },
+              "rows25": {
+                "type": "boolean"
+              },
+              "screenOn": {
+                "type": "boolean"
+              },
+              "bitmapMode": {
+                "type": "boolean"
+              },
+              "extendedBackgroundMode": {
+                "type": "boolean"
+              },
+              "rasterMsb": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "raw",
+              "yScroll",
+              "rows25",
+              "screenOn",
+              "bitmapMode",
+              "extendedBackgroundMode",
+              "rasterMsb"
+            ]
+          },
+          "control2": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "xScroll": {
+                "type": "number"
+              },
+              "columns40": {
+                "type": "boolean"
+              },
+              "multicolourMode": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "raw",
+              "xScroll",
+              "columns40",
+              "multicolourMode"
+            ]
+          },
+          "rasterLine": {
+            "type": "number"
+          },
+          "lightPenX": {
+            "type": "number"
+          },
+          "lightPenY": {
+            "type": "number"
+          },
+          "memorySetup": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "screenOffset": {
+                "type": "number"
+              },
+              "charsetOffset": {
+                "type": "number"
+              },
+              "bitmapOffset": {
+                "type": "number"
+              },
+              "relativeTo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "raw",
+              "screenOffset",
+              "charsetOffset",
+              "bitmapOffset",
+              "relativeTo"
+            ]
+          },
+          "interruptStatus": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "rasterIrq": {
+                "type": "boolean"
+              },
+              "spriteBackgroundCollisionIrq": {
+                "type": "boolean"
+              },
+              "spriteSpriteCollisionIrq": {
+                "type": "boolean"
+              },
+              "lightPenIrq": {
+                "type": "boolean"
+              },
+              "anyIrqPending": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "raw",
+              "rasterIrq",
+              "spriteBackgroundCollisionIrq",
+              "spriteSpriteCollisionIrq",
+              "lightPenIrq",
+              "anyIrqPending"
+            ]
+          },
+          "interruptEnable": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "rasterIrqEnabled": {
+                "type": "boolean"
+              },
+              "spriteBackgroundCollisionIrqEnabled": {
+                "type": "boolean"
+              },
+              "spriteSpriteCollisionIrqEnabled": {
+                "type": "boolean"
+              },
+              "lightPenIrqEnabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "raw",
+              "rasterIrqEnabled",
+              "spriteBackgroundCollisionIrqEnabled",
+              "spriteSpriteCollisionIrqEnabled",
+              "lightPenIrqEnabled"
+            ]
+          },
+          "spriteSpriteCollision": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "sprites": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "required": [
+              "raw",
+              "sprites"
+            ]
+          },
+          "spriteBackgroundCollision": {
+            "type": "object",
+            "properties": {
+              "raw": {
+                "type": "number"
+              },
+              "sprites": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "required": [
+              "raw",
+              "sprites"
+            ]
+          },
+          "borderColour": {
+            "type": "number"
+          },
+          "backgroundColour": {
+            "type": "number"
+          },
+          "extraBackgroundColour1": {
+            "type": "number"
+          },
+          "extraBackgroundColour2": {
+            "type": "number"
+          },
+          "extraBackgroundColour3": {
+            "type": "number"
+          },
+          "spriteMulticolour1": {
+            "type": "number"
+          },
+          "spriteMulticolour2": {
+            "type": "number"
+          },
+          "unavailable": {
+            "type": "object",
+            "properties": {
+              "rasterIrqLine": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              },
+              "videoCounter": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              },
+              "rowCounter": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              },
+              "badLineCondition": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              },
+              "borderFlipFlops": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              },
+              "spriteDmaState": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "available",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "rasterIrqLine",
+              "videoCounter",
+              "rowCounter",
+              "badLineCondition",
+              "borderFlipFlops",
+              "spriteDmaState"
+            ]
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "base",
+          "end",
+          "length",
+          "registersHex",
+          "spriteX",
+          "spriteY",
+          "spriteEnabled",
+          "spriteExpandY",
+          "spritePriorityBehindBackground",
+          "spriteMulticolour",
+          "spriteExpandX",
+          "spriteColour",
+          "control1",
+          "control2",
+          "rasterLine",
+          "lightPenX",
+          "lightPenY",
+          "memorySetup",
+          "interruptStatus",
+          "interruptEnable",
+          "spriteSpriteCollision",
+          "spriteBackgroundCollision",
+          "borderColour",
+          "backgroundColour",
+          "extraBackgroundColour1",
+          "extraBackgroundColour2",
+          "extraBackgroundColour3",
+          "spriteMulticolour1",
+          "spriteMulticolour2",
+          "unavailable",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_cia_get_state",
+      "description": "Get CIA1 and/or CIA2 state, computed client-side (DERIV-05) from one sidefx:false MEM_GET per requested chip over its 16-byte register block -- the binary monitor has no CIA command. The read is sidefx:false so $DC0D/$DD0D are not cleared on read. Three read/write address collisions are reported as two distinct named fields each: the readable side is named for what it is (e.g. timerA.current, interruptStatus), and the write-only side is a separate `unavailable` field (D-05-11) -- timerALatch, timerBLatch, interruptEnableMask, todAlarmTime and todLatchState are the write side of addresses whose read side returns something else, and are reported as {available:false, reason}, never 0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cia": {
+            "type": "number",
+            "description": "CIA chip number: 1 or 2 (optional, default returns both)"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "string"
+          },
+          "cias": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chip": {
+                  "type": "number"
+                },
+                "base": {
+                  "type": "number"
+                },
+                "registersHex": {
+                  "type": "string"
+                },
+                "portA": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "joystick2": {
+                      "type": "object",
+                      "properties": {
+                        "up": {
+                          "type": "boolean"
+                        },
+                        "down": {
+                          "type": "boolean"
+                        },
+                        "left": {
+                          "type": "boolean"
+                        },
+                        "right": {
+                          "type": "boolean"
+                        },
+                        "fire": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "up",
+                        "down",
+                        "left",
+                        "right",
+                        "fire"
+                      ]
+                    },
+                    "vicBank": {
+                      "type": "number"
+                    },
+                    "vicBankBase": {
+                      "type": "number"
+                    },
+                    "rs232Txd": {
+                      "type": "boolean"
+                    },
+                    "serialAtnOut": {
+                      "type": "boolean"
+                    },
+                    "serialClockOut": {
+                      "type": "boolean"
+                    },
+                    "serialDataOut": {
+                      "type": "boolean"
+                    },
+                    "serialClockIn": {
+                      "type": "boolean"
+                    },
+                    "serialDataIn": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "raw"
+                  ]
+                },
+                "portB": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "joystick1": {
+                      "type": "object",
+                      "properties": {
+                        "up": {
+                          "type": "boolean"
+                        },
+                        "down": {
+                          "type": "boolean"
+                        },
+                        "left": {
+                          "type": "boolean"
+                        },
+                        "right": {
+                          "type": "boolean"
+                        },
+                        "fire": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "up",
+                        "down",
+                        "left",
+                        "right",
+                        "fire"
+                      ]
+                    },
+                    "rs232Rxd": {
+                      "type": "boolean"
+                    },
+                    "ri": {
+                      "type": "boolean"
+                    },
+                    "dcd": {
+                      "type": "boolean"
+                    },
+                    "userPortH": {
+                      "type": "boolean"
+                    },
+                    "cts": {
+                      "type": "boolean"
+                    },
+                    "dsr": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "raw"
+                  ]
+                },
+                "portADirection": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "required": [
+                    "raw",
+                    "outputs"
+                  ]
+                },
+                "portBDirection": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "required": [
+                    "raw",
+                    "outputs"
+                  ]
+                },
+                "timerA": {
+                  "type": "object",
+                  "properties": {
+                    "current": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "current"
+                  ]
+                },
+                "timerB": {
+                  "type": "object",
+                  "properties": {
+                    "current": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "current"
+                  ]
+                },
+                "tod": {
+                  "type": "object",
+                  "properties": {
+                    "tenths": {
+                      "type": "number"
+                    },
+                    "seconds": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "hours": {
+                      "type": "number"
+                    },
+                    "pm": {
+                      "type": "boolean"
+                    },
+                    "rawHex": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "tenths",
+                    "seconds",
+                    "minutes",
+                    "hours",
+                    "pm",
+                    "rawHex"
+                  ]
+                },
+                "serialShiftRegister": {
+                  "type": "number"
+                },
+                "interruptStatus": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "timerAUnderflow": {
+                      "type": "boolean"
+                    },
+                    "timerBUnderflow": {
+                      "type": "boolean"
+                    },
+                    "todAlarm": {
+                      "type": "boolean"
+                    },
+                    "serialShiftComplete": {
+                      "type": "boolean"
+                    },
+                    "flagPin": {
+                      "type": "boolean"
+                    },
+                    "interruptGenerated": {
+                      "type": "boolean"
+                    },
+                    "interruptKind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "raw",
+                    "timerAUnderflow",
+                    "timerBUnderflow",
+                    "todAlarm",
+                    "serialShiftComplete",
+                    "flagPin",
+                    "interruptGenerated",
+                    "interruptKind"
+                  ]
+                },
+                "timerAControl": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "started": {
+                      "type": "boolean"
+                    },
+                    "underflowOnPortB": {
+                      "type": "boolean"
+                    },
+                    "underflowPulseMode": {
+                      "type": "boolean"
+                    },
+                    "oneShot": {
+                      "type": "boolean"
+                    },
+                    "forceLoad": {
+                      "type": "boolean"
+                    },
+                    "countsCntPin": {
+                      "type": "boolean"
+                    },
+                    "serialOutput": {
+                      "type": "boolean"
+                    },
+                    "todFrequency50Hz": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "raw",
+                    "started",
+                    "underflowOnPortB",
+                    "underflowPulseMode",
+                    "oneShot",
+                    "forceLoad",
+                    "countsCntPin",
+                    "serialOutput",
+                    "todFrequency50Hz"
+                  ]
+                },
+                "timerBControl": {
+                  "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "number"
+                    },
+                    "started": {
+                      "type": "boolean"
+                    },
+                    "underflowOnPortB": {
+                      "type": "boolean"
+                    },
+                    "underflowPulseMode": {
+                      "type": "boolean"
+                    },
+                    "oneShot": {
+                      "type": "boolean"
+                    },
+                    "forceLoad": {
+                      "type": "boolean"
+                    },
+                    "countSource": {
+                      "type": "number"
+                    },
+                    "countSourceMeaning": {
+                      "type": "string"
+                    },
+                    "todWriteSetsAlarm": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "raw",
+                    "started",
+                    "underflowOnPortB",
+                    "underflowPulseMode",
+                    "oneShot",
+                    "forceLoad",
+                    "countSource",
+                    "countSourceMeaning",
+                    "todWriteSetsAlarm"
+                  ]
+                },
+                "unavailable": {
+                  "type": "object",
+                  "properties": {
+                    "timerALatch": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ]
+                    },
+                    "timerBLatch": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ]
+                    },
+                    "interruptEnableMask": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ]
+                    },
+                    "todAlarmTime": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ]
+                    },
+                    "todLatchState": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "timerALatch",
+                    "timerBLatch",
+                    "interruptEnableMask",
+                    "todAlarmTime",
+                    "todLatchState"
+                  ]
+                }
+              },
+              "required": [
+                "chip",
+                "base",
+                "registersHex",
+                "portA",
+                "portB",
+                "portADirection",
+                "portBDirection",
+                "timerA",
+                "timerB",
+                "tod",
+                "serialShiftRegister",
+                "interruptStatus",
+                "timerAControl",
+                "timerBControl",
+                "unavailable"
+              ]
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "requested",
+          "cias",
+          "count",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_sprite_get",
+      "description": "Get sprite position, colour and control-bit state for one or all 8 sprites, computed client-side (DERIV-06) by resolving the VIC bank ($DD00), screen base ($D018) and 8-entry sprite pointer table over three sidefx:false MEM_GET reads. Sprite pointers are resolved to absolute dataAddress values (D-05-10); omit `sprite` to get all eight.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite": {
+            "type": "number",
+            "description": "Sprite number 0-7 (omit to get all sprites)"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite": {
+            "type": "number"
+          },
+          "vicBank": {
+            "type": "number"
+          },
+          "vicBankBase": {
+            "type": "number"
+          },
+          "cia2PortARaw": {
+            "type": "number"
+          },
+          "memorySetupRaw": {
+            "type": "number"
+          },
+          "screenBase": {
+            "type": "number"
+          },
+          "pointerTableAddress": {
+            "type": "number"
+          },
+          "spriteMulticolour1": {
+            "type": "number"
+          },
+          "spriteMulticolour2": {
+            "type": "number"
+          },
+          "sprites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "number"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "colour": {
+                  "type": "number"
+                },
+                "multicolour": {
+                  "type": "boolean"
+                },
+                "expandX": {
+                  "type": "boolean"
+                },
+                "expandY": {
+                  "type": "boolean"
+                },
+                "priorityBehindBackground": {
+                  "type": "boolean"
+                },
+                "pointer": {
+                  "type": "number"
+                },
+                "dataAddress": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "index",
+                "enabled",
+                "x",
+                "y",
+                "colour",
+                "multicolour",
+                "expandX",
+                "expandY",
+                "priorityBehindBackground",
+                "pointer",
+                "dataAddress"
+              ]
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "vicBank",
+          "vicBankBase",
+          "cia2PortARaw",
+          "memorySetupRaw",
+          "screenBase",
+          "pointerTableAddress",
+          "spriteMulticolour1",
+          "spriteMulticolour2",
+          "sprites",
+          "count",
+          "notes",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_sprite_inspect",
+      "description": "Render one sprite's 63-byte data block as an ASCII or binary grid, computed client-side (DERIV-06) at native resolution (24 columns hi-res / 12 columns multicolour, always 21 rows) -- no scaling by the X/Y expansion bits. format:'png_base64' is refused by name: it was cut from this milestone with SHOT-01..SHOT-05, since no shipped skill calls it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite_number": {
+            "type": "number",
+            "description": "Sprite number 0-7 to inspect"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "ascii",
+              "binary"
+            ],
+            "description": "Output format: 'ascii' (default) or 'binary'. 'png_base64' is refused by name (cut with SHOT-01..SHOT-05, D-05-03) -- no skill calls it."
+          }
+        },
+        "required": [
+          "sprite_number"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "sprite": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "ascii",
+              "binary"
+            ]
+          },
+          "multicolour": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "colour": {
+            "type": "number"
+          },
+          "expandX": {
+            "type": "boolean"
+          },
+          "expandY": {
+            "type": "boolean"
+          },
+          "priorityBehindBackground": {
+            "type": "boolean"
+          },
+          "spriteMulticolour1": {
+            "type": "number"
+          },
+          "spriteMulticolour2": {
+            "type": "number"
+          },
+          "vicBank": {
+            "type": "number"
+          },
+          "pointer": {
+            "type": "number"
+          },
+          "dataAddress": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "bytes": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ascii": {
+            "type": "string"
+          },
+          "legend": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "sprite",
+          "format",
+          "multicolour",
+          "enabled",
+          "x",
+          "y",
+          "colour",
+          "expandX",
+          "expandY",
+          "priorityBehindBackground",
+          "spriteMulticolour1",
+          "spriteMulticolour2",
+          "vicBank",
+          "pointer",
+          "dataAddress",
+          "width",
+          "height",
+          "bytes",
+          "rows",
+          "notes",
+          "runState"
+        ]
+      }
     }
   ]
 }
