@@ -107,3 +107,13 @@ None - no external service configuration required.
 ---
 *Phase: 05-skill-critical-derived-tools*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-memory-search.ts`
+- FOUND: `.claude/mcp/vice/stock-memory-search.test.ts`
+- FOUND: `.planning/phases/05-skill-critical-derived-tools/05-01-SUMMARY.md`
+- FOUND commit `a0f9bdf` (Task 1)
+- FOUND commit `60ee44d` (Task 2)
+- FOUND commit `08d07ff` (Task 3)
+- FOUND commit `89a6a2d` (metadata)
