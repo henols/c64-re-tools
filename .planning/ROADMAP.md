@@ -302,7 +302,7 @@ Notes:
   4. A user can read and inspect sprites, including ASCII rendering, on the stock backend.
   5. Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the three tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`), which are Phase 8's business. *(Corrected 2026-08-17, during Phase 5 planning: the count was **two**. Plan 05-08's skill-vs-manifest sweep found a third — `vice_keyboard_restore`, called by `c64-re-tools/.claude/skills/c64-program-recon/references/control-flow.md:86`, present on the fork manifest, absent from stock. It belongs to the same family as `vice_keyboard_matrix` and is already recorded as a hard loss in `docs/stock-vice-parity.md` §A item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse the RESTORE/NMI line. It is covered by no requirement and falls in no phase's scope, so this is a factual correction to the exception list, not a scope cut; without it criterion 5 is literally unmeetable. Route: `BACK-05` + `SKILL-01` in Phase 8.)*
 
-**Plans**: 8 plans in 4 waves
+**Plans**: 13 plans in 8 waves *(8 shipped in waves 1-4; 5 gap-closure plans added 2026-08-17 in waves 5-8 after `05-VERIFICATION.md` returned `gaps_found` — criteria 3 and 4 failed on CR-01/CR-02, the hardcoded CPU-view `bank: 0x0000` in all four chip/sprite reads)*
 Plans:
 **Wave 1** *(the four declared-independent tool families, five plans, disjoint file ownership -- none writes a shared registration file)*
 
@@ -323,6 +323,23 @@ Plans:
 **Wave 4** *(blocked on 05-07)*
 
 - [x] 05-08-PLAN.md — criterion 5 mechanised: `scripts/check-skill-tool-coverage.mjs` + a blocking CI step (D-05-05), the parity-doc trims and the DERIV-05 stock gain, and four bounded skill-reference corrections [wave 4]
+
+**Wave 5** *(gap closure, blocked on 05-03/05-04/05-07; sole owner of `stock-memory.ts`, both chip modules, the two chip manifest entries and the shared conformance harness)*
+
+- [ ] 05-09-PLAN.md — CR-01: `resolveRequiredBank()` in `stock-memory.ts`, VIC-II and CIA read through the emulator's own `io` bank id (refusing rather than guessing), `bank:{id,name:"io"}` on both answers pinned with `enum:["io"]`, plus the live `$01 = $34` regression the phase never had (D-05-14, D-05-15) [wave 5]
+
+**Wave 6** *(blocked on 05-09; two plans, disjoint file ownership)*
+
+- [ ] 05-10-PLAN.md — CR-02 + the legend defect: sprite registers read through `io`, pointer table and sprite data through `ram`, a VIC-bank-3 I/O-window note, and two ASCII legends selected on the per-sprite `multicolour` flag (D-05-16, D-05-17) [wave 6]
+- [ ] 05-11-PLAN.md — WR-01/WR-08 in `stock-symbols.ts`: `query.address` echoes the parsed number so the answer satisfies its own `outputSchema`, and the containment-checked canonical path is the one stat'ed, read and reported (D-05-18, D-05-19) [wave 6]
+
+**Wave 7** *(blocked on 05-09; sole owner of `stock-cia.ts` and the CIA manifest entry)*
+
+- [ ] 05-12-PLAN.md — the remaining criterion-3 "plausible-but-wrong" fields: CIA1 joystick state marked confounded from the DDR byte already in the buffer (WR-02), and a non-BCD TOD byte reported as invalid instead of an impossible decimal (WR-03) (D-05-20, D-05-21) [wave 7]
+
+**Wave 8** *(blocked on 05-09..05-12)*
+
+- [ ] 05-13-PLAN.md — the docs and traceability gaps: the banking hazard and the VERIFIED/ASSUMED side-effect split in `docs/stock-vice-parity.md` and `observation-hazards.md` (WR-12), `REQUIREMENTS.md`'s DERIV-04/05/06 marks reconciled with the live evidence, and `vice_disk_read_sector` recorded as CUT rather than pending (WR-13) (D-05-22, D-05-23) [wave 8]
 
 Notes:
 
