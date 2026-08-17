@@ -56,7 +56,8 @@ below is renumbered to stay contiguous.)
 
 6. **Reproducible but not byte-identical (reimplementation, not lost capability):**
    `vice_disassemble` (ship a client 6502 disassembler; formatting/illegal opcodes
-   won't match VICE's exactly) · `vice_display_screenshot` (INDEXED8 framebuffer +
+   won't match VICE's exactly — see item 7's D-09/D-13/D-12/D-14 bullets below for
+   the specific, enumerated divergences Phase 4 landed) · `vice_display_screenshot` (INDEXED8 framebuffer +
    `PALETTE_GET` → encode PNG client-side) · `vice_disk_read_sector` (parse the
    `.d64` file, not the live drive) · `vice_snapshot_save` metadata/`mcp_snapshots/`
    (DUMP writes state; JSON metadata + list is client bookkeeping).
@@ -139,6 +140,42 @@ below is renumbered to stay contiguous.)
      optional `program` argument (load-by-name from a disk image) has no
      wire equivalent — `AUTOSTART` supports only a numeric `fileIndex` — and
      is refused when supplied rather than silently dropped.
+   - **`vice_disassemble`'s illegal-opcode rendering (Phase 4 D-09).** Every
+     opcode ACME's `!cpu 6510` cannot express renders as `!byte` with all its
+     bytes and the decoded mnemonic in a trailing comment, so the following
+     instruction still lands at the correct address and the output
+     reassembles byte-exactly with zero exclusions. The exact opcode set the
+     installed ACME 0.97 ("Zem") rejected, copied verbatim from
+     04-06-SUMMARY.md (35 opcodes): `$12, $1A, $22, $2B, $32, $34, $3A, $3C,
+     $42, $44, $52, $54, $5A, $5C, $62, $64, $72, $74, $7A, $7C, $82, $89,
+     $92, $B2, $C2, $D2, $D4, $DA, $DC, $E2, $EB, $F2, $F4, $FA, $FC`. This
+     set is determined by an assertion test against a real ACME
+     (`disasm-roundtrip.test.ts` Suite C), not by a static list, so it may
+     shrink as ACME gains mnemonics — re-run that suite against a newer ACME
+     before trusting this list as current. Also note the D-11 forced-16-bit
+     form (`lda+2 $0080`) that appears wherever an absolute-family operand is
+     below `$0100`, which the fork does not emit.
+   - **`vice_disassemble`'s answer shape (Phase 4 D-13).** The stock answer
+     carries `instructions[]` (address, bytes, mnemonic, operand,
+     resolvedTarget, notes) **and** a rendered `listing` string, plus
+     `symbolsApplied`, `limitReached`/`nextAddress` and the standard
+     `runState` tail — under a declared `outputSchema`. The fork's entry has
+     no `outputSchema` at all, so there is no fork shape to reproduce. The
+     answer is bounded at 100 instructions.
+   - **`vice_disassemble`'s optional `end` argument (Phase 4 D-12).** A
+     stock-only optional extra permitted by Phase 3 D-03; the fork's
+     `address`/`count`/`show_symbols` are unchanged in name, type and
+     default. Supplying both `end` and `count` is **mutually exclusive** and
+     **refused**, never silently resolved in favour of one. Note the
+     over-read-by-two rule (the handler reads two bytes past `end` so the
+     last instruction can be fully decoded) and that instructions starting
+     past `end` are dropped rather than returned.
+   - **`vice_disassemble`'s `show_symbols` with no symbol store (Phase 4
+     D-14).** On stock this is
+     a successful no-op that says so on the answer (`symbolsApplied: false`
+     plus an explanatory note), matching `parseAddress()`'s existing "no
+     symbol table is loaded" wording — never an error. Phase 5's DERIV-04
+     installs the real store and nothing about the disassembler changes.
 
 ## B. Extra stock features worth exposing (things stock does *more*)
 
