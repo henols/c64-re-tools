@@ -29,7 +29,7 @@
 // once, no automated drift check" posture Phase 4's D-06 already accepted
 // for the disassembler's opcode table.
 //
-// TWO CLARIFICATIONS THAT ARE OTHERWISE EASY TO GET WRONG:
+// THREE CLARIFICATIONS THAT ARE OTHERWISE EASY TO GET WRONG:
 //   - Port A/B bits are ACTIVE-LOW for joysticks and the keyboard matrix: a
 //     CLEAR bit means pressed. Every joystick field below is computed as
 //     `((raw >> bit) & 1) === 0` -- do not "fix" this polarity later.
@@ -37,6 +37,17 @@
 //     current column selection and row result; the full matrix is
 //     `vice_keyboard_matrix`, which is provably unrecoverable on stock
 //     (`docs/stock-vice-parity.md` SS A item 2) and is Phase 8's business.
+//   - WR-02 (2026-08-17): the port A/B joystick bits share their PINS with
+//     the keyboard matrix's column-select ($DC00) and row-read ($DC01), and
+//     a stock read halts the machine at an arbitrary PC -- often inside the
+//     KERNAL's IRQ keyboard scan -- so a driven-low column bit decodes as a
+//     phantom direction press. The DDR bytes already in this same 16-byte
+//     buffer (`portADirection`) are what makes a driven column detectable:
+//     when any port A pin is configured as an output, `joystick2`/
+//     `joystick1` carry `confounded:true` plus a `confoundedReason`. The
+//     five booleans are ANNOTATED, never removed or altered -- with
+//     `DDRA = $00` (a game that is not scanning the keyboard) they are a
+//     genuine joystick read.
 //
 // WHAT NOT TO DO:
 //   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
@@ -159,6 +170,39 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
+  function directionOutputs(raw: number): boolean[] {
+    const outputs: boolean[] = [];
+    for (let n = 0; n < 8; n += 1) {
+      outputs.push(boolBit(raw, n));
+    }
+    return outputs;
+  }
+
+  // Chip-level prose (WR-02/WR-03) -- present and empty when there is
+  // nothing to say, never absent, matching stock-sprites.ts's own
+  // notes:string[] convention.
+  const notes: string[] = [];
+
+  // WR-02: computed BEFORE the port A/B decode below (moved up from its
+  // original position after portB) so the CIA1 joystick branches can
+  // consult the DDR byte already in this same 16-byte buffer.
+  const portADirectionRaw = bytes[0x02]!;
+  const keyboardColumnDriven = chip === 1 && portADirectionRaw !== 0x00;
+  const ddraHex = portADirectionRaw.toString(16).padStart(2, "0");
+  const outputPinCount = directionOutputs(portADirectionRaw).filter(Boolean).length;
+  const confoundedReason =
+    `$DC00 is the keyboard-matrix COLUMN SELECT and $DC01 is the ROW READ, on the same pins as ` +
+    `joystick 2 ($DC00) and joystick 1 ($DC01). DDRA ($DC02) reads 0x${ddraHex}, so ${outputPinCount} ` +
+    `port A pin(s) are configured as outputs, and a stock read halts the machine at an arbitrary PC -- ` +
+    `often inside the KERNAL's IRQ keyboard scan -- so a cleared bit here may be a driven column rather ` +
+    `than a pressed direction. Read again with the machine stopped outside the scan, or compare two samples.`;
+  if (keyboardColumnDriven) {
+    notes.push(
+      `$DC00/$DC01 (joystick 2/joystick 1) share pins with the keyboard-matrix column-select/row-read, ` +
+        `and DDRA (0x${ddraHex}) shows ${outputPinCount} port A output pin(s) -- see portA.joystick2's/portB.joystick1's confoundedReason.`,
+    );
+  }
+
   const portARaw = bytes[0x00]!;
   const portA: Record<string, unknown> = { raw: portARaw };
   if (chip === 1) {
@@ -168,6 +212,8 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portARaw, 2),
       right: activeLow(portARaw, 3),
       fire: activeLow(portARaw, 4),
+      confounded: keyboardColumnDriven,
+      ...(keyboardColumnDriven ? { confoundedReason } : {}),
     };
   } else {
     // $DD00 bits 0-1 are the VIC bank number, INVERTED: %00=bank3, %01=bank2,
@@ -193,6 +239,8 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portBRaw, 2),
       right: activeLow(portBRaw, 3),
       fire: activeLow(portBRaw, 4),
+      confounded: keyboardColumnDriven,
+      ...(keyboardColumnDriven ? { confoundedReason } : {}),
     };
   } else {
     portB.rs232Rxd = boolBit(portBRaw, 0);
@@ -203,15 +251,6 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     portB.dsr = boolBit(portBRaw, 7);
   }
 
-  function directionOutputs(raw: number): boolean[] {
-    const outputs: boolean[] = [];
-    for (let n = 0; n < 8; n += 1) {
-      outputs.push(boolBit(raw, n));
-    }
-    return outputs;
-  }
-
-  const portADirectionRaw = bytes[0x02]!;
   const portADirection = { raw: portADirectionRaw, outputs: directionOutputs(portADirectionRaw) };
 
   const portBDirectionRaw = bytes[0x03]!;
@@ -285,6 +324,7 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     chip,
     base,
     registersHex,
+    notes,
     portA,
     portB,
     portADirection,

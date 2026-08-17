@@ -94,7 +94,10 @@ function parseAnswer(result: { content: { text: string }[] }): Record<string, un
 // CIA1 ($DC00):
 //   portA=0xef (bit4 clear -> joystick2 FIRE pressed, everything else released)
 //   portB=0xfe (bit0 clear -> joystick1 UP pressed)
-//   ddrA=0xff, ddrB=0x00
+//   ddrA=0xff, ddrB=0x00 -- WR-02: ddrA=0xff means this fixture is, by the
+//     confounded condition itself, a confounded reading; see the WR-02 test
+//     group below and the two joystick decode tests above, which assert
+//     confounded:true rather than deepEqual-ing a plain joystick shape.
 //   timerA=0x1234 (bytes 0x34,0x12), timerB=0x5678 (bytes 0x78,0x56)
 //   TOD: tenths=5, seconds=0x42(BCD 42), minutes=0x59(BCD 59), hours=0x8b (pm, BCD->11)
 //   SDR=0xa5
@@ -118,13 +121,17 @@ const CIA2_BYTES = [0xc1, 0x00, 0x0f, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x01, 0x02, 
 
 test("CIA1 portA.joystick2 is active-low decoded -- fire pressed, rest released", () => {
   const decoded = decodeCia(1, new Uint8Array(CIA1_BYTES));
-  assert.deepEqual((decoded.portA as Record<string, unknown>).joystick2, {
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-    fire: true,
-  });
+  const joystick2 = (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
+  assert.equal(joystick2.up, false);
+  assert.equal(joystick2.down, false);
+  assert.equal(joystick2.left, false);
+  assert.equal(joystick2.right, false);
+  assert.equal(joystick2.fire, true);
+  // CIA1_BYTES' ddrA is 0xff (all port A pins configured as outputs), so
+  // this fixture is, by WR-02's own condition, a confounded reading -- the
+  // five booleans above are annotated, not altered.
+  assert.equal(joystick2.confounded, true);
+  assert.ok(typeof joystick2.confoundedReason === "string" && joystick2.confoundedReason.length > 0);
 });
 
 test("CIA1 portB.joystick1.up is true, the other four false", () => {
@@ -135,6 +142,80 @@ test("CIA1 portB.joystick1.up is true, the other four false", () => {
   assert.equal(joystick1.left, false);
   assert.equal(joystick1.right, false);
   assert.equal(joystick1.fire, false);
+  // Same CIA1_BYTES fixture (ddrA=0xff) -- portB.joystick1 shares the same
+  // confounded condition as portA.joystick2 above (both are CIA1, keyed off
+  // the same DDRA byte, WR-02).
+  assert.equal(joystick1.confounded, true);
+});
+
+// ---------------------------------------------------------------------------
+// WR-02 -- CIA1 joystick fields are marked confounded when the DDR shows a
+// driven keyboard column; CIA2 is never confounded (it has no joystick
+// fields at all). A dedicated fixture with ddrA (bytes[0x02]) varied is used
+// here, distinct from CIA1_BYTES (whose own ddrA=0xff already makes it
+// confounded, covered above).
+// ---------------------------------------------------------------------------
+
+/** Clones a fixture, overriding byte offset 0x02 (DDRA/portADirection). */
+function withDdrA(bytes: number[], ddrA: number): number[] {
+  const clone = [...bytes];
+  clone[0x02] = ddrA;
+  return clone;
+}
+
+test("WR-02 not confounded: CIA1 with ddrA=0x00 -- confounded false on both joysticks, notes empty", () => {
+  const decoded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0x00)));
+  const joystick2 = (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
+  const joystick1 = (decoded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
+  assert.equal(joystick2.confounded, false);
+  assert.equal(joystick1.confounded, false);
+  assert.ok(!("confoundedReason" in joystick2), "confoundedReason must be absent when not confounded");
+  assert.ok(!("confoundedReason" in joystick1), "confoundedReason must be absent when not confounded");
+  assert.deepEqual(decoded.notes, []);
+});
+
+test("WR-02 confounded: CIA1 with ddrA=0xff -- confounded true on both joysticks, reason names $DC00/$DC01, direction booleans unchanged", () => {
+  const notConfounded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0x00)));
+  const confounded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0xff)));
+  const j2NotConfounded = (notConfounded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
+  const j2 = (confounded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
+  const j1NotConfounded = (notConfounded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
+  const j1 = (confounded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
+
+  assert.equal(j2.confounded, true);
+  assert.equal(j1.confounded, true);
+  for (const holder of [j2, j1]) {
+    const reason = holder.confoundedReason;
+    assert.ok(typeof reason === "string" && reason.length >= 80, "confoundedReason must be a substantial string");
+    assert.match(reason as string, /\$DC00/);
+    assert.match(reason as string, /\$DC01/);
+  }
+
+  // The five direction booleans are annotated, never altered, by the
+  // confounded flag.
+  for (const key of ["up", "down", "left", "right", "fire"] as const) {
+    assert.equal(j2[key], j2NotConfounded[key], `joystick2.${key} must be unchanged by confounded`);
+    assert.equal(j1[key], j1NotConfounded[key], `joystick1.${key} must be unchanged by confounded`);
+  }
+
+  assert.equal((confounded.notes as string[]).length, 1);
+});
+
+test("WR-02 partial DDR: CIA1 with ddrA=0x01 (one output pin) is still confounded", () => {
+  const decoded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0x01)));
+  const joystick2 = (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
+  const joystick1 = (decoded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
+  assert.equal(joystick2.confounded, true);
+  assert.equal(joystick1.confounded, true);
+});
+
+test("WR-02: CIA2 is never confounded -- no joystick1/joystick2 keys at all, notes empty", () => {
+  const decoded = decodeCia(2, new Uint8Array(withDdrA(CIA2_BYTES, 0xff)));
+  const portA = decoded.portA as Record<string, unknown>;
+  const portB = decoded.portB as Record<string, unknown>;
+  assert.ok(!("joystick2" in portA));
+  assert.ok(!("joystick1" in portB));
+  assert.deepEqual(decoded.notes, []);
 });
 
 test("CIA2 portA decodes vicBank/vicBankBase and the serial bus bits", () => {
