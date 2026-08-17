@@ -261,7 +261,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04-06-PLAN.md — ACME in CI plus the byte-exact round-trip and substitution-membership assertions (wave 5)
+- [x] 04-06-PLAN.md — ACME in CI plus the byte-exact round-trip and substitution-membership assertions (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -426,7 +426,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
-| 4. Client-Side Tool Seam and 6510 Disassembler | 5/7 | In Progress|  |
+| 4. Client-Side Tool Seam and 6510 Disassembler | 6/7 | In Progress|  |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
