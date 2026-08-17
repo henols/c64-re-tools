@@ -302,7 +302,27 @@ Notes:
   4. A user can read and inspect sprites, including ASCII rendering, on the stock backend.
   5. Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the two tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`), which are Phase 8's business.
 
-**Plans**: TBD
+**Plans**: 8 plans in 4 waves
+Plans:
+**Wave 1** *(the four declared-independent tool families, five plans, disjoint file ownership -- none writes a shared registration file)*
+
+- [ ] 05-01-PLAN.md — `stock-memory-search.ts`: `vice_memory_search` + `vice_memory_compare` (`mode:'ranges'` only; `mode:'snapshot'` refused by name, D-05-01) [wave 1]
+- [ ] 05-02-PLAN.md — `stock-symbols.ts`: the DERIV-04 store installing into `stock-address.ts`'s one resolver holder, workspace-contained file read, plus `derivedAnswer()` in `stock-handler.ts` (D-05-06) [wave 1]
+- [ ] 05-03-PLAN.md — `stock-vicii.ts`: `vice_vicii_get_state` over one `sidefx:false` read of `$D000-$D02E`, with six internal-only fields marked explicitly unavailable [wave 1]
+- [ ] 05-04-PLAN.md — `stock-cia.ts`: `vice_cia_get_state` over one `sidefx:false` read per chip, with the three read-versus-write address collisions named as five unavailable fields (D-05-11) [wave 1]
+- [ ] 05-05-PLAN.md — `stock-sprites.ts`: `vice_sprite_get` + `vice_sprite_inspect`, pointer-chain arithmetic ported verbatim from `dump-artifacts.mjs`, native-resolution ASCII (D-05-04), `png_base64` refused (D-05-03) [wave 1]
+
+**Wave 2** *(blocked on 05-01 and 05-02; sole owner of every shared registration file this wave)*
+
+- [ ] 05-06-PLAN.md — register the four DERIV-01/DERIV-04 tools: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 26 -> 30, `files[]` 39 -> 41 (Rule 2), four conformance cases, and the de-vacuumed `hostpath-consumers.test.ts` guard (D-05-12) [wave 2]
+
+**Wave 3** *(blocked on 05-03/04/05 and 05-06; takes the same shared files over)*
+
+- [ ] 05-07-PLAN.md — register the four DERIV-05/DERIV-06 tools: manifest 30 -> 34 with eleven `enum: [false]` unavailability pins, `files[]` 41 -> 44, four address-dispatching conformance cases, phase-neutral tarball regression list [wave 3]
+
+**Wave 4** *(blocked on 05-07)*
+
+- [ ] 05-08-PLAN.md — criterion 5 mechanised: `scripts/check-skill-tool-coverage.mjs` + a blocking CI step (D-05-05), the parity-doc trims and the DERIV-05 stock gain, and four bounded skill-reference corrections [wave 4]
 
 Notes:
 
@@ -418,7 +438,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 0/TBD | Not started | - |
+| 5. Skill-Critical Derived Tools | 0/8 | Planned    | - |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
