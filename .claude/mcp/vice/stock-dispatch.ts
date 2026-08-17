@@ -554,7 +554,7 @@ const handlePing: StockSessionHandler = async (_args, session, deps) => {
  *   - `vice_snapshot_list` (D-16 -- deleted from both manifests)
  *   - `vice_disk_detach` (D-13 -- Phase 7, via the text monitor)
  *   - `vice_joystick_tap` (needs a resume plus Phase 7's timing route)
- *   - `vice_disk_read_sector` (Phase 5)
+ *   - `vice_disk_read_sector` (CUT from scope 2026-08-17 -- no skill calls it; see ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)" and docs/stock-vice-parity.md item 6)
  *   - `vice_sid_get_state` and the low-level keyboard family (hard losses)
  *   - `vice_machine_config_get` / `vice_machine_config_set` (Phase 6)
  * `dispatchStock()`'s miss branch already refuses any of these by name,

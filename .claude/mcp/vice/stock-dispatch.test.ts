@@ -297,7 +297,7 @@ const TRIMMED_TOOL_DECISIONS: Array<[string, string]> = [
   ["vice_snapshot_list", "D-16"],
   ["vice_disk_detach", "D-13"],
   ["vice_joystick_tap", "needs a resume plus Phase 7's timing route"],
-  ["vice_disk_read_sector", "Phase 5"],
+  ["vice_disk_read_sector", "CUT from scope 2026-08-17 -- no skill calls it"],
   ["vice_sid_get_state", "hard loss -- SID is write-only in hardware"],
   ["vice_key_press", "hard loss -- low-level keyboard family"],
   ["vice_key_release", "hard loss -- low-level keyboard family"],
