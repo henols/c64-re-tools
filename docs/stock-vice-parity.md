@@ -274,6 +274,22 @@ below is renumbered to stay contiguous.)
      plus an explanatory note), matching `parseAddress()`'s existing "no
      symbol table is loaded" wording — never an error. Phase 5's DERIV-04
      installs the real store and nothing about the disassembler changes.
+   - **`vice_memory_search`/`vice_memory_compare` take a stock-only optional
+     `bank` argument, and both answers name the view they read (WR-06, Phase
+     5).** Another stock-only optional extra permitted by D-03, resolved
+     through the same `resolveBank()` seam `vice_memory_read`'s `bank` uses;
+     the fork's required arguments are unchanged. Omitting it keeps the
+     previous behaviour — wire bank 0, the CPU view — which is a defensible
+     default for a general search, unlike a chip-state read, where the CPU
+     view is forbidden and an absent `io` bank is a refusal (CR-01). What
+     changed is that the default is no longer invisible: every answer carries
+     `bank` (`{id,name}` when a name was resolved, the bare wire id
+     otherwise) plus a plain-language `bankView` saying which view produced
+     the bytes, because a search across `$D000-$DFFF` returns register bytes
+     or the RAM underneath depending on the halted program's `$01` and the
+     answer used to look identical either way. `vice_memory_compare` applies
+     the one `bank` to **both** ranges: it compares two ranges in one halted
+     machine, so two views would be two different questions.
 
 ## B. Extra stock features worth exposing (things stock does *more*)
 

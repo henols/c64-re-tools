@@ -545,6 +545,66 @@ test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the 
 });
 
 test(
+  "stock-live (WR-06): vice_memory_search's bank argument genuinely changes the view it reads, and the answer names that view",
+  { skip: SKIP_REASON },
+  async () => {
+    await ensureBooted();
+
+    async function readByte(address: string, bank?: string): Promise<number> {
+      const args: Record<string, unknown> = { address, size: 1, encoding: "array" };
+      if (bank !== undefined) args.bank = bank;
+      const result = await dispatchStock("vice_memory_read", args, liveDeps());
+      const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+      return (payload.bytes as number[])[0]!;
+    }
+
+    // $E000 is KERNAL ROM in the CPU view under default banking ($01 = $37),
+    // and RAM through the emulator's own `ram` bank -- the canonical
+    // "RAM under ROM" case the fork's own bank description names.
+    const cpuByte = await readByte("$e000");
+    const ramByte = await readByte("$e000", "ram");
+    console.log(`stock-live: $E000 -- cpu view: 0x${cpuByte.toString(16)}, ram bank: 0x${ramByte.toString(16)}`);
+    assert.notEqual(cpuByte, ramByte, "non-vacuity: the two views must genuinely differ at $E000, or this case proves nothing about the bank argument");
+
+    // Searching the same one-byte range for the CPU view's byte matches
+    // through the default view and NOT through `ram`, and vice versa. This is
+    // the capability WR-06 was about: before it, no bank argument existed and
+    // the RAM under ROM was unsearchable.
+    async function search(pattern: number, bank?: string): Promise<Record<string, unknown>> {
+      const args: Record<string, unknown> = { start: "$e000", end: "$e000", pattern: [pattern] };
+      if (bank !== undefined) args.bank = bank;
+      const result = await dispatchStock("vice_memory_search", args, liveDeps());
+      return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+    }
+
+    const defaultView = await search(cpuByte);
+    console.log(`stock-live: search default view -> bank=${JSON.stringify(defaultView.bank)}, matches=${JSON.stringify(defaultView.matches)}`);
+    assert.deepEqual(defaultView.matches, [0xe000], "the default (CPU) view must find the ROM byte");
+    assert.equal(defaultView.bank, 0, "an omitted bank is still wire bank 0 -- reported, not inferred");
+    assert.match(String(defaultView.bankView), /CPU view/);
+
+    const ramView = await search(cpuByte, "ram");
+    console.log(`stock-live: search ram bank -> bank=${JSON.stringify(ramView.bank)}, matches=${JSON.stringify(ramView.matches)}`);
+    assert.deepEqual(ramView.matches, [], "the ROM byte must NOT be found through the ram bank -- the argument really changed the view");
+    assert.equal((ramView.bank as { name: string }).name, "ram");
+    assert.match(String(ramView.bankView), /"ram"/);
+
+    const ramHit = await search(ramByte, "ram");
+    assert.deepEqual(ramHit.matches, [0xe000], "the RAM-under-ROM byte IS findable through the ram bank -- previously unreachable");
+
+    // vice_memory_compare reports the same view fields, applied to both ranges.
+    const compare = await dispatchStock(
+      "vice_memory_compare",
+      { mode: "ranges", range1_start: "$e000", range1_end: "$e00f", range2_start: "$e010", bank: "ram" },
+      liveDeps(),
+    );
+    const comparePayload = parseOkPayload(compare as { content: { type: "text"; text: string }[]; isError: boolean });
+    assert.equal((comparePayload.bank as { name: string }).name, "ram");
+    assert.match(String(comparePayload.bankView), /"ram"/);
+  },
+);
+
+test(
   "stock-live (WR-03): the CIA joystick `confounded` flag DISCRIMINATES -- a freshly-booted machine reads clean, and a driven-low direction pin reads confounded",
   { skip: SKIP_REASON },
   async () => {

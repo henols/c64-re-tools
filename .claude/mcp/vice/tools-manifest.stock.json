@@ -1604,6 +1604,10 @@
           "max_results": {
             "type": "number",
             "description": "Maximum matches to return (default: 100, max: 10000)."
+          },
+          "bank": {
+            "type": "string",
+            "description": "Stock-only, optional: memory bank name (e.g. ram to search the RAM under ROM/I-O, io for the register view). Defaults to the CPU view (wire bank 0), which follows $00/$01 banking. The answer always reports which view it read. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -1658,6 +1662,10 @@
               "stopped",
               "unknown"
             ]
+          },
+          "bank": {},
+          "bankView": {
+            "type": "string"
           }
         },
         "required": [
@@ -1669,7 +1677,9 @@
           "matches",
           "count",
           "truncated",
-          "runState"
+          "runState",
+          "bank",
+          "bankView"
         ]
       }
     },
@@ -1714,6 +1724,10 @@
           "max_differences": {
             "type": "number",
             "description": "Maximum differences to return (default: 100, max: 10000)."
+          },
+          "bank": {
+            "type": "string",
+            "description": "Stock-only, optional: memory bank name applied to BOTH ranges (e.g. ram to compare the RAM under ROM/I-O). Defaults to the CPU view (wire bank 0), which follows $00/$01 banking. The answer always reports which view it read. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -1793,6 +1807,10 @@
               "stopped",
               "unknown"
             ]
+          },
+          "bank": {},
+          "bankView": {
+            "type": "string"
           }
         },
         "required": [
@@ -1807,7 +1825,9 @@
           "count",
           "truncated",
           "identical",
-          "runState"
+          "runState",
+          "bank",
+          "bankView"
         ]
       }
     },

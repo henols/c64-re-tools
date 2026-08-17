@@ -369,3 +369,113 @@ test("handleMemoryCompare: snapshot_name, start and end passed alongside mode:'r
   assert.equal(withoutExtras.isError, false);
   assert.deepEqual(parseAnswer(withExtras), parseAnswer(withoutExtras));
 });
+
+// ---------------------------------------------------------------------------
+// WR-06 (2026-08-17 re-review) -- both tools used to pass a LITERAL wire bank
+// 0x0000 (the CPU view, which follows $00/$01 banking), accepted no `bank`
+// argument, and never said which view produced the bytes. The default is
+// unchanged (the CPU view is defensible for a general search); what changes is
+// that it is now VISIBLE on the answer and CHANGEABLE by argument.
+// ---------------------------------------------------------------------------
+
+/** The catalog observed live on VICE 3.9, with `ram` deliberately a non-zero
+ * id so a regression back to the literal 0x0000 cannot pass. */
+function banksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+      { id: 2, name: "rom" },
+      { id: 3, name: "io" },
+      { id: 4, name: "cart" },
+    ],
+    related: [],
+  };
+}
+
+function bankAwareSession(bytes: number[]) {
+  return makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(bytes)));
+}
+
+test("WR-06 handleMemorySearch: with no bank argument the answer NAMES the CPU view it read, and sends no BanksAvailable", async () => {
+  const { session, calls } = bankAwareSession([0xea, 0xea]);
+  const parsed = parseAnswer(await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea] }, session, DEPS));
+  assert.equal(parsed.bank, 0, "the default is still the CPU view, reported as the bare wire id -- vice_memory_read's own shape");
+  assert.match(String(parsed.bankView), /CPU view/);
+  assert.match(String(parsed.bankView), /\$00\/\$01 banking/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.BanksAvailable), "the default path must not cost a catalog round trip");
+});
+
+test('WR-06 handleMemorySearch: bank: "ram" resolves through the emulator\'s catalog into MEM_GET body offset 6 and onto the answer', async () => {
+  const { session, calls } = bankAwareSession([0xea, 0xea]);
+  const result = await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea], bank: "ram" }, session, DEPS);
+  assert.equal(result.isError, false);
+  const memGet = calls.find(([commandType]) => commandType === CommandType.MemoryGet)!;
+  assert.equal(memGet[1].readUInt16LE(6), 1, "the wire body must carry the resolved ram id, never the literal 0");
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.bank, { id: 1, name: "ram" });
+  assert.match(String(parsed.bankView), /"ram"/);
+  assert.ok(!/CPU view \(no bank argument/.test(String(parsed.bankView)));
+});
+
+test("WR-06 handleMemorySearch: an unknown bank name refuses, listing the catalog's names, with zero MemoryGet sends", async () => {
+  const { session, calls } = bankAwareSession([0xea, 0xea]);
+  const result = await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea], bank: "nope" }, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /unknown bank "nope"/);
+  assert.match(result.content[0]!.text, /ram/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
+});
+
+test("WR-06 handleMemorySearch: a non-string bank refuses before any send", async () => {
+  const { session, calls } = bankAwareSession([0xea, 0xea]);
+  const result = await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea], bank: 1 }, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /bank must be a string/);
+  assert.equal(calls.length, 0);
+});
+
+test('WR-06 handleMemoryCompare: bank: "io" applies to BOTH range reads and is reported once', async () => {
+  const { session, calls } = bankAwareSession([0x11, 0x22]);
+  const result = await handleMemoryCompare(
+    { mode: "ranges", range1_start: "$2000", range1_end: "$2001", range2_start: "$3000", bank: "io" },
+    session,
+    DEPS,
+  );
+  assert.equal(result.isError, false);
+  const memGets = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGets.length, 2);
+  for (const [, body] of memGets) {
+    assert.equal(body.readUInt16LE(6), 3, "both range reads must carry the resolved io id");
+  }
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.bank, { id: 3, name: "io" });
+  assert.match(String(parsed.bankView), /"io"/);
+  // Exactly one catalog round trip for the two reads.
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1);
+});
+
+test("WR-06 handleMemoryCompare: with no bank argument both reads still carry wire bank 0 and the answer says so", async () => {
+  const { session, calls } = bankAwareSession([0x11, 0x22]);
+  const parsed = parseAnswer(
+    await handleMemoryCompare({ mode: "ranges", range1_start: "$2000", range1_end: "$2001", range2_start: "$3000" }, session, DEPS),
+  );
+  for (const [, body] of calls.filter(([commandType]) => commandType === CommandType.MemoryGet)) {
+    assert.equal(body.readUInt16LE(6), 0);
+  }
+  assert.equal(parsed.bank, 0);
+  assert.match(String(parsed.bankView), /CPU view/);
+});
+
+test("WR-06: bankView genuinely discriminates -- the defaulted and requested strings differ", async () => {
+  const { session: a } = bankAwareSession([0xea, 0xea]);
+  const defaulted = parseAnswer(await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea] }, a, DEPS));
+  const { session: b } = bankAwareSession([0xea, 0xea]);
+  const requested = parseAnswer(await handleMemorySearch({ start: "$1000", end: "$1001", pattern: [0xea], bank: "ram" }, b, DEPS));
+  assert.notEqual(defaulted.bankView, requested.bankView);
+  assert.notDeepEqual(defaulted.bank, requested.bank);
+});

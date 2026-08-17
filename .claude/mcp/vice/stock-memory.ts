@@ -135,12 +135,17 @@ export async function bankCatalogFor(session: StockConnectSession): Promise<Bank
   return catalog;
 }
 
-/** Shared bank-argument resolution for both memory handlers below: omitted
- * `bank` resolves to wire id 0x0000, a non-string `bank` refuses, and an
- * unknown name refuses listing the names the catalog actually returned --
- * never a hardcoded table. Factored once so handleMemoryRead/Write do not
- * each re-derive the same three branches. */
-async function resolveBank(
+/** Shared bank-argument resolution for every handler whose `bank` argument is
+ * OPTIONAL: omitted `bank` resolves to wire id 0x0000, a non-string `bank`
+ * refuses, and an unknown name refuses listing the names the catalog actually
+ * returned -- never a hardcoded table. Factored once so
+ * handleMemoryRead/Write, and stock-memory-search.ts's
+ * vice_memory_search/vice_memory_compare (WR-06), do not each re-derive the
+ * same three branches. An omitted bank is the CPU view, which is a defensible
+ * DEFAULT for a caller who asked to read memory as the CPU sees it -- but it
+ * is never correct for a chip-state or VIC-fetch read: those call
+ * resolveRequiredBank() below instead, where an absent catalog entry refuses. */
+export async function resolveBank(
   toolName: string,
   bankArg: unknown,
   session: StockConnectSession,

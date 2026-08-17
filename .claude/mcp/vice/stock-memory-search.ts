@@ -29,8 +29,22 @@
 //   - Never implement `vice_memory_compare`'s `mode:'snapshot'` as a
 //     destructive snapshot restore or a `.vsf` parser (D-05-01) -- it is
 //     refused by name, before any MEM_GET is sent.
+//   - WR-06 (2026-08-17): never pass a LITERAL bank id to memGetBody() here
+//     again. All three MEM_GETs used to hardcode `bank: 0x0000`. Unlike the
+//     chip-state readers (which must refuse rather than default -- see
+//     stock-memory.ts's CR-01 note), the CPU view IS a defensible default for
+//     a general memory search; the defect was that it was INVISIBLE and
+//     UNCHANGEABLE. An agent could not search RAM under ROM or under I/O, and
+//     a search across $D000-$DFFF returned registers or the RAM underneath
+//     depending on the halted program's `$01` with the answer looking
+//     identical either way. Both tools now take the same optional `bank`
+//     argument vice_memory_read has (a stock-only OPTIONAL extra, which D-03
+//     permits and vice_memory_read's own `sideEffects` already precedents),
+//     resolve it through stock-memory.ts's ONE resolveBank() seam, and REPORT
+//     the view they actually read on the answer.
 import { CommandType, memGetBody } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
+import { resolveBank } from "./stock-memory.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockErrorResult } from "./stock-handler.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
@@ -79,6 +93,27 @@ function parseByteArray(toolName: string, what: string, input: unknown): number[
 /** Narrows a `parseByteArray()` result to its error branch. */
 function isByteArrayError(result: number[] | StockErrorResult): result is StockErrorResult {
   return !Array.isArray(result);
+}
+
+/**
+ * WR-06: the plain-language description of the memory VIEW an answer's bytes
+ * were read through, reported on every answer so a caller can audit it
+ * instead of inferring it. Rendered from the SAME resolution the MEM_GET body
+ * carried -- never from the raw argument, which may have been omitted.
+ */
+function bankViewFor(resolution: { id: number; name?: string }): string {
+  if (resolution.name !== undefined) {
+    return (
+      `read through the emulator's own "${resolution.name}" bank (wire id ${resolution.id}), as requested -- ` +
+      `not the CPU view, so $00/$01 banking does not affect these bytes`
+    );
+  }
+  return (
+    `read through wire bank ${resolution.id}, the CPU view (no bank argument was given) -- it follows $00/$01 ` +
+    `banking, so a range crossing $A000-$BFFF, $D000-$DFFF or $E000-$FFFF returns whatever the halted program ` +
+    `has banked in there right now. Pass bank:"ram" (or "io", "rom") to read a specific view instead; ` +
+    `vice_memory_banks lists the names this emulator reports.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -148,9 +183,16 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
     }
   }
 
+  // --------------------------------------------------------- bank (optional, WR-06: defaults to the CPU view, but visibly and changeably)
+
+  const bankResolution = await resolveBank("vice_memory_search", args.bank, session);
+  if (!bankResolution.ok) {
+    return bankResolution.result;
+  }
+
   // --------------------------------------------------------- bounded memory read (Phase 3 D-05: halts, never resumes)
 
-  const body = memGetBody({ sidefx: false, start, end, memspace: 0x00, bank: 0x0000 });
+  const body = memGetBody({ sidefx: false, start, end, memspace: 0x00, bank: bankResolution.id });
 
   let response;
   try {
@@ -209,6 +251,11 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
     matches,
     count: matches.length,
     truncated,
+    // WR-06: the same shape vice_memory_read reports -- {id,name} when a name
+    // was resolved, the bare wire id otherwise -- plus a plain-language
+    // `bankView` so the answer says which view produced these bytes.
+    bank: bankResolution.name !== undefined ? { id: bankResolution.id, name: bankResolution.name } : bankResolution.id,
+    bankView: bankViewFor(bankResolution),
   };
 
   return stockAnswer(session.client, payload);
@@ -301,13 +348,24 @@ export const handleMemoryCompare: StockSessionHandler = async (args, session, _d
   // compatibility only (see plan_decision_D-05-01) -- they belong solely to
   // the refused mode:'snapshot' path and are deliberately ignored here.
 
+  // --------------------------------------------------------- bank (optional, WR-06)
+  //
+  // ONE bank for BOTH ranges: the tool compares two ranges in one halted
+  // machine, so comparing them through two different views would be comparing
+  // two different questions. A caller who wants that reads twice.
+
+  const bankResolution = await resolveBank("vice_memory_compare", args.bank, session);
+  if (!bankResolution.ok) {
+    return bankResolution.result;
+  }
+
   // --------------------------------------------------------- two sequential MEM_GET reads, both sidefx:false
   //
   // The machine is already halted by the first read (Phase 3 D-05), so the
   // two reads are consistent with each other for a stopped machine; neither
   // issues a resume between them.
 
-  const body1 = memGetBody({ sidefx: false, start: range1Start, end: range1End, memspace: 0x00, bank: 0x0000 });
+  const body1 = memGetBody({ sidefx: false, start: range1Start, end: range1End, memspace: 0x00, bank: bankResolution.id });
   let response1;
   try {
     response1 = await session.client.send(CommandType.MemoryGet, body1);
@@ -325,7 +383,7 @@ export const handleMemoryCompare: StockSessionHandler = async (args, session, _d
     );
   }
 
-  const body2 = memGetBody({ sidefx: false, start: range2Start, end: range2End, memspace: 0x00, bank: 0x0000 });
+  const body2 = memGetBody({ sidefx: false, start: range2Start, end: range2End, memspace: 0x00, bank: bankResolution.id });
   let response2;
   try {
     response2 = await session.client.send(CommandType.MemoryGet, body2);
@@ -373,6 +431,10 @@ export const handleMemoryCompare: StockSessionHandler = async (args, session, _d
     count: differences.length,
     truncated,
     identical: differences.length === 0 && !truncated,
+    // WR-06: one bank for both ranges, reported as vice_memory_read reports
+    // it, plus the plain-language view description.
+    bank: bankResolution.name !== undefined ? { id: bankResolution.id, name: bankResolution.name } : bankResolution.id,
+    bankView: bankViewFor(bankResolution),
   };
 
   return stockAnswer(session.client, payload);
