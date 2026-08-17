@@ -662,3 +662,99 @@ test("handleSpriteGet: a bank-3 I/O-window note is emitted when a resolved sprit
   const pointerCall = memGetCalls.find((c) => c[1].readUInt16LE(1) === pointerTableAddress)!;
   assert.equal(pointerCall[1].readUInt16LE(6), 1, "the pointer-table send must still carry the ram id");
 });
+
+// ---------------------------------------------------------------------------
+// WR-02 (2026-08-17 re-review) -- a per-sprite hazard note belongs to the
+// sprite it was computed from, and must not appear on an answer that does not
+// report that sprite. The fixture puts the hazard on sprite 5 ONLY, so a note
+// leaking onto a `{ sprite: 3 }` answer is unambiguous.
+// ---------------------------------------------------------------------------
+
+/** VIC bank 3, screenBase $C000 (itself safe), only sprite 5's pointer
+ * resolving into the $D000-$DFFF I/O window. */
+function makeSprite5HazardSession() {
+  const dd00Bank3 = 0xc0; // vicBank 3, bankBase 0xc000
+  const viciiBytes = buildViciiBytes();
+  viciiBytes[0x18] = 0x00; // screenBase = 0xc000, not in the window
+  const pointerTableAddress = screenBase(0x00, dd00Bank3) + 0x3f8;
+  // Sprite 5 -> pointer 0x40 -> 0xc000 + 0x40*64 = 0xd000 (hazard).
+  // Every other sprite -> pointer 0x00 -> 0xc000 (safe).
+  const pointers = [0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00];
+  assert.equal(spriteDataAddress(dd00Bank3, 0x40), 0xd000);
+  assert.equal(spriteDataAddress(dd00Bank3, 0x00), 0xc000);
+  return makeSpriteSession({ dd00: dd00Bank3, viciiBytes, pointerTableAddress, pointerBytes: pointers });
+}
+
+test("WR-02 handleSpriteGet: { sprite: 3 } returns NO hazard note when only sprite 5's data address is hazardous", async () => {
+  const { session } = makeSprite5HazardSession();
+  const result = await handleSpriteGet({ sprite: 3 }, session, DEPS);
+  assert.equal(result.isError, false);
+  const parsed = parseAnswer(result);
+  const sprites = parsed.sprites as Array<Record<string, unknown>>;
+  assert.equal(sprites.length, 1);
+  assert.equal(sprites[0]!.dataAddress, 0xc000, "sprite 3's own data address is safe");
+  assert.deepEqual(parsed.notes, [], "a hazard on a sprite this answer does not report must not appear on it");
+});
+
+test("WR-02 handleSpriteGet: the all-sprites answer DOES carry the note, attributed to sprite 5", async () => {
+  const { session } = makeSprite5HazardSession();
+  const result = await handleSpriteGet({}, session, DEPS);
+  assert.equal(result.isError, false);
+  const notes = parseAnswer(result).notes as string[];
+  assert.equal(notes.length, 1, `exactly one note -- one hazardous sprite; got ${JSON.stringify(notes)}`);
+  assert.match(notes[0]!, /^sprite 5: /, "the note must name the sprite it belongs to");
+  assert.match(notes[0]!, /I\/O window/);
+  assert.match(notes[0]!, /0xd000/);
+});
+
+test("WR-02 handleSpriteGet: { sprite: 5 } carries the note, still attributed", async () => {
+  const { session } = makeSprite5HazardSession();
+  const result = await handleSpriteGet({ sprite: 5 }, session, DEPS);
+  const notes = parseAnswer(result).notes as string[];
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /^sprite 5: /);
+});
+
+test("WR-02 handleSpriteGet: two hazardous sprites produce two separately-attributed notes, never one deduplicated to the wrong sprite", async () => {
+  const dd00Bank3 = 0xc0;
+  const viciiBytes = buildViciiBytes();
+  viciiBytes[0x18] = 0x00;
+  const pointerTableAddress = screenBase(0x00, dd00Bank3) + 0x3f8;
+  // Sprites 2 and 6 both point at 0xd000 -- the SAME hazardous address, which
+  // is exactly the case an address-keyed dedupe would collapse to one note.
+  const pointers = [0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40, 0x00];
+  const { session } = makeSpriteSession({ dd00: dd00Bank3, viciiBytes, pointerTableAddress, pointerBytes: pointers });
+  const notes = parseAnswer(await handleSpriteGet({}, session, DEPS)).notes as string[];
+  assert.equal(notes.length, 2, `both hazardous sprites must be named; got ${JSON.stringify(notes)}`);
+  assert.match(notes[0]!, /^sprite 2: /);
+  assert.match(notes[1]!, /^sprite 6: /);
+});
+
+test("WR-02 handleSpriteInspect: its own note carries the same `sprite N: ` attribution as handleSpriteGet's, for the same sprite", async () => {
+  const dd00Bank3 = 0xc0;
+  const viciiBytes = buildViciiBytes();
+  viciiBytes[0x18] = 0x00;
+  const pointerTableAddress = screenBase(0x00, dd00Bank3) + 0x3f8;
+  // Pointer 0x41 -> 0xc000 + 0x41*64 = 0xd040: inside bank 3's I/O window, but
+  // NOT 0xd000, which makeSpriteSession() already dispatches to the VIC-II
+  // register fixture -- vice_sprite_inspect, unlike vice_sprite_get, actually
+  // READS the data block.
+  const dataAddr = spriteDataAddress(dd00Bank3, 0x41);
+  assert.equal(dataAddr, 0xd040);
+  const pointers = [0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00];
+  const opts = {
+    dd00: dd00Bank3,
+    viciiBytes,
+    pointerTableAddress,
+    pointerBytes: pointers,
+    dataAddresses: { [dataAddr]: DATA_FIXTURE },
+  };
+
+  const inspectNotes = parseAnswer(await handleSpriteInspect({ sprite_number: 5 }, makeSpriteSession(opts).session, DEPS)).notes as string[];
+  const inspectHazard = inspectNotes.filter((n) => /I\/O window/.test(n));
+  assert.equal(inspectHazard.length, 1);
+  assert.match(inspectHazard[0]!, /^sprite 5: /);
+
+  const getNotes = parseAnswer(await handleSpriteGet({ sprite: 5 }, makeSpriteSession(opts).session, DEPS)).notes as string[];
+  assert.equal(inspectHazard[0], getNotes[0], "the two tools must emit the identical string for the same sprite's hazard");
+});

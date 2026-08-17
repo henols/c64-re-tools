@@ -232,7 +232,9 @@ interface SpriteContext {
   ramBank: { id: number; name: string };
   /** Non-null spriteWindowNote() results gathered so far (the screen base
    * check only -- per-sprite data-address notes are added by each handler
-   * once it knows which sprite(s) it needs). */
+   * once it knows which sprite(s) it needs, prefixed `sprite N: ` so a note
+   * can never be mis-attributed to a sprite the answer did not report:
+   * WR-02, 2026-08-17). */
   notes: string[];
 }
 
@@ -433,10 +435,6 @@ export const handleSpriteGet: StockSessionHandler = async (args, session, _deps)
   for (let index = 0; index < SPRITE_COUNT; index += 1) {
     const pointer = context.pointerBytes[index]!;
     const dataAddress = spriteDataAddress(context.dd00, pointer);
-    const dataNote = spriteWindowNote(dataAddress, context.bank, context.ramBank.name);
-    if (dataNote !== null && !notes.includes(dataNote)) {
-      notes.push(dataNote);
-    }
     allSprites.push({
       index,
       enabled: ((d015 >> index) & 1) === 1,
@@ -453,6 +451,25 @@ export const handleSpriteGet: StockSessionHandler = async (args, session, _deps)
   }
 
   const sprites = spriteIndex !== undefined ? [allSprites[spriteIndex]!] : allSprites;
+
+  // WR-02 (2026-08-17): per-sprite hazard notes are computed AFTER the answer
+  // is narrowed, for the sprites this answer actually RETURNS, and each note
+  // NAMES its sprite. The loop above used to compute them for all eight and
+  // push into one unattributed array, so asking about sprite 3 could return a
+  // hazard warning that belonged to sprite 5 -- and a caller had no way to
+  // tell that from a real hazard on the sprite it asked about. This is the
+  // contract SpriteContext.notes already documented; handleSpriteInspect has
+  // always honoured it.
+  for (const sprite of sprites) {
+    const dataNote = spriteWindowNote(sprite.dataAddress as number, context.bank, context.ramBank.name);
+    if (dataNote === null) {
+      continue;
+    }
+    const attributed = `sprite ${sprite.index as number}: ${dataNote}`;
+    if (!notes.includes(attributed)) {
+      notes.push(attributed);
+    }
+  }
 
   const payload: Record<string, unknown> = {
     ...(spriteIndex !== undefined ? { sprite: spriteIndex } : {}),
@@ -643,8 +660,13 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
 
   const notes = [...context.notes];
   const dataNote = spriteWindowNote(dataAddress, context.bank, context.ramBank.name);
-  if (dataNote !== null && !notes.includes(dataNote)) {
-    notes.push(dataNote);
+  if (dataNote !== null) {
+    // WR-02: same attributed form handleSpriteGet emits, so the two tools'
+    // notes for one sprite are the same string rather than two spellings.
+    const attributed = `sprite ${spriteIndex}: ${dataNote}`;
+    if (!notes.includes(attributed)) {
+      notes.push(attributed);
+    }
   }
   if (expandX || expandY) {
     notes.push(
