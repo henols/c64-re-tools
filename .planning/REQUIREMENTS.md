@@ -52,7 +52,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [-] **CUT 2026-08-17** — no skill calls `vice_backtrace`. Original: **DERIV-02**: User can get a call backtrace on the stock backend
 - [-] **CUT 2026-08-17** — no skill calls any `vice_checkpoint_group_*` or `vice_checkpoint_set_ignore_count`. Original: **DERIV-03**: User can group checkpoints and set an ignore count on the stock backend
 - [ ] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names
-- [ ] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero *(narrowed 2026-08-17: read side only — no skill calls `vice_vicii_set_state` or `vice_cia_set_state`)*
+- [x] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero *(narrowed 2026-08-17: read side only — no skill calls `vice_vicii_set_state` or `vice_cia_set_state`)*
 - [ ] **DERIV-06**: User can read and inspect sprites, including ASCII rendering, on the stock backend *(narrowed 2026-08-17: read side only — no skill calls `vice_sprite_set`)*
 - [x] **DERIV-07**: Derived tools are implemented in sibling modules, not appended to `vice-proxy.ts`, and are intercepted before argument rewriting so they never receive host-translated paths
 
@@ -181,7 +181,7 @@ and the sequencing rationale.
 | DERIV-02 | Phase 5 | Pending |
 | DERIV-03 | Phase 5 | Pending |
 | DERIV-04 | Phase 5 | Pending |
-| DERIV-05 | Phase 5 | Pending |
+| DERIV-05 | Phase 5 | Complete |
 | DERIV-06 | Phase 5 | Pending |
 | DERIV-07 | Phase 4 | Complete |
 | DISASM-01 | Phase 4 | Complete |
