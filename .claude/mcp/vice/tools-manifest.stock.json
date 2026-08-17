@@ -780,6 +780,62 @@
         },
         "required": ["port", "directions", "fire", "value", "valueBits", "runState"]
       }
+    },
+    {
+      "name": "vice_disassemble",
+      "description": "Disassemble memory to 6502 instructions, computed client-side (DERIV-07) -- the binary monitor has no disassemble opcode. Stock divergences from the fork: reading memory halts the machine and runState reports it (D-05); an illegal opcode ACME's !cpu 6510 cannot express renders as !byte with the mnemonic moved into a comment (D-09); listing formatting diverges from the fork by design (docs/stock-vice-parity.md Section A.7).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Start address: number, hex string ($1000), or symbol name"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of instructions (default 10, max 100). Mutually exclusive with end."
+          },
+          "end": {
+            "type": "string",
+            "description": "Stock-only, optional: last address of the range. Mutually exclusive with count."
+          },
+          "show_symbols": {
+            "type": "boolean",
+            "description": "Show symbol names where the operand's role and width prove substitution cannot change the encoding (default true). With no symbol store loaded this is a no-op and the answer says so."
+          }
+        },
+        "required": ["address"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "number" },
+          "end": { "type": "number" },
+          "count": { "type": "number" },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": { "type": "number" },
+                "bytes": { "type": "array", "items": { "type": "number" } },
+                "mnemonic": { "type": "string" },
+                "operand": { "type": "string" },
+                "resolvedTarget": { "type": "number" },
+                "notes": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["address", "bytes", "mnemonic", "operand", "notes"]
+            }
+          },
+          "listing": { "type": "string" },
+          "symbolsApplied": { "type": "boolean" },
+          "symbolNote": { "type": "string" },
+          "limitReached": { "type": "boolean" },
+          "nextAddress": { "type": "number" },
+          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+        },
+        "required": ["address", "count", "instructions", "listing", "symbolsApplied", "limitReached", "runState"]
+      }
     }
   ]
 }

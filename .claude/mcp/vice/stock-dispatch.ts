@@ -60,6 +60,7 @@ import {
 import { handleExecutionPause, handleExecutionRun, handleExecutionStep, handleExecutionUntilReturn } from "./stock-execution.ts";
 import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet } from "./stock-input.ts";
+import { handleDisassemble } from "./stock-disassemble.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -602,6 +603,9 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   vice_keyboard_type: withStockSession("vice_keyboard_type", handleKeyboardType),
   vice_keyboard_petscii: withStockSession("vice_keyboard_petscii", handleKeyboardPetscii),
   vice_joystick_set: withStockSession("vice_joystick_set", handleJoystickSet),
+
+  // derived (DERIV-07, DISASM-01)
+  vice_disassemble: withDerivedTool("vice_disassemble", { needsSession: true }, handleDisassemble),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a
