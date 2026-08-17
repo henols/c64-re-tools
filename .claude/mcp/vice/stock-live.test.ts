@@ -543,3 +543,118 @@ test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the 
     `the live catalog must contain a bank named "ram" (case-insensitively)`,
   );
 });
+
+// ---------------------------------------------------------------------------
+// 05-10's CR-02 and legend live regressions. stock-sprites.test.ts proves the
+// WIRING is right against a stub built from the SAME understanding as the
+// fix; only a real emulator can prove sprite geometry survives I/O being
+// banked out, and that a live hi-res render actually carries a legend
+// naming only the symbols it emits.
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-live (05-10, CR-02): sprite geometry survives I/O being banked out, with a non-vacuity control proving the banking actually changed",
+  { skip: SKIP_REASON },
+  async () => {
+    await ensureBooted();
+
+    // --- 1. Baseline: vice_sprite_get on the default-booted machine ---
+    const preResult = await dispatchStock("vice_sprite_get", {}, liveDeps());
+    const prePayload = parseOkPayload(preResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    console.log(
+      `stock-live: pre-write vice_sprite_get -> vicBank=${prePayload.vicBank}, screenBase=${prePayload.screenBase}, ` +
+        `pointerTableAddress=${prePayload.pointerTableAddress}, registerBank=${JSON.stringify(prePayload.registerBank)}, ` +
+        `dataBank=${JSON.stringify(prePayload.dataBank)}, notes=${JSON.stringify(prePayload.notes)}`,
+    );
+    assert.equal(prePayload.vicBank, 0, `vicBank must be 0 on a default-booted machine, got ${prePayload.vicBank}`);
+    assert.equal(prePayload.screenBase, 1024, `screenBase must be 1024 on a default-booted machine, got ${prePayload.screenBase}`);
+    assert.equal(
+      prePayload.pointerTableAddress,
+      2040,
+      `pointerTableAddress must be 2040 on a default-booted machine, got ${prePayload.pointerTableAddress}`,
+    );
+    const preRegisterBank = prePayload.registerBank as { id: number; name: string };
+    const preDataBank = prePayload.dataBank as { id: number; name: string };
+    assert.equal(preRegisterBank.name, "io");
+    assert.equal(preDataBank.name, "ram");
+    assert.equal(prePayload.runState, "stopped");
+    const preCia2PortARaw = prePayload.cia2PortARaw;
+
+    try {
+      // --- 2. Bank I/O out ---
+      const writeResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
+      assert.equal(writeResult.isError, false, `vice_memory_write({address:1, data:[0x34]}) must succeed, got: ${JSON.stringify(writeResult)}`);
+
+      // --- 3. Re-run vice_sprite_get -- the CR-02 regression ---
+      const postResult = await dispatchStock("vice_sprite_get", {}, liveDeps());
+      const postPayload = parseOkPayload(postResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(
+        `stock-live: post-write ($01=0x34) vice_sprite_get -> vicBank=${postPayload.vicBank}, screenBase=${postPayload.screenBase}, ` +
+          `pointerTableAddress=${postPayload.pointerTableAddress}, cia2PortARaw=${postPayload.cia2PortARaw}`,
+      );
+      assert.equal(
+        postPayload.vicBank,
+        prePayload.vicBank,
+        `vicBank must be unchanged with I/O banked out: before=${prePayload.vicBank} after=${postPayload.vicBank}`,
+      );
+      assert.equal(
+        postPayload.screenBase,
+        prePayload.screenBase,
+        `screenBase must be unchanged with I/O banked out: before=${prePayload.screenBase} after=${postPayload.screenBase}`,
+      );
+      assert.equal(
+        postPayload.pointerTableAddress,
+        prePayload.pointerTableAddress,
+        `pointerTableAddress must be unchanged with I/O banked out: before=${prePayload.pointerTableAddress} after=${postPayload.pointerTableAddress}`,
+      );
+      assert.equal(
+        postPayload.cia2PortARaw,
+        preCia2PortARaw,
+        `cia2PortARaw must be unchanged with I/O banked out: before=${preCia2PortARaw} after=${postPayload.cia2PortARaw}`,
+      );
+
+      // --- 4. Non-vacuity control: prove the banking manipulation actually took effect ---
+      const defaultReadResult = await dispatchStock("vice_memory_read", { address: "$dd00", size: 1, encoding: "array" }, liveDeps());
+      const defaultReadPayload = parseOkPayload(defaultReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      const defaultByte = (defaultReadPayload.bytes as number[])[0];
+      const ioReadResult = await dispatchStock("vice_memory_read", { address: "$dd00", size: 1, encoding: "array", bank: "io" }, liveDeps());
+      const ioReadPayload = parseOkPayload(ioReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      const ioByte = (ioReadPayload.bytes as number[])[0];
+      console.log(`stock-live: non-vacuity control -- default-bank $dd00: ${defaultByte}, io-bank $dd00: ${ioByte}, reported cia2PortARaw: ${preCia2PortARaw}`);
+      assert.equal(
+        defaultByte,
+        255,
+        `non-vacuity control failed: the default-bank $DD00 read must be 255 (uninitialised RAM) after $01=$34, got ${defaultByte}`,
+      );
+      assert.equal(
+        ioByte,
+        preCia2PortARaw,
+        `non-vacuity control failed: the io-bank $DD00 read (${ioByte}) must equal the reported cia2PortARaw (${preCia2PortARaw})`,
+      );
+    } finally {
+      // --- 5. Restore $01 -- a mid-test failure must not leave the shared
+      //        fixture's emulator banked out for the cases that follow. ---
+      const restoreResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
+      assert.equal(restoreResult.isError, false, `restoring $01=$37 must succeed, got: ${JSON.stringify(restoreResult)}`);
+    }
+  },
+);
+
+test("stock-live (05-10): the hi-res legend, live -- sprite 0's legend names only '.' and '#', never '@' or '%'", { skip: SKIP_REASON }, async () => {
+  await ensureBooted();
+  const result = await dispatchStock("vice_sprite_inspect", { sprite_number: 0, format: "ascii" }, liveDeps());
+  const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+  const legend = payload.legend as string;
+  const rows = payload.rows as string[];
+  console.log(`stock-live: vice_sprite_inspect({sprite_number:0, format:"ascii"}) -- legend="${legend}"`);
+  console.log(`stock-live: first three rendered rows: ${JSON.stringify(rows.slice(0, 3))}`);
+  assert.equal(payload.multicolour, false, `sprite 0 must be hi-res on a default-booted machine, got multicolour=${payload.multicolour}`);
+  assert.ok(legend.includes("#"), `legend must mention '#', got: ${legend}`);
+  assert.ok(legend.includes("."), `legend must mention '.', got: ${legend}`);
+  assert.ok(!legend.includes("@"), `hi-res legend must not mention '@', got: ${legend}`);
+  assert.ok(!legend.includes("%"), `hi-res legend must not mention '%', got: ${legend}`);
+  const distinctChars = new Set(rows.join(""));
+  for (const ch of distinctChars) {
+    assert.ok(legend.includes(ch), `every character actually rendered must be mentioned in the legend -- "${ch}" is missing from: ${legend}`);
+  }
+});
