@@ -6,7 +6,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { isErrorText, convertHandshakeError, convertWireError, stockAnswer } from "./stock-handler.ts";
+import { isErrorText, convertHandshakeError, convertWireError, stockAnswer, derivedAnswer } from "./stock-handler.ts";
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -49,6 +49,35 @@ test("stockAnswer: a caller-supplied runState in payload is overwritten by the p
   const result = stockAnswer(client, { status: "ok", runState: "running" });
   const payload = JSON.parse(result.content[0]!.text);
   assert.equal(payload.runState, "stopped", "the projection's value must win over anything the caller supplied");
+});
+
+// --------------------------------------------------------- derivedAnswer()
+
+test("derivedAnswer: passes the payload through and stamps runState: unknown", () => {
+  const result = derivedAnswer({ a: 1 });
+  assert.equal(result.isError, false);
+  assert.equal(result.content.length, 1);
+  assert.equal(result.content[0]!.type, "text");
+  const payload = JSON.parse(result.content[0]!.text);
+  assert.deepEqual(payload, { a: 1, runState: "unknown" });
+});
+
+test("derivedAnswer: a caller-supplied runState is overwritten, never honoured", () => {
+  const result = derivedAnswer({ runState: "running" });
+  const payload = JSON.parse(result.content[0]!.text);
+  assert.equal(payload.runState, "unknown");
+});
+
+test("derivedAnswer: an empty payload parses to exactly { runState: \"unknown\" }", () => {
+  const result = derivedAnswer({});
+  const payload = JSON.parse(result.content[0]!.text);
+  assert.deepEqual(payload, { runState: "unknown" });
+});
+
+test("derivedAnswer: its result is structurally assignable to StockToolResult (compile-time)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _assignable: import("./stock-handler.ts").StockToolResult = derivedAnswer({});
+  assert.ok(_assignable);
 });
 
 // --------------------------------------------------------- isErrorText()
