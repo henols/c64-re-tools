@@ -2358,6 +2358,24 @@
               "stopped",
               "unknown"
             ]
+          },
+          "bank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "io"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -2391,7 +2409,8 @@
           "spriteMulticolour1",
           "spriteMulticolour2",
           "unavailable",
-          "runState"
+          "runState",
+          "bank"
         ]
       }
     },
@@ -2894,13 +2913,32 @@
               "stopped",
               "unknown"
             ]
+          },
+          "bank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "io"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
           "requested",
           "cias",
           "count",
-          "runState"
+          "runState",
+          "bank"
         ]
       }
     },

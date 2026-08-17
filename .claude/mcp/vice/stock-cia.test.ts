@@ -12,11 +12,13 @@ import { EventEmitter } from "node:events";
 import { handleCiaGetState, decodeCia, CIA_UNAVAILABLE_FIELDS, CIA1_BASE, CIA2_BASE, CIA_LENGTH } from "./stock-cia.ts";
 import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
+  resetBankCatalogsForTest();
 });
 
 type SendCall = [number, Buffer];
@@ -43,6 +45,40 @@ const DEPS = {} as unknown as StockDispatchDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };
+}
+
+/** The catalog observed live on VICE 3.9 (05-REVIEW.md), with `io`
+ * deliberately a NON-ZERO id (3) so a regression back to a hardcoded
+ * bank 0x0000 cannot pass. */
+function banksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+      { id: 2, name: "rom" },
+      { id: 3, name: "io" },
+      { id: 4, name: "cart" },
+    ],
+    related: [],
+  };
+}
+
+/** Catalog with no `io` entry at all -- for the refusal case. */
+function noIoBanksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 1, name: "ram" },
+    ],
+    related: [],
+  };
 }
 
 function parseAnswer(result: { content: { text: string }[] }): Record<string, unknown> {
@@ -246,6 +282,9 @@ test("D-05-11 pairing: the readable half and the unreadable half of one address 
 // ---------------------------------------------------------------------------
 
 function ciaSendImpl(commandType: number, body: Buffer): unknown {
+  if (commandType === CommandType.BanksAvailable) {
+    return banksAvailableReply();
+  }
   const start = body.readUInt16LE(1);
   if (start === CIA1_BASE) {
     return memoryGetReply(CIA1_BYTES);
@@ -259,11 +298,12 @@ function ciaSendImpl(commandType: number, body: Buffer): unknown {
 test("omitting cia reads both chips in ascending order", async () => {
   const { session, calls } = makeSession(ciaSendImpl);
   const result = await handleCiaGetState({}, session, DEPS);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0]![1].readUInt16LE(1), 0xdc00);
-  assert.equal(calls[0]![1].readUInt16LE(3), 0xdc0f);
-  assert.equal(calls[1]![1].readUInt16LE(1), 0xdd00);
-  assert.equal(calls[1]![1].readUInt16LE(3), 0xdd0f);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGetCalls.length, 2);
+  assert.equal(memGetCalls[0]![1].readUInt16LE(1), 0xdc00);
+  assert.equal(memGetCalls[0]![1].readUInt16LE(3), 0xdc0f);
+  assert.equal(memGetCalls[1]![1].readUInt16LE(1), 0xdd00);
+  assert.equal(memGetCalls[1]![1].readUInt16LE(3), 0xdd0f);
   const answer = parseAnswer(result as { content: { text: string }[] });
   const cias = answer.cias as Record<string, unknown>[];
   assert.equal(cias.length, 2);
@@ -277,7 +317,7 @@ test("omitting cia reads both chips in ascending order", async () => {
 test("cia:1 reads only $DC00-$DC0F", async () => {
   const { session, calls } = makeSession(ciaSendImpl);
   const result = await handleCiaGetState({ cia: 1 }, session, DEPS);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.MemoryGet).length, 1);
   const answer = parseAnswer(result as { content: { text: string }[] });
   assert.equal((answer.cias as unknown[]).length, 1);
   assert.equal(answer.requested, "1");
@@ -286,9 +326,10 @@ test("cia:1 reads only $DC00-$DC0F", async () => {
 test("cia:2 reads only $DD00-$DD0F", async () => {
   const { session, calls } = makeSession(ciaSendImpl);
   await handleCiaGetState({ cia: 2 }, session, DEPS);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]![1].readUInt16LE(1), 0xdd00);
-  assert.equal(calls[0]![1].readUInt16LE(3), 0xdd0f);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGetCalls.length, 1);
+  assert.equal(memGetCalls[0]![1].readUInt16LE(1), 0xdd00);
+  assert.equal(memGetCalls[0]![1].readUInt16LE(3), 0xdd0f);
 });
 
 test('cia:"2" (string form) is accepted and normalised to 2', async () => {
@@ -298,14 +339,54 @@ test('cia:"2" (string form) is accepted and normalised to 2', async () => {
   assert.equal(answer.requested, "2");
 });
 
-test("sidefx regression guard: every call's body has length 8 and body[0] === 0x00", async () => {
+test("sidefx regression guard: every MemoryGet call's body has length 8 and body[0] === 0x00", async () => {
   const { session, calls } = makeSession(ciaSendImpl);
   await handleCiaGetState({}, session, DEPS);
-  assert.ok(calls.length >= 2);
-  for (const [, body] of calls) {
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.ok(memGetCalls.length >= 2);
+  for (const [, body] of memGetCalls) {
     assert.equal(body.length, 8);
     assert.equal(body[0], 0x00);
   }
+});
+
+// ---------------------------------------------------------------------------
+// CR-01 (05-09) -- io bank resolution wired into handleCiaGetState.
+// ---------------------------------------------------------------------------
+
+test("handleCiaGetState: every MemoryGet call's wire body bank field (offset 6) carries the resolved io id, not 0", async () => {
+  const { session, calls } = makeSession(ciaSendImpl);
+  await handleCiaGetState({}, session, DEPS);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGetCalls.length, 2);
+  for (const [, body] of memGetCalls) {
+    assert.equal(body.readUInt16LE(6), 3);
+    assert.notEqual(body.readUInt16LE(6), 0);
+  }
+});
+
+test("handleCiaGetState: a both-chips call sends exactly one BanksAvailable and two MemoryGet", async () => {
+  const { session, calls } = makeSession(ciaSendImpl);
+  await handleCiaGetState({}, session, DEPS);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.MemoryGet).length, 2);
+});
+
+test('handleCiaGetState: the answer\'s top-level bank deep-equals { id: 3, name: "io" }', async () => {
+  const { session } = makeSession(ciaSendImpl);
+  const result = await handleCiaGetState({ cia: 1 }, session, DEPS);
+  const answer = parseAnswer(result as { content: { text: string }[] });
+  assert.deepEqual(answer.bank, { id: 3, name: "io" });
+});
+
+test("handleCiaGetState: a catalog with no io bank refuses, naming the reported banks, and sends zero MemoryGet", async () => {
+  const { session, calls } = makeSession((commandType, body) => (commandType === CommandType.BanksAvailable ? noIoBanksAvailableReply() : ciaSendImpl(commandType, body)));
+  const result = await handleCiaGetState({}, session, DEPS);
+  assert.equal((result as { isError: boolean }).isError, true);
+  const text = (result as { content: { text: string }[] }).content[0]!.text;
+  assert.match(text, /default/);
+  assert.match(text, /ram/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
 
 for (const bad of [0, 3, 1.5, "both"]) {
@@ -336,14 +417,16 @@ test("non-object args are refused with zero sends", async () => {
 });
 
 test("a wrong response type is refused naming memory_get", async () => {
-  const { session } = makeSession(() => ({ type: "ping" as const, requestId: 1, errorCode: ErrorCode.Ok, related: [] }));
+  const { session } = makeSession((commandType) =>
+    commandType === CommandType.BanksAvailable ? banksAvailableReply() : { type: "ping" as const, requestId: 1, errorCode: ErrorCode.Ok, related: [] },
+  );
   const result = await handleCiaGetState({ cia: 1 }, session, DEPS);
   assert.equal((result as { isError: boolean }).isError, true);
   assert.match((result as { content: { text: string }[] }).content[0]!.text, /memory_get/);
 });
 
 test("a 15-byte reply is refused as a short read, naming which chip", async () => {
-  const { session } = makeSession(() => memoryGetReply(new Array(15).fill(0)));
+  const { session } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(new Array(15).fill(0))));
   const result = await handleCiaGetState({ cia: 2 }, session, DEPS);
   assert.equal((result as { isError: boolean }).isError, true);
   const text = (result as { content: { text: string }[] }).content[0]!.text;

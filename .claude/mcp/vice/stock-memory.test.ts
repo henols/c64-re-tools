@@ -9,7 +9,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, bankCatalogFor, resetBankCatalogsForTest } from "./stock-memory.ts";
+import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, bankCatalogFor, resetBankCatalogsForTest, resolveRequiredBank } from "./stock-memory.ts";
 import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -261,4 +261,60 @@ test("handleMemoryRead: an unknown bank name refuses listing available names and
   assert.match(result.content[0]!.text, /default/);
   assert.match(result.content[0]!.text, /RAM/);
   assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
+});
+
+// ---------------------------------------------------------------------------
+// resolveRequiredBank() (05-09 Task 1, CR-01) -- the mandatory-name seam
+// chip-state handlers use instead of resolveBank()'s "omitted means 0x0000"
+// default.
+// ---------------------------------------------------------------------------
+
+/** The real bank catalog observed live on VICE 3.9 (05-REVIEW.md), used as
+ * the stub reply for every resolveRequiredBank() case below -- `io` is
+ * deliberately a non-zero id (3) so a regression back to a hardcoded 0x0000
+ * cannot pass. */
+function realCatalogReply(requestId = 2) {
+  return banksAvailableReply(
+    [
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+      { id: 2, name: "rom" },
+      { id: 3, name: "io" },
+      { id: 4, name: "cart" },
+    ],
+    requestId,
+  );
+}
+
+test('resolveRequiredBank: "io" against the real VICE 3.9 catalog resolves to { ok: true, id: 3, name: "io" }', async () => {
+  const { session } = makeSession(() => realCatalogReply());
+  const result = await resolveRequiredBank("t", "io", session);
+  assert.deepEqual(result, { ok: true, id: 3, name: "io" });
+});
+
+test('resolveRequiredBank: "IO" (uppercase) resolves identically -- case-insensitive lookup', async () => {
+  const { session } = makeSession(() => realCatalogReply());
+  const result = await resolveRequiredBank("t", "IO", session);
+  assert.deepEqual(result, { ok: true, id: 3, name: "io" });
+});
+
+test('resolveRequiredBank: a catalog with no "io" bank refuses, naming the reported banks and the refusal phrase', async () => {
+  const { session, calls } = makeSession(() => banksAvailableReply([{ id: 0, name: "default" }, { id: 1, name: "ram" }]));
+  const result = await resolveRequiredBank("t", "io", session);
+  assert.equal(result.ok, false);
+  const failure = result as { ok: false; result: { isError: boolean; content: { text: string }[] } };
+  assert.equal(failure.result.isError, true);
+  const text = failure.result.content[0]!.text;
+  assert.match(text, /default/);
+  assert.match(text, /ram/);
+  assert.match(text, /refusing rather than reading the banking-dependent CPU view/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
+});
+
+test("resolveRequiredBank: two calls on the SAME session record exactly one BanksAvailable send", async () => {
+  const { session, calls } = makeSession(() => realCatalogReply());
+  await resolveRequiredBank("t", "io", session);
+  await resolveRequiredBank("t", "ram", session);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1);
 });

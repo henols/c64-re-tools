@@ -44,6 +44,13 @@
 //     arithmetic here would be the "re-deriving a cross-cutting seam
 //     locally" anti-pattern for a field the caller can already get from two
 //     other tools.
+//   - CR-01 (2026-08-17): never read this block through bank `0x0000` --
+//     that is the CPU view and follows `$00`/`$01` banking, so it returns
+//     the RAM underneath $D000-$DFFF whenever the running program has I/O
+//     banked out ($01 = $34/$35, routine in loaders, depackers and IRQ
+//     handlers), producing a plausible-and-wrong answer with an empty
+//     `unavailable` set. Always resolve the emulator's own `io` bank
+//     through resolveRequiredBank() first and refuse when it is absent.
 //   - Never send anything but MEM_GET -- no ExitLoop/Exit/Continue, i.e.
 //     never an unrequested resume (Phase 3 D-05). `runState` on the answer
 //     (via stockAnswer()) reports the halt honestly.
@@ -65,6 +72,7 @@
 // disassembler's opcode table.
 import { CommandType, memGetBody } from "./stock-protocol.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
+import { resolveRequiredBank } from "./stock-memory.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -274,7 +282,12 @@ export const handleViciiGetState: StockSessionHandler = async (args, session, _d
     return isErrorText(`vice_vicii_get_state: unexpected argument(s): ${unexpected.join(", ")} -- this tool takes no arguments`);
   }
 
-  const body = memGetBody({ sidefx: false, start: VICII_BASE, end: VICII_END, memspace: 0x00, bank: 0x0000 });
+  const bankResolution = await resolveRequiredBank("vice_vicii_get_state", "io", session);
+  if (!bankResolution.ok) {
+    return bankResolution.result;
+  }
+
+  const body = memGetBody({ sidefx: false, start: VICII_BASE, end: VICII_END, memspace: 0x00, bank: bankResolution.id });
 
   let response;
   try {
@@ -299,6 +312,7 @@ export const handleViciiGetState: StockSessionHandler = async (args, session, _d
     base: VICII_BASE,
     end: VICII_END,
     length: VICII_LENGTH,
+    bank: { id: bankResolution.id, name: bankResolution.name },
     ...decodeVicii(response.bytes),
   });
 };

@@ -25,6 +25,13 @@
 //     exactly how an answer ships without `runState`.
 //   - Never send an EXIT to "restore" the machine after a read (D-05) -- a
 //     read leaves the machine halted, and the answer says so via runState.
+//   - CR-01 (2026-08-17): a chip-state or VIC-fetch read must NEVER pass a
+//     literal bank id and must NEVER default to `0x0000` -- bank 0 is the
+//     CPU view and follows `$00`/`$01` banking, so with I/O banked out it
+//     silently returns the RAM underneath $D000-$DFFF as if it were chip
+//     registers. Such a caller MUST use resolveRequiredBank() below and
+//     refuse when the emulator's own catalog has no `io` bank -- never
+//     guess, never fall back to bank 0.
 import { CommandType, memGetBody, memSetBody } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
@@ -119,7 +126,30 @@ async function resolveBank(
   if (typeof bankArg !== "string") {
     return { ok: false, result: isErrorText(`${toolName}: bank must be a string, got ${typeof bankArg}`) };
   }
+  return await resolveRequiredBank(toolName, bankArg, session);
+}
 
+/**
+ * The one exported seam that turns a REQUIRED bank NAME into the emulator's
+ * own wire bank id, or refuses (CR-01, 2026-08-17, plan_decision_D-05-14).
+ * Unlike resolveBank() above -- whose contract is "an omitted bank means
+ * wire id 0x0000", correct for vice_memory_read/write where the caller
+ * asked for the CPU view -- this function's `bankName` is MANDATORY, and an
+ * absent catalog entry is a REFUSAL, never a fallback. Consumers that need
+ * a specific chip's register view (vice_vicii_get_state,
+ * vice_cia_get_state) call this directly; they must never default to bank
+ * 0x0000, which follows $00/$01 banking and returns the RAM underneath
+ * $D000-$DFFF whenever the running program has banked I/O out.
+ *
+ * Bank ids are never hardcoded here -- they come only from the emulator's
+ * own BANKS_AVAILABLE catalog (bankCatalogFor()'s per-session cache), since
+ * ids are build- and machine-specific.
+ */
+export async function resolveRequiredBank(
+  toolName: string,
+  bankName: string,
+  session: StockConnectSession,
+): Promise<{ ok: true; id: number; name: string } | { ok: false; result: StockToolResult }> {
   let catalog: BankCatalog;
   try {
     catalog = await bankCatalogFor(session);
@@ -127,12 +157,19 @@ async function resolveBank(
     return { ok: false, result: convertWireError(toolName, err) };
   }
 
-  const resolved = catalog.byName.get(bankArg.toLowerCase());
+  const resolved = catalog.byName.get(bankName.toLowerCase());
   if (resolved === undefined) {
     const names = [...catalog.byId.values()].join(", ") || "(none reported)";
-    return { ok: false, result: isErrorText(`${toolName}: unknown bank "${bankArg}" -- available banks: ${names}`) };
+    return {
+      ok: false,
+      result: isErrorText(
+        `${toolName}: unknown bank "${bankName}" -- refusing rather than reading the banking-dependent CPU view. ` +
+          `The CPU view (bank 0) returns the RAM underneath $D000-$DFFF whenever the running program has banked ` +
+          `I/O out via $01 -- available banks: ${names}`,
+      ),
+    };
   }
-  return { ok: true, id: resolved, name: bankArg };
+  return { ok: true, id: resolved, name: catalog.byId.get(resolved) ?? bankName };
 }
 
 // ---------------------------------------------------------------------------
