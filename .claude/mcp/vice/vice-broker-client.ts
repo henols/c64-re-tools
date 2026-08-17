@@ -21,9 +21,10 @@
 // never-cache-a-negative-result" section.
 //
 // MUST NOT import hostpath.ts: the host-path consumer set is closed to
-// four production modules by vice-mcp-selector-docs.test.mjs's assertion 4,
-// and host-path message text stays in vice-proxy.mjs, which is already on
-// that list.
+// exactly five production modules (containerpath.ts, install-resources.ts,
+// stock-paths.ts, vice-proxy.ts, vice-sync.ts), pinned by
+// hostpath-consumers.test.ts, and host-path message text stays in
+// vice-proxy.ts, which is already on that list.
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";

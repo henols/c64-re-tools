@@ -18,12 +18,13 @@
 // hazard. There, NOT translating an emulator-side path is the bug -- four
 // tools carry a filename stock VICE opens on the HOST, and stock-paths.ts's
 // whole job is making sure that translation happens. HERE, translating a
-// CLIENT-SIDE-DERIVED path is the bug: rewriteArguments() runs INSIDE
-// forwardToVice() at vice-proxy.ts:2773, before call() -- a derived tool
-// sitting behind call() would receive HOST-translated paths and act on them
-// INSIDE THE CONTAINER (ROADMAP Phase 4 Notes, CLAUDE.md). The derived-tool
-// seam this file anchors exists so a derived tool's handler is reached
-// BEFORE forwardToVice() ever runs rewriteArguments() at all.
+// CLIENT-SIDE-DERIVED path is the bug: rewriteArguments() runs INSIDE the
+// fork-forwarding function at vice-proxy.ts:2773, before call() -- a derived
+// tool sitting behind call() would receive HOST-translated paths and act on
+// them INSIDE THE CONTAINER (ROADMAP Phase 4 Notes, CLAUDE.md). The
+// derived-tool seam this file anchors exists so a derived tool's handler is
+// reached BEFORE that fork-forwarding function ever runs
+// rewriteArguments() at all.
 //
 // SECOND CONSUMER, named now so Phase 5's edit is a one-liner:
 // gatherWedgeEvidence() (vice-proxy.ts:1343) calls rewriteArguments() itself
