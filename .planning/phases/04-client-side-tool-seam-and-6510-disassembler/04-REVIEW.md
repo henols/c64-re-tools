@@ -209,6 +209,51 @@ completeness since it's the same helper function as WR-01; no fix required, just
 that this one is a non-issue by design, so a future reviewer doesn't need to re-derive that
 conclusion.
 
+## Resolution Status
+
+**Updated:** 2026-08-17, via quick task `260817-n6p`.
+
+- **WR-01 — Resolved.** `decode()` now refuses a `startAddress` above `0xffff`
+  by returning `[]`, via a dedicated `isValidStartAddress()` guard (option (a)
+  above), leaving `isNonNegativeSafeInteger()` untouched for `opts.count`/
+  `opts.end`. **Motivation change to record:** both consumers this finding
+  named as its reason to matter — Phase 5's backtrace (`DERIV-02`) and Phase
+  6's CPU-history decode (`GAIN-01`) — were cut from v0.2.0 scope on
+  2026-08-17 (see `ROADMAP.md` "Cut from scope" and the Phase 6 CUT block).
+  Every reachable caller today reaches `decode()` via `stock-disassemble.ts` →
+  `parseAddress()`, which already enforces `0..0xffff`. So this fix landed as
+  defense-in-depth on a currently unreachable path, not as a fix for a live
+  defect — recorded plainly here so a future reader does not re-derive this or
+  over-rate the finding's severity.
+
+- **IN-02 — Still live, and now more likely to matter.** It names Phase 5's
+  `DERIV-04` symbol store as its trigger, and `DERIV-04` **survived the cut**
+  (it remains in Phase 5's requirement list, and gains a second reason to
+  exist as the consumer half of the regenerator2000 symbol round trip). Carried
+  forward as something Phase 5 must handle in its own tests: assert
+  `symbolFor()` is injective per listing, or have `render()` warn / fall back
+  to the numeric form on a detected name collision rather than silently
+  keeping the last-seen address.
+
+- **IN-03 — Moot, and deliberately so.** It is explicitly about
+  `opts.count`/`opts.end` being unbounded by design; this task's fix
+  deliberately preserved that — the bound applies to `startAddress` only, via
+  a separate `isValidStartAddress()` guard, precisely so
+  `isNonNegativeSafeInteger()` keeps its unbounded semantics for those two
+  fields. `disasm-decoder.ts` now carries a matching `WHAT NOT TO DO` header
+  comment referencing this finding, so a later reviewer does not "fix" it.
+
+- **IN-01 — Unchanged, still deferred.** Operand-text duplication between
+  `disasm-renderer.ts` and `stock-disassemble.ts`. The documented rationale
+  (not reopening an already-committed, already-tested renderer mid-phase)
+  still holds; revisit only if `disasm-renderer.ts` is reopened, per the
+  finding's own Fix note.
+
+Front-matter `status` left as `issues_found`: IN-02 is a live carry-forward
+(an Info scoped to a future phase, not resolved yet), so `issues_found`
+remains the defensible reading even though the one Warning (WR-01) is now
+resolved.
+
 ---
 
 _Reviewed: 2026-08-17T13:35:37Z_
