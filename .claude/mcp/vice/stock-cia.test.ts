@@ -152,11 +152,15 @@ test("CIA1 portB.joystick1.up is true, the other four false", () => {
 });
 
 // ---------------------------------------------------------------------------
-// WR-02 -- CIA1 joystick fields are marked confounded when the DDR shows a
-// driven keyboard column; CIA2 is never confounded (it has no joystick
-// fields at all). A dedicated fixture with ddrA (bytes[0x02]) varied is used
-// here, distinct from CIA1_BYTES (whose own ddrA=0xff already makes it
-// confounded, covered above).
+// WR-02/WR-03 -- CIA1 joystick fields are annotated `confounded` when a
+// direction bit that reads LOW could be something other than a pressed
+// direction; CIA2 is never confounded (it has no joystick fields at all).
+//
+// WR-03 (re-review): the flag is PER READ ACTUAL and PER BIT. The original
+// predicate was `DDRA !== 0x00`, true on every booted C64 (the KERNAL leaves
+// DDRA = $FF), so it could not discriminate. These cases pin the new
+// semantics: a HIGH bit is never confounded; a LOW bit is confounded when its
+// own pin drives low, or when the OTHER port is driving a matrix line low.
 // ---------------------------------------------------------------------------
 
 /** Clones a fixture, overriding byte offset 0x02 (DDRA/portADirection). */
@@ -166,12 +170,35 @@ function withDdrA(bytes: number[], ddrA: number): number[] {
   return clone;
 }
 
+/** Clones a fixture, overriding any of the four port/DDR bytes
+ * (PRA/PRB/DDRA/DDRB at offsets 0x00-0x03) -- the whole input to the
+ * confounded predicate in one helper. */
+function withPorts(bytes: number[], overrides: { pra?: number; prb?: number; ddra?: number; ddrb?: number }): number[] {
+  const clone = [...bytes];
+  if (overrides.pra !== undefined) clone[0x00] = overrides.pra;
+  if (overrides.prb !== undefined) clone[0x01] = overrides.prb;
+  if (overrides.ddra !== undefined) clone[0x02] = overrides.ddra;
+  if (overrides.ddrb !== undefined) clone[0x03] = overrides.ddrb;
+  return clone;
+}
+
+function joysticks(bytes: number[]): { j2: Record<string, unknown>; j1: Record<string, unknown>; notes: string[] } {
+  const decoded = decodeCia(1, new Uint8Array(bytes));
+  return {
+    j2: (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>,
+    j1: (decoded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>,
+    notes: decoded.notes as string[],
+  };
+}
+
 test("WR-02 not confounded: CIA1 with ddrA=0x00 -- confounded false on both joysticks, notes empty", () => {
   const decoded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0x00)));
   const joystick2 = (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
   const joystick1 = (decoded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
   assert.equal(joystick2.confounded, false);
   assert.equal(joystick1.confounded, false);
+  assert.deepEqual(joystick2.confoundedDirections, []);
+  assert.deepEqual(joystick1.confoundedDirections, []);
   assert.ok(!("confoundedReason" in joystick2), "confoundedReason must be absent when not confounded");
   assert.ok(!("confoundedReason" in joystick1), "confoundedReason must be absent when not confounded");
   assert.deepEqual(decoded.notes, []);
@@ -204,12 +231,102 @@ test("WR-02 confounded: CIA1 with ddrA=0xff -- confounded true on both joysticks
   assert.equal((confounded.notes as string[]).length, 1);
 });
 
-test("WR-02 partial DDR: CIA1 with ddrA=0x01 (one output pin) is still confounded", () => {
-  const decoded = decodeCia(1, new Uint8Array(withDdrA(CIA1_BYTES, 0x01)));
-  const joystick2 = (decoded.portA as Record<string, unknown>).joystick2 as Record<string, unknown>;
-  const joystick1 = (decoded.portB as Record<string, unknown>).joystick1 as Record<string, unknown>;
-  assert.equal(joystick2.confounded, true);
-  assert.equal(joystick1.confounded, true);
+test("WR-03: DDRA=$ff with PRA=$ff is CLEAN -- every direction reads HIGH, so nothing can be a phantom press", () => {
+  const { j2, j1, notes } = joysticks(withPorts(CIA1_BYTES, { pra: 0xff, prb: 0xff, ddra: 0xff, ddrb: 0x00 }));
+  assert.equal(j2.confounded, false, "a read whose direction bits are all high cannot be confounded, whatever DDRA says");
+  assert.equal(j1.confounded, false);
+  assert.deepEqual(j2.confoundedDirections, []);
+  assert.deepEqual(j1.confoundedDirections, []);
+  assert.deepEqual(notes, []);
+});
+
+test("WR-03: DDRA=$ff with PRA=$fe is CONFOUNDED on exactly one direction -- up, the single driven-low pin", () => {
+  const { j2, j1 } = joysticks(withPorts(CIA1_BYTES, { pra: 0xfe, prb: 0xff, ddra: 0xff, ddrb: 0x00 }));
+  assert.equal(j2.up, true, "the boolean is annotated, never altered");
+  assert.equal(j2.confounded, true);
+  assert.deepEqual(j2.confoundedDirections, ["up"], "only the low bit is suspect -- the other four read high");
+  assert.match(j2.confoundedReason as string, /up/);
+  // Port B's own directions all read high, so nothing there is suspect even
+  // though port A is driving a column low.
+  assert.equal(j1.confounded, false);
+  assert.deepEqual(j1.confoundedDirections, []);
+});
+
+test("WR-03 the live booted-machine sample: $DC00=0x7F with DDRA=$ff is reported CLEAN on both joysticks", () => {
+  // The bytes the reviewer read off a freshly-booted /usr/bin/x64sc:
+  // 7f ff ff 00 67 1f ff ff 00 00 00 01 00 00 01 08.
+  const live = [0x7f, 0xff, 0xff, 0x00, 0x67, 0x1f, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x08];
+  const { j2, j1, notes } = joysticks(live);
+  // Only bit 7 (a column line) is low; bits 0-4 all read high.
+  assert.equal(j2.confounded, false, "the flag must discriminate -- this is an unambiguous nothing-pressed read");
+  assert.equal(j1.confounded, false);
+  for (const key of ["up", "down", "left", "right", "fire"] as const) {
+    assert.equal(j2[key], false);
+    assert.equal(j1[key], false);
+  }
+  assert.deepEqual(notes, []);
+});
+
+test("WR-03: a direction whose own pin is an INPUT and reads low is genuine -- DDRA=0x01 does not confound the fire bit", () => {
+  // CIA1_BYTES: PRA=0xef (bit 4 low -> fire). DDRA=0x01 drives bit 0 only,
+  // and bit 0 reads HIGH, so nothing is being driven low at all.
+  const { j2 } = joysticks(withDdrA(CIA1_BYTES, 0x01));
+  assert.equal(j2.fire, true);
+  assert.equal(j2.confounded, false, "an input pin reading low is a genuine press");
+  assert.deepEqual(j2.confoundedDirections, []);
+});
+
+test("WR-03: DDRA=0x10 DOES confound the fire bit -- the same low bit, now on a driven output pin", () => {
+  const { j2 } = joysticks(withDdrA(CIA1_BYTES, 0x10));
+  assert.equal(j2.fire, true);
+  assert.equal(j2.confounded, true);
+  assert.deepEqual(j2.confoundedDirections, ["fire"]);
+});
+
+test("WR-03: joystick1 consults DDRB, not DDRA -- DDRA=$00 with DDRB=$f0 driving the fire pin low confounds joystick1 only", () => {
+  const { j2, j1 } = joysticks(withPorts(CIA1_BYTES, { pra: 0xff, prb: 0xef, ddra: 0x00, ddrb: 0xf0 }));
+  assert.equal(j1.fire, true);
+  assert.equal(j1.confounded, true, "port B's own DDR must be consulted for joystick1 -- the old predicate only ever read DDRA");
+  assert.deepEqual(j1.confoundedDirections, ["fire"]);
+  assert.match(j1.confoundedReason as string, /DDRB \(\$DC03 = 0xf0\)/);
+  // Port A reads all-high and drives nothing, so joystick2 stays clean.
+  assert.equal(j2.confounded, false);
+});
+
+test("WR-03 the cross-port path: a port A column driven low makes port B's LOW bits suspect (a pressed key could short them)", () => {
+  // DDRA=$ff, PRA=$7f -> column 7 driven low. Port B is all inputs, but its
+  // bit 0 reads low: that could be joystick 1 up, or the key at that column.
+  const { j1, j2 } = joysticks(withPorts(CIA1_BYTES, { pra: 0x7f, prb: 0xfe, ddra: 0xff, ddrb: 0x00 }));
+  assert.equal(j1.up, true);
+  assert.equal(j1.confounded, true);
+  assert.deepEqual(j1.confoundedDirections, ["up"]);
+  assert.match(j1.confoundedReason as string, /pressed KEY/);
+  // The same read with NO column driven low is genuine -- the control that
+  // proves the cross-port term, not the low bit, is doing the work.
+  const clean = joysticks(withPorts(CIA1_BYTES, { pra: 0x7f, prb: 0xfe, ddra: 0x00, ddrb: 0x00 }));
+  assert.equal(clean.j1.up, true);
+  assert.equal(clean.j1.confounded, false);
+  assert.equal(j2.confounded, false, "port A's own low bit is bit 7, outside the five direction bits");
+});
+
+test("WR-03: the chip-level note names the suspect directions per joystick, and is absent when nothing is suspect", () => {
+  const suspect = joysticks(withPorts(CIA1_BYTES, { pra: 0xfe, prb: 0xfd, ddra: 0xff, ddrb: 0xff }));
+  assert.equal(suspect.notes.length, 1);
+  assert.match(suspect.notes[0]!, /joystick 2: up/);
+  assert.match(suspect.notes[0]!, /joystick 1: down/);
+  const clean = joysticks(withPorts(CIA1_BYTES, { pra: 0xff, prb: 0xff, ddra: 0xff, ddrb: 0xff }));
+  assert.deepEqual(clean.notes, []);
+});
+
+test("WR-03 non-vacuity: the flag genuinely discriminates -- it is false for some realistic reads and true for others", () => {
+  const cases = [
+    { name: "booted, nothing pressed", bytes: withPorts(CIA1_BYTES, { pra: 0x7f, prb: 0xff, ddra: 0xff, ddrb: 0x00 }), expected: false },
+    { name: "no scan, fire pressed", bytes: withPorts(CIA1_BYTES, { pra: 0xef, prb: 0xff, ddra: 0x00, ddrb: 0x00 }), expected: false },
+    { name: "fire pin driven low", bytes: withPorts(CIA1_BYTES, { pra: 0xef, prb: 0xff, ddra: 0x10, ddrb: 0x00 }), expected: true },
+  ] as const;
+  for (const { name, bytes, expected } of cases) {
+    assert.equal(joysticks(bytes).j2.confounded, expected, `joystick2.confounded for "${name}"`);
+  }
 });
 
 test("WR-02: CIA2 is never confounded -- no joystick1/joystick2 keys at all, notes empty", () => {

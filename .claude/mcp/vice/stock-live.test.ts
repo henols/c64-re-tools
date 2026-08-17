@@ -545,6 +545,64 @@ test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the 
 });
 
 test(
+  "stock-live (WR-03): the CIA joystick `confounded` flag DISCRIMINATES -- a freshly-booted machine reads clean, and a driven-low direction pin reads confounded",
+  { skip: SKIP_REASON },
+  async () => {
+    await ensureBooted();
+
+    function joysticksOf(payload: Record<string, unknown>): { j2: Record<string, unknown>; j1: Record<string, unknown>; notes: string[] } {
+      const cia1 = (payload.cias as Record<string, unknown>[])[0]!;
+      return {
+        j2: (cia1.portA as Record<string, unknown>).joystick2 as Record<string, unknown>,
+        j1: (cia1.portB as Record<string, unknown>).joystick1 as Record<string, unknown>,
+        notes: cia1.notes as string[],
+      };
+    }
+
+    async function readCia1(): Promise<Record<string, unknown>> {
+      const result = await dispatchStock("vice_cia_get_state", { cia: 1 }, liveDeps());
+      return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+    }
+
+    // --- 1. Baseline: a booted C64 leaves DDRA = $FF permanently, which is
+    //        exactly why the old `DDRA !== 0x00` predicate was true for ~100%
+    //        of realistic reads. The bits that matter all read HIGH, so this
+    //        must now report CLEAN. ---
+    const basePayload = await readCia1();
+    const base = joysticksOf(basePayload);
+    const cia1 = (basePayload.cias as Record<string, unknown>[])[0]!;
+    console.log(`stock-live: booted CIA1 registers = ${cia1.registersHex}`);
+    console.log(`stock-live: booted joystick2 = ${JSON.stringify(base.j2)}`);
+    assert.equal((cia1.portADirection as { raw: number }).raw, 0xff, "premise: the KERNAL leaves DDRA = $FF -- if this build does not, WR-03's whole point needs re-verifying");
+    assert.equal(base.j2.confounded, false, "a booted machine with nothing pressed must NOT be flagged confounded, or the flag carries no information");
+    assert.equal(base.j1.confounded, false);
+    assert.deepEqual(base.j2.confoundedDirections, []);
+    assert.deepEqual(base.j1.confoundedDirections, []);
+    assert.deepEqual(base.notes, []);
+
+    // --- 2. Non-vacuity control: drive port A bit 0 low. The machine is
+    //        halted, so nothing rewrites $DC00 between the write and the read.
+    //        The same five booleans now carry confounded:true for `up` only. ---
+    const originalPra = (cia1.portA as { raw: number }).raw;
+    try {
+      const write = await dispatchStock("vice_memory_write", { address: "$dc00", data: [0xfe], bank: "io" }, liveDeps());
+      assert.equal(write.isError, false, `driving $DC00 = 0xfe must succeed, got: ${JSON.stringify(write)}`);
+
+      const driven = joysticksOf(await readCia1());
+      console.log(`stock-live: with $DC00 driven to 0xfe, joystick2 = ${JSON.stringify(driven.j2)}`);
+      assert.equal(driven.j2.up, true, "bit 0 low decodes as `up` -- the boolean is annotated, never altered");
+      assert.equal(driven.j2.confounded, true, "a low bit on a pin DDRA configures as an output driving low IS confounded");
+      assert.deepEqual(driven.j2.confoundedDirections, ["up"], "only the driven-low direction is suspect");
+      assert.match(String(driven.j2.confoundedReason), /up/);
+      assert.equal(driven.notes.length, 1);
+    } finally {
+      const restore = await dispatchStock("vice_memory_write", { address: "$dc00", data: [originalPra], bank: "io" }, liveDeps());
+      assert.equal(restore.isError, false, `restoring $DC00 = 0x${originalPra.toString(16)} must succeed, got: ${JSON.stringify(restore)}`);
+    }
+  },
+);
+
+test(
   "stock-live (WR-01): vice_memory_banks reports the emulator's WHOLE enumeration -- aliases sharing a wire id included, and every reported name resolves",
   { skip: SKIP_REASON },
   async () => {

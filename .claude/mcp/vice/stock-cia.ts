@@ -42,12 +42,23 @@
 //     a stock read halts the machine at an arbitrary PC -- often inside the
 //     KERNAL's IRQ keyboard scan -- so a driven-low column bit decodes as a
 //     phantom direction press. The DDR bytes already in this same 16-byte
-//     buffer (`portADirection`) are what makes a driven column detectable:
-//     when any port A pin is configured as an output, `joystick2`/
-//     `joystick1` carry `confounded:true` plus a `confoundedReason`. The
-//     five booleans are ANNOTATED, never removed or altered -- with
-//     `DDRA = $00` (a game that is not scanning the keyboard) they are a
-//     genuine joystick read.
+//     buffer are what makes that detectable: `joystick2`/`joystick1` carry
+//     `confounded`, `confoundedDirections` and (when confounded) a
+//     `confoundedReason`. The five booleans are ANNOTATED, never removed or
+//     altered.
+//   - WR-03 (2026-08-17, re-review): that flag must be PER READ ACTUAL and
+//     PER BIT, never per DDR configured. The first version was
+//     `chip === 1 && DDRA !== 0x00`, and the KERNAL leaves `DDRA = $FF` on
+//     every booted machine, so it was true for ~100% of realistic reads and
+//     carried no information at all -- an agent could not use it to tell a
+//     clean sample from a phantom one, and the documented escape hatch
+//     (`DDRA = $00`) described a state that essentially never occurs. It
+//     also consulted DDRA for `joystick1`, which lives on port B. A
+//     direction is confounded IFF it reads LOW *and* either its own pin is
+//     an output driving low or the OTHER port is driving a matrix line low.
+//     A bit reading HIGH is never confounded, so `$DC00 = 0x7F` on a booted
+//     machine reports a clean "nothing pressed". Do not widen this back to a
+//     whole-port or DDR-only predicate.
 //
 // WHAT NOT TO DO:
 //   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
@@ -159,6 +170,29 @@ function boolBit(byte: number, n: number): boolean {
   return bit(byte, n) === 1;
 }
 
+/** The five joystick direction bits, bit 0 first -- the fixed order every
+ * `confoundedDirections` list is rendered in. */
+const JOYSTICK_DIRECTIONS: ReadonlyArray<string> = Object.freeze(["up", "down", "left", "right", "fire"]);
+
+/** Bits 0-4 of a port read that are LOW. Only a low bit can be a phantom: a
+ * bit reading HIGH has nothing pulling it down, so it is an unambiguous
+ * "this direction is not pressed" regardless of how the DDR is configured
+ * (WR-03, 2026-08-17). */
+function lowDirectionBits(raw: number): number {
+  return ~raw & 0x1f;
+}
+
+/** The pins this port is actively driving LOW: configured as an output (DDR
+ * bit set) with a 0 in the port register. All eight bits, because the
+ * keyboard's column-select/row-read lines are not confined to bits 0-4. */
+function drivenLowMask(raw: number, ddr: number): number {
+  return ddr & ~raw & 0xff;
+}
+
+function directionNames(mask: number): string[] {
+  return JOYSTICK_DIRECTIONS.filter((_, n) => ((mask >> n) & 1) === 1);
+}
+
 const COUNT_SOURCE_MEANING: Readonly<Record<number, string>> = {
   0: "system cycles",
   1: "cnt pin positive edges",
@@ -201,25 +235,103 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
 
   // WR-02: computed BEFORE the port A/B decode below (moved up from its
   // original position after portB) so the CIA1 joystick branches can
-  // consult the DDR byte already in this same 16-byte buffer.
+  // consult the DDR bytes already in this same 16-byte buffer.
+  //
+  // WR-03 (2026-08-17, re-review): the original predicate was
+  // `chip === 1 && DDRA !== 0x00`, which is TRUE on every booted C64 -- the
+  // KERNAL leaves DDRA = $FF permanently -- so it fired for ~100% of
+  // realistic reads and could not discriminate a clean sample from a phantom
+  // one. It also consulted DDRA for `joystick1`, which lives on port B. The
+  // predicate is now PER READ ACTUAL and PER BIT:
+  //
+  //   a direction bit is confounded IFF it reads LOW *and* something other
+  //   than the joystick could be pulling it down.
+  //
+  // A bit reading HIGH is never confounded (nothing is pulling it down), so
+  // an unambiguous "nothing pressed" read like $DC00 = 0x7F is reported
+  // clean. A low bit has two possible non-joystick causes, and both are
+  // computable from bytes already in this buffer:
+  //   1. its OWN pin is an output currently driving low (own DDR bit set,
+  //      own port bit 0) -- the driven latch reads back on the pin;
+  //   2. the OTHER port is driving any pin low, so a pressed KEY in the
+  //      selected column/row shorts this pin to that driven line. Which
+  //      port B row a driven port A column can pull down is not recoverable
+  //      from the register map, so every low bit on the other port is
+  //      suspect while that is happening -- and the matrix itself is
+  //      provably unrecoverable on stock (see this module's header).
+  const portARaw = bytes[0x00]!;
+  const portBRaw = bytes[0x01]!;
   const portADirectionRaw = bytes[0x02]!;
-  const keyboardColumnDriven = chip === 1 && portADirectionRaw !== 0x00;
+  const portBDirectionRaw = bytes[0x03]!;
   const ddraHex = portADirectionRaw.toString(16).padStart(2, "0");
-  const outputPinCount = directionOutputs(portADirectionRaw).filter(Boolean).length;
-  const confoundedReason =
-    `$DC00 is the keyboard-matrix COLUMN SELECT and $DC01 is the ROW READ, on the same pins as ` +
-    `joystick 2 ($DC00) and joystick 1 ($DC01). DDRA ($DC02) reads 0x${ddraHex}, so ${outputPinCount} ` +
-    `port A pin(s) are configured as outputs, and a stock read halts the machine at an arbitrary PC -- ` +
-    `often inside the KERNAL's IRQ keyboard scan -- so a cleared bit here may be a driven column rather ` +
-    `than a pressed direction. Read again with the machine stopped outside the scan, or compare two samples.`;
-  if (keyboardColumnDriven) {
-    notes.push(
-      `$DC00/$DC01 (joystick 2/joystick 1) share pins with the keyboard-matrix column-select/row-read, ` +
-        `and DDRA (0x${ddraHex}) shows ${outputPinCount} port A output pin(s) -- see portA.joystick2's/portB.joystick1's confoundedReason.`,
+  const ddrbHex = portBDirectionRaw.toString(16).padStart(2, "0");
+
+  const portADrivenLow = drivenLowMask(portARaw, portADirectionRaw);
+  const portBDrivenLow = drivenLowMask(portBRaw, portBDirectionRaw);
+
+  /** Suspect direction bits for one joystick: low bits whose own pin is
+   * driven low, plus (if the opposite port is driving anything low) every low
+   * bit, since a pressed key could be shorting it to that line. */
+  function confoundedBitsFor(raw: number, ownDdr: number, otherDrivenLow: number): number {
+    const low = lowDirectionBits(raw);
+    return low & (ownDdr | (otherDrivenLow !== 0 ? 0x1f : 0x00));
+  }
+
+  const joystick2Bits = chip === 1 ? confoundedBitsFor(portARaw, portADirectionRaw, portBDrivenLow) : 0;
+  const joystick1Bits = chip === 1 ? confoundedBitsFor(portBRaw, portBDirectionRaw, portADrivenLow) : 0;
+
+  /** The per-joystick reason, naming the suspect directions and WHICH of the
+   * two causes applies -- never a single shared sentence, since the two ports
+   * have different DDRs and different roles in the matrix. */
+  function joystickReason(
+    joystick: 1 | 2,
+    portLabel: "A" | "B",
+    bits: number,
+    raw: number,
+    ownDdr: number,
+    ownDdrHex: string,
+    otherDrivenLow: number,
+  ): string {
+    const ownDriven = lowDirectionBits(raw) & ownDdr;
+    const causes: string[] = [];
+    if (ownDriven !== 0) {
+      const ownNames = directionNames(ownDriven);
+      causes.push(
+        `${ownNames.join("/")} ${ownNames.length === 1 ? "sits" : "sit"} on port ${portLabel} pin(s) that ` +
+          `DDR${portLabel} ($DC0${portLabel === "A" ? "2" : "3"} = 0x${ownDdrHex}) configures as OUTPUTS currently driving LOW, ` +
+          `so the low bit may be that driven latch`,
+      );
+    }
+    if (otherDrivenLow !== 0) {
+      causes.push(
+        `port ${portLabel === "A" ? "B" : "A"} is driving 0x${otherDrivenLow.toString(16).padStart(2, "0")} low, so a pressed KEY in the ` +
+          `selected matrix line could be shorting a low pin here to that line`,
+      );
+    }
+    return (
+      `$DC00 is the keyboard-matrix COLUMN SELECT and $DC01 is the ROW READ, on the same pins as joystick 2 ` +
+      `($DC00) and joystick 1 ($DC01), and a stock read halts the machine at an arbitrary PC -- often inside ` +
+      `the KERNAL's IRQ keyboard scan. Suspect direction(s) for joystick ${joystick}: ${directionNames(bits).join("/")} -- ` +
+      `${causes.join("; and ")}. Directions reading HIGH are unaffected: nothing is pulling them down. Re-sample ` +
+      `with the machine stopped outside the scan, or compare two samples.`
     );
   }
 
-  const portARaw = bytes[0x00]!;
+  const joystick2Reason = joystickReason(2, "A", joystick2Bits, portARaw, portADirectionRaw, ddraHex, portBDrivenLow);
+  const joystick1Reason = joystickReason(1, "B", joystick1Bits, portBRaw, portBDirectionRaw, ddrbHex, portADrivenLow);
+
+  if (joystick2Bits !== 0 || joystick1Bits !== 0) {
+    const suspects: string[] = [];
+    if (joystick2Bits !== 0) suspects.push(`joystick 2: ${directionNames(joystick2Bits).join("/")}`);
+    if (joystick1Bits !== 0) suspects.push(`joystick 1: ${directionNames(joystick1Bits).join("/")}`);
+    notes.push(
+      `$DC00/$DC01 (joystick 2/joystick 1) share pins with the keyboard-matrix column-select/row-read, and ` +
+        `DDRA (0x${ddraHex})/DDRB (0x${ddrbHex}) plus the bytes actually read leave these direction(s) suspect -- ` +
+        `${suspects.join("; ")}. See portA.joystick2's/portB.joystick1's confoundedReason. Directions not listed ` +
+        `read HIGH or sit on undriven pins and are genuine.`,
+    );
+  }
+
   const portA: Record<string, unknown> = { raw: portARaw };
   if (chip === 1) {
     portA.joystick2 = {
@@ -228,8 +340,12 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portARaw, 2),
       right: activeLow(portARaw, 3),
       fire: activeLow(portARaw, 4),
-      confounded: keyboardColumnDriven,
-      ...(keyboardColumnDriven ? { confoundedReason } : {}),
+      confounded: joystick2Bits !== 0,
+      // Always present (empty when nothing is suspect), matching this
+      // module's own notes:[] convention -- an absent list would read as
+      // "not computed" rather than "nothing suspect".
+      confoundedDirections: directionNames(joystick2Bits),
+      ...(joystick2Bits !== 0 ? { confoundedReason: joystick2Reason } : {}),
     };
   } else {
     // $DD00 bits 0-1 are the VIC bank number, INVERTED: %00=bank3, %01=bank2,
@@ -246,7 +362,6 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     portA.serialDataIn = boolBit(portARaw, 7);
   }
 
-  const portBRaw = bytes[0x01]!;
   const portB: Record<string, unknown> = { raw: portBRaw };
   if (chip === 1) {
     portB.joystick1 = {
@@ -255,8 +370,9 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portBRaw, 2),
       right: activeLow(portBRaw, 3),
       fire: activeLow(portBRaw, 4),
-      confounded: keyboardColumnDriven,
-      ...(keyboardColumnDriven ? { confoundedReason } : {}),
+      confounded: joystick1Bits !== 0,
+      confoundedDirections: directionNames(joystick1Bits),
+      ...(joystick1Bits !== 0 ? { confoundedReason: joystick1Reason } : {}),
     };
   } else {
     portB.rs232Rxd = boolBit(portBRaw, 0);
@@ -268,8 +384,6 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   }
 
   const portADirection = { raw: portADirectionRaw, outputs: directionOutputs(portADirectionRaw) };
-
-  const portBDirectionRaw = bytes[0x03]!;
   const portBDirection = { raw: portBDirectionRaw, outputs: directionOutputs(portBDirectionRaw) };
 
   const timerA = { current: bytes[0x04]! | (bytes[0x05]! << 8) };

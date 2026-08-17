@@ -2475,6 +2475,19 @@
                         },
                         "confoundedReason": {
                           "type": "string"
+                        },
+                        "confoundedDirections": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "down",
+                              "left",
+                              "right",
+                              "fire"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -2483,7 +2496,8 @@
                         "left",
                         "right",
                         "fire",
-                        "confounded"
+                        "confounded",
+                        "confoundedDirections"
                       ]
                     },
                     "vicBank": {
@@ -2544,6 +2558,19 @@
                         },
                         "confoundedReason": {
                           "type": "string"
+                        },
+                        "confoundedDirections": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "down",
+                              "left",
+                              "right",
+                              "fire"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -2552,7 +2579,8 @@
                         "left",
                         "right",
                         "fire",
-                        "confounded"
+                        "confounded",
+                        "confoundedDirections"
                       ]
                     },
                     "rs232Rxd": {
