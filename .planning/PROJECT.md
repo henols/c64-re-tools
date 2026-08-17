@@ -213,7 +213,7 @@ re-record the fixtures against hardware, confirm the discriminator against real
 stock and fork binaries, and settle whether CI's bare `npm test` or the narrowed
 `test:automated` gate is correct.
 
-**Current state:** Phase 3 (Direct Tools) complete — 2026-08-16. Every tool with a
+**Previously:** Phase 3 (Direct Tools) complete — 2026-08-16. Every tool with a
 1:1 binary-monitor opcode now works on the stock backend: memory and registers,
 checkpoints and watchpoints with a typed condition builder, pause/resume/step/
 until-return, and machine control (reset, autostart, disk attach, keyboard,
@@ -251,7 +251,57 @@ gap-closure diff returned 0 critical / 8 warning; the two most useful are that t
 manifest still advertises flag-bit register names the handler always refuses, and that
 the new leak-prevention net covers only 1 of 4 server factories.
 
-Next: Phase 4, the client-side tool seam and 6510 disassembler.
+**Current state:** Phase 4 (Client-Side Tool Seam and 6510 Disassembler) complete —
+2026-08-17. DERIV-07's derived-tool seam exists as sibling modules (`stock-derived.ts`
+plus `withDerivedTool()` in `stock-dispatch.ts`), intercepting client-side tools *before*
+`forwardToVice()` runs `rewriteArguments()`, so a derived tool structurally cannot receive
+a host-translated path. `vice_disassemble` is its first consumer and is live on the stock
+backend. 7 plans across 6 waves; all 5 success criteria verified; 1321 tests green.
+
+**The real-assembler gate is what made this phase honest.** The opcode table was
+transcribed from cc65 and pinned by an independent `aaabbbcc` bit-pattern derivation test,
+and it still shipped 14 wrong `acmeExpressible` entries — caught only when 04-06 ran the
+renderer's output through a real ACME 0.97 and compared bytes. Bare `jam` assembles to
+`$02` no matter which of the 12 JAM opcodes it decoded from, and `anc #imm` always to
+`$0B`, so 11 JAM entries and `$2B` were over-substituting: they would have emitted a
+mnemonic that silently re-assembles to a *different byte*. Seven further entries were
+under-substituting — byte-faithful, but seeded `false`, so they emitted `!byte` where ACME
+accepts the mnemonic. Net: 221 of 256 opcodes are assembler-expressible, verified
+byte-exact in both directions. A test written from the same understanding as the code
+cannot find this class of error; only the external tool can.
+
+**Four of seven plans had their own plan text corrected during execution**, nearly always
+the same defect: a test whose expected value was read from the same live source that built
+its input, making the acceptance criterion permanently green. 04-03's suite 6 was the
+first (asserting `entry.length` against a stream built from `entry.length`); it was fixed
+by asserting against `LENGTH_FOR_MODE` and proven non-vacuous by corrupting `$00` and
+watching it fail. Both gates this phase added were likewise verified by watching them
+fail, not by inspection: removing `THIRD-PARTY-NOTICES.md` from `files[]` makes
+`check-npm-packages.mjs` reject publication, and with ACME absent under CI's
+`VICE_REQUIRE_ACME=1` the round-trip hard-fails instead of skipping.
+
+Independently cross-checked outside this codebase: all 256 instruction lengths re-derived
+from oxyron.de (a source separate from cc65) with **0 mismatches**; the illegal-`NOP` class
+re-counted as exactly 27 opcodes across 6 addressing-mode groups, confirming the
+planning-time correction to the ROADMAP's stale "twelve"; and `vice_disassemble` live-tested
+against genuine unpatched stock VICE 3.9, output byte-identical to that emulator's own
+text-monitor `d`. Criterion 5 holds empirically — all four dependency blocks are
+byte-identical to the phase-start commit, so the disassembler added zero npm dependencies.
+
+Carried forward: no Active requirement graduates yet — Phase 4 delivered only the
+disassembler slice of "tools the fork implemented in-emulator are reimplemented
+client-side"; backtrace, sprite decode and chip-state decode remain Phase 5. One code-review
+Warning is open and worth closing *before* Phase 5 consumes the decoder: `decode()`'s
+`startAddress` accepts any non-negative safe integer and silently wraps via `& 0xffff`,
+harmless today only because `parseAddress()` bounds the single current call site, while the
+decoder is explicitly the direct import surface for Phase 5's backtrace and Phase 6's
+CPU-history decode. `04-HUMAN-UAT.md` tracks one deployment-observable item: CI has never
+run this work, since all commits are local and `origin/main` is 298 behind. A separate
+pre-existing tracking gap surfaced at completion: `UP-01`, `UP-02`, `QUAL-01..03` appear in
+REQUIREMENTS.md's body but not its traceability table — it predates Phase 4 and belongs to
+whichever phase owns those IDs.
+
+Next: Phase 5, client-side derivations and screenshots.
 
 ---
-*Last updated: 2026-08-16 after Phase 3 completion (direct tools; live-validated against genuine stock VICE 3.9, DIRECT-02 blocker found and fixed, CI green on a PR branch, detach deferred to Phase 7)*
+*Last updated: 2026-08-17 after Phase 4 completion (derived-tool seam + 6510 disassembler; real-ACME round-trip corrected 14 opcode-table entries, 256 lengths cross-checked against an independent source, live-validated against genuine stock VICE 3.9, WR-01 decoder bound open for Phase 5)*
