@@ -330,15 +330,51 @@ test("handleSpriteGet: a catalog stub lacking ram refuses both, naming the repor
   assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
 
-test("handleSpriteGet: a wrong response type on any of the three reads is refused", async () => {
-  const { session } = makeSpriteSession();
-  const original = (session.client as unknown as { send: (...args: unknown[]) => Promise<unknown> }).send;
-  (session.client as unknown as { send: (...args: unknown[]) => Promise<unknown> }).send = async () => ({
-    type: "wrong_type",
+// WR-04 (2026-08-17 re-review): this used to be ONE case that replaced `send`
+// with a function answering "wrong_type" to EVERY call. Once readSpriteContext()
+// began resolving banks first (CR-02), the very first send was BANKS_AVAILABLE,
+// so the failure came out of bankCatalogFor() and NOT ONE of the three
+// memory_get type guards was reached -- a test whose title claimed three code
+// paths and covered none. Parameterised over which read fails, answering
+// BANKS_AVAILABLE normally throughout, so each guard is genuinely exercised;
+// the `memGets === failAt` assertion is what stops it going vacuous again.
+for (const failAt of [1, 2, 3] as const) {
+  test(`handleSpriteGet: a wrong response type on memory read ${failAt} of 3 is refused by that read's own type guard`, async () => {
+    const { session } = makeSpriteSession();
+    const real = (session.client as unknown as { send: (commandType: number, body: Buffer) => Promise<unknown> }).send;
+    let memGets = 0;
+    (session.client as unknown as { send: (commandType: number, body: Buffer) => Promise<unknown> }).send = async (
+      commandType: number,
+      body: Buffer,
+    ) => {
+      if (commandType === CommandType.BanksAvailable) {
+        return real(commandType, body);
+      }
+      memGets += 1;
+      return memGets === failAt ? { type: "wrong_type" } : real(commandType, body);
+    };
+
+    const result = await handleSpriteGet({}, session, DEPS);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /unexpected response type \("wrong_type"\), expected "memory_get"/);
+    assert.equal(memGets, failAt, "the read under test must be the one that failed -- no earlier read may short-circuit it");
   });
+}
+
+test("handleSpriteGet: a wrong response type on the BANKS_AVAILABLE read is refused by bankCatalogFor, before any memory read", async () => {
+  const { session } = makeSpriteSession();
+  // The stub replaces `send` outright, so it records its OWN call log --
+  // makeSpriteSession()'s `calls` array is never reached and asserting on it
+  // here would be vacuous.
+  const seen: number[] = [];
+  (session.client as unknown as { send: (commandType: number, body: Buffer) => Promise<unknown> }).send = async (commandType: number) => {
+    seen.push(commandType);
+    return { type: "wrong_type" };
+  };
   const result = await handleSpriteGet({}, session, DEPS);
   assert.equal(result.isError, true);
-  void original;
+  assert.match(result.content[0]!.text, /banks_available/);
+  assert.deepEqual(seen, [CommandType.BanksAvailable], "exactly one send, and no memory read once the catalog is unusable");
 });
 
 test("handleSpriteGet: a short VIC-II reply (46 bytes) is refused, 'a short read is a wrong answer'", async () => {
