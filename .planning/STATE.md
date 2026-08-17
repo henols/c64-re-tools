@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: milestone_complete
+status: phase_complete
 last_updated: 2026-08-17T22:37:52.565Z
-last_activity: 2026-08-17 -- Phase 05 execution started
+last_activity: 2026-08-17 -- Phase 05 complete, verified 5/5
 progress:
-  total_phases: 5
-  completed_phases: 4
+  total_phases: 7
+  completed_phases: 5
   total_plans: 52
   completed_plans: 52
-  percent: 80
-stopped_at: Milestone complete (Phase 05 was final phase)
+  percent: 71
+stopped_at: Phase 05 complete and verified; Phase 07 is next (Phase 06 is cut)
 ---
 
 # Project State
@@ -23,24 +23,30 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Milestone complete
+**Current focus:** Phase 07 — cycle timing and wedge triage
 
 ## Current Position
 
-Phase: 05
-Plan: Not started
-Status: Milestone complete
+Phase: 05 complete (verified 5/5) — next is Phase 07
+Plan: 13/13 complete
+Status: Phase complete, verified
 Last activity: 2026-08-17
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 28 tools -- 16 already
-work on stock, 10 are buildable (8 in Phase 5, 2 in Phase 7), and 2 are provably
-impossible (`vice_sid_get_state`, `vice_keyboard_matrix`) and route to the fork via
-Phase 8. The fork's other 34 tools are called by no skill. Phase 6 was cut wholesale;
-screenshots, backtrace, checkpoint groups, disk detach and the parity harness came out.
-See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 21 CUT-marked items.
+work on stock, 10 are buildable (8 in Phase 5, 2 in Phase 7), and 3 are provably
+impossible (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) and
+route to the fork via Phase 8. The fork's other 34 tools are called by no skill. Phase 6
+was cut wholesale; screenshots, backtrace, checkpoint groups, disk detach and the parity
+harness came out. See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 21
+CUT-marked items.
 
-Progress: [██████████] 100%
+*(The impossible list was two until plan 05-08's skill-vs-manifest sweep found
+`vice_keyboard_restore`, called by `c64-program-recon/references/control-flow.md:86` and
+absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
+item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
+
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
