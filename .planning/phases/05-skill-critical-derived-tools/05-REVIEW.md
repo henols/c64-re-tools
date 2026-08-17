@@ -1,497 +1,573 @@
 ---
 phase: 05-skill-critical-derived-tools
-reviewed: 2026-08-17T19:00:05Z
+reviewed: 2026-08-17T21:49:46Z
 depth: standard
-files_reviewed: 28
+files_reviewed: 31
 files_reviewed_list:
-  - .claude/mcp/vice/stock-memory-search.ts
-  - .claude/mcp/vice/stock-memory-search.test.ts
-  - .claude/mcp/vice/stock-symbols.ts
-  - .claude/mcp/vice/stock-symbols.test.ts
-  - .claude/mcp/vice/stock-vicii.ts
-  - .claude/mcp/vice/stock-vicii.test.ts
-  - .claude/mcp/vice/stock-cia.ts
-  - .claude/mcp/vice/stock-cia.test.ts
-  - .claude/mcp/vice/stock-sprites.ts
-  - .claude/mcp/vice/stock-sprites.test.ts
-  - .claude/mcp/vice/stock-handler.ts
-  - .claude/mcp/vice/stock-handler.test.ts
-  - .claude/mcp/vice/stock-derived.ts
-  - .claude/mcp/vice/stock-derived.test.ts
-  - .claude/mcp/vice/stock-dispatch.ts
-  - .claude/mcp/vice/stock-dispatch.test.ts
   - .claude/mcp/vice/hostpath-consumers.test.ts
   - .claude/mcp/vice/package.json
+  - .claude/mcp/vice/stock-cia.test.ts
+  - .claude/mcp/vice/stock-cia.ts
+  - .claude/mcp/vice/stock-derived.test.ts
+  - .claude/mcp/vice/stock-derived.ts
+  - .claude/mcp/vice/stock-dispatch.test.ts
+  - .claude/mcp/vice/stock-dispatch.ts
+  - .claude/mcp/vice/stock-handler.test.ts
+  - .claude/mcp/vice/stock-handler.ts
+  - .claude/mcp/vice/stock-live.test.ts
+  - .claude/mcp/vice/stock-memory-search.test.ts
+  - .claude/mcp/vice/stock-memory-search.ts
+  - .claude/mcp/vice/stock-memory.test.ts
+  - .claude/mcp/vice/stock-memory.ts
+  - .claude/mcp/vice/stock-sprites.test.ts
+  - .claude/mcp/vice/stock-sprites.ts
+  - .claude/mcp/vice/stock-symbols.test.ts
+  - .claude/mcp/vice/stock-symbols.ts
+  - .claude/mcp/vice/stock-vicii.test.ts
+  - .claude/mcp/vice/stock-vicii.ts
   - .claude/mcp/vice/tools-manifest.stock.json
-  - scripts/check-skill-tool-coverage.mjs
-  - scripts/check-npm-packages.mjs
-  - .github/workflows/ci.yml
-  - docs/stock-vice-parity.md
-  - .claude/skills/c64-program-recon/references/tool-selection.md
+  - .claude/skills/c64-program-recon/references/control-flow.md
+  - .claude/skills/c64-program-recon/references/graphics.md
   - .claude/skills/c64-program-recon/references/observation-hazards.md
   - .claude/skills/c64-program-recon/references/sound-and-input.md
-  - .claude/skills/c64-program-recon/references/graphics.md
-  - .claude/skills/c64-program-recon/references/control-flow.md
+  - .claude/skills/c64-program-recon/references/tool-selection.md
+  - docs/stock-vice-parity.md
+  - .github/workflows/ci.yml
+  - scripts/check-npm-packages.mjs
+  - scripts/check-skill-tool-coverage.mjs
 findings:
-  critical: 2
-  warning: 13
-  info: 0
-  total: 15
+  critical: 1
+  warning: 11
+  info: 4
+  total: 16
 status: issues_found
 ---
 
-# Phase 5: Code Review Report
+# Phase 5: Code Review Report (re-review after gap closure 05-09..05-13)
 
-**Reviewed:** 2026-08-17T19:00:05Z
+**Reviewed:** 2026-08-17T21:49:46Z
 **Depth:** standard
-**Files Reviewed:** 28
+**Files Reviewed:** 31
 **Status:** issues_found
 
 ## Summary
 
-Eight derived tools were added to the stock backend across five new modules, plus
-registration, manifest, CI-gate and doc changes. Baseline gates all pass in this
-worktree: `tsc --noEmit` is clean, `node --test 'stock-*.test.ts' 'hostpath-consumers.test.ts'`
-is 722 pass / 0 fail / 2 skipped, `scripts/check-skill-tool-coverage.mjs` exits 0.
-The four registration surfaces are consistent: `STOCK_DERIVED_TOOLS` (9),
-`STOCK_DISPATCH_TABLE` (34), `tools-manifest.stock.json` (34 entries with
-`inputSchema`/`outputSchema`), and `package.json` `files[]` (all five new modules
-present). Fork/stock `inputSchema` property sets and `required` lists are identical
-for all eight tools, so D-03 argument compatibility holds. Criterion 3's
-`{available:false, reason}` registries are genuinely built from `VICII_UNAVAILABLE_FIELDS`
-/ `CIA_UNAVAILABLE_FIELDS` and pinned with `enum:[false]` in the manifest; no
-enumerated internal-only field surfaces as `0`.
+This is a re-review of the same 31 files after five gap-closure plans landed. I re-verified
+every claimed fix against the code and, where the claim was about real emulator behaviour,
+against genuine unpatched stock VICE 3.9 at `/usr/bin/x64sc`.
 
-The bit decoding I could check by hand is correct: `$D011`/`$D016`/`$D018`/`$D019`/`$D01A`
-field extraction, the 9-bit sprite-X and raster reconstruction, the CIA CRA/CRB bit
-layout including the 2-bit `countSource`, the active-low joystick polarity, the
-`3 - (raw & 3)` VIC-bank inversion, `screenBase`/`spriteDataAddress` (fixture-verified
-against `dump-artifacts.mjs`: `$DD00=0xC1`, `$D018=0x31` → 35840), and the
-multicolour bit-pair legend mapping.
+**Verified fixed, and fixed correctly:**
 
-**However, the whole DERIV-05/DERIV-06 family reads the wrong memory view.** All
-four chip/sprite reads hardcode `bank: 0x0000`, which on stock VICE is the
-`default`/`cpu` bank — the *current CPU banking configuration*, not the I/O
-registers and not the RAM the VIC-II fetches. I verified this against a real
-unpatched `/usr/bin/x64sc` (VICE 3.9) over the binary monitor: with `$01 = $34`
-(I/O banked out — routine in depackers, loaders and demos, i.e. exactly this
-milestone's audience), `MEM_GET` bank 0 over `$D000-$D02E` returns the RAM
-underneath, which `decodeVicii()` then reports as fully-available VIC-II state
-with no marker at all. That is the criterion-3 failure mode the phase was built
-to prevent, arriving through the address argument instead of through the
-`unavailable` registry. Two BLOCKERs below, plus thirteen warnings covering an
-outputSchema violation on a documented input form, CIA port decoding that ignores
-the keyboard-matrix column drive, unvalidated BCD, a misleading ASCII legend,
-misleading skill/refusal text about `mode:'ranges'`, three tests that cannot fail
-or that under-test their own titles, and assorted dead code.
+- **CR-01** — `stock-vicii.ts:285` and `stock-cia.ts:429` now call
+  `resolveRequiredBank(..., "io", session)` (new export, `stock-memory.ts:148`) and refuse
+  when the catalog has no `io` entry, sending zero `MEM_GET`s on that path. I ran the
+  manual-only live gate myself (`VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test
+  stock-live.test.ts`, 7/7 pass) and confirmed the regression is genuinely closed: with
+  `$01 = $34`, the CPU-view `$D020` read returns `255` while `vice_vicii_get_state` still
+  reports `borderColour: 14` / `backgroundColour: 6` through `bank {id:3,name:"io"}`, and
+  `vice_cia_get_state` reports `timerAControl.raw: 1` rather than the CPU-view `0xff`.
+- **CR-02** — `readSpriteContext()` resolves `io` for `$D000-$D02E`/`$DD00` and `ram` for the
+  pointer table and sprite data, both before the first send, with exactly one
+  `BANKS_AVAILABLE` round trip. `registerBank`/`dataBank` are on both sprite answers and
+  pinned with `enum` in the manifest. The bank-3 I/O-window note exists and fires. Live
+  confirmed: `cia2PortARaw` is unchanged across `$01 = $34`, with a working non-vacuity control.
+- **Legend defect** — two constants, selected on the per-sprite `multicolour` flag, with a
+  genuinely useful cross-check test ("every distinct character in the rendered rows is
+  mentioned in the legend") plus a live case.
+- **WR-01** — `query.address` echoes the parsed number, and `stock-symbols.test.ts:436-471`
+  validates the address branch against the *shipped* manifest schema **and** carries a
+  non-vacuity control that proves the checker rejects the old behaviour. Well done.
+- **WR-08** — `resolveLabelFilePath()` returns `real`; tested against a real in-workspace
+  symlink. (But see WR-05 below: the containment comparison it feeds is asymmetric.)
+- **WR-11 (partial)** — `loadedPath` is gone.
+- **WR-02 / WR-03 (partial)** — `confounded`/`confoundedReason` and `invalidBcd` exist and are
+  tested. Both fixes are incomplete; see CR-01 and WR-03 below.
+- **WR-12 / WR-13** — the "provably side-effect-free" claim is correctly downgraded to
+  VERIFIED-flag/ASSUMED-honouring in both the parity doc and the hazard reference, the
+  banking hazard is recorded in both, and `stock-dispatch.ts:557` no longer says
+  "(Phase 5)" for `vice_disk_read_sector`.
 
-## Critical Issues
+**What I found that is still wrong.** One Critical: the WR-03 fix skipped `tod.tenths`, which
+still fabricates an impossible decimal from a non-BCD nibble with no marker at all — the exact
+anti-pattern criterion 3 exists to forbid, in a manifest-`required` field. Eleven warnings,
+five of them new: `vice_memory_banks` demonstrably under-reports the emulator's own bank
+enumeration (live-verified: 6 banks on the wire, 5 in the answer, `count: 5`); `handleSpriteGet`
+emits hazard notes for sprites that are not in the answer; the CIA `confounded` flag is
+unconditionally `true` on any booted machine (live-verified `DDRA = $FF`) so it cannot
+discriminate; the `resolveLabelFilePath` containment check compares a realpath against a
+non-realpath root and falsely refuses legitimate files (reproduced); and one sprite test became
+*more* vacuous as a side effect of the CR-01/CR-02 fix — its three response-type guards are now
+unreachable, proven by instrumentation. The rest are carried-over items I judged worth
+re-stating.
 
-### CR-01: All chip-state reads use the CPU-view bank, so RAM/char-ROM is silently decoded as VIC-II/CIA registers
+I also independently confirm the orchestrator's stated facts: manifest counts, `files[]` = 44,
+`STOCK_DERIVED_TOOLS` size 9, fork/stock `inputSchema` property sets and `required` lists
+identical for all eight new tools (so D-03 argument compatibility holds), and
+`check-skill-tool-coverage.mjs` exit 0.
 
-**File:** `.claude/mcp/vice/stock-vicii.ts:277`, `.claude/mcp/vice/stock-cia.ts:339`, `.claude/mcp/vice/stock-sprites.ts:230`
+## Narrative Findings (AI reviewer)
 
-**Issue:** Every read hardcodes `bank: 0x0000`. `BANKS_AVAILABLE` on real stock
-VICE 3.9 reports `[{id:0,"default"},{id:0,"cpu"},{id:1,"ram"},{id:2,"rom"},{id:3,"io"},{id:4,"cart"}]`
-— bank 0 is the *CPU view*, which follows `$00`/`$01` banking. Verified live
-against `/usr/bin/x64sc` (VICE 3.9) over `-binarymonitor`:
+### Critical Issues
 
-```
-# default banking ($01 = $37)
-D020 bank0: fe   bankIO: fe   bankRAM: ff
+#### CR-01: `tod.tenths` still fabricates an impossible decimal from a non-BCD nibble — the WR-03 fix skipped it
 
-# after MEM_SET $01 = $34 (I/O banked out)
-D020 bank0: ff   bankIO: fe   bankRAM: ff
-VICblock bank0  = ffff00000000ffffffff00000000ffffffff...   <- RAM under I/O
-VICblock bankIO = 00000000000000000000000000000000001b...   <- real registers
-```
+**File:** `.claude/mcp/vice/stock-cia.ts:291` (with `:137-144`, `:289-319`)
 
-`decodeVicii()` on that first buffer yields `borderColour: 15`,
-`spriteEnabled: [true x8]`, a plausible `rasterLine`, a plausible
-`memorySetup`, `interruptStatus.anyIrqPending: true` — all reported as
-*available*, with `unavailable` carrying only the six internal-only fields. The
-answer is indistinguishable from a real read. Same for `vice_cia_get_state`
-(`$DC00`/`$DD00`) and for `vice_sprite_get`/`vice_sprite_inspect`'s `$DD00` read,
-which feeds the VIC-bank number and therefore every derived address in the
-answer. A game running with `$01 = $34` (or `$35`, common in loaders and IRQ
-depackers) makes every one of these tools return fabricated state. `stock-memory.ts`
-already built and exported the bank seam for exactly this reason
-(`bankCatalogFor()`, `resolveBank()`); the derived modules bypass it.
-
-**Fix:** resolve the `io` bank id from the emulator's own catalog and read through
-it; never assume the wire id. Refuse rather than guess if the catalog has no `io`
-entry, and state the bank on the answer so the caller can see which view was read.
+**Issue:** `fromBcd()` was hardened to return `null` for a byte whose nibble exceeds 9, and
+`seconds`/`minutes`/`hours` correctly omit the key and list themselves in `tod.invalidBcd`.
+`tenths` was never routed through it:
 
 ```ts
-// stock-vicii.ts / stock-cia.ts / stock-sprites.ts's $DD00 read
-import { bankCatalogFor } from "./stock-memory.ts";
+const tod: Record<string, unknown> = {
+  tenths: todTenthsRaw & 0x0f,     // <- raw mask, never validated, never listed
+};
+```
 
-async function ioBankId(toolName: string, session: StockConnectSession): Promise<number | StockErrorResult> {
-  let catalog;
-  try {
-    catalog = await bankCatalogFor(session);
-  } catch (err) {
-    return convertWireError(toolName, err);
-  }
-  const id = catalog.byName.get("io");
-  if (id === undefined) {
-    return isErrorText(
-      `${toolName}: this VICE build's BANKS_AVAILABLE catalog has no "io" bank ` +
-        `(${[...catalog.byId.values()].join(", ")}) -- refusing rather than reading the ` +
-        `banking-dependent CPU view, which returns the RAM under $D000-$DFFF whenever the ` +
-        `running program has I/O banked out ($01 bit 2 / bits 0-1).`,
-    );
-  }
-  return id;
+A TOD tenths register holds BCD 0-9; VICE stores whatever the program wrote (`byte & 0x0f`), so
+10-15 is reachable. Reproduced against the shipped decoder with `$DC08 = 0x0f`:
+
+```
+tod:   {"tenths":15,"seconds":42,"minutes":59,"hours":11,"pm":true,"rawHex":"0f425991","invalidBcd":[]}
+notes: []
+```
+
+`tenths: 15` is not a physical value. There is no `invalidBcd` entry, no `notes` entry, and the
+manifest lists `tenths` in `tod.required` with `type: "number"`, so the answer conforms and an
+agent has no signal whatsoever that this number was invented. This is precisely the "plausible
+value where the truth is unavailable" class the phase's criterion 3 was written to forbid, and
+the gap-closure plan's own claim ("TOD fields refuse to invent a value from a non-BCD byte")
+is only two-thirds delivered. Blast radius is one field, but the class is the one that must not
+ship — and the sibling fields being fixed makes the inconsistency actively misleading: an agent
+that has learned to trust `invalidBcd` will read `tenths` as measured.
+
+`stock-cia.test.ts` cannot catch it: every fixture's tenths nibble is `0x5`, `0x0` or `0x1`, and
+no `withTod()` override touches offset `0x08`.
+
+**Fix:** route tenths through the same helper and the same omit-plus-name path as its three
+siblings.
+
+```ts
+const todTenths = fromBcd(todTenthsRaw & 0x0f);   // high nibble is unused/reads 0
+const tod: Record<string, unknown> = {};
+if (todTenths !== null) {
+  tod.tenths = todTenths;
+} else {
+  invalidBcd.push("tenths");
+  notes.push(
+    `$${basePrefix}08 (TOD tenths) reads 0x${todTenthsRaw.toString(16).padStart(2, "0")}, whose low ` +
+      `nibble is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+  );
 }
-// ...
-const body = memGetBody({ sidefx: false, start: VICII_BASE, end: VICII_END, memspace: 0x00, bank: ioBank });
 ```
 
-Add `bank: "io"` to each answer payload and to the manifest `outputSchema`, and add
-a live case to `stock-live.test.ts` that sets `$01 = $34` and asserts the answer
-still reports real register values (see WR-06).
+Then drop `tenths` from `tod.required` in `tools-manifest.stock.json` (it joins
+`seconds`/`minutes`/`hours` as conditionally present), and add a `withTod({ tenths: 0x0f })`
+case asserting the key is absent and `invalidBcd` contains `"tenths"`.
 
-### CR-02: Sprite/screen reads also use the CPU-view bank, so a resolved address in `$D000-$DFFF` returns I/O registers instead of the RAM the VIC-II fetches
+### Warnings
 
-**File:** `.claude/mcp/vice/stock-sprites.ts:272` (pointer table), `.claude/mcp/vice/stock-sprites.ts:546` (sprite data), `.claude/mcp/vice/stock-sprites.ts:124-137` (`spriteRomWindowNote`)
+#### WR-01: `vice_memory_banks` silently drops any bank sharing a wire id — live-verified, 6 banks on the wire, 5 in the answer
 
-**Issue:** The VIC-II never sees I/O or cartridge ROM — it sees RAM (plus the
-char-ROM window in banks 0 and 2). The pointer-table and sprite-data reads use
-`bank: 0x0000`, the CPU view. In VIC bank 3 (`$C000-$FFFF`) the absolute range
-`$D000-$DFFF` is the I/O area from the CPU's side, so a screen at `$CC00`
-(pointer table `$CFF8`) with pointers into `$D000+` — or sprite data placed under
-I/O, a standard trick to reclaim 4 KB — is read back as CIA/VIC/colour-RAM
-register bytes and rendered as a sprite. Verified live: `$D020` returns `fe`
-through bank 0 and `ff` through bank `ram`, i.e. the two views genuinely differ
-at the addresses in question.
+**File:** `.claude/mcp/vice/stock-memory.ts:101-110,195-196` (also `:172`)
 
-`spriteRomWindowNote()` shows the author reasoned about exactly this class of
-hazard for the char-ROM window (`$1000-$1FFF` in banks 0 and 2) but there is no
-equivalent for the I/O window, and — unlike the char-ROM case, where the CPU view
-happens to return the same RAM the note warns about — here the returned bytes are
-genuinely from a different device.
+**Issue:** `bankCatalogFor()` builds `byId` with `byId.set(bank.id, bank.name)`, and
+`handleMemoryBanks` enumerates `byId`. Real stock VICE reports **two names for wire id 0**, so
+last-write-wins loses one. Raw wire probe against `/usr/bin/x64sc` (VICE 3.9):
 
-**Fix:** read the pointer table and the sprite data through the `ram` bank id
-resolved from `bankCatalogFor()` (the VIC-II's own view), and keep the char-ROM
-note for banks 0/2 since `ram` still cannot show char ROM. Then add the missing
-window note:
+```
+RAW BANKS: [{"id":0,"name":"default"},{"id":0,"name":"cpu"},{"id":1,"name":"ram"},
+            {"id":2,"name":"rom"},{"id":3,"name":"io"},{"id":4,"name":"cart"}]
+```
+
+and the shipped handler on that exact catalog:
+
+```
+vice_memory_banks answer: {"banks":[{"id":0,"name":"cpu"},{"id":1,"name":"ram"},{"id":2,"name":"rom"},
+                                    {"id":3,"name":"io"},{"id":4,"name":"cart"}],"count":5,...}
+```
+
+`"default"` is gone and `count` says 5 where the emulator enumerated 6. The same `byId` is the
+source of the "available banks: ..." list in `resolveRequiredBank`'s refusal
+(`stock-memory.ts:162`), so a refusal message tells an agent a working bank name does not exist.
+And `resolveRequiredBank`/`resolveBank` return `name: catalog.byId.get(resolved)`, which echoes
+a name the caller did not ask for:
+
+```
+resolveRequiredBank("default") -> {"ok":true,"id":0,"name":"cpu"}
+```
+
+The live `stock-live.test.ts` case at line 532 only asserts `io` and `ram` are *present*, so it
+passes; and `stock-memory.test.ts` has a `realCatalogReply()` fixture carrying the duplicate id
+but never feeds it to `handleMemoryBanks` (the only `handleMemoryBanks` test uses a two-bank
+fixture with distinct ids). CLAUDE.md's own rule is that bank ids come from the emulator's
+enumeration and are never guessed — reporting fewer banks than it enumerated breaks the same
+contract from the other end.
+
+**Fix:** keep the wire list, not an id-keyed map, for reporting; keep `byId` only for the
+one-name-per-id reverse lookup, and echo the *requested* name.
 
 ```ts
-/** Banks 0 and 2: $1000-$1FFF is the char-ROM window (chip sees ROM, we read RAM).
- *  Bank 3: $D000-$DFFF is the I/O window from the CPU's side -- reading it through
- *  the `ram` bank is what the chip actually fetches; reading it through `default`
- *  returns registers instead. */
-function spriteWindowNote(address: number, bank: number): string | null { /* ... */ }
-```
-
-Add a unit case with a pointer resolving into `$D000-$DFFF` in bank 3 asserting
-both the correct bank on the wire body and the note's presence.
-
-## Warnings
-
-### WR-01: `vice_symbols_lookup` violates its own declared `outputSchema` on a documented, unit-tested input form
-
-**File:** `.claude/mcp/vice/stock-symbols.ts:380`, `.claude/mcp/vice/tools-manifest.stock.json` (`vice_symbols_lookup.outputSchema.properties.query.properties.address`)
-
-**Issue:** `payload.query = { address: args.address }` echoes the **raw**
-argument, while the schema declares `query.address` as `type: "number"`.
-`parseAddress()` accepts `"$d020"` / `"0xd020"`, and
-`stock-symbols.test.ts:341-357` explicitly tests those forms. Reproduced:
-
-```
-answer:     {"query":{"address":"$d020"},"found":true,...}
-violations: ["$.query.address: expected type \"number\", got string"]
-```
-
-The `conformance (D-02)` gate in `stock-dispatch.test.ts` would catch this, but
-its `vice_symbols_lookup` case only calls `{ name: "main" }` — the `address`
-branch is never schema-checked, so the gate passes vacuously for this path.
-
-**Fix:** echo the parsed value, not the raw one, and add the missing conformance
-case.
-
-```ts
-const payload: Record<string, unknown> = { query: { address }, found: name !== undefined, symbolCount: loadedSymbolCount };
-```
-
-### WR-02: CIA1 port A/B joystick decoding ignores the keyboard-matrix column drive that shares the same pins
-
-**File:** `.claude/mcp/vice/stock-cia.ts:155-197`
-
-**Issue:** `$DC00`/`$DC01` are the keyboard matrix column-select / row-read pair
-*and* joystick 2 / joystick 1. With `DDRA = $FF` (the normal KERNAL state) a read
-of `$DC00` returns the column latch the scan last wrote; with a column driven low,
-`$DC01`'s row bits read as pressed keys. `decodeCia()` reports `joystick2`/
-`joystick1` as five plain booleans with no caveat, and it *already has* the DDR
-bytes in the same 16-byte buffer (`portADirection`/`portBDirection`) but does not
-consult them. Because every stock read halts the machine at an arbitrary PC —
-often inside the IRQ keyboard scan — a low column bit decodes as a phantom
-direction press. Verified live at the BASIC prompt with no input:
-`$DC00..$DC03 = 7f ff ff 00` — bit 7 of `$DC00` is the column latch, not a
-joystick line, so the byte demonstrably carries non-joystick content.
-
-This is the same "plausible-looking value where the truth is unavailable" class
-criterion 3 targets, and the module's own header explicitly lists the CIA's
-read/write aliases while omitting this one.
-
-**Fix:** add a `notes: string[]` to each chip entry (the precedent already exists
-in `stock-sprites.ts`) and emit a note whenever `portADirection` shows output bits
-on CIA1, naming the aliasing; alternatively wrap `joystick1`/`joystick2` as
-`{ value, confounded: boolean, reason }`. Declare the new field in the manifest
-`outputSchema`.
-
-### WR-03: `fromBcd()` accepts non-BCD nibbles and reports impossible TOD values; the CIA1 fixture makes the tens-digit path pass by coincidence
-
-**File:** `.claude/mcp/vice/stock-cia.ts:113-115`, `.claude/mcp/vice/stock-cia.test.ts:68,148-156`
-
-**Issue:** `fromBcd(0x9f)` returns `9*10 + 15 = 105`, emitted as
-`tod.seconds: 105` with no marker. Separately, the fixture's hours byte is `0x8b`
-— low nibble `0xb`, not valid BCD. `fromBcd(0x8b & 0x1f) = fromBcd(0x0b) = 0*10 + 11 = 11`,
-so `assert.equal(tod.hours, 11)` passes without ever exercising the tens digit
-(bit 4). A real 11 PM is `0x91`. The regression this test claims to guard —
-"a raw pass-through would give seconds:66, not 42" — is only actually proven for
-seconds/minutes.
-
-**Fix:** validate both nibbles and mark the field rather than emitting an
-impossible number; change the fixture to a valid BCD hours byte so the tens digit
-is covered.
-
-```ts
-function fromBcd(raw: number): number | null {
-  const tens = (raw >> 4) & 0x0f, units = raw & 0x0f;
-  return tens > 9 || units > 9 ? null : tens * 10 + units;
+export interface BankCatalog {
+  byName: Map<string, number>;
+  byId: Map<number, string>;
+  /** Every (id, name) pair the emulator reported, in wire order -- aliases included. */
+  entries: { id: number; name: string }[];
 }
-// hours: 0x91 -> 11 PM (tens digit exercised); report null as
-// { available: false, reason: "$xx0B held 0x8b, which is not valid BCD" }
+// handleMemoryBanks:
+return stockAnswer(session.client, { banks: catalog.entries, count: catalog.entries.length });
+// resolveRequiredBank: report what was asked for, and the canonical spelling separately
+return { ok: true, id: resolved, name: catalog.entries.find((b) => b.id === resolved && b.name.toLowerCase() === bankName.toLowerCase())!.name };
 ```
 
-### WR-04: `vice_sprite_inspect` returns the multicolour bit-pair legend for hi-res renders, where it does not apply
+Add a `handleMemoryBanks` test driven by `realCatalogReply()` asserting `count === 6` and that
+both `default` and `cpu` appear.
 
-**File:** `.claude/mcp/vice/stock-sprites.ts:74-75,603`, `.claude/mcp/vice/stock-sprites.test.ts:318`
+#### WR-02: `handleSpriteGet` emits hazard notes for sprites that are not in the answer, and the notes name no sprite
 
-**Issue:** `SPRITE_ASCII_LEGEND` describes four bit-*pair* mappings
-(`'.'`=00, `'#'`=10, `'@'`=01, `'%'`=11). For a hi-res sprite `renderSpriteAscii()`
-emits one character per **bit** — only `'#'` and `'.'`, where `'#'` means "bit
-set", not "%10" — yet the same legend is attached whenever `format === "ascii"`.
-An agent reading a hi-res grid is told `'@'` and `'%'` exist and that `'#'` means
-a two-bit code. `stock-sprites.test.ts:318` asserts
-`parsed.legend === SPRITE_ASCII_LEGEND` on hi-res sprite 0, pinning the wrong
-behaviour.
+**File:** `.claude/mcp/vice/stock-sprites.ts:433-439,455,471` (contradicting the contract at `:234-236`)
 
-**Fix:** two legends, selected on `multicolour`.
+**Issue:** The per-sprite loop computes `spriteWindowNote()` for **all eight** sprites and pushes
+into the shared `notes` array, but `sprites` is then narrowed to the single requested index at
+line 455. `SpriteContext`'s own doc comment says the opposite is intended: "per-sprite
+data-address notes are added by each handler once it knows which sprite(s) it needs".
+`handleSpriteInspect` does it correctly (line 645, single sprite); `handleSpriteGet` does not.
+
+Reproduced with VIC bank 3, `screenBase = $C000`, and only sprite 5's pointer resolving into
+`$D000`:
+
+```
+requested sprite: 3  returned: [{"i":3,"addr":49152}]
+notes: ["address 0xd000 falls in VIC bank 3's I/O window ($D000-$DFFF absolute) -- ..."]
+```
+
+The note carries no sprite index, so an agent that asked about sprite 3 reads a hazard warning
+it can only attribute to sprite 3 — whose data address is `0xc000` and perfectly safe. The
+inverse error is equally available: a real hazard on the requested sprite is indistinguishable
+from a spurious one on another.
+
+**Fix:** compute notes only for the sprites actually returned, and name the sprite in the note.
 
 ```ts
-export const SPRITE_ASCII_LEGEND_HIRES = "'.' = transparent (bit clear), '#' = sprite colour (bit set)";
-export const SPRITE_ASCII_LEGEND_MULTICOLOUR = "'.' = transparent (00), '#' = sprite colour (10), '@' = multicolour 1 (01), '%' = multicolour 2 (11)";
-// ...
-legend: multicolour ? SPRITE_ASCII_LEGEND_MULTICOLOUR : SPRITE_ASCII_LEGEND_HIRES,
+const sprites = spriteIndex !== undefined ? [allSprites[spriteIndex]!] : allSprites;
+for (const s of sprites) {
+  const dataNote = spriteWindowNote(s.dataAddress as number, context.bank, context.ramBank.name);
+  if (dataNote !== null) {
+    const attributed = `sprite ${s.index}: ${dataNote}`;
+    if (!notes.includes(attributed)) notes.push(attributed);
+  }
+}
 ```
 
-### WR-05: The `mode:'snapshot'` refusal text and the new skill text both promise a time-dimension `mode:'ranges'` does not have
+Add a case asserting `{ sprite: 3 }` on that fixture returns `notes: []` while `{}` returns the
+note, attributed to sprite 5.
 
-**File:** `.claude/mcp/vice/stock-memory-search.ts:242-243`, `.claude/skills/c64-program-recon/references/control-flow.md:164-166`
+#### WR-03: the CIA `confounded` flag is unconditionally `true` on any booted machine, so it cannot discriminate — and it ignores DDRB for `joystick1`
 
-**Issue:** Both say to "compare two live ranges captured at different points in
-time". `handleMemoryCompare()` issues both `MEM_GET`s inside one call against one
-halted machine (its own comment at lines 305-308 says exactly that). It compares
-two *addresses* at one *time*; there is no mechanism to capture range 1 now and
-compare it later, and no tool in the milestone copies a range to a scratch buffer.
-An agent following the refusal message's advice will produce a meaningless diff
-and read it as a state comparison. This is agent-facing text on the error path, so
-it is the wording most likely to be acted on.
+**File:** `.claude/mcp/vice/stock-cia.ts:204`
 
-**Fix:** say what the tool does. e.g. "`mode:'ranges'` compares two *different
-address ranges* in the same halted machine — it cannot compare one range across
-time. To compare a range before and after, use `vice_memory_read` twice and diff
-client-side, or the `c64-ram-capture` skill's full-image diff." Update
-`control-flow.md` to match.
+**Issue:** `keyboardColumnDriven = chip === 1 && portADirectionRaw !== 0x00`. On a real booted
+C64 the KERNAL leaves `DDRA = $FF` permanently, so this is always true. Live probe of a
+freshly-booted `/usr/bin/x64sc` through the shipped decoder:
 
-### WR-06: No live-emulator coverage for any of the eight new tools
+```
+live $DC00-$DC0F: 7fffff00671fffff0000000100000108
+portA.joystick2: {"up":false,...,"fire":false,"confounded":true,"confoundedReason":"... DDRA ($DC02) reads 0xff ..."}
+portB.joystick1: {"up":false,...,"confounded":true,...}
+notes: ["$DC00/$DC01 ... DDRA (0xff) shows 8 port A output pin(s) ..."]
+```
 
-**File:** `.claude/mcp/vice/stock-live.test.ts` (unchanged by this phase)
+Here `$DC00 = 0x7F`: only bit 7 (a column line) is low, bits 0-4 all read high, so this *is* an
+unambiguous "nothing pressed" joystick read — and the tool flags it confounded anyway. Because
+the flag is on for 100% of realistic reads, it carries no information: an agent cannot use it
+to tell a clean sample from a phantom one, and the module header's stated escape hatch ("with
+`DDRA = $00` ... they are a genuine joystick read") describes a state that essentially never
+occurs. The honest fix is cheap and uses bytes already in the buffer: a joystick bit is only
+confounded when its own pin is an output **and** currently reads low.
 
-**Issue:** The opt-in live harness still contains only its two Phase-3 register
-cases; all 34 new/changed tests are stub-driven (`EventEmitter` + a `send` spy).
-Those stubs assert wiring faithfully — call order, byte-level body contents,
-short-read refusals — but they cannot see what the emulator actually returns for
-a given request, which is precisely how CR-01 and CR-02 got through: the bodies
-are exactly as intended, and the intent is wrong. One live case per chip tool,
-run against `/usr/bin/x64sc`, would have failed immediately.
+Separately, `joystick1` lives on port B (`$DC01`), whose read is also latch-confounded by
+`DDRB` (`bytes[0x03]`) — which this predicate never consults. With `DDRA = $00` and
+`DDRB != 0x00`, `joystick1` reports `confounded: false` while port B is being driven.
 
-**Fix:** add live cases guarded by the existing `VICE_LIVE_STOCK_BIN` opt-in:
-(a) `vice_vicii_get_state` on a booted machine asserting `borderColour === 14`
-and `backgroundColour === 6` (the KERNAL defaults); (b) the same after
-`MEM_SET $01 = $34`, asserting the answer still reports those values (the CR-01
-regression); (c) `vice_sprite_get` asserting `screenBase === 1024` and
-`pointerTableAddress === 2040` on a default machine.
-
-### WR-07: `stock-sprites.ts` re-derives constants and sprite decoding that `stock-vicii.ts` already exports
-
-**File:** `.claude/mcp/vice/stock-sprites.ts:58-60,359-379,527-534`
-
-**Issue:** `VICII_BASE`/`VICII_END`/`VICII_LENGTH` are redeclared as private
-literals even though `stock-vicii.ts:77-81` exports all three, and the per-sprite
-`enabled`/`x`/`y`/`colour`/`multicolour`/`expandX`/`expandY`/
-`priorityBehindBackground` extraction duplicates `decodeVicii()`'s
-`spriteEnabled`/`spriteX`/`spriteY`/`spriteColour`/`spriteMulticolour`/
-`spriteExpandX`/`spriteExpandY`/`spritePriorityBehindBackground` bit-for-bit, in
-a third and fourth place (`handleSpriteGet` and `handleSpriteInspect` each carry
-their own copy of the eight `bytes[0xdNNN - VICII_BASE]!` lookups). This is the
-codebase's own named "re-deriving a cross-cutting seam locally" anti-pattern, and
-`VICII_LENGTH = 0x2f` is a magic literal where the sibling derives it from base
-and end.
-
-**Fix:** `import { VICII_BASE, VICII_END, VICII_LENGTH, decodeVicii } from "./stock-vicii.ts";`
-and build both sprite answers from `decodeVicii()`'s already-decoded per-sprite
-arrays; keep only the pointer-chain arithmetic local to this module.
-
-### WR-08: `vice_symbols_load`'s path containment is check-then-use, and the reported `resolvedPath` is not the canonical path
-
-**File:** `.claude/mcp/vice/stock-symbols.ts:129-146,279,289`
-
-**Issue:** `resolveLabelFilePath()` computes `real = realpathSync(resolved)`,
-asserts containment on `real`, then **returns `resolved`** — the non-canonical
-path. `statSync(resolvedPath)` and `readFileSync(resolvedPath)` then re-traverse
-symlinks, so the escape check is advisory: anything that can replace a symlink
-component between the check and the read is read from outside the workspace. The
-answer's `resolvedPath` is likewise the pre-canonicalisation string, so the
-end-to-end test at `stock-dispatch.test.ts` asserting `resolvedPath` stays
-container-side is checking the un-resolved value.
-
-**Fix:** return and use `real` everywhere after the check, and report it.
+**Fix:** make the flag per-read-actual rather than per-DDR-configured, and consult the right DDR
+for each port.
 
 ```ts
-  return real;   // canonical, containment-checked; stat/read/report all agree
+/** A port bit is confounded iff it is configured as an output AND currently reads low --
+ *  i.e. the low bit could be the driven latch rather than a pressed direction. */
+function drivenLowMask(raw: number, ddr: number): number { return ddr & ~raw & 0x1f; }
+const portAConfoundedBits = drivenLowMask(portARaw, portADirectionRaw);
+const portBConfoundedBits = drivenLowMask(portBRaw, bytes[0x03]!);
+// joystick2.confounded = portAConfoundedBits !== 0; joystick1.confounded = portAConfoundedBits !== 0 || portBConfoundedBits !== 0;
+// and report `confoundedBits` so a caller knows WHICH directions are suspect.
 ```
 
-### WR-09: `truncated` is set on an exact-boundary result, and `identical`'s `!truncated` conjunct is dead
+Then replace the `withDdrA(CIA1_BYTES, 0xff)` test with cases distinguishing
+`DDRA=$ff, PRA=$ff` (clean) from `DDRA=$ff, PRA=$fe` (confounded), and add a `DDRA=$00,
+DDRB=$f0` case for `joystick1`.
+
+#### WR-04: the sprite "wrong response type on any of the three reads" test became strictly vacuous as a side effect of the CR-01/CR-02 fix
+
+**File:** `.claude/mcp/vice/stock-sprites.test.ts:333-342`
+
+**Issue:** The test replaces `send` with a function returning `{ type: "wrong_type" }` for
+*every* call. Before the gap closure, the first call was the VIC-II `MEM_GET`, so at least one
+of the three `memory_get` type guards was reached. Now `readSpriteContext()` sends
+`BANKS_AVAILABLE` first, so the failure comes from `bankCatalogFor()` and **none** of the three
+guards in `readSpriteContext()` is exercised. Instrumented against the shipped handler:
+
+```
+isError: true
+text:   vice_sprite_get: the command failed (bankCatalogFor: expected a "banks_available" reply, got "wrong_type").
+send call count: 1  types: [ 130 ]      // 130 = BANKS_AVAILABLE only
+```
+
+The test title claims coverage of three code paths and now covers none of them. (`void
+original;` at line 341 is also still dead — the original `send` is captured and discarded.) This
+is a regression in coverage introduced by an otherwise-correct fix, which is exactly the class
+of drift a re-review should catch.
+
+**Fix:** parameterise over which read fails, answering `BANKS_AVAILABLE` normally throughout.
+
+```ts
+for (const failAt of [1, 2, 3] as const) {
+  test(`handleSpriteGet: a wrong response type on read ${failAt} is refused`, async () => {
+    let memGets = 0;
+    const { session } = makeSpriteSession();
+    const real = (session.client as any).send;
+    (session.client as any).send = async (ct: number, body: Buffer) => {
+      if (ct === CommandType.BanksAvailable) return real(ct, body);
+      memGets += 1;
+      return memGets === failAt ? { type: "wrong_type" } : real(ct, body);
+    };
+    const result = await handleSpriteGet({}, session, DEPS);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /memory_get/);
+    assert.equal(memGets, failAt, "the failing read must be the one under test");
+  });
+}
+```
+
+Delete `void original;` rather than keeping a captured-and-discarded reference.
+
+#### WR-05: `resolveLabelFilePath` compares a realpath against a non-realpath root, falsely refusing legitimate in-workspace files
+
+**File:** `.claude/mcp/vice/stock-symbols.ts:129-151` (with `repo-root.ts:117-156`)
+
+**Issue:** `root = repoRoot()` returns `resolve(...)`, never `realpathSync(...)`. The second
+containment check compares the fully-canonicalised `real` against that possibly-symlinked
+`root`, so any workspace whose own path contains a symlinked component fails for every file
+inside it. Reproduced with `CLAUDE_PROJECT_DIR` pointing at a symlink to a real directory that
+genuinely contains the label file:
+
+```
+vice_symbols_load: ".../symtest/link/sub/labels.lbl" resolves (via symlink) to
+".../symtest/real/sub/labels.lbl", which is outside the workspace root (.../symtest/link)
+-- a symbol file must live inside the workspace
+```
+
+The file *is* inside the workspace; the message is wrong and the tool is unusable. This is
+routine in practice: a bind-mounted or symlinked project directory, `/tmp` on macOS, a
+`~ -> /mnt/...` home. The WR-08 fix made this reachable more often, since the returned value is
+now the same `real` the check ran on. `stock-symbols.test.ts`'s symlink cases use
+`mkdtempSync(tmpdir())` where `/tmp` is real on Linux CI, so nothing catches it.
+
+**Fix:** canonicalise both sides before comparing, and keep the pre-realpath check purely as
+the friendlier message for an obviously out-of-tree argument.
+
+```ts
+const root = repoRoot();
+let realRoot: string;
+try { realRoot = realpathSync(root); } catch { realRoot = root; }
+// ... after `real = realpathSync(resolved)`:
+if (!isContained(real, realRoot)) { /* refuse, naming both realRoot and real */ }
+```
+
+Add a test that symlinks a directory, points `CLAUDE_PROJECT_DIR` at the link, and asserts a
+load *succeeds*.
+
+#### WR-06: `vice_memory_search` / `vice_memory_compare` still read wire bank `0x0000`, take no `bank` argument, and never say which view they read
+
+**File:** `.claude/mcp/vice/stock-memory-search.ts:153,310,328`
+
+**Issue:** All three `MEM_GET` bodies pass `bank: 0x0000` as a literal. That is the CPU view,
+which follows `$00`/`$01` banking — the exact shape CR-01 was raised about, and which
+`stock-memory.ts`'s own header now names as forbidden ("a chip-state or VIC-fetch read must
+NEVER pass a literal bank id and must NEVER default to `0x0000`"). These two are not chip-state
+reads, so the CPU view is a defensible default; the defect is that it is **invisible and
+unchangeable**:
+
+- `vice_memory_read` accepts `bank` and reports it on the answer; these two accept no `bank` at
+  all (fork parity confirmed: neither manifest declares one), so an agent cannot search RAM
+  under ROM or under I/O, which is a routine reverse-engineering need on this project.
+- Neither answer carries a `bank` field, and neither `outputSchema` declares one. A search
+  across `$D000-$DFFF` returns register bytes or the RAM underneath depending on the halted
+  program's `$01`, and the answer looks identical either way. The module header's own reasoning
+  ("searching or comparing across `$D000-$DFFF` must never clear a pending VIC-II IRQ flag")
+  shows the author expected these ranges to be searched.
+
+**Fix:** at minimum, name the view on the answer so it is auditable; better, accept the same
+optional `bank` argument `vice_memory_read` already resolves through `resolveBank()`.
+
+```ts
+const bankResolution = await resolveBank("vice_memory_search", args.bank, session);
+if (!bankResolution.ok) return bankResolution.result;
+const body = memGetBody({ sidefx: false, start, end, memspace: 0x00, bank: bankResolution.id });
+// payload: ..., bank: bankResolution.name !== undefined ? { id: bankResolution.id, name: bankResolution.name } : bankResolution.id,
+```
+
+Declare `bank` in both `inputSchema`s and `outputSchema`s (adding an argument the fork does not
+have is already precedented — `vice_memory_read`'s `sideEffects` is stock-only).
+
+#### WR-07 (carried over from the prior review's WR-05): the `mode:'snapshot'` refusal and two docs promise a time dimension `mode:'ranges'` does not have
+
+**File:** `.claude/mcp/vice/stock-memory-search.ts:242-243`,
+`.claude/skills/c64-program-recon/references/control-flow.md:164`,
+`docs/stock-vice-parity.md:188-189`
+
+**Issue:** Deliberately out of scope for the gap closure, and it has since **spread** to a third
+file: the parity doc now quotes the refusal text verbatim. All three tell an agent to
+"compare two live ranges captured at different points in time". `handleMemoryCompare` issues
+both `MEM_GET`s inside one call against one halted machine (its own comment at lines 304-308
+says so). It compares two *addresses* at one *time*. This is agent-facing text on an error path
+— the wording most likely to be acted on — so I am re-reporting it despite the scope decision.
+
+**Fix:** say what the tool does, in all three places: "`mode:'ranges'` compares two *different
+address ranges* in the same halted machine; it cannot compare one range across time. To compare
+before/after, call `vice_memory_read` twice and diff client-side, or use `c64-ram-capture`'s
+full-image diff."
+
+#### WR-08 (carried over, WR-09): `truncated` is set on an exact-boundary result, and `identical`'s `!truncated` conjunct is dead
 
 **File:** `.claude/mcp/vice/stock-memory-search.ts:195-198,357-360,375`
 
-**Issue:** `if (matches.length === maxResults) { truncated = true; break; }` fires
-after pushing the last allowed match, without ever establishing that another match
-exists. A range with exactly `max_results` matches reports `truncated: true`, so a
-caller that re-searches on `truncated` loops for nothing and cannot tell a complete
-result from a clipped one. Same in the compare loop. Separately,
-`identical: differences.length === 0 && !truncated` — when `truncated` is true
-`differences.length === maxDifferences >= 1` (`parseByteCount` refuses 0), so the
-conjunct can never change the value.
+**Issue:** `if (matches.length === maxResults) { truncated = true; break; }` fires after pushing
+the last allowed match without establishing that another exists, so a range with exactly
+`max_results` matches reports `truncated: true`. A caller that re-searches on `truncated` cannot
+tell a complete result from a clipped one. `identical: differences.length === 0 && !truncated`
+is dead in the second conjunct: `parseByteCount` refuses 0 (`stock-address.ts:215`), so
+`truncated` implies `differences.length >= 1`. `stock-memory-search.test.ts:91` uses 6 matches
+against `max_results: 2`, so the boundary case is untested.
 
-**Fix:** keep scanning far enough to know, or rename the flag honestly.
+**Fix:** `if (matches.length === maxResults) { truncated = offset < bytes.length - pattern.length; break; }`
+and `identical: differences.length === 0`. Add a boundary case (exactly `max_results` matches
+available) asserting `truncated: false`.
 
-```ts
-if (matches.length === maxResults) { truncated = offset < bytes.length - pattern.length; break; }
-// ...
-identical: differences.length === 0,
-```
+#### WR-09 (carried over, WR-07): `stock-sprites.ts` re-derives constants and per-sprite decoding that `stock-vicii.ts` already exports
 
-### WR-10: Three tests cannot fail, or do not test what their titles claim
+**File:** `.claude/mcp/vice/stock-sprites.ts:72-74,420-453,602-669`
 
-**File:** `.claude/mcp/vice/stock-derived.test.ts:60-113`, `.claude/mcp/vice/stock-sprites.test.ts:253-262`
+**Issue:** `VICII_BASE`/`VICII_END`/`VICII_LENGTH` are private literals (`VICII_LENGTH = 0x2f`
+is a magic number where `stock-vicii.ts:89` derives it) although
+`stock-vicii.ts:85-89` exports all three; and the eight `bytes[0xdNNN - VICII_BASE]!` lookups
+plus the per-sprite `enabled`/`x`/`y`/`colour`/`multicolour`/`expandX`/`expandY`/
+`priorityBehindBackground` extraction are duplicated bit-for-bit in **both** sprite handlers,
+making four copies of decoding `decodeVicii()` already performs. This is the codebase's own
+named "re-deriving a cross-cutting seam locally" anti-pattern, and WR-02 above is a direct
+consequence of the duplication (the two handlers' note handling diverged).
 
-**Issue:**
-1. `"D-02 mechanism 1: a derived handler receives the container path verbatim"`
-   wraps a synthetic handler in `withDerivedTool()` and asserts the args arrive
-   unchanged. `withDerivedTool()` (`stock-dispatch.ts:491-520`) forwards `args`
-   by reference and has no reference to `rewriteArguments` at all, so the
-   assertion is structurally unfailable. The stated risk — that `vice-proxy.ts`
-   routes a derived tool through `forwardToVice()`, which *does* call
-   `rewriteArguments()` at line 2773 — is never exercised: nothing in the test
-   touches `vice-proxy.ts`'s routing. The `hostPath()` non-vacuity control only
-   proves translation *would* differ, which says nothing about whether the real
-   dispatch order bypasses it.
-2. `"handleSpriteGet: a wrong response type on any of the three reads is refused"`
-   replaces `send` with a function that returns `{type:"wrong_type"}` for *every*
-   call, so only the **first** read's guard is reached; reads 2 and 3 are never
-   exercised. `void original;` at line 261 is dead — the original `send` is
-   captured and discarded, never restored.
+**Fix:** `import { VICII_BASE, VICII_END, VICII_LENGTH, decodeVicii } from "./stock-vicii.ts";`
+and build both sprite answers from `decodeVicii()`'s already-decoded arrays; keep only the
+pointer-chain arithmetic local.
 
-**Fix:** (1) assert the routing property where it lives — extend the existing
-`VICE_PROXY_CODE_LINES` structural assertion in `stock-dispatch.test.ts` to prove
-the derived branch precedes the `forwardToVice(` call site, or drive a real
-`tools/call` through `vice-proxy.ts` with `VICE_BACKEND=stock`. (2) Parameterise
-the sprite test over which of the three reads returns the wrong type:
+#### WR-10 (carried over, WR-10 #1): the D-02 derived-path test is structurally unfailable
 
-```ts
-for (const failAt of [1, 2, 3]) {
-  test(`handleSpriteGet: a wrong response type on read ${failAt} is refused`, async () => { /* count calls, fail only on `failAt` */ });
-}
-```
+**File:** `.claude/mcp/vice/stock-derived.test.ts:60-113`
 
-### WR-11: Dead code across the new modules and the new CI script
+**Issue:** The test wraps a synthetic handler in `withDerivedTool()` and asserts args arrive
+unrewritten. `withDerivedTool` (`stock-dispatch.ts:486-521`) forwards `args` by reference and
+contains no reference to `rewriteArguments` at all, so the assertion cannot fail. The stated
+risk — that `vice-proxy.ts` routes a derived tool through the fork-forwarding function, which
+*does* call `rewriteArguments()` — is never exercised; the `hostPath()` control only proves
+translation *would* differ. Per CLAUDE.md this is the load-bearing invariant for every derived
+tool, so a test that cannot fail is a real gap even though it was scoped out.
 
-**File:** `.claude/mcp/vice/stock-symbols.ts:215,314`, `.claude/mcp/vice/stock-derived.ts:66-135`, `.claude/mcp/vice/stock-sprites.ts:262-270,539-544`, `scripts/check-skill-tool-coverage.mjs:25,42,54`
+**Fix:** assert the routing property where it lives — extend the existing `VICE_PROXY_CODE_LINES`
+structural assertion in `stock-dispatch.test.ts` to prove the derived branch precedes the
+fork-forward call site, or drive a real `tools/call` through `vice-proxy.ts` with
+`VICE_BACKEND=stock`.
 
-**Issue:**
-- `loadedPath` is assigned (line 314) and cleared (line 236) but never read
-  anywhere in the codebase — write-only module state, and it is not on the answer
-  either.
-- `derivedContainerPath()` and `DerivedToolError` have **zero production callers**
-  (only `stock-derived.test.ts`), and no `STOCK_DERIVED_TOOLS` member takes a path
-  argument. The file's header calls it "the ONE named seam a derived tool routes an
-  output path through"; nothing routes through it, so the seam is currently
-  decorative and its refusal branch can never fire in production.
-- The two `> 0xffff` refusals in `stock-sprites.ts` are unreachable:
-  `pointerTableEnd` maxes at `49152 + 15*1024 + 0x3ff = 65535` and `dataEnd` at
-  `49152 + 255*64 + 62 = 65534`. `stock-sprites.test.ts:407-426` documents the
-  bound is never crossed. They read as live guards.
-- `statSync` is imported and never used (line 25); `walkSkills`'s third parameter
-  `dirsSeen` is always `null` and never read (lines 42, 54); the recursive call's
-  return value is discarded while the function also returns `acc`.
+#### WR-11 (carried over, WR-11 remainder): dead code across the derived modules and the new CI script
 
-**Fix:** delete `loadedPath` or put it on the answer as `loadedFrom`; either give
-`derivedContainerPath()` its first production caller or delete it with its error
-class and the tests that only exercise it; convert the two address guards into
-`assert`-style internal invariants with a comment stating they are unreachable by
-construction; drop the unused import and parameter.
+**File:** `.claude/mcp/vice/stock-derived.ts:66-135`, `.claude/mcp/vice/stock-sprites.ts:332-342,614-620`,
+`scripts/check-skill-tool-coverage.mjs:25,42,53,62`
 
-### WR-12: The new skill/doc text warns about the small hazard and is silent on the large one, and overstates the side-effect proof
+**Issue:** Still present after the gap closure:
+- `derivedContainerPath()` and `DerivedToolError` have **zero production callers** (only
+  `stock-derived.test.ts`), and no `STOCK_DERIVED_TOOLS` member takes a path argument — so the
+  file's "ONE named seam a derived tool routes an output path through" routes nothing, and its
+  refusal branch cannot fire in production.
+- The two `> 0xffff` refusals in `stock-sprites.ts` are unreachable by construction:
+  `pointerTableEnd` maxes at `49152 + 15*1024 + 0x3ff = 65535`, `dataEnd` at
+  `49152 + 255*64 + 62 = 65534`. They read as live guards; `stock-sprites.test.ts:556-575`
+  documents the bound is never crossed.
+- `statSync` is imported and never used (line 25); `walkSkills`'s third parameter `dirsSeen` is
+  always `null` and never read (lines 42, 53, 62), and the recursive call's return value is
+  discarded while the function also returns `acc`.
 
-**File:** `.claude/skills/c64-program-recon/references/observation-hazards.md:83-87`, `docs/stock-vice-parity.md:64-77`
+**Fix:** give `derivedContainerPath()` a production caller or delete it with its error class and
+the tests that only exercise it; convert the two address guards into commented internal
+invariants stating they are unreachable by construction; drop the unused import and parameter.
 
-**Issue:** The new paragraph tells agents "an internal field the register map
-cannot expose is marked `{ available: false, reason }` ... never a bare `0` — do
-not record a stock `0` from one of these fields as a measurement; check
-`available` first." That is true for the eleven enumerated fields and useless
-against CR-01, where *every* field is `available` and wrong. Nothing in the skill
-or the parity doc tells the reader that a stock chip-state answer is only valid
-while the program has I/O banked in.
+### Info
 
-Separately, both files upgrade the side-effect claim from the skill's existing
-"unverified" to "**provably** side-effect-free ... a stronger guarantee than
-'unverified', not merely a smaller risk", citing as evidence "asserted directly on
-the wire body by a regression test". The tests assert only that `body[0] === 0x00`
-— a client-side fact about what is *sent*. Whether stock VICE's `MEM_GET`
-honours `side_effects = 0` for `$D01E`/`$D01F`/`$DC0D`/`$DD0D` is an emulator
-property with no cited source or probe in the repo. (My own live probe was
-consistent with the claim — a repeated `sidefx:false` read of `$D01E` did not
-clear it — but the repo's evidence chain does not establish it, and this project's
-convention is to mark such claims VERIFIED vs ASSUMED explicitly.)
+#### IN-01: the manifest pins `bank.name` to lowercase literals while `resolveRequiredBank` returns the wire's own spelling
 
-**Fix:** add the banking hazard to `observation-hazards.md` alongside the
-`available` note, and downgrade "provably" to the accurate claim ("`sidefx:false`
-is hardcoded with no override; whether the emulator's read path honours it for
-`$D01E`/`$D01F`/`$DC0D`/`$DD0D` is ASSUMED, pending a recorded probe") or add the
-probe to `stock-live.test.ts` and cite it.
+**File:** `.claude/mcp/vice/tools-manifest.stock.json` (`vice_vicii_get_state`/`vice_cia_get_state`
+`bank.name.enum: ["io"]`, `vice_sprite_*` `registerBank`/`dataBank`), `.claude/mcp/vice/stock-memory.ts:172`
 
-### WR-13: Stale planner comment now contradicts the shipped scope
+**Issue:** Lookup is case-insensitive (`byName.get(bankName.toLowerCase())`) but the reported
+name is `catalog.byId.get(resolved)`, i.e. whatever the build spelled. VICE 3.9 spells them
+lowercase (verified live), so this is latent — but a build spelling it `"IO"` would resolve
+fine and then emit an answer that violates its own declared `enum`, surfacing as a conformance
+failure rather than a clean refusal or a correct answer.
 
-**File:** `.claude/mcp/vice/stock-dispatch.ts:558`
+**Fix:** report the canonical lowercase name the schema pins (`name: bankName.toLowerCase()`),
+and keep the wire spelling in a separate `wireName` field if it is worth surfacing at all.
 
-**Issue:** The deliberately-not-registered list still reads
-`- \`vice_disk_read_sector\` (Phase 5)`. Phase 5 has landed without it, and
-`docs/stock-vice-parity.md` (this diff) now records it as **CUT from scope
-2026-08-17**. The two files disagree about whether the omission is pending or
-permanent, and `stock-dispatch.test.ts`'s `DELIBERATELY_ABSENT_TOOL_NAMES`
-carries the same stale annotation.
+#### IN-02: `check-npm-packages.mjs`'s transitive-closure walk misses `export ... from` and side-effect imports
 
-**Fix:** change to `- \`vice_disk_read_sector\` (CUT from scope 2026-08-17 -- no
-skill calls it; see ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)")` and mirror
-it in the test's comment.
+**File:** `scripts/check-npm-packages.mjs:118`
+
+**Issue:** The regex `/^\s*import\s[^;]*?from\s+"(\.\/[^"]+)"/gm` matches only value/type imports
+with a `from` clause. It would not follow `export { x } from "./y.ts"` or a bare
+`import "./y.ts"` — and one of the latter exists (`vice-probe.ts:41: import "./repo-root.ts";`).
+No module is currently unreachable-but-unshipped because of it (`repo-root.ts` is reached by
+other named imports), so this is a latent hole in an otherwise good gate.
+
+**Fix:** widen the pattern to `/^\s*(?:import|export)\s(?:[^;]*?from\s+)?"(\.\/[^"]+)"/gm`.
+
+#### IN-03: the hostpath consumer gate only sees direct static imports of `./hostpath.*`
+
+**File:** `.claude/mcp/vice/hostpath-consumers.test.ts:43`
+
+**Issue:** `HOSTPATH_IMPORT_RE` is deliberately narrow (correctly, to avoid matching comments and
+string literals), but that means a future derived module could reach host-path translation
+transitively — e.g. by importing `stock-paths.ts`, which is itself in the allowed set — or via a
+dynamic `await import()`, and the two D-02 mechanisms would both pass. Today no derived module
+imports any of the five, so the invariant holds.
+
+**Fix:** add a second, transitive assertion: for each `DERIVED_TOOL_MODULES` value, walk its
+relative-import closure and assert none of the five consumers appears in it.
+
+#### IN-04: `sound-and-input.md` documents the joystick bits without mentioning `confounded`
+
+**File:** `.claude/skills/c64-program-recon/references/sound-and-input.md:55-59,68-70`
+
+**Issue:** The reference gained a note about `$xx0D`'s read/write split (good), but the joystick
+paragraph still reads "The joystick bits are active-low: bit 4 is fire, bits 0-3
+up/down/left/right" with no mention that on stock `vice_cia_get_state` annotates those five
+booleans with `confounded`/`confoundedReason`, nor that `tod` fields can be absent with the name
+listed in `invalidBcd`. Given WR-03 above (the flag is currently always `true`), a skill note is
+what would stop an agent reading a phantom direction press as real.
+
+**Fix:** one sentence in the third CIA hazard: "On stock, `vice_cia_get_state`'s `joystick1`/
+`joystick2` carry `confounded` plus a reason whenever the shared keyboard-column pins may be
+driving the read — treat a confounded direction as unmeasured, and re-sample with the machine
+stopped outside the KERNAL scan."
 
 ---
 
-_Reviewed: 2026-08-17T19:00:05Z_
+_Reviewed: 2026-08-17T21:49:46Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Live verification: `/usr/bin/x64sc` (VICE 3.9) — `stock-live.test.ts` 7/7 pass; raw `BANKS_AVAILABLE`, `$DC00-$DC0F` on a booted machine, and four shipped-handler repros run directly_
