@@ -80,13 +80,20 @@ Prefer the whole-chip reads — `vice_vicii_get_state`, `vice_cia_get_state`, `v
 — over raw register reads. Whether the VICE monitor's own read path is side-effect-free is
 **unverified**: treat it as verify-don't-assume rather than taking it on faith.
 
-On the stock backend, `vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` and
-therefore **provably** cannot clear `$D01E`/`$D01F`/`$DC0D`/`$DD0D` — a stronger guarantee than
-"unverified," not merely a smaller risk; `vice_sid_get_state` is **fork-only**, since SID
-`$D400-$D418` is write-only in hardware and the binary monitor has no SID command. Also: on
-stock, an internal field the register map cannot expose is marked `{ available: false, reason }`
-in the answer, never a bare `0` — do not record a stock `0` from one of these fields as a
-measurement; check `available` first.
+On the stock backend, `vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` with
+no argument able to override it — **VERIFIED**, asserted on the wire body by a regression test.
+Whether the emulator's own `MEM_GET` read path actually honours that flag for
+`$D01E`/`$D01F`/`$DC0D`/`$DD0D` — i.e. whether it truly cannot clear them — is **ASSUMED**, with
+no probe recorded in this repo; treat it as no worse than the fork's own unverified path, not as
+a proven guarantee. `vice_sid_get_state` is **fork-only**, since SID `$D400-$D418` is write-only
+in hardware and the binary monitor has no SID command. Also: on stock, an internal field the
+register map cannot expose is marked `{ available: false, reason }` in the answer, never a bare
+`0` — do not record a stock `0` from one of these fields as a measurement; check `available`
+first. A stock chip-state or sprite answer also **names the memory view it read** (`bank`, or
+`registerBank`/`dataBank`), read through the emulator's own `io`/`ram` banks, so it stays valid
+even while the program has I/O banked out ($01 driving the RAM/ROM/I-O switch). An answer with
+**no** bank field — an older transcript, or the fork backend — is suspect whenever `$01` may not
+have been `$37`: those bytes may be the RAM underneath the I/O area, not registers.
 
 ## 4. The keyboard buffer is not how games read keys
 

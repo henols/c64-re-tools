@@ -63,18 +63,47 @@ below is renumbered to stay contiguous.)
    `vice_sprite_get` resolves the absolute `screenBase`/`dataAddress` form
    (DERIV-06).
 
-   **The DERIV-05 stock GAIN.** On stock, these reads are **provably**
-   side-effect-free — `sidefx: false` is hardcoded with no argument to override
-   it, asserted directly on the wire body by a regression test for both chips —
-   whereas the fork's own chip-state read path is, per this project's own skill
-   docs (`c64-program-recon/references/observation-hazards.md`: "Whether the
-   VICE monitor's own read path is side-effect-free is **unverified**: treat it
-   as verify-don't-assume rather than taking it on faith"), **unverified** rather
-   than proven. Reading `$D01E`/`$D01F`/`$DC0D`/`$DD0D` through the stock tools
-   therefore cannot steal a collision flag or an interrupt the running program
-   has not yet serviced. This is the one place in the milestone where the stock
-   backend is the **safer** one, not merely a
-   smaller loss — record it as a gain, not only a partial loss.
+   **Which memory view the answer read, and why it matters.** The chip-state and
+   sprite tools resolve their bank from the emulator's own `BANKS_AVAILABLE`
+   enumeration: the **`io`** bank for `$D000-$D02E`, `$DC00-$DC0F` and
+   `$DD00-$DD0F`, and the **`ram`** bank for the sprite pointer table and the
+   63-byte sprite data block — the view the VIC-II chip itself fetches, since the
+   chip never sees I/O or cartridge ROM. Every answer names the view it read:
+   `vice_vicii_get_state` and `vice_cia_get_state` report `bank: { id, name: "io"
+   }`; `vice_sprite_get` and `vice_sprite_inspect` report `registerBank` and
+   `dataBank`. The stock manifest pins those names with `enum`, so the
+   answer-conformance harness enforces them rather than only a hand-written test.
+   A build whose catalog reports no `io` (or no `ram`) bank gets an explicit
+   **refusal** naming the banks it did report — never a guess, and never a
+   fallback to the CPU view. Dated hazard record (**2026-08-17**): before this,
+   all four tools read wire bank `0x0000` — the **CPU view**, which follows
+   `$00`/`$01` banking. With I/O banked out (`$01 = $34`/`$35`, routine in
+   loaders, depackers and IRQ handlers) they returned the RAM underneath the I/O
+   area as fully-"available" register values with an empty `unavailable` set:
+   plausible, wrong, and worse than the `0` the criterion was written to forbid.
+   The `{available:false, reason}` mechanism could not catch it because the
+   defect arrived through the address/bank argument, not the field registry; the
+   regression is now pinned by a live case in `stock-live.test.ts` that sets
+   `$01 = $34`. One further note for the sprite half: an address resolved into
+   `$D000-$DFFF` while VIC bank 3 is selected now carries an explicit
+   **I/O window** note, alongside the pre-existing char-ROM-window note for
+   banks 0 and 2.
+
+   **The DERIV-05 stock GAIN.** `sidefx: false` is hardcoded with no argument
+   able to override it — **VERIFIED**, asserted on the wire body by a regression
+   test for both chips. Whether stock VICE's `MEM_GET` read path actually honours
+   `side_effects = 0` for `$D01E`/`$D01F`/`$DC0D`/`$DD0D` — i.e. that the
+   emulator's own read path does not clear those registers — is **ASSUMED**, with
+   no probe recorded in this repo. The fork's own chip-state read path is, per
+   this project's own skill docs
+   (`c64-program-recon/references/observation-hazards.md`: "Whether the VICE
+   monitor's own read path is side-effect-free is **unverified**: treat it as
+   verify-don't-assume rather than taking it on faith"), likewise unverified —
+   so the stock side is no worse, and is now explicit about which part is
+   proven and which is assumed. Reading `$D01E`/`$D01F`/`$DC0D`/`$DD0D` through
+   the stock tools is therefore, on current evidence, no more likely to steal a
+   collision flag or an unserviced interrupt than the fork's own path — record
+   it as a gain, not only a partial loss.
 
 6. **Reproducible but not byte-identical (reimplementation, not lost capability):**
    `vice_disassemble` (ship a client 6502 disassembler; formatting/illegal opcodes
@@ -174,11 +203,11 @@ below is renumbered to stay contiguous.)
      at native resolution per mode (24x21 hi-res, 12x21 multicolour) and is
      **not** scaled by the `$D017`/`$D01D` expansion bits.
    - **Criterion 5's exception count is three, not two (D-05-08, Phase 5).**
-     `vice_keyboard_restore` is a third skill-called tool that is provably
+     `vice_keyboard_restore` is a third skill-called tool that is confirmed
      unrecoverable on stock — it is in the same hard-loss family as `matrix`
      and `chord` (item 2 above), and
      `c64-program-recon/references/control-flow.md` calls it. The ROADMAP's
-     Phase 5 criterion 5 names only two provably-unrecoverable tools
+     Phase 5 criterion 5 names only two confirmed-unrecoverable tools
      (`vice_sid_get_state`, `vice_keyboard_matrix`); the extraction behind
      `scripts/check-skill-tool-coverage.mjs` finds a third. It routes to
      Phase 8 exactly like the other two (`BACK-05` for the runtime error,

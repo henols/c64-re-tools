@@ -51,9 +51,9 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [x] **DERIV-01**: User can search and compare memory ranges on the stock backend *(narrowed 2026-08-17: `fill` cut — no skill calls `vice_memory_fill`)*
 - [-] **CUT 2026-08-17** — no skill calls `vice_backtrace`. Original: **DERIV-02**: User can get a call backtrace on the stock backend
 - [-] **CUT 2026-08-17** — no skill calls any `vice_checkpoint_group_*` or `vice_checkpoint_set_ignore_count`. Original: **DERIV-03**: User can group checkpoints and set an ignore count on the stock backend
-- [ ] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names
-- [x] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero *(narrowed 2026-08-17: read side only — no skill calls `vice_vicii_set_state` or `vice_cia_set_state`)*
-- [ ] **DERIV-06**: User can read and inspect sprites, including ASCII rendering, on the stock backend *(narrowed 2026-08-17: read side only — no skill calls `vice_sprite_set`)*
+- [x] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names *(completed Phase 5; `outputSchema` conformance defect WR-01 — `query.address` echoed as a raw string — fixed 2026-08-17 in plan 05-11)*
+- [x] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero *(narrowed 2026-08-17: read side only — no skill calls `vice_vicii_set_state` or `vice_cia_set_state`)* *(this mark was premature when first set: 05-VERIFICATION.md live-falsified it via CR-01 — all chip reads used the banking-dependent CPU view. Genuinely complete after plan 05-09 (io-bank resolution + live `$01 = $34` regression) and plan 05-12 (confounded joystick and BCD honesty))*
+- [x] **DERIV-06**: User can read and inspect sprites, including ASCII rendering, on the stock backend *(narrowed 2026-08-17: read side only — no skill calls `vice_sprite_set`)* *(completed Phase 5; the CPU-view-bank defect CR-02 and the hi-res/multicolour legend defect fixed 2026-08-17 in plan 05-10, with a live regression in `stock-live.test.ts`)*
 - [x] **DERIV-07**: Derived tools are implemented in sibling modules, not appended to `vice-proxy.ts`, and are intercepted before argument rewriting so they never receive host-translated paths
 
 ### Disassembler
@@ -180,9 +180,9 @@ and the sequencing rationale.
 | DERIV-01 | Phase 5 | Complete |
 | DERIV-02 | Phase 5 | Pending |
 | DERIV-03 | Phase 5 | Pending |
-| DERIV-04 | Phase 5 | Pending |
-| DERIV-05 | Phase 5 | Complete |
-| DERIV-06 | Phase 5 | Pending |
+| DERIV-04 | Phase 5 | Complete (05-11) |
+| DERIV-05 | Phase 5 | Complete (05-09, 05-12) |
+| DERIV-06 | Phase 5 | Complete (05-10) |
 | DERIV-07 | Phase 4 | Complete |
 | DISASM-01 | Phase 4 | Complete |
 | DISASM-02 | Phase 4 | Complete |
@@ -224,11 +224,14 @@ and the sequencing rationale.
 **Coverage (revised 2026-08-17 after the scope cut):**
 - v0.2.0 requirements defined: 68
 - **Cut**: 21 (`DERIV-02`, `DERIV-03`, `SHOT-01`..`SHOT-05`, `GAIN-01`..`GAIN-09`, `VERIF-03`, plus the `DIRECT-06` detach half and the `fill`/`*_set_state` halves of `DERIV-01`/`05`/`06`)
-- **In scope**: 47 — 33 already complete, **14 open**
+- **In scope**: 47 — 35 already complete, **12 open**
 - Mapped to phases: 47 · Unmapped: 0 ✓
 
-**Open requirements per phase:** Phase 5: 4 (`DERIV-01`, `DERIV-04`, `DERIV-05`,
-`DERIV-06`) · Phase 6: **cut** · Phase 7: 4 (`TIME-01`..`TIME-04`) · Phase 8: 5
+**Open requirements per phase:** Phase 5: **0** — all four (`DERIV-01`,
+`DERIV-04`, `DERIV-05`, `DERIV-06`) complete; the per-phase line previously
+double-counted `DERIV-01` as open when the checklist already marked it `[x]`
+Complete, a second stale number found and fixed alongside DERIV-04/05/06
+(plan 05-13) · Phase 6: **cut** · Phase 7: 4 (`TIME-01`..`TIME-04`) · Phase 8: 5
 (`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`, `SKILL-01`)
 
 ### The cut criterion
