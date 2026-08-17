@@ -105,3 +105,12 @@ None - no external service configuration required.
 ---
 *Phase: 04-client-side-tool-seam-and-6510-disassembler*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/disasm-opcodes.ts`
+- FOUND: `.claude/mcp/vice/disasm-opcodes.test.ts`
+- FOUND: `.planning/phases/04-client-side-tool-seam-and-6510-disassembler/deferred-items.md`
+- FOUND commit `2fe5a0c` (Task 1)
+- FOUND commit `0f1dbe8` (Task 2)
+- FOUND commit `5499f10` (deviation log)
