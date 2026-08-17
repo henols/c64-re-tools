@@ -455,7 +455,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 13/13 | Complete   | 2026-08-17 |
+| 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |

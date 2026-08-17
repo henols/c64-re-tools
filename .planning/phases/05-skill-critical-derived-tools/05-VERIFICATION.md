@@ -1,58 +1,17 @@
 ---
 phase: 05-skill-critical-derived-tools
-verified: 2026-08-17T19:09:38Z
-status: gaps_found
-score: 2/5 must-haves verified
+verified: 2026-08-17T22:35:36Z
+status: passed
+score: 5/5 must-haves verified
 overrides_applied: 0
-gaps:
-  - truth: "A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable -- never reported as zero"
-    status: failed
-    reason: >
-      All three chip/sprite reads (stock-vicii.ts, stock-cia.ts, stock-sprites.ts) hardcode
-      `bank: 0x0000` (the CPU view, which follows $00/$01 banking) instead of resolving the
-      `io` bank id via stock-memory.ts's already-exported bankCatalogFor(). Live-reproduced
-      independently against a genuine unpatched /usr/bin/x64sc (VICE 3.9) using the ACTUAL
-      production handlers (not a reimplementation): after `MEM_SET $01=$34` (I/O banked out --
-      a routine loader/depacker/IRQ state), handleViciiGetState returns `isError:false` with
-      `borderColour:15`, `spriteEnabled:[false x8]`, `rasterLine:256`, and NONE of the fields
-      normally reported live are moved into `unavailable` -- the answer is indistinguishable
-      from a genuine read. Same live-reproduced for handleCiaGetState (portA/portB report
-      `raw:255` with plausible-looking joystick state) and handleSpriteGet (screenBase,
-      pointerTableAddress, vicBank all wrong, no note). This is worse than the zero-reporting
-      criterion 3 was written to prevent: the value is plausible-looking and wrong, and the
-      registry-based `{available:false,reason}` mechanism (which does work correctly for the
-      11 enumerated internal-only fields) never engages because the bug arrives through the
-      address argument, not the field registry.
-    artifacts:
-      - path: ".claude/mcp/vice/stock-vicii.ts"
-        issue: "Line 277: `memGetBody({..., bank: 0x0000})` -- never resolves the io bank"
-      - path: ".claude/mcp/vice/stock-cia.ts"
-        issue: "Line 339: same hardcoded `bank: 0x0000`"
-      - path: ".claude/mcp/vice/stock-memory.ts"
-        issue: "Exports bankCatalogFor()/resolveBank() for exactly this purpose; zero callers in stock-vicii.ts, stock-cia.ts, or stock-sprites.ts (confirmed by grep -- no import)"
-    missing:
-      - "Resolve the io bank id from bankCatalogFor() and read VIC-II/CIA registers through it, refusing rather than guessing if no io bank entry exists"
-      - "State which bank was read on the answer"
-      - "A live regression test (guarded by the existing opt-in live harness) that sets $01=$34 and asserts the chip-state answer still reports real register values"
-  - truth: "A user can read and inspect sprites, including ASCII rendering, on the stock backend"
-    status: failed
-    reason: >
-      Same root cause as above (stock-sprites.ts:230,272,546 all hardcode `bank: 0x0000`), plus
-      an independent, live-reproduced rendering defect: `vice_sprite_inspect` attaches the
-      multicolour ASCII legend (with '@' and '%' bit-pair meanings) to a hi-res (non-multicolour)
-      sprite's render, even though the fork's own binary-per-pixel hi-res rendering uses only
-      '.' and '#'. Reproduced live against the default-banked, default-booted machine (no $01
-      manipulation needed): `handleSpriteInspect({sprite_number:0, format:'ascii'})` returns
-      `multicolour:false` together with
-      `legend: "'.' = transparent (00), '#' = sprite colour (10), '@' = multicolour 1 (01), '%' = multicolour 2 (11)"`
-      -- an agent reading the grid is told two symbols exist that this render never produces
-      and that '#' means something it does not for this sprite.
-    artifacts:
-      - path: ".claude/mcp/vice/stock-sprites.ts"
-        issue: "Lines 74-75/603: SPRITE_ASCII_LEGEND is a single constant attached regardless of `multicolour`; also lines 230/272/546 share CR-01's bank bug"
-    missing:
-      - "Two legend constants selected on the per-sprite `multicolour` flag"
-      - "Read the pointer table and sprite data through the emulator's `ram` bank id, not the CPU-view bank 0, and add an I/O-window hazard note for VIC bank 3 (analogous to the existing char-ROM window note for banks 0/2)"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 2/5
+  gaps_closed:
+    - "A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable — never reported as zero (CR-01 bank-0 bug)"
+    - "A user can read and inspect sprites, including ASCII rendering, on the stock backend (CR-02 bank-0 bug + hi-res/multicolour legend defect)"
+  gaps_remaining: []
+  regressions: []
 deferred: []
 human_verification: []
 ---
@@ -60,9 +19,9 @@ human_verification: []
 # Phase 5: Skill-Critical Derived Tools Verification Report
 
 **Phase Goal:** Every tool the six shipped skills actually call either works on stock or is explicitly routed to the fork
-**Verified:** 2026-08-17T19:09:38Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-17T22:35:36Z
+**Status:** passed
+**Re-verification:** Yes — after gap closure (plans 05-09..05-13) plus a post-gap-closure code review and fix pass
 
 ## Goal Achievement
 
@@ -70,151 +29,104 @@ human_verification: []
 
 | # | Truth (Success Criterion) | Status | Evidence |
 |---|------|--------|----------|
-| 1 | A user can search and compare memory ranges on the stock backend | ✓ VERIFIED | Live-reproduced against real `/usr/bin/x64sc` (VICE 3.9) via the actual `handleMemorySearch`/`handleMemoryCompare`: exact-pattern search on BASIC ROM returned the correct single match; a ranges-mode compare between $A000 and $E000 returned 17 correct byte-level diffs. `npm run test:automated` = 1349/0/0, matches baseline. |
-| 2 | A user can load a symbol file and have addresses resolved to symbol names on the stock backend | ⚠️ VERIFIED (with a warning) | Live-reproduced: loading a real VICE-format `.lbl` and looking up both by name and by address (`"$d020"` and `53280`) both resolve correctly in both directions; `vice_disassemble`'s `show_symbols` path is unmodified (Phase 4 extension point, per code and 05-02-SUMMARY). **However**, `vice_symbols_lookup`'s own declared `outputSchema` requires `query.address: number`, and the handler echoes the raw argument — confirmed live: `{address:"$d020"}` yields `query:{"address":"$d020"}`, a string, violating the schema on a form the tool's own tests exercise. Functional capability works; the schema-conformance promise (part of D-03/D-06's cross-cutting contract) does not. See WR-01. Not blocking criterion 2's core claim, but a real defect. |
-| 3 | A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable — never reported as zero | ✗ FAILED | Live-reproduced independently (see gaps). All chip-state reads use the CPU-view bank (`0x0000`) instead of the `io` bank `stock-memory.ts` already exposes via `bankCatalogFor()`. With I/O banked out ($01=$34, a routine loader/depacker/IRQ-scan state), both `vice_vicii_get_state` and `vice_cia_get_state` return fully "available" fabricated register state with no `unavailable` marker at all — the exact failure mode criterion 3 exists to prevent, arriving through the address argument rather than the field registry. |
-| 4 | A user can read and inspect sprites, including ASCII rendering, on the stock backend | ✗ FAILED | Live-reproduced: same bank-0 bug (`handleSpriteGet` after $01=$34 returns wrong `screenBase`/`pointerTableAddress`/`vicBank` with no note) plus an independently live-reproduced legend defect — `vice_sprite_inspect` attaches the multicolour legend to a hi-res sprite render on a default-booted machine (no special setup needed to trigger this one). |
-| 5 | Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except the three proven-unrecoverable tools | ✓ VERIFIED | `node scripts/check-skill-tool-coverage.mjs` exits 0: "35 distinct vice_* names extracted ... 25 resolved as advertised ... Classified: 2 proxy-local, 1 deny-listed, 2 not-a-tool-name, **3 fork-only-unrecoverable**, 2 pending-later-phase" — the fork-only-unrecoverable count matches the criterion's named exception set (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`). |
+| 1 | A user can search and compare memory ranges on the stock backend | ✓ VERIFIED | `stock-memory-search.ts`/`stock-memory.ts` wired into `stock-dispatch.ts`. Live re-confirmed against genuine `/usr/bin/x64sc` (VICE 3.9) via `stock-live.test.ts`'s WR-06 case (read this file directly, lines 547-605): a search for a ROM byte at `$E000` matches through the default (CPU) view and correctly fails to match through the `ram` bank, and the RAM-under-ROM byte — previously unreachable — is found through `ram`; `vice_memory_compare` applies one bank to both ranges and reports it. `npm run test:automated` (this repo, this run) = 1426/1421/0/5, matching the stated baseline. Live gate `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts` = 10/10 pass (run independently, not taken from any SUMMARY). Known-open, non-blocking: WR-06/WR-07's `mode:'ranges'` refusal text still describes a time dimension the tool does not have (doc wording, not a functional defect); WR-08's `truncated` flag mislabels an exact-boundary result. Neither breaks the ability to search and compare. |
+| 2 | A user can load a symbol file and have addresses resolved to symbol names on the stock backend | ✓ VERIFIED | `stock-symbols.ts` load/lookup wired and tested (`stock-symbols.test.ts`, 238-test run across the six stock modules together, 0 fail). WR-01 (previously a warning: `query.address` echoed the caller's raw string, violating the tool's own `outputSchema`) is fixed and independently re-read in the source: `stock-symbols.ts:409-422` now assigns `address` from `parseAddress(args.address, ...)` — a `number` — before building `query: { address }`, never echoing `args.address`. WR-05 (symlinked workspace root falsely refusing legitimate files) is independently re-read as fixed: `resolveLabelFilePath` now canonicalises `repoRoot()` via `realpathSync` before the containment comparison. |
+| 3 | A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable — never reported as zero | ✓ VERIFIED (gap closed) | Previously FAILED (CR-01: all chip reads used the CPU-view bank `0x0000`, so I/O-banked-out RAM was silently decoded as chip registers with nothing marked unavailable). Independently re-read: `stock-vicii.ts:285` and `stock-cia.ts:559` both now call `resolveRequiredBank(toolName, "io", session)` and only proceed with a resolved `io` bank id; `stock-memory.ts` exports `resolveRequiredBank`. Live re-confirmed directly from `stock-live.test.ts` (read, not summarized): with `$01=$34` (I/O banked out), `vice_vicii_get_state` still reports `borderColour: 14`/`backgroundColour: 6` (the true KERNAL defaults) through `bank: {name: "io"}`, and its own non-vacuity control proves the CPU-view read at the same moment returns `255` (would-be silent RAM); `vice_cia_get_state` similarly reports `portBDirection.raw: 0` and `timerAControl.raw` not `0xff`. A second Critical from the post-gap-closure re-review (`tod.tenths` fabricating an impossible decimal from a non-BCD nibble, bypassing the hardened `fromBcd()` its three siblings use) is independently re-read as fixed at `stock-cia.ts:408-420`: `tenths` now routes through `fromBcd()` and is omitted plus named in `tod.invalidBcd` when invalid, exactly like `seconds`/`minutes`/`hours`. `npm run test:automated` ran clean at 1426/1421/0/5 in this session. |
+| 4 | A user can read and inspect sprites, including ASCII rendering, on the stock backend | ✓ VERIFIED (gap closed) | Previously FAILED (CR-02: same bank-0 bug in `stock-sprites.ts`, plus a hi-res sprite's ASCII render being labelled with the multicolour legend). Independently re-read: `stock-sprites.ts:266-270` resolves both `io` (registers) and `ram` (pointer table + sprite data) via `resolveRequiredBank` before the first send. Two separate legend constants (`SPRITE_ASCII_LEGEND_HIRES` / `SPRITE_ASCII_LEGEND_MULTICOLOUR`) now exist and are selected on the per-sprite `multicolour` flag at line 707. Live re-confirmed directly: `stock-live.test.ts`'s CR-02 case shows sprite geometry (`vicBank`, `screenBase`, `pointerTableAddress`) unchanged across `$01=$34` with a non-vacuity control proving the banking write actually took effect (`cia2PortARaw` sampled through the `io` bank differs from the default-bank read of the same register); the legend case shows sprite 0's live ASCII render legend names only `.`/`#`, never `@`/`%`. |
+| 5 | Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the three tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) | ✓ VERIFIED | `node scripts/check-skill-tool-coverage.mjs` run directly in this session, exit 0: "35 distinct vice_* names extracted from 30 files across 6 skill directories; 25 resolved as advertised on the stock manifest (34 tools total). Classified: 2 proxy-local, 1 deny-listed, 2 not-a-tool-name, 3 fork-only-unrecoverable, 2 pending-later-phase." Read the script's `FORK_ONLY_UNRECOVERABLE` array directly: it names exactly `vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore` — matching the roadmap's corrected three-tool exception list verbatim, each with a route (`BACK-05`/`SKILL-01`, Phase 8). The script self-asserts non-vacuity (≥30 names extracted, ≥6 skill dirs scanned, two positive-control tool names present) and that every allowlisted name is still actually referenced by a skill file (a stale-allowlist guard). |
 
-**Score:** 2/5 truths fully verified, 1 verified-with-warning, 2 failed.
+**Score:** 5/5 truths verified. All previously-failed truths (3, 4) are now closed with independent re-verification, including a fresh live run against genuine unpatched stock VICE (not reused from any SUMMARY/REVIEW claim).
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `.claude/mcp/vice/stock-memory-search.ts` | handleMemorySearch/handleMemoryCompare | ✓ VERIFIED | Exists, exports both, wired into `stock-dispatch.ts`, live-confirmed functional |
-| `.claude/mcp/vice/stock-symbols.ts` | handleSymbolsLoad/handleSymbolsLookup | ⚠️ VERIFIED (warning) | Exists, wired, workspace containment live-confirmed working; output-schema echo defect (WR-01) live-confirmed |
-| `.claude/mcp/vice/stock-vicii.ts` | handleViciiGetState, decodeVicii, VICII_UNAVAILABLE_FIELDS | ✗ WRONG DATA VIEW | Exists, exports present, registry mechanism for the 11 enumerated fields works correctly in isolation, but the bank-0 bug (CR-01) makes the whole answer unreliable whenever I/O is banked out |
-| `.claude/mcp/vice/stock-cia.ts` | handleCiaGetState, decodeCia, CIA_UNAVAILABLE_FIELDS | ✗ WRONG DATA VIEW | Same bank-0 bug, live-confirmed |
-| `.claude/mcp/vice/stock-sprites.ts` | handleSpriteGet, handleSpriteInspect, renderers | ✗ WRONG DATA VIEW + legend bug | Same bank-0 bug plus live-confirmed hi-res/multicolour legend mismatch |
-| `.claude/mcp/vice/stock-memory.ts` | bankCatalogFor()/resolveBank() (pre-existing, Phase 3) | ✓ EXISTS, BYPASSED | Confirmed exported and used correctly by `vice_memory_read`/`vice_memory_write`/`vice_memory_banks`; confirmed by grep that stock-vicii.ts/stock-cia.ts/stock-sprites.ts import nothing from it |
-| `.claude/mcp/vice/tools-manifest.stock.json` | 34 tools total (26+4+4) | ✓ VERIFIED | `node -e` count = 34 |
-| `.claude/mcp/vice/package.json` files[] | 44 entries | ✓ VERIFIED | `node -e` count = 44 |
-| `.claude/mcp/vice/stock-derived.ts` STOCK_DERIVED_TOOLS | 9 tools | ✓ VERIFIED | 9-member Set confirmed by direct read |
-| `scripts/check-skill-tool-coverage.mjs` | criterion-5 gate | ✓ VERIFIED | Exits 0, non-vacuous (35 extracted names, 3 fork-only-unrecoverable matching the named exception set) |
-| `docs/stock-vice-parity.md` | records divergences + DERIV-05 gain | ⚠️ INCOMPLETE per CR-01 | Records the intended 11 unavailable fields and the sidefx claim, but (per WR-12, independently plausible from the CR-01 finding) does not warn that a chip-state answer with I/O banked out is silently wrong rather than marked unavailable |
+| `.claude/mcp/vice/stock-memory-search.ts` | handleMemorySearch/handleMemoryCompare, now with an optional `bank` argument (WR-06) | ✓ VERIFIED | Exists, exports both, wired into `stock-dispatch.ts`, live-confirmed functional including the new `bank` argument |
+| `.claude/mcp/vice/stock-symbols.ts` | handleSymbolsLoad/handleSymbolsLookup, schema-conformant `query.address`, symlink-safe containment | ✓ VERIFIED | Both WR-01 and WR-05 fixes independently re-read as present and correct in source |
+| `.claude/mcp/vice/stock-vicii.ts` | handleViciiGetState resolving the `io` bank, VICII_UNAVAILABLE_FIELDS registry | ✓ VERIFIED | `resolveRequiredBank("vice_vicii_get_state", "io", session)` present at line 285; registry mechanism for the 11 enumerated internal-only fields unchanged and correct |
+| `.claude/mcp/vice/stock-cia.ts` | handleCiaGetState resolving the `io` bank, CIA_UNAVAILABLE_FIELDS registry, honest `tod.tenths`, discriminating `confounded` joystick flag | ✓ VERIFIED | `resolveRequiredBank` at line 559; `tod.tenths` routed through `fromBcd()` at lines 408-420; `confounded`/`confoundedDirections` now per-bit, per-read-actual (WR-03), live-confirmed to read clean on a freshly-booted machine and confounded only on a genuinely driven-low pin |
+| `.claude/mcp/vice/stock-sprites.ts` | handleSpriteGet/handleSpriteInspect resolving `io`+`ram` banks, per-render-mode legend, attributed hazard notes | ✓ VERIFIED | Bank resolution at lines 266-270; two legend constants selected on `multicolour` at line 707; hazard notes now computed only for returned sprites and attributed by sprite index (WR-02) |
+| `.claude/mcp/vice/stock-memory.ts` | `resolveRequiredBank()`/`resolveBank()`, now reporting the emulator's whole bank enumeration including aliased ids (WR-01) | ✓ VERIFIED | `BankCatalog.entries` (wire-order, aliases included) exists and feeds `handleMemoryBanks`; live-confirmed to report all 6 wire pairs (`default`/`cpu` sharing one id) rather than the previous 5 |
+| `.claude/mcp/vice/tools-manifest.stock.json` | 34 tools total | ✓ VERIFIED | Direct count = 34 |
+| `.claude/mcp/vice/package.json` files[] | 44 entries | ✓ VERIFIED (per stated baseline; not independently re-counted, no change plausible from doc/test-only fix commits) |
+| `.claude/mcp/vice/stock-derived.ts` STOCK_DERIVED_TOOLS | 9 tools | ✓ VERIFIED (per stated baseline) |
+| `scripts/check-skill-tool-coverage.mjs` | criterion-5 gate | ✓ VERIFIED | Re-run directly, exit 0, non-vacuous, three-tool exception list confirmed by source read |
+| `docs/stock-vice-parity.md` | records the CR-01/CR-02 fixes and the bank-resolution discipline | ✓ VERIFIED | §A item 5 and the WR-06 section both describe the fixed bank-resolution behaviour accurately; the WR-07 doc-wording defect (time-dimension claim for `mode:'ranges'`) is confirmed still present verbatim — known open, non-blocking |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `stock-vicii.ts` / `stock-cia.ts` / `stock-sprites.ts` | `stock-memory.ts` | `bankCatalogFor()` resolving the `io`/`ram` bank | ✗ NOT WIRED | Confirmed by grep: zero imports from stock-memory.ts in any of the three modules |
-| `stock-dispatch.ts` | `stock-memory-search.ts`, `stock-symbols.ts`, `stock-vicii.ts`, `stock-cia.ts`, `stock-sprites.ts` | `STOCK_DISPATCH_TABLE` via `withDerivedTool` | ✓ WIRED | `npm run test:automated` 1349/0/0 includes conformance-harness dispatch tests for all 9 derived tools |
-| `stock-symbols.ts` | `stock-address.ts` | `setSymbolResolver()` | ✓ WIRED | Live-confirmed: loaded symbol resolves through lookup in both directions |
-| `package.json` files[] | the 5 new modules | same-commit `files[]` entries | ✓ WIRED | 44-entry count matches baseline; `npm run test:automated`/`typecheck` clean |
+| `stock-vicii.ts` / `stock-cia.ts` / `stock-sprites.ts` | `stock-memory.ts`'s `resolveRequiredBank()` | direct import + call before the first `MEM_GET` | ✓ WIRED | Confirmed by source read in all three files; this is the exact link whose absence caused the previous FAILED verdicts on criteria 3/4 |
+| Stock backend dispatch (`vice-proxy.ts`) | `stock-dispatch.ts`'s `dispatchStock()` | `buildBackendAwareTool()` branching on `ACTIVE_BACKEND.backend` | ✓ WIRED | Read `vice-proxy.ts:3166-3187` directly: on any non-fork backend every registered tool (including derived tools) routes through `dispatchStock`, never `forwardToVice()`/`call()`. This satisfies CLAUDE.md's "derived tools must be intercepted before forwardToVice()" constraint structurally, independent of the WR-10 finding that one specific unit test cannot fail (a test-quality gap, not a wiring gap) |
+| Skill reference docs (`c64-program-recon/references/*.md`) | Stock tool surface | tool-name extraction + manifest cross-check | ✓ WIRED | `check-skill-tool-coverage.mjs` proves every skill-referenced `vice_*` name is either advertised on stock or explicitly classified with a reason and route |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|---------------------|--------|
-| `handleViciiGetState` | `response.bytes` (47-byte VIC-II block) | live `MEM_GET` over the CPU-view bank (0x0000) | Real bytes, but from the **wrong memory device** whenever I/O is banked out | ⚠️ HOLLOW under a common condition — flows, but the source is not what the field name promises |
-| `handleCiaGetState` | `response.bytes` (16-byte CIA block) | same CPU-view-bank issue | Same | ⚠️ HOLLOW under a common condition |
-| `handleSpriteGet`/`handleSpriteInspect` | pointer table + sprite data bytes | same CPU-view-bank issue (compounded: pointer-derived addresses can land in $D000-$DFFF, VIC bank 3) | Same | ⚠️ HOLLOW under a common condition |
-| `handleMemorySearch`/`handleMemoryCompare` | live `MEM_GET` results | direct wire read, no derived bank assumption beyond the caller's explicit `bank` argument | Real | ✓ FLOWING |
-| `handleSymbolsLoad`/`handleSymbolsLookup` | parsed `.lbl` file | `node:fs` read inside the container, workspace-contained | Real | ✓ FLOWING |
+| `vice_vicii_get_state` answer | `borderColour`/`backgroundColour`/registers | one `MEM_GET` against the resolved `io` bank | Live-confirmed: true chip register values survive `$01` banking manipulation, not the CPU view | ✓ FLOWING |
+| `vice_cia_get_state` answer | `tod.tenths`/joystick booleans/`confounded` | `fromBcd()` decode of the `io`-bank TOD bytes; per-bit driven-low predicate | Live-confirmed: invalid BCD nibble omitted and named rather than fabricated; joystick flag discriminates a genuinely driven-low pin from a clean read | ✓ FLOWING |
+| `vice_sprite_get`/`vice_sprite_inspect` answer | pointer-chain addresses, ASCII render, legend | `io`-bank VIC-II registers + `ram`-bank pointer table/sprite data | Live-confirmed: geometry survives I/O banking; legend matches the render's actual alphabet | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| `npm run typecheck` | `tsc --noEmit -p tsconfig.json` | clean, no output | ✓ PASS |
-| `npm run test:automated` | `node --test` via `test-gate.mjs` | 1354 total / 1349 pass / 0 fail / 5 todo | ✓ PASS (matches baseline) |
-| `node scripts/check-skill-tool-coverage.mjs` | repo-root CLI gate | exit 0, non-vacuous | ✓ PASS |
-| Stock manifest tool count | `require("tools-manifest.stock.json").tools.length` | 34 | ✓ PASS (matches baseline) |
-| Fork manifest tool count | `require("tools-manifest.json").tools.length` | 62 | ✓ PASS (matches baseline, unchanged) |
-| `package.json` files[] count | `require("package.json").files.length` | 44 | ✓ PASS (matches baseline) |
-| `STOCK_DERIVED_TOOLS` size | direct read of the Set literal | 9 | ✓ PASS (matches baseline) |
+| Typecheck clean | `npm run typecheck` (in `.claude/mcp/vice`) | clean, no output | ✓ PASS |
+| Full automated suite | `npm run test:automated` | 1426 tests, 1421 pass, 0 fail, 5 todo | ✓ PASS |
+| Six stock-module unit suites together | `node --test stock-symbols.test.ts stock-cia.test.ts stock-vicii.test.ts stock-sprites.test.ts stock-memory-search.test.ts stock-memory.test.ts` | 238 tests, 238 pass, 0 fail | ✓ PASS |
+| Skill-vs-manifest coverage gate | `node scripts/check-skill-tool-coverage.mjs` | exit 0, three-tool exception list confirmed | ✓ PASS |
+| Manual-only live gate against genuine unpatched stock VICE | `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-live.test.ts` | 10 tests, 10 pass, 0 fail | ✓ PASS |
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` convention exists in this repo for this phase; the phase's own validation strategy substitutes live-VICE checks against the real production handlers, run above under "Goal Achievement." `probe-binmon.mjs` (Phase 1 artifact, unrelated to this phase's tools) was not re-run as it does not cover DERIV-01/04/05/06.
+Not applicable — this phase's runnable checks are covered by the automated and manual-only live test suites above (Step 7b), which are the project's equivalent of probes for this codebase and were executed directly by this verifier, not read from a prior report.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
-|-------------|-----------------|--------------|--------|----------|
-| DERIV-01 | 05-01, 05-06, 05-08 | Search/compare memory ranges on stock | ✓ SATISFIED | Live-confirmed functional; `REQUIREMENTS.md` already marked `[x]` Complete (commit `cd295ec`) |
-| DERIV-04 | 05-02, 05-06, 05-08 | Load symbol file, resolve addresses to names | ⚠️ PARTIALLY SATISFIED | Core capability live-confirmed working; WR-01 schema-conformance defect live-confirmed. **`REQUIREMENTS.md` line 54 still reads `[ ]` Pending and its traceability table (line 183) still says "Pending"**, despite 05-02-SUMMARY.md and 05-08-SUMMARY.md both declaring `requirements-completed: [DERIV-04]`. The SUMMARY claim was never reflected in the requirements doc — a real traceability gap independent of the functional defect. |
-| DERIV-05 | 05-03, 05-04, 05-07, 05-08 | Decoded VIC-II/CIA state, unavailable fields marked | ✗ BLOCKED | CR-01, live-confirmed. `REQUIREMENTS.md` marks this `[x]` Complete (commit `7061e3c`), which is not accurate given the live-reproduced failure. |
-| DERIV-06 | 05-05, 05-07, 05-08 | Read/inspect sprites incl. ASCII | ✗ BLOCKED | CR-02 + legend defect, both live-confirmed. **`REQUIREMENTS.md` line 56 still reads `[ ]` Pending**, despite 05-05-SUMMARY.md and 05-08-SUMMARY.md declaring `requirements-completed: [DERIV-06]` — consistent with (in this one case, correctly reflecting) the actual unresolved state, but for the wrong reason (never updated, not intentionally left open). |
+|-------------|----------------|--------------|--------|----------|
+| DERIV-01 | 05-01, 05-06, 05-08 | User can search and compare memory ranges on the stock backend | ✓ SATISFIED | Criterion 1, verified above |
+| DERIV-04 | 05-02, 05-06, 05-08, 05-11, 05-13 | User can load a symbol file and have addresses resolved to symbol names | ✓ SATISFIED | Criterion 2, verified above; WR-01 fix independently re-read |
+| DERIV-05 | 05-03, 05-04, 05-07, 05-08, 05-09, 05-12, 05-13 | User can read decoded VIC-II and CIA state, unavailable fields marked, read side only | ✓ SATISFIED | Criterion 3, verified above; CR-01 gap-closure and the post-gap-closure `tod.tenths` Critical both independently re-read as fixed |
+| DERIV-06 | 05-05, 05-07, 05-08, 05-10, 05-13 | User can read and inspect sprites including ASCII rendering, read side only | ✓ SATISFIED | Criterion 4, verified above; CR-02 (bank + legend) gap-closure independently re-read as fixed |
 
-No orphaned requirements: all four IDs the phase criteria name (DERIV-01, DERIV-04, DERIV-05, DERIV-06) appear in at least one plan's `requirements:` frontmatter field, and `REQUIREMENTS.md`'s Phase 5 traceability rows account for all four (plus DERIV-02/03, correctly cut).
+No orphaned requirements: REQUIREMENTS.md's traceability table lists exactly these four requirement IDs against Phase 5 as `Complete`, and its "Open requirements per phase" line states Phase 5: 0. `DERIV-02`/`DERIV-03` and `SHOT-01`..`05` are also mapped to "Phase 5" in the same table but are explicitly reconciled in the same document's "Coverage" section as **Cut** (out of the v0.2.0 milestone's scope, not silently dropped) — the table's literal "Pending" wording for those rows is a residual label inconsistency in REQUIREMENTS.md's own bookkeeping (the narrative Coverage section is authoritative and correctly says Cut), not a Phase 5 code gap, and does not affect any of this phase's four requirement IDs or the five roadmap success criteria.
 
 ### Anti-Patterns Found
 
-| File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| `stock-vicii.ts` | 277 | Hardcoded `bank: 0x0000` where a resolved bank was required | 🛑 BLOCKER | Criterion 3 failure, live-confirmed (CR-01) |
-| `stock-cia.ts` | 339 | Same | 🛑 BLOCKER | Criterion 3 failure, live-confirmed (CR-01) |
-| `stock-sprites.ts` | 230, 272, 546 | Same, plus VIC-bank-3 I/O-window aliasing on pointer-derived addresses | 🛑 BLOCKER | Criterion 4 failure, live-confirmed (CR-02) |
-| `stock-sprites.ts` | 74-75, 603 | Single ASCII legend attached regardless of `multicolour` | ⚠️ WARNING | Criterion 4 partial failure, live-confirmed |
-| `stock-symbols.ts` | 380 | `outputSchema`-declared-number field echoed as raw (possibly string) input | ⚠️ WARNING | Criterion 2 schema-conformance defect, live-confirmed |
-| `stock-cia.ts` | 155-197 | Joystick decode ignores DDR-driven keyboard-column aliasing on the same port | ⚠️ WARNING | Plausible-but-wrong CIA field, same class as criterion 3's concern, not live-verified by me but code-confirmed consistent with review |
-| `stock-cia.ts` | 113-115 | `fromBcd()` accepts invalid nibbles, returns impossible TOD values | ⚠️ WARNING | Code-confirmed per review, not independently re-verified live |
-| `stock-symbols.ts` | 129-146 | Check-then-use path containment (TOCTOU via symlink) | ⚠️ WARNING | Code-confirmed per review |
-| Various (WR-05, WR-09, WR-10, WR-11, WR-13) | — | Misleading refusal text, a truncation-flag off-by-one, weak tests, dead code, stale comment | ℹ️ INFO/WARNING | Per 05-REVIEW.md; not independently re-verified live, no reason to doubt the reviewer's static analysis on these |
+None newly introduced by the fix pass. All patterns found in the post-gap-closure review are either fixed (CR-01, WR-01 through WR-06 — independently re-confirmed above) or remain open by the orchestrator's deliberate scope decision (WR-07 through WR-11, IN-01 through IN-04). Judged individually against the five success criteria per this task's instructions:
 
-No `TBD`/`FIXME`/`XXX` unreferenced debt markers found in the reviewed file list.
+| Finding | File | Severity | Breaks a success criterion? |
+|---------|------|----------|------------------------------|
+| WR-07 | `stock-memory-search.ts`, `control-flow.md`, `stock-vice-parity.md` | Warning | No — inaccurate error/doc wording about a time dimension, tool still searches/compares correctly (criterion 1 intact) |
+| WR-08 | `stock-memory-search.ts` | Warning | No — mislabels `truncated` only on an exact-boundary match count; core search/compare capability unaffected |
+| WR-09 | `stock-sprites.ts` | Warning | No — code-duplication/maintainability issue, not a behavioral defect; sprite reads (criterion 4) still correct as independently verified live |
+| WR-10 | `stock-derived.test.ts` | Warning | No — the *test* cannot fail, but the production wiring itself was independently re-read (`vice-proxy.ts:3166-3187`) and structurally guarantees derived tools never reach `forwardToVice()` on stock; the invariant holds even though this one test doesn't prove it |
+| WR-11 | `stock-derived.ts`, `stock-sprites.ts`, `check-skill-tool-coverage.mjs` | Warning | No — dead code / unreachable guards / unused imports, no behavioral impact |
+| IN-01 | `tools-manifest.stock.json`, `stock-memory.ts` | Info | No — latent; VICE 3.9 spells all bank names lowercase, so it does not currently manifest |
+| IN-02 | `scripts/check-npm-packages.mjs` | Info | No — packaging-gate regex gap unrelated to any of the five criteria |
+| IN-03 | `hostpath-consumers.test.ts` | Info | No — a gate-hardening suggestion, not an observed defect |
+| IN-04 | `sound-and-input.md` | Info | No — documentation completeness only; `confounded`/`invalidBcd` are correctly computed and reported by the tool (confirmed live) regardless of whether this one skill reference explains them |
+
+No `TBD`/`FIXME`/`XXX` debt markers found in the files this phase's gap-closure and fix-pass plans modified (checked directly: none of `stock-vicii.ts`, `stock-cia.ts`, `stock-sprites.ts`, `stock-memory.ts`, `stock-memory-search.ts`, `stock-symbols.ts` carry any).
 
 ### Human Verification Required
 
-None. All success criteria are either mechanically verified or directly falsified by live evidence gathered in this verification pass; no criterion is left in a state that only a human can adjudicate.
+None. Every truth was independently re-verifiable by source reading, the automated test suite, and a fresh live run against genuine unpatched stock VICE (`/usr/bin/x64sc`, VICE 3.9) executed directly in this verification session — not sourced from any SUMMARY.md, REVIEW.md, or REVIEW-FIX.md claim.
 
 ### Gaps Summary
 
-Two of the four requirement-bearing chip/sprite tools this phase built —
-`vice_vicii_get_state`, `vice_cia_get_state`, `vice_sprite_get`, and
-`vice_sprite_inspect` — read the wrong memory view. All four hardcode
-`bank: 0x0000` (the CPU's current banking configuration) instead of resolving
-the emulator's own `io`/`ram` bank ids through `stock-memory.ts`'s
-already-exported `bankCatalogFor()`. I independently reproduced this live
-against a genuine unpatched `/usr/bin/x64sc` (VICE 3.9), calling the actual
-production handlers (not a reimplementation): with `$01=$34` (I/O banked out —
-a state loaders, depackers and IRQ handlers routinely leave the machine in),
-`vice_vicii_get_state` and `vice_cia_get_state` both return `isError:false`
-with plausible-looking, fully-"available" register values that are actually
-the RAM underneath the I/O area, and `vice_sprite_get` reports wrong
-`vicBank`/`screenBase`/`pointerTableAddress` with no note. This is exactly the
-failure mode criterion 3 was written to forbid ("never reported as zero"),
-except worse — the value is not zero, it is plausible and indistinguishable
-from a real read, and the registry-based `{available:false, reason}` mechanism
-this phase built for the 11 enumerated internal-only fields never engages
-because the defect arrives through the address/bank argument rather than
-through any of the fields that registry covers.
+None remaining. Both previously-FAILED truths (criteria 3 and 4) are closed:
 
-I also independently live-reproduced a second, narrower defect in
-`vice_sprite_inspect`: it attaches the multicolour ASCII legend
-(`'@'`/`'%'` bit-pair meanings) to a hi-res sprite's render on a
-default-booted, default-banked machine — no special setup required to trigger
-this one.
-
-A third, non-blocking defect: `vice_symbols_lookup`'s declared `outputSchema`
-requires `query.address` to be a number, but the handler echoes the raw
-argument; live-reproduced with `{address:"$d020"}` returning
-`query:{"address":"$d020"}` (a string). The underlying symbol-resolution
-capability (criterion 2's actual claim) works correctly in both directions —
-this is a schema-conformance defect, not a functional one.
-
-Separately, I found (independent of the code review) that `REQUIREMENTS.md`
-was never updated to mark DERIV-04 or DERIV-06 complete, despite
-05-02-SUMMARY.md, 05-05-SUMMARY.md, and 05-08-SUMMARY.md all declaring
-`requirements-completed` for those IDs. `git log` shows dedicated commits
-marking DERIV-01 and DERIV-05 complete in `REQUIREMENTS.md`, but no equivalent
-commit exists for DERIV-04 or DERIV-06 — the SUMMARY claim was not carried
-through to the traceability document that is supposed to be the source of
-truth. In DERIV-06's case this accidentally matches the actual (blocked)
-state; in DERIV-04's case it understates a mostly-working capability. Either
-way it is a process gap worth closing alongside the functional fixes.
-
-**This is not a case for an override.** CR-01/CR-02 are not an alternative
-implementation of criterion 3/4's intent — they are a wrong implementation of
-the stated intent, live-confirmed to produce exactly the failure mode the
-criterion was written to prevent. Baseline regression gates (typecheck, full
-test suite, manifest/files[]/STOCK_DERIVED_TOOLS counts, criterion-5 script)
-all pass cleanly and are not implicated — the defect is isolated to the three
-bank-argument call sites and the one legend constant.
+- **CR-01** (chip-state reads used the CPU-view bank instead of resolving the emulator's `io` bank) — fixed in `stock-vicii.ts`/`stock-cia.ts`, independently re-read in source and re-confirmed live with `$01=$34` against genuine stock VICE.
+- **CR-02** (sprite reads shared CR-01's bank bug, plus a hi-res sprite's ASCII render carrying the multicolour legend) — fixed in `stock-sprites.ts`, independently re-read in source (bank resolution + two legend constants) and re-confirmed live.
+- A second Critical surfaced by the post-gap-closure code review (`tod.tenths` fabricating an impossible decimal from a non-BCD nibble) was fixed in commit `ecafe21` and independently re-read as routing through the same hardened `fromBcd()` path as its three siblings.
+- Six Warning-severity findings from the same review (WR-01 through WR-06) were fixed in commits `11e49bf`, `254324a`, `8b149c3`, `5d1eaa2`, `62518fe`, `e5cf367`; all six independently re-read in source and, where the finding was about real emulator behaviour, re-confirmed against genuine stock VICE via the live gate.
+- The remaining five Warnings (WR-07 through WR-11) and four Info items (IN-01 through IN-04) were deliberately left out of the fix pass as out-of-brief. Each was individually checked against the five roadmap success criteria in this verification (table above); none breaks a criterion. They remain legitimate, tracked technical debt for a future pass, not phase-blocking gaps.
 
 ---
 
-_Verified: 2026-08-17T19:09:38Z_
+_Verified: 2026-08-17T22:35:36Z_
 _Verifier: Claude (gsd-verifier)_
