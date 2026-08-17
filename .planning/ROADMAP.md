@@ -244,8 +244,8 @@ Notes:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — the committed 256-entry 6510 opcode table and its bit-pattern derivation test (wave 1)
-- [ ] 04-02-PLAN.md — the derived-tool seam: stock-derived.ts, withDerivedTool(), and D-02's two enforcement mechanisms (wave 1)
+- [x] 04-01-PLAN.md — the committed 256-entry 6510 opcode table and its bit-pattern derivation test (wave 1)
+- [x] 04-02-PLAN.md — the derived-tool seam: stock-derived.ts, withDerivedTool(), and D-02's two enforcement mechanisms (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -426,7 +426,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
-| 4. Client-Side Tool Seam and 6510 Disassembler | 0/TBD | Not started | - |
+| 4. Client-Side Tool Seam and 6510 Disassembler | 2/7 | In Progress|  |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
