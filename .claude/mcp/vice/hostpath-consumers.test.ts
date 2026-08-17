@@ -88,7 +88,17 @@ test("stock-derived.ts is absent from the hostpath.ts consumer set", () => {
 
 test("the disassembler modules (not yet reachable from stock-dispatch.ts in this wave) are absent from the consumer set", () => {
   const importers = hostpathImporters();
-  for (const name of ["stock-disassemble.ts", "disasm-opcodes.ts", "disasm-decoder.ts", "disasm-renderer.ts", "stock-memory-search.ts", "stock-symbols.ts"]) {
+  for (const name of [
+    "stock-disassemble.ts",
+    "disasm-opcodes.ts",
+    "disasm-decoder.ts",
+    "disasm-renderer.ts",
+    "stock-memory-search.ts",
+    "stock-symbols.ts",
+    "stock-vicii.ts",
+    "stock-cia.ts",
+    "stock-sprites.ts",
+  ]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });
@@ -109,6 +119,10 @@ const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_memory_compare: "stock-memory-search.ts",
   vice_symbols_load: "stock-symbols.ts",
   vice_symbols_lookup: "stock-symbols.ts",
+  vice_vicii_get_state: "stock-vicii.ts",
+  vice_cia_get_state: "stock-cia.ts",
+  vice_sprite_get: "stock-sprites.ts",
+  vice_sprite_inspect: "stock-sprites.ts",
 };
 
 test("D-05-12: DERIVED_TOOL_MODULES' key set equals STOCK_DERIVED_TOOLS exactly", () => {
