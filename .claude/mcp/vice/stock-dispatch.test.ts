@@ -2114,11 +2114,32 @@ test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REA
  * (`body.readUInt16LE(1)`, matching memGetBody()'s own encoding at
  * stock-protocol.ts:494) rather than one fixed reply for every call -- all
  * four of these handlers issue MULTIPLE reads of different ranges, so a
- * single fixed reply would let a wrong-address bug pass silently. Throws on
- * an unmapped start address so an unexpected read is a loud test failure,
- * never a silent empty buffer. */
+ * single fixed reply would let a wrong-address bug pass silently. Also
+ * answers CommandType.BanksAvailable (05-09, CR-01) -- vice_vicii_get_state
+ * and vice_cia_get_state now resolve the `io` bank through
+ * resolveRequiredBank() before every MEM_GET, so this stub must answer that
+ * lookup too. The catalog observed live on VICE 3.9 -- with `io`
+ * deliberately a NON-ZERO id (3) so a regression back to bank 0x0000 cannot
+ * pass. Throws on an unmapped start address or an unexpected commandType so
+ * an unexpected read is a loud test failure, never a silent empty buffer. */
 function chipStateSendImpl(map: Map<number, number[]>): ConformanceSendImpl {
   return (commandType, body) => {
+    if (commandType === CommandType.BanksAvailable) {
+      return {
+        type: "banks_available" as const,
+        requestId: 1,
+        errorCode: 0,
+        banks: [
+          { id: 0, name: "default" },
+          { id: 0, name: "cpu" },
+          { id: 1, name: "ram" },
+          { id: 2, name: "rom" },
+          { id: 3, name: "io" },
+          { id: 4, name: "cart" },
+        ],
+        related: [],
+      };
+    }
     if (commandType !== CommandType.MemoryGet) {
       throw new Error(`chipStateSendImpl: unexpected commandType ${commandType}`);
     }
@@ -2150,6 +2171,12 @@ conformanceTest("vice_vicii_get_state", async () => {
       `vice_vicii_get_state's unavailable.${name}.reason must be a non-empty string`,
     );
   }
+
+  // CR-01 (05-09): the answer must state which bank it read, resolved
+  // through the emulator's own catalog -- never a hardcoded 0x0000.
+  const bank = parsed.bank as { id: number; name: string };
+  assert.equal(bank.name, "io", "vice_vicii_get_state's bank.name must be \"io\"");
+  assert.equal(bank.id, 3, "vice_vicii_get_state's bank.id must be the stub catalog's io id (3)");
 });
 
 conformanceTest("vice_cia_get_state", async () => {
@@ -2183,6 +2210,12 @@ conformanceTest("vice_cia_get_state", async () => {
       );
     }
   }
+
+  // CR-01 (05-09): the answer must state which bank it read, resolved
+  // through the emulator's own catalog -- never a hardcoded 0x0000.
+  const bank = parsed.bank as { id: number; name: string };
+  assert.equal(bank.name, "io", "vice_cia_get_state's bank.name must be \"io\"");
+  assert.equal(bank.id, 3, "vice_cia_get_state's bank.id must be the stub catalog's io id (3)");
 });
 
 /** The same $DD00=193 (0xC1) / $D018=0x31 pair 05-05's own stock-sprites.test.ts

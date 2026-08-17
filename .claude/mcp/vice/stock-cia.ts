@@ -61,8 +61,15 @@
 //   - Never report an unavailable field as `0` or omit it. The five
 //     write-side/internal fields below are rendered from
 //     CIA_UNAVAILABLE_FIELDS, never as five hand-written literals.
+//   - CR-01 (2026-08-17): never read $DC00/$DD00 through bank `0x0000` --
+//     that is the CPU view and follows `$00`/`$01` banking, so it returns
+//     the RAM underneath $DC00-$DFFF whenever the running program has I/O
+//     banked out ($01 = $34/$35). Always resolve the emulator's own `io`
+//     bank through resolveRequiredBank() first and refuse when it is
+//     absent.
 import { CommandType, memGetBody } from "./stock-protocol.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
+import { resolveRequiredBank } from "./stock-memory.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -333,10 +340,15 @@ export const handleCiaGetState: StockSessionHandler = async (args, session, _dep
     requested = String(parsed);
   }
 
+  const bankResolution = await resolveRequiredBank("vice_cia_get_state", "io", session);
+  if (!bankResolution.ok) {
+    return bankResolution.result;
+  }
+
   const cias: Record<string, unknown>[] = [];
   for (const chip of chips) {
     const base = chip === 1 ? CIA1_BASE : CIA2_BASE;
-    const body = memGetBody({ sidefx: false, start: base, end: base + CIA_LENGTH - 1, memspace: 0x00, bank: 0x0000 });
+    const body = memGetBody({ sidefx: false, start: base, end: base + CIA_LENGTH - 1, memspace: 0x00, bank: bankResolution.id });
 
     let response;
     try {
@@ -361,5 +373,10 @@ export const handleCiaGetState: StockSessionHandler = async (args, session, _dep
     cias.push(decodeCia(chip, response.bytes));
   }
 
-  return stockAnswer(session.client, { requested, cias, count: cias.length });
+  return stockAnswer(session.client, {
+    requested,
+    bank: { id: bankResolution.id, name: bankResolution.name },
+    cias,
+    count: cias.length,
+  });
 };

@@ -12,11 +12,13 @@ import { EventEmitter } from "node:events";
 import { handleViciiGetState, decodeVicii, VICII_UNAVAILABLE_FIELDS } from "./stock-vicii.ts";
 import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
+  resetBankCatalogsForTest();
 });
 
 type SendCall = [number, Buffer];
@@ -43,6 +45,40 @@ const DEPS = {} as unknown as StockDispatchDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };
+}
+
+/** The catalog observed live on VICE 3.9 (05-REVIEW.md), with `io`
+ * deliberately a NON-ZERO id (3) so a regression back to a hardcoded
+ * bank 0x0000 cannot pass. */
+function banksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+      { id: 2, name: "rom" },
+      { id: 3, name: "io" },
+      { id: 4, name: "cart" },
+    ],
+    related: [],
+  };
+}
+
+/** Catalog with no `io` entry at all -- for the refusal case. */
+function noIoBanksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 1, name: "ram" },
+    ],
+    related: [],
+  };
 }
 
 function parseAnswer(result: { content: { text: string }[] }): Record<string, unknown> {
@@ -259,19 +295,18 @@ test("decodeVicii: rasterLine (readable current line) and unavailable.rasterIrqL
 // ---------------------------------------------------------------------------
 
 test("handleViciiGetState: sidefx:false wire body covers exactly $D000-$D02E", async () => {
-  const { session, calls } = makeSession(() => memoryGetReply(FIXTURE));
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
   const result = await handleViciiGetState({}, session, DEPS);
   assert.equal(result.isError, false);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]![0], CommandType.MemoryGet);
-  assert.equal(calls[0]![1].length, 8);
-  assert.equal(calls[0]![1][0], 0x00);
-  assert.equal(calls[0]![1].readUInt16LE(1), 0xd000);
-  assert.equal(calls[0]![1].readUInt16LE(3), 0xd02e);
+  const memGetCall = calls.find(([commandType]) => commandType === CommandType.MemoryGet)!;
+  assert.equal(memGetCall[1].length, 8);
+  assert.equal(memGetCall[1][0], 0x00);
+  assert.equal(memGetCall[1].readUInt16LE(1), 0xd000);
+  assert.equal(memGetCall[1].readUInt16LE(3), 0xd02e);
 });
 
 test("handleViciiGetState: any argument at all is refused naming the key, zero sends", async () => {
-  const { session, calls } = makeSession(() => memoryGetReply(FIXTURE));
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
   const result = await handleViciiGetState({ cia: 1 }, session, DEPS);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /cia/);
@@ -280,28 +315,32 @@ test("handleViciiGetState: any argument at all is refused naming the key, zero s
 });
 
 test("handleViciiGetState: an empty object is accepted (no arguments at all)", async () => {
-  const { session, calls } = makeSession(() => memoryGetReply(FIXTURE));
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
   const result = await handleViciiGetState({}, session, DEPS);
   assert.equal(result.isError, false);
-  assert.equal(calls.length, 1);
+  assert.ok(calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
 
 test("handleViciiGetState: non-object args are refused with zero sends", async () => {
-  const { session, calls } = makeSession(() => memoryGetReply(FIXTURE));
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
   const result = await handleViciiGetState(null as unknown as Record<string, unknown>, session, DEPS);
   assert.equal(result.isError, true);
   assert.equal(calls.length, 0);
 });
 
 test("handleViciiGetState: a reply of the wrong type is refused naming memory_get", async () => {
-  const { session } = makeSession(() => ({ type: "registers_get" as const, requestId: 1, errorCode: ErrorCode.Ok, related: [] }));
+  const { session } = makeSession((commandType) =>
+    commandType === CommandType.BanksAvailable ? banksAvailableReply() : { type: "registers_get" as const, requestId: 1, errorCode: ErrorCode.Ok, related: [] },
+  );
   const result = await handleViciiGetState({}, session, DEPS);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /memory_get/);
 });
 
 test("handleViciiGetState: a 46-byte reply is refused, naming both 47 and 46", async () => {
-  const { session } = makeSession(() => memoryGetReply(FIXTURE.slice(0, 46)));
+  const { session } = makeSession((commandType) =>
+    commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE.slice(0, 46)),
+  );
   const result = await handleViciiGetState({}, session, DEPS);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /a short read is a wrong answer/);
@@ -319,11 +358,47 @@ test("handleViciiGetState: a send() rejection is converted, not thrown", async (
 });
 
 test("handleViciiGetState: successful answer carries runState and base/end/length", async () => {
-  const { session } = makeSession(() => memoryGetReply(FIXTURE));
+  const { session } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
   const result = await handleViciiGetState({}, session, DEPS);
   const answer = parseAnswer(result);
   assert.equal(typeof answer.runState, "string");
   assert.equal(answer.base, 0xd000);
   assert.equal(answer.end, 0xd02e);
   assert.equal(answer.length, 47);
+});
+
+// ---------------------------------------------------------------------------
+// CR-01 (05-09) -- io bank resolution wired into handleViciiGetState.
+// ---------------------------------------------------------------------------
+
+test("handleViciiGetState: the MEM_GET wire body's bank field (offset 6) carries the resolved io id, not 0", async () => {
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
+  const result = await handleViciiGetState({}, session, DEPS);
+  assert.equal(result.isError, false);
+  const memGetCall = calls.find(([commandType]) => commandType === CommandType.MemoryGet)!;
+  assert.equal(memGetCall[1].readUInt16LE(6), 3);
+  assert.notEqual(memGetCall[1].readUInt16LE(6), 0);
+});
+
+test("handleViciiGetState: BanksAvailable is sent before MemoryGet", async () => {
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
+  await handleViciiGetState({}, session, DEPS);
+  assert.equal(calls[0]![0], CommandType.BanksAvailable);
+  assert.equal(calls[1]![0], CommandType.MemoryGet);
+});
+
+test('handleViciiGetState: the answer\'s bank deep-equals { id: 3, name: "io" }', async () => {
+  const { session } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? banksAvailableReply() : memoryGetReply(FIXTURE)));
+  const result = await handleViciiGetState({}, session, DEPS);
+  const answer = parseAnswer(result);
+  assert.deepEqual(answer.bank, { id: 3, name: "io" });
+});
+
+test("handleViciiGetState: a catalog with no io bank refuses, naming the reported banks, and sends zero MemoryGet", async () => {
+  const { session, calls } = makeSession((commandType) => (commandType === CommandType.BanksAvailable ? noIoBanksAvailableReply() : memoryGetReply(FIXTURE)));
+  const result = await handleViciiGetState({}, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /default/);
+  assert.match(result.content[0]!.text, /ram/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
