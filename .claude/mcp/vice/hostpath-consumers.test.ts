@@ -23,7 +23,7 @@
 // prevent.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -88,24 +88,50 @@ test("stock-derived.ts is absent from the hostpath.ts consumer set", () => {
 
 test("the disassembler modules (not yet reachable from stock-dispatch.ts in this wave) are absent from the consumer set", () => {
   const importers = hostpathImporters();
-  for (const name of ["stock-disassemble.ts", "disasm-opcodes.ts", "disasm-decoder.ts", "disasm-renderer.ts"]) {
+  for (const name of ["stock-disassemble.ts", "disasm-opcodes.ts", "disasm-decoder.ts", "disasm-renderer.ts", "stock-memory-search.ts", "stock-symbols.ts"]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });
 
+// D-05-12: the derived-module guess this test used to make -- stripping the
+// "vice_" prefix off the tool name and prefixing "stock-" -- produced an
+// UNDERSCORE-bearing name for every multi-word tool -- e.g. vice_memory_search
+// guessed "stock-memory_search.ts", never matching the real hyphenated
+// "stock-memory-search.ts" -- so the absence assertion could never match a
+// real file for any multi-word tool name and read as coverage while testing
+// nothing (only vice_disassemble's single-word name ever produced a real
+// hit). This declared map replaces the guess: every STOCK_DERIVED_TOOLS
+// member is named explicitly, and its filename is asserted to exist on disk
+// so a typo fails loudly instead of passing vacuously.
+const DERIVED_TOOL_MODULES: Record<string, string> = {
+  vice_disassemble: "stock-disassemble.ts",
+  vice_memory_search: "stock-memory-search.ts",
+  vice_memory_compare: "stock-memory-search.ts",
+  vice_symbols_load: "stock-symbols.ts",
+  vice_symbols_lookup: "stock-symbols.ts",
+};
+
+test("D-05-12: DERIVED_TOOL_MODULES' key set equals STOCK_DERIVED_TOOLS exactly", () => {
+  const mapped = Object.keys(DERIVED_TOOL_MODULES).sort();
+  const registered = [...STOCK_DERIVED_TOOLS].sort();
+  assert.deepEqual(mapped, registered, "a derived tool with no DERIVED_TOOL_MODULES entry must fail this test rather than escape it");
+});
+
+test("D-05-12: every DERIVED_TOOL_MODULES filename exists on disk", () => {
+  for (const [toolName, moduleName] of Object.entries(DERIVED_TOOL_MODULES)) {
+    assert.equal(existsSync(join(HERE, moduleName)), true, `${moduleName} (implementing derived tool ${toolName}) must exist in .claude/mcp/vice`);
+  }
+});
+
 test("D-02 mechanism 2: no module implementing a STOCK_DERIVED_TOOLS entry may ever join the hostpath.ts consumer set", () => {
-  // Loops the registry, not a fixed guess at file names -- a FUTURE derived
+  // Uses the declared map, not a guess at file names -- a FUTURE derived
   // tool that reaches hostpath.ts fails THIS test rather than shipping,
   // which is the whole point of a second, independent enforcement
   // mechanism (D-02): one structural test alone was rejected because CR-07
   // proved a structural test can pass while the real violation stands.
   const importers = new Set(hostpathImporters());
-  for (const toolName of STOCK_DERIVED_TOOLS) {
-    // A derived tool's implementation module is conventionally named after
-    // the tool (e.g. vice_disassemble -> stock-disassemble.ts); this asserts
-    // no such family module -- known today or introduced later -- is in the
-    // importer set.
-    const derivedModuleGuess = `stock-${toolName.replace(/^vice_/, "")}.ts`;
-    assert.equal(importers.has(derivedModuleGuess), false, `${derivedModuleGuess} (implementing derived tool ${toolName}) must not import hostpath.ts`);
+  const distinctModules = new Set(Object.values(DERIVED_TOOL_MODULES));
+  for (const moduleName of distinctModules) {
+    assert.equal(importers.has(moduleName), false, `${moduleName} (implementing a STOCK_DERIVED_TOOLS entry) must not import hostpath.ts`);
   }
 });
