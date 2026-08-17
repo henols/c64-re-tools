@@ -25,10 +25,21 @@
 //   - Never implement symbol resolution in Phase 3. setSymbolResolver() is
 //     a deliberately empty extension point until Phase 5's DERIV-04 symbol
 //     store installs a real one; the default here stays `null`.
+//   - Never add a second resolver holder. `nameFor` (address -> name,
+//     DISASM-06's first consumer, Phase 4) and `resolve` (name -> address,
+//     Phase 3) live on the SAME `SymbolResolver` object, read from the SAME
+//     module-level `symbolResolver` holder above. Phase 5's DERIV-04 store
+//     installs one object implementing both; a second holder or a
+//     re-derived address->name map in a family module would force it to
+//     install itself twice.
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
 
 export interface SymbolResolver {
   resolve(name: string): number | undefined;
+  /** The inverse direction (DISASM-06, Phase 4's first consumer of it) --
+   * optional so the Phase 3 default (`null`, no resolver installed at all)
+   * and every existing test fake stay valid without implementing it. */
+  nameFor?(address: number): string | undefined;
 }
 
 // The ONE module-level holder for the installed resolver. `null` in Phase 3
@@ -40,6 +51,30 @@ let symbolResolver: SymbolResolver | null = null;
  * loaded" refusal. */
 export function setSymbolResolver(resolver: SymbolResolver | null): void {
   symbolResolver = resolver;
+}
+
+/** DISASM-06's reverse lookup: address -> name, read from the SAME holder
+ * `parseAddress()` reads. Returns `undefined` -- never throws -- when no
+ * resolver is installed, or when the installed resolver has no `nameFor`
+ * (e.g. a Phase 3-era fake that only implements `resolve`). This is a
+ * client-side convenience read, not an MCP argument parse, so there is no
+ * "no symbol table is loaded" refusal here -- that wording belongs to
+ * `parseAddress()`'s own symbolic-name path; a caller wanting an explanatory
+ * note for its own answer uses `hasSymbolStore()` to decide that itself. */
+export function symbolNameFor(address: number): string | undefined {
+  if (!symbolResolver || typeof symbolResolver.nameFor !== "function") {
+    return undefined;
+  }
+  return symbolResolver.nameFor(address);
+}
+
+/** True iff a resolver is installed AND it implements the reverse (`nameFor`)
+ * direction -- what D-14 reads to decide whether `show_symbols` is a
+ * no-op that SAYS SO on the answer, rather than the handler guessing from an
+ * empty/undefined result (which could equally mean "store installed, but no
+ * name for this particular address"). */
+export function hasSymbolStore(): boolean {
+  return symbolResolver !== null && typeof symbolResolver.nameFor === "function";
 }
 
 /** The one address/byte-count error type this module ever throws -- never a

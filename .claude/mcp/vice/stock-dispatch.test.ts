@@ -954,9 +954,11 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 25 tool names this plan registers, driven from an explicit array
- * literal (per this plan's own acceptance criteria) so a missing entry
- * fails as a NAMED assertion rather than a generic count mismatch. */
+/** The 26 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+ * tools plus 04-05's vice_disassemble, the first derived-tool entry), driven
+ * from an explicit array literal (per this plan's own acceptance criteria)
+ * so a missing entry fails as a NAMED assertion rather than a generic count
+ * mismatch. */
 const REGISTERED_TOOL_NAMES = [
   "vice_ping",
   "vice_memory_read",
@@ -983,6 +985,7 @@ const REGISTERED_TOOL_NAMES = [
   "vice_keyboard_type",
   "vice_keyboard_petscii",
   "vice_joystick_set",
+  "vice_disassemble",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -999,20 +1002,20 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-test("dispatch: stockHandlerFor returns a function for every one of the 25 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 26 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 25", () => {
+test("dispatch: the table's key count is exactly 26", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 25-name list rather than reaching into the
+  // this test drives the same 26-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 25);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 25);
+  assert.equal(hits.length, 26);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 26);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
@@ -1937,6 +1940,66 @@ conformanceTest("vice_joystick_set", async () => {
   const deps = buildConformanceDeps(session);
   const result = await dispatchStock("vice_joystick_set", { port: 1, direction: "up", fire: true }, deps);
   assertAnswerConforms("vice_joystick_set", result);
+});
+
+// --------------------------------------------------------- vice_disassemble (04-05, DERIV-07/DISASM-01)
+
+/** 30 NOP ($ea) bytes -- enough to decode into 10 one-byte instructions
+ * (the default count), never truncated, so the conformance case exercises
+ * the ordinary success path through decode()/render() rather than a
+ * boundary case (those live in stock-disassemble.test.ts). */
+function conformanceDisassembleBytes(): Uint8Array {
+  return Uint8Array.from(new Array(30).fill(0xea));
+}
+
+conformanceTest("vice_disassemble", async () => {
+  const session = buildConformanceSession("conformance-vice_disassemble", (commandType) => {
+    if (commandType === CommandType.MemoryGet) {
+      return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: conformanceDisassembleBytes(), related: [] };
+    }
+    throw new Error(`vice_disassemble: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_disassemble", { address: "$1000" }, deps);
+  assertAnswerConforms("vice_disassemble", result);
+});
+
+test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL dispatchStock() path under a translating environment -- the derived path never reaches host-path translation", async () => {
+  const prevHostWs = process.env.HOST_WORKSPACE_PATH;
+  const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  process.env.HOST_WORKSPACE_PATH = "/home/user/project";
+  process.env.CLAUDE_PROJECT_DIR = "/workspace";
+  try {
+    const session = buildConformanceSession("conformance-vice_disassemble-e2e", (commandType) => {
+      if (commandType === CommandType.MemoryGet) {
+        return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: conformanceDisassembleBytes(), related: [] };
+      }
+      throw new Error(`vice_disassemble: unexpected commandType ${commandType}`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_disassemble", { address: "$1000" }, deps);
+    assert.equal(
+      result.isError,
+      false,
+      "vice_disassemble must answer a normal success under a translating environment -- a derived tool never reaches hostpath.ts's translation at all",
+    );
+  } finally {
+    if (prevHostWs === undefined) delete process.env.HOST_WORKSPACE_PATH;
+    else process.env.HOST_WORKSPACE_PATH = prevHostWs;
+    if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
+  }
+});
+
+test("structure: stock-dispatch.ts contains zero CODE references to the fork-forwarding function's name, pairing the vice-proxy.ts structural assertion above with this module's own", () => {
+  // Same filtering VICE_PROXY_CODE_LINES uses above -- strips both `//` line
+  // comments and `*` block-comment continuation lines, since stock-dispatch.ts's
+  // own withDerivedTool() docblock names the function IN PROSE (explaining
+  // the hazard it exists to prevent), which is not a code reference.
+  const src = readFileSync(join(HERE, "stock-dispatch.ts"), "utf8");
+  const codeLines = src.split("\n").filter((line) => !/^\s*\*/.test(line) && !/^\s*\/\//.test(line));
+  const offenders = codeLines.filter((line) => line.includes("forwardToVice"));
+  assert.equal(offenders.length, 0, `found a forwardToVice reference in stock-dispatch.ts: ${JSON.stringify(offenders)}`);
 });
 
 // --------------------------------------------------------- vice_ping
