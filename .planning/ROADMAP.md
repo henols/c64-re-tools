@@ -249,7 +249,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-03-PLAN.md — the pure decoder: resolved branch targets, truncation, page-wrap notes (wave 2)
+- [x] 04-03-PLAN.md — the pure decoder: resolved branch targets, truncation, page-wrap notes (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -426,7 +426,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Corrected Ground Truth | 4/4 | Complete    | 2026-08-12 |
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
-| 4. Client-Side Tool Seam and 6510 Disassembler | 2/7 | In Progress|  |
+| 4. Client-Side Tool Seam and 6510 Disassembler | 3/7 | In Progress|  |
 | 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
 | 6. Stock-Only Gains | 0/TBD | Not started | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
