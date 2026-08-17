@@ -253,6 +253,95 @@ test(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// WR-05 (2026-08-17 re-review) -- the containment check must compare CANONICAL
+// against CANONICAL. repoRoot() returns resolve(), never realpathSync(), so a
+// workspace root that is itself reached through a symlink (a bind-mounted or
+// symlinked project dir, /tmp on macOS, a `~ -> /mnt/...` home) used to refuse
+// EVERY file inside it. The cases above cannot catch it: mkdtempSync(tmpdir())
+// is a real directory on Linux CI, so root === realpath(root) there.
+// ---------------------------------------------------------------------------
+
+/** Builds `<base>/real/` plus a `<base>/link -> <base>/real` symlink, points
+ * CLAUDE_PROJECT_DIR at the LINK (so repoRoot() returns a non-canonical path),
+ * and restores/removes everything afterwards. */
+function withSymlinkedWorkspaceRoot(fn: (linkRoot: string, realRoot: string, t: TestContext) => Promise<void> | void) {
+  return async (t: TestContext) => {
+    const base = mkdtempSync(join(tmpdir(), "vice-symbols-symroot-"));
+    const realRoot = join(base, "real");
+    const linkRoot = join(base, "link");
+    mkdirSync(realRoot);
+    try {
+      symlinkSync(realRoot, linkRoot);
+    } catch (err) {
+      rmSync(base, { recursive: true, force: true });
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const prev = process.env.CLAUDE_PROJECT_DIR;
+    process.env.CLAUDE_PROJECT_DIR = linkRoot;
+    try {
+      // Precondition: the root really is non-canonical, or these cases prove nothing.
+      assert.notEqual(realpathSync(linkRoot), linkRoot, "the workspace root must be reached through a symlink");
+      await fn(linkRoot, realpathSync(realRoot), t);
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+      else process.env.CLAUDE_PROJECT_DIR = prev;
+      rmSync(base, { recursive: true, force: true });
+    }
+  };
+}
+
+test(
+  "WR-05 vice_symbols_load: a label file genuinely inside a SYMLINKED workspace root LOADS -- it is not refused as outside the workspace",
+  withSymlinkedWorkspaceRoot(async (_linkRoot, realRoot) => {
+    mkdirSync(join(realRoot, "sub"));
+    const target = join(realRoot, "sub", "labels.lbl");
+    writeFileSync(target, FIXTURE);
+
+    const result = await handleSymbolsLoad({ path: "sub/labels.lbl" }, DEPS);
+    assert.equal(result.isError, false, `expected a successful load, got: ${result.content[0]!.text}`);
+    const payload = parseAnswer(result);
+    assert.equal(payload.symbolCount, 4);
+    // WR-08 is preserved: the reported path is still the canonical one that
+    // was containment-checked and opened.
+    assert.equal(payload.resolvedPath, realpathSync(target));
+  }),
+);
+
+test(
+  "WR-05 non-vacuity: with a symlinked root, an escape via symlink is STILL refused -- the fix canonicalises the root, it does not weaken the check",
+  withSymlinkedWorkspaceRoot(async (_linkRoot, realRoot, t) => {
+    const outsideTarget = join(tmpdir(), `vice-symbols-symroot-outside-${process.pid}-${Date.now()}.lbl`);
+    writeFileSync(outsideTarget, "al C:1234 .outside");
+    const linkPath = join(realRoot, "escape.lbl");
+    try {
+      symlinkSync(outsideTarget, linkPath);
+    } catch (err) {
+      rmSync(outsideTarget, { force: true });
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    try {
+      const result = await handleSymbolsLoad({ path: "escape.lbl" }, DEPS);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text.toLowerCase(), /workspace/);
+      assert.match(result.content[0]!.text, new RegExp(realpathSync(outsideTarget).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    } finally {
+      rmSync(outsideTarget, { force: true });
+    }
+  }),
+);
+
+test(
+  "WR-05 vice_symbols_load: a path escaping a symlinked root with ../ is still refused before any realpath",
+  withSymlinkedWorkspaceRoot(async () => {
+    const result = await handleSymbolsLoad({ path: "../outside.lbl" }, DEPS);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /outside the workspace root/);
+  }),
+);
+
 test(
   "vice_symbols_load: a non-existent path is refused with a 'not found' message, distinct from the escape refusal",
   withTempWorkspace(async () => {

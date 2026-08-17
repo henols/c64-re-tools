@@ -143,10 +143,28 @@ function resolveLabelFilePath(pathArg: unknown): string {
     throw new StockSymbolsError(`could not resolve "${resolved}" (${err instanceof Error ? err.message : String(err)})`);
   }
 
-  if (!isContained(real, root)) {
+  // WR-05 (2026-08-17): the second check must compare CANONICAL against
+  // CANONICAL. `repoRoot()` returns `resolve(...)`, never `realpathSync(...)`,
+  // so comparing the fully-canonicalised `real` against a possibly-symlinked
+  // `root` refused EVERY file in a workspace whose own path contains a
+  // symlinked component -- a bind-mounted or symlinked project directory,
+  // `/tmp` on macOS, a `~ -> /mnt/...` home. The file was inside the
+  // workspace and the refusal said it was not. Canonicalising the root is the
+  // fix; the check itself, and the `real` that is returned (WR-08), stay.
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    // An unresolvable root cannot be canonicalised, so fall back to the
+    // resolved spelling rather than refusing every path -- the check below
+    // still runs, just against the less canonical of the two.
+    realRoot = root;
+  }
+
+  if (!isContained(real, realRoot)) {
     throw new StockSymbolsError(
-      `"${resolved}" resolves (via symlink) to "${real}", which is outside the workspace root (${root}) -- ` +
-        `a symbol file must live inside the workspace`,
+      `"${resolved}" resolves (via symlink) to "${real}", which is outside the workspace root ` +
+        `(${realRoot === root ? realRoot : `${root}, canonically ${realRoot}`}) -- a symbol file must live inside the workspace`,
     );
   }
 
