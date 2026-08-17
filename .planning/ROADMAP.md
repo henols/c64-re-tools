@@ -3,6 +3,7 @@
 ## Milestones
 
 - 🚧 **v0.2.0 Switchable stock-VICE backend** — Phases 1-8 (in progress)
+- 📋 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-12 (proposed, not opened)
 
 ## Overview
 
@@ -433,4 +434,177 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 8. Capability Surface, Docs, and Cross-Backend Verification | 0/TBD | Not started | - |
 
 ---
+
+# Milestone v0.3.0: regenerator2000 static-analysis backend (PROPOSED)
+
+**Status:** proposed, not opened. Requires v0.2.0 complete.
+**Defined:** 2026-08-17 from `/gsd-explore`.
+**Grounding:** `.planning/notes/regenerator2000-integration.md` (decisions
+D-R1..D-R4, overlap map, source-confirmed upstream blockers).
+**Requirements:** `R2000-01`..`R2000-16` in `REQUIREMENTS.md` (proposed block).
+
+## Overview
+
+[regenerator2000](https://github.com/ricardoquesada/regenerator2000) is an
+interactive 6502 disassembler for Commodore 8-bits (Rust, TUI, Apache-2.0). It
+brings three things this project structurally lacks: a **persistent, queryable
+annotation store** (labels, comments, enums, block types, scopes, undo/redo), a
+**recursive-descent disassembler with an auto-analyzer** and export to four
+assemblers, and a **sandboxed binary unpacker** covering the common C64 packers.
+
+It is adopted as a **static-analysis backend only**. It is never given
+`--vice` — our broker keeps sole ownership of stock VICE's binary monitor,
+because that monitor serves exactly one client and a second connection is
+indistinguishable from a wedge. Everything uniquely ours (broker, pool, warm
+floor, crash supervision, container path translation, incident capture, wedge
+triage, live-RAM disassembly) is untouched.
+
+The journey runs: prove the four load-bearing assumptions against a real build
+and land the batch-CLI route, which is enough to retire `acme-build`'s
+`toacme` shim (Phase 9) → stand up the container-side MCP server under the
+never-`--vice` guard (Phase 10) → make recon write queryable state and generate
+enums from `memmap.json` (Phase 11) → close the symbol round trip with DERIV-04
+and finish the install and playbook story (Phase 12).
+
+## Standing Constraints
+
+- **`--vice` is never passed.** Guarded in the launch path, not merely
+  documented (`R2000-01`). This is the constraint the whole milestone shape
+  follows from.
+- **regenerator2000 runs on the MCP proxy's side of the container boundary.** No
+  `hostpath.ts` / `containerpath.ts` translation is applied to any argument
+  passed to it (`R2000-02`). This is what makes devcontainer use and two
+  simultaneous projects work with no upstream patch — separate network
+  namespaces mean the hardcoded `127.0.0.1:3000` stops colliding. Note the
+  inversion hazard: were it host-side, the project-file argument *would* need
+  host translation, the mirror image of the `DERIV-07` screenshot-path trap.
+- **Phase 4's disassembler stays.** Its sole non-test consumer is
+  `stock-disassemble.ts` — `vice_disassemble` against live RAM at a checkpoint,
+  which a file-based static tool cannot serve. Phase 5's backtrace also needs
+  the opcode table.
+- **Phase 5 does not shrink.** regenerator2000's sprite/bitmap/charset views are
+  TUI-only and not MCP-exposed, so the agent-readable ASCII rendering is still
+  required.
+- **The emulator depack route stays.** regenerator2000's unpacker becomes the
+  fast path for the packers it recognises; the emulator handles custom loaders
+  and disk-based loads its sandbox cannot.
+
+## Known upstream limits (not this milestone's work)
+
+Source-confirmed at `ricardoquesada/regenerator2000@main`:
+
+| Limit | Location | Effect |
+|---|---|---|
+| `--mcp-server` is a bare boolean, HTTP port hardcoded 3000 | `src/main.rs:62-64`, `mcp/http.rs:198` | two projects in one namespace cannot coexist. `run_server(port: u16)` is already parameterized — a ~3-line CLI fix upstream |
+| MCP HTTP binds `127.0.0.1` only | `mcp/http.rs:196` | a host-side regenerator2000 is unreachable from a devcontainer. Sidestepped by D-R4, not fixed |
+| headless refuses non-`.regen2000proj` | `src/main.rs:141-152` | no unattended ingest of a raw binary; the TUI is needed once per binary |
+
+Consequences carried, not solved: r2000-assisted two-release diffing in
+`c64-provenance-diff` is blocked by the first; fully unattended pipelines are
+blocked by the third. Both are documented for the user (`R2000-04`, `R2000-09`)
+rather than worked around. Synthesizing a `.regen2000proj` ourselves was
+considered and rejected — it means depending on an undocumented serde format.
+
+## Phases
+
+- [ ] **Phase 9: Verified Batch Route** - Check the four load-bearing assumptions against a real build, then land the batch-CLI integration and retire `acme-build`'s `toacme` shim
+- [ ] **Phase 10: Container-Side MCP Server** - Stand up the regenerator2000 MCP server beside the proxy under the never-`--vice` guard, with the two-project limit reported rather than hit
+- [ ] **Phase 11: Annotation Store and Enums** - Recon writes queryable state instead of prose only, and `memmap.json` generates regenerator2000 enums
+- [ ] **Phase 12: Symbol Round Trip, Install Story, and Playbooks** - Close the DERIV-04 loop in both directions and finish the prerequisite documentation and skill revisions
+
+### Phase 9: Verified Batch Route
+
+**Goal**: The batch route is proven against a real build and is good enough to delete the `toacme` shim
+**Depends on**: v0.2.0 complete
+**Requirements**: R2000-16, R2000-05, R2000-06, R2000-07, R2000-08, R2000-09, R2000-03
+**Success Criteria** (what must be TRUE):
+
+  1. All four assumptions in `R2000-16` are answered against a real regenerator2000 build and recorded in the repo — `.regen2000proj` creation without the TUI, ACME export reassembly under `!cpu 6510`, `--export_lbl` format versus what DERIV-04 will consume, and container-side toolchain cost — with any that fail recorded as an accepted limit stating what it breaks.
+  2. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and the replacement route is documented in their place.
+  3. A user can turn a `.prg` or a flat 64K `c64-ram-capture` image into ACME source that **reassembles**, verified by running the assembler, not asserted.
+  4. A user can produce an HTML disassembly with working cross-reference links.
+  5. The playbooks state up front that a raw binary cannot be ingested headlessly, so no documented pipeline is one that cannot actually run unattended.
+
+**Plans**: TBD
+
+Notes:
+
+- **Criterion 1 gates the rest of the milestone.** If `.regen2000proj` cannot be produced without the TUI, every later phase inherits a human-in-the-loop step and the playbooks must say so. Do not plan Phases 10-12 in detail before this runs.
+- The removal in criterion 2 is smaller than it looks: `disasm` is a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`). The real removal is documentary — ~50 lines of `SKILL.md` caveats that exist only because `toacme` does a flat linear decode (BASIC stub read as instructions, out-of-range labels needing manual definition, illegal-opcode indentation, the `.dis.a` → `.dis.asm` Read-tool workaround).
+- Criterion 3's reassembly check is the honest version of what `SKILL.md` currently only advises. regenerator2000 ships `--verify-roundtrip` (export → assemble → diff) — prefer using its gate over building one.
+- **Parallel:** the assumption probe (criterion 1) must precede the rest. The `acme-build` retirement, ACME export, HTML export and the capture bridge are then four independent units.
+
+### Phase 10: Container-Side MCP Server
+
+**Goal**: Claude can drive regenerator2000 over MCP from inside a devcontainer, with the socket-ownership rule enforced in code
+**Depends on**: Phase 9
+**Requirements**: R2000-01, R2000-02, R2000-04, R2000-11
+**Success Criteria** (what must be TRUE):
+
+  1. The launch path **refuses** to pass `--vice`, enforced in code and tested, so no configuration or user error can put a second client on the binary monitor.
+  2. Claude reaches the regenerator2000 MCP server from inside a devcontainer, and no argument passed to it is host-translated.
+  3. Two projects open in separate devcontainers both work; a second project in the *same* namespace is refused with a message naming the hardcoded-port cause and the upstream gap, not a bind error or a hang.
+  4. A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program.
+
+**Plans**: TBD
+
+Notes:
+
+- Criterion 1 is the load-bearing one. It mirrors `vice.ts`'s `DENY_LIST` pattern: one place, checked at the dispatch seam, never re-derived locally.
+- Criterion 2's "no host translation" is a deliberate *absence*. It is the mirror image of `DERIV-07` — there, translation was wrongly applied; here, applying it would be the bug. Assert it in a test rather than trusting that nobody adds it later.
+- Criterion 3 is a reporting requirement, not a pooling one. The broker is deliberately **not** extended to pool regenerator2000 instances — that would only be needed for host-side operation, which is blocked upstream by both the boolean `--mcp-server` and the loopback bind.
+- Consider whether the stdio transport avoids the port question entirely. Upstream documents it as "experimental/testing only", so treat it as an investigation, not a plan.
+
+### Phase 11: Annotation Store and Enums
+
+**Goal**: Recon findings become state a later session can query, and register writes read as names instead of magic numbers
+**Depends on**: Phase 10
+**Requirements**: R2000-10, R2000-12, R2000-13
+**Success Criteria** (what must be TRUE):
+
+  1. `c64-program-recon` writes labels, comments, block types and scopes into an annotation store, and a later session queries that store instead of re-deriving the findings from the Markdown.
+  2. `c64-program-recon`'s tool-selection reference tells Claude which questions are static and which need the running machine, so neither substrate is used for the other's job.
+  3. Enum definitions generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA register writes with semantic names — `lda #$1b / sta $d011` reads as named bits.
+
+**Plans**: TBD
+
+Notes:
+
+- Criterion 1 is the milestone's main prize. Today `templates/memory-map.template.md` produces prose nothing can query, diff, or undo.
+- Criterion 3 is the most distinctive gain available here — **neither project can do it alone.** `memmap.json` holds the bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`. Generate once, benefit on every disassembly.
+- Criterion 2 adds a third axis to tool selection on top of stock-vs-fork. Reuse the `SKILL-01` shape rather than inventing a second convention for "which backend answers this".
+- **Parallel:** the enum generator (criterion 3) is independent of the recon rewrite (criteria 1-2) — different skills, different files.
+
+### Phase 12: Symbol Round Trip, Install Story, and Playbooks
+
+**Goal**: Names flow in both directions between the annotation store and the live emulator, and the prerequisite is honestly documented
+**Depends on**: Phase 11, and v0.2.0 Phase 5 (DERIV-04)
+**Requirements**: R2000-14, R2000-15, R2000-03
+**Success Criteria** (what must be TRUE):
+
+  1. Symbols annotated in regenerator2000 are exported and consumed by DERIV-04's symbol store, so live addresses resolve to the names the user chose.
+  2. Names discovered against the running machine flow back into the annotation store, closing the round trip rather than being a one-way dump.
+  3. The install documentation names regenerator2000 as a prerequisite alongside VICE, states the toolchain cost honestly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
+
+**Plans**: TBD
+
+Notes:
+
+- Criterion 1 closes a loop v0.2.0 leaves open: DERIV-04 consumes a symbol file but nothing in the project *produces* one. regenerator2000's `--export_lbl` emits **VICE label files** and `--import_lbl` reads them — native format on both sides, no glue format to invent.
+- Criterion 3 is the honest half of decision D-R2. No prebuilt release assets exist upstream, so install means `cargo install regenerator2000` and a Rust toolchain. Say so plainly; do not bury it. Re-check for prebuilt binaries before writing the docs — the project is young and may have shipped them by then.
+- **Depends on v0.2.0 Phase 5**, not just on Phase 11. If DERIV-04 shipped in a shape that does not match `--export_lbl`, Phase 9's criterion 1 will already have surfaced it.
+
+## Progress
+
+**Execution Order:** 9 → 10 → 11 → 12
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 9. Verified Batch Route | 0/TBD | Not started | - |
+| 10. Container-Side MCP Server | 0/TBD | Not started | - |
+| 11. Annotation Store and Enums | 0/TBD | Not started | - |
+| 12. Symbol Round Trip, Install Story, and Playbooks | 0/TBD | Not started | - |
+
+---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
+*v0.3.0 appended 2026-08-17 as a proposed milestone from `/gsd-explore` — not opened*

@@ -235,5 +235,48 @@ roadmap creation.*
 Phase 5: 11 · Phase 6: 9 · Phase 7: 4 · Phase 8: 5
 
 ---
+
+## v0.3.0 Requirements — regenerator2000 static-analysis backend (PROPOSED, not active)
+
+**Defined:** 2026-08-17 from `/gsd-explore`. **Not counted in the v0.2.0 coverage
+totals above.** Grounded in `.planning/notes/regenerator2000-integration.md`
+(decisions D-R1..D-R4, source-confirmed upstream blockers). These become active
+when v0.2.0 completes and the milestone is opened; until then they are a scoped
+proposal, not a commitment.
+
+### Constraints (bound the rest)
+
+- [ ] **R2000-01**: regenerator2000 is **never** launched with `--vice`. The launch path refuses to pass it, guarded in code rather than only documented — mirroring the `DENY_LIST` pattern in `vice.ts`. Rationale: stock VICE's binary monitor serves exactly one client and a second connection is indistinguishable from a wedge (D-R1)
+- [ ] **R2000-02**: regenerator2000 runs on the same side of the container boundary as the MCP proxy, so no host/container path translation is applied to any argument passed to it — and a user in a devcontainer, and two projects open at once in separate devcontainers, both work without an upstream patch (D-R4)
+- [ ] **R2000-03**: regenerator2000 is a declared prerequisite of the plugin, named in the install documentation alongside VICE, with its Apache-2.0 notice recorded in `THIRD-PARTY-NOTICES.md` (D-R2)
+- [ ] **R2000-04**: A user who tries to open two regenerator2000 projects in one network namespace is told why it fails and what the upstream gap is, rather than seeing a bind error or a silent hang — the port is hardcoded to 3000 with a bare boolean `--mcp-server` flag
+
+### Tier 1 — batch CLI, no MCP server
+
+- [ ] **R2000-05**: `acme-build`'s `disasm` verb and its `## Disassembly` documentation section are removed, replaced by a regenerator2000 route; the `toacme`-on-PATH prerequisite is dropped from the skill
+- [ ] **R2000-06**: A user can turn a `.prg` or a flat 64K capture into reassemblable ACME source whose illegal opcodes match this project's `!cpu 6510` expectations, verified by reassembly rather than asserted
+- [ ] **R2000-07**: A user can produce an HTML disassembly artifact with clickable cross-references from an analysed program
+- [ ] **R2000-08**: `c64-ram-capture`'s flat 64K images are accepted as regenerator2000 input, so a program depacked in the real emulator can be analysed statically — and regenerator2000's own sandbox unpacker is documented as the fast path for the packers it recognises, with the emulator route as the fallback for custom loaders and disk-based loads
+- [ ] **R2000-09**: A user is told, before automating anything, that regenerator2000 cannot ingest a raw binary headlessly — a `.regen2000proj` must be created interactively once per binary — so no skill documents an unattended pipeline that cannot run
+
+### Tier 2 — MCP server and the annotation store
+
+- [ ] **R2000-10**: `c64-program-recon` writes its findings as queryable annotation state — labels, comments, block types, scopes — not only as Markdown prose, and a later session can query that state instead of re-deriving it
+- [ ] **R2000-11**: A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program
+- [ ] **R2000-12**: `c64-program-recon`'s tool-selection reference tells Claude which questions are static (block classification, cross-references, routine boundaries) and which require the running machine (what actually executes, live IRQ vectors, self-modifying code), so neither substrate is used for the other's job
+- [ ] **R2000-13**: Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so per-bit VIC-II/SID/CIA register writes render with semantic names instead of magic numbers in a disassembly
+
+### The symbol round trip
+
+- [ ] **R2000-14**: Symbols annotated in regenerator2000 are exported as VICE label files and consumed by DERIV-04's symbol store, so live addresses resolve to names the user chose
+- [ ] **R2000-15**: Names discovered against the running machine flow back into the annotation store via label import, closing the round trip rather than being a one-way dump
+
+### Verification owed before planning
+
+- [ ] **R2000-16**: Before any plan is written, four assumptions are checked against a real regenerator2000 build: whether a `.regen2000proj` can be produced without the TUI; whether `--export_asm` ACME output reassembles under `!cpu 6510`; whether `--export_lbl` format matches what DERIV-04 consumes; and the container-side Rust toolchain build time and image-size cost
+
+**Coverage:** 16 proposed requirements, unmapped to phases (milestone not opened).
+
+---
 *Requirements defined: 2026-08-12*
-*Last updated: 2026-08-12 after roadmap creation (traceability populated, count corrected 63 -> 67)*
+*Last updated: 2026-08-17 — appended proposed v0.3.0 R2000-* block from `/gsd-explore`; v0.2.0 totals unchanged at 68/68*
