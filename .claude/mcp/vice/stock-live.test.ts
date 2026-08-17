@@ -396,3 +396,150 @@ test(
     await waitForStoppedRunState();
   },
 );
+
+// ---------------------------------------------------------------------------
+// 05-09's CR-01 live regression. `stock-vicii.test.ts`/`stock-cia.test.ts`
+// prove the WIRING is right against a stub that answers exactly what the
+// handler asks for -- but that stub was built from the SAME understanding
+// as the fix, so it cannot catch "the fix reads the wrong bank and the stub
+// happily agrees". Only a real emulator, banked genuinely wrong, can prove
+// the fix survives contact with reality: `vice_vicii_get_state` and
+// `vice_cia_get_state` used to hardcode `bank: 0x0000` (the CPU view, which
+// follows $00/$01 banking) and would silently return the RAM underneath
+// $D000-$DFFF once the running program banked I/O out -- a plausible,
+// wrong, isError:false answer with an empty `unavailable` set. This section
+// proves the fix reads through the emulator's own `io` bank instead, with
+// an independent non-vacuity control proving the banking manipulation
+// actually took effect (rather than a no-op write silently making every
+// assertion below pass for the wrong reason).
+//
+// PREREQUISITE ESTABLISHED EMPIRICALLY (not assumed from the plan text): the
+// shared fixture's own before() hook connects while the binary monitor
+// halts the machine on the very first inbound byte -- at/near the reset
+// vector, before the KERNAL has ever set $D020/$D021. Task 1/2's register
+// probes above never advance execution either. So "the KERNAL defaults on
+// a booted machine" requires actually booting it first: ensureBooted()
+// hard-resets with run_after:true, waits long enough (real-time emulation,
+// no warp) for the KERNAL to reach the ready prompt, then pauses again --
+// done ONCE and cached, since both cases below depend on it and re-running
+// it between them would perturb Case B's own $01 restore invariant.
+// ---------------------------------------------------------------------------
+
+let bootedOnce = false;
+
+async function ensureBooted(): Promise<void> {
+  if (bootedOnce) return;
+  const resetResult = await dispatchStock("vice_machine_reset", { mode: "hard", run_after: true }, liveDeps());
+  assert.equal(resetResult.isError, false, `vice_machine_reset({mode:"hard",run_after:true}) must succeed, got: ${JSON.stringify(resetResult)}`);
+  // Real-time emulation, no -warp -- 3s comfortably covers the KERNAL's
+  // boot sequence reaching the ready prompt (empirically confirmed against
+  // this build: border/background were still unset at connect-time and
+  // took a few real seconds of run time to reach their KERNAL defaults).
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const pauseResult = await dispatchStock("vice_execution_pause", {}, liveDeps());
+  assert.equal(pauseResult.isError, false, `vice_execution_pause() must succeed, got: ${JSON.stringify(pauseResult)}`);
+  await waitForStoppedRunState();
+  bootedOnce = true;
+}
+
+test("stock-live (05-09, CR-01): default banking -- vice_vicii_get_state reports the io bank and the KERNAL-default border/background colours", { skip: SKIP_REASON }, async () => {
+  await ensureBooted();
+  const result = await dispatchStock("vice_vicii_get_state", {}, liveDeps());
+  const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+  const bank = payload.bank as { id: number; name: string };
+  console.log(`stock-live: vice_vicii_get_state resolved bank ${JSON.stringify(bank)}, registersHex=${payload.registersHex}`);
+  assert.equal(bank.name, "io");
+  assert.equal(typeof bank.id, "number");
+  assert.equal(payload.borderColour, 14, `borderColour must be the KERNAL default 14 on a freshly booted machine, got ${payload.borderColour}`);
+  assert.equal(payload.backgroundColour, 6, `backgroundColour must be the KERNAL default 6 on a freshly booted machine, got ${payload.backgroundColour}`);
+  assert.equal(payload.runState, "stopped");
+});
+
+test(
+  "stock-live (05-09, CR-01): with I/O banked out ($01=$34), vice_vicii_get_state and vice_cia_get_state still report true chip registers through the io bank",
+  { skip: SKIP_REASON },
+  async () => {
+    await ensureBooted();
+
+    // --- 1. Pre-condition control: read $D020 both ways before the banking change ---
+    const preCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+    const preCpuPayload = parseOkPayload(preCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
+    const preIoRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
+    const preIoPayload = parseOkPayload(preIoRead as { content: { type: "text"; text: string }[]; isError: boolean });
+    console.log(`stock-live: pre-write $D020 -- cpu bank: ${JSON.stringify(preCpuPayload.bytes)}, io bank: ${JSON.stringify(preIoPayload.bytes)}`);
+
+    try {
+      // --- 2. MEM_SET $01 = $34 -- bank I/O out, exposing RAM underneath $D000-$DFFF to the CPU view ---
+      const writeResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
+      assert.equal(writeResult.isError, false, `vice_memory_write({address:1, data:[0x34]}) must succeed, got: ${JSON.stringify(writeResult)}`);
+
+      // --- 3. Non-vacuity control: prove the banking manipulation actually took effect ---
+      const postCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+      const postCpuPayload = parseOkPayload(postCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
+      const postIoRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
+      const postIoPayload = parseOkPayload(postIoRead as { content: { type: "text"; text: string }[]; isError: boolean });
+      const postCpuByte = (postCpuPayload.bytes as number[])[0];
+      const postIoByte = (postIoPayload.bytes as number[])[0];
+      console.log(`stock-live: post-write $D020 -- cpu bank: ${postCpuByte}, io bank: ${postIoByte}`);
+      assert.equal(
+        postCpuByte,
+        255,
+        `non-vacuity control failed: the CPU-view $D020 read must be 255 (uninitialised RAM) after $01=$34 -- ` +
+          `the emulator did not honour the banking write, so the rest of this case would pass vacuously. Got ${postCpuByte}.`,
+      );
+      assert.notEqual(
+        postIoByte,
+        255,
+        `non-vacuity control failed: the io-bank $D020 read must differ from the CPU-view's 255 after $01=$34 -- ` +
+          `if they agree, the "io" bank argument is not actually resolving to a different view. Got ${postIoByte}.`,
+      );
+
+      // --- 4. THE FIX, LIVE: vice_vicii_get_state must still report true chip registers ---
+      const viciiResult = await dispatchStock("vice_vicii_get_state", {}, liveDeps());
+      const viciiPayload = parseOkPayload(viciiResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      const viciiBank = viciiPayload.bank as { id: number; name: string };
+      console.log(`stock-live: with $01=$34, vice_vicii_get_state -> bank=${JSON.stringify(viciiBank)}, borderColour=${viciiPayload.borderColour}, backgroundColour=${viciiPayload.backgroundColour}`);
+      assert.equal(viciiPayload.borderColour, 14, `borderColour must still be 14 with I/O banked out, got ${viciiPayload.borderColour}`);
+      assert.equal(viciiPayload.backgroundColour, 6, `backgroundColour must still be 6 with I/O banked out, got ${viciiPayload.backgroundColour}`);
+      assert.equal(viciiBank.name, "io");
+      const registersHex = viciiPayload.registersHex as string;
+      assert.ok(!/^f+$/.test(registersHex), `registersHex must not be all "f" characters (the CPU-view symptom) with I/O banked out, got ${registersHex}`);
+
+      // --- 5. THE FIX, LIVE: vice_cia_get_state must still report true chip registers ---
+      const ciaResult = await dispatchStock("vice_cia_get_state", { cia: 1 }, liveDeps());
+      const ciaPayload = parseOkPayload(ciaResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      const ciaBank = ciaPayload.bank as { id: number; name: string };
+      const cia1 = (ciaPayload.cias as Record<string, unknown>[])[0]!;
+      const portBDirection = cia1.portBDirection as { raw: number };
+      const timerAControl = cia1.timerAControl as { raw: number };
+      console.log(`stock-live: with $01=$34, vice_cia_get_state({cia:1}) -> bank=${JSON.stringify(ciaBank)}, portBDirection.raw=${portBDirection.raw}, timerAControl.raw=${timerAControl.raw}`);
+      assert.equal(portBDirection.raw, 0, `CIA1 portBDirection.raw must still be 0 (a booted machine's $DC03) with I/O banked out, got ${portBDirection.raw}`);
+      assert.notEqual(timerAControl.raw, 0xff, `CIA1 timerAControl.raw must not be 0xff (the CPU-view symptom) with I/O banked out, got ${timerAControl.raw}`);
+      assert.equal(ciaBank.name, "io");
+    } finally {
+      // --- 6. Restore $01 -- a mid-test failure must not leave the shared
+      //        fixture's emulator banked out for the cases that follow. ---
+      const restoreResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
+      assert.equal(restoreResult.isError, false, `restoring $01=$37 must succeed, got: ${JSON.stringify(restoreResult)}`);
+      const restoredCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+      const restoredCpuPayload = parseOkPayload(restoredCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
+      const restoredByte = (restoredCpuPayload.bytes as number[])[0];
+      assert.notEqual(restoredByte, 255, `the CPU-view $D020 read must no longer be 255 after restoring $01=$37, got ${restoredByte}`);
+    }
+  },
+);
+
+test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the live BANKS_AVAILABLE catalog names both io and ram", { skip: SKIP_REASON }, async () => {
+  const result = await dispatchStock("vice_memory_banks", {}, liveDeps());
+  const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+  const banks = payload.banks as Array<{ id: number; name: string }>;
+  console.log(`stock-live: live BANKS_AVAILABLE catalog: ${JSON.stringify(banks)}`);
+  assert.ok(
+    banks.some((b) => b.name.toLowerCase() === "io"),
+    `the live catalog must contain a bank named "io" (case-insensitively) -- both handlers' resolveRequiredBank() call depends on this; if a future VICE build drops it, this case documents that as the cause`,
+  );
+  assert.ok(
+    banks.some((b) => b.name.toLowerCase() === "ram"),
+    `the live catalog must contain a bank named "ram" (case-insensitively)`,
+  );
+});
