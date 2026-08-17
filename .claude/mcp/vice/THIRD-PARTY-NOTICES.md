@@ -4,10 +4,7 @@ This package is MIT-licensed (see `LICENSE` at the repository root, copyright
 Henrik Olsson). This file lists third-party material incorporated into, or
 relied on by, `@henols/vice-mcp`, with a provenance line per source.
 
-**No GPL-licensed material is incorporated into this package.** Every source
-named below is either zlib-licensed (incorporated), reference-only (nothing
-copied), or a build/test-time subprocess whose licence therefore never
-attaches to anything shipped.
+**No GPL-licensed material is incorporated into this package: no GPL-licensed material appears anywhere in `@henols/vice-mcp`'s source or its published tarball.** Every source named below is either zlib-licensed (incorporated), reference-only (nothing copied), or a build/test-time subprocess whose licence therefore never attaches to anything shipped.
 
 ## Incorporated material — cc65 (zlib)
 
