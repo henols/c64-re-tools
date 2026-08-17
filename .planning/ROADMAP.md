@@ -326,12 +326,12 @@ Plans:
 
 **Wave 5** *(gap closure, blocked on 05-03/05-04/05-07; sole owner of `stock-memory.ts`, both chip modules, the two chip manifest entries and the shared conformance harness)*
 
-- [ ] 05-09-PLAN.md — CR-01: `resolveRequiredBank()` in `stock-memory.ts`, VIC-II and CIA read through the emulator's own `io` bank id (refusing rather than guessing), `bank:{id,name:"io"}` on both answers pinned with `enum:["io"]`, plus the live `$01 = $34` regression the phase never had (D-05-14, D-05-15) [wave 5]
+- [x] 05-09-PLAN.md — CR-01: `resolveRequiredBank()` in `stock-memory.ts`, VIC-II and CIA read through the emulator's own `io` bank id (refusing rather than guessing), `bank:{id,name:"io"}` on both answers pinned with `enum:["io"]`, plus the live `$01 = $34` regression the phase never had (D-05-14, D-05-15) [wave 5]
 
 **Wave 6** *(blocked on 05-09; two plans, disjoint file ownership)*
 
 - [ ] 05-10-PLAN.md — CR-02 + the legend defect: sprite registers read through `io`, pointer table and sprite data through `ram`, a VIC-bank-3 I/O-window note, and two ASCII legends selected on the per-sprite `multicolour` flag (D-05-16, D-05-17) [wave 6]
-- [ ] 05-11-PLAN.md — WR-01/WR-08 in `stock-symbols.ts`: `query.address` echoes the parsed number so the answer satisfies its own `outputSchema`, and the containment-checked canonical path is the one stat'ed, read and reported (D-05-18, D-05-19) [wave 6]
+- [x] 05-11-PLAN.md — WR-01/WR-08 in `stock-symbols.ts`: `query.address` echoes the parsed number so the answer satisfies its own `outputSchema`, and the containment-checked canonical path is the one stat'ed, read and reported (D-05-18, D-05-19) [wave 6]
 
 **Wave 7** *(blocked on 05-09; sole owner of `stock-cia.ts` and the CIA manifest entry)*
 
@@ -455,7 +455,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 8/8 | Gaps found | - |
+| 5. Skill-Critical Derived Tools | 10/13 | In Progress|  |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
