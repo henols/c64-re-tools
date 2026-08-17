@@ -114,6 +114,13 @@ function isContained(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + sep);
 }
 
+/** Resolves `pathArg` against `repoRoot()`, refusing anything that escapes
+ * the workspace either directly or via a symlink, and returns the ONE
+ * canonical path that is checked, opened and reported. The rule (WR-08): the
+ * path that is containment-checked is the path that is opened and the path
+ * that is reported -- returning the pre-`realpathSync` string made the
+ * check advisory, because `statSync`/`readFileSync` re-traverse symlinks
+ * independently of this function's own check. */
 function resolveLabelFilePath(pathArg: unknown): string {
   if (typeof pathArg !== "string" || pathArg.trim() === "") {
     throw new StockSymbolsError(`path must be a non-empty string, got ${typeof pathArg === "string" ? "an empty/whitespace-only string" : typeof pathArg}`);
@@ -143,7 +150,17 @@ function resolveLabelFilePath(pathArg: unknown): string {
     );
   }
 
-  return resolved;
+  // WR-08: the path that is checked is the path that is opened and the path
+  // that is reported -- `real` (the fully-resolved, containment-checked
+  // path), never `resolved` (the pre-canonicalisation string). Returning
+  // `resolved` made the containment check advisory: statSync()/readFileSync()
+  // re-traverse any symlink in `resolved`, so a component swapped after the
+  // check on `real` but before those calls could read a file outside the
+  // workspace while the check above had passed on a different, already-gone
+  // resolution of the same string. Both checks above stay (the pre-realpath
+  // check on `resolved` gives the clearer error for an obviously out-of-tree
+  // argument); only the returned path changes.
+  return real;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,12 +224,15 @@ function parseViceLabelFile(text: string): {
 
 // ---------------------------------------------------------------------------
 // Module state about THIS module's own load -- not a second resolver
-// holder. loadedTable/loadedPath/loadedSymbolCount let handleSymbolsLookup
-// answer without re-reading the file.
+// holder. loadedTable/loadedSymbolCount let handleSymbolsLookup answer
+// without re-reading the file. (WR-11: a third field tracking the last-
+// loaded path was write-only -- assigned on every load and cleared on
+// reset, but read nowhere in the codebase. Deleted rather than replaced
+// with an answer field: adding a key to either answer would require a
+// tools-manifest.stock.json change this plan deliberately excludes.)
 // ---------------------------------------------------------------------------
 
 let loadedTable: SymbolTable | null = null;
-let loadedPath: string | null = null;
 let loadedSymbolCount = 0;
 
 /** Builds one SymbolResolver implementing BOTH directions and installs it
@@ -233,7 +253,6 @@ function installSymbolTable(table: SymbolTable): void {
  * another file's run. */
 export function resetSymbolStoreForTest(): void {
   loadedTable = null;
-  loadedPath = null;
   loadedSymbolCount = 0;
   setSymbolResolver(null);
 }
@@ -311,7 +330,6 @@ export const handleSymbolsLoad: DerivedPureHandler = async (args, _deps) => {
   const replaced = loadedTable !== null;
   installSymbolTable(parsed.table);
   loadedTable = parsed.table;
-  loadedPath = resolvedPath;
   loadedSymbolCount = parsed.symbolCount;
 
   const payload: Record<string, unknown> = {

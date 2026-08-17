@@ -8,7 +8,7 @@
 // never a write into this worktree itself.
 import { test, afterEach, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -192,7 +192,7 @@ test(
 );
 
 test(
-  "vice_symbols_load: a symlink inside the workspace pointing outside it is refused",
+  "vice_symbols_load: a symlink inside the workspace pointing outside it is refused, naming the resolved target and installing no table",
   withTempWorkspace(async (dir, t) => {
     const outsideTarget = join(tmpdir(), `vice-symbols-outside-${process.pid}-${Date.now()}.lbl`);
     writeFileSync(outsideTarget, "al C:1234 .outside");
@@ -207,9 +207,49 @@ test(
       const result = await handleSymbolsLoad({ path: "link.lbl" }, DEPS);
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text.toLowerCase(), /workspace/);
+      // WR-08: the refusal must name the resolved (realpath) target, not
+      // just say "outside the workspace" with no evidence of what was
+      // actually resolved.
+      assert.match(result.content[0]!.text, new RegExp(realpathSync(outsideTarget).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+      // A refused load must never install a symbol table -- a following
+      // lookup still reports the pre-existing (empty) state.
+      const lookup = await handleSymbolsLookup({ name: "outside" }, DEPS);
+      const payload = parseAnswer(lookup);
+      assert.equal(payload.found, false);
+      assert.match(String(payload.note), /no symbol table is loaded/);
     } finally {
       rmSync(outsideTarget, { force: true });
     }
+  }),
+);
+
+test(
+  "vice_symbols_load: loading through an in-workspace symlink returns resolvedPath as the realpath of the target, not the symlink path",
+  withTempWorkspace(async (dir, t) => {
+    const realSubdir = join(dir, "real-subdir");
+    mkdirSync(realSubdir);
+    const targetPath = join(realSubdir, "actual-labels.lbl");
+    writeFileSync(targetPath, FIXTURE);
+    const linkPath = join(dir, "via-link.lbl");
+    try {
+      symlinkSync(targetPath, linkPath);
+    } catch (err) {
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const result = await handleSymbolsLoad({ path: "via-link.lbl" }, DEPS);
+    assert.equal(result.isError, false);
+    const payload = parseAnswer(result);
+    assert.equal(payload.resolvedPath, realpathSync(targetPath));
+    assert.equal(payload.symbolCount, 4);
+    // Regression guard: resolvedPath must never contain the symlink's own
+    // basename when it differs from the target's basename -- this fails if
+    // resolveLabelFilePath() ever again returns `resolved` instead of `real`.
+    assert.ok(
+      !String(payload.resolvedPath).includes("via-link.lbl"),
+      `resolvedPath must report the target's realpath, not the symlink path: ${payload.resolvedPath}`,
+    );
   }),
 );
 
