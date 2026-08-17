@@ -42,6 +42,8 @@
     "disasm-opcodes.ts",
     "disasm-decoder.ts",
     "disasm-renderer.ts",
+    "stock-memory-search.ts",
+    "stock-symbols.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
