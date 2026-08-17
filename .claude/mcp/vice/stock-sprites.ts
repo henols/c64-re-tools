@@ -82,10 +82,25 @@ const SPRITE_ROWS = 21;
 const SPRITE_HIRES_COLUMNS = 24;
 const SPRITE_MULTICOLOUR_COLUMNS = 12;
 
+/**
+ * The legend is a property of the RENDER, not of the tool -- renderSpriteAscii()'s
+ * two branches (below) emit genuinely different alphabets, so a single shared
+ * legend constant lies about whichever mode it is attached to. Hi-res emits
+ * one character per BIT ('.'/'#'); multicolour emits one character per BIT
+ * PAIR ('.'/'@'/'#'/'%'), through MULTICOLOUR_LEGEND. handleSpriteInspect
+ * selects between these two constants on the same `multicolour` flag that
+ * selects the renderer -- never a single constant applied regardless of mode
+ * (that was CR-02's live-reproduced legend defect: a hi-res render told an
+ * agent that '@' and '%' exist in a grid that only ever emits '.' and '#').
+ */
+export const SPRITE_ASCII_LEGEND_HIRES = "'.' = transparent (bit clear), '#' = sprite colour (bit set)";
+
 /** The fork's own manifest description, quoted verbatim in shape (four
  * mappings separated by ", ") so a caller sees the exact bit-pair legend
- * without decoding pixels themselves. */
-export const SPRITE_ASCII_LEGEND =
+ * without decoding pixels themselves. Unchanged text -- it was always
+ * correct for multicolour sprites; the defect was attaching it to hi-res
+ * renders too. */
+export const SPRITE_ASCII_LEGEND_MULTICOLOUR =
   "'.' = transparent (00), '#' = sprite colour (10), '@' = multicolour 1 (01), '%' = multicolour 2 (11)";
 
 /** vice_sprite_inspect's `format` values actually served on stock (D-05-03). */
@@ -663,7 +678,11 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
     height: SPRITE_ROWS,
     bytes: Array.from(dataResponse.bytes),
     rows,
-    ...(format === "ascii" ? { ascii: rows.join("\n"), legend: SPRITE_ASCII_LEGEND } : {}),
+    // CR-02: the legend must match THIS render's own alphabet -- attaching
+    // the multicolour legend to a hi-res render told an agent that '@' and
+    // '%' exist in a grid that never emits them, and that '#' meant a
+    // two-bit code when it is really a single set bit here.
+    ...(format === "ascii" ? { ascii: rows.join("\n"), legend: multicolour ? SPRITE_ASCII_LEGEND_MULTICOLOUR : SPRITE_ASCII_LEGEND_HIRES } : {}),
     notes,
   };
 

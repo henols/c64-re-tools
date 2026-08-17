@@ -23,7 +23,8 @@ import {
   spriteDataAddress,
   renderSpriteAscii,
   renderSpriteBinary,
-  SPRITE_ASCII_LEGEND,
+  SPRITE_ASCII_LEGEND_HIRES,
+  SPRITE_ASCII_LEGEND_MULTICOLOUR,
 } from "./stock-sprites.ts";
 import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
@@ -396,7 +397,47 @@ test("handleSpriteInspect: format omitted defaults to ascii, hi-res sprite 0", a
   assert.equal(parsed.height, 21);
   assert.equal((parsed.rows as string[]).length, 21);
   assert.equal(((parsed.ascii as string).match(/\n/g) ?? []).length, 20);
-  assert.equal(parsed.legend, SPRITE_ASCII_LEGEND);
+  assert.equal(parsed.multicolour, false);
+  assert.equal(parsed.legend, SPRITE_ASCII_LEGEND_HIRES);
+  // the assertion that actually protects the agent: a hi-res grid never
+  // emits '@'/'%', so the legend attached to it must not mention them either
+  // (CR-02's live-reproduced defect).
+  assert.ok(!(parsed.legend as string).includes("@"));
+  assert.ok(!(parsed.legend as string).includes("%"));
+});
+
+test("handleSpriteInspect: multicolour sprite 1's legend is SPRITE_ASCII_LEGEND_MULTICOLOUR and mentions both @ and %", async () => {
+  const pointer1DataAddr = spriteDataAddress(DD00, POINTERS[1]!);
+  const { session } = makeSpriteSession({ dataAddresses: { [pointer1DataAddr]: DATA_FIXTURE } });
+  const result = await handleSpriteInspect({ sprite_number: 1 }, session, DEPS);
+  assert.equal(result.isError, false);
+  const parsed = parseAnswer(result);
+  assert.equal(parsed.multicolour, true);
+  assert.equal(parsed.legend, SPRITE_ASCII_LEGEND_MULTICOLOUR);
+  assert.ok((parsed.legend as string).includes("@"));
+  assert.ok((parsed.legend as string).includes("%"));
+});
+
+test("handleSpriteInspect: cross-check -- every distinct character in the rendered rows is mentioned in the legend (hi-res and multicolour)", async () => {
+  // Data bytes exercising all four bit pairs: 0x1b = %00011011.
+  const allPairsData: number[] = new Array(63).fill(0x1b);
+
+  const { session: hiresSession } = makeSpriteSession({ dataAddresses: { [SPRITE0_DATA_ADDR]: allPairsData } });
+  const hiresResult = await handleSpriteInspect({ sprite_number: 0 }, hiresSession, DEPS);
+  const hiresParsed = parseAnswer(hiresResult);
+  const hiresChars = new Set((hiresParsed.rows as string[]).join(""));
+  for (const ch of hiresChars) {
+    assert.ok((hiresParsed.legend as string).includes(ch), `hi-res legend must mention "${ch}"`);
+  }
+
+  const pointer1DataAddr = spriteDataAddress(DD00, POINTERS[1]!);
+  const { session: mcSession } = makeSpriteSession({ dataAddresses: { [pointer1DataAddr]: allPairsData } });
+  const mcResult = await handleSpriteInspect({ sprite_number: 1 }, mcSession, DEPS);
+  const mcParsed = parseAnswer(mcResult);
+  const mcChars = new Set((mcParsed.rows as string[]).join(""));
+  for (const ch of mcChars) {
+    assert.ok((mcParsed.legend as string).includes(ch), `multicolour legend must mention "${ch}"`);
+  }
 });
 
 test("handleSpriteInspect: rendered rows match the exported renderer exactly (hi-res)", async () => {
