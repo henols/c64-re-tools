@@ -97,3 +97,12 @@ None - no external service configuration required.
 ---
 *Phase: 05-skill-critical-derived-tools*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-symbols.ts`
+- FOUND: `.claude/mcp/vice/stock-symbols.test.ts`
+- FOUND: `.planning/phases/05-skill-critical-derived-tools/05-11-SUMMARY.md`
+- FOUND commit `658da1f` (Task 1)
+- FOUND commit `0db3265` (Task 2)
+- FOUND commit `c636c20` (SUMMARY.md)
