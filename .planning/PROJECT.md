@@ -251,7 +251,7 @@ gap-closure diff returned 0 critical / 8 warning; the two most useful are that t
 manifest still advertises flag-bit register names the handler always refuses, and that
 the new leak-prevention net covers only 1 of 4 server factories.
 
-**Current state:** Phase 4 (Client-Side Tool Seam and 6510 Disassembler) complete —
+**Previously:** Phase 4 (Client-Side Tool Seam and 6510 Disassembler) complete —
 2026-08-17. DERIV-07's derived-tool seam exists as sibling modules (`stock-derived.ts`
 plus `withDerivedTool()` in `stock-dispatch.ts`), intercepting client-side tools *before*
 `forwardToVice()` runs `rewriteArguments()`, so a derived tool structurally cannot receive
@@ -301,7 +301,55 @@ pre-existing tracking gap surfaced at completion: `UP-01`, `UP-02`, `QUAL-01..03
 REQUIREMENTS.md's body but not its traceability table — it predates Phase 4 and belongs to
 whichever phase owns those IDs.
 
-Next: Phase 5, client-side derivations and screenshots.
+**Current state:** Phase 5 (Skill-Critical Derived Tools) complete — 2026-08-17. All four
+DERIV families the shipped skills call now work on the stock backend: memory search/compare
+(DERIV-01), the symbol store and address resolution (DERIV-04), decoded VIC-II and CIA state
+(DERIV-05 read side), and sprite read/inspect with ASCII rendering (DERIV-06 read side).
+13 plans; all 5 success criteria verified; 1426 tests green, 0 fail.
+
+**One defect class accounted for this entire phase's rework, and only the real emulator
+found it.** All four chip and sprite reads hardcoded `bank: 0x0000` — the *CPU* view, which
+follows `$00`/`$01` banking. With I/O banked out (`$01 = $34`) every tool returned
+`isError:false` and plausible, fully-"available" values decoded from the RAM *underneath* the
+I/O area: `borderColour:15`, `rasterLine:256`, CIA joystick `raw:255`. Nothing moved to
+`unavailable`, because the defect arrived through the bank argument, not the field registry
+that the phase had carefully built. Every unit suite was green. Verification failed criteria 3
+and 4, and five gap-closure plans (05-09..05-13) closed it by resolving the emulator's *own*
+`io`/`ram` bank ids through one new seam, `resolveRequiredBank()`, which refuses rather than
+falling back when a build reports no such bank.
+
+**The same anti-pattern then survived gap closure twice more, in smaller form.** A
+post-closure review found `tod.tenths` still fabricating an impossible decimal (`tenths: 15`)
+from a non-BCD nibble while its three siblings had been hardened — conforming to its own
+schema, so an agent trained to trust `invalidBcd` would read it as measured. And
+`vice_memory_banks` reported 5 banks where the wire enumerates 6, which mattered beyond its
+own answer because the same map feeds `resolveRequiredBank()`'s refusal text: a refusal could
+tell an agent that a working bank name did not exist. Both are fixed, with 7 of 16 findings
+closed (`05-REVIEW-FIX.md`). The lesson is narrower and sharper than Phase 2's: a registry
+that marks unavailable fields cannot defend against a wrong *address*, and only a live read
+with I/O banked out distinguishes the two.
+
+Live evidence is now first-class rather than incidental: `stock-live.test.ts` runs 10 cases
+against genuine unpatched stock VICE 3.9 at `/usr/bin/x64sc`, including the `$01 = $34`
+regression for both chip state and sprites. It stays out of `test:automated` (it is in
+`test-gate.mjs`'s `MANUAL_ONLY_TESTS`), so it must be run deliberately — worth remembering,
+since the automated suite cannot catch a break in it.
+
+Carried forward as tracked debt, each judged against the five criteria and breaking none:
+`WR-07` (the `mode:'snapshot'` refusal and two docs promise a time dimension `mode:'ranges'`
+lacks — now quoted in a third place), `WR-08` (`truncated` set on an exact-boundary result,
+with a dead `!truncated` conjunct), `WR-09` (`stock-sprites.ts` re-deriving constants
+`stock-vicii.ts` exports), `WR-10` (a structurally unfailable derived-path test), `WR-11`
+(dead code across the derived modules), and `IN-01..IN-04` — including `IN-04`, where
+`sound-and-input.md` documents the joystick bits without mentioning the new `confounded`
+field. Phase 4's open decoder bound (`decode()`'s `startAddress` silently wrapping via
+`& 0xffff`) was not consumed by this phase and remains open for whichever phase adds
+backtrace. The `UP-01`/`UP-02`/`QUAL-01..03` traceability note above is confirmed a false
+positive of a body-vs-table scan: those IDs sit under "Future Requirements — deferred, not in
+this roadmap", and the v0.2.0 traceability table is correct to omit them, as it is to omit the
+proposed `R2000-*` v0.3.0 set.
+
+Next: Phase 7, cycle timing and wedge triage (Phase 6 is cut).
 
 ---
-*Last updated: 2026-08-17 after Phase 4 completion (derived-tool seam + 6510 disassembler; real-ACME round-trip corrected 14 opcode-table entries, 256 lengths cross-checked against an independent source, live-validated against genuine stock VICE 3.9, WR-01 decoder bound open for Phase 5)*
+*Last updated: 2026-08-17 after Phase 5 completion (all four DERIV families live on stock; the CPU-view `bank: 0x0000` defect that no unit suite could see, closed by `resolveRequiredBank()` and proven with an I/O-banked-out live regression; 10-case live gate against genuine stock VICE 3.9)*
