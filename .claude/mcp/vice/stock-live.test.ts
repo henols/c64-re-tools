@@ -544,6 +544,42 @@ test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the 
   );
 });
 
+test(
+  "stock-live (WR-01): vice_memory_banks reports the emulator's WHOLE enumeration -- aliases sharing a wire id included, and every reported name resolves",
+  { skip: SKIP_REASON },
+  async () => {
+    const result = await dispatchStock("vice_memory_banks", {}, liveDeps());
+    const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+    const banks = payload.banks as Array<{ id: number; name: string }>;
+
+    assert.equal(payload.count, banks.length, "count must be the length of the reported list");
+
+    // VICE 3.9 reports SIX (id, name) pairs over FIVE distinct ids -- both
+    // `default` and `cpu` are wire id 0. The old handler enumerated an
+    // id-keyed map, so one of the two vanished and `count` said 5. Pinning
+    // both names is the whole point: a build that genuinely stopped reporting
+    // one should fail here and be re-verified, not silently reported.
+    const names = banks.map((b) => b.name.toLowerCase());
+    for (const alias of ["default", "cpu"] as const) {
+      assert.ok(names.includes(alias), `the live catalog must report "${alias}" -- if a future build drops it, re-verify WR-01 rather than deleting this case`);
+    }
+    const aliasIds = new Set(banks.filter((b) => ["default", "cpu"].includes(b.name.toLowerCase())).map((b) => b.id));
+    assert.equal(aliasIds.size, 1, "default and cpu are expected to SHARE one wire id -- that sharing is what the old id-keyed map lost");
+    assert.ok(banks.length > new Set(banks.map((b) => b.id)).size, "the answer must carry more (id, name) pairs than distinct ids, or nothing here is being exercised");
+
+    // Every name the answer offers must actually resolve -- the same catalog
+    // feeds resolveRequiredBank()'s "available banks: ..." refusal, so a name
+    // reported here that refuses would be the WR-01 defect from the other end.
+    for (const bank of banks) {
+      const read = await dispatchStock("vice_memory_read", { address: "$1000", size: 1, bank: bank.name }, liveDeps());
+      const readPayload = parseOkPayload(read as { content: { type: "text"; text: string }[]; isError: boolean });
+      const reportedBank = readPayload.bank as { id: number; name: string };
+      assert.equal(reportedBank.id, bank.id, `bank "${bank.name}" must resolve to the wire id the catalog reported`);
+      assert.equal(reportedBank.name, bank.name, `vice_memory_read must echo the bank name that was ASKED for, not another alias of the same id`);
+    }
+  },
+);
+
 // ---------------------------------------------------------------------------
 // 05-10's CR-02 and legend live regressions. stock-sprites.test.ts proves the
 // WIRING is right against a stub built from the SAME understanding as the

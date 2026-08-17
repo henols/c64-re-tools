@@ -318,3 +318,74 @@ test("resolveRequiredBank: two calls on the SAME session record exactly one Bank
   await resolveRequiredBank("t", "ram", session);
   assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// WR-01 (2026-08-17 re-review) -- stock VICE 3.9 reports TWO names for wire
+// id 0 (`default` and `cpu`), so anything that reports banks out of an
+// id-keyed map loses one. These cases all drive realCatalogReply(), the
+// verbatim live enumeration, rather than the distinct-id twoBankReply().
+// ---------------------------------------------------------------------------
+
+test("WR-01 non-vacuity: realCatalogReply() genuinely carries an aliased id -- 6 pairs over 5 distinct ids", () => {
+  const banks = realCatalogReply().banks;
+  assert.equal(banks.length, 6);
+  assert.equal(new Set(banks.map((b) => b.id)).size, 5, "the fixture must contain a duplicate wire id or these tests prove nothing");
+});
+
+test("WR-01 bankCatalogFor: entries keeps all six wire pairs while byId keeps one name per id", async () => {
+  const { session } = makeSession(() => realCatalogReply());
+  const catalog = await bankCatalogFor(session);
+  assert.equal(catalog.entries.length, 6);
+  assert.equal(catalog.byId.size, 5);
+  // Both aliases resolve, and both survive in entries.
+  assert.equal(catalog.byName.get("default"), 0);
+  assert.equal(catalog.byName.get("cpu"), 0);
+  assert.deepEqual(
+    catalog.entries.filter((b) => b.id === 0).map((b) => b.name),
+    ["default", "cpu"],
+  );
+});
+
+test("WR-01 handleMemoryBanks: the real VICE 3.9 catalog answers all 6 banks in wire order, count 6", async () => {
+  const { session } = makeSession(() => realCatalogReply());
+  const result = await handleMemoryBanks({}, session, DEPS);
+  assert.equal(result.isError, false);
+  const parsed = JSON.parse(result.content[0]!.text);
+  assert.deepEqual(parsed.banks, [
+    { id: 0, name: "default" },
+    { id: 0, name: "cpu" },
+    { id: 1, name: "ram" },
+    { id: 2, name: "rom" },
+    { id: 3, name: "io" },
+    { id: 4, name: "cart" },
+  ]);
+  assert.equal(parsed.count, 6);
+  assert.equal(parsed.count, parsed.banks.length, "count must be the length of the reported list, never a distinct-id count");
+});
+
+test('WR-01 resolveRequiredBank: an aliased name echoes the name that was ASKED for, never the other alias', async () => {
+  const { session: sessionA } = makeSession(() => realCatalogReply());
+  assert.deepEqual(await resolveRequiredBank("t", "default", sessionA), { ok: true, id: 0, name: "default" });
+  const { session: sessionB } = makeSession(() => realCatalogReply());
+  assert.deepEqual(await resolveRequiredBank("t", "cpu", sessionB), { ok: true, id: 0, name: "cpu" });
+  // Case-insensitive lookup still reports the wire's own spelling, not the
+  // caller's casing.
+  const { session: sessionC } = makeSession(() => realCatalogReply());
+  assert.deepEqual(await resolveRequiredBank("t", "DeFaUlT", sessionC), { ok: true, id: 0, name: "default" });
+});
+
+test("WR-01 resolveRequiredBank: the refusal's available-banks list names every alias, including one sharing an id", async () => {
+  const { session } = makeSession(() =>
+    banksAvailableReply([
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+    ]),
+  );
+  const result = await resolveRequiredBank("t", "io", session);
+  assert.equal(result.ok, false);
+  const text = (result as { ok: false; result: { content: { text: string }[] } }).result.content[0]!.text;
+  assert.match(text, /default/);
+  assert.match(text, /cpu/, "the refusal must not omit an alias -- it would deny a name that resolves");
+  assert.match(text, /ram/);
+});

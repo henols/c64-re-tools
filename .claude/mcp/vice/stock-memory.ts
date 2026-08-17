@@ -32,6 +32,13 @@
 //     registers. Such a caller MUST use resolveRequiredBank() below and
 //     refuse when the emulator's own catalog has no `io` bank -- never
 //     guess, never fall back to bank 0.
+//   - WR-01 (2026-08-17): never REPORT or LIST banks out of the catalog's
+//     `byId` map. Stock VICE reports several names for one wire id (3.9:
+//     both `default` and `cpu` are id 0), so an id-keyed map is lossy by
+//     construction -- enumerating it made vice_memory_banks answer 5 banks
+//     where the emulator enumerated 6, and made resolveRequiredBank()'s
+//     refusal tell an agent a working bank name did not exist. Anything
+//     agent-facing reads `entries`, the verbatim wire list.
 import { CommandType, memGetBody, memSetBody } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
@@ -58,7 +65,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 export interface BankCatalog {
   byName: Map<string, number>;
+  /** ONE name per id, for the reverse lookup only. Real stock VICE reports
+   * MORE THAN ONE name for the same wire id (3.9 reports both `default` and
+   * `cpu` for id 0), so this map is LOSSY BY CONSTRUCTION -- never enumerate
+   * it to report "the banks the emulator has" (WR-01, 2026-08-17: doing
+   * exactly that made vice_memory_banks answer 5 banks where the emulator
+   * enumerated 6, and made a refusal claim a working bank name did not
+   * exist). Use `entries` for anything that reports or lists. */
   byId: Map<number, string>;
+  /** Every (id, name) pair the emulator reported, in wire order -- aliases
+   * included. This is the faithful record of the enumeration and the only
+   * thing that may be reported to a caller. */
+  entries: { id: number; name: string }[];
 }
 
 /** The one place this file's per-session cache storage is defined -- an
@@ -100,12 +118,19 @@ export async function bankCatalogFor(session: StockConnectSession): Promise<Bank
 
   const byName = new Map<string, number>();
   const byId = new Map<number, string>();
+  const entries: { id: number; name: string }[] = [];
   for (const bank of response.banks) {
     byName.set(bank.name.toLowerCase(), bank.id);
-    byId.set(bank.id, bank.name);
+    // WR-01: FIRST name per id wins here, so the reverse lookup is stable
+    // rather than "whichever alias the emulator listed last". Aliases are
+    // never lost -- they all live in `entries`.
+    if (!byId.has(bank.id)) {
+      byId.set(bank.id, bank.name);
+    }
+    entries.push({ id: bank.id, name: bank.name });
   }
 
-  const catalog: BankCatalog = { byName, byId };
+  const catalog: BankCatalog = { byName, byId, entries };
   bankCatalogs.set(session, catalog);
   return catalog;
 }
@@ -157,9 +182,13 @@ export async function resolveRequiredBank(
     return { ok: false, result: convertWireError(toolName, err) };
   }
 
-  const resolved = catalog.byName.get(bankName.toLowerCase());
+  const requested = bankName.toLowerCase();
+  const resolved = catalog.byName.get(requested);
   if (resolved === undefined) {
-    const names = [...catalog.byId.values()].join(", ") || "(none reported)";
+    // WR-01: listed from `entries`, NOT from byId -- byId collapses aliases
+    // sharing a wire id, so listing it told an agent that a bank name which
+    // resolves perfectly well (VICE 3.9's `default`, id 0) does not exist.
+    const names = catalog.entries.map((bank) => bank.name).join(", ") || "(none reported)";
     return {
       ok: false,
       result: isErrorText(
@@ -169,7 +198,12 @@ export async function resolveRequiredBank(
       ),
     };
   }
-  return { ok: true, id: resolved, name: catalog.byId.get(resolved) ?? bankName };
+  // WR-01: echo the wire spelling of the name the CALLER asked for, not
+  // "whatever name byId happens to hold for this id" -- asking for `default`
+  // and being answered `cpu` looks like the resolver silently substituted a
+  // different bank.
+  const match = catalog.entries.find((bank) => bank.id === resolved && bank.name.toLowerCase() === requested);
+  return { ok: true, id: resolved, name: match?.name ?? bankName };
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +226,10 @@ export const handleMemoryBanks: StockSessionHandler = async (args, session, _dep
     return convertWireError("vice_memory_banks", err);
   }
 
-  const banks = [...catalog.byId.entries()].map(([id, name]) => ({ id, name }));
+  // WR-01: report the emulator's OWN enumeration verbatim, in wire order,
+  // aliases included -- never `byId`, which keeps one name per id and so
+  // answered 5 banks on a machine that enumerated 6.
+  const banks = catalog.entries.map(({ id, name }) => ({ id, name }));
   return stockAnswer(session.client, { banks, count: banks.length });
 };
 
