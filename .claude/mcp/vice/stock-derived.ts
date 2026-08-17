@@ -85,6 +85,10 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_memory_compare", // Phase 5, DERIV-01
   "vice_symbols_load", // Phase 5, DERIV-04
   "vice_symbols_lookup", // Phase 5, DERIV-04
+  "vice_vicii_get_state", // Phase 5, DERIV-05
+  "vice_cia_get_state", // Phase 5, DERIV-05
+  "vice_sprite_get", // Phase 5, DERIV-06
+  "vice_sprite_inspect", // Phase 5, DERIV-06
 ]);
 
 /**

@@ -12,13 +12,17 @@ import { hostPath } from "./hostpath.ts";
 
 // --------------------------------------------------------- STOCK_DERIVED_TOOLS
 
-test("STOCK_DERIVED_TOOLS: exactly five entries -- vice_disassemble plus Phase 5's DERIV-01/DERIV-04 quartet", () => {
-  assert.equal(STOCK_DERIVED_TOOLS.size, 5);
+test("STOCK_DERIVED_TOOLS: exactly nine entries -- vice_disassemble plus Phase 5's DERIV-01/DERIV-04/DERIV-05/DERIV-06 octet", () => {
+  assert.equal(STOCK_DERIVED_TOOLS.size, 9);
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_disassemble"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_memory_search"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_memory_compare"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_symbols_load"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_symbols_lookup"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_vicii_get_state"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_cia_get_state"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_sprite_get"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_sprite_inspect"));
 });
 
 // --------------------------------------------------------- derivedContainerPath

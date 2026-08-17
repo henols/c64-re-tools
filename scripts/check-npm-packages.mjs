@@ -68,20 +68,27 @@ need(
   "vice-mcp: missing THIRD-PARTY-NOTICES.md -- criterion 5 requires the opcode table's zlib provenance to ship with the package (D-07)"
 );
 
-// --- Phase 3 Rule 2 regression guard: the five Phase 4 modules -------------
-// These five entries were added to files[] by 04-02 (stock-derived.ts) and
-// 04-05 (stock-disassemble.ts + the three disasm-*.ts) in the SAME commit
-// that made each reachable from vice-proxy.ts's import closure. This loop
-// re-asserts they are still there; the transitive-closure walk below is the
-// general form that catches any FUTURE phase repeating the same mistake.
-const PHASE4_MODULES = [
+// --- Phase 3 Rule 2 regression guard: Phase 4 and Phase 5's derived modules -
+// These entries were added to files[] by 04-02 (stock-derived.ts), 04-05
+// (stock-disassemble.ts + the three disasm-*.ts), 05-06 (stock-memory-search.ts,
+// stock-symbols.ts) and 05-07 (stock-vicii.ts, stock-cia.ts, stock-sprites.ts)
+// in the SAME commit that made each reachable from vice-proxy.ts's import
+// closure. This loop re-asserts they are still there; the transitive-closure
+// walk below is the general form that catches any FUTURE phase repeating the
+// same mistake.
+const REQUIRED_DERIVED_MODULES = [
   ["stock-derived.ts", "DERIV-07"],
   ["stock-disassemble.ts", "DISASM-01"],
   ["disasm-opcodes.ts", "DISASM-02"],
   ["disasm-decoder.ts", "DISASM-04"],
   ["disasm-renderer.ts", "DISASM-03"],
+  ["stock-memory-search.ts", "DERIV-01"],
+  ["stock-symbols.ts", "DERIV-04"],
+  ["stock-vicii.ts", "DERIV-05"],
+  ["stock-cia.ts", "DERIV-05"],
+  ["stock-sprites.ts", "DERIV-06"],
 ];
-for (const [file, req] of PHASE4_MODULES) {
+for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
 }
 
