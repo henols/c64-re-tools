@@ -256,8 +256,8 @@ proposal, not a commitment.
 - [ ] **R2000-05**: `acme-build`'s `disasm` verb and its `## Disassembly` documentation section are removed, replaced by a regenerator2000 route; the `toacme`-on-PATH prerequisite is dropped from the skill
 - [ ] **R2000-06**: A user can turn a `.prg` or a flat 64K capture into reassemblable ACME source whose illegal opcodes match this project's `!cpu 6510` expectations, verified by reassembly rather than asserted
 - [ ] **R2000-07**: A user can produce an HTML disassembly artifact with clickable cross-references from an analysed program
-- [ ] **R2000-08**: `c64-ram-capture`'s flat 64K images are accepted as regenerator2000 input, so a program depacked in the real emulator can be analysed statically — and regenerator2000's own sandbox unpacker is documented as the fast path for the packers it recognises, with the emulator route as the fallback for custom loaders and disk-based loads
-- [ ] **R2000-09**: A user is told, before automating anything, that regenerator2000 cannot ingest a raw binary headlessly — a `.regen2000proj` must be created interactively once per binary — so no skill documents an unattended pipeline that cannot run
+- [ ] **R2000-08**: A program depacked in the real emulator can be handed to regenerator2000 for static analysis, using a VICE `.vsf` snapshot in preference to a flat `.raw` because snapshots carry memory, machine type and start address while `.raw` loads at origin `$0000` with no CLI override — and regenerator2000's own sandbox unpacker is documented as the fast path for the packers it recognises, with the emulator route as the fallback for custom loaders and disk-based loads
+- [ ] **R2000-09**: Project bootstrap from a raw binary is automated, not a documented manual step: a skill can turn a `.prg` or snapshot into a `.regen2000proj` without a human, by driving HTTP MCP mode under a pty and calling `r2000_save_project`. If `R2000-16`'s pty check fails, this degrades to a documented one-time interactive step and every affected playbook says so rather than describing a pipeline that cannot run
 
 ### Tier 2 — MCP server and the annotation store
 
@@ -273,7 +273,7 @@ proposal, not a commitment.
 
 ### Verification owed before planning
 
-- [ ] **R2000-16**: Before any plan is written, four assumptions are checked against a real regenerator2000 build: whether a `.regen2000proj` can be produced without the TUI; whether `--export_asm` ACME output reassembles under `!cpu 6510`; whether `--export_lbl` format matches what DERIV-04 consumes; and the container-side Rust toolchain build time and image-size cost
+- [ ] **R2000-16**: Before any plan is written, five assumptions are checked against a real regenerator2000 build and the results recorded in the repo: (a) whether HTTP MCP mode runs under a pty with no real TTY, which decides whether project bootstrap is automatable — this one gates the rest; (b) whether `--export_asm --assembler acme` output reassembles under `!cpu 6510`; (c) whether `--export_lbl` emits a format DERIV-04's symbol store consumes as-is; (d) whether a `.vsf` from `vice_snapshot_save` loads with the expected machine type and start address; (e) container-side Rust toolchain build time and image size. Any that fails is recorded as an accepted limit stating what it breaks
 
 **Coverage:** 16 proposed requirements, unmapped to phases (milestone not opened).
 

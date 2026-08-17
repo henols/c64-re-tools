@@ -96,18 +96,73 @@ r2000 counterpart.
 |---|---|---|---|
 | `--mcp-server` is a bare boolean; HTTP port hardcoded to 3000 | `src/main.rs:62-64`; `mcp/http.rs:198` | a second r2000 cannot bind — **no two projects at once** | ~3 lines. `run_server(port: u16, ...)` is *already* parameterized; only the CLI fails to expose it. |
 | MCP HTTP binds loopback only — `SocketAddr::from(([127,0,0,1], port))` | `mcp/http.rs:196` | a host-run r2000 is unreachable from another network namespace (devcontainer) | ~2 lines (`--mcp-bind`) |
-| `validate_headless_mode()` exits(1) unless the file is `.regen2000proj` | `src/main.rs:141-152` | **no unattended ingest** of a `.prg` or a 64K RAW capture; the TUI is required once per binary | larger — its own message says *"Other formats require interactive UI for configuration"* |
+| `validate_headless_mode()` exits(1) unless the file is `.regen2000proj` | `src/main.rs:141-152` | the **batch-export and stdio-MCP** routes cannot ingest a raw binary | an extension allowlist — see the mechanics below |
 
 The first two are the same shape as the `KEYBOARD_MATRIX_SET` follow-up already
 recorded in `PROJECT.md` (genuinely worth upstreaming, not a deliverable here).
 
-The third is the one that actually bites: it means r2000 cannot be a
-fire-and-forget CLI step inside `c64-ram-capture` or `c64-provenance-diff`. A
-human opens the binary in the TUI once and saves a project; automation runs from
-there. Synthesizing a minimal `.regen2000proj` ourselves is possible in
-principle (serde-serialized, see their `tests/config_serialization_tests.rs`) but
-means depending on an undocumented format — **not recommended**, record as a
-rejected alternative.
+### Mechanics of the third — narrower than it first appears
+
+**It does not apply to HTTP MCP mode.** `main.rs:710` computes
+`let headless = cli.headless || cli.verify || cli.mcp_server_stdio;` —
+`cli.mcp_server` (HTTP) is **not** in that disjunction, so
+`validate_headless_mode()` never runs for it.
+
+| Invocation | headless | project file required | TUI runs |
+|---|---|---|---|
+| `regenerator2000 game.prg` | no | no | yes |
+| `regenerator2000 --mcp-server game.prg` | **no** | **no** | **yes** |
+| `regenerator2000 --mcp-server-stdio game.prg` | yes | **yes** → exit(1) | no |
+| `regenerator2000 --headless --export_asm out.a game.prg` | yes | **yes** → exit(1) | no |
+
+**What the "configuration" in the error message actually is.** From the load
+branches in `state/file_io.rs`:
+
+| Format | origin | system | entry point |
+|---|---|---|---|
+| `.prg` | its own 2-byte header | `prg_data.suggested_system` | `suggested_entry_point` |
+| `.vsf` (VICE snapshot) | `$0000` | parsed from `machine_name` | `vsf_data.start_address` |
+| `.bin` / `.raw` | **`Addr::ZERO`, hardcoded** (`file_io.rs:125-127`) | none | none |
+| `.d64`/`.d71`/`.d81`/`.t64` | — | — | returns a **list** of file entries |
+
+There is no `--origin` and no `--platform` flag in the CLI. So only two cases are
+genuinely ambiguous: **raw/bin** (origin unknowable from the bytes) and
+**disk/tape images** (which file inside the container). `validate_headless_mode`
+is a blunt extension check that protects those by refusing everything that is not
+a project file — thereby **over-restricting `.prg` and `.vsf`, both of which are
+fully self-configuring.** The human is not needed to supply information; the
+allowlist simply never asks whether the information is already in the file.
+
+**The bootstrap that removes the human.** `r2000_save_project` is one of the 28
+MCP tools, and `auto_analyze` is a setting checked directly in the load path
+(`crate::analyzer::analyze(self)` at `file_io.rs:391`) — no keypress. So:
+
+```
+pty + regenerator2000 --mcp-server game.prg   → auto-analyze runs on load
+                                              → MCP: r2000_save_project
+                                              → game.regen2000proj exists
+                                              → every headless batch route unlocks
+```
+
+The real requirement is therefore **a pty, once per binary** — automatable with
+`script` / `tmux` / `expect` — *not* a human making decisions. **Unverified:**
+HTTP MCP mode runs the TUI (`enable_raw_mode` plus a `crossterm::event::read()`
+input thread), which may refuse a non-TTY outright. This is the single sharpest
+item for `R2000-16`.
+
+**Rejected alternative:** synthesizing a minimal `.regen2000proj` ourselves. It
+is serde-serialized (see their `tests/config_serialization_tests.rs`) but
+undocumented, and the pty bootstrap above makes it unnecessary.
+
+### `.vsf` is the better bridge than `.raw`
+
+regenerator2000 parses **VICE snapshot files natively** — full memory, machine
+type from `machine_name`, and start address. `vice_snapshot_save` already exists
+on both backends (`DIRECT-08`, complete). So: depack in the emulator → save a
+`.vsf` → hand that to regenerator2000, rather than exporting a flat 64K `.raw`
+that lands at origin `$0000` with no override. Note the irony: `.vsf` is
+self-configuring and *should* pass headless on its merits — only the extension
+allowlist stops it.
 
 ## Where r2000 runs
 
@@ -181,12 +236,13 @@ do not close are:
    self-documents. **Neither project can do this alone** — this is the most
    distinctive gain available here.
 
-Plus: `c64-ram-capture` becomes the *bridge* rather than a casualty — its flat
-64K images are r2000 RAW/BIN input, so depack in the real emulator (which handles
-the custom loaders r2000's sandbox cannot) and hand the capture to r2000 for
-structure. And `c64-provenance-diff` could compare *block classifications*
-between releases rather than raw byte offsets — gated on the one-project limit
-above.
+Plus: `c64-ram-capture` becomes the *bridge* rather than a casualty — depack in
+the real emulator (which handles the custom loaders r2000's sandbox cannot), then
+hand the result to r2000 for structure. Prefer a **`.vsf` snapshot** over a flat
+`.raw`: r2000 parses VICE snapshots natively (memory, machine type, start
+address) whereas `.raw` lands at origin `$0000` with no CLI override. And
+`c64-provenance-diff` could compare *block classifications* between releases
+rather than raw byte offsets — gated on the one-project limit above.
 
 ## Costs and open risks
 
@@ -198,8 +254,14 @@ above.
 - **Maturity.** Eight months old. Healthier than the fork we are leaving, but not
   a settled dependency. Stdio MCP transport is documented as
   "experimental/testing only".
-- **Verification owed before planning:** whether a `.regen2000proj` can be
-  produced without the TUI; whether `--export_asm` ACME output reassembles under
-  our `!cpu 6510` illegal-opcode expectations; whether `--export_lbl` format
-  matches what DERIV-04 will consume; actual container-side build time and image
-  size for the Rust toolchain.
+- **Verification owed before planning** (`R2000-16`), sharpest first:
+  1. Does HTTP MCP mode run under a pty (`script`/`tmux`) with no real TTY? This
+     is what decides whether project bootstrap is automatable or a documented
+     manual step. Everything downstream depends on the answer.
+  2. Does `--export_asm --assembler acme` output reassemble under our
+     `!cpu 6510` illegal-opcode expectations? Prefer their `--verify-roundtrip`
+     over building our own gate.
+  3. Does `--export_lbl` emit a format DERIV-04's symbol store consumes as-is?
+  4. Does a `.vsf` from `vice_snapshot_save` load correctly, and does it carry the
+     machine type and start address we expect?
+  5. Container-side Rust toolchain build time and image-size cost.

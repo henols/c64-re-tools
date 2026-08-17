@@ -497,17 +497,29 @@ Source-confirmed at `ricardoquesada/regenerator2000@main`:
 |---|---|---|
 | `--mcp-server` is a bare boolean, HTTP port hardcoded 3000 | `src/main.rs:62-64`, `mcp/http.rs:198` | two projects in one namespace cannot coexist. `run_server(port: u16)` is already parameterized — a ~3-line CLI fix upstream |
 | MCP HTTP binds `127.0.0.1` only | `mcp/http.rs:196` | a host-side regenerator2000 is unreachable from a devcontainer. Sidestepped by D-R4, not fixed |
-| headless refuses non-`.regen2000proj` | `src/main.rs:141-152` | no unattended ingest of a raw binary; the TUI is needed once per binary |
+| headless refuses non-`.regen2000proj` | `src/main.rs:141-152` | the batch-export and stdio-MCP routes cannot ingest a raw binary. **Does not affect HTTP MCP mode** — `main.rs:710` omits `cli.mcp_server` from the headless disjunction |
+
+The third limit is narrower than its error message suggests. Only `.bin`/`.raw`
+(origin hardcoded to `Addr::ZERO`, `file_io.rs:125-127`, and no `--origin` flag
+exists) and disk/tape images (which file inside the container?) are genuinely
+ambiguous. `.prg` and `.vsf` are self-configuring — origin, system and entry
+point all come from the file — and are over-restricted by a blunt extension
+check. The route through it is a **bootstrap under a pty**: `--mcp-server <raw
+binary>` loads and auto-analyses (`auto_analyze` is checked in the load path at
+`file_io.rs:391`, no keypress), then `r2000_save_project` writes the project
+file, after which every headless route unlocks. No human decisions are required.
+Whether the TUI tolerates a pty with no real TTY is `R2000-16`(a) and gates
+Phase 9.
 
 Consequences carried, not solved: r2000-assisted two-release diffing in
-`c64-provenance-diff` is blocked by the first; fully unattended pipelines are
-blocked by the third. Both are documented for the user (`R2000-04`, `R2000-09`)
-rather than worked around. Synthesizing a `.regen2000proj` ourselves was
-considered and rejected — it means depending on an undocumented serde format.
+`c64-provenance-diff` is blocked by the first limit, and is documented for the
+user (`R2000-04`) rather than worked around. Synthesizing a `.regen2000proj`
+ourselves was considered and rejected — it depends on an undocumented serde
+format, and the pty bootstrap makes it unnecessary.
 
 ## Phases
 
-- [ ] **Phase 9: Verified Batch Route** - Check the four load-bearing assumptions against a real build, then land the batch-CLI integration and retire `acme-build`'s `toacme` shim
+- [ ] **Phase 9: Verified Batch Route** - Check the five load-bearing assumptions against a real build, automate project bootstrap, then land the batch-CLI integration and retire `acme-build`'s `toacme` shim
 - [ ] **Phase 10: Container-Side MCP Server** - Stand up the regenerator2000 MCP server beside the proxy under the never-`--vice` guard, with the two-project limit reported rather than hit
 - [ ] **Phase 11: Annotation Store and Enums** - Recon writes queryable state instead of prose only, and `memmap.json` generates regenerator2000 enums
 - [ ] **Phase 12: Symbol Round Trip, Install Story, and Playbooks** - Close the DERIV-04 loop in both directions and finish the prerequisite documentation and skill revisions
@@ -519,20 +531,21 @@ considered and rejected — it means depending on an undocumented serde format.
 **Requirements**: R2000-16, R2000-05, R2000-06, R2000-07, R2000-08, R2000-09, R2000-03
 **Success Criteria** (what must be TRUE):
 
-  1. All four assumptions in `R2000-16` are answered against a real regenerator2000 build and recorded in the repo — `.regen2000proj` creation without the TUI, ACME export reassembly under `!cpu 6510`, `--export_lbl` format versus what DERIV-04 will consume, and container-side toolchain cost — with any that fail recorded as an accepted limit stating what it breaks.
-  2. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and the replacement route is documented in their place.
-  3. A user can turn a `.prg` or a flat 64K `c64-ram-capture` image into ACME source that **reassembles**, verified by running the assembler, not asserted.
-  4. A user can produce an HTML disassembly with working cross-reference links.
-  5. The playbooks state up front that a raw binary cannot be ingested headlessly, so no documented pipeline is one that cannot actually run unattended.
+  1. All five assumptions in `R2000-16` are answered against a real regenerator2000 build and recorded in the repo — pty tolerance, ACME export reassembly under `!cpu 6510`, `--export_lbl` format versus what DERIV-04 will consume, `.vsf` load fidelity, and container-side toolchain cost — with any that fail recorded as an accepted limit stating what it breaks.
+  2. A raw `.prg` or a `.vsf` snapshot becomes a `.regen2000proj` **without a human**: HTTP MCP mode under a pty, auto-analysis on load, then `r2000_save_project`. If the pty check in criterion 1 fails, this degrades to a documented one-time interactive step and every affected playbook says so.
+  3. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and the replacement route is documented in their place.
+  4. A user can turn a `.prg` or an emulator-depacked snapshot into ACME source that **reassembles**, verified by running the assembler, not asserted.
+  5. A user can produce an HTML disassembly with working cross-reference links.
 
 **Plans**: TBD
 
 Notes:
 
-- **Criterion 1 gates the rest of the milestone.** If `.regen2000proj` cannot be produced without the TUI, every later phase inherits a human-in-the-loop step and the playbooks must say so. Do not plan Phases 10-12 in detail before this runs.
+- **Criterion 1(a) gates the rest of the milestone.** Whether HTTP MCP mode tolerates a pty with no real TTY decides whether criterion 2 is an automated bootstrap or a documented manual step — and that in turn decides how every later playbook reads. Do not plan Phases 10-12 in detail before it runs.
+- The bootstrap in criterion 2 exists because `validate_headless_mode` is an extension allowlist, not an information requirement: `.prg` and `.vsf` already carry origin, system and entry point. Prefer `.vsf` over a flat `.raw` for anything coming out of the emulator — `.raw` loads at origin `$0000` with no override.
 - The removal in criterion 2 is smaller than it looks: `disasm` is a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`). The real removal is documentary — ~50 lines of `SKILL.md` caveats that exist only because `toacme` does a flat linear decode (BASIC stub read as instructions, out-of-range labels needing manual definition, illegal-opcode indentation, the `.dis.a` → `.dis.asm` Read-tool workaround).
-- Criterion 3's reassembly check is the honest version of what `SKILL.md` currently only advises. regenerator2000 ships `--verify-roundtrip` (export → assemble → diff) — prefer using its gate over building one.
-- **Parallel:** the assumption probe (criterion 1) must precede the rest. The `acme-build` retirement, ACME export, HTML export and the capture bridge are then four independent units.
+- Criterion 4's reassembly check is the honest version of what `SKILL.md` currently only advises. regenerator2000 ships `--verify-roundtrip` (export → assemble → diff) — prefer using its gate over building one. Note it implies `--headless`, so it needs a project file, i.e. criterion 2 first.
+- **Parallel:** the assumption probe (criterion 1) precedes everything, and criterion 2 precedes anything using a batch flag. The `acme-build` retirement, ACME export and HTML export are then three independent units.
 
 ### Phase 10: Container-Side MCP Server
 
