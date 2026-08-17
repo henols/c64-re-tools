@@ -306,11 +306,11 @@ Notes:
 Plans:
 **Wave 1** *(the four declared-independent tool families, five plans, disjoint file ownership -- none writes a shared registration file)*
 
-- [ ] 05-01-PLAN.md — `stock-memory-search.ts`: `vice_memory_search` + `vice_memory_compare` (`mode:'ranges'` only; `mode:'snapshot'` refused by name, D-05-01) [wave 1]
-- [ ] 05-02-PLAN.md — `stock-symbols.ts`: the DERIV-04 store installing into `stock-address.ts`'s one resolver holder, workspace-contained file read, plus `derivedAnswer()` in `stock-handler.ts` (D-05-06) [wave 1]
-- [ ] 05-03-PLAN.md — `stock-vicii.ts`: `vice_vicii_get_state` over one `sidefx:false` read of `$D000-$D02E`, with six internal-only fields marked explicitly unavailable [wave 1]
-- [ ] 05-04-PLAN.md — `stock-cia.ts`: `vice_cia_get_state` over one `sidefx:false` read per chip, with the three read-versus-write address collisions named as five unavailable fields (D-05-11) [wave 1]
-- [ ] 05-05-PLAN.md — `stock-sprites.ts`: `vice_sprite_get` + `vice_sprite_inspect`, pointer-chain arithmetic ported verbatim from `dump-artifacts.mjs`, native-resolution ASCII (D-05-04), `png_base64` refused (D-05-03) [wave 1]
+- [x] 05-01-PLAN.md — `stock-memory-search.ts`: `vice_memory_search` + `vice_memory_compare` (`mode:'ranges'` only; `mode:'snapshot'` refused by name, D-05-01) [wave 1]
+- [x] 05-02-PLAN.md — `stock-symbols.ts`: the DERIV-04 store installing into `stock-address.ts`'s one resolver holder, workspace-contained file read, plus `derivedAnswer()` in `stock-handler.ts` (D-05-06) [wave 1]
+- [x] 05-03-PLAN.md — `stock-vicii.ts`: `vice_vicii_get_state` over one `sidefx:false` read of `$D000-$D02E`, with six internal-only fields marked explicitly unavailable [wave 1]
+- [x] 05-04-PLAN.md — `stock-cia.ts`: `vice_cia_get_state` over one `sidefx:false` read per chip, with the three read-versus-write address collisions named as five unavailable fields (D-05-11) [wave 1]
+- [x] 05-05-PLAN.md — `stock-sprites.ts`: `vice_sprite_get` + `vice_sprite_inspect`, pointer-chain arithmetic ported verbatim from `dump-artifacts.mjs`, native-resolution ASCII (D-05-04), `png_base64` refused (D-05-03) [wave 1]
 
 **Wave 2** *(blocked on 05-01 and 05-02; sole owner of every shared registration file this wave)*
 
@@ -438,7 +438,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 0/8 | Planned    | - |
+| 5. Skill-Critical Derived Tools | 5/8 | In Progress|  |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |

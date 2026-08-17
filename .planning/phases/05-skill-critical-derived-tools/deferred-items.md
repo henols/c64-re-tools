@@ -39,8 +39,9 @@ reproduces running `repo-root.test.ts` in isolation with no other test file
 loaded. Also previously logged as deferred under quick task `quick-260817-n6p`
 (commit `ff87d94`), which independently establishes it as pre-existing.
 
-**Disposition:** Left unfixed. Expected to disappear once the work is merged
-back to `main`, where the checkout is no longer nested under
-`.claude/worktrees/` -- the orchestrator's post-merge test gate is the
-confirmation point. If it recurs against a non-worktree checkout, it is a
-genuine regression worth its own investigation.
+**Disposition:** RESOLVED -- no code change needed. Confirmed a pure
+worktree-nesting artifact by the orchestrator's post-merge test gate: after all
+five wave-1 branches merged to `main`, `npm run test:automated` reports 1338
+pass / 0 fail, `repo-root.test.ts` included. `repo-root.ts` was never at fault.
+If this test ever fails from a non-worktree checkout, that is a genuine
+regression worth its own investigation.

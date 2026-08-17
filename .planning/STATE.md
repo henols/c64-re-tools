@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-17T17:20:36.457Z"
-last_activity: 2026-08-17 -- Phase 5 planning complete
+last_updated: "2026-08-17T17:26:10.439Z"
+last_activity: 2026-08-17 -- Phase 05 execution started
 progress:
   total_phases: 5
   completed_phases: 4
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 5 — skill-critical derived tools (8 tools: memory search/compare, symbol store, VIC-II/CIA read, sprite read)
+**Current focus:** Phase 05 — skill-critical-derived-tools
 
 ## Current Position
 
-Phase: 5 (skill-critical-derived-tools) — READY TO PLAN
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-17 -- Phase 5 planning complete
+Phase: 05 (skill-critical-derived-tools) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 05
+Last activity: 2026-08-17 -- Phase 05 execution started
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 28 tools -- 16 already
