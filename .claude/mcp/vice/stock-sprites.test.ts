@@ -25,13 +25,15 @@ import {
   renderSpriteBinary,
   SPRITE_ASCII_LEGEND,
 } from "./stock-sprites.ts";
-import { ErrorCode } from "./stock-protocol.ts";
+import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
+  resetBankCatalogsForTest();
 });
 
 type SendCall = [number, Buffer];
@@ -40,6 +42,43 @@ const DEPS = {} as unknown as StockDispatchDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };
+}
+
+/** The catalog observed live on VICE 3.9 (05-REVIEW.md), with `io` and `ram`
+ * deliberately NON-ZERO/non-default ids so a regression back to a
+ * hardcoded bank 0x0000 cannot pass. Matches stock-vicii.test.ts's/
+ * stock-cia.test.ts's own banksAvailableReply() convention. */
+function banksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 0, name: "cpu" },
+      { id: 1, name: "ram" },
+      { id: 2, name: "rom" },
+      { id: 3, name: "io" },
+      { id: 4, name: "cart" },
+    ],
+    related: [],
+  };
+}
+
+/** Catalog with no `ram` entry at all -- for the refusal case (the `io`
+ * resolution happens first, so this exercises the SECOND resolveRequiredBank
+ * call's refusal path). */
+function noRamBanksAvailableReply(requestId = 2) {
+  return {
+    type: "banks_available" as const,
+    requestId,
+    errorCode: ErrorCode.Ok,
+    banks: [
+      { id: 0, name: "default" },
+      { id: 3, name: "io" },
+    ],
+    related: [],
+  };
 }
 
 function parseAnswer(result: { content: { text: string }[] }): Record<string, unknown> {
@@ -99,7 +138,10 @@ const DATA_FIXTURE = buildSpriteDataBytes();
  * Builds a fake StockConnectSession that DISPATCHES per address rather than
  * returning one shared reply -- 0xd000 -> the VIC-II fixture, 0xdd00 -> the
  * single $DD00 byte, the pointer-table address -> pointerBytes, any
- * registered sprite-data address -> its own 63-byte block.
+ * registered sprite-data address -> its own 63-byte block. CommandType.
+ * BanksAvailable answers `banksAvailable` (defaulting to the io=3/ram=1
+ * catalog) BEFORE any body.readUInt16LE(1) dispatch, since its body is
+ * empty (Buffer.alloc(0)).
  */
 function makeSpriteSession(
   opts: {
@@ -108,6 +150,7 @@ function makeSpriteSession(
     pointerTableAddress?: number;
     pointerBytes?: number[];
     dataAddresses?: Record<number, number[]>;
+    banksAvailable?: () => ReturnType<typeof banksAvailableReply>;
   } = {},
 ): { session: StockConnectSession; calls: SendCall[] } {
   const dd00 = opts.dd00 ?? DD00;
@@ -115,11 +158,15 @@ function makeSpriteSession(
   const pointerTableAddress = opts.pointerTableAddress ?? POINTER_TABLE_ADDR;
   const pointerBytes = opts.pointerBytes ?? POINTERS;
   const dataAddresses = opts.dataAddresses ?? { [SPRITE0_DATA_ADDR]: DATA_FIXTURE };
+  const banksAvailable = opts.banksAvailable ?? banksAvailableReply;
 
   const calls: SendCall[] = [];
   const client = Object.assign(new EventEmitter(), {
     send: async (commandType: number, body: Buffer = Buffer.alloc(0)) => {
       calls.push([commandType, body]);
+      if (commandType === CommandType.BanksAvailable) {
+        return banksAvailable();
+      }
       const start = body.readUInt16LE(1);
       if (start === 0xd000) {
         return memoryGetReply(viciiBytes);
@@ -238,16 +285,48 @@ test("handleSpriteGet: an unexpected key (sprite_number, the other tool's argume
   assert.equal(calls.length, 0);
 });
 
-test("handleSpriteGet: read order and sidefx across all three reads", async () => {
+test("handleSpriteGet: read order and sidefx across all three reads, with exactly one BanksAvailable send first", async () => {
   const { session, calls } = makeSpriteSession();
   await handleSpriteGet({}, session, DEPS);
-  assert.equal(calls.length, 3);
-  assert.equal(calls[0]![1].readUInt16LE(1), 0xd000);
-  assert.equal(calls[1]![1].readUInt16LE(1), 0xdd00);
-  assert.equal(calls[2]![1].readUInt16LE(1), 36856);
-  for (let i = 0; i < 3; i += 1) {
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0]![0], CommandType.BanksAvailable);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1, "exactly one BanksAvailable send even though two bank names are resolved");
+  assert.equal(calls[1]![1].readUInt16LE(1), 0xd000);
+  assert.equal(calls[2]![1].readUInt16LE(1), 0xdd00);
+  assert.equal(calls[3]![1].readUInt16LE(1), 36856);
+  for (let i = 1; i < 4; i += 1) {
     assert.equal(calls[i]![1][0], 0x00, `call ${i} must be sidefx:false`);
   }
+});
+
+test("handleSpriteGet: the VIC-II-block and $DD00 sends carry the resolved io bank (3), the pointer-table send carries the resolved ram bank (1); none carries 0", async () => {
+  const { session, calls } = makeSpriteSession();
+  await handleSpriteGet({}, session, DEPS);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGetCalls.length, 3);
+  assert.equal(memGetCalls[0]![1].readUInt16LE(6), 3, "VIC-II block must carry io (3)");
+  assert.equal(memGetCalls[1]![1].readUInt16LE(6), 3, "$DD00 must carry io (3)");
+  assert.equal(memGetCalls[2]![1].readUInt16LE(6), 1, "the pointer table must carry ram (1)");
+  for (const [, body] of memGetCalls) {
+    assert.notEqual(body.readUInt16LE(6), 0);
+  }
+});
+
+test('handleSpriteGet: the answer\'s registerBank deep-equals {id:3,name:"io"} and dataBank deep-equals {id:1,name:"ram"}', async () => {
+  const { session } = makeSpriteSession();
+  const result = await handleSpriteGet({}, session, DEPS);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.registerBank, { id: 3, name: "io" });
+  assert.deepEqual(parsed.dataBank, { id: 1, name: "ram" });
+});
+
+test("handleSpriteGet: a catalog stub lacking ram refuses both, naming the reported bank names, zero MemoryGet sends", async () => {
+  const { session, calls } = makeSpriteSession({ banksAvailable: noRamBanksAvailableReply });
+  const result = await handleSpriteGet({}, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /default/);
+  assert.match(result.content[0]!.text, /io/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
 
 test("handleSpriteGet: a wrong response type on any of the three reads is refused", async () => {
@@ -276,6 +355,7 @@ test("handleSpriteGet: a 0-byte $DD00 reply is refused, 'a short read is a wrong
     body: Buffer,
   ) => {
     calls.push([commandType, body]);
+    if (commandType === CommandType.BanksAvailable) return banksAvailableReply();
     const start = body.readUInt16LE(1);
     if (start === 0xd000) return memoryGetReply(buildViciiBytes());
     if (start === 0xdd00) return memoryGetReply([]);
@@ -284,6 +364,7 @@ test("handleSpriteGet: a 0-byte $DD00 reply is refused, 'a short read is a wrong
   const result = await handleSpriteGet({}, session, DEPS);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /a short read is a wrong answer/);
+  void original;
 });
 
 test("handleSpriteGet: a 7-byte pointer-table reply is refused, 'a short read is a wrong answer'", async () => {
@@ -377,15 +458,42 @@ test("handleSpriteInspect: a missing sprite_number is refused by name, zero send
   assert.equal(calls.length, 0);
 });
 
-test("handleSpriteInspect: read order and sidefx across all four reads", async () => {
+test("handleSpriteInspect: read order and sidefx across all four reads, with exactly one BanksAvailable send first", async () => {
   const { session, calls } = makeSpriteSession();
   await handleSpriteInspect({ sprite_number: 0 }, session, DEPS);
-  assert.equal(calls.length, 4);
-  assert.equal(calls[3]![1].readUInt16LE(1), 40960);
-  assert.equal(calls[3]![1].readUInt16LE(3), 40960 + 62);
-  for (let i = 0; i < 4; i += 1) {
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0]![0], CommandType.BanksAvailable);
+  assert.equal(calls.filter(([commandType]) => commandType === CommandType.BanksAvailable).length, 1, "exactly one BanksAvailable send even though two bank names are resolved");
+  assert.equal(calls[4]![1].readUInt16LE(1), 40960);
+  assert.equal(calls[4]![1].readUInt16LE(3), 40960 + 62);
+  for (let i = 1; i < 5; i += 1) {
     assert.equal(calls[i]![1][0], 0x00, `call ${i} must be sidefx:false`);
   }
+});
+
+test("handleSpriteInspect: the fourth (sprite-data) MemoryGet send carries the resolved ram bank (1)", async () => {
+  const { session, calls } = makeSpriteSession();
+  await handleSpriteInspect({ sprite_number: 0 }, session, DEPS);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  assert.equal(memGetCalls.length, 4);
+  assert.equal(memGetCalls[3]![1].readUInt16LE(6), 1);
+});
+
+test('handleSpriteInspect: the answer\'s registerBank deep-equals {id:3,name:"io"} and dataBank deep-equals {id:1,name:"ram"}', async () => {
+  const { session } = makeSpriteSession();
+  const result = await handleSpriteInspect({ sprite_number: 0 }, session, DEPS);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.registerBank, { id: 3, name: "io" });
+  assert.deepEqual(parsed.dataBank, { id: 1, name: "ram" });
+});
+
+test("handleSpriteInspect: a catalog stub lacking ram refuses, naming the reported bank names, zero MemoryGet sends", async () => {
+  const { session, calls } = makeSpriteSession({ banksAvailable: noRamBanksAvailableReply });
+  const result = await handleSpriteInspect({ sprite_number: 0 }, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /default/);
+  assert.match(result.content[0]!.text, /io/);
+  assert.ok(!calls.some(([commandType]) => commandType === CommandType.MemoryGet));
 });
 
 test("handleSpriteInspect: a 62-byte data reply is refused, 'a short read is a wrong answer'", async () => {
@@ -422,7 +530,7 @@ test("handleSpriteInspect: the $ffff bound -- pointer 0xff in bank 3 still fits"
   });
   const result = await handleSpriteInspect({ sprite_number: 0 }, session, DEPS);
   assert.equal(result.isError, false);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
 });
 
 // ---------------------------------------------------------------------------
@@ -447,4 +555,33 @@ test("handleSpriteGet: a ROM-window note is emitted when a resolved address fall
   const result = await handleSpriteGet({}, session, DEPS);
   const notes = parseAnswer(result).notes as string[];
   assert.ok(notes.some((n) => n.includes("character-ROM")));
+});
+
+// ---------------------------------------------------------------------------
+// CR-02 -- the bank-3 I/O-window note (a resolved address landing in
+// $D000-$DFFF while VIC bank 3 is selected, read correctly through `ram`).
+// ---------------------------------------------------------------------------
+
+test("handleSpriteGet: a bank-3 I/O-window note is emitted when a resolved sprite-data address lands in $D000-$DFFF, and the pointer/data sends still carry the ram id", async () => {
+  const dd00Bank3 = 0xc0; // dd00 & 3 === 0 -> vicBank === 3 -> bankBase 49152 (0xc000)
+  const viciiBytes = buildViciiBytes();
+  viciiBytes[0x18] = 0x00; // screenBase = 49152 + 0 = 49152 (0xc000, NOT in the I/O window itself)
+  const pointerTableAddress = screenBase(0x00, dd00Bank3) + 0x3f8;
+  // pointer 0x40 -> dataAddress = 49152 + 0x40*64 = 53248 = 0xd000, inside VIC bank 3's I/O window.
+  const pointers = [0x40, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87];
+  const dataAddr = spriteDataAddress(dd00Bank3, 0x40);
+  assert.equal(dataAddr, 0xd000);
+  const { session, calls } = makeSpriteSession({
+    dd00: dd00Bank3,
+    viciiBytes,
+    pointerTableAddress,
+    pointerBytes: pointers,
+  });
+  const result = await handleSpriteGet({}, session, DEPS);
+  assert.equal(result.isError, false);
+  const notes = parseAnswer(result).notes as string[];
+  assert.ok(notes.some((n) => /I\/O window/.test(n) && n.includes("0xd000")), `expected an I/O window note naming 0xd000, got: ${JSON.stringify(notes)}`);
+  const memGetCalls = calls.filter(([commandType]) => commandType === CommandType.MemoryGet);
+  const pointerCall = memGetCalls.find((c) => c[1].readUInt16LE(1) === pointerTableAddress)!;
+  assert.equal(pointerCall[1].readUInt16LE(6), 1, "the pointer-table send must still carry the ram id");
 });

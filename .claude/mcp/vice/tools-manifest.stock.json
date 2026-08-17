@@ -3054,6 +3054,42 @@
               "stopped",
               "unknown"
             ]
+          },
+          "registerBank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "io"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "dataBank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "ram"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -3068,7 +3104,9 @@
           "sprites",
           "count",
           "notes",
-          "runState"
+          "runState",
+          "registerBank",
+          "dataBank"
         ]
       }
     },
@@ -3184,6 +3222,42 @@
               "stopped",
               "unknown"
             ]
+          },
+          "registerBank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "io"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "dataBank": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "ram"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -3207,7 +3281,9 @@
           "bytes",
           "rows",
           "notes",
-          "runState"
+          "runState",
+          "registerBank",
+          "dataBank"
         ]
       }
     }
