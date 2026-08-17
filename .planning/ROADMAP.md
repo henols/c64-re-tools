@@ -241,14 +241,30 @@ Notes:
   5. The disassembler adds no npm dependency and no GPL-licensed material, and the opcode table's zlib provenance is attributed in the source and in third-party notices.
 
 **Plans**: 7 plans in 6 waves
-
 Plans:
+**Wave 1**
+
 - [ ] 04-01-PLAN.md — the committed 256-entry 6510 opcode table and its bit-pattern derivation test (wave 1)
 - [ ] 04-02-PLAN.md — the derived-tool seam: stock-derived.ts, withDerivedTool(), and D-02's two enforcement mechanisms (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-03-PLAN.md — the pure decoder: resolved branch targets, truncation, page-wrap notes (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-04-PLAN.md — the ACME-ready renderer: !byte substitution, width invariant, symbol gating (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 04-05-PLAN.md — vice_disassemble on the stock backend, through the derived adapter (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 04-06-PLAN.md — ACME in CI plus the byte-exact round-trip and substitution-membership assertions (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 04-07-PLAN.md — third-party notices, the publish gate, and the parity-doc divergences (wave 6)
 
 Notes:
