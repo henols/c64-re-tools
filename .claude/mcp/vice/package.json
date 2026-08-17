@@ -45,7 +45,8 @@
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
-    "README.md"
+    "README.md",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {
     "node": ">=22.18.0"
