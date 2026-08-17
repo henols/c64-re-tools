@@ -437,7 +437,34 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 # Milestone v0.3.0: regenerator2000 static-analysis backend (PROPOSED)
 
-**Status:** proposed, not opened. Requires v0.2.0 complete.
+**Status:** proposed, not opened.
+**Dependency on v0.2.0: none, structurally.** regenerator2000 never touches VICE
+(D-R1), so it is backend-agnostic — it behaves identically on the fork and stock
+backends. The one apparent cross-dependency, Phase 12's symbol round trip needing
+`DERIV-04`, is **already satisfied on the fork**: `vice_symbols_load` and
+`vice_symbols_lookup` ship today; `DERIV-04` only restores them on *stock*. So
+this milestone could run against the fork backend with no v0.2.0 work at all.
+
+**Phase 9's assumption probe (`R2000-16`) may be pulled forward now**, ahead of
+v0.2.0 Phases 5-8, and should be. It has no v0.2.0 dependency, it de-risks the
+whole milestone for the cost of a day, and — the real reason — it erases the only
+genuine rework between the two milestones: v0.2.0 Phase 8 writes the install
+story (`DIST-01/02/03`) and revises the playbooks (`SKILL-01`), which v0.3.0 then
+rewrites and re-touches. Knowing the probe's answers before Phase 8 lets Phase 8
+write those docs **once**, already naming regenerator2000.
+
+**What v0.2.0 still has to finish regardless of this milestone**, because
+regenerator2000 replaces none of it: stock advertises 26 tools against the fork's
+62, and Phase 5 is that gap (memory search, backtrace, sprites, chip-state
+decode, screenshots, symbols). Phase 4's disassembler has one consumer today and
+gains its second from Phase 5's backtrace. Phase 7 owns disk detach (the deferred
+half of `DIRECT-06`) and wedge triage on stock. The entire overlap analysis found
+exactly one deletable thing in this codebase: a 14-line `toacme` shim.
+
+**If v0.3.0 needs to start sooner, defer Phase 6, not 5 or 7.** Phase 6 is
+"Stock-Only Gains" — value-add with no parity requirement behind it. Phases 5 and
+7 are what make the stock backend usable at all. This holds independently of
+regenerator2000.
 **Defined:** 2026-08-17 from `/gsd-explore`.
 **Grounding:** `.planning/notes/regenerator2000-integration.md` (decisions
 D-R1..D-R4, overlap map, source-confirmed upstream blockers).
