@@ -91,7 +91,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
 - [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (18 plans: 13 executed 2026-08-14 + 5 gap-closure 2026-08-16; all four 03-UAT gaps closed and the 2 Critical broker defects fixed and re-confirmed; verified 8/9 + 1 accepted override — disk detach has no stock opcode and is owned by Phase 7) (completed 2026-08-16)
 - [x] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it (completed 2026-08-17)
-- [ ] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side
+- [x] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side (completed 2026-08-17)
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
 - [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock
 - [ ] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have
@@ -322,7 +322,7 @@ Plans:
 
 **Wave 4** *(blocked on 05-07)*
 
-- [ ] 05-08-PLAN.md — criterion 5 mechanised: `scripts/check-skill-tool-coverage.mjs` + a blocking CI step (D-05-05), the parity-doc trims and the DERIV-05 stock gain, and four bounded skill-reference corrections [wave 4]
+- [x] 05-08-PLAN.md — criterion 5 mechanised: `scripts/check-skill-tool-coverage.mjs` + a blocking CI step (D-05-05), the parity-doc trims and the DERIV-05 stock gain, and four bounded skill-reference corrections [wave 4]
 
 Notes:
 
@@ -438,7 +438,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 7/8 | In Progress|  |
+| 5. Skill-Critical Derived Tools | 8/8 | Complete   | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
