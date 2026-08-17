@@ -21,6 +21,9 @@
 //   - Never build a `{ content: [...], isError: false }` literal outside
 //     stockAnswer() -- that is exactly how an answer ships without
 //     `runState`, which D-06 requires on EVERY stock tool answer.
+//   - Never construct a session-free derived answer as a bare literal
+//     either -- a `needsSession: false` handler calls derivedAnswer(), a
+//     sessioned handler calls stockAnswer(), and there is no third shape.
 //   - Never write a third error converter. convertHandshakeError() (moved
 //     here, unchanged, from stock-dispatch.ts) is the ONE conversion for a
 //     failed ensureStockSession()/stockConnect(); convertWireError() (new
@@ -172,4 +175,30 @@ export function convertWireError(toolName: string, err: unknown): StockErrorResu
 export function stockAnswer(client: ViceMonitorClient, payload: Record<string, unknown>): StockOkResult {
   const runState = runStateFor(client);
   return { content: [{ type: "text", text: JSON.stringify({ ...payload, runState }) }], isError: false };
+}
+
+// ---------------------------------------------------------------------------
+// derivedAnswer() -- new here (Phase 5, 05-02, D-05-06). The ONE place a
+// SESSION-FREE (`withDerivedTool(..., { needsSession: false }, ...)`) derived
+// tool's successful answer is constructed. `runState: "unknown"` is the
+// honest value here, not a placeholder: a session-free handler never opens a
+// monitor connection, so the emulator's run state was genuinely never
+// observed -- "unknown" is already documented (docs/stock-vice-parity.md
+// §A.7) as "the honest post-connect value and is not a failure". This
+// function exists so the standing D-06 gate in stock-dispatch.test.ts
+// ("every stock entry's outputSchema declares a required runState enum of
+// [running, stopped, unknown]") needs no exemption list for the two DERIV-04
+// symbol tools (`vice_symbols_load`/`vice_symbols_lookup`) -- currently the
+// only `needsSession: false` tools in the milestone, and this function's
+// only consumer (stock-symbols.ts).
+//
+// Unlike stockAnswer(), this function takes NO client argument at all --
+// there is no session to read a run state from, which is the whole point.
+// `runState` is stamped LAST, so a `runState` key already present in
+// `payload` is overwritten -- matching stockAnswer()'s own "a handler may
+// never supply its own" rule.
+// ---------------------------------------------------------------------------
+
+export function derivedAnswer(payload: Record<string, unknown>): StockOkResult {
+  return { content: [{ type: "text", text: JSON.stringify({ ...payload, runState: "unknown" }) }], isError: false };
 }
