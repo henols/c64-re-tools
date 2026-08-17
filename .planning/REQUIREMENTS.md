@@ -58,13 +58,13 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Disassembler
 
-- [ ] **DISASM-01**: User can disassemble a memory range on the stock backend
+- [x] **DISASM-01**: User can disassemble a memory range on the stock backend
 - [x] **DISASM-02**: Disassembly decodes all 256 opcodes including the undocumented 6510 set, with correct instruction lengths
-- [ ] **DISASM-03**: Disassembly output reassembles through ACME, verified by a round-trip test with documented exclusions
-- [ ] **DISASM-04**: Branch instructions render the resolved target address, not the raw offset
-- [ ] **DISASM-05**: A partial instruction at the end of a range is reported as truncated rather than fabricated
-- [ ] **DISASM-06**: Symbol substitution is applied only where it cannot change the encoding, using operand role and width
-- [ ] **DISASM-07**: The disassembler adds no npm dependency and no GPL-licensed material
+- [x] **DISASM-03**: Disassembly output reassembles through ACME, verified by a round-trip test with documented exclusions
+- [x] **DISASM-04**: Branch instructions render the resolved target address, not the raw offset
+- [x] **DISASM-05**: A partial instruction at the end of a range is reported as truncated rather than fabricated
+- [x] **DISASM-06**: Symbol substitution is applied only where it cannot change the encoding, using operand role and width
+- [x] **DISASM-07**: The disassembler adds no npm dependency and no GPL-licensed material
 
 ### Screenshots
 
@@ -184,13 +184,13 @@ and the sequencing rationale.
 | DERIV-05 | Phase 5 | Pending |
 | DERIV-06 | Phase 5 | Pending |
 | DERIV-07 | Phase 4 | Complete |
-| DISASM-01 | Phase 4 | Pending |
+| DISASM-01 | Phase 4 | Complete |
 | DISASM-02 | Phase 4 | Complete |
-| DISASM-03 | Phase 4 | Pending |
-| DISASM-04 | Phase 4 | Pending |
-| DISASM-05 | Phase 4 | Pending |
-| DISASM-06 | Phase 4 | Pending |
-| DISASM-07 | Phase 4 | Pending |
+| DISASM-03 | Phase 4 | Complete |
+| DISASM-04 | Phase 4 | Complete |
+| DISASM-05 | Phase 4 | Complete |
+| DISASM-06 | Phase 4 | Complete |
+| DISASM-07 | Phase 4 | Complete |
 | SHOT-01 | Phase 5 | Pending |
 | SHOT-02 | Phase 5 | Pending |
 | SHOT-03 | Phase 5 | Pending |
