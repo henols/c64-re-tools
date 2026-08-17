@@ -213,3 +213,167 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
 
   return stockAnswer(session.client, payload);
 };
+
+// ---------------------------------------------------------------------------
+// vice_memory_compare -- mode 'ranges' only. mode 'snapshot' is refused by
+// name (D-05-01): there is no memory-only snapshot producer tool on either
+// backend (vice_snapshot_save writes a whole-machine .vsf), so serving it
+// would mean either destructively restoring the machine to read memory out
+// of it, or parsing an unverified binary snapshot format. Neither is
+// implemented; the refusal fires before any MEM_GET is sent.
+// ---------------------------------------------------------------------------
+
+export const handleMemoryCompare: StockSessionHandler = async (args, session, _deps) => {
+  if (!isPlainObject(args)) {
+    return isErrorText("vice_memory_compare: arguments must be an object");
+  }
+
+  // --------------------------------------------------------- mode (required)
+
+  if (typeof args.mode !== "string") {
+    return isErrorText(`vice_memory_compare: mode must be a string, got ${typeof args.mode}`);
+  }
+
+  if (args.mode === "snapshot") {
+    return isErrorText(
+      "vice_memory_compare: mode:'snapshot' is not implemented on the stock backend -- there is no memory-only " +
+        "snapshot producer tool on either backend (vice_snapshot_save writes a whole-machine .vsf), so serving it " +
+        "would mean either destructively restoring the machine to read memory out of it, or parsing an unverified " +
+        "binary snapshot format. Use mode:'ranges' to compare two live ranges captured at different points in " +
+        "time, or use the c64-ram-capture skill's own full-image diff.",
+    );
+  }
+
+  if (args.mode !== "ranges") {
+    return isErrorText(`vice_memory_compare: mode must be "ranges" or "snapshot", got ${JSON.stringify(args.mode)}`);
+  }
+
+  // --------------------------------------------------------- range1_start/range1_end/range2_start (all required in mode:'ranges')
+
+  if (args.range1_start === undefined) {
+    return isErrorText("vice_memory_compare: range1_start is required when mode is 'ranges'");
+  }
+  if (args.range1_end === undefined) {
+    return isErrorText("vice_memory_compare: range1_end is required when mode is 'ranges'");
+  }
+  if (args.range2_start === undefined) {
+    return isErrorText("vice_memory_compare: range2_start is required when mode is 'ranges'");
+  }
+
+  let range1Start: number, range1End: number, range2Start: number;
+  try {
+    range1Start = parseAddress(args.range1_start, { what: "range1_start" });
+    range1End = parseAddress(args.range1_end, { what: "range1_end" });
+    range2Start = parseAddress(args.range2_start, { what: "range2_start" });
+  } catch (err) {
+    return isErrorText(`vice_memory_compare: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (range1End < range1Start) {
+    return isErrorText(
+      `vice_memory_compare: range1_end (0x${range1End.toString(16)}) must be >= range1_start (0x${range1Start.toString(16)})`,
+    );
+  }
+
+  // --------------------------------------------------------- range2_end is DERIVED from range1's length -- never accepted as an argument
+
+  const length = range1End - range1Start + 1;
+  const range2End = range2Start + length - 1;
+  if (range2End > 0xffff) {
+    return isErrorText(
+      `vice_memory_compare: range2_start (0x${range2Start.toString(16)}) + range1's length (${length}) would put range2_end at ` +
+        `0x${range2End.toString(16)}, which exceeds the 16-bit address space -- range 2 takes range 1's length, there is no range2_end argument`,
+    );
+  }
+
+  // --------------------------------------------------------- max_differences (optional, default 100, max 10000)
+
+  let maxDifferences = DEFAULT_MAX_RESULTS;
+  if (args.max_differences !== undefined) {
+    try {
+      maxDifferences = parseByteCount(args.max_differences, { max: MAX_MAX_RESULTS, what: "max_differences" });
+    } catch (err) {
+      return isErrorText(`vice_memory_compare: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // snapshot_name, start and end are declared on the manifest for D-03 input
+  // compatibility only (see plan_decision_D-05-01) -- they belong solely to
+  // the refused mode:'snapshot' path and are deliberately ignored here.
+
+  // --------------------------------------------------------- two sequential MEM_GET reads, both sidefx:false
+  //
+  // The machine is already halted by the first read (Phase 3 D-05), so the
+  // two reads are consistent with each other for a stopped machine; neither
+  // issues a resume between them.
+
+  const body1 = memGetBody({ sidefx: false, start: range1Start, end: range1End, memspace: 0x00, bank: 0x0000 });
+  let response1;
+  try {
+    response1 = await session.client.send(CommandType.MemoryGet, body1);
+  } catch (err) {
+    return convertWireError("vice_memory_compare", err);
+  }
+  if (response1.type !== "memory_get") {
+    return isErrorText(
+      `vice_memory_compare: the binary monitor replied with an unexpected response type ("${response1.type}") for range 1, expected "memory_get"`,
+    );
+  }
+  if (response1.bytes.length !== length) {
+    return isErrorText(
+      `vice_memory_compare: expected ${length} byte(s) for range 1, got ${response1.bytes.length} -- a short read is a wrong answer, not a partial success`,
+    );
+  }
+
+  const body2 = memGetBody({ sidefx: false, start: range2Start, end: range2End, memspace: 0x00, bank: 0x0000 });
+  let response2;
+  try {
+    response2 = await session.client.send(CommandType.MemoryGet, body2);
+  } catch (err) {
+    return convertWireError("vice_memory_compare", err);
+  }
+  if (response2.type !== "memory_get") {
+    return isErrorText(
+      `vice_memory_compare: the binary monitor replied with an unexpected response type ("${response2.type}") for range 2, expected "memory_get"`,
+    );
+  }
+  if (response2.bytes.length !== length) {
+    return isErrorText(
+      `vice_memory_compare: expected ${length} byte(s) for range 2, got ${response2.bytes.length} -- a short read is a wrong answer, not a partial success`,
+    );
+  }
+
+  // --------------------------------------------------------- diff, bounded at max_differences
+
+  const bytes1 = response1.bytes;
+  const bytes2 = response2.bytes;
+  const differences: { offset: number; address1: number; address2: number; value1: number; value2: number }[] = [];
+  let truncated = false;
+  for (let offset = 0; offset < length; offset += 1) {
+    const value1 = bytes1[offset]!;
+    const value2 = bytes2[offset]!;
+    if (value1 !== value2) {
+      differences.push({ offset, address1: range1Start + offset, address2: range2Start + offset, value1, value2 });
+      if (differences.length === maxDifferences) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+
+  const payload: Record<string, unknown> = {
+    mode: "ranges",
+    range1Start,
+    range1End,
+    range2Start,
+    range2End,
+    length,
+    maxDifferences,
+    differences,
+    count: differences.length,
+    truncated,
+    identical: differences.length === 0 && !truncated,
+  };
+
+  return stockAnswer(session.client, payload);
+};
