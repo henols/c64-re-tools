@@ -1,12 +1,24 @@
 // node:test coverage of stock-address.ts -- the one address parser (D-04),
 // in stock-protocol.test.ts's golden-table style. Pure-function tests, no
 // socket, no emulator.
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseAddress, parseByteCount, setSymbolResolver, StockAddressError, type SymbolResolver } from "./stock-address.ts";
+import {
+  parseAddress,
+  parseByteCount,
+  setSymbolResolver,
+  symbolNameFor,
+  hasSymbolStore,
+  StockAddressError,
+  type SymbolResolver,
+} from "./stock-address.ts";
 
 beforeEach(() => {
+  setSymbolResolver(null);
+});
+
+afterEach(() => {
   setSymbolResolver(null);
 });
 
@@ -131,4 +143,53 @@ test("parseByteCount respects a custom max", () => {
 
 test("parseByteCount refuses a non-integer number", () => {
   assert.throws(() => parseByteCount(1.5), StockAddressError);
+});
+
+// --------------------------------------------------------- symbolNameFor / hasSymbolStore (DISASM-06)
+
+test("symbolNameFor: returns undefined with no resolver installed", () => {
+  assert.equal(symbolNameFor(0xd020), undefined);
+});
+
+test("symbolNameFor: returns undefined when the installed resolver has no nameFor", () => {
+  setSymbolResolver({ resolve: () => undefined });
+  assert.equal(symbolNameFor(0xd020), undefined);
+});
+
+test("symbolNameFor: returns the name when an installed resolver implements nameFor", () => {
+  setSymbolResolver({
+    resolve: () => undefined,
+    nameFor: (a) => (a === 0xd020 ? "vic_cborder" : undefined),
+  });
+  assert.equal(symbolNameFor(0xd020), "vic_cborder");
+  assert.equal(symbolNameFor(0xd021), undefined);
+});
+
+test("hasSymbolStore: false with no resolver installed", () => {
+  assert.equal(hasSymbolStore(), false);
+});
+
+test("hasSymbolStore: false when the installed resolver has no nameFor", () => {
+  setSymbolResolver({ resolve: () => undefined });
+  assert.equal(hasSymbolStore(), false);
+});
+
+test("hasSymbolStore: true when the installed resolver implements nameFor", () => {
+  setSymbolResolver({ resolve: () => undefined, nameFor: () => "x" });
+  assert.equal(hasSymbolStore(), true);
+});
+
+test("setSymbolResolver(null) restores symbolNameFor/hasSymbolStore to their no-store defaults", () => {
+  setSymbolResolver({ resolve: () => undefined, nameFor: (a) => (a === 0xd020 ? "vic_cborder" : undefined) });
+  assert.equal(hasSymbolStore(), true);
+  setSymbolResolver(null);
+  assert.equal(hasSymbolStore(), false);
+  assert.equal(symbolNameFor(0xd020), undefined);
+});
+
+test("parseAddress()'s existing behaviour is unaffected by widening SymbolResolver with an optional nameFor", () => {
+  const resolver: SymbolResolver = { resolve: (name) => (name === "SCREEN" ? 0x0400 : undefined) };
+  setSymbolResolver(resolver);
+  assert.equal(parseAddress("SCREEN"), 0x0400);
+  assert.throws(() => parseAddress("UNKNOWN"), /not a known symbol/);
 });
