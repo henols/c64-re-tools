@@ -41,19 +41,19 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [x] **DIRECT-03**: User can set, list, delete, toggle, and condition checkpoints and watchpoints on the stock backend
 - [x] **DIRECT-04**: User can step instructions and execute-until-return on the stock backend
 - [x] **DIRECT-05**: User can pause a freely-running emulator on demand and resume it
-- [~] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach disks on the stock backend — *attach half delivered in Phase 3; **detach** deferred to Phase 7, because stock VICE's binary monitor exposes no detach opcode (D-13 in `03-CONTEXT.md`, `docs/stock-vice-parity.md`). Phase 7 owns it as its success criterion 4.*
+- [~] **DIRECT-06**: User can reset the machine, autostart a PRG or disk image, and attach disks on the stock backend — *attach half delivered in Phase 3. **Detach CUT 2026-08-17** — no skill calls `vice_disk_detach`, stock VICE's binary monitor exposes no detach opcode (D-13 in `03-CONTEXT.md`, `docs/stock-vice-parity.md`), and attaching a different image covers the workflow. No longer owned by Phase 7.*
 - [x] **DIRECT-07**: User can type text and drive the joystick on the stock backend
 - [x] **DIRECT-08**: User can save and restore emulator snapshots on the stock backend
 - [x] **DIRECT-09**: User can enumerate available memory banks and registers on the stock backend
 
 ### Derived tools
 
-- [ ] **DERIV-01**: User can search, compare, and fill memory ranges on the stock backend
-- [ ] **DERIV-02**: User can get a call backtrace on the stock backend
-- [ ] **DERIV-03**: User can group checkpoints and set an ignore count on the stock backend
+- [ ] **DERIV-01**: User can search and compare memory ranges on the stock backend *(narrowed 2026-08-17: `fill` cut — no skill calls `vice_memory_fill`)*
+- [-] **CUT 2026-08-17** — no skill calls `vice_backtrace`. Original: **DERIV-02**: User can get a call backtrace on the stock backend
+- [-] **CUT 2026-08-17** — no skill calls any `vice_checkpoint_group_*` or `vice_checkpoint_set_ignore_count`. Original: **DERIV-03**: User can group checkpoints and set an ignore count on the stock backend
 - [ ] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names
-- [ ] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero
-- [ ] **DERIV-06**: User can inspect and set sprites, including ASCII rendering, on the stock backend
+- [ ] **DERIV-05**: User can read decoded VIC-II and CIA state on the stock backend, with unavailable internal fields explicitly marked unavailable rather than reported as zero *(narrowed 2026-08-17: read side only — no skill calls `vice_vicii_set_state` or `vice_cia_set_state`)*
+- [ ] **DERIV-06**: User can read and inspect sprites, including ASCII rendering, on the stock backend *(narrowed 2026-08-17: read side only — no skill calls `vice_sprite_set`)*
 - [x] **DERIV-07**: Derived tools are implemented in sibling modules, not appended to `vice-proxy.ts`, and are intercepted before argument rewriting so they never receive host-translated paths
 
 ### Disassembler
@@ -68,23 +68,23 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Screenshots
 
-- [ ] **SHOT-01**: User can capture a screenshot on the stock backend and receives a valid PNG
-- [ ] **SHOT-02**: Screenshot capture adds no npm dependency
-- [ ] **SHOT-03**: Screenshot returns a file path, preserving parity with the fork backend and with incident-record bookkeeping
-- [ ] **SHOT-04**: Screenshot content is visible to Claude as an image, not only as a text-encoded data URI
-- [ ] **SHOT-05**: Capture behaviour with respect to torn frames is either avoided by capturing while paused, or documented
+- [-] **CUT 2026-08-17** — no skill calls `vice_display_screenshot`; incident capture degrades cleanly via `captureStep()`. Original: **SHOT-01**: User can capture a screenshot on the stock backend and receives a valid PNG
+- [-] **CUT 2026-08-17** — see SHOT-01. Original: **SHOT-02**: Screenshot capture adds no npm dependency
+- [-] **CUT 2026-08-17** — see SHOT-01. Original: **SHOT-03**: Screenshot returns a file path, preserving parity with the fork backend and with incident-record bookkeeping
+- [-] **CUT 2026-08-17** — see SHOT-01. Original: **SHOT-04**: Screenshot content is visible to Claude as an image, not only as a text-encoded data URI
+- [-] **CUT 2026-08-17** — see SHOT-01. Original: **SHOT-05**: Capture behaviour with respect to torn frames is either avoided by capturing while paused, or documented
 
 ### Stock-only capabilities
 
-- [ ] **GAIN-01**: User can retrieve a CPU instruction-history trace with registers and cycle timestamps, on builds that support it
-- [ ] **GAIN-02**: On a build without CPU-history support, the trace tool explains what is missing and what version provides it
-- [ ] **GAIN-03**: User can set checkpoints, read registers, and read memory on a 1541 drive CPU
-- [ ] **GAIN-04**: Drive debugging with true drive emulation disabled reports that explicitly, rather than returning zeros that look like data
-- [ ] **GAIN-05**: Stepping and conditions behave correctly after a drive checkpoint hit, despite `default_memspace` contamination
-- [ ] **GAIN-06**: User can break at an exact raster line and cycle, with conditions built so operator-precedence and hex-literal traps cannot produce a silently-false condition
-- [ ] **GAIN-07**: User can read the emulator's exact palette
-- [ ] **GAIN-08**: User can get and set VICE resources beyond today's whitelist
-- [ ] **GAIN-09**: Resources that power-cycle the machine, break the monitor connection, or destroy observed state are denied or gated behind explicit intent
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-01**: User can retrieve a CPU instruction-history trace with registers and cycle timestamps, on builds that support it
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-02**: On a build without CPU-history support, the trace tool explains what is missing and what version provides it
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-03**: User can set checkpoints, read registers, and read memory on a 1541 drive CPU
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-04**: Drive debugging with true drive emulation disabled reports that explicitly, rather than returning zeros that look like data
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-05**: Stepping and conditions behave correctly after a drive checkpoint hit, despite `default_memspace` contamination
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-06**: User can break at an exact raster line and cycle, with conditions built so operator-precedence and hex-literal traps cannot produce a silently-false condition
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-07**: User can read the emulator's exact palette
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-08**: User can get and set VICE resources beyond today's whitelist
+- [-] **CUT 2026-08-17** — entire Phase 6 cut; capability surplus, not a gap. Original: **GAIN-09**: Resources that power-cycle the machine, break the monitor connection, or destroy observed state are denied or gated behind explicit intent
 
 ### Timing
 
@@ -113,7 +113,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 - [x] **VERIF-01**: The binary-monitor probe has been run against a real stock VICE build and its results recorded
 - [x] **VERIF-02**: Protocol client behaviour is unit-tested against recorded or stubbed frames, including the malformed and event-interleaved cases
-- [ ] **VERIF-03**: Tool output is compared between backends for a known program, with expected divergences documented rather than treated as failures
+- [-] **CUT 2026-08-17** — byte-identical parity is an explicit non-goal in PROJECT.md. Original: **VERIF-03**: Tool output is compared between backends for a known program, with expected divergences documented rather than treated as failures
 - [x] **VERIF-04**: The five items the research flagged UNVERIFIED are resolved empirically or recorded as accepted unknowns
 
 ## Future Requirements
@@ -221,18 +221,39 @@ and the sequencing rationale.
 | VERIF-03 | Phase 8 | Pending |
 | VERIF-04 | Phase 1 | Complete |
 
-**Coverage:**
-- v0.2.0 requirements: 68 total
-- Mapped to phases: 68
-- Unmapped: 0 ✓
+**Coverage (revised 2026-08-17 after the scope cut):**
+- v0.2.0 requirements defined: 68
+- **Cut**: 21 (`DERIV-02`, `DERIV-03`, `SHOT-01`..`SHOT-05`, `GAIN-01`..`GAIN-09`, `VERIF-03`, plus the `DIRECT-06` detach half and the `fill`/`*_set_state` halves of `DERIV-01`/`05`/`06`)
+- **In scope**: 47 — 33 already complete, **14 open**
+- Mapped to phases: 47 · Unmapped: 0 ✓
 
-*Count correction: an earlier version of this block stated 63 total. The file
-contains 67 requirement items (BACK 5, BROK 3, DERIV 7, DIRECT 9, DISASM 7,
-DIST 3, DOC 3, GAIN 9, PROTO 8, SHOT 5, TIME 4, VERIF 4). Corrected during
-roadmap creation.*
+**Open requirements per phase:** Phase 5: 4 (`DERIV-01`, `DERIV-04`, `DERIV-05`,
+`DERIV-06`) · Phase 6: **cut** · Phase 7: 4 (`TIME-01`..`TIME-04`) · Phase 8: 5
+(`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`, `SKILL-01`)
 
-**Requirements per phase:** Phase 1: 5 · Phase 2: 16 · Phase 3: 9 · Phase 4: 8 ·
-Phase 5: 11 · Phase 6: 9 · Phase 7: 4 · Phase 8: 5
+### The cut criterion
+
+Every cut above was decided by one test: **does a shipped skill call the tool, or
+does something a skill calls depend on it?** Measured by diffing the six skills'
+actual `vice_*` usage against `tools-manifest.json` (62 tools) and
+`tools-manifest.stock.json` (26 tools):
+
+- The skills call **28** tools.
+- **16** already work on stock — Phase 3 delivered them.
+- **10** are buildable and missing: `vice_memory_search`, `vice_memory_compare`,
+  `vice_symbols_load`, `vice_symbols_lookup`, `vice_vicii_get_state`,
+  `vice_cia_get_state`, `vice_sprite_get`, `vice_sprite_inspect` (Phase 5);
+  `vice_cycles_stopwatch`, `vice_run_until` (Phase 7).
+- **2** are provably impossible on stock — `vice_sid_get_state` (SID registers are
+  write-only in hardware) and `vice_keyboard_matrix` (`read_ciapb()` recomputes
+  from `keyarr` on every read). These need `BACK-05` + `SKILL-01` + `DIST-02`,
+  i.e. honesty, not code. That is Phase 8, and it is why Phase 8 is the phase the
+  milestone exists for.
+- The fork's other **34** tools are called by no skill. They are not a gap.
+
+The finish line is therefore *"a user with an apt-installed VICE can run the six
+shipped skills, and is told plainly where they must reach for the fork"* — not
+parity with the fork.
 
 ---
 
@@ -249,21 +270,21 @@ proposal, not a commitment.
 - [ ] **R2000-01**: regenerator2000 is **never** launched with `--vice`. The launch path refuses to pass it, guarded in code rather than only documented — mirroring the `DENY_LIST` pattern in `vice.ts`. Rationale: stock VICE's binary monitor serves exactly one client and a second connection is indistinguishable from a wedge (D-R1)
 - [ ] **R2000-02**: regenerator2000 runs on the same side of the container boundary as the MCP proxy, so no host/container path translation is applied to any argument passed to it — and a user in a devcontainer, and two projects open at once in separate devcontainers, both work without an upstream patch (D-R4)
 - [ ] **R2000-03**: regenerator2000 is a declared prerequisite of the plugin, named in the install documentation alongside VICE, with its Apache-2.0 notice recorded in `THIRD-PARTY-NOTICES.md` (D-R2)
-- [ ] **R2000-04**: A user who tries to open two regenerator2000 projects in one network namespace is told why it fails and what the upstream gap is, rather than seeing a bind error or a silent hang — the port is hardcoded to 3000 with a bare boolean `--mcp-server` flag
+- [-] **CUT 2026-08-17** — folded into Phase 9 install documentation as a stated limitation. Original: **R2000-04**: A user who tries to open two regenerator2000 projects in one network namespace is told why it fails and what the upstream gap is, rather than seeing a bind error or a silent hang — the port is hardcoded to 3000 with a bare boolean `--mcp-server` flag
 
 ### Tier 1 — batch CLI, no MCP server
 
 - [ ] **R2000-05**: `acme-build`'s `disasm` verb and its `## Disassembly` documentation section are removed, replaced by a regenerator2000 route; the `toacme`-on-PATH prerequisite is dropped from the skill
 - [ ] **R2000-06**: A user can turn a `.prg` or a flat 64K capture into reassemblable ACME source whose illegal opcodes match this project's `!cpu 6510` expectations, verified by reassembly rather than asserted
-- [ ] **R2000-07**: A user can produce an HTML disassembly artifact with clickable cross-references from an analysed program
-- [ ] **R2000-08**: A program depacked in the real emulator can be handed to regenerator2000 for static analysis, using a VICE `.vsf` snapshot in preference to a flat `.raw` because snapshots carry memory, machine type and start address while `.raw` loads at origin `$0000` with no CLI override — and regenerator2000's own sandbox unpacker is documented as the fast path for the packers it recognises, with the emulator route as the fallback for custom loaders and disk-based loads
+- [-] **CUT 2026-08-17** — HTML export: no skill produces or consumes it. Original: **R2000-07**: A user can produce an HTML disassembly artifact with clickable cross-references from an analysed program
+- [-] **CUT 2026-08-17** — reduced to a note on Phase 9 criterion 2. Original: **R2000-08**: A program depacked in the real emulator can be handed to regenerator2000 for static analysis, using a VICE `.vsf` snapshot in preference to a flat `.raw` because snapshots carry memory, machine type and start address while `.raw` loads at origin `$0000` with no CLI override — and regenerator2000's own sandbox unpacker is documented as the fast path for the packers it recognises, with the emulator route as the fallback for custom loaders and disk-based loads
 - [ ] **R2000-09**: Project bootstrap from a raw binary is automated, not a documented manual step: a skill can turn a `.prg` or snapshot into a `.regen2000proj` without a human, by driving HTTP MCP mode under a pty and calling `r2000_save_project`. If `R2000-16`'s pty check fails, this degrades to a documented one-time interactive step and every affected playbook says so rather than describing a pipeline that cannot run
 
 ### Tier 2 — MCP server and the annotation store
 
 - [ ] **R2000-10**: `c64-program-recon` writes its findings as queryable annotation state — labels, comments, block types, scopes — not only as Markdown prose, and a later session can query that state instead of re-deriving it
 - [ ] **R2000-11**: A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program
-- [ ] **R2000-12**: `c64-program-recon`'s tool-selection reference tells Claude which questions are static (block classification, cross-references, routine boundaries) and which require the running machine (what actually executes, live IRQ vectors, self-modifying code), so neither substrate is used for the other's job
+- [-] **CUT 2026-08-17** — folded into v0.2.0 SKILL-01, same playbook pass. Original: **R2000-12**: `c64-program-recon`'s tool-selection reference tells Claude which questions are static (block classification, cross-references, routine boundaries) and which require the running machine (what actually executes, live IRQ vectors, self-modifying code), so neither substrate is used for the other's job
 - [ ] **R2000-13**: Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so per-bit VIC-II/SID/CIA register writes render with semantic names instead of magic numbers in a disassembly
 
 ### The symbol round trip
@@ -275,7 +296,14 @@ proposal, not a commitment.
 
 - [ ] **R2000-16**: Before any plan is written, five assumptions are checked against a real regenerator2000 build and the results recorded in the repo: (a) whether HTTP MCP mode runs under a pty with no real TTY, which decides whether project bootstrap is automatable — this one gates the rest; (b) whether `--export_asm --assembler acme` output reassembles under `!cpu 6510`; (c) whether `--export_lbl` emits a format DERIV-04's symbol store consumes as-is; (d) whether a `.vsf` from `vice_snapshot_save` loads with the expected machine type and start address; (e) container-side Rust toolchain build time and image size. Any that fails is recorded as an accepted limit stating what it breaks
 
-**Coverage:** 16 proposed requirements, unmapped to phases (milestone not opened).
+**Coverage (revised 2026-08-17 after the scope cut):** 16 proposed → **12 in
+scope**, 4 cut or folded (`R2000-04` folded into Phase 9's install docs,
+`R2000-07` HTML export cut, `R2000-08` reduced to a note on Phase 9 criterion 2,
+`R2000-12` folded into v0.2.0's `SKILL-01`). Two phases, not four.
+
+**Per phase:** Phase 9: `R2000-16`, `R2000-01`, `R2000-02`, `R2000-03`,
+`R2000-05`, `R2000-06`, `R2000-09` · Phase 10: `R2000-10`, `R2000-11`,
+`R2000-13`, `R2000-14`, `R2000-15`
 
 ---
 *Requirements defined: 2026-08-12*

@@ -3,7 +3,14 @@
 ## Milestones
 
 - 🚧 **v0.2.0 Switchable stock-VICE backend** — Phases 1-8 (in progress)
-- 📋 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-12 (proposed, not opened)
+- 📋 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-10 (proposed, not opened)
+
+**Scope was cut on 2026-08-17** against a single test: *does a shipped skill call
+it, or does something a skill calls depend on it?* Measured by diffing the six
+skills' actual `vice_*` usage against `tools-manifest.json` and
+`tools-manifest.stock.json`. v0.2.0 went from 29 open requirements across 4
+phases to 14 across 3; v0.3.0 from 16 across 4 phases to 12 across 2. See "Cut
+from scope" in each milestone.
 
 ## Overview
 
@@ -17,12 +24,17 @@ The journey runs: fix the normative protocol documents and prove the protocol
 against a real build (Phase 1) → make the server able to launch, select, and
 correctly converse with a stock VICE (Phase 2) → port the tools that map 1:1
 onto binary-monitor opcodes (Phase 3) → build the client-side tool seam and the
-6510 disassembler that several later tools depend on (Phase 4) → reimplement the
-tools the fork did inside the emulator, plus client-side screenshot encoding
-(Phase 5) → land the three capability groups only stock has (Phase 6) → restore
-cycle timing and wedge triage (Phase 7) → annotate the surface per backend,
-document the install story, and compare the two backends against each other
-(Phase 8).
+6510 disassembler that several later tools depend on (Phase 4) → build the eight
+skill-called tools stock lacks (Phase 5) → restore cycle timing and wedge triage,
+the last two (Phase 7) → make both backends honest about the two capabilities
+stock provably cannot have, and ship an install story (Phase 8).
+
+**The finish line is not parity with the fork.** It is: a user with an
+apt-installed VICE can run the six shipped skills, and is told plainly where they
+must reach for the fork instead. The skills call 28 tools; 16 already work on
+stock, 10 are buildable and are Phases 5 and 7, and 2 are impossible and are
+Phase 8's job to route honestly. The fork's other 34 tools are called by no
+skill and are not a gap.
 
 ## Standing Constraints
 
@@ -79,10 +91,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
 - [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (18 plans: 13 executed 2026-08-14 + 5 gap-closure 2026-08-16; all four 03-UAT gaps closed and the 2 Critical broker defects fixed and re-confirmed; verified 8/9 + 1 accepted override — disk detach has no stock opcode and is owned by Phase 7) (completed 2026-08-16)
 - [x] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it (completed 2026-08-17)
-- [ ] **Phase 5: Client-Side Derivations and Screenshots** - Reimplement the tools the fork ran inside the emulator, and encode screenshots client-side from the framebuffer
-- [ ] **Phase 6: Stock-Only Gains** - CPU-history tracing, 1541 drive-CPU debugging, and raster-precise conditions / exact palette / full resources
-- [ ] **Phase 7: Cycle Timing and Wedge Triage** - Elapsed-cycle measurement, exact run-until-address, and the "is the emulator advancing" check on stock
-- [ ] **Phase 8: Capability Surface, Docs, and Cross-Backend Verification** - Per-backend support annotation, the install story, skill-playbook revision, and a two-process parity harness
+- [ ] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side
+- [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
+- [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock
+- [ ] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have
 
 ## Phase Details
 
@@ -277,150 +289,128 @@ Notes:
 - **Two planning-time corrections to the note above (Phase 4 research, 2026-08-17).** (a) The real illegal-`NOP` set is **27 opcodes across 6 addressing-mode groups** (6 implied/1-byte, 5 immediate/2-byte, 3 zeropage/2-byte, 6 zeropage,X/2-byte, 1 absolute/3-byte, 6 absolute,X/3-byte) — no grouping of them yields twelve. Criterion 2 above is corrected accordingly, and the verification is written exhaustively over all 256 opcodes, which is a strict superset. (b) **`fluffy-6502` could not be located under that name** on GitHub or the general web, so it is **not** a cross-check source. The `aaabbbcc` bit-pattern derivation test and the byte-exact real-ACME round-trip carry that burden instead, and `THIRD-PARTY-NOTICES.md` records `fluffy-6502` as an unavailable non-source rather than citing it.
 - Over-read by two bytes and drop instructions starting past the requested end, so truncation only ever happens at a genuine memspace boundary.
 - Blocks: DERIV-02 (backtrace needs instruction lengths) and GAIN-01 (CPU-history decode uses the same table).
+### Phase 5: Skill-Critical Derived Tools
 
-### Phase 5: Client-Side Derivations and Screenshots
-
-**Goal**: Tools the fork implemented inside the emulator work client-side on stock, including screenshots
+**Goal**: Every tool the six shipped skills actually call either works on stock or is explicitly routed to the fork
 **Depends on**: Phase 4
-**Requirements**: DERIV-01, DERIV-02, DERIV-03, DERIV-04, DERIV-05, DERIV-06, SHOT-01, SHOT-02, SHOT-03, SHOT-04, SHOT-05
+**Requirements**: DERIV-01 (search/compare), DERIV-04, DERIV-05 (read side), DERIV-06 (read side)
 **Success Criteria** (what must be TRUE):
 
-  1. A user can search, compare and fill memory ranges, group checkpoints and set an ignore count, get a call backtrace, load a symbol file and see addresses resolved to symbol names, and inspect and set sprites including ASCII rendering — all on the stock backend.
-  2. Decoded VIC-II and CIA state marks every internal field stock cannot read as explicitly unavailable, never reporting it as zero.
-  3. A user capturing a screenshot on the stock backend receives a valid PNG at a returned file path, written directly to the container path with no host translation, and the incident record's "saved to" claim is verifiable against the file existing.
-  4. Screenshot capture adds no npm dependency, and screenshot content is visible to Claude as an MCP image content block rather than only as a text-encoded data URI.
-  5. `gatherWedgeEvidence()` no longer host-translates the screenshot path on the stock backend, and torn-frame behaviour is either avoided by capturing while paused or documented.
+  1. A user can search and compare memory ranges on the stock backend.
+  2. A user can load a symbol file and have addresses resolved to symbol names on the stock backend.
+  3. A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable — never reported as zero.
+  4. A user can read and inspect sprites, including ASCII rendering, on the stock backend.
+  5. Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the two tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`), which are Phase 8's business.
 
 **Plans**: TBD
 
 Notes:
 
-- Screenshots are a derived tool through Phase 4's seam, composing `DISPLAY_GET` + `PALETTE_GET` plus local encoding. The two calls can be issued concurrently — the client correlates by request id.
-- Encode with a ~50-line indexed-PNG writer over `node:zlib` (`crc32` since Node 22.2, `deflateSync` for the RFC 1950 stream `IDAT` needs). `DISPLAY_GET` INDEXED8 bytes are already PNG colour-type-3 pixel data — index `N` maps directly to palette entry `N`. `pngjs` cannot write indexed PNGs at all; native encoders are the wrong shape for an `npx`-distributed plugin.
-- Parse `BL`/`BD` off `4 + FL`, not the literal offsets 17/21 the probe hardcodes, and advance palette entries by `1 + IS`, not a fixed 4.
-- Default to the full frame including border. `XO`/`YO`/`IW`/`IH` are degenerate on every VICE machine, so cropping from them is a no-op; an optional `crop: "inner"` must come from a `(DW,DH)` lookup table and refuse-with-note on unrecognised geometry.
-- **Second breakage site, same cause as DERIV-07:** `gatherWedgeEvidence()` calls `rewriteArguments()` itself. On the stock backend, *performing* that translation becomes the bug — its own comment inverts. Route it through the same derived-tool helper the public tool uses rather than branching on backend at the call site.
-- This phase retires the screenshot host-path candidate ladder and makes screenshotting unit-testable for the first time — both were previously recorded as untestable without a real emulator. Treat both as acceptance, not accident.
-- **Parallel:** memory search/compare/fill, checkpoint groups, the symbol store, chip-state decode, sprites, and screenshots are six independent tool families. Only backtrace has an intra-milestone dependency (Phase 4's opcode table).
+- **Scope is set by what the skills call, not by parity with the fork.** Measured against `tools-manifest.json` versus `tools-manifest.stock.json`: the skills call 28 tools; 16 already work on stock, 12 do not, and 2 of those 12 are impossible on stock. That leaves **8 tools in this phase** (`vice_memory_search`, `vice_memory_compare`, `vice_symbols_load`, `vice_symbols_lookup`, `vice_vicii_get_state`, `vice_cia_get_state`, `vice_sprite_get`, `vice_sprite_inspect`) and 2 in Phase 7. Everything else the fork offers is called by **no skill** and is therefore out of scope — see "Cut from scope" below.
+- Only the **read** halves are in scope. `vice_sprite_set`, `vice_vicii_set_state`, `vice_cia_set_state`, `vice_memory_fill` are called by no skill.
+- `DERIV-04` gains a second reason to exist beyond parity: it is the consumer half of the regenerator2000 symbol round trip (v0.3.0). Build the loader so a VICE `.lbl` file from any producer works.
+- `DERIV-07` (derived tools live in sibling modules, intercepted before `rewriteArguments()`) is already complete from Phase 4 and stands as the seam these eight tools land through.
+- **Parallel:** memory search/compare, the symbol store, chip-state decode and sprites are four independent tool families with no ordering between them.
 
-### Phase 6: Stock-Only Gains
+### Phase 6: CUT — Stock-Only Gains
 
-**Goal**: The three capability groups only stock VICE has become usable, with their traps closed rather than discovered later
-**Depends on**: Phase 5
-**Requirements**: GAIN-01, GAIN-02, GAIN-03, GAIN-04, GAIN-05, GAIN-06, GAIN-07, GAIN-08, GAIN-09
-**Success Criteria** (what must be TRUE):
+**Status**: **removed from v0.2.0 scope on 2026-08-17.** Moved to backlog.
+**Was**: CPU-history tracing, 1541 drive-CPU debugging, raster-precise conditions, exact palette, full resource get/set (`GAIN-01`..`GAIN-09`).
 
-  1. On a build that supports it, a user retrieves a CPU instruction-history trace with registers and cycle timestamps; on a build that does not, the tool explains what is missing and which version provides it, distinguishing "opcode absent" from "feature not compiled in".
-  2. A user can set checkpoints and read registers and memory on a 1541 drive CPU; with true drive emulation disabled the tool reports that precondition explicitly instead of returning zeros that look like data.
-  3. After a drive checkpoint hit, stepping and `@bank:` conditions still act on the CPU the user asked for — the tool either restores the contaminated state or refuses, and never silently steps the drive.
-  4. A user can break at an exact raster line and cycle; a condition that would be silently always false — unparenthesised, bare-decimal, `LIN`/`CYC`, lowercase, or out of range for the machine's video standard — is refused with an explanation instead of being sent.
-  5. A user can read the emulator's exact palette and get and set resources beyond today's whitelist, while resources that power-cycle the machine or break the monitor connection are denied outright and drive-resetting ones require explicit intent.
+Why it went: **no skill calls any tool in this group, and no requirement outside
+the group depends on it.** It is a capability surplus over the fork, not a gap
+against it — genuinely interesting, and entirely optional to the milestone goal
+of "the plugin works on a VICE anyone can install".
 
-**Plans**: TBD
+It also carried the milestone's densest trap cluster for no forced reason:
+`default_memspace` contamination from drive checkpoints silently stepping the
+wrong CPU, the `CPUHISTORY_GET` version-and-compile-flag double gate, the
+condition parser's absent operator precedence, and three resources that
+power-cycle the machine one call deep. All of that research is preserved in
+`.planning/research/` and `docs/stock-vice-parity.md` and loses nothing by
+waiting.
 
-Notes:
-
-- **GAIN-05 is in the same phase as GAIN-03 by requirement, not by convenience.** Drive debugging is what creates `default_memspace` contamination: a drive checkpoint hit sets it at `monitor.c:3393-3396`, no binary-monitor command resets it, and afterwards `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the *drive* CPU while `@bank:` conditions fail outright. Shipping GAIN-03 without GAIN-05 silently breaks stepping for the rest of the session.
-- Drive reads on `x64sc` **always succeed** — `check_drive_emu_level_ok()` is a machine-capability check that always passes, so there is no protocol-level way to detect a stopped drive CPU. The real gate is `Drive8TrueEmulation` plus a non-zero `Drive8Type`, and setting TDE resets the drive CPU (destructive, must be labelled).
-- `CPUHISTORY_GET` needs VICE ≥ 3.10 (Debian and all current Ubuntu ship 3.9) **and** is compile-time optional even on 3.10+ — the two failures are distinguishable only by error code (`0x83` vs `0x8f`). Gate on the 4-byte version quad, never the SVN revision, which is zeros in distro builds. Clamp the count field to 65535.
-- Conditions attach to an existing checkpoint by number, cannot be read back, cannot be cleared, and leak if re-set — so keep a client-side condition registry, treat conditions as immutable, and delete the orphan checkpoint if `CONDITION_SET` fails, or a full-range unconditioned breakpoint is left armed.
-- `RESOURCE_SET` ships an **allow-list**, not a deny-list. Hard-block `MachineVideoStandard`, `VICIIModel`, `MachinePowerFrequency` (each power-cycles the machine one call deep), and `BinaryMonitorServer`/`BinaryMonitorServerAddress` (each makes the instance unreconnectable). Resource names are not version-stable (`TrapDevice8` was `VirtualDevice8` before 3.10, no alias) — probe or version-key.
-- **Parallel:** the three research groups (A drive-CPU, B raster conditions, C resources/palette) are independent of each other. Within A, GAIN-03/04/05 are one unit.
+**Phase number 6 is retained, not reused.** Phases 1-4 have committed artifacts
+under `.planning/phases/`; renumbering would invalidate every cross-reference.
 
 ### Phase 7: Cycle Timing and Wedge Triage
 
 **Goal**: "How long did that take" and "is the emulator still advancing" work on the stock backend
-**Depends on**: Phase 6
-**Requirements**: TIME-01, TIME-02, TIME-03, TIME-04, DIRECT-06 *(detach half only — see criterion 4)*
+**Depends on**: Phase 5
+**Requirements**: TIME-01, TIME-02, TIME-03, TIME-04
 **Success Criteria** (what must be TRUE):
 
-  1. A user can measure elapsed CPU cycles on the stock backend on any supported VICE version, by a route whose socket cost has been measured against a real build rather than assumed.
-  2. A user can run until an address is reached exactly, and cycle-bounded execution either works or reports its approximation and error bound honestly rather than implying precision it does not have.
-  3. `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend: two samples straddling a resume, distinguishing advancing-but-jiffy-frozen from a tight loop.
-  4. **DIRECT-06 (detach half, inherited from Phase 3):** disk *detach* on the stock backend either works via the concurrent `-remotemonitor` text-monitor route this phase already stands up, or is closed out as a permanent, documented divergence in `docs/stock-vice-parity.md`. Stock VICE's binary monitor has no detach opcode, so Phase 3 correctly scoped it out (D-13); this phase owns the decision because it is the first phase that establishes the text-monitor route detach would need. Attach itself already works on stock and is not in question.
+  1. A user can measure elapsed cycles across an operation on the stock backend, and a bracket that cannot be measured says so rather than returning zero.
+  2. A user can run to an exact address on the stock backend, with the temporary checkpoint cleaned up whether the run succeeded, timed out, or the machine restarted underneath it.
+  3. `vice_diagnose` distinguishes, on the stock backend, an emulator that is genuinely wedged from one stopped at the user's own checkpoint, one that crashed and respawned, one merely paused, **and one whose binary monitor is already held by another client**.
+  4. `vice-wedge-triage`'s documented opening move works on stock rather than returning fork HTTP failure text.
 
 **Plans**: TBD
 
 Notes:
 
-- This phase must **resolve the CONFLICT and REFINEMENT blocks** in `.planning/notes/stock-vice-migration-revised-loss-ledger.md` rather than inherit them. Route 1 (reconstruct from `LIN`/`CYC` with a frame counter from an unconditioned non-stopping checkpoint at `$EA31`) costs ~50-60 unsolicited `CHECKPOINT_INFO` frames per second for as long as the stopwatch exists, emitted synchronously from inside the CPU loop. The REFINEMENT does not rescue it — every hit of a frame counter is a wanted hit, so a condition cannot reduce the traffic. Route 2 (the text monitor's real `stopwatch` over a concurrent `-remotemonitor`, which coexists with `-binarymonitor`) avoids it. Decide with measurement, and record the decision.
-- Route 2's dependency is why this phase sits after Phase 6: enabling the text monitor is either a broker launch flag or `RESOURCE_SET MonitorServer 1`, and keeping both options open means not blocking on a launch-flag decision made in Phase 2.
-- There is no monotonic cycle register. `LIN`/`CYC` are readable but wrap every frame, are derived from the CPU clock rather than the VIC-II raster counter (fixed phase offset from `$D012`), are identical across all memspaces, and are silently read-only.
-- Prefer registers over `$D012` for the advancing check, and add the jiffy clock at `$A0-$A2`. Both samples must straddle an `EXIT` or the values are frozen.
+- These are the last two skill-called tools missing on stock: `vice_cycles_stopwatch` and `vice_run_until`. Together with Phase 5's eight, that closes the buildable half of the 12-tool gap.
+- Criterion 3's fourth state is new and comes from `PROTO-08`'s human half: stock VICE's binary monitor serves exactly one client, and a second connection is behaviourally identical to a hang. Tracked as a pending todo dated 2026-08-17.
+- `vice-sync.ts`'s invariants survive unchanged: exactly one resume per wait; poll on `hit_count`, never on paused state; never delete a VICE-marked temporary checkpoint.
+- **Dropped from this phase:** `vice_disk_detach`, the deferred half of `DIRECT-06`. No skill calls it, stock has no detach opcode, and `vice_disk_attach` of a different image covers the real workflow. Recorded under "Cut from scope".
+- No monotonic cycle register exists on stock. `LIN`/`CYC` are readable but not monotonic; reconstruct absolute cycles or read the text monitor's `stopwatch`.
 
-### Phase 8: Capability Surface, Docs, and Cross-Backend Verification
+### Phase 8: Capability Honesty and the Install Story
 
-**Goal**: A user knows what each backend gives them, can get there from a package manager, and the two backends' output has actually been compared
+**Goal**: A user can install this from a package manager and is never silently given a wrong answer by a backend that cannot do the thing
 **Depends on**: Phase 7
-**Requirements**: BACK-05, DIST-01, DIST-02, DIST-03, SKILL-01, VERIF-03
+**Requirements**: BACK-05, DIST-01, DIST-02, DIST-03, SKILL-01
 **Success Criteria** (what must be TRUE):
 
-  1. The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — the manifest itself is trimmed per backend (D-07), so this declaration lives in documentation and covers tools absent from the active backend's list.
-  2. Calling a tool the active backend does not advertise returns an error naming the capability, the reason, and which backend provides it — not a generic unknown-tool error, never a silent wrong answer, and never a no-op success. On stock this is the out-of-manifest call path, since the tool is absent from `tools/list` rather than present-and-refusing.
-  3. A new user can read which VICE they need, where to get it per platform, what differs per version, and that the fork is required for SID read-back and matrix keyboard.
-  4. Installing the plugin plus a package-manager stock VICE is sufficient to drive the emulator end to end, verified on a clean machine or container rather than asserted.
-  5. Tool output has been compared between backends for a known program using a harness that runs **two server processes**, one per backend, with every divergence either explained as expected or filed as a defect.
-  6. No skill playbook instructs Claude to use a capability the active backend cannot provide without naming the stock-backend route or the fork requirement — covering `c64-program-recon`'s `vice_keyboard_matrix` instruction and whole-chip-read guidance, `c64-ram-capture`'s matrix-keyboard "hit any key" step, and `vice-wedge-triage`'s stopwatch bracket.
+  1. Calling a tool the active backend does not advertise returns an error naming the capability, the reason, and which backend provides it — never a generic unknown-tool error and never a silent wrong answer.
+  2. Every skill whose documented method depends on a fork-only capability either names the stock route or states the fork requirement. The two proven-unrecoverable tools (`vice_sid_get_state`, `vice_keyboard_matrix`) are named explicitly at their point of use.
+  3. A user installs the plugin and a working VICE from a package manager by following the documentation, with the backend choice and its consequences stated.
+  4. The documentation states which backend each tool works on, derived from the shipped manifests rather than maintained by hand.
 
 **Plans**: TBD
 
 Notes:
 
-- **VERIF-03 is a harness design task, not a test run.** Backend selection is project-level — one backend per MCP server process — so both backends cannot be live in one process. The harness must stand up two servers, drive the same script through each, and diff structured output, with a documented divergence list (disassembly spelling, illegal-opcode rendering, and everything `docs/stock-vice-parity.md` §A.7 already licensed) treated as expected rather than as failures. Budget it as real work.
-- BACK-05 lands here rather than in Phase 2 because the error it returns must name the capability and the restoring backend, which requires the completed per-backend capability matrix — and that requires the full tool inventory from Phases 3-7.
-- BACK-05 also carries the runtime half of the skill-methodology problem: `vice_keyboard_matrix` on stock must say "the fork backend provides this" instead of doing nothing. Under D-07 that tool is **absent** from stock's `tools/list`, so BACK-05's error is raised on an out-of-manifest `tools/call` — an MCP client may call a tool it was never advertised, and that is the case this criterion covers. See Coverage Notes for the prose half.
-- **Parallel:** the manifest annotation, the install/version documentation, and the parity harness are three independent plans.
+- **This is the phase the milestone actually exists for.** Phases 5 and 7 close the buildable tool gap; this one makes the two backends honest about the gap that cannot be closed. Two tools the skills call are provably unrecoverable on stock — without criteria 1 and 2, a stock user hits them as failures with no route forward.
+- The three halves of one problem land together by design: `BACK-05` is the runtime error, `SKILL-01` is the playbook methodology, `DIST-02` is the install documentation. Splitting them leaves the user carried by whichever half shipped.
+- Criterion 4 must be **derived** from `tools-manifest.json` / `tools-manifest.stock.json`, not hand-written. A hand-maintained support table drifts on the first tool added.
+- **Dropped from this phase:** `VERIF-03`, the two-process cross-backend parity harness. `PROJECT.md` already declares byte-identical parity a non-goal, so the harness would measure something the project does not promise. Criterion 4's manifest-derived table gives the user the same information for far less work.
+- Re-check for prebuilt regenerator2000 binaries when writing criterion 3, in case v0.3.0's prerequisite can be stated without `cargo install`.
 
-## Coverage Notes
+## Cut from scope (v0.2.0, 2026-08-17)
 
-**Requirement count corrected.** `REQUIREMENTS.md` stated "63 total" in its
-Coverage block, but the file contains **67** requirement items
-(BACK 5, BROK 3, DERIV 7, DIRECT 9, DISASM 7, DIST 3, DOC 3, GAIN 9, PROTO 8,
-SHOT 5, TIME 4, VERIF 4). The 63 was stale — possibly carried over from
-PROJECT.md's "~63 tools" figure. All 67 are mapped; the Coverage block has been
-corrected to 67.
+Removed after measuring the shipped skills' actual tool usage against both
+manifests. **The test applied: does a skill call it, or does something a skill
+calls depend on it?** Nothing below passes.
 
-**Coverage:** 68/68 v0.2.0 requirements mapped to exactly one phase. No orphans,
-no duplicates. (67 from the corrected count, plus `SKILL-01` added by user decision.)
+| Cut | Requirements | Why |
+|---|---|---|
+| Client-side screenshots and the PNG encoder | `SHOT-01`..`SHOT-05` | No skill calls `vice_display_screenshot`. Its only consumer is `gatherWedgeEvidence()`, where `captureStep()` already returns `{available: false}` on failure — so the incident record degrades from five evidence items to four and is still written. Five requirements and an indexed-PNG writer for one optional evidence field. |
+| Call backtrace | `DERIV-02` | No skill calls `vice_backtrace`. |
+| Checkpoint groups and ignore counts | `DERIV-03` | No skill calls any `vice_checkpoint_group_*` or `vice_checkpoint_set_ignore_count`. |
+| Memory fill; every `*_set_state` write half | part of `DERIV-01`, `DERIV-05`, `DERIV-06` | No skill calls `vice_memory_fill`, `vice_sprite_set`, `vice_vicii_set_state`, `vice_cia_set_state`. |
+| All stock-only gains | `GAIN-01`..`GAIN-09` | Entire Phase 6. Capability surplus, not a gap. See above. |
+| Disk detach | remainder of `DIRECT-06` | No skill calls `vice_disk_detach`; stock has no detach opcode; re-attaching a different image covers the workflow. |
+| Cross-backend parity harness | `VERIF-03` | Byte-identical parity is already an explicit non-goal in `PROJECT.md`. |
 
-**Gap identified, not silently absorbed.** The loss ledger records that **3 of 6
-skills need methodology revision** (`c64-program-recon`'s "use
-`vice_keyboard_matrix`" instruction, `c64-ram-capture`'s matrix-keyboard step in
-its "hit any key" gate, `vice-wedge-triage`'s stopwatch bracket, and
-`c64-program-recon`'s "prefer whole-chip state reads" guidance). No v0.2.0
-requirement covers revising that **playbook prose**:
+**Net effect:** 29 open requirements → 14. Phase 6 removed entirely; Phases 5, 7
+and 8 narrowed to the ten buildable skill-called tools plus the capability-honesty
+work that makes the two unbuildable ones survivable.
 
-- TIME-04 covers the wedge-triage *mechanism*, not the SKILL.md text.
-- BACK-05 covers the *runtime* symptom — a stock-backend call to a fork-only
-  tool now names the capability and the backend that restores it, instead of
-  silently doing nothing.
+**Kept despite being uncalled:** nothing. Every retained requirement is either
+called by a skill, or is `BACK-05`/`SKILL-01`/`DIST-*`, which exist precisely
+because two called tools cannot be built.
 
-- DIST-02 covers *install* documentation, not skill methodology.
-
-So the failure mode is caught at runtime but the playbooks still tell Claude to
-do something that will be refused.
-
-**RESOLVED (user decision, 2026-08-12): `SKILL-01` added and mapped to Phase 8.**
-The skills whose documented methodology depends on fork-only capabilities must
-name the stock-backend route or state the fork requirement. It is Phase 8 success
-criterion 6, and it sits alongside `DIST-02` (install docs) and `BACK-05` (the
-runtime error) so all three halves of the same problem land together. Coverage is
-therefore **68/68**, not 67/67.
-
-The alternatives considered and rejected: deferring to a follow-up milestone
-(leaves the playbooks wrong while the runtime error carries the user), and
-splitting it so only `vice-wedge-triage` is fixed in Phase 7 (fixes the skill
-whose mechanism changed but leaves the two keyboard-dependent playbooks stale).
-
-**No UI phases.** Scanned every phase for UI/frontend indicators. This milestone
-is an MCP server, a protocol client, and a broker — there is no frontend
-surface. Phase 5's screenshot and sprite work concerns an emulator framebuffer
-and PNG bytes, not an interface, so no `UI hint` annotation applies.
+**How to reverse a cut:** each row above names its requirements. They remain in
+`REQUIREMENTS.md` marked `CUT` with this rationale, so restoring one is a
+scope decision, not an archaeology exercise.
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 7 → 8. **Phase 6 is cut**;
+its number is retained so committed artifacts under `.planning/phases/` keep
+their references.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -428,10 +418,14 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Client-Side Derivations and Screenshots | 0/TBD | Not started | - |
-| 6. Stock-Only Gains | 0/TBD | Not started | - |
+| 5. Skill-Critical Derived Tools | 0/TBD | Not started | - |
+| 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
-| 8. Capability Surface, Docs, and Cross-Backend Verification | 0/TBD | Not started | - |
+| 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
+
+**Remaining scope:** 14 open requirements across 3 phases, covering the 10
+buildable skill-called tools missing on stock plus the capability-honesty work
+for the 2 that cannot be built. Was 29 requirements across 4 phases.
 
 ---
 
@@ -543,107 +537,80 @@ Consequences carried, not solved: r2000-assisted two-release diffing in
 user (`R2000-04`) rather than worked around. Synthesizing a `.regen2000proj`
 ourselves was considered and rejected — it depends on an undocumented serde
 format, and the pty bootstrap makes it unnecessary.
-
 ## Phases
 
-- [ ] **Phase 9: Verified Batch Route** - Check the five load-bearing assumptions against a real build, automate project bootstrap, then land the batch-CLI integration and retire `acme-build`'s `toacme` shim
-- [ ] **Phase 10: Container-Side MCP Server** - Stand up the regenerator2000 MCP server beside the proxy under the never-`--vice` guard, with the two-project limit reported rather than hit
-- [ ] **Phase 11: Annotation Store and Enums** - Recon writes queryable state instead of prose only, and `memmap.json` generates regenerator2000 enums
-- [ ] **Phase 12: Symbol Round Trip, Install Story, and Playbooks** - Close the DERIV-04 loop in both directions and finish the prerequisite documentation and skill revisions
+Two phases, not four. Collapsed 2026-08-17 by the same test applied to v0.2.0:
+**does a skill need it, or does something a skill needs depend on it?**
 
-### Phase 9: Verified Batch Route
+- [ ] **Phase 9: Probe, Bootstrap, and the Removal** - Answer the five load-bearing assumptions against a real build, automate project creation, and retire `acme-build`'s `toacme` shim
+- [ ] **Phase 10: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
 
-**Goal**: The batch route is proven against a real build and is good enough to delete the `toacme` shim
-**Depends on**: v0.2.0 complete
-**Requirements**: R2000-16, R2000-05, R2000-06, R2000-07, R2000-08, R2000-09, R2000-03
+### Phase 9: Probe, Bootstrap, and the Removal
+
+**Goal**: The bet is de-risked, project creation needs no human, and the one thing regenerator2000 makes obsolete is gone
+**Depends on**: nothing — **may run now, ahead of v0.2.0 Phases 5-8** (see the dependency note above)
+**Requirements**: R2000-16, R2000-01, R2000-02, R2000-03, R2000-05, R2000-06, R2000-09
 **Success Criteria** (what must be TRUE):
 
-  1. All five assumptions in `R2000-16` are answered against a real regenerator2000 build and recorded in the repo — pty tolerance, ACME export reassembly under `!cpu 6510`, `--export_lbl` format versus what DERIV-04 will consume, `.vsf` load fidelity, and container-side toolchain cost — with any that fail recorded as an accepted limit stating what it breaks.
-  2. A raw `.prg` or a `.vsf` snapshot becomes a `.regen2000proj` **without a human**: HTTP MCP mode under a pty, auto-analysis on load, then `r2000_save_project`. If the pty check in criterion 1 fails, this degrades to a documented one-time interactive step and every affected playbook says so.
-  3. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and the replacement route is documented in their place.
-  4. A user can turn a `.prg` or an emulator-depacked snapshot into ACME source that **reassembles**, verified by running the assembler, not asserted.
-  5. A user can produce an HTML disassembly with working cross-reference links.
+  1. All five assumptions in `R2000-16` are answered against a real build and recorded in the repo, with any failure recorded as an accepted limit stating what it breaks.
+  2. A raw `.prg` or a `.vsf` snapshot becomes a `.regen2000proj` **without a human** — HTTP MCP mode under a pty, auto-analysis on load, then `r2000_save_project`. If `R2000-16`(a) fails, this degrades to a documented one-time interactive step and every affected playbook says so.
+  3. The launch path **refuses** to pass `--vice`, enforced in code and tested, and no argument passed to regenerator2000 is host-translated.
+  4. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and a replacement route producing source that **reassembles** — verified by running the assembler — is documented in its place.
+  5. The install documentation names regenerator2000 as a prerequisite, states the toolchain cost plainly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
 
 **Plans**: TBD
 
 Notes:
 
-- **Criterion 1(a) gates the rest of the milestone.** Whether HTTP MCP mode tolerates a pty with no real TTY decides whether criterion 2 is an automated bootstrap or a documented manual step — and that in turn decides how every later playbook reads. Do not plan Phases 10-12 in detail before it runs.
-- The bootstrap in criterion 2 exists because `validate_headless_mode` is an extension allowlist, not an information requirement: `.prg` and `.vsf` already carry origin, system and entry point. Prefer `.vsf` over a flat `.raw` for anything coming out of the emulator — `.raw` loads at origin `$0000` with no override.
-- The removal in criterion 2 is smaller than it looks: `disasm` is a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`). The real removal is documentary — ~50 lines of `SKILL.md` caveats that exist only because `toacme` does a flat linear decode (BASIC stub read as instructions, out-of-range labels needing manual definition, illegal-opcode indentation, the `.dis.a` → `.dis.asm` Read-tool workaround).
-- Criterion 4's reassembly check is the honest version of what `SKILL.md` currently only advises. regenerator2000 ships `--verify-roundtrip` (export → assemble → diff) — prefer using its gate over building one. Note it implies `--headless`, so it needs a project file, i.e. criterion 2 first.
-- **Parallel:** the assumption probe (criterion 1) precedes everything, and criterion 2 precedes anything using a batch flag. The `acme-build` retirement, ACME export and HTML export are then three independent units.
+- **Criterion 1 gates everything, including whether Phase 10 is worth starting.** Run it first, alone, and read the result before planning further. If regenerator2000 cannot be driven without a human, the annotation store is not reachable from a skill and the milestone should be reconsidered rather than replanned.
+- **Run this phase before v0.2.0 Phase 8.** It has no v0.2.0 dependency, and knowing its answers lets Phase 8 write the install story once — already naming regenerator2000 — instead of writing it and then rewriting it here. That is the only genuine rework between the two milestones.
+- Criterion 3's "no host translation" is a deliberate *absence*, the mirror image of `DERIV-07` where translation was wrongly applied. Assert it in a test so nobody adds it later.
+- Criterion 4 is the entire deletion this milestone earns: a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`) plus ~50 lines of `SKILL.md` caveats that exist only because `toacme` does a flat linear decode. Prefer regenerator2000's own `--verify-roundtrip` over building a reassembly gate — note it implies `--headless`, so criterion 2 comes first.
+- Prefer `.vsf` over `.raw` for anything out of the emulator: snapshots carry memory, machine type and start address, while `.raw` loads at origin `$0000` with no CLI override.
 
-### Phase 10: Container-Side MCP Server
+### Phase 10: Annotation Store, Enums, and the Symbol Round Trip
 
-**Goal**: Claude can drive regenerator2000 over MCP from inside a devcontainer, with the socket-ownership rule enforced in code
-**Depends on**: Phase 9
-**Requirements**: R2000-01, R2000-02, R2000-04, R2000-11
+**Goal**: Recon findings become state a later session can query, register writes read as names, and names flow both ways between the store and the running machine
+**Depends on**: Phase 9, and v0.2.0 Phase 5 for `DERIV-04` on the stock backend
+**Requirements**: R2000-10, R2000-11, R2000-13, R2000-14, R2000-15
 **Success Criteria** (what must be TRUE):
 
-  1. The launch path **refuses** to pass `--vice`, enforced in code and tested, so no configuration or user error can put a second client on the binary monitor.
-  2. Claude reaches the regenerator2000 MCP server from inside a devcontainer, and no argument passed to it is host-translated.
-  3. Two projects open in separate devcontainers both work; a second project in the *same* namespace is refused with a message naming the hardcoded-port cause and the upstream gap, not a bind error or a hang.
-  4. A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program.
+  1. `c64-program-recon` writes labels, comments, block types and scopes into the annotation store, and a later session queries that store instead of re-deriving the findings from Markdown.
+  2. A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program.
+  3. Enums generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA writes with semantic names — `lda #$1b / sta $d011` reads as named bits.
+  4. Symbols annotated in regenerator2000 resolve live addresses through `vice_symbols_load`, and names discovered against the running machine flow back into the store — a round trip, not a one-way dump.
 
 **Plans**: TBD
 
 Notes:
 
-- Criterion 1 is the load-bearing one. It mirrors `vice.ts`'s `DENY_LIST` pattern: one place, checked at the dispatch seam, never re-derived locally.
-- Criterion 2's "no host translation" is a deliberate *absence*. It is the mirror image of `DERIV-07` — there, translation was wrongly applied; here, applying it would be the bug. Assert it in a test rather than trusting that nobody adds it later.
-- Criterion 3 is a reporting requirement, not a pooling one. The broker is deliberately **not** extended to pool regenerator2000 instances — that would only be needed for host-side operation, which is blocked upstream by both the boolean `--mcp-server` and the loopback bind.
-- Consider whether the stdio transport avoids the port question entirely. Upstream documents it as "experimental/testing only", so treat it as an investigation, not a plan.
+- Criterion 1 is why this milestone exists. Today `templates/memory-map.template.md` produces prose that nothing can query, diff, or undo.
+- Criterion 3 is the most distinctive thing available here — **neither project can do it alone.** `memmap.json` holds the bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`.
+- Criterion 4 works on the **fork backend today** — `vice_symbols_load` and `vice_symbols_lookup` already ship there. `DERIV-04` (v0.2.0 Phase 5) is what extends it to stock, which is why this phase depends on Phase 5 but this milestone as a whole does not depend on v0.2.0.
+- `--export_lbl` / `--import_lbl` are **VICE label files** on both sides. No glue format to invent; if Phase 9's criterion 1(c) found a mismatch, resolve it here.
 
-### Phase 11: Annotation Store and Enums
+## Cut from v0.3.0 scope (2026-08-17)
 
-**Goal**: Recon findings become state a later session can query, and register writes read as names instead of magic numbers
-**Depends on**: Phase 10
-**Requirements**: R2000-10, R2000-12, R2000-13
-**Success Criteria** (what must be TRUE):
+| Cut | Requirements | Why |
+|---|---|---|
+| Separate MCP-server-standup phase | (was Phase 10) | Wiring is a task inside Phase 9's criterion 3, not a phase. Nothing else was in it once the two-project limit became a documentation line. |
+| HTML export with clickable xrefs | `R2000-07` | A shareable artifact no skill produces or consumes. Genuinely nice; not why we are here. Available ad-hoc via `--export_html` regardless. |
+| Two-project limit as a reported error | `R2000-04` | Folded into Phase 9's install documentation as a stated limitation. Building detection-and-reporting for an upstream port collision is work in the wrong place. |
+| Static-vs-live tool-selection axis | `R2000-12` | Folded into v0.2.0's `SKILL-01`, which is already rewriting the same playbooks for backend routing. One pass over `c64-program-recon`, not two. |
+| `.vsf`/`.raw` bridge as its own requirement | `R2000-08` | Reduced to a note on Phase 9 criterion 2 — it is which file extension you hand over, not a deliverable. |
 
-  1. `c64-program-recon` writes labels, comments, block types and scopes into an annotation store, and a later session queries that store instead of re-deriving the findings from the Markdown.
-  2. `c64-program-recon`'s tool-selection reference tells Claude which questions are static and which need the running machine, so neither substrate is used for the other's job.
-  3. Enum definitions generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA register writes with semantic names — `lda #$1b / sta $d011` reads as named bits.
-
-**Plans**: TBD
-
-Notes:
-
-- Criterion 1 is the milestone's main prize. Today `templates/memory-map.template.md` produces prose nothing can query, diff, or undo.
-- Criterion 3 is the most distinctive gain available here — **neither project can do it alone.** `memmap.json` holds the bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`. Generate once, benefit on every disassembly.
-- Criterion 2 adds a third axis to tool selection on top of stock-vs-fork. Reuse the `SKILL-01` shape rather than inventing a second convention for "which backend answers this".
-- **Parallel:** the enum generator (criterion 3) is independent of the recon rewrite (criteria 1-2) — different skills, different files.
-
-### Phase 12: Symbol Round Trip, Install Story, and Playbooks
-
-**Goal**: Names flow in both directions between the annotation store and the live emulator, and the prerequisite is honestly documented
-**Depends on**: Phase 11, and v0.2.0 Phase 5 (DERIV-04)
-**Requirements**: R2000-14, R2000-15, R2000-03
-**Success Criteria** (what must be TRUE):
-
-  1. Symbols annotated in regenerator2000 are exported and consumed by DERIV-04's symbol store, so live addresses resolve to the names the user chose.
-  2. Names discovered against the running machine flow back into the annotation store, closing the round trip rather than being a one-way dump.
-  3. The install documentation names regenerator2000 as a prerequisite alongside VICE, states the toolchain cost honestly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
-
-**Plans**: TBD
-
-Notes:
-
-- Criterion 1 closes a loop v0.2.0 leaves open: DERIV-04 consumes a symbol file but nothing in the project *produces* one. regenerator2000's `--export_lbl` emits **VICE label files** and `--import_lbl` reads them — native format on both sides, no glue format to invent.
-- Criterion 3 is the honest half of decision D-R2. No prebuilt release assets exist upstream, so install means `cargo install regenerator2000` and a Rust toolchain. Say so plainly; do not bury it. Re-check for prebuilt binaries before writing the docs — the project is young and may have shipped them by then.
-- **Depends on v0.2.0 Phase 5**, not just on Phase 11. If DERIV-04 shipped in a shape that does not match `--export_lbl`, Phase 9's criterion 1 will already have surfaced it.
+**Net effect:** 4 phases → 2, and 16 requirements → 12 (with 4 folded rather than
+abandoned). Phases 11 and 12's numbers are not reused.
 
 ## Progress
 
-**Execution Order:** 9 → 10 → 11 → 12
+**Execution Order:** 9 → 10. Phase 9's criterion 1 may run **now**, ahead of
+v0.2.0 Phases 5-8.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. Verified Batch Route | 0/TBD | Not started | - |
-| 10. Container-Side MCP Server | 0/TBD | Not started | - |
-| 11. Annotation Store and Enums | 0/TBD | Not started | - |
-| 12. Symbol Round Trip, Install Story, and Playbooks | 0/TBD | Not started | - |
+| 9. Probe, Bootstrap, and the Removal | 0/TBD | Not started | - |
+| 10. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
