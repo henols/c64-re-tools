@@ -235,12 +235,21 @@ Notes:
 **Success Criteria** (what must be TRUE):
 
   1. Client-side tools are intercepted **before** `forwardToVice()` runs `rewriteArguments()` and live in sibling modules rather than in `vice-proxy.ts`; a test proves a derived tool receives the container path and never the host-translated one.
-  2. A user can disassemble a memory range on the stock backend, and all 256 opcodes decode with correct instruction lengths — including the undocumented 6510 set and, in particular, the twelve `NOP` variants whose operand lengths desynchronise everything after them when wrong.
+  2. A user can disassemble a memory range on the stock backend, and all 256 opcodes decode with correct instruction lengths — including the undocumented 6510 set and, in particular, the illegal `NOP`-class variants (**27 opcodes across 6 addressing-mode groups**, not twelve — corrected during Phase 4 planning, see Notes) whose operand lengths desynchronise everything after them when wrong.
   3. Branch instructions render the resolved target address rather than the raw offset; a partial instruction at the end of a range is reported as truncated rather than fabricated; `JMP ($xxFF)` carries an explicit NMOS page-wrap warning; and symbol substitution is applied only where operand role and width prove it cannot change the encoding.
   4. Disassembly re-assembles through ACME, verified by a round-trip test whose exclusions are enumerated and asserted rather than skipped.
   5. The disassembler adds no npm dependency and no GPL-licensed material, and the opcode table's zlib provenance is attributed in the source and in third-party notices.
 
-**Plans**: TBD
+**Plans**: 7 plans in 6 waves
+
+Plans:
+- [ ] 04-01-PLAN.md — the committed 256-entry 6510 opcode table and its bit-pattern derivation test (wave 1)
+- [ ] 04-02-PLAN.md — the derived-tool seam: stock-derived.ts, withDerivedTool(), and D-02's two enforcement mechanisms (wave 1)
+- [ ] 04-03-PLAN.md — the pure decoder: resolved branch targets, truncation, page-wrap notes (wave 2)
+- [ ] 04-04-PLAN.md — the ACME-ready renderer: !byte substitution, width invariant, symbol gating (wave 3)
+- [ ] 04-05-PLAN.md — vice_disassemble on the stock backend, through the derived adapter (wave 4)
+- [ ] 04-06-PLAN.md — ACME in CI plus the byte-exact round-trip and substitution-membership assertions (wave 5)
+- [ ] 04-07-PLAN.md — third-party notices, the publish gate, and the parity-doc divergences (wave 6)
 
 Notes:
 
@@ -248,6 +257,7 @@ Notes:
 - The hazard being closed: `rewriteArguments()` runs at `vice-proxy.ts:2773` **inside** `forwardToVice()` and before `call()`. A derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container.
 - **Parallel, and the biggest parallelism win in the milestone:** the disassembler library (DISASM-02..07) is a pure function with no protocol dependency and no emulator requirement. It can be built and fully tested alongside Phase 2 or Phase 3. Only DISASM-01 — the tool that reads memory through the seam — needs Phase 3.
 - The table is transcoded from cc65's `opc6502x.c` (zlib), cross-checked against `fluffy-6502` (MIT) and ACME's illegal-opcode matrix, with mnemonics re-spelled to ACME's `!cpu 6510` set. **Nothing is sourced from VICE** — VICE is GPL-2 and this repo is MIT.
+- **Two planning-time corrections to the note above (Phase 4 research, 2026-08-17).** (a) The real illegal-`NOP` set is **27 opcodes across 6 addressing-mode groups** (6 implied/1-byte, 5 immediate/2-byte, 3 zeropage/2-byte, 6 zeropage,X/2-byte, 1 absolute/3-byte, 6 absolute,X/3-byte) — no grouping of them yields twelve. Criterion 2 above is corrected accordingly, and the verification is written exhaustively over all 256 opcodes, which is a strict superset. (b) **`fluffy-6502` could not be located under that name** on GitHub or the general web, so it is **not** a cross-check source. The `aaabbbcc` bit-pattern derivation test and the byte-exact real-ACME round-trip carry that burden instead, and `THIRD-PARTY-NOTICES.md` records `fluffy-6502` as an unavailable non-source rather than citing it.
 - Over-read by two bytes and drop instructions starting past the requested end, so truncation only ever happens at a genuine memspace boundary.
 - Blocks: DERIV-02 (backtrace needs instruction lengths) and GAIN-01 (CPU-history decode uses the same table).
 
