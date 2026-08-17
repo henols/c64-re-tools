@@ -318,7 +318,7 @@ Plans:
 
 **Wave 3** *(blocked on 05-03/04/05 and 05-06; takes the same shared files over)*
 
-- [ ] 05-07-PLAN.md — register the four DERIV-05/DERIV-06 tools: manifest 30 -> 34 with eleven `enum: [false]` unavailability pins, `files[]` 41 -> 44, four address-dispatching conformance cases, phase-neutral tarball regression list [wave 3]
+- [x] 05-07-PLAN.md — register the four DERIV-05/DERIV-06 tools: manifest 30 -> 34 with eleven `enum: [false]` unavailability pins, `files[]` 41 -> 44, four address-dispatching conformance cases, phase-neutral tarball regression list [wave 3]
 
 **Wave 4** *(blocked on 05-07)*
 
@@ -438,7 +438,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 6/8 | In Progress|  |
+| 5. Skill-Critical Derived Tools | 7/8 | In Progress|  |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
