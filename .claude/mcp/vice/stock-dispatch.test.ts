@@ -38,6 +38,7 @@ import { CommandType } from "./stock-protocol.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
+import { resetSymbolStoreForTest } from "./stock-symbols.ts";
 import {
   resetCheckpointStateForTest,
   handleCheckpointSetCondition,
@@ -954,11 +955,11 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 26 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
- * tools plus 04-05's vice_disassemble, the first derived-tool entry), driven
- * from an explicit array literal (per this plan's own acceptance criteria)
- * so a missing entry fails as a NAMED assertion rather than a generic count
- * mismatch. */
+/** The 30 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+ * tools, 04-05's vice_disassemble, and Phase 5's four DERIV-01/DERIV-04
+ * derived tools), driven from an explicit array literal (per this plan's
+ * own acceptance criteria) so a missing entry fails as a NAMED assertion
+ * rather than a generic count mismatch. */
 const REGISTERED_TOOL_NAMES = [
   "vice_ping",
   "vice_memory_read",
@@ -986,6 +987,10 @@ const REGISTERED_TOOL_NAMES = [
   "vice_keyboard_petscii",
   "vice_joystick_set",
   "vice_disassemble",
+  "vice_memory_search",
+  "vice_memory_compare",
+  "vice_symbols_load",
+  "vice_symbols_lookup",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -1002,20 +1007,20 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-test("dispatch: stockHandlerFor returns a function for every one of the 26 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 30 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 26", () => {
+test("dispatch: the table's key count is exactly 30", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 26-name list rather than reaching into the
+  // this test drives the same 30-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 26);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 26);
+  assert.equal(hits.length, 30);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 30);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
@@ -1650,6 +1655,39 @@ conformanceTest("vice_memory_banks", async () => {
   assertAnswerConforms("vice_memory_banks", result);
 });
 
+// --------------------------------------------------------- vice_memory_search / vice_memory_compare (05-01, DERIV-01)
+
+conformanceTest("vice_memory_search", async () => {
+  const session = buildConformanceSession("conformance-vice_memory_search", (commandType) => {
+    if (commandType === CommandType.MemoryGet) {
+      // $1000-$100f inclusive is 16 bytes -- a short read is refused as a
+      // wrong answer (never a partial success), so the fixture must match
+      // the requested range's length exactly.
+      return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x4c, 0x00, 0xa0, 0xea, 0xea, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), related: [] };
+    }
+    throw new Error(`vice_memory_search: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_memory_search", { start: "$1000", end: "$100f", pattern: [0x4c] }, deps);
+  assertAnswerConforms("vice_memory_search", result);
+});
+
+conformanceTest("vice_memory_compare", async () => {
+  let calls = 0;
+  const session = buildConformanceSession("conformance-vice_memory_compare", (commandType) => {
+    if (commandType === CommandType.MemoryGet) {
+      calls += 1;
+      const bytes = calls === 1 ? Uint8Array.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]) : Uint8Array.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x09]);
+      return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes, related: [] };
+    }
+    throw new Error(`vice_memory_compare: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_memory_compare", { mode: "ranges", range1_start: "$1000", range1_end: "$1007", range2_start: "$2000" }, deps);
+  assertAnswerConforms("vice_memory_compare", result);
+  assert.equal(calls, 2, "vice_memory_compare must answer exactly two MemoryGet calls, one per range");
+});
+
 // --------------------------------------------------------- registers
 
 conformanceTest("vice_registers_get", async () => {
@@ -1988,6 +2026,81 @@ test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL
     else process.env.HOST_WORKSPACE_PATH = prevHostWs;
     if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
+  }
+});
+
+// --------------------------------------------------------- vice_symbols_load / vice_symbols_lookup (05-02, DERIV-04)
+
+/** The exact ACME-`--vicelabels`-shaped fixture recorded in 05-02-SUMMARY.md
+ * -- reused verbatim so this conformance case's answer counts match that
+ * plan's own documented answer key (symbolCount: 4, duplicateNames: 1,
+ * skippedLines: 3, lineCount: 8). */
+const SYMBOLS_FIXTURE = `al C:0810 .main
+al C:d020 .vic_cborder
+al C:FFD2 .chrout
+
+; this is not a label
+break $0810
+al C:0900 .main
+al C:0810 .entry
+`;
+
+conformanceTest("vice_symbols_load", async () => {
+  await withTempRepoRootForConformance(async (repoRootDir) => {
+    writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
+    const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const result = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, deps);
+    assertAnswerConforms("vice_symbols_load", result);
+    resetSymbolStoreForTest();
+  });
+});
+
+conformanceTest("vice_symbols_lookup", async () => {
+  await withTempRepoRootForConformance(async (repoRootDir) => {
+    writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
+    const loadDeps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const loadResult = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, loadDeps);
+    assert.equal(loadResult.isError, false, "the fixture load must succeed before this case looks anything up");
+
+    const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const result = await dispatchStock("vice_symbols_lookup", { name: "main" }, deps);
+    assertAnswerConforms("vice_symbols_lookup", result);
+    resetSymbolStoreForTest();
+  });
+});
+
+test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REAL dispatchStock() path under a translating environment -- resolvedPath stays container-side", async () => {
+  const prevHostWs = process.env.HOST_WORKSPACE_PATH;
+  process.env.HOST_WORKSPACE_PATH = "/home/user/project";
+  try {
+    await withTempRepoRootForConformance(async (repoRootDir) => {
+      // withTempRepoRootForConformance already sets CLAUDE_PROJECT_DIR to
+      // repoRootDir (a DIFFERENT absolute path than HOST_WORKSPACE_PATH
+      // above) and restores it in its own finally block -- this test only
+      // needs to manage HOST_WORKSPACE_PATH around the call.
+      writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
+      const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+      const result = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, deps);
+      assert.equal(
+        result.isError,
+        false,
+        "vice_symbols_load must answer a normal success under a translating environment -- the derived path never reaches host-path translation",
+      );
+      const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+      const resolvedPath = parsed.resolvedPath as string;
+      assert.ok(
+        resolvedPath.startsWith(repoRootDir),
+        `resolvedPath must resolve inside CLAUDE_PROJECT_DIR (${repoRootDir}), got ${resolvedPath}`,
+      );
+      assert.ok(
+        !resolvedPath.includes("/home/user/project"),
+        `resolvedPath must never contain the HOST_WORKSPACE_PATH value, got ${resolvedPath}`,
+      );
+      resetSymbolStoreForTest();
+    });
+  } finally {
+    if (prevHostWs === undefined) delete process.env.HOST_WORKSPACE_PATH;
+    else process.env.HOST_WORKSPACE_PATH = prevHostWs;
   }
 });
 

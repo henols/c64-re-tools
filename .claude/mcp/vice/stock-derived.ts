@@ -50,6 +50,11 @@
 //   - Never re-implement session acquisition here -- withDerivedTool() in
 //     stock-dispatch.ts delegates to the one ensureStockSession() the 25
 //     direct tools use.
+//   - Never add a name to STOCK_DERIVED_TOOLS without adding its module to
+//     package.json's files[] in the SAME commit (Phase 3 Rule 2) --
+//     withDerivedTool() refuses on this set, and a declared-but-unshipped
+//     module fails at module load in the published tarball rather than at
+//     dispatch.
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
@@ -76,6 +81,10 @@ export class DerivedToolError extends ViceError {
 
 export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_disassemble", // Phase 4, DERIV-07's first consumer (04-05) -- client-side 6510 disassembler
+  "vice_memory_search", // Phase 5, DERIV-01
+  "vice_memory_compare", // Phase 5, DERIV-01
+  "vice_symbols_load", // Phase 5, DERIV-04
+  "vice_symbols_lookup", // Phase 5, DERIV-04
 ]);
 
 /**

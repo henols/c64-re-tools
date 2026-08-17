@@ -61,6 +61,8 @@ import { handleExecutionPause, handleExecutionRun, handleExecutionStep, handleEx
 import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet } from "./stock-input.ts";
 import { handleDisassemble } from "./stock-disassemble.ts";
+import { handleMemorySearch, handleMemoryCompare } from "./stock-memory-search.ts";
+import { handleSymbolsLoad, handleSymbolsLookup } from "./stock-symbols.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -606,6 +608,14 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
 
   // derived (DERIV-07, DISASM-01)
   vice_disassemble: withDerivedTool("vice_disassemble", { needsSession: true }, handleDisassemble),
+
+  // derived (DERIV-01)
+  vice_memory_search: withDerivedTool("vice_memory_search", { needsSession: true }, handleMemorySearch),
+  vice_memory_compare: withDerivedTool("vice_memory_compare", { needsSession: true }, handleMemoryCompare),
+
+  // derived (DERIV-04) -- needsSession:false: pure client-side state, never touches the wire
+  vice_symbols_load: withDerivedTool("vice_symbols_load", { needsSession: false }, handleSymbolsLoad),
+  vice_symbols_lookup: withDerivedTool("vice_symbols_lookup", { needsSession: false }, handleSymbolsLookup),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a
@@ -624,9 +634,9 @@ export function stockHandlerFor(name: string): StockHandler | undefined {
  * naming the fork as the backend that does -- WITHOUT reading `deps` at all
  * (no lease is ever requested for a tool that does not exist on this
  * backend). There is no third branch, and in particular NO fall-through to
- * forwardToVice() anywhere in this file or anything it calls -- that is
- * D-09's whole point, grep-gated to zero occurrences of that name in this
- * file's own code lines.
+ * the fork's HTTP-forwarding path anywhere in this file or anything it calls
+ * -- that is D-09's whole point, grep-gated to zero occurrences of that
+ * function's name in this file's own code lines.
  */
 export async function dispatchStock(name: string, args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
   const handler = stockHandlerFor(name);

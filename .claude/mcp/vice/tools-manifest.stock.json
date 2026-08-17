@@ -12,15 +12,42 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "status": { "type": "string" },
-          "backend": { "type": "string" },
-          "viceVersion": { "type": "string" },
-          "resolvedBinaryPath": { "type": "string" },
-          "resolvedBinaryPathIsResolved": { "type": "boolean" },
-          "capabilities": { "type": "object" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "status": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "viceVersion": {
+            "type": "string"
+          },
+          "resolvedBinaryPath": {
+            "type": "string"
+          },
+          "resolvedBinaryPathIsResolved": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "type": "object"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["status", "backend", "viceVersion", "resolvedBinaryPath", "resolvedBinaryPathIsResolved", "capabilities", "runState"]
+        "required": [
+          "status",
+          "backend",
+          "viceVersion",
+          "resolvedBinaryPath",
+          "resolvedBinaryPathIsResolved",
+          "capabilities",
+          "runState"
+        ]
       }
     },
     {
@@ -50,22 +77,57 @@
             "description": "Stock-only, optional, default false: whether the read is permitted to have side effects (e.g. reading $D019 clears pending VIC-II IRQ flags). Defaults to side-effect-free."
           }
         },
-        "required": ["address", "size"]
+        "required": [
+          "address",
+          "size"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "address": { "type": "number" },
-          "size": { "type": "number" },
-          "encoding": { "type": "string" },
-          "sideEffects": { "type": "boolean" },
+          "address": {
+            "type": "number"
+          },
+          "size": {
+            "type": "number"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "sideEffects": {
+            "type": "boolean"
+          },
           "bank": {},
-          "memspace": { "type": "string" },
-          "hex": { "type": "string" },
-          "bytes": { "type": "array", "items": { "type": "number" } },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "memspace": {
+            "type": "string"
+          },
+          "hex": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["address", "size", "encoding", "sideEffects", "bank", "memspace", "runState"]
+        "required": [
+          "address",
+          "size",
+          "encoding",
+          "sideEffects",
+          "bank",
+          "memspace",
+          "runState"
+        ]
       }
     },
     {
@@ -86,18 +148,40 @@
             }
           }
         },
-        "required": ["address", "data"]
+        "required": [
+          "address",
+          "data"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "address": { "type": "number" },
-          "bytesWritten": { "type": "number" },
+          "address": {
+            "type": "number"
+          },
+          "bytesWritten": {
+            "type": "number"
+          },
           "bank": {},
-          "memspace": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "memspace": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["address", "bytesWritten", "bank", "memspace", "runState"]
+        "required": [
+          "address",
+          "bytesWritten",
+          "bank",
+          "memspace",
+          "runState"
+        ]
       }
     },
     {
@@ -115,16 +199,36 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "number" },
-                "name": { "type": "string" }
+                "id": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                }
               },
-              "required": ["id", "name"]
+              "required": [
+                "id",
+                "name"
+              ]
             }
           },
-          "count": { "type": "number" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "count": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["banks", "count", "runState"]
+        "required": [
+          "banks",
+          "count",
+          "runState"
+        ]
       }
     },
     {
@@ -137,12 +241,30 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "registers": { "type": "object" },
-          "unknownIds": { "type": "array" },
-          "memspace": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "registers": {
+            "type": "object"
+          },
+          "unknownIds": {
+            "type": "array"
+          },
+          "memspace": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["registers", "unknownIds", "memspace", "runState"]
+        "required": [
+          "registers",
+          "unknownIds",
+          "memspace",
+          "runState"
+        ]
       }
     },
     {
@@ -160,19 +282,44 @@
             "description": "Register value"
           }
         },
-        "required": ["register", "value"]
+        "required": [
+          "register",
+          "value"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "register": { "type": "string" },
-          "id": { "type": "number" },
-          "requestedValue": { "type": "number" },
+          "register": {
+            "type": "string"
+          },
+          "id": {
+            "type": "number"
+          },
+          "requestedValue": {
+            "type": "number"
+          },
           "observedValue": {},
-          "memspace": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "memspace": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["register", "id", "requestedValue", "observedValue", "memspace", "runState"]
+        "required": [
+          "register",
+          "id",
+          "requestedValue",
+          "observedValue",
+          "memspace",
+          "runState"
+        ]
       }
     },
     {
@@ -190,18 +337,44 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "number" },
-                "name": { "type": "string" },
-                "sizeBits": { "type": "number" }
+                "id": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "sizeBits": {
+                  "type": "number"
+                }
               },
-              "required": ["id", "name", "sizeBits"]
+              "required": [
+                "id",
+                "name",
+                "sizeBits"
+              ]
             }
           },
-          "count": { "type": "number" },
-          "memspace": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "count": {
+            "type": "number"
+          },
+          "memspace": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["registers", "count", "memspace", "runState"]
+        "required": [
+          "registers",
+          "count",
+          "memspace",
+          "runState"
+        ]
       }
     },
     {
@@ -214,13 +387,34 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "requested": { "type": "string" },
-          "sent": { "type": "boolean" },
-          "alreadyStopped": { "type": "boolean" },
-          "stateBefore": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "requested": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "boolean"
+          },
+          "alreadyStopped": {
+            "type": "boolean"
+          },
+          "stateBefore": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["requested", "sent", "alreadyStopped", "stateBefore", "runState"]
+        "required": [
+          "requested",
+          "sent",
+          "alreadyStopped",
+          "stateBefore",
+          "runState"
+        ]
       }
     },
     {
@@ -233,13 +427,34 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "requested": { "type": "string" },
-          "sent": { "type": "boolean" },
-          "alreadyRunning": { "type": "boolean" },
-          "stateBefore": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "requested": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "boolean"
+          },
+          "alreadyRunning": {
+            "type": "boolean"
+          },
+          "stateBefore": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["requested", "sent", "alreadyRunning", "stateBefore", "runState"]
+        "required": [
+          "requested",
+          "sent",
+          "alreadyRunning",
+          "stateBefore",
+          "runState"
+        ]
       }
     },
     {
@@ -261,14 +476,37 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "requested": { "type": "string" },
-          "count": { "type": "number" },
-          "stepOver": { "type": "boolean" },
-          "stateBefore": { "type": "string" },
-          "programCounter": { "type": "number" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "requested": {
+            "type": "string"
+          },
+          "count": {
+            "type": "number"
+          },
+          "stepOver": {
+            "type": "boolean"
+          },
+          "stateBefore": {
+            "type": "string"
+          },
+          "programCounter": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["requested", "count", "stepOver", "stateBefore", "runState"]
+        "required": [
+          "requested",
+          "count",
+          "stepOver",
+          "stateBefore",
+          "runState"
+        ]
       }
     },
     {
@@ -281,12 +519,29 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "requested": { "type": "string" },
-          "stateBefore": { "type": "string" },
-          "programCounter": { "type": "number" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "requested": {
+            "type": "string"
+          },
+          "stateBefore": {
+            "type": "string"
+          },
+          "programCounter": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["requested", "stateBefore", "runState"]
+        "required": [
+          "requested",
+          "stateBefore",
+          "runState"
+        ]
       }
     },
     {
@@ -324,34 +579,91 @@
             "description": "Stock-only, optional, default false: required (set true) when stop:false -- a non-stopping checkpoint emits one CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop, over the blocking monitor socket, and can stall the emulator on a hot address. The client rate-limits hits per second and auto-disables the checkpoint if the limit is exceeded."
           }
         },
-        "required": ["start"]
+        "required": [
+          "start"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "id": { "type": "number" },
-          "start": { "type": "number" },
-          "end": { "type": "number" },
-          "stop": { "type": "boolean" },
-          "enabled": { "type": "boolean" },
+          "id": {
+            "type": "number"
+          },
+          "start": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "stop": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "operation": {
             "type": "object",
             "properties": {
-              "value": { "type": "number" },
-              "flags": { "type": "array", "items": { "type": "string" } },
-              "defaulted": { "type": "boolean" }
+              "value": {
+                "type": "number"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "defaulted": {
+                "type": "boolean"
+              }
             },
-            "required": ["value", "flags", "defaulted"]
+            "required": [
+              "value",
+              "flags",
+              "defaulted"
+            ]
           },
-          "temporary": { "type": "boolean" },
-          "hitCount": { "type": "number" },
-          "ignoreCount": { "type": "number" },
-          "hasCondition": { "type": "boolean" },
-          "traceMode": { "type": "boolean" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "temporary": {
+            "type": "boolean"
+          },
+          "hitCount": {
+            "type": "number"
+          },
+          "ignoreCount": {
+            "type": "number"
+          },
+          "hasCondition": {
+            "type": "boolean"
+          },
+          "traceMode": {
+            "type": "boolean"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["id", "start", "end", "stop", "enabled", "operation", "temporary", "hitCount", "ignoreCount", "hasCondition", "traceMode", "runState"]
+        "required": [
+          "id",
+          "start",
+          "end",
+          "stop",
+          "enabled",
+          "operation",
+          "temporary",
+          "hitCount",
+          "ignoreCount",
+          "hasCondition",
+          "traceMode",
+          "runState"
+        ]
       }
     },
     {
@@ -365,17 +677,36 @@
             "description": "Checkpoint number to delete"
           }
         },
-        "required": ["checkpoint_num"]
+        "required": [
+          "checkpoint_num"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "checkpointNum": { "type": "number" },
-          "deleted": { "type": "boolean" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "checkpointNum": {
+            "type": "number"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["checkpointNum", "deleted", "runState"]
+        "required": [
+          "checkpointNum",
+          "deleted",
+          "runState"
+        ]
       }
     },
     {
@@ -393,31 +724,90 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "number" },
-                "start": { "type": "number" },
-                "end": { "type": "number" },
-                "stop": { "type": "boolean" },
-                "enabled": { "type": "boolean" },
-                "operation": { "type": "object" },
-                "temporary": { "type": "boolean" },
-                "hitCount": { "type": "number" },
-                "ignoreCount": { "type": "number" },
-                "hasCondition": { "type": "boolean" },
-                "traceMode": { "type": "boolean" },
+                "id": {
+                  "type": "number"
+                },
+                "start": {
+                  "type": "number"
+                },
+                "end": {
+                  "type": "number"
+                },
+                "stop": {
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "operation": {
+                  "type": "object"
+                },
+                "temporary": {
+                  "type": "boolean"
+                },
+                "hitCount": {
+                  "type": "number"
+                },
+                "ignoreCount": {
+                  "type": "number"
+                },
+                "hasCondition": {
+                  "type": "boolean"
+                },
+                "traceMode": {
+                  "type": "boolean"
+                },
                 "condition": {},
-                "conditionTextKnown": { "type": "boolean" },
-                "conditionNote": { "type": "string" },
-                "autoDisabled": { "type": "object" }
+                "conditionTextKnown": {
+                  "type": "boolean"
+                },
+                "conditionNote": {
+                  "type": "string"
+                },
+                "autoDisabled": {
+                  "type": "object"
+                }
               },
-              "required": ["id", "start", "end", "stop", "enabled", "operation", "temporary", "hitCount", "ignoreCount", "hasCondition", "traceMode", "conditionTextKnown"]
+              "required": [
+                "id",
+                "start",
+                "end",
+                "stop",
+                "enabled",
+                "operation",
+                "temporary",
+                "hitCount",
+                "ignoreCount",
+                "hasCondition",
+                "traceMode",
+                "conditionTextKnown"
+              ]
             }
           },
-          "totalReported": { "type": "number" },
-          "entriesReceived": { "type": "number" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "totalReported": {
+            "type": "number"
+          },
+          "entriesReceived": {
+            "type": "number"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["checkpoints", "totalReported", "entriesReceived", "runState"]
+        "required": [
+          "checkpoints",
+          "totalReported",
+          "entriesReceived",
+          "runState"
+        ]
       }
     },
     {
@@ -435,18 +825,40 @@
             "description": "Enable (true) or disable (false)"
           }
         },
-        "required": ["checkpoint_num", "enabled"]
+        "required": [
+          "checkpoint_num",
+          "enabled"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "checkpointNum": { "type": "number" },
-          "enabled": { "type": "boolean" },
-          "autoDisableCleared": { "type": "boolean" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "checkpointNum": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "autoDisableCleared": {
+            "type": "boolean"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["checkpointNum", "enabled", "runState"]
+        "required": [
+          "checkpointNum",
+          "enabled",
+          "runState"
+        ]
       }
     },
     {
@@ -463,18 +875,41 @@
             "description": "EITHER a condition expression string (e.g. 'A == $42') OR a structured condition object with a 'kind' discriminator field. This is the one inputSchema property in this manifest that deliberately omits \"type\" rather than contradicting the fork's own \"type\": \"string\" declaration -- the checker's supported subset has no union keyword (no oneOf/anyOf) to express \"string or object\"."
           }
         },
-        "required": ["checkpoint_num", "condition"]
+        "required": [
+          "checkpoint_num",
+          "condition"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "checkpointNum": { "type": "number" },
-          "condition": { "type": "string" },
-          "immutable": { "type": "boolean" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "checkpointNum": {
+            "type": "number"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "immutable": {
+            "type": "boolean"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["checkpointNum", "condition", "immutable", "runState"]
+        "required": [
+          "checkpointNum",
+          "condition",
+          "immutable",
+          "runState"
+        ]
       }
     },
     {
@@ -508,27 +943,74 @@
             "description": "Stock-only, optional, default false: required (set true) when stop:false, identically to vice_checkpoint_add's acknowledgeTraceRisk."
           }
         },
-        "required": ["address"]
+        "required": [
+          "address"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "id": { "type": "number" },
-          "start": { "type": "number" },
-          "end": { "type": "number" },
-          "watchType": { "type": "string" },
-          "size": { "type": "number" },
-          "operation": { "type": "object" },
-          "stop": { "type": "boolean" },
-          "enabled": { "type": "boolean" },
+          "id": {
+            "type": "number"
+          },
+          "start": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "watchType": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "operation": {
+            "type": "object"
+          },
+          "stop": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "condition": {},
-          "hitCount": { "type": "number" },
-          "hasCondition": { "type": "boolean" },
-          "traceMode": { "type": "boolean" },
-          "autoDisables": { "type": "array" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "hitCount": {
+            "type": "number"
+          },
+          "hasCondition": {
+            "type": "boolean"
+          },
+          "traceMode": {
+            "type": "boolean"
+          },
+          "autoDisables": {
+            "type": "array"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["id", "start", "end", "watchType", "size", "operation", "stop", "enabled", "condition", "hitCount", "hasCondition", "traceMode", "runState"]
+        "required": [
+          "id",
+          "start",
+          "end",
+          "watchType",
+          "size",
+          "operation",
+          "stop",
+          "enabled",
+          "condition",
+          "hitCount",
+          "hasCondition",
+          "traceMode",
+          "runState"
+        ]
       }
     },
     {
@@ -550,12 +1032,30 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "mode": { "type": "string" },
-          "runAfter": { "type": "boolean" },
-          "resumed": { "type": "boolean" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "mode": {
+            "type": "string"
+          },
+          "runAfter": {
+            "type": "boolean"
+          },
+          "resumed": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["mode", "runAfter", "resumed", "runState"]
+        "required": [
+          "mode",
+          "runAfter",
+          "resumed",
+          "runState"
+        ]
       }
     },
     {
@@ -581,18 +1081,41 @@
             "description": "Program index on disk, 0-based (default: 0)"
           }
         },
-        "required": ["path"]
+        "required": [
+          "path"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "path": { "type": "string" },
-          "sentPath": { "type": "string" },
-          "run": { "type": "boolean" },
-          "index": { "type": "number" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "path": {
+            "type": "string"
+          },
+          "sentPath": {
+            "type": "string"
+          },
+          "run": {
+            "type": "boolean"
+          },
+          "index": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["path", "sentPath", "run", "index", "runState"]
+        "required": [
+          "path",
+          "sentPath",
+          "run",
+          "index",
+          "runState"
+        ]
       }
     },
     {
@@ -610,18 +1133,42 @@
             "description": "Path to disk image (.d64, .g64, etc)"
           }
         },
-        "required": ["unit", "path"]
+        "required": [
+          "unit",
+          "path"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "unit": { "type": "number" },
-          "path": { "type": "string" },
-          "sentPath": { "type": "string" },
-          "approximation": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "unit": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sentPath": {
+            "type": "string"
+          },
+          "approximation": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["unit", "path", "sentPath", "approximation", "runState"]
+        "required": [
+          "unit",
+          "path",
+          "sentPath",
+          "approximation",
+          "runState"
+        ]
       }
     },
     {
@@ -647,22 +1194,56 @@
             "description": "Include disk drive state in snapshot (default: false)."
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "path": { "type": "string" },
-          "sentPath": { "type": "string" },
-          "includeRoms": { "type": "boolean" },
-          "includeDisks": { "type": "boolean" },
-          "metadataWritten": { "type": "boolean" },
-          "metadataFailureReason": { "type": "string" },
-          "metadataPath": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sentPath": {
+            "type": "string"
+          },
+          "includeRoms": {
+            "type": "boolean"
+          },
+          "includeDisks": {
+            "type": "boolean"
+          },
+          "metadataWritten": {
+            "type": "boolean"
+          },
+          "metadataFailureReason": {
+            "type": "string"
+          },
+          "metadataPath": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["name", "path", "sentPath", "includeRoms", "includeDisks", "metadataWritten", "metadataPath", "runState"]
+        "required": [
+          "name",
+          "path",
+          "sentPath",
+          "includeRoms",
+          "includeDisks",
+          "metadataWritten",
+          "metadataPath",
+          "runState"
+        ]
       }
     },
     {
@@ -676,19 +1257,41 @@
             "description": "Name of the snapshot to load. Must match the name previously given to vice_snapshot_save."
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "path": { "type": "string" },
-          "sentPath": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sentPath": {
+            "type": "string"
+          },
           "programCounter": {},
           "metadata": {},
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["name", "path", "sentPath", "programCounter", "metadata", "runState"]
+        "required": [
+          "name",
+          "path",
+          "sentPath",
+          "programCounter",
+          "metadata",
+          "runState"
+        ]
       }
     },
     {
@@ -706,19 +1309,45 @@
             "description": "Default true: uppercase ASCII displays as uppercase on C64. Set false for raw PETSCII (uppercase ASCII maps to graphics)"
           }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "text": { "type": "string" },
-          "petsciiUpper": { "type": "boolean" },
-          "byteCount": { "type": "number" },
-          "petsciiHex": { "type": "string" },
-          "note": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "text": {
+            "type": "string"
+          },
+          "petsciiUpper": {
+            "type": "boolean"
+          },
+          "byteCount": {
+            "type": "number"
+          },
+          "petsciiHex": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["text", "petsciiUpper", "byteCount", "petsciiHex", "note", "runState"]
+        "required": [
+          "text",
+          "petsciiUpper",
+          "byteCount",
+          "petsciiHex",
+          "note",
+          "runState"
+        ]
       }
     },
     {
@@ -735,17 +1364,37 @@
             }
           }
         },
-        "required": ["data"]
+        "required": [
+          "data"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "byteCount": { "type": "number" },
-          "petsciiHex": { "type": "string" },
-          "note": { "type": "string" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "byteCount": {
+            "type": "number"
+          },
+          "petsciiHex": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["byteCount", "petsciiHex", "note", "runState"]
+        "required": [
+          "byteCount",
+          "petsciiHex",
+          "note",
+          "runState"
+        ]
       }
     },
     {
@@ -771,14 +1420,44 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "port": { "type": "number" },
-          "directions": { "type": "array", "items": { "type": "string" } },
-          "fire": { "type": "boolean" },
-          "value": { "type": "number" },
-          "valueBits": { "type": "array", "items": { "type": "string" } },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "port": {
+            "type": "number"
+          },
+          "directions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fire": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueBits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["port", "directions", "fire", "value", "valueBits", "runState"]
+        "required": [
+          "port",
+          "directions",
+          "fire",
+          "value",
+          "valueBits",
+          "runState"
+        ]
       }
     },
     {
@@ -804,37 +1483,471 @@
             "description": "Show symbol names where the operand's role and width prove substitution cannot change the encoding (default true). With no symbol store loaded this is a no-op and the answer says so."
           }
         },
-        "required": ["address"]
+        "required": [
+          "address"
+        ]
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "address": { "type": "number" },
-          "end": { "type": "number" },
-          "count": { "type": "number" },
+          "address": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          },
           "instructions": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "address": { "type": "number" },
-                "bytes": { "type": "array", "items": { "type": "number" } },
-                "mnemonic": { "type": "string" },
-                "operand": { "type": "string" },
-                "resolvedTarget": { "type": "number" },
-                "notes": { "type": "array", "items": { "type": "string" } }
+                "address": {
+                  "type": "number"
+                },
+                "bytes": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "mnemonic": {
+                  "type": "string"
+                },
+                "operand": {
+                  "type": "string"
+                },
+                "resolvedTarget": {
+                  "type": "number"
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               },
-              "required": ["address", "bytes", "mnemonic", "operand", "notes"]
+              "required": [
+                "address",
+                "bytes",
+                "mnemonic",
+                "operand",
+                "notes"
+              ]
             }
           },
-          "listing": { "type": "string" },
-          "symbolsApplied": { "type": "boolean" },
-          "symbolNote": { "type": "string" },
-          "limitReached": { "type": "boolean" },
-          "nextAddress": { "type": "number" },
-          "runState": { "type": "string", "enum": ["running", "stopped", "unknown"] }
+          "listing": {
+            "type": "string"
+          },
+          "symbolsApplied": {
+            "type": "boolean"
+          },
+          "symbolNote": {
+            "type": "string"
+          },
+          "limitReached": {
+            "type": "boolean"
+          },
+          "nextAddress": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
         },
-        "required": ["address", "count", "instructions", "listing", "symbolsApplied", "limitReached", "runState"]
+        "required": [
+          "address",
+          "count",
+          "instructions",
+          "listing",
+          "symbolsApplied",
+          "limitReached",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_search",
+      "description": "Search memory for a byte pattern with an optional wildcard mask, computed client-side (DERIV-01) -- the binary monitor has no search opcode. pattern is refused when longer than the range searched or longer than 4096 bytes; mask must be exactly patterns length and is never padded; max_results defaults to 100 and is refused above 10000.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start address: number, hex string ($C000), or symbol name"
+          },
+          "end": {
+            "type": "string",
+            "description": "End address: number, hex string ($FFFF), or symbol name"
+          },
+          "pattern": {
+            "type": "array",
+            "description": "Byte pattern to find, e.g., [0x4C, 0x00, 0xA0] for JMP $A000. Refused if longer than the range searched or longer than 4096 bytes.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "mask": {
+            "type": "array",
+            "description": "Per-byte mask: 0xFF=exact match, 0x00=wildcard (optional). Must be exactly patterns length; never padded.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "max_results": {
+            "type": "number",
+            "description": "Maximum matches to return (default: 100, max: 10000)."
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "pattern"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "searched": {
+            "type": "number"
+          },
+          "pattern": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "mask": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "maxResults": {
+            "type": "number"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "searched",
+          "pattern",
+          "maxResults",
+          "matches",
+          "count",
+          "truncated",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_memory_compare",
+      "description": "Compare two live memory ranges byte-by-byte, computed client-side (DERIV-01) -- the binary monitor has no compare opcode. mode:ranges is served; mode:snapshot is refused with an explanatory message because there is no memory-only snapshot producer tool on either backend.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "ranges",
+              "snapshot"
+            ],
+            "description": "Comparison mode. ranges is served on stock; snapshot is refused with an explanatory message (no memory-only snapshot producer tool exists on either backend)."
+          },
+          "range1_start": {
+            "type": "string",
+            "description": "Start address of first range (for mode=ranges): number, hex string ($1000), or symbol"
+          },
+          "range1_end": {
+            "type": "string",
+            "description": "End address of first range (for mode=ranges): number, hex string ($1FFF), or symbol"
+          },
+          "range2_start": {
+            "type": "string",
+            "description": "Start address of second range (for mode=ranges): number, hex string ($2000), or symbol. range2_end is derived from range1s length, never its own argument."
+          },
+          "snapshot_name": {
+            "type": "string",
+            "description": "Declared for argument compatibility; mode snapshot is not implemented on stock."
+          },
+          "start": {
+            "type": "string",
+            "description": "Declared for argument compatibility; mode snapshot is not implemented on stock."
+          },
+          "end": {
+            "type": "string",
+            "description": "Declared for argument compatibility; mode snapshot is not implemented on stock."
+          },
+          "max_differences": {
+            "type": "number",
+            "description": "Maximum differences to return (default: 100, max: 10000)."
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "ranges"
+            ]
+          },
+          "range1Start": {
+            "type": "number"
+          },
+          "range1End": {
+            "type": "number"
+          },
+          "range2Start": {
+            "type": "number"
+          },
+          "range2End": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "maxDifferences": {
+            "type": "number"
+          },
+          "differences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offset": {
+                  "type": "number"
+                },
+                "address1": {
+                  "type": "number"
+                },
+                "address2": {
+                  "type": "number"
+                },
+                "value1": {
+                  "type": "number"
+                },
+                "value2": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "offset",
+                "address1",
+                "address2",
+                "value1",
+                "value2"
+              ]
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "identical": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "range1Start",
+          "range1End",
+          "range2Start",
+          "range2End",
+          "length",
+          "maxDifferences",
+          "differences",
+          "count",
+          "truncated",
+          "identical",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_symbols_load",
+      "description": "Load a VICE-format label file into a client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-file command. Only auto and vice are served on stock; kickasm and simple are refused by name because no in-repo producer emits them.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to symbol file (.sym, .lbl). Resolved against the workspace root and refused if it escapes, including via a symlink, with a 2 MiB / 50000-line / 20000-symbol ceiling."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "kickasm",
+              "vice",
+              "simple"
+            ],
+            "description": "Format: auto (default) or vice parse VICE-format al C:xxxx .Name lines on stock; kickasm and simple are refused by name -- no in-repo producer emits them."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "resolvedPath": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "symbolCount": {
+            "type": "number"
+          },
+          "skippedLines": {
+            "type": "number"
+          },
+          "duplicateNames": {
+            "type": "number"
+          },
+          "lineCount": {
+            "type": "number"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "resolvedPath",
+          "format",
+          "symbolCount",
+          "skippedLines",
+          "duplicateNames",
+          "lineCount",
+          "replaced",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_symbols_lookup",
+      "description": "Look up a symbol by name or an address by symbol, against the client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-lookup command. Exactly one of name or address is required; supplying both is refused as mutually exclusive.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Symbol name to look up (returns address). Exactly one of name or address is required."
+          },
+          "address": {
+            "type": "number",
+            "description": "Address to look up (returns symbol name). Exactly one of name or address is required."
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "address": {
+                "type": "number"
+              }
+            }
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "number"
+          },
+          "symbolCount": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "found",
+          "symbolCount",
+          "runState"
+        ]
       }
     }
   ]
