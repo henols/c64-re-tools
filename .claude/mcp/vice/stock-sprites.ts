@@ -39,8 +39,22 @@
 //     as an explicit integer 0..7 instead (see parseSpriteIndex()).
 //   - Never build the answer outside stockAnswer() (D-06) -- that is
 //     exactly how an answer ships without `runState`.
+//   - CR-02 (2026-08-17): never read VIC-fetched memory (the sprite pointer
+//     table, sprite data) or I/O registers ($D000-$D02E, $DD00) through a
+//     literal bank id, and never default either to bank 0x0000 -- bank 0 is
+//     the CPU view and follows $00/$01 banking, so with I/O banked out it
+//     silently returns the RAM underneath $D000-$DFFF as if it were chip
+//     registers, and a screen at $CC00 with pointers into $D000+ is a
+//     normal layout (not an exotic one) that this exact bug turns into
+//     misread register bytes rendered as sprite pixels. Registers ($D000
+//     block, $DD00) resolve the emulator's own `io` bank; VIC-fetched memory
+//     (pointer table, sprite data) resolves its own `ram` bank -- both via
+//     resolveRequiredBank() (stock-memory.ts), never re-derived locally. See
+//     readSpriteContext() below; state this split in one sentence so the
+//     next reader does not "simplify" it to one bank.
 import { CommandType, memGetBody } from "./stock-protocol.ts";
-import { convertWireError, isErrorText, stockAnswer, type StockErrorResult, type StockSessionHandler } from "./stock-handler.ts";
+import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
+import { resolveRequiredBank } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
@@ -68,10 +82,25 @@ const SPRITE_ROWS = 21;
 const SPRITE_HIRES_COLUMNS = 24;
 const SPRITE_MULTICOLOUR_COLUMNS = 12;
 
+/**
+ * The legend is a property of the RENDER, not of the tool -- renderSpriteAscii()'s
+ * two branches (below) emit genuinely different alphabets, so a single shared
+ * legend constant lies about whichever mode it is attached to. Hi-res emits
+ * one character per BIT ('.'/'#'); multicolour emits one character per BIT
+ * PAIR ('.'/'@'/'#'/'%'), through MULTICOLOUR_LEGEND. handleSpriteInspect
+ * selects between these two constants on the same `multicolour` flag that
+ * selects the renderer -- never a single constant applied regardless of mode
+ * (that was CR-02's live-reproduced legend defect: a hi-res render told an
+ * agent that '@' and '%' exist in a grid that only ever emits '.' and '#').
+ */
+export const SPRITE_ASCII_LEGEND_HIRES = "'.' = transparent (bit clear), '#' = sprite colour (bit set)";
+
 /** The fork's own manifest description, quoted verbatim in shape (four
  * mappings separated by ", ") so a caller sees the exact bit-pair legend
- * without decoding pixels themselves. */
-export const SPRITE_ASCII_LEGEND =
+ * without decoding pixels themselves. Unchanged text -- it was always
+ * correct for multicolour sprites; the defect was attaching it to hi-res
+ * renders too. */
+export const SPRITE_ASCII_LEGEND_MULTICOLOUR =
   "'.' = transparent (00), '#' = sprite colour (10), '@' = multicolour 1 (01), '%' = multicolour 2 (11)";
 
 /** vice_sprite_inspect's `format` values actually served on stock (D-05-03). */
@@ -114,26 +143,44 @@ export function spriteDataAddress(dd00Raw: number, pointerByte: number): number 
 
 /**
  * Returns a note when `address` (already resolved to an absolute address)
- * falls in the character-ROM shadow window inside VIC banks 0 and 2
- * ($1000-$1FFF relative to the bank base). In those two banks the VIC-II
- * chip fetches character ROM in that window, while MEM_GET always returns
- * the RAM underneath it -- so bytes reported for a screen or sprite-data
- * address resolved into that window may not be what the chip is actually
- * fetching. Returns null otherwise.
+ * falls in one of two independent hazard windows -- returns null otherwise.
+ * Both conditions describe a case where the bytes MEM_GET returns (through
+ * whichever bank this file resolved for that read) may not be what the
+ * VIC-II chip is actually fetching at that address:
+ *
+ * 1. VIC banks 0 and 2, address in $1000-$1FFF relative to the bank base --
+ *    the character-ROM shadow window. The chip fetches character ROM there;
+ *    MEM_GET (even through the resolved `ram` bank) always returns the RAM
+ *    underneath it.
+ * 2. VIC bank 3, absolute address in $D000-$DFFF -- bank 3's I/O window. A
+ *    screen or sprite-data pointer resolved into this range (a standard
+ *    trick to reclaim 4 KB under bank 3) is exactly the CR-02 defect: the
+ *    CPU's own view (bank 0x0000) would have returned CIA/VIC/colour-RAM
+ *    register bytes here, while the VIC-II chip itself fetches RAM. This
+ *    note documents that this answer read it through the resolved `ram`
+ *    bank -- the chip's own view -- naming that bank so a caller can see
+ *    which read produced the bytes.
  */
-function spriteRomWindowNote(address: number, bank: number): string | null {
-  if (bank !== 0 && bank !== 2) {
+function spriteWindowNote(address: number, bank: number, ramBankName: string): string | null {
+  if (bank === 0 || bank === 2) {
+    const relative = address & 0x3fff;
+    if (relative >= 0x1000 && relative <= 0x1fff) {
+      return (
+        `address 0x${address.toString(16)} falls in VIC bank ${bank}'s character-ROM window ` +
+        `($1000-$1FFF relative to the bank base) -- the VIC-II chip sees character ROM there, ` +
+        `while MEM_GET returns the RAM underneath it, so the bytes reported may not be what the chip is fetching`
+      );
+    }
     return null;
   }
-  const relative = address & 0x3fff;
-  if (relative < 0x1000 || relative > 0x1fff) {
-    return null;
+  if (bank === 3 && address >= 0xd000 && address <= 0xdfff) {
+    return (
+      `address 0x${address.toString(16)} falls in VIC bank 3's I/O window ($D000-$DFFF absolute) -- ` +
+      `the VIC-II chip fetches RAM there, while the CPU's own view (bank 0x0000) returns CIA/VIC/colour-RAM ` +
+      `registers instead; this answer read it through the emulator's resolved "${ramBankName}" bank, the chip's own view`
+    );
   }
-  return (
-    `address 0x${address.toString(16)} falls in VIC bank ${bank}'s character-ROM window ` +
-    `($1000-$1FFF relative to the bank base) -- the VIC-II chip sees character ROM there, ` +
-    `while MEM_GET returns the RAM underneath it, so the bytes reported may not be what the chip is fetching`
-  );
+  return null;
 }
 
 /**
@@ -177,15 +224,21 @@ interface SpriteContext {
   pointerTableAddress: number;
   /** The 8 pointer-table bytes, one per sprite. */
   pointerBytes: Uint8Array;
-  /** Non-null spriteRomWindowNote() results gathered so far (the screen
-   * base check only -- per-sprite data-address notes are added by each
-   * handler once it knows which sprite(s) it needs). */
+  /** The emulator's own resolved `io` bank -- used for every register read
+   * ($D000-$D02E, $DD00). */
+  ioBank: { id: number; name: string };
+  /** The emulator's own resolved `ram` bank -- used for every VIC-fetched
+   * read (the sprite pointer table, and each sprite's data block). */
+  ramBank: { id: number; name: string };
+  /** Non-null spriteWindowNote() results gathered so far (the screen base
+   * check only -- per-sprite data-address notes are added by each handler
+   * once it knows which sprite(s) it needs). */
   notes: string[];
 }
 
 interface SpriteContextError {
   ok: false;
-  result: StockErrorResult;
+  result: StockToolResult;
 }
 
 type SpriteContextResult = SpriteContext | SpriteContextError;
@@ -198,9 +251,28 @@ type SpriteContextResult = SpriteContext | SpriteContextError;
  * sprite pointer table (8 bytes at screenBase + $3F8). Every read is
  * sidefx: false. Refuses (before sending) if the resolved pointer-table
  * range would exceed the 16-bit address space.
+ *
+ * CR-02: the VIC-II block and $DD00 are I/O REGISTERS -- resolved through
+ * the emulator's own `io` bank, exactly like stock-vicii.ts/stock-cia.ts.
+ * The sprite pointer table is what the VIC-II chip itself FETCHES -- the
+ * chip never sees I/O or cartridge ROM there, so it is resolved through the
+ * emulator's own `ram` bank instead. Both banks are resolved BEFORE the
+ * first send, and this function refuses (with zero MEM_GET sends) if either
+ * name is absent from the emulator's own catalog.
  */
 async function readSpriteContext(toolName: string, session: StockConnectSession): Promise<SpriteContextResult> {
-  const viciiBody = memGetBody({ sidefx: false, start: VICII_BASE, end: VICII_END, memspace: 0x00, bank: 0x0000 });
+  const ioResolution = await resolveRequiredBank(toolName, "io", session);
+  if (!ioResolution.ok) {
+    return { ok: false, result: ioResolution.result };
+  }
+  const ramResolution = await resolveRequiredBank(toolName, "ram", session);
+  if (!ramResolution.ok) {
+    return { ok: false, result: ramResolution.result };
+  }
+  const ioBank = { id: ioResolution.id, name: ioResolution.name };
+  const ramBank = { id: ramResolution.id, name: ramResolution.name };
+
+  const viciiBody = memGetBody({ sidefx: false, start: VICII_BASE, end: VICII_END, memspace: 0x00, bank: ioBank.id });
   let viciiResponse;
   try {
     viciiResponse = await session.client.send(CommandType.MemoryGet, viciiBody);
@@ -227,7 +299,7 @@ async function readSpriteContext(toolName: string, session: StockConnectSession)
   // $DD00 is far from $D000-$D02E -- a second, small read rather than one
   // wide request spanning both, which would pull ~3.3 KB of unrelated I/O
   // and RAM across the wire for one byte.
-  const dd00Body = memGetBody({ sidefx: false, start: CIA2_PORT_A, end: CIA2_PORT_A, memspace: 0x00, bank: 0x0000 });
+  const dd00Body = memGetBody({ sidefx: false, start: CIA2_PORT_A, end: CIA2_PORT_A, memspace: 0x00, bank: ioBank.id });
   let dd00Response;
   try {
     dd00Response = await session.client.send(CommandType.MemoryGet, dd00Body);
@@ -269,7 +341,7 @@ async function readSpriteContext(toolName: string, session: StockConnectSession)
     };
   }
 
-  const pointerBody = memGetBody({ sidefx: false, start: pointerTableAddress, end: pointerTableEnd, memspace: 0x00, bank: 0x0000 });
+  const pointerBody = memGetBody({ sidefx: false, start: pointerTableAddress, end: pointerTableEnd, memspace: 0x00, bank: ramBank.id });
   let pointerResponse;
   try {
     pointerResponse = await session.client.send(CommandType.MemoryGet, pointerBody);
@@ -294,7 +366,7 @@ async function readSpriteContext(toolName: string, session: StockConnectSession)
   }
 
   const notes: string[] = [];
-  const screenNote = spriteRomWindowNote(screenBaseAddr, bank);
+  const screenNote = spriteWindowNote(screenBaseAddr, bank, ramBank.name);
   if (screenNote !== null && !notes.includes(screenNote)) {
     notes.push(screenNote);
   }
@@ -309,6 +381,8 @@ async function readSpriteContext(toolName: string, session: StockConnectSession)
     screenBaseAddr,
     pointerTableAddress,
     pointerBytes: pointerResponse.bytes,
+    ioBank,
+    ramBank,
     notes,
   };
 }
@@ -359,7 +433,7 @@ export const handleSpriteGet: StockSessionHandler = async (args, session, _deps)
   for (let index = 0; index < SPRITE_COUNT; index += 1) {
     const pointer = context.pointerBytes[index]!;
     const dataAddress = spriteDataAddress(context.dd00, pointer);
-    const dataNote = spriteRomWindowNote(dataAddress, context.bank);
+    const dataNote = spriteWindowNote(dataAddress, context.bank, context.ramBank.name);
     if (dataNote !== null && !notes.includes(dataNote)) {
       notes.push(dataNote);
     }
@@ -392,6 +466,8 @@ export const handleSpriteGet: StockSessionHandler = async (args, session, _deps)
     spriteMulticolour2: d026 & 0x0f,
     sprites,
     count: sprites.length,
+    registerBank: context.ioBank,
+    dataBank: context.ramBank,
     notes,
   };
 
@@ -543,7 +619,7 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
     );
   }
 
-  const dataBody = memGetBody({ sidefx: false, start: dataAddress, end: dataEnd, memspace: 0x00, bank: 0x0000 });
+  const dataBody = memGetBody({ sidefx: false, start: dataAddress, end: dataEnd, memspace: 0x00, bank: context.ramBank.id });
   let dataResponse;
   try {
     dataResponse = await session.client.send(CommandType.MemoryGet, dataBody);
@@ -566,7 +642,7 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
   const expandY = ((d017 >> spriteIndex) & 1) === 1;
 
   const notes = [...context.notes];
-  const dataNote = spriteRomWindowNote(dataAddress, context.bank);
+  const dataNote = spriteWindowNote(dataAddress, context.bank, context.ramBank.name);
   if (dataNote !== null && !notes.includes(dataNote)) {
     notes.push(dataNote);
   }
@@ -594,13 +670,19 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
     spriteMulticolour1: d025 & 0x0f,
     spriteMulticolour2: d026 & 0x0f,
     vicBank: context.bank,
+    registerBank: context.ioBank,
+    dataBank: context.ramBank,
     pointer,
     dataAddress,
     width,
     height: SPRITE_ROWS,
     bytes: Array.from(dataResponse.bytes),
     rows,
-    ...(format === "ascii" ? { ascii: rows.join("\n"), legend: SPRITE_ASCII_LEGEND } : {}),
+    // CR-02: the legend must match THIS render's own alphabet -- attaching
+    // the multicolour legend to a hi-res render told an agent that '@' and
+    // '%' exist in a grid that never emits them, and that '#' meant a
+    // two-bit code when it is really a single set bit here.
+    ...(format === "ascii" ? { ascii: rows.join("\n"), legend: multicolour ? SPRITE_ASCII_LEGEND_MULTICOLOUR : SPRITE_ASCII_LEGEND_HIRES } : {}),
     notes,
   };
 
