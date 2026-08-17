@@ -135,3 +135,4 @@ No stub tracking needed — every field is wired to a real decoded value or an e
 *Phase: 05-skill-critical-derived-tools*
 *Plan: 04*
 *Completed: 2026-08-17*
+## Self-Check: PASSED
