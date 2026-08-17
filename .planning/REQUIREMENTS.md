@@ -48,7 +48,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Derived tools
 
-- [ ] **DERIV-01**: User can search and compare memory ranges on the stock backend *(narrowed 2026-08-17: `fill` cut — no skill calls `vice_memory_fill`)*
+- [x] **DERIV-01**: User can search and compare memory ranges on the stock backend *(narrowed 2026-08-17: `fill` cut — no skill calls `vice_memory_fill`)*
 - [-] **CUT 2026-08-17** — no skill calls `vice_backtrace`. Original: **DERIV-02**: User can get a call backtrace on the stock backend
 - [-] **CUT 2026-08-17** — no skill calls any `vice_checkpoint_group_*` or `vice_checkpoint_set_ignore_count`. Original: **DERIV-03**: User can group checkpoints and set an ignore count on the stock backend
 - [ ] **DERIV-04**: User can load a symbol file and have addresses resolved to symbol names
@@ -177,7 +177,7 @@ and the sequencing rationale.
 | DIRECT-07 | Phase 3 | Complete |
 | DIRECT-08 | Phase 3 | Complete |
 | DIRECT-09 | Phase 3 | Complete |
-| DERIV-01 | Phase 5 | Pending |
+| DERIV-01 | Phase 5 | Complete |
 | DERIV-02 | Phase 5 | Pending |
 | DERIV-03 | Phase 5 | Pending |
 | DERIV-04 | Phase 5 | Pending |
