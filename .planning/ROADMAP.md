@@ -314,7 +314,7 @@ Plans:
 
 **Wave 2** *(blocked on 05-01 and 05-02; sole owner of every shared registration file this wave)*
 
-- [ ] 05-06-PLAN.md — register the four DERIV-01/DERIV-04 tools: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 26 -> 30, `files[]` 39 -> 41 (Rule 2), four conformance cases, and the de-vacuumed `hostpath-consumers.test.ts` guard (D-05-12) [wave 2]
+- [x] 05-06-PLAN.md — register the four DERIV-01/DERIV-04 tools: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 26 -> 30, `files[]` 39 -> 41 (Rule 2), four conformance cases, and the de-vacuumed `hostpath-consumers.test.ts` guard (D-05-12) [wave 2]
 
 **Wave 3** *(blocked on 05-03/04/05 and 05-06; takes the same shared files over)*
 
@@ -438,7 +438,7 @@ their references.
 | 2. Stock Backend Connection | 10/10 | Complete    | 2026-08-13 |
 | 3. Direct Tools | 18/18 | Complete    | 2026-08-16 |
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
-| 5. Skill-Critical Derived Tools | 5/8 | In Progress|  |
+| 5. Skill-Critical Derived Tools | 6/8 | In Progress|  |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
