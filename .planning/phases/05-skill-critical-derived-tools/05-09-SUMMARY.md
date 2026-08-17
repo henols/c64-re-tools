@@ -127,3 +127,7 @@ None - no external service configuration required.
 ---
 *Phase: 05-skill-critical-derived-tools*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+All 9 declared files_modified plus this SUMMARY.md verified present on disk. All 4 commit hashes (`fcd0eca`, `9803f99`, `d0d9f7c`, `9a19547`) verified present in `git log --oneline --all`.
