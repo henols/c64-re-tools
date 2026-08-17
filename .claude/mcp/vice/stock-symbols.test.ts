@@ -8,15 +8,29 @@
 // never a write into this worktree itself.
 import { test, afterEach, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleSymbolsLoad, handleSymbolsLookup, resetSymbolStoreForTest } from "./stock-symbols.ts";
 import { parseAddress, symbolNameFor, hasSymbolStore, setSymbolResolver } from "./stock-address.ts";
+import { checkAgainstSchema } from "./stock-schema-check.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 const DEPS = {} as unknown as StockDispatchDeps;
+
+/** The shipped manifest's own declared `outputSchema` for `vice_symbols_lookup`
+ * -- read directly with node:fs (relative to this test file, matching the
+ * plan's instruction) rather than duplicating the schema by hand, so this
+ * assertion tracks the real, committed contract rather than a copy of it. */
+function symbolsLookupOutputSchema(): unknown {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, "tools-manifest.stock.json"), "utf8")) as {
+    tools: { name: string; outputSchema: unknown }[];
+  };
+  const entry = manifest.tools.find((t) => t.name === "vice_symbols_lookup");
+  assert.ok(entry, "tools-manifest.stock.json must declare vice_symbols_lookup");
+  return entry!.outputSchema;
+}
 
 function parseAnswer(result: { content: { text: string }[] }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text);
@@ -178,7 +192,7 @@ test(
 );
 
 test(
-  "vice_symbols_load: a symlink inside the workspace pointing outside it is refused",
+  "vice_symbols_load: a symlink inside the workspace pointing outside it is refused, naming the resolved target and installing no table",
   withTempWorkspace(async (dir, t) => {
     const outsideTarget = join(tmpdir(), `vice-symbols-outside-${process.pid}-${Date.now()}.lbl`);
     writeFileSync(outsideTarget, "al C:1234 .outside");
@@ -193,9 +207,49 @@ test(
       const result = await handleSymbolsLoad({ path: "link.lbl" }, DEPS);
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text.toLowerCase(), /workspace/);
+      // WR-08: the refusal must name the resolved (realpath) target, not
+      // just say "outside the workspace" with no evidence of what was
+      // actually resolved.
+      assert.match(result.content[0]!.text, new RegExp(realpathSync(outsideTarget).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+      // A refused load must never install a symbol table -- a following
+      // lookup still reports the pre-existing (empty) state.
+      const lookup = await handleSymbolsLookup({ name: "outside" }, DEPS);
+      const payload = parseAnswer(lookup);
+      assert.equal(payload.found, false);
+      assert.match(String(payload.note), /no symbol table is loaded/);
     } finally {
       rmSync(outsideTarget, { force: true });
     }
+  }),
+);
+
+test(
+  "vice_symbols_load: loading through an in-workspace symlink returns resolvedPath as the realpath of the target, not the symlink path",
+  withTempWorkspace(async (dir, t) => {
+    const realSubdir = join(dir, "real-subdir");
+    mkdirSync(realSubdir);
+    const targetPath = join(realSubdir, "actual-labels.lbl");
+    writeFileSync(targetPath, FIXTURE);
+    const linkPath = join(dir, "via-link.lbl");
+    try {
+      symlinkSync(targetPath, linkPath);
+    } catch (err) {
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const result = await handleSymbolsLoad({ path: "via-link.lbl" }, DEPS);
+    assert.equal(result.isError, false);
+    const payload = parseAnswer(result);
+    assert.equal(payload.resolvedPath, realpathSync(targetPath));
+    assert.equal(payload.symbolCount, 4);
+    // Regression guard: resolvedPath must never contain the symlink's own
+    // basename when it differs from the target's basename -- this fails if
+    // resolveLabelFilePath() ever again returns `resolved` instead of `real`.
+    assert.ok(
+      !String(payload.resolvedPath).includes("via-link.lbl"),
+      `resolvedPath must report the target's realpath, not the symlink path: ${payload.resolvedPath}`,
+    );
   }),
 );
 
@@ -353,6 +407,67 @@ test(
     assert.equal(parseAnswer(byNumber).name, "vic_cborder");
     assert.equal(parseAnswer(byDollarHex).name, "vic_cborder");
     assert.equal(parseAnswer(byZeroX).name, "vic_cborder");
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// WR-01: query.address echoes the PARSED number for every accepted form,
+// never the caller's raw argument -- and the address branch is schema-
+// checked against the shipped manifest so it cannot pass vacuously.
+// ---------------------------------------------------------------------------
+
+test(
+  "vice_symbols_lookup: query.address is the parsed number 53280 for every accepted address form",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+
+    for (const form of [53280, "$d020", "0xd020"]) {
+      const result = await handleSymbolsLookup({ address: form }, DEPS);
+      const payload = parseAnswer(result);
+      const query = payload.query as Record<string, unknown>;
+      assert.equal(typeof query.address, "number", `form ${JSON.stringify(form)}: query.address must be a number`);
+      assert.equal(query.address, 53280, `form ${JSON.stringify(form)}: query.address must be 53280`);
+      assert.equal(payload.found, true, `form ${JSON.stringify(form)}: address is defined in the fixture`);
+    }
+  }),
+);
+
+test(
+  "vice_symbols_lookup: the address branch's real answer validates against the shipped manifest outputSchema",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+    const schema = symbolsLookupOutputSchema();
+
+    const addressResult = await handleSymbolsLookup({ address: "$d020" }, DEPS);
+    const addressPayload = parseAnswer(addressResult);
+    assert.deepEqual(checkAgainstSchema(addressPayload, schema), []);
+
+    const nameResult = await handleSymbolsLookup({ name: "main" }, DEPS);
+    const namePayload = parseAnswer(nameResult);
+    assert.deepEqual(checkAgainstSchema(namePayload, schema), []);
+    assert.equal(typeof namePayload.query, "object");
+    assert.equal(typeof (namePayload.query as Record<string, unknown>).name, "string");
+  }),
+);
+
+test(
+  "vice_symbols_lookup: non-vacuity control -- forcing query.address back to a string DOES fail the schema check",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "labels.lbl"), FIXTURE);
+    await handleSymbolsLoad({ path: "labels.lbl" }, DEPS);
+    const schema = symbolsLookupOutputSchema();
+
+    const result = await handleSymbolsLookup({ address: "$d020" }, DEPS);
+    const payload = parseAnswer(result);
+    const corrupted = { ...payload, query: { address: "$d020" } };
+    const violations = checkAgainstSchema(corrupted, schema);
+    assert.notDeepEqual(violations, []);
+    assert.ok(
+      violations.some((v) => v.includes("query.address")),
+      `expected a violation mentioning query.address, got: ${JSON.stringify(violations)}`,
+    );
   }),
 );
 
