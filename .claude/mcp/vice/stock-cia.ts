@@ -29,7 +29,7 @@
 // once, no automated drift check" posture Phase 4's D-06 already accepted
 // for the disassembler's opcode table.
 //
-// TWO CLARIFICATIONS THAT ARE OTHERWISE EASY TO GET WRONG:
+// THREE CLARIFICATIONS THAT ARE OTHERWISE EASY TO GET WRONG:
 //   - Port A/B bits are ACTIVE-LOW for joysticks and the keyboard matrix: a
 //     CLEAR bit means pressed. Every joystick field below is computed as
 //     `((raw >> bit) & 1) === 0` -- do not "fix" this polarity later.
@@ -37,6 +37,17 @@
 //     current column selection and row result; the full matrix is
 //     `vice_keyboard_matrix`, which is provably unrecoverable on stock
 //     (`docs/stock-vice-parity.md` SS A item 2) and is Phase 8's business.
+//   - WR-02 (2026-08-17): the port A/B joystick bits share their PINS with
+//     the keyboard matrix's column-select ($DC00) and row-read ($DC01), and
+//     a stock read halts the machine at an arbitrary PC -- often inside the
+//     KERNAL's IRQ keyboard scan -- so a driven-low column bit decodes as a
+//     phantom direction press. The DDR bytes already in this same 16-byte
+//     buffer (`portADirection`) are what makes a driven column detectable:
+//     when any port A pin is configured as an output, `joystick2`/
+//     `joystick1` carry `confounded:true` plus a `confoundedReason`. The
+//     five booleans are ANNOTATED, never removed or altered -- with
+//     `DDRA = $00` (a game that is not scanning the keyboard) they are a
+//     genuine joystick read.
 //
 // WHAT NOT TO DO:
 //   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
@@ -115,10 +126,21 @@ export const CIA_UNAVAILABLE_FIELDS: ReadonlyArray<readonly [string, string]> = 
 ]);
 
 /** Converts one BCD-encoded byte (e.g. `$42`) to its decimal value (`42`).
- * Used for TOD seconds/minutes/hours -- a raw-byte pass-through would give
- * `0x42 = 66`, which is exactly the bug this helper exists to prevent. */
-function fromBcd(raw: number): number {
-  return ((raw >> 4) & 0x0f) * 10 + (raw & 0x0f);
+ * Used for TOD seconds/minutes/hours. Originally written to stop a raw-byte
+ * pass-through from reporting `0x42` as `66`. WR-03 (2026-08-17): that is
+ * not the only invention this helper must refuse -- a byte whose nibble
+ * exceeds 9 is not valid BCD at all, and the naive `tens*10+units` formula
+ * happily turns `0x9f` into a fabricated `105`. Returns `null`, never a
+ * fabricated decimal, when either nibble is out of BCD range; the caller
+ * omits the field and names it in `tod.invalidBcd` rather than reporting an
+ * impossible value. */
+function fromBcd(raw: number): number | null {
+  const tens = (raw >> 4) & 0x0f;
+  const units = raw & 0x0f;
+  if (tens > 9 || units > 9) {
+    return null;
+  }
+  return tens * 10 + units;
 }
 
 function bit(byte: number, n: number): number {
@@ -155,9 +177,45 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   }
 
   const base = chip === 1 ? CIA1_BASE : CIA2_BASE;
+  // "DC" or "DD" -- the two hex digits shared by every register address in
+  // this chip's block, substituted into WR-02/WR-03's note strings below.
+  const basePrefix = base.toString(16).toUpperCase().slice(0, 2);
   const registersHex = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+
+  function directionOutputs(raw: number): boolean[] {
+    const outputs: boolean[] = [];
+    for (let n = 0; n < 8; n += 1) {
+      outputs.push(boolBit(raw, n));
+    }
+    return outputs;
+  }
+
+  // Chip-level prose (WR-02/WR-03) -- present and empty when there is
+  // nothing to say, never absent, matching stock-sprites.ts's own
+  // notes:string[] convention.
+  const notes: string[] = [];
+
+  // WR-02: computed BEFORE the port A/B decode below (moved up from its
+  // original position after portB) so the CIA1 joystick branches can
+  // consult the DDR byte already in this same 16-byte buffer.
+  const portADirectionRaw = bytes[0x02]!;
+  const keyboardColumnDriven = chip === 1 && portADirectionRaw !== 0x00;
+  const ddraHex = portADirectionRaw.toString(16).padStart(2, "0");
+  const outputPinCount = directionOutputs(portADirectionRaw).filter(Boolean).length;
+  const confoundedReason =
+    `$DC00 is the keyboard-matrix COLUMN SELECT and $DC01 is the ROW READ, on the same pins as ` +
+    `joystick 2 ($DC00) and joystick 1 ($DC01). DDRA ($DC02) reads 0x${ddraHex}, so ${outputPinCount} ` +
+    `port A pin(s) are configured as outputs, and a stock read halts the machine at an arbitrary PC -- ` +
+    `often inside the KERNAL's IRQ keyboard scan -- so a cleared bit here may be a driven column rather ` +
+    `than a pressed direction. Read again with the machine stopped outside the scan, or compare two samples.`;
+  if (keyboardColumnDriven) {
+    notes.push(
+      `$DC00/$DC01 (joystick 2/joystick 1) share pins with the keyboard-matrix column-select/row-read, ` +
+        `and DDRA (0x${ddraHex}) shows ${outputPinCount} port A output pin(s) -- see portA.joystick2's/portB.joystick1's confoundedReason.`,
+    );
+  }
 
   const portARaw = bytes[0x00]!;
   const portA: Record<string, unknown> = { raw: portARaw };
@@ -168,6 +226,8 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portARaw, 2),
       right: activeLow(portARaw, 3),
       fire: activeLow(portARaw, 4),
+      confounded: keyboardColumnDriven,
+      ...(keyboardColumnDriven ? { confoundedReason } : {}),
     };
   } else {
     // $DD00 bits 0-1 are the VIC bank number, INVERTED: %00=bank3, %01=bank2,
@@ -193,6 +253,8 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
       left: activeLow(portBRaw, 2),
       right: activeLow(portBRaw, 3),
       fire: activeLow(portBRaw, 4),
+      confounded: keyboardColumnDriven,
+      ...(keyboardColumnDriven ? { confoundedReason } : {}),
     };
   } else {
     portB.rs232Rxd = boolBit(portBRaw, 0);
@@ -203,15 +265,6 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     portB.dsr = boolBit(portBRaw, 7);
   }
 
-  function directionOutputs(raw: number): boolean[] {
-    const outputs: boolean[] = [];
-    for (let n = 0; n < 8; n += 1) {
-      outputs.push(boolBit(raw, n));
-    }
-    return outputs;
-  }
-
-  const portADirectionRaw = bytes[0x02]!;
   const portADirection = { raw: portADirectionRaw, outputs: directionOutputs(portADirectionRaw) };
 
   const portBDirectionRaw = bytes[0x03]!;
@@ -220,18 +273,50 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   const timerA = { current: bytes[0x04]! | (bytes[0x05]! << 8) };
   const timerB = { current: bytes[0x06]! | (bytes[0x07]! << 8) };
 
+  // WR-03: fromBcd() returns `null`, never a fabricated decimal, when a byte
+  // is not valid BCD. The `tod` object OMITS the corresponding key and lists
+  // its name in `invalidBcd` (D-05-20) -- `rawHex` is always present so the
+  // caller can always re-derive the truth for a field this decoder declines
+  // to interpret.
   const todTenthsRaw = bytes[0x08]!;
   const todSecondsRaw = bytes[0x09]!;
   const todMinutesRaw = bytes[0x0a]!;
   const todHoursRaw = bytes[0x0b]!;
-  const tod = {
+  const todSeconds = fromBcd(todSecondsRaw);
+  const todMinutes = fromBcd(todMinutesRaw);
+  const todHours = fromBcd(todHoursRaw & 0x1f);
+
+  const invalidBcd: string[] = [];
+  const tod: Record<string, unknown> = {
     tenths: todTenthsRaw & 0x0f,
-    seconds: fromBcd(todSecondsRaw),
-    minutes: fromBcd(todMinutesRaw),
-    hours: fromBcd(todHoursRaw & 0x1f),
-    pm: bit(todHoursRaw, 7) === 1,
-    rawHex: [todTenthsRaw, todSecondsRaw, todMinutesRaw, todHoursRaw].map((b) => b.toString(16).padStart(2, "0")).join(""),
   };
+  if (todSeconds !== null) {
+    tod.seconds = todSeconds;
+  } else {
+    invalidBcd.push("seconds");
+    notes.push(
+      `$${basePrefix}09 (TOD seconds) reads 0x${todSecondsRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  if (todMinutes !== null) {
+    tod.minutes = todMinutes;
+  } else {
+    invalidBcd.push("minutes");
+    notes.push(
+      `$${basePrefix}0A (TOD minutes) reads 0x${todMinutesRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  if (todHours !== null) {
+    tod.hours = todHours;
+  } else {
+    invalidBcd.push("hours");
+    notes.push(
+      `$${basePrefix}0B (TOD hours) reads 0x${todHoursRaw.toString(16).padStart(2, "0")}, which is not valid BCD -- no decimal value is reported; tod.rawHex carries the raw byte.`,
+    );
+  }
+  tod.pm = bit(todHoursRaw, 7) === 1;
+  tod.rawHex = [todTenthsRaw, todSecondsRaw, todMinutesRaw, todHoursRaw].map((b) => b.toString(16).padStart(2, "0")).join("");
+  tod.invalidBcd = invalidBcd;
 
   const serialShiftRegister = bytes[0x0c]!;
 
@@ -285,6 +370,7 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
     chip,
     base,
     registersHex,
+    notes,
     portA,
     portB,
     portADirection,

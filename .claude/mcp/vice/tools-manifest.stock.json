@@ -2469,6 +2469,12 @@
                         },
                         "fire": {
                           "type": "boolean"
+                        },
+                        "confounded": {
+                          "type": "boolean"
+                        },
+                        "confoundedReason": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -2476,7 +2482,8 @@
                         "down",
                         "left",
                         "right",
-                        "fire"
+                        "fire",
+                        "confounded"
                       ]
                     },
                     "vicBank": {
@@ -2531,6 +2538,12 @@
                         },
                         "fire": {
                           "type": "boolean"
+                        },
+                        "confounded": {
+                          "type": "boolean"
+                        },
+                        "confoundedReason": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -2538,7 +2551,8 @@
                         "down",
                         "left",
                         "right",
-                        "fire"
+                        "fire",
+                        "confounded"
                       ]
                     },
                     "rs232Rxd": {
@@ -2642,15 +2656,19 @@
                     },
                     "rawHex": {
                       "type": "string"
+                    },
+                    "invalidBcd": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "tenths",
-                    "seconds",
-                    "minutes",
-                    "hours",
                     "pm",
-                    "rawHex"
+                    "rawHex",
+                    "invalidBcd"
                   ]
                 },
                 "serialShiftRegister": {
@@ -2882,6 +2900,12 @@
                     "todAlarmTime",
                     "todLatchState"
                   ]
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               },
               "required": [
@@ -2899,7 +2923,8 @@
                 "interruptStatus",
                 "timerAControl",
                 "timerBControl",
-                "unavailable"
+                "unavailable",
+                "notes"
               ]
             }
           },
