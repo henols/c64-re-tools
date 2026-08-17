@@ -224,7 +224,7 @@ phase boundary rather than as in-plan checkpoints.
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verify or Wave 0 dependencies — all 22 tasks carry one
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — all 23 tasks carry one
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify (every task has one)
 - [x] Wave 0 covers all MISSING references (each plan creates the test file its own commands invoke)
 - [x] No watch-mode flags

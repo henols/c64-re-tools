@@ -608,9 +608,19 @@ globally.
 | A3 | `vice_memory_compare`'s fork `mode: 'snapshot'` has no dedicated memory-only snapshot producer and is genuinely unreachable without either a destructive restore or an unverified `.vsf` parse | Common Pitfalls Pitfall 2 | Low — confirmed by grepping BOTH manifests for any snapshot-producing tool besides `vice_snapshot_save` (a whole-machine `.vsf` dump) and confirming zero skill callers of `mode:'snapshot'`. If a producer does exist that this research missed, the cost of being wrong is simply that the refusal text undersells a buildable feature — not a correctness bug. |
 | A4 | The VIC-II/CIA bit-field names transcribed from `memmap.json` into the new TS modules will be transcribed correctly and stay in sync if `memmap.json` is later revised | Standard Stack Alternatives, Don't Hand-Roll | Low — the SAME risk class Phase 4's D-06 already accepted for the opcode table (a committed literal, cross-checked once, not re-verified automatically against its source on every change). No automated drift check is proposed; a manual note in the new modules' header comments pointing at the exact `memmap.json` entries checked is the mitigation, matching this codebase's existing provenance-comment convention. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three were resolved at planning time (2026-08-17), each adopting this
+> document's own recommendation verbatim. See the `plan_decision` blocks named
+> below for the binding form of each decision.
 
 1. **`vice_memory_compare`'s `mode: 'snapshot'` — build it, refuse it, or defer it?**
+
+   **RESOLVED: refused by name — see D-05-01 in `05-01-PLAN.md`.** `snapshot_name`/`start`/`end`
+   stay *declared* on the stock schema (the D-03 gate in `stock-dispatch.test.ts` asserts every
+   fork property exists on stock with a matching type), but `mode:'snapshot'` is refused before
+   any wire send.
+
    - What we know: no skill calls it; no memory-only snapshot producer tool
      exists in either manifest; `vice_snapshot_save` only produces
      whole-machine `.vsf` dumps.
@@ -625,6 +635,10 @@ globally.
      silent omission.
 
 2. **Should `vice_symbols_load`'s `format: 'kickasm'`/`'simple'` be refused by name or simply unimplemented (auto-detect fails silently to "not vice format")?**
+
+   **RESOLVED: refused by name — see D-05-02 in `05-02-PLAN.md`.** `'auto'` does no format
+   sniffing; a 0-symbol load is an explained success rather than an error.
+
    - What we know: no skill or script in this repo produces a KickAssembler
      label file or names a "simple" format anywhere; only ACME
      (`--vicelabels`) and regenerator2000 (`--export_lbl`, unverified format)
@@ -643,6 +657,11 @@ globally.
      that risks a false-positive misclassification.
 
 3. **Does `vice_sprite_inspect`'s answer need the full 24×21 grid for hi-res sprites, or is a scaled/half-width representation preferable for agent readability?**
+
+   **RESOLVED: native resolution per mode (24×21 hi-res, 12×21 multicolour), not scaled by the
+   expansion bits — see D-05-04 in `05-05-PLAN.md`.** `format:'png_base64'` was additionally
+   omitted from the stock enum and refused (D-05-03), mirroring the SHOT-01..05 cut.
+
    - What we know: the fork's legend implies a fixed mapping; the roadmap and
      REQUIREMENTS.md both simply say "ASCII rendering" with no format spec.
    - What's unclear: whether an agent-facing ASCII grid should render at

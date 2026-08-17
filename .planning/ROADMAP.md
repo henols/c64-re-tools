@@ -300,7 +300,7 @@ Notes:
   2. A user can load a symbol file and have addresses resolved to symbol names on the stock backend.
   3. A user can read decoded VIC-II and CIA state on the stock backend, with every internal field stock cannot read marked explicitly unavailable — never reported as zero.
   4. A user can read and inspect sprites, including ASCII rendering, on the stock backend.
-  5. Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the two tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`), which are Phase 8's business.
+  5. Running each of the six skills' documented tool calls against the stock backend produces no unadvertised-tool failure except for the three tools proven unrecoverable (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`), which are Phase 8's business. *(Corrected 2026-08-17, during Phase 5 planning: the count was **two**. Plan 05-08's skill-vs-manifest sweep found a third — `vice_keyboard_restore`, called by `c64-re-tools/.claude/skills/c64-program-recon/references/control-flow.md:86`, present on the fork manifest, absent from stock. It belongs to the same family as `vice_keyboard_matrix` and is already recorded as a hard loss in `docs/stock-vice-parity.md` §A item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse the RESTORE/NMI line. It is covered by no requirement and falls in no phase's scope, so this is a factual correction to the exception list, not a scope cut; without it criterion 5 is literally unmeetable. Route: `BACK-05` + `SKILL-01` in Phase 8.)*
 
 **Plans**: 8 plans in 4 waves
 Plans:

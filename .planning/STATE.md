@@ -2,17 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: ready_to_plan
-last_updated: 2026-08-17T15:10:00.000Z
-last_activity: 2026-08-17 -- Phase 04 verified (CI confirmed ACME round-trip); scope cut; quick task 260817-n6p
+status: executing
+last_updated: "2026-08-17T17:20:36.457Z"
+last_activity: 2026-08-17 -- Phase 5 planning complete
 progress:
-  total_phases: 7
+  total_phases: 5
   completed_phases: 4
-  total_plans: 39
+  total_plans: 47
   completed_plans: 39
-  percent: 57
-scope_note: "Phase 6 CUT 2026-08-17 — total_phases counts 7 executable phases (1-5, 7, 8). Open requirements 29 -> 14."
-stopped_at: Phase 04 verified and closed — ready to plan Phase 5 (now 4 requirements, was 11)
+  percent: 80
 ---
 
 # Project State
@@ -30,8 +28,8 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 Phase: 5 (skill-critical-derived-tools) — READY TO PLAN
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-17 -- Phase 04 closed (verification passed, UAT confirmed against CI run 32039853822)
+Status: Ready to execute
+Last activity: 2026-08-17 -- Phase 5 planning complete
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 28 tools -- 16 already
