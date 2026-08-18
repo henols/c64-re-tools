@@ -24,6 +24,7 @@
     "build.ts",
     "container-guard.mts",
     "backend-detect.mts",
+    "capability-registry.ts",
     "stock-dispatch.ts",
     "stock-derived.ts",
     "stock-handler.ts",

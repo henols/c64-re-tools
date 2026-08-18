@@ -87,6 +87,7 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-vicii.ts", "DERIV-05"],
   ["stock-cia.ts", "DERIV-05"],
   ["stock-sprites.ts", "DERIV-06"],
+  ["capability-registry.ts", "BACK-05"],
 ];
 for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
