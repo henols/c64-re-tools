@@ -122,3 +122,17 @@ Both `vice_cycles_stopwatch` and `vice_run_until` are fully dispatchable, advert
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: .claude/mcp/vice/stock-dispatch.ts
+- FOUND: .claude/mcp/vice/stock-derived.ts
+- FOUND: .claude/mcp/vice/package.json
+- FOUND: .claude/mcp/vice/tools-manifest.stock.json
+- FOUND: .claude/mcp/vice/stock-dispatch.test.ts
+- FOUND: .claude/mcp/vice/hostpath-consumers.test.ts
+- FOUND: .claude/mcp/vice/stock-derived.test.ts
+- FOUND: .planning/phases/07-cycle-timing-and-wedge-triage/07-08-SUMMARY.md
+- FOUND: 5e54822 (feat: wire vice_cycles_stopwatch and vice_run_until into stock dispatch)
+- FOUND: 8500ab6 (feat: add manifest entries for vice_cycles_stopwatch and vice_run_until)
+- FOUND: b9824df (test: add conformance cases for vice_cycles_stopwatch and vice_run_until)
