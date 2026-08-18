@@ -349,7 +349,47 @@ positive of a body-vs-table scan: those IDs sit under "Future Requirements — d
 this roadmap", and the v0.2.0 traceability table is correct to omit them, as it is to omit the
 proposed `R2000-*` v0.3.0 set.
 
-Next: Phase 7, cycle timing and wedge triage (Phase 6 is cut).
+**Previously:** Phase 8 (Capability Honesty and the Install Story) complete —
+2026-08-18, and it is the milestone's last phase. `capability-registry.ts` is now
+the single runtime-importable home for the 26-entry per-backend capability delta,
+deliberately shaped like `vice.ts`'s `DENY_LIST` / `denyListRefusalMessage()` pair.
+Four consumers read it and none holds a copy: `vice-proxy.ts`'s `tools/call` miss
+branch (strictly after `DENY_LIST`), the generator behind `docs/tool-support.md`,
+the skill-honesty lint, and `check-skill-tool-coverage.mjs` — whose literal
+duplicate array this phase deleted, closing the **D-E** debt its own header comment
+had asked for. `docs/tool-support.md` is this repository's first generated markdown
+file: 63 rows derived from the two shipped manifests plus three mechanically
+discovered synthetic tools, with **zero** hand-curated exclusions, guarded by the
+same generate-into-scratch-then-byte-diff mechanism `resources-sync.test.ts` uses
+for compiled resources. README gained the install story — per-ecosystem VICE
+versions, the `VICE_BACKEND` choice and its consequences — and lost two false
+claims, including an assertion that two guardrail test files existed when neither
+was anywhere in the repository. Verified 4/4 success criteria, 5/5 requirements.
+
+**The phase's own deliverables contained the failure class it exists to remove**,
+and only executing the documentation caught it. Running the README's own install
+instructions in a fresh `debian:trixie` container failed outright — Debian ships
+`vice` in `contrib`, not `main` — a defect in a section written minutes earlier and
+reviewed as correct. The post-execution code review then found two more: README
+called `VICE_BACKEND` "one config value" in `.mcp.json` while `vice-proxy.ts`'s own
+mismatch error says it "must be set for both" processes, and
+`capabilityRefusalMessage()` rendered `entry.alternative` only in its `descoped`
+branch — while all five entries carrying one are `hardware`, so the field was dead
+at exactly the surface `BACK-05` exists for. The generated table, four skill files
+and README all printed the stock route; the runtime refusal alone dropped it. Two
+green test suites had passed over it because the hardware case tested
+`vice_sid_get_state` and the descoped case `vice_memory_fill`, neither of which has
+an alternative. All three are fixed and pinned. Thirteen review warnings were
+consciously left; `WR-14` is the one to revisit — skill prose presents
+`vice_joystick_set` as the stock route for a keyboard-matrix gate, where the
+registry itself only hedges "covers most in-game input".
+
+One item stays open by design: `08-HUMAN-UAT.md` records the plugin-install plus
+`c64-ram-capture` walkthrough as `pending`, since its interactive half needs a live
+session. The install half was executed live and is what caught the `contrib` defect.
+
+Next: v0.2.0's phase work is complete — `/gsd-audit-milestone` then
+`/gsd-complete-milestone`.
 
 ---
-*Last updated: 2026-08-17 after Phase 5 completion (all four DERIV families live on stock; the CPU-view `bank: 0x0000` defect that no unit suite could see, closed by `resolveRequiredBank()` and proven with an I/O-banked-out live regression; 10-case live gate against genuine stock VICE 3.9)*
+*Last updated: 2026-08-18 after Phase 8 completion — the final v0.2.0 phase (one capability registry, four consumers, no second copy; the repo's first generated markdown file with a byte-identity drift guard; an install story proven by running it, which is how the Debian `contrib` defect and two further honesty defects in this phase's own output were found)*
