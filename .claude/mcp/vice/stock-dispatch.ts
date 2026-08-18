@@ -27,6 +27,7 @@
 import { resolve, join } from "node:path";
 
 import type { ViceBackend } from "./backend-detect.mts";
+import type { ToolInfo } from "./vice.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";
 import {
@@ -99,6 +100,53 @@ export function manifestPathForBackend(backend: ViceBackend, hereDir: string, en
     return resolve(envOverride);
   }
   return backend === "stock" ? join(hereDir, "tools-manifest.stock.json") : join(hereDir, "tools-manifest.json");
+}
+
+/**
+ * resolveAdvertisedToolDefinition() -- WR-07's fix. `tools` in vice-proxy.ts
+ * is a name-keyed record: whichever assignment to a given key runs LAST
+ * wins, and vice-proxy.ts's own registration order used to assign
+ * RECYCLE_TOOL/DIAGNOSE_TOOL's literal (fork-worded) definitions
+ * UNCONDITIONALLY, on both backends, straight after the backend-aware
+ * manifest loop had already populated the same keys correctly. So on the
+ * stock backend, `tools/list` served the fork's five-verdict vocabulary --
+ * including `stale_read_path`, which stock cannot produce (D-03) -- and
+ * omitted `monitor_held_elsewhere`, which stock can, even though the
+ * corrected stock manifest entry sat right there in
+ * tools-manifest.stock.json, unread. This function is the ONE place that
+ * decision is now made, so the manifest loop's own per-tool selection and
+ * the two synthetic tools' registration agree.
+ *
+ * Behaviour:
+ *   - `backend === "fork"`: always returns `syntheticDef` unchanged, no
+ *     matter what `manifestTools` contains. The fork's advertised surface
+ *     is frozen at v0.1.x and this function must never be able to alter it.
+ *   - `backend === "stock"`: returns the `manifestTools` entry whose `name`
+ *     equals `syntheticDef.name`, if one exists. Falls back to
+ *     `syntheticDef` when no match exists -- `readManifestTools()`'s own
+ *     malformed/unreadable-manifest fallbacks answer `[]`, and in that case
+ *     the proxy must still advertise a WORKING tool rather than none at all
+ *     (T-07-16-02).
+ *   - NEVER merges fields from the two definitions. Picking one whole
+ *     definition keeps `description`, `inputSchema` and `outputSchema`
+ *     internally consistent; a field-by-field merge could pair a fork
+ *     description with a stock `outputSchema`, or the reverse.
+ *
+ * Declared as a `function`, not a `const` arrow, per this module tree's own
+ * standing rule: stock-dispatch.ts <-> stock-diagnose.ts <-> stock-recycle.ts
+ * form a runtime import cycle, and the phase already reproduced a live
+ * `ReferenceError` from a `const` handler export sitting in that cycle.
+ */
+export function resolveAdvertisedToolDefinition(
+  syntheticDef: ToolInfo,
+  backend: ViceBackend,
+  manifestTools: ToolInfo[],
+): ToolInfo {
+  if (backend === "fork") {
+    return syntheticDef;
+  }
+  const manifestEntry = manifestTools.find((t) => t.name === syntheticDef.name);
+  return manifestEntry ?? syntheticDef;
 }
 
 // ---------------------------------------------------------------------------

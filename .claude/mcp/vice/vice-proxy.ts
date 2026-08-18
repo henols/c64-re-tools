@@ -3176,7 +3176,11 @@ function buildBackendAwareTool(def: ToolDefinition, forkRun: (args: Record<strin
 }
 
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
-for (const def of readManifestTools()) {
+// Read ONCE and reused below for both the manifest loop and the two
+// synthetic registrations' own resolveAdvertisedToolDefinition() calls --
+// never re-read per registration (WR-07, plan 07-16).
+const manifestTools = readManifestTools();
+for (const def of manifestTools) {
   if (DENY_LIST.includes(def.name)) continue;
   tools[def.name] = buildBackendAwareTool(def, (args) => forwardToVice(def.name, args));
 }
@@ -3187,9 +3191,15 @@ for (const def of readManifestTools()) {
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
 // Backend-AWARE (CR-07): both of these gather evidence over the fork's HTTP
 // transport, so on stock they are refused by name rather than advertised and
-// then failed at the wire.
-tools[RECYCLE_TOOL.name] = buildBackendAwareTool(RECYCLE_TOOL, (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildBackendAwareTool(DIAGNOSE_TOOL, (args) => handleDiagnose(args));
+// then failed at the wire. WR-07 (plan 07-16): the ADVERTISED definition is
+// now also backend-aware -- resolveAdvertisedToolDefinition() picks the
+// corrected stock manifest entry on stock (falling back to the synthetic
+// definition when the manifest has none) and always returns the synthetic
+// definition unchanged on the fork, so RECYCLE_TOOL/DIAGNOSE_TOOL's literal
+// fork-worded text below no longer overwrites the stock manifest's own
+// entry in `tools/list`.
+tools[RECYCLE_TOOL.name] = buildBackendAwareTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, ACTIVE_BACKEND.backend, manifestTools), (args) => handleRecycle(args));
+tools[DIAGNOSE_TOOL.name] = buildBackendAwareTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, ACTIVE_BACKEND.backend, manifestTools), (args) => handleDiagnose(args));
 
 const server = new MCPServer({ name: "vice", version: PROXY_VERSION, tools });
 await server.startStdio();
