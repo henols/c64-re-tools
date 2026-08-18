@@ -97,6 +97,12 @@ patterns, or schema changes were introduced. Both threat-register items (T-07-11
 mitigated as specified: the frame-counter fallback is marked SUPERSEDED with its rejecting
 arithmetic, and the interception-constraint citation is corrected with a per-phase drift note.
 
-## Self-Check
+## Self-Check: PASSED
 
-See `## Self-Check` section below.
+- FOUND: CLAUDE.md
+- FOUND: .planning/PROJECT.md
+- FOUND: docs/phase0-binmon-findings.md
+- FOUND: .planning/phases/07-cycle-timing-and-wedge-triage/07-04-SUMMARY.md
+- FOUND: commit 0c3cd38 (Task 1 — rewriteArguments() line citations)
+- FOUND: commit f22bd53 (Task 2 — SUPERSEDED note)
+- FOUND: commit bbfb802 (this summary)
