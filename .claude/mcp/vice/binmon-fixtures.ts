@@ -10,27 +10,41 @@
 // (or a garbage/duplicate/desynced stream) without a live x64sc. That left
 // five of VERIF-02's eight cases unobtainable in this container, which has
 // no VICE and no display (see docs/phase1-probe-results.md's own framing).
-// This module makes those five cases synthesize-only fixtures; the other
-// three (display-get, event-interleaved, checkpoint-list) are LOADED from
-// fixtures/binmon/ through loadCapturedFixture() below, which
-// probe-binmon.mjs's --capture mode is what normally writes.
+// This module makes those five cases synthesize-only fixtures; the others
+// (display-get, event-interleaved, checkpoint-list, and the three
+// CPUHISTORY_GET cases added by plan 07-12) are LOADED from fixtures/binmon/
+// through loadCapturedFixture() below, which probe-binmon.mjs's --capture mode
+// is what normally writes.
 //
-// PROVENANCE, CORRECTED (WR-10, code review 2026-08-13): the three fixtures
-// under fixtures/binmon/ are NOT currently real captures. This comment used to
-// say they were "captured for real", while all three sidecars say
-// `"capturedFrom": "synthesized-fallback"`, `"synthetic": true`, and both
-// fixtures/binmon/README.md and docs/phase2-backend-probe-evidence.md record
-// the 2026-08-13 override of D-19: no stock VICE binary is reachable in this
-// environment, so they were generated from the normative protocol spec
-// (docs/phase0-binmon-findings.md §3/§5) instead. In a codebase whose review
-// standard is "provenance that lies is the thing not to produce", the module
-// that LOADS the fixtures is the worst possible place for a stale claim of
-// hardware evidence. The re-capture follow-up is tracked at
-// .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md.
+// PROVENANCE -- MIXED, per fixture. Read the sidecar, never this comment, for
+// any individual fixture's status. There is no blanket answer, and there used
+// to be: this header asserted "the three fixtures under fixtures/binmon/ are
+// NOT currently real captures" and "nothing downstream may treat these bytes as
+// hardware evidence", which became FALSE for exactly the three fixtures 07-12's
+// entire CPUHISTORY_GET layout proof rests on (07-REVIEW.md WR-09).
 //
-// Nothing downstream may treat these bytes as hardware evidence.
-// loadCapturedFixture() returns `provenance.synthetic` explicitly so a caller
-// can assert on it rather than inferring from a string.
+//   SYNTHETIC (spec-derived, `"synthetic": true`, carry a `specSections` array):
+//     display-get, event-interleaved, checkpoint-list. Generated from the
+//     normative protocol spec (docs/phase0-binmon-findings.md §3/§5) under the
+//     2026-08-13 override of D-19 -- no stock VICE binary was reachable in the
+//     environment plan 02-02 ran in. Recorded in
+//     fixtures/binmon/README.md and docs/phase2-backend-probe-evidence.md; the
+//     re-capture follow-up is tracked at
+//     .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md.
+//     Nothing downstream may treat THESE bytes as hardware evidence.
+//
+//   REAL CAPTURES (`"synthetic": false`), 2026-08-18, plan 07-12:
+//     cpuhistory-get and cpuhistory-get-multi off a genuine VICE 3.10 build,
+//     cpuhistory-get-unsupported off a genuine VICE 3.9 build. These ARE
+//     hardware evidence -- cpuhistory-get was hand-decoded byte by byte and
+//     cpuhistory-get-multi is what proved entries[] arrives oldest-first.
+//
+// In a codebase whose review standard is "provenance that lies is the thing not
+// to produce", the module that LOADS the fixtures is the worst possible place
+// for a stale blanket claim in either direction. loadCapturedFixture() REQUIRES
+// each sidecar to state `synthetic` (WR-09) and returns it as a real boolean,
+// so a caller asserts on the fixture's own declaration rather than on this
+// comment or on a `capturedFrom` string.
 //
 // WHAT NOT TO DO: never import the vendor's contracts.ts/errors.ts here or
 // anywhere else in this package -- they pull in `zod`, which
@@ -205,17 +219,29 @@ export class MissingFixtureError extends Error {
   }
 }
 
-const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command"] as const;
+/** WR-09 (07-REVIEW.md) added `synthetic` to this list. Before that,
+ * `synthetic: provenance.synthetic === true` meant a sidecar that OMITTED the
+ * key read back as `synthetic: false` -- so a hand-written sidecar claimed
+ * hardware provenance by saying nothing, and
+ * `assert.equal(fixture.synthetic, false)` (whose stated purpose is that "a
+ * future re-record to a synthesized fallback fails loudly here rather than
+ * silently") was satisfied by omission. Requiring the key means provenance is
+ * always STATED. probe-binmon.mjs's buildSidecar() emits `synthetic: false`
+ * for every live capture; the synthesized fixtures carry `true`. */
+const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"] as const;
 
 export interface CapturedFixture {
   bytes: Buffer;
   provenance: Record<string, unknown>;
   /** WR-10: the sidecar's own `synthetic` flag, surfaced as a real boolean so a
    * caller can assert "these bytes are/are not hardware evidence" without
-   * re-deriving it from `provenance.capturedFrom`'s string. Absent or
-   * non-boolean in the sidecar reads as `false` -- i.e. a fixture only claims
-   * hardware provenance when it says so explicitly, and no default can quietly
-   * turn a synthetic fixture into a recorded one. */
+   * re-deriving it from `provenance.capturedFrom`'s string.
+   *
+   * WR-09 (07-REVIEW.md): the key is now REQUIRED (see
+   * REQUIRED_PROVENANCE_KEYS), so it can no longer be defaulted. A sidecar that
+   * does not state its provenance is a MissingFixtureError, not a fixture that
+   * quietly claims to be a real capture. A non-boolean value still reads as
+   * `false` for narrowing, but the required-key check means one cannot arrive. */
   synthetic: boolean;
 }
 

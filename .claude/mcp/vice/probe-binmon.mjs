@@ -611,9 +611,10 @@ function selftest() {
   // --- --capture mode selftest additions (no socket, no emulator) ---------
 
   // (a) WR-11: the REAL sidecar builder -- buildSidecar(), the same function
-  // runCapture() writes with -- emits exactly the four required provenance keys,
-  // with the case's own recorded command. The previous version of this check
-  // built an object literal with those keys and asserted the literal had them,
+  // runCapture() writes with -- emits exactly the four required provenance keys
+  // plus the explicit `synthetic` provenance flag (07-REVIEW.md WR-09), with
+  // the case's own recorded command. The previous version of this check built
+  // an object literal with those keys and asserted the literal had them,
   // exercising nothing while its message claimed to cover the builder.
   const builtSidecar = buildSidecar({
     capturedFrom: "stock:/usr/bin/x64sc",
@@ -623,9 +624,13 @@ function selftest() {
   });
   const sidecarKeys = Object.keys(builtSidecar);
   assertTrue(
-    sidecarKeys.length === 4 &&
-      ["capturedFrom", "viceVersion", "capturedAt", "command"].every((k) => sidecarKeys.includes(k)),
-    "buildSidecar: exactly the four required provenance keys, and no others",
+    sidecarKeys.length === 5 &&
+      ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"].every((k) => sidecarKeys.includes(k)),
+    "buildSidecar: exactly the four required provenance keys plus the explicit synthetic flag, and no others",
+  );
+  assertTrue(
+    builtSidecar.synthetic === false,
+    "buildSidecar (WR-09): synthetic is STATED as false -- a live capture must never leave provenance to be defaulted by the loader",
   );
   assertTrue(builtSidecar.command === CAPTURE_COMMAND_BY_CASE["display-get"], "buildSidecar: command comes from the case's own recorded command string");
   assertTrue(builtSidecar.capturedAt === "2026-08-13T00:00:00.000Z", "buildSidecar: capturedAt is an ISO timestamp from the injected clock");
@@ -1374,6 +1379,18 @@ export function buildSidecar({ capturedFrom, viceVersion, caseName, now = () => 
     viceVersion,
     capturedAt: now().toISOString(),
     command,
+    // WR-09 (07-REVIEW.md): provenance is always STATED, never defaulted.
+    // binmon-fixtures.ts's loadCapturedFixture() derives
+    // `synthetic: provenance.synthetic === true`, so a sidecar that omits the
+    // key silently claims hardware provenance -- which is how the three real
+    // CPUHISTORY_GET captures satisfied `assert.equal(fixture.synthetic,
+    // false)` by saying nothing at all, defeating the very assertion whose
+    // stated purpose is that "a future re-record to a synthesized fallback
+    // fails loudly here rather than silently". Anything this function writes
+    // came off a live socket, so `false` is the truthful value; the synthetic
+    // fixtures are written by hand and carry `true` plus a `specSections`
+    // array. Never make this a parameter.
+    synthetic: false,
   };
 }
 

@@ -126,6 +126,7 @@ test("loadCapturedFixture: returns { bytes, provenance } when present", () => {
         viceVersion: "3.9.0.0",
         capturedAt: new Date().toISOString(),
         command: "DISPLAY_GET (0x84)",
+        synthetic: false,
       }),
     );
     const result = loadCapturedFixture("display-get", { dir });
@@ -183,7 +184,7 @@ test("WR-10 loadCapturedFixture: a sidecar that parses to a non-object (a bare a
   }
 });
 
-test("WR-10 loadCapturedFixture: `synthetic` is surfaced as a real boolean, and only a sidecar that SAYS so claims hardware provenance", () => {
+test("WR-10/WR-09 loadCapturedFixture: `synthetic` is surfaced as a real boolean AND is a required key -- provenance is stated, never defaulted", () => {
   const dir = mkdtempSync(join(tmpdir(), "binmon-fixtures-test-"));
   try {
     const base = { viceVersion: "3.9.0.0", capturedAt: new Date().toISOString(), command: "DISPLAY_GET (0x84)" };
@@ -192,15 +193,58 @@ test("WR-10 loadCapturedFixture: `synthetic` is surfaced as a real boolean, and 
     writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "synthesized-fallback", synthetic: true }));
     assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, true);
 
+    writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "stock:/usr/bin/x64sc", synthetic: false }));
+    assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, false);
+
+    // WR-09 (07-REVIEW.md): the flag used to be OPT-IN, so a sidecar that
+    // omitted it read back as a real capture -- which is how three
+    // hand-written sidecars satisfied `assert.equal(fixture.synthetic, false)`
+    // by saying nothing at all, defeating the assertion whose stated purpose
+    // is that a re-record to a synthesized fallback fails loudly. It is now
+    // REQUIRED: silence is a MissingFixtureError, not a provenance claim.
     writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "stock:/usr/bin/x64sc" }));
-    assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, false, "a sidecar with no flag is treated as a real capture -- the flag is opt-in");
+    assert.throws(
+      () => loadCapturedFixture("display-get", { dir }),
+      (err: unknown) => {
+        assert.ok(err instanceof MissingFixtureError, `expected MissingFixtureError, got ${String(err)}`);
+        assert.match((err as Error).message, /synthetic/, "the refusal must name the missing key");
+        return true;
+      },
+      "a sidecar that does not state its provenance must be refused, never defaulted to 'real capture'",
+    );
 
     // A non-boolean must NOT be coerced into "recorded": a truthy string like
-    // "false" would otherwise silently promote a synthetic fixture.
+    // "false" would otherwise silently promote a synthetic fixture. (The
+    // required-key check above means this cannot arrive from a sidecar that
+    // says nothing, but a sidecar that says something wrong still must not be
+    // read as a hardware claim.)
     writeFileSync(join(dir, "display-get.json"), JSON.stringify({ ...base, capturedFrom: "x", synthetic: "true" }));
     assert.equal(loadCapturedFixture("display-get", { dir }).synthetic, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WR-09: every committed sidecar under fixtures/binmon/ STATES its provenance, and the three CPUHISTORY_GET captures state it as real", () => {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "binmon");
+  const cases = [
+    { name: "display-get", synthetic: true },
+    { name: "event-interleaved", synthetic: true },
+    { name: "checkpoint-list", synthetic: true },
+    { name: "cpuhistory-get", synthetic: false },
+    { name: "cpuhistory-get-multi", synthetic: false },
+    { name: "cpuhistory-get-unsupported", synthetic: false },
+  ];
+  for (const { name, synthetic } of cases) {
+    const raw = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8")) as Record<string, unknown>;
+    assert.equal(
+      typeof raw.synthetic,
+      "boolean",
+      `${name}.json must STATE synthetic as a boolean -- omission is how a hand-written sidecar used to claim hardware provenance by silence`,
+    );
+    assert.equal(raw.synthetic, synthetic, `${name}.json declares the wrong provenance`);
+    // And it must load, i.e. satisfy the required-key contract end to end.
+    assert.equal(loadCapturedFixture(name, { dir }).synthetic, synthetic);
   }
 });
 

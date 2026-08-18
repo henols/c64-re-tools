@@ -2,5 +2,7 @@
   "capturedFrom": "stock:/usr/local/bin/x64sc",
   "viceVersion": "3.10.0.0",
   "capturedAt": "2026-08-18T10:54:55.500Z",
-  "command": "CPUHISTORY_GET (0x86) count=1"
+  "command": "CPUHISTORY_GET (0x86) count=1",
+  "synthetic": false,
+  "note": "Real capture from a genuine VICE 3.10 build. Hand-decoded byte by byte during the 07-REVIEW re-review: count=1, item_size=0x2f=47, regCount=8, 8x4-byte register items, cycle=0x031734ec, instruction_length=4, instruction bytes 8D 92 02 FF -- 4 + 1 + 47 = 52 = exactly the declared body length. This fixture is the evidence for 07-12s corrected CPUHISTORY_GET layout."
 }

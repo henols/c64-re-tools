@@ -2,5 +2,7 @@
   "capturedFrom": "stock:/usr/bin/x64sc",
   "viceVersion": "3.9.0.0",
   "capturedAt": "2026-08-18T10:56:06.002Z",
-  "command": "CPUHISTORY_GET (0x86) count=1 against a build without FEATURE_CPUMEMHISTORY"
+  "command": "CPUHISTORY_GET (0x86) count=1 against a build without FEATURE_CPUMEMHISTORY",
+  "synthetic": false,
+  "note": "Real capture from a genuine VICE 3.9 build (/usr/bin/x64sc), which has no 0x86 case at all: the reply is an INVALID_TYPE (0x83) error frame. REQUIRES A 3.9-CLASS BUILD to re-record -- see probe-binmon.mjs CAPTURE_REQUIRES_VERSION, which refuses to overwrite this file from a >= 3.10 target."
 }
