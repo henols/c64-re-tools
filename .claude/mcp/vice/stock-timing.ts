@@ -184,20 +184,27 @@ export type CycleBaseline = CpuHistoryBaseline | FramePositionBaseline | Unavail
 
 /** Route A's one extra REGISTERS_GET for PC -- Route B reads PC out of the
  * SAME REGISTERS_GET reply it already needs for LIN/CYC (see
- * `readCycleBaseline()` below), so this helper exists only for Route A. */
-async function readProgramCounter(session: StockConnectSession): Promise<number> {
+ * `readCycleBaseline()` below), so this helper exists only for Route A.
+ *
+ * Exported (07-14) so `stock-run-until.ts` can reuse this one existing
+ * PC-read seam to resolve the already_gone cleanup race, rather than
+ * re-deriving a second one. No test in this tree asserts these throw
+ * messages' exact strings (grep-verified against `readCycleBaseline:` at
+ * 07-14 plan time), so they are named for what this function does, not for
+ * the caller that historically was its only one. */
+export async function readProgramCounter(session: StockConnectSession): Promise<number> {
   const catalog = await registerCatalogFor(session);
   const pcEntry = catalog.byName.get("PC");
   if (!pcEntry) {
-    throw new Error("readCycleBaseline: the connected VICE build's REGISTERS_AVAILABLE enumeration has no \"PC\" register");
+    throw new Error("readProgramCounter: the connected VICE build's REGISTERS_AVAILABLE enumeration has no \"PC\" register");
   }
   const response = await session.client.send(CommandType.RegistersGet, memspaceBody({ memspace: 0x00 }));
   if (response.type !== "registers") {
-    throw new Error(`readCycleBaseline: expected a registers reply, got "${response.type}"`);
+    throw new Error(`readProgramCounter: expected a registers reply, got "${response.type}"`);
   }
   const found = response.registers.find((reg) => reg.id === pcEntry.id);
   if (!found) {
-    throw new Error("readCycleBaseline: REGISTERS_GET's reply did not include a value for \"PC\" despite the catalog enumerating it");
+    throw new Error("readProgramCounter: REGISTERS_GET's reply did not include a value for \"PC\" despite the catalog enumerating it");
   }
   return found.value;
 }

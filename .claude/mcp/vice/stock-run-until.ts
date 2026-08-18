@@ -47,6 +47,7 @@ import {
 } from "./stock-protocol.ts";
 import { parseAddress } from "./stock-address.ts";
 import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
+import { readProgramCounter } from "./stock-timing.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -264,7 +265,6 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
 
   const payload: Record<string, unknown> = {
     requested: "run_until",
-    reached: false,
     timedOut: true,
     address,
     timeoutMs,
@@ -276,5 +276,50 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   };
   if (timeoutClamped) payload.timeoutClamped = true;
   if (cleanupError !== undefined) payload.cleanupError = cleanupError;
+
+  if (cleanup === "already_gone") {
+    // WR-01: an ObjectMissing on this delete means the temporary checkpoint
+    // was already gone before the delete arrived -- VICE only does that the
+    // instant the checkpoint fires (mon_breakpoint.c:605-607), so the
+    // address almost certainly WAS reached, between the deadline expiring
+    // and this cleanup delete being sent. Never assert reached:false on
+    // this branch; resolve it from the program counter instead, or declare
+    // it unresolved -- never fabricate a PC value.
+    try {
+      const pc = await readProgramCounter(session);
+      if (pc === address) {
+        payload.reached = true;
+        payload.raceResolved = "pc_at_address";
+        payload.pcAtCleanup = pc;
+        payload.raceNote =
+          "the temporary checkpoint fired between the deadline expiring and the cleanup delete being sent -- the program " +
+          "counter still at the requested address confirms the address executed.";
+      } else {
+        payload.reached = false;
+        payload.raceResolved = "pc_elsewhere";
+        payload.pcAtCleanup = pc;
+        payload.raceNote =
+          `the temporary checkpoint was already gone before the cleanup delete arrived, but the program counter is at ` +
+          `0x${pc.toString(16)}, not the requested 0x${address.toString(16)} -- the race is resolved against a hit.`;
+      }
+    } catch (err) {
+      // The one path where this tool genuinely does not know: never emit
+      // `reached` and `reachedUnknown` together, and never emit
+      // `reached: false` here -- that would assert a falsehood exactly as
+      // confidently as the defect this plan closes.
+      payload.reachedUnknown = true;
+      payload.raceResolved = "unresolved";
+      payload.pcReadError = convertWireError("vice_run_until", err).content[0]!.text;
+      payload.raceNote =
+        "the temporary checkpoint was already gone before the cleanup delete arrived (it likely fired), but the program " +
+        "counter could not be read to confirm it -- read the program counter yourself (vice_registers_get) to settle it.";
+    }
+  } else {
+    // "deleted" and "delete_failed": the checkpoint provably still existed
+    // at cleanup time (or its state is reported separately via
+    // cleanupError), so no race resolution is warranted.
+    payload.reached = false;
+  }
+
   return stockAnswer(session.client, payload);
 };
