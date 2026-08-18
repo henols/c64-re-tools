@@ -15,13 +15,18 @@ import { join } from "node:path";
 
 import { stockConnect, stockDisconnect, stockReconnect, clampCpuHistoryCount, type StockConnectBrokerControl } from "./stock-connect.ts";
 import {
+  ViceMonitorClient,
   CommandType,
   ResponseType,
   ErrorCode,
   REQUEST_HEADER_LEN,
   StockFramingError,
+  StockDesyncError,
+  StockResponseMismatchError,
   StockConnectionClosedError,
   StockRequestTimeoutError,
+  type ConnectOptions,
+  type ResolvedResponse,
 } from "./stock-protocol.ts";
 import { MonitorOwnershipError, type ClaimMonitorOutcome, type ReleaseMonitorOutcome } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice.ts";
@@ -501,7 +506,16 @@ test("stockConnect: the CPUHISTORY_GET request body carries count=1, never count
   assert.notEqual(cpuHistoryBody!.readUInt32LE(1), 0);
 });
 
-test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) still rejects", async () => {
+// CR-01 note: this test's third case previously asserted that an
+// unclassified CPUHISTORY_GET error code (0x82) still rejected the whole
+// handshake. That was the pre-CR-01-fix behaviour this plan exists to
+// change -- resolveCapabilities()'s new guard (Task 1b) means ANY error
+// this module cannot interpret (not just a decode failure) degrades to
+// `cpuHistory: "absent"` rather than failing stockConnect() outright, so
+// every downstream stock tool stays reachable even when a future,
+// currently-unmapped wire error code appears. Updated here rather than
+// left green-but-wrong.
+test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) degrades to absent rather than rejecting (CR-01)", async () => {
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidType }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
     const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5c", brokerControl });
@@ -516,7 +530,129 @@ test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged 
   });
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidApiVersion }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
-    await assert.rejects(() => stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl }));
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl });
+    assert.equal(session.capabilities.cpuHistory, "absent", "an unclassified CPUHISTORY_GET error code must degrade to absent, not fail the handshake");
+    await stockDisconnect(session);
+  });
+});
+
+// ===========================================================================
+// CR-01 (07-VERIFICATION.md gap 1): probeCpuHistory()/resolveCapabilities()
+// must answer a capability VALUE for a DECODE failure and still REJECT for a
+// TRANSPORT failure. Every case below patches
+// ViceMonitorClient.prototype.send() so the CPUHISTORY_GET call rejects with
+// the exact error class under test -- deliberately NOT a wire-accurate body.
+// Plan 07-12 makes the real 52-byte CPUHISTORY_GET body decode successfully;
+// a test that manufactured the framing failure from real bytes would
+// silently stop testing this guard the moment that lands. Every other
+// command in the handshake (PING, VICE_INFO, EXIT) is still answered for
+// real by happyPathResponder() over the net stub server -- only the one
+// command under test is intercepted.
+// ===========================================================================
+
+/** Temporarily replaces ViceMonitorClient.prototype.send() so a CPUHISTORY_GET
+ * call rejects with `err` directly, while every other command type still
+ * reaches the real implementation (and, from there, the net stub server).
+ * Always restores the original method, even if `fn()` throws/rejects. */
+function withCpuHistoryRejecting<T>(err: unknown, fn: () => Promise<T>): Promise<T> {
+  const original = ViceMonitorClient.prototype.send;
+  ViceMonitorClient.prototype.send = function (
+    this: ViceMonitorClient,
+    commandType: CommandType,
+    body: Buffer = Buffer.alloc(0),
+    opts: ConnectOptions = {},
+  ): Promise<ResolvedResponse> {
+    if (commandType === CommandType.CpuHistoryGet) return Promise.reject(err);
+    return original.call(this, commandType, body, opts);
+  };
+  return fn().finally(() => {
+    ViceMonitorClient.prototype.send = original;
+  });
+}
+
+test("stockConnect (CR-01, live-reproduced message): a StockFramingError from CPUHISTORY_GET degrades to capabilities.cpuHistory 'absent', not a rejected handshake", async () => {
+  const message = "response type 0x86 body is 52 byte(s), needs at least 65";
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await withCpuHistoryRejecting(new StockFramingError(message, { observed: 52, expected: 65, responseType: ResponseType.CpuHistoryGet }), () =>
+      stockConnect({ host: "127.0.0.1", port, targetId: "grant-cr01-1", brokerControl }),
+    );
+    assert.equal(session.capabilities.cpuHistory, "absent");
+    await stockDisconnect(session);
+  });
+});
+
+test("stockConnect (CR-01): StockDesyncError and StockResponseMismatchError from CPUHISTORY_GET also degrade to 'absent'", async () => {
+  const cases: Array<{ name: string; err: Error }> = [
+    { name: "StockDesyncError", err: new StockDesyncError("accumulated buffer desynced", { bytesSkipped: 4 }) },
+    { name: "StockResponseMismatchError", err: new StockResponseMismatchError("reply type did not match the pending command", { expected: ResponseType.CpuHistoryGet, received: ResponseType.Ping }) },
+  ];
+  for (const { name, err } of cases) {
+    await withStockStubServer(happyPathResponder(), async (port) => {
+      const { brokerControl } = makeStubBrokerControl();
+      const session = await withCpuHistoryRejecting(err, () => stockConnect({ host: "127.0.0.1", port, targetId: `grant-cr01-${name}`, brokerControl }));
+      assert.equal(session.capabilities.cpuHistory, "absent", `${name} must degrade to "absent" -- the opcode answered, this client just could not read it`);
+      await stockDisconnect(session);
+    });
+  }
+});
+
+test("stockConnect (CR-01): a StockConnectionClosedError from CPUHISTORY_GET is a transport failure and still rejects the handshake", async () => {
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl, state } = makeStubBrokerControl();
+    const err = new StockConnectionClosedError("socket closed mid-probe", { port, abandoned: 1, trigger: "close" });
+    await assert.rejects(
+      withCpuHistoryRejecting(err, () => stockConnect({ host: "127.0.0.1", port, targetId: "grant-cr01-closed", brokerControl })),
+      (e: unknown) => e === err,
+    );
+    assert.equal(state.releaseCalls, 1, "a failed handshake must still release the monitor claim");
+  });
+});
+
+test("stockConnect (CR-01): a StockRequestTimeoutError from CPUHISTORY_GET is a transport failure and still rejects the handshake", async () => {
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const err = new StockRequestTimeoutError("CPUHISTORY_GET never answered", { requestId: 1, commandType: CommandType.CpuHistoryGet, elapsedMs: 5000 });
+    await assert.rejects(
+      withCpuHistoryRejecting(err, () => stockConnect({ host: "127.0.0.1", port, targetId: "grant-cr01-timeout", brokerControl })),
+      (e: unknown) => e === err,
+    );
+  });
+});
+
+test("stockConnect (CR-01): an unclassifiable error resolving CPUHISTORY_GET degrades to 'absent' and never writes a capability cache record", async () => {
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    let writeCalls = 0;
+    const session = await withCpuHistoryRejecting(new Error("something nobody mapped"), () =>
+      stockConnect({
+        host: "127.0.0.1",
+        port,
+        targetId: "grant-cr01-unclassified",
+        brokerControl,
+        deps: {
+          binPath: "x64sc",
+          readCapabilityRecordFn: () => null,
+          writeCapabilityRecordFn: () => {
+            writeCalls += 1;
+          },
+        },
+      }),
+    );
+    assert.equal(session.capabilities.cpuHistory, "absent");
+    assert.equal(writeCalls, 0, "a capability answer nobody could establish must never be persisted for the next connect");
+    await stockDisconnect(session);
+  });
+});
+
+test("stockConnect (CR-01 regression guard -- the whole point of the plan): a framing rejection from CPUHISTORY_GET still yields a usable session, not a thrown handshake failure", async () => {
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const err = new StockFramingError("response type 0x86 body is 52 byte(s), needs at least 65", { observed: 52, expected: 65, responseType: ResponseType.CpuHistoryGet });
+    const session = await withCpuHistoryRejecting(err, () => stockConnect({ host: "127.0.0.1", port, targetId: "grant-cr01-regression", brokerControl }));
+    assert.ok("client" in session, "every downstream stock tool depends on session.client existing");
+    assert.ok("capabilities" in session, "every downstream stock tool depends on session.capabilities existing");
+    await stockDisconnect(session);
   });
 });
 
