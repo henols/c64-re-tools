@@ -526,7 +526,7 @@ their references.
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
-| 8. Capability Honesty and the Install Story | 6/6 | Complete   | 2026-08-18 |
+| 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
