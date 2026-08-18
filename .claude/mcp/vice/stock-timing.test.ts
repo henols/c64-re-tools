@@ -20,6 +20,7 @@ import {
   readCycleBaseline,
   handleCyclesStopwatch,
   resetTimingStateForTest,
+  forgetTimingForOtherTargets,
 } from "./stock-timing.ts";
 
 beforeEach(() => {
@@ -78,6 +79,12 @@ interface FakeSessionOptions {
   cpuHistoryReplies?: CpuHistoryReplyFixture[];
   registersGetReplies?: Array<Array<{ id: number; value: number }>>;
   resourceGetReplies?: ResourceGetReplyFixture[];
+  /** WR-14: the restart epoch this session proved at connect. A DIFFERENT
+   * epoch on the same targetId is exactly a recycle/respawn -- the case the
+   * stopwatch baseline store and the video-standard cache must not reuse an
+   * entry across. Defaults to null (identity unprovable), matching the
+   * pre-WR-14 fixture shape so existing cases keep exercising the same path. */
+  baselineEpoch?: number | null;
 }
 
 /** Builds a fake session + client pair. Every reply source is a QUEUE (see
@@ -124,7 +131,7 @@ function makeFakeSession(options: FakeSessionOptions = {}): { session: StockConn
     targetId: options.targetId ?? "target-1",
     brokerControl: {} as unknown as StockConnectSession["brokerControl"],
     deps: {},
-    baselineEpoch: null,
+    baselineEpoch: options.baselineEpoch ?? null,
   } as unknown as StockConnectSession;
 
   return { session, sendCalls };
@@ -135,6 +142,166 @@ const FAKE_DEPS = {} as unknown as StockDispatchDeps;
 function parseAnswer(result: { content: { type: "text"; text: string }[]; isError: boolean }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// 07-REVIEW.md WR-14: both of this file's targetId-keyed caches survived a
+// stockReconnect() and a vice_recycle respawn, because targetId does. Only
+// Route A had a `delta < 0n` guard that caught a machine swap by accident;
+// Route B subtracted two unrelated within-frame positions and answered
+// `measurable: true`. Every case below reuses ONE targetId across two different
+// epochs -- which is exactly what a recycle looks like from this file's side.
+// ---------------------------------------------------------------------------
+
+test("stopwatch (WR-14): a baseline recorded under one epoch is REFUSED against a sample under another, on Route A", async () => {
+  const before = makeFakeSession({
+    targetId: "target-recycled",
+    baselineEpoch: 1,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(1_000_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  await handleCyclesStopwatch({ action: "reset" }, before.session, FAKE_DEPS);
+
+  // Same targetId, new epoch: the broker respawned the instance underneath us.
+  // The cycle counter on a fresh machine can legitimately read HIGHER than the
+  // old baseline, so `delta < 0n` does not catch this.
+  const after = makeFakeSession({
+    targetId: "target-recycled",
+    baselineEpoch: 2,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(9_000_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x105 }]],
+  });
+  const answer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, after.session, FAKE_DEPS));
+  assert.equal(answer.measurable, false, "a baseline from a different machine must never produce a figure");
+  assert.equal(answer.cycles, undefined);
+  assert.match(answer.reason as string, /epoch/);
+  assert.match(answer.reason as string, /different machines/);
+});
+
+test("stopwatch (WR-14): the same refusal covers Route B, where nothing else would have caught it", async () => {
+  const registers = [{ id: 0, value: 0x100 }, { id: 1, value: 100 }, { id: 2, value: 20 }];
+  const withLinCyc = [...DEFAULT_REGISTERS, { id: 1, size: 16, name: "LIN" }, { id: 2, size: 8, name: "CYC" }];
+
+  const before = makeFakeSession({
+    targetId: "target-recycled-b",
+    baselineEpoch: 1,
+    cpuHistory: "absent",
+    registersAvailable: withLinCyc,
+    resourceGetReplies: [{ valueType: "integer", value: 1 }],
+    registersGetReplies: [registers],
+  });
+  await handleCyclesStopwatch({ action: "reset" }, before.session, FAKE_DEPS);
+
+  // A LATER within-frame position on a respawned machine: strictly greater than
+  // the baseline, so Route B's own `after.position < before.position` check
+  // passes and it answered `measurable: true` with a meaningless delta.
+  const after = makeFakeSession({
+    targetId: "target-recycled-b",
+    baselineEpoch: 2,
+    cpuHistory: "absent",
+    registersAvailable: withLinCyc,
+    resourceGetReplies: [{ valueType: "integer", value: 1 }],
+    registersGetReplies: [[{ id: 0, value: 0x105 }, { id: 1, value: 200 }, { id: 2, value: 40 }]],
+  });
+  const answer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, after.session, FAKE_DEPS));
+  assert.equal(answer.measurable, false, "Route B had no guard of its own -- the epoch check is what makes this honest");
+  assert.equal(answer.cycles, undefined);
+  assert.match(answer.reason as string, /epoch/);
+});
+
+test("stopwatch (WR-14): a reconnect to the SAME machine (same epoch, new session object) still measures", async () => {
+  const before = makeFakeSession({
+    targetId: "target-same",
+    baselineEpoch: 7,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(1_000_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  await handleCyclesStopwatch({ action: "reset" }, before.session, FAKE_DEPS);
+
+  const after = makeFakeSession({
+    targetId: "target-same",
+    baselineEpoch: 7,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(1_002_500n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x105 }]],
+  });
+  const answer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, after.session, FAKE_DEPS));
+  assert.equal(answer.measurable, true, "the whole point of a strong Map is that a reconnect to the same machine keeps its baseline");
+  assert.equal(answer.cycles, 2500);
+});
+
+test("resolveVideoStandard (WR-14): a cached value is NOT reused across an epoch change on the same targetId", async () => {
+  const first = makeFakeSession({
+    targetId: "target-vs",
+    baselineEpoch: 1,
+    resourceGetReplies: [{ valueType: "integer", value: 1 }], // PAL
+  });
+  const firstResult = await resolveVideoStandard(first.session);
+  assert.equal(firstResult.name, VIDEO_STANDARDS[1]!.name);
+  assert.equal(firstResult.assumed, false);
+  assert.equal(first.sendCalls.filter((c) => c.commandType === CommandType.ResourceGet).length, 1);
+
+  // Same targetId, same session shape, SAME epoch -> a real cache hit, no
+  // second wire read. (Establishes the cache works at all, so the next
+  // assertion cannot pass vacuously.)
+  const cachedHit = makeFakeSession({ targetId: "target-vs", baselineEpoch: 1, resourceGetReplies: [{ valueType: "integer", value: 2 }] });
+  assert.equal((await resolveVideoStandard(cachedHit.session)).name, VIDEO_STANDARDS[1]!.name);
+  assert.equal(cachedHit.sendCalls.filter((c) => c.commandType === CommandType.ResourceGet).length, 0, "same epoch must be a cache hit");
+
+  // New epoch on the SAME targetId -- a respawned instance, which can be a
+  // different model entirely. The cache must MISS and re-read.
+  const respawned = makeFakeSession({ targetId: "target-vs", baselineEpoch: 2, resourceGetReplies: [{ valueType: "integer", value: 2 }] }); // NTSC
+  const respawnedResult = await resolveVideoStandard(respawned.session);
+  assert.equal(respawned.sendCalls.filter((c) => c.commandType === CommandType.ResourceGet).length, 1, "a new epoch must force a fresh read");
+  assert.equal(respawnedResult.name, VIDEO_STANDARDS[2]!.name, "the respawned machine's own value, not the previous instance's");
+});
+
+test("forgetTimingForOtherTargets (WR-14): evicts every OTHER target's baseline and video standard, and keeps the active one", async () => {
+  const a = makeFakeSession({
+    targetId: "target-a",
+    baselineEpoch: 1,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(1_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  const b = makeFakeSession({
+    targetId: "target-b",
+    baselineEpoch: 1,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(5_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  await handleCyclesStopwatch({ action: "reset" }, a.session, FAKE_DEPS);
+  await handleCyclesStopwatch({ action: "reset" }, b.session, FAKE_DEPS);
+
+  forgetTimingForOtherTargets("target-b");
+
+  // target-a's baseline is gone -- a torn-down instance can never be consulted.
+  const aRead = makeFakeSession({
+    targetId: "target-a",
+    baselineEpoch: 1,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(2_000n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  const aAnswer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, aRead.session, FAKE_DEPS));
+  assert.equal(aAnswer.measurable, false);
+  assert.match(aAnswer.reason as string, /no baseline recorded/);
+
+  // target-b's is intact.
+  const bRead = makeFakeSession({
+    targetId: "target-b",
+    baselineEpoch: 1,
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(5_400n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }]],
+  });
+  const bAnswer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, bRead.session, FAKE_DEPS));
+  assert.equal(bAnswer.measurable, true, "the ACTIVE target must keep its baseline");
+  assert.equal(bAnswer.cycles, 400);
+});
 
 // ---------------------------------------------------------------------------
 // Task 1: VIDEO_STANDARDS / positionWithinFrame / resolveVideoStandard

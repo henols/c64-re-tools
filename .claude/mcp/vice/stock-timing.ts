@@ -108,8 +108,24 @@ export interface VideoStandardResult {
  * deep (CLAUDE.md), and this file adds no `RESOURCE_SET` encoder at all --
  * so within this codebase's own reach, the value can never change out from
  * under a live target, and a `targetId`-keyed cache cannot go stale for a
- * reason this file itself could cause. */
-let videoStandardCache = new Map<string, VideoStandardResult>();
+ * reason this file itself could cause.
+ *
+ * WR-14 (07-REVIEW.md) added the EPOCH half. `session.targetId` survives both a
+ * `stockReconnect()` and a `vice_recycle` respawn, so a `targetId`-keyed entry
+ * outlives the machine it describes -- a respawned instance can be a different
+ * build or a different model entirely. Every entry therefore records the
+ * `baselineEpoch` of the session that established it, and an entry whose epoch
+ * does not match the reading session's is treated as a MISS, not as a value. */
+interface CachedVideoStandard {
+  result: VideoStandardResult;
+  /** The `session.baselineEpoch` in force when this was read. `null` means
+   * identity could not be proven at connect time; a `null` entry is only ever
+   * reused by another `null`-epoch session on the same target, which is the
+   * most this file can honestly claim. */
+  epoch: number | null;
+}
+
+let videoStandardCache = new Map<string, CachedVideoStandard>();
 
 function palFallback(reason: string): VideoStandardResult {
   const pal = VIDEO_STANDARDS[PAL_STANDARD_VALUE]!;
@@ -127,8 +143,13 @@ function palFallback(reason: string): VideoStandardResult {
  */
 export async function resolveVideoStandard(session: StockConnectSession): Promise<VideoStandardResult> {
   const cached = videoStandardCache.get(session.targetId);
+  // WR-14: a cache hit must ALSO match the session's epoch -- a targetId alone
+  // cannot distinguish this machine from the one that replaced it.
+  if (cached && cached.epoch === session.baselineEpoch) {
+    return cached.result;
+  }
   if (cached) {
-    return cached;
+    videoStandardCache.delete(session.targetId);
   }
 
   try {
@@ -142,7 +163,7 @@ export async function resolveVideoStandard(session: StockConnectSession): Promis
       return palFallback(`resolveVideoStandard: MachineVideoStandard resource returned an unrecognized value (${response.value}) -- assuming PAL`);
     }
     const result: VideoStandardResult = { value: response.value, cyclesPerLine: entry.cyclesPerLine, screenLines: entry.screenLines, name: entry.name, assumed: false };
-    videoStandardCache.set(session.targetId, result);
+    videoStandardCache.set(session.targetId, { result, epoch: session.baselineEpoch });
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -305,12 +326,55 @@ export async function readCycleBaseline(session: StockConnectSession): Promise<C
 
 /** The stopwatch's own per-target baseline store (Task 2) -- declared here,
  * ahead of handleCyclesStopwatch(), so resetTimingStateForTest() can clear
- * both this file's caches from one place. */
-let stopwatchBaselines = new Map<string, CycleBaseline>();
+ * both this file's caches from one place.
+ *
+ * WR-14 (07-REVIEW.md): each entry records the `baselineEpoch` of the session
+ * that recorded it. `session.targetId` survives a `stockReconnect()` AND a
+ * `vice_recycle` respawn, so keying on it alone let the stopwatch compare a
+ * baseline taken on one machine against a sample taken on its replacement.
+ * Only Route A had a `delta < 0n` guard to catch that accidentally; Route B
+ * compared two unrelated within-frame positions and answered
+ * `measurable: true`. An epoch mismatch is now a first-class refusal on BOTH
+ * routes, checked before either route's own arithmetic. */
+interface StoredBaseline {
+  baseline: CycleBaseline;
+  epoch: number | null;
+}
+
+let stopwatchBaselines = new Map<string, StoredBaseline>();
 
 export function resetTimingStateForTest(): void {
-  videoStandardCache = new Map<string, VideoStandardResult>();
-  stopwatchBaselines = new Map<string, CycleBaseline>();
+  videoStandardCache = new Map<string, CachedVideoStandard>();
+  stopwatchBaselines = new Map<string, StoredBaseline>();
+}
+
+/**
+ * WR-14: THE per-target eviction seam for both of this file's `targetId`-keyed
+ * caches, mirroring stock-checkpoints.ts's `forgetConditionsForOtherTargets()`
+ * exactly -- including being called from the SAME place in
+ * stock-dispatch.ts's ensureStockSession(), so the two registries can never
+ * drift apart on when they forget.
+ *
+ * Reaching that call site means a fresh handshake just installed a new held
+ * session, so every OTHER target this process has seen is an instance that has
+ * already been torn down and can never be consulted again. Without this, both
+ * maps (strong `Map`s, deliberately, so they survive a `stockReconnect()` to
+ * the same machine) grow one entry per distinct instance for the life of the
+ * process -- which a broker that recycles/respawns/re-warms routinely makes
+ * unbounded.
+ *
+ * Deliberately does NOT touch the ACTIVE target's entries: a reconnect to the
+ * same machine must keep a usable stopwatch baseline, and the epoch check
+ * inside handleCyclesStopwatch() is what catches the case where "the same
+ * targetId" is not the same machine.
+ */
+export function forgetTimingForOtherTargets(activeTargetId: string): void {
+  for (const targetId of videoStandardCache.keys()) {
+    if (targetId !== activeTargetId) videoStandardCache.delete(targetId);
+  }
+  for (const targetId of stopwatchBaselines.keys()) {
+    if (targetId !== activeTargetId) stopwatchBaselines.delete(targetId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +412,7 @@ export const handleCyclesStopwatch: StockSessionHandler = async (args, session) 
   }
 
   if (action === "reset") {
-    stopwatchBaselines.set(session.targetId, sample);
+    stopwatchBaselines.set(session.targetId, { baseline: sample, epoch: session.baselineEpoch });
     return stockAnswer(session.client, {
       requested: "cycles_stopwatch",
       action: "reset",
@@ -359,25 +423,44 @@ export const handleCyclesStopwatch: StockSessionHandler = async (args, session) 
   }
 
   // action is "read" or "reset_and_read" from here on.
-  const baseline = stopwatchBaselines.get(session.targetId);
+  const stored = stopwatchBaselines.get(session.targetId);
 
   function finish(payload: Record<string, unknown>): StockOkResult {
     // reset_and_read stores the new sample as the NEXT baseline on EVERY
     // path, including the unmeasurable ones -- a failed measurement must
     // not silently leave a stale baseline behind.
     if (action === "reset_and_read") {
-      stopwatchBaselines.set(session.targetId, sample);
+      stopwatchBaselines.set(session.targetId, { baseline: sample, epoch: session.baselineEpoch });
     }
     return stockAnswer(session.client, { requested: "cycles_stopwatch", action, ...payload });
   }
 
-  if (!baseline) {
+  if (!stored) {
     return finish({
       route: sample.route,
       measurable: false,
       reason: `no baseline recorded on this instance -- call vice_cycles_stopwatch with action:"reset" before action:"${action}"`,
     });
   }
+
+  // WR-14: the epoch check, BEFORE either route's arithmetic. `targetId`
+  // survives a stockReconnect() and a vice_recycle respawn, so a matching key
+  // does not prove the baseline and the sample came from the same machine.
+  // Only Route A had a `delta < 0n` guard that caught this by accident; Route B
+  // happily subtracted two unrelated within-frame positions and answered
+  // `measurable: true`. Refusing here covers both routes for the real reason
+  // rather than one route for a coincidental one.
+  if (stored.epoch !== session.baselineEpoch) {
+    return finish({
+      route: sample.route,
+      measurable: false,
+      reason:
+        `the baseline was recorded against restart epoch ${String(stored.epoch)} but this session's epoch is ` +
+        `${String(session.baselineEpoch)} -- the emulator was restarted, recycled or respawned in between, so the two samples ` +
+        `are from different machines and the elapsed count is meaningless; call action:"reset" again before reading`,
+    });
+  }
+  const baseline = stored.baseline;
 
   if (sample.route === "unavailable") {
     return finish({ route: "unavailable", measurable: false, reason: sample.reason });

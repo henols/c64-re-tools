@@ -67,7 +67,7 @@ import { handleSymbolsLoad, handleSymbolsLookup } from "./stock-symbols.ts";
 import { handleViciiGetState } from "./stock-vicii.ts";
 import { handleCiaGetState } from "./stock-cia.ts";
 import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
-import { handleCyclesStopwatch } from "./stock-timing.ts";
+import { handleCyclesStopwatch, forgetTimingForOtherTargets } from "./stock-timing.ts";
 import { handleRunUntil } from "./stock-run-until.ts";
 import { handleDiagnoseStock } from "./stock-diagnose.ts";
 import { handleRecycleStock } from "./stock-recycle.ts";
@@ -389,6 +389,13 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
   // all. The reuse and reconnect branches return before this line, so a
   // reconnect to the SAME machine never evicts anything.
   forgetConditionsForOtherTargets(session.targetId);
+  // WR-14 (07-REVIEW.md): stock-timing.ts's two targetId-keyed caches (the
+  // video-standard cache and the stopwatch baseline store) are evicted from the
+  // SAME line, for the same reasons, so the registries can never drift apart on
+  // when they forget. Both are strong Maps deliberately -- they must survive a
+  // stockReconnect() to the same machine -- so without this they grow one entry
+  // per distinct instance for the life of the process.
+  forgetTimingForOtherTargets(session.targetId);
   return { ok: true, session };
 }
 
