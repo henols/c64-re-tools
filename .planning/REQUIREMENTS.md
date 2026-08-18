@@ -21,7 +21,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [x] **BACK-02**: User running the fork backend sees behaviour identical to v0.1.x — no regression in any tool
 - [x] **BACK-03**: User can ask which backend is active and which VICE version is connected, and gets an answer naming both
 - [x] **BACK-04**: Server detects at connect time whether the connected VICE supports each version-gated capability, rather than failing at first use
-- [ ] **BACK-05**: Calling a tool the active backend does not advertise returns an error that names the capability, the reason, and which backend provides it — not a generic unknown-tool error, and never a silent wrong answer. Under D-07 the manifest is trimmed per backend, so on stock this is the out-of-manifest `tools/call` path rather than a present-but-refusing tool
+- [x] **BACK-05**: Calling a tool the active backend does not advertise returns an error that names the capability, the reason, and which backend provides it — not a generic unknown-tool error, and never a silent wrong answer. Under D-07 the manifest is trimmed per backend, so on stock this is the out-of-manifest `tools/call` path rather than a present-but-refusing tool
 
 ### Protocol client
 
@@ -101,13 +101,13 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 ### Distribution and documentation
 
-- [ ] **DIST-01**: The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — including tools absent from the active backend's trimmed manifest (D-07)
+- [x] **DIST-01**: The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — including tools absent from the active backend's trimmed manifest (D-07)
 - [x] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
 - [x] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
 
 ### Skill playbooks
 
-- [ ] **SKILL-01**: The skills whose documented methodology depends on fork-only capabilities name the stock-backend route or state the fork requirement, so Claude following a playbook is not sent into a refusal — covering `c64-program-recon`'s `vice_keyboard_matrix` instruction and whole-chip-read guidance, `c64-ram-capture`'s matrix-keyboard "hit any key" step, and `vice-wedge-triage`'s stopwatch bracket
+- [x] **SKILL-01**: The skills whose documented methodology depends on fork-only capabilities name the stock-backend route or state the fork requirement, so Claude following a playbook is not sent into a refusal — covering `c64-program-recon`'s `vice_keyboard_matrix` instruction and whole-chip-read guidance, `c64-ram-capture`'s matrix-keyboard "hit any key" step, and `vice-wedge-triage`'s stopwatch bracket
 
 ### Verification
 
@@ -168,7 +168,7 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | BACK-02 | Phase 2 | Complete |
 | BACK-03 | Phase 2 | Complete |
 | BACK-04 | Phase 2 | Complete |
-| BACK-05 | Phase 8 | Pending |
+| BACK-05 | Phase 8 | Complete |
 | PROTO-01 | Phase 2 | Complete |
 | PROTO-02 | Phase 2 | Complete |
 | PROTO-03 | Phase 2 | Complete |
@@ -221,10 +221,10 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | BROK-01 | Phase 2 | Complete |
 | BROK-02 | Phase 2 | Complete |
 | BROK-03 | Phase 2 | Complete |
-| DIST-01 | Phase 8 | Pending |
+| DIST-01 | Phase 8 | Complete |
 | DIST-02 | Phase 8 | Complete |
 | DIST-03 | Phase 8 | Complete |
-| SKILL-01 | Phase 8 | Pending |
+| SKILL-01 | Phase 8 | Complete |
 | VERIF-01 | Phase 1 | Complete |
 | VERIF-02 | Phase 2 | Complete |
 | VERIF-03 | Phase 8 | Pending |
