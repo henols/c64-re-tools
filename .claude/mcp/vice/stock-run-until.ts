@@ -234,6 +234,13 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     // Hit: VICE already deleted the temporary checkpoint itself
     // (mon_breakpoint.c:605-607) -- issuing CHECKPOINT_DELETE here would
     // target an object that no longer exists.
+    //
+    // machineHalted (07-14/WR-02): the checkpoint that just fired STOPPED
+    // the machine (it was armed with stop:true) -- on stock, any inbound
+    // byte halts the machine (CLAUDE.md, monitor_binary.c:281) and nothing
+    // in this handler resumes it. Emitted unconditionally, never only when
+    // true, so an absent field can never be read as "not halted" (the exact
+    // ambiguity WR-02 is about).
     const payload: Record<string, unknown> = {
       requested: "run_until",
       reached: true,
@@ -241,6 +248,10 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
       checkpointId,
       hitCount: outcome.hitCount,
       timeoutMs,
+      machineHalted: true,
+      machineHaltedNote:
+        "the checkpoint at the requested address stopped the emulated machine when it fired, and nothing here resumed it -- " +
+        "this is expected, not a wedge. Call vice_execution_run to resume.",
     };
     if (timeoutClamped) payload.timeoutClamped = true;
     return stockAnswer(session.client, payload);
@@ -263,16 +274,27 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     }
   }
 
+  // machineHalted (07-14/WR-02): the CHECKPOINT_DELETE just sent above is
+  // itself an inbound byte, so it halted the machine on every one of the
+  // three cleanup branches -- including "already_gone", where the delete
+  // was rejected but still travelled over the wire. Nothing here resumes it.
+  const machineHaltedNote =
+    "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), and " +
+    "nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume.";
+
   const payload: Record<string, unknown> = {
     requested: "run_until",
     timedOut: true,
     address,
     timeoutMs,
     cleanup,
+    machineHalted: true,
+    machineHaltedNote,
     explanation:
       "an address that never executes within the timeout window is, from the caller's side, indistinguishable from " +
       "a genuinely wedged emulator -- see vice-wedge-triage/SKILL.md. This bounded answer means the address itself " +
-      "did not execute in time, not that the connection is unresponsive.",
+      "did not execute in time, not that the connection is unresponsive. The machine is now stopped (see " +
+      "machineHalted) and needs vice_execution_run to resume.",
   };
   if (timeoutClamped) payload.timeoutClamped = true;
   if (cleanupError !== undefined) payload.cleanupError = cleanupError;
