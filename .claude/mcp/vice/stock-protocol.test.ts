@@ -1586,16 +1586,25 @@ test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
 });
 
 // ===========================================================================
-// CPUHISTORY_GET (0x86) -- plan 07-02, Task 1. Body layout confirmed against
-// monitor_binary.c:1563-1617: count(u32LE) then per entry item_size(1) a
-// register block of item_size bytes (deliberately not decoded -- VICE
+// CPUHISTORY_GET (0x86) -- plan 07-12, Task 2. Body layout re-derived
+// 2026-08-18 from monitor_binary_process_cpuhistory() (monitor_binary.c:
+// 1452-1620), verified against the real captures fixtures/binmon/
+// cpuhistory-get.bin and cpuhistory-get-multi.bin: count(u32LE) then per
+// entry item_size(1) -- the byte count of EVERYTHING after this byte, so the
+// entry stride is item_size + 1 -- containing a register block written by
+// write_registers() (regCount(u16LE) then regCount items of
+// size(1)+id(1)+value(u16LE), deliberately not decoded by the parser: VICE
 // hard-fills LIN/CYC with the sentinel 0xffff inside CPU-history entries,
-// monitor_binary.c:1585-1590) cycle(u64LE) instruction_length(1) opcode(1)
-// p1(1) p2(1) and one trailing placeholder byte.
+// monitor_binary.c:1585-1590) then cycle(u64LE) instruction_length(1)
+// opcode(1) p1(1) p2(1) and one trailing placeholder byte. The PREVIOUS
+// layout this comment (and cpuHistoryEntry() below) used treated item_size
+// as just the register-block length before cycle -- disproven live against
+// a genuine VICE 3.10 build; see deferred-items.md's "Route A live decode
+// mismatch" (WR-13, plan 07-12).
 // ===========================================================================
 
 interface CpuHistoryEntryOptions {
-  itemSize?: number;
+  regCount?: number;
   cycle: bigint;
   instructionLength: number;
   opcode: number;
@@ -1604,10 +1613,28 @@ interface CpuHistoryEntryOptions {
   placeholder?: number;
 }
 
-function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p2, placeholder = 0 }: CpuHistoryEntryOptions): Buffer {
-  // Register block filled with 0xff, matching VICE's own LIN/CYC 0xffff
-  // sentinel fill for CPU-history entries -- this parser never reads it.
-  const registerBlock = Buffer.alloc(itemSize, 0xff);
+function cpuHistoryEntry({
+  regCount = 8,
+  cycle,
+  instructionLength,
+  opcode,
+  p1,
+  p2,
+  placeholder = 0xff,
+}: CpuHistoryEntryOptions): Buffer {
+  // Register block: regCount(u16LE) then regCount items of
+  // size(1)+id(1)+value(u16LE) -- MON_REGISTER_ITEM_SIZE is 3 on the real
+  // wire (monitor_binary.c:431), giving each item a 4-byte stride. Content
+  // is arbitrary (0xffff, matching VICE's own LIN/CYC sentinel fill) -- this
+  // parser never decodes it.
+  const registerBlock = Buffer.alloc(2 + regCount * 4);
+  registerBlock.writeUInt16LE(regCount, 0);
+  for (let index = 0; index < regCount; index += 1) {
+    const off = 2 + index * 4;
+    registerBlock[off] = 3; // MON_REGISTER_ITEM_SIZE
+    registerBlock[off + 1] = index; // register id, arbitrary for this test
+    registerBlock.writeUInt16LE(0xffff, off + 2);
+  }
   const tail = Buffer.alloc(8 + 5);
   tail.writeBigUInt64LE(cycle, 0);
   tail[8] = instructionLength;
@@ -1615,7 +1642,8 @@ function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p
   tail[10] = p1;
   tail[11] = p2;
   tail[12] = placeholder;
-  return Buffer.concat([Buffer.from([itemSize]), registerBlock, tail]);
+  const content = Buffer.concat([registerBlock, tail]);
+  return Buffer.concat([Buffer.from([content.length]), content]);
 }
 
 function cpuHistoryFrame(entries: Buffer[], requestId = 30): Buffer {
@@ -1646,10 +1674,10 @@ test("CPUHISTORY_GET: a single-entry body decodes to type cpu_history with an ex
   assert.equal(parsed.entries[0]!.p2, 0x00);
 });
 
-test("CPUHISTORY_GET: a two-entry body preserves order -- entries[0] is the newest, the one Route A's stopwatch reads", () => {
-  const newest = cpuHistoryEntry({ cycle: 999999n, instructionLength: 1, opcode: 0xea, p1: 0, p2: 0 });
-  const older = cpuHistoryEntry({ cycle: 500000n, instructionLength: 2, opcode: 0xa2, p1: 0x05, p2: 0 });
-  const frame = cpuHistoryFrame([newest, older]);
+test("CPUHISTORY_GET: a two-entry body decodes entries in wire order without reordering (WR-13 correction: entries[0] is the OLDEST per the real multi-entry capture, not the newest -- see ParsedCpuHistoryResponse's doc comment; irrelevant to Route A, which always requests count:1)", () => {
+  const first = cpuHistoryEntry({ cycle: 999999n, instructionLength: 4, opcode: 0xea, p1: 0, p2: 0 });
+  const second = cpuHistoryEntry({ cycle: 500000n, instructionLength: 3, opcode: 0xa2, p1: 0x05, p2: 0 });
+  const frame = cpuHistoryFrame([first, second]);
   const { responses } = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(responses.length, 1);
   const parsed = responses[0] as { entries: Array<{ cycle: bigint }> };
@@ -1746,6 +1774,158 @@ test("RESOURCE_GET: a string response body parses to { valueType: 'string', valu
 test("RESOURCE_GET: a body with the type byte present but the size byte missing is a returned StockFramingError", () => {
   const body = Buffer.from([0x01]); // type byte only, no size byte
   const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 42, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+// ===========================================================================
+// CR-02 regressions (plan 07-12, Task 3): the integer branch used to read a
+// fixed 4 bytes at offset 2 behind only need(body, 2 + size, ...), so a
+// declared size shorter than 4 satisfied that guard and then threw a bare
+// RangeError out of parseResponse() -- past parseBuffer()'s try/catch and
+// straight into the "BUG:" undocumented-error arm, mislabelling an ordinary
+// wire-format event as an internal defect.
+// ===========================================================================
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 0 is a returned StockFramingError, never a RangeError", () => {
+  const body = Buffer.from([1, 0]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 50, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b0\b/);
+});
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 2 (2 payload bytes) is a returned StockFramingError naming the observed size", () => {
+  const body = Buffer.from([1, 2, 0xaa, 0xbb]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 51, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b2\b/);
+});
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 3 (3 payload bytes) is a returned StockFramingError naming the observed size", () => {
+  const body = Buffer.from([1, 3, 0xaa, 0xbb, 0xcc]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 52, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b3\b/);
+});
+
+test("RESOURCE_GET (CR-02): a valid size-4 integer response still decodes to { valueType: 'integer', value: 42 }", () => {
+  const body = Buffer.from([1, 4, 0x2a, 0, 0, 0]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 53, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: number };
+  assert.equal(parsed.type, "resource_get");
+  assert.equal(parsed.valueType, "integer");
+  assert.equal(parsed.value, 42);
+});
+
+test("RESOURCE_GET (CR-02): a [1, 0] body does NOT log an internal 'BUG:' line -- it is an ordinary wire-format event, not an undocumented defect", () => {
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  try {
+    const body = Buffer.from([1, 0]);
+    const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 54, body });
+    parseBuffer(frame, { desyncBytes: 0 });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.ok(
+    !captured.some((line) => line.includes("BUG:")),
+    `expected no "BUG:" line, got: ${JSON.stringify(captured)}`,
+  );
+});
+
+// ===========================================================================
+// Real-bytes CPUHISTORY_GET regressions (plan 07-12, Task 3): decode the
+// captured fixtures from Task 1 through the same public entry point the
+// client uses, asserting non-synthetic provenance so a future re-record to
+// a synthesized fallback fails loudly here rather than silently.
+// ===========================================================================
+
+test("CPUHISTORY_GET (real bytes): the captured single-entry fixture is non-synthetic and decodes to count=1, one bigint-cycle entry", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; count: number; entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.type, "cpu_history");
+  assert.equal(parsed.count, 1);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(typeof parsed.entries[0]!.cycle, "bigint");
+  assert.ok(parsed.entries[0]!.cycle > 0n);
+});
+
+test("CPUHISTORY_GET (real bytes): the captured multi-entry fixture is non-synthetic and decodes every entry at the item_size-derived stride", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get-multi");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; count: number; entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.type, "cpu_history");
+  assert.equal(parsed.entries.length, parsed.count);
+  assert.ok(parsed.count >= 4, `expected the multi-entry capture to hold at least 4 entries, got ${parsed.count}`);
+  for (const entry of parsed.entries) {
+    assert.equal(typeof entry.cycle, "bigint");
+  }
+  // Observed order (WR-13 correction, plan 07-12 Task 2): entries[0] is the
+  // OLDEST of the returned window, entries[count-1] is the NEWEST -- cycles
+  // are strictly ascending across the array, the opposite of this file's
+  // previous "entries[0] is the newest" assumption. Irrelevant to Route A's
+  // live stopwatch, which always requests count:1.
+  for (let index = 1; index < parsed.entries.length; index += 1) {
+    assert.ok(
+      parsed.entries[index]!.cycle > parsed.entries[index - 1]!.cycle,
+      `expected strictly ascending cycles, got entries[${index - 1}]=${parsed.entries[index - 1]!.cycle} then entries[${index}]=${parsed.entries[index]!.cycle}`,
+    );
+  }
+});
+
+test("CPUHISTORY_GET (real bytes): the captured 3.9 refusal fixture is non-synthetic and decodes to the real observed error shape", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get-unsupported");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  // Real 3.9 build's observed answer: a 0-byte body, responseType 0x00, and
+  // errorCode 0x83 (e_MON_ERR_CMD_INVALID_TYPE) -- NOT the 0x8f CMD_FAILURE
+  // monitor_binary.c's FEATURE_CPUMEMHISTORY #else branch would send. 3.9's
+  // command dispatcher does not recognize opcode 0x86 at all.
+  assert.ok(responses[0] instanceof StockProtocolError);
+  assert.equal((responses[0] as StockProtocolError).errorCode, 0x83);
+  assert.equal((responses[0] as StockProtocolError).responseType, 0x00);
+});
+
+// ===========================================================================
+// Hostile-input regressions (plan 07-12, Task 3): mirrors of Task 2's
+// guards, asserted here so they cannot be silently removed later.
+// ===========================================================================
+
+test("CPUHISTORY_GET (hostile): a declared count of 70000 is a returned StockFramingError, not a hang and not a RangeError", () => {
+  const body = Buffer.alloc(4);
+  body.writeUInt32LE(70000, 0);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 60, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /70000/);
+});
+
+test("CPUHISTORY_GET (hostile): an item_size too small to hold its own regCount field is a returned StockFramingError naming item_size", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0);
+  // item_size = 1: only one byte follows the size byte, but regCount alone
+  // needs 2 bytes -- cannot possibly hold a valid register block.
+  const body = Buffer.concat([count, Buffer.from([1, 0xff])]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 61, body });
   const { responses } = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(responses.length, 1);
   assert.ok(responses[0] instanceof StockFramingError);

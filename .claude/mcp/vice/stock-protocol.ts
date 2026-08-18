@@ -1105,12 +1105,25 @@ export interface ParsedUndumpResponse extends ParsedBaseResponse {
  * value Phase 7's Route A stopwatch reads -- a `bigint` via
  * `readBigUInt64LE`, never narrowed to `Number`, since a uint64 clock does
  * not fit a JS number safely and the stopwatch's whole value is exactness.
- * The per-entry register block ([monitor_binary.c:1563-1617]'s `item_size`
- * bytes between the `item_size` byte and `cycle`) is deliberately NOT
- * decoded here: VICE hard-fills `LIN`/`CYC` inside CPU-history entries with
- * the sentinel `0xffff` (`monitor_binary.c:1585-1590`), so those per-entry
- * raster positions carry no real value and this phase never interprets
- * them.
+ * The per-entry register block (the `regCount`-prefixed items between the
+ * `item_size` byte and `cycle`, written by `write_registers()`) is
+ * deliberately NOT decoded here: VICE hard-fills `LIN`/`CYC` inside
+ * CPU-history entries with the sentinel `0xffff`
+ * (`monitor_binary.c:1585-1590`), so those per-entry raster positions carry
+ * no real value and this phase never interprets them.
+ *
+ * `instructionLength` is NOT the real length of the decoded 6502
+ * instruction -- VICE hardcodes `uint8_t instruction_length = 4;`
+ * (`monitor_binary.c:1468`) regardless of what `opcode` actually is. Nothing
+ * may treat this field as an instruction size.
+ *
+ * Layout re-derived 2026-08-18 from `monitor_binary_process_cpuhistory()`
+ * (`monitor_binary.c:1452-1620`) and verified against the real committed
+ * captures `fixtures/binmon/cpuhistory-get.bin` and `cpuhistory-get-multi.bin`
+ * (plan 07-12). The PREVIOUS layout this comment cited was disproven live
+ * against a genuine VICE 3.10 build -- see
+ * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md`,
+ * "Route A (CPUHISTORY_GET) live decode mismatch" -- do not re-trust it.
  */
 export interface ParsedCpuHistoryEntry {
   cycle: bigint;
@@ -1120,8 +1133,23 @@ export interface ParsedCpuHistoryEntry {
   p2: number;
 }
 
-/** CPUHISTORY_GET (0x86) parsed shape. `entries[0]` is the newest entry --
- * the one Route A's stopwatch reads. [CITED monitor_binary.c:1563-1617] */
+/**
+ * CPUHISTORY_GET (0x86) parsed shape. CORRECTED 2026-08-18 (plan 07-12): the
+ * real `cpuhistory-get-multi.bin` capture (`count:4`) decodes to
+ * STRICTLY ASCENDING `cycle` values across `entries[0..3]` -- i.e.
+ * `entries[0]` is the OLDEST of the returned window and `entries[count-1]`
+ * is the NEWEST, the opposite of this comment's previous unverified
+ * "entries[0] is the newest" claim. Route A's live stopwatch
+ * (`stock-timing.ts`'s `readCycleBaseline()`) is UNAFFECTED by this
+ * correction: it always requests `CPUHISTORY_GET(count:1)`, never a larger
+ * count, so `entries[0]` is the only entry either way. Layout re-derived
+ * from `monitor_binary_process_cpuhistory()` (`monitor_binary.c:1452-1620`)
+ * and verified against the real captures `fixtures/binmon/cpuhistory-get.bin`
+ * (single entry) and `cpuhistory-get-multi.bin` (multi-entry, the stride AND
+ * order proof) -- see plan 07-12 and
+ * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md` for
+ * the disproven earlier layout this replaces.
+ */
 export interface ParsedCpuHistoryResponse extends ParsedBaseResponse {
   type: "cpu_history";
   count: number;
@@ -1415,34 +1443,114 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       need(body, 2, responseType, requestId);
       return { type: "undump", requestId, errorCode, programCounter: body.readUInt16LE(0) };
     case ResponseType.CpuHistoryGet: {
-      // CPUHISTORY_GET (0x86) body layout, confirmed against
-      // monitor_binary.c:1563-1617: count(u32LE) at offset 0, then per entry
-      // -- item_size(1), a register block of item_size bytes (skipped, see
-      // ParsedCpuHistoryEntry's own doc comment), cycle(u64LE),
-      // instruction_length(1), opcode(1), p1(1), p2(1), and one trailing
-      // placeholder byte (five bytes total after the cycle field). Each
-      // entry's declared item_size runs the cursor an extra item_size + 14
-      // bytes (1 item_size byte + item_size register bytes + 8 cycle bytes +
-      // 5 trailing bytes) -- an entry whose item_size overruns the body end
-      // is a StockFramingError through need(), never a truncated silent
-      // success and never a RangeError.
+      // CPUHISTORY_GET (0x86) body layout, re-derived 2026-08-18 from
+      // monitor_binary_process_cpuhistory() (monitor_binary.c:1452-1620) and
+      // verified against the real captures fixtures/binmon/cpuhistory-get.bin
+      // (single entry) and cpuhistory-get-multi.bin (multi-entry, the stride
+      // proof) -- see plan 07-12 and
+      // .planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md's
+      // "Route A (CPUHISTORY_GET) live decode mismatch" for the disproven
+      // earlier layout this replaces (WR-13): that layout was NEVER
+      // confirmed against a real reply and does not match what a genuine
+      // VICE >= 3.10 build actually sends.
+      //
+      // count(u32LE) at offset 0. Then per entry: item_size(1) -- the byte
+      // count of EVERYTHING AFTER this size byte
+      // (response_size = 4 + count * (item_size + 1), so the entry stride is
+      // item_size + 1) -- NOT the register-block length alone, the single
+      // misreading that produced the previous layout. Inside one entry: a
+      // register block written by write_registers() -- regCount(u16LE),
+      // then regCount items of size(1)+id(1)+value(u16LE), each item's own
+      // stride being its declared size + 1 (same item_size-is-the-wire's-own
+      // -stride discipline as the RegisterInfo case above); then
+      // cycle(u64LE); then instruction_length(1); then exactly
+      // instruction_length bytes of instruction data (opcode, p1, p2, and a
+      // trailing placeholder byte for a third parameter that exists on some
+      // machines). instruction_length is a hardcoded constant 4 in VICE
+      // (monitor_binary.c:1468) regardless of the decoded instruction's real
+      // size -- see ParsedCpuHistoryEntry's doc comment.
+      //
+      // Every field is bounds-checked against BOTH the declared entry end
+      // (entryEnd = offset + 1 + itemSize) and the body end via need() --
+      // an item_size that does not leave room for its own
+      // regCount/register-items/cycle/instruction_length is a
+      // StockFramingError naming the observed item_size and what did not
+      // fit, never a truncated silent success and never a RangeError
+      // (T-07-12-03). count is rejected above 65535 up front: VICE's own
+      // count is a uint16_t (monitor_binary.c:1469, 1491's
+      // little_endian_to_uint32() read), so a larger declared count is a
+      // desynced or hostile frame and iterating it would be a
+      // denial-of-service loop (T-07-12-01). The cursor always advances by
+      // exactly 1 + itemSize per entry -- the stride from the source, never
+      // a recomputed sum of the fields just read.
       need(body, 4, responseType, requestId);
       const count = body.readUInt32LE(0);
+      if (count > 0xffff) {
+        throw new StockFramingError(
+          `CPUHISTORY_GET declared count ${count}, exceeding VICE's own uint16_t ceiling of 65535 (monitor_binary.c:1469) -- desynced or hostile frame`,
+          { observed: count, expected: 0xffff, responseType, requestId },
+        );
+      }
       let offset = 4;
       const entries: ParsedCpuHistoryEntry[] = [];
       for (let index = 0; index < count; index += 1) {
         need(body, offset + 1, responseType, requestId);
         const itemSize = body[offset]!;
-        need(body, offset + 1 + itemSize + 8 + 5, responseType, requestId);
-        const cycleOffset = offset + 1 + itemSize;
-        entries.push({
-          cycle: body.readBigUInt64LE(cycleOffset),
-          instructionLength: body[cycleOffset + 8]!,
-          opcode: body[cycleOffset + 9]!,
-          p1: body[cycleOffset + 10]!,
-          p2: body[cycleOffset + 11]!,
-        });
-        offset += 1 + itemSize + 8 + 5;
+        const entryEnd = offset + 1 + itemSize;
+        need(body, entryEnd, responseType, requestId);
+
+        let cursor = offset + 1;
+        need(body, cursor + 2, responseType, requestId);
+        const regCount = body.readUInt16LE(cursor);
+        cursor += 2;
+        for (let regIndex = 0; regIndex < regCount; regIndex += 1) {
+          if (cursor + 2 > entryEnd) {
+            throw new StockFramingError(
+              `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for register item ${regIndex} of ${regCount}`,
+              { observed: itemSize, responseType, requestId },
+            );
+          }
+          const regItemSize = body[cursor]!;
+          cursor += 1 + regItemSize;
+        }
+        if (cursor + 8 > entryEnd) {
+          throw new StockFramingError(
+            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for the 8-byte cycle field after its ${regCount}-item register block`,
+            { observed: itemSize, responseType, requestId },
+          );
+        }
+        need(body, cursor + 8, responseType, requestId);
+        const cycle = body.readBigUInt64LE(cursor);
+        cursor += 8;
+
+        if (cursor + 1 > entryEnd) {
+          throw new StockFramingError(
+            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for the instruction_length byte`,
+            { observed: itemSize, responseType, requestId },
+          );
+        }
+        need(body, cursor + 1, responseType, requestId);
+        const instructionLength = body[cursor]!;
+        cursor += 1;
+        if (instructionLength < 3) {
+          throw new StockFramingError(
+            `CPUHISTORY_GET entry ${index} declares instruction_length ${instructionLength}, too short to hold opcode/p1/p2`,
+            { observed: instructionLength, expected: 3, responseType, requestId },
+          );
+        }
+        if (cursor + 3 > entryEnd) {
+          throw new StockFramingError(
+            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for its declared instruction_length ${instructionLength}`,
+            { observed: itemSize, responseType, requestId },
+          );
+        }
+        need(body, cursor + 3, responseType, requestId);
+        const opcode = body[cursor]!;
+        const p1 = body[cursor + 1]!;
+        const p2 = body[cursor + 2]!;
+
+        entries.push({ cycle, instructionLength, opcode, p1, p2 });
+        offset = entryEnd; // advance by 1 + itemSize -- the stride from the source
       }
       return { type: "cpu_history", requestId, errorCode, count, entries };
     }
@@ -1452,13 +1560,35 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // e_MON_RESOURCE_TYPE_INT. For the integer case size is always 4 and
       // the payload is a uint32LE; for the string case size is the payload's
       // own byte length. [CITED monitor_binary.c:938-965]
+      //
+      // CR-02 (code review, plan 07-12 Task 3): the integer branch used to
+      // read a FIXED 4 bytes at offset 2 behind only `need(body, 2 + size,
+      // ...)` -- a body of `[0x01, 0x00]` (size=0) satisfies that guard and
+      // then `readUInt32LE(2)` throws a bare RangeError straight out of
+      // parseResponse(), violating this function's own normative rule
+      // (never add a case that reads at a fixed or wire-derived offset
+      // without a preceding need() for the bytes it ACTUALLY reads). A
+      // 4-byte payload is part of e_MON_RESOURCE_TYPE_INT's own contract,
+      // not a value to read past -- so the size mismatch is checked FIRST,
+      // independent of how many bytes the (possibly also-lying) body
+      // physically has, naming the observed size rather than surfacing as
+      // a generic "body too short" message. Only once size is confirmed to
+      // be exactly 4 does need(body, 2 + 4, ...) bounds-check the actual
+      // payload bytes before reading them.
       need(body, 2, responseType, requestId);
       const valueTypeByte = body[0]!;
       const size = body[1]!;
-      need(body, 2 + size, responseType, requestId);
       if (valueTypeByte === 1) {
+        if (size !== 4) {
+          throw new StockFramingError(
+            `RESOURCE_GET integer response declares size ${size}, expected 4 (a uint32LE payload)`,
+            { observed: size, expected: 4, responseType, requestId },
+          );
+        }
+        need(body, 2 + 4, responseType, requestId);
         return { type: "resource_get", requestId, errorCode, valueType: "integer", value: body.readUInt32LE(2) };
       }
+      need(body, 2 + size, responseType, requestId);
       return {
         type: "resource_get",
         requestId,
