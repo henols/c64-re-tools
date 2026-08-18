@@ -6,8 +6,9 @@ Commodore 64 games, reusable across C64 projects.
 It provides two things as a single installable unit:
 
 - **The `vice` MCP server** — tools that drive a host VICE
-  emulator (run disks, read/write RAM, checkpoints, screenshots, snapshots,
-  scripted input) through an on-demand broker.
+  emulator (run disks, read/write RAM, checkpoints, screenshots —
+  fork backend only, see below — save-state capture, scripted input)
+  through an on-demand broker.
 - **Six C64 skills:**
   - `acme-build` — assemble 6502/6510 source with the ACME cross-assembler.
   - `c64-memory-mapping` — resolve any C64 address; annotate disassembly.
@@ -59,6 +60,91 @@ any lockfile change, gated on a hash so normal starts are a cheap no-op. This
 needs `node` and `npm` on `PATH` and network access to the npm registry on the
 consumer's machine.
 
+## Installing VICE, and choosing a backend
+
+The `vice` MCP server does not bundle an emulator — it drives one running on
+your host. Two backends exist:
+
+- **Stock upstream VICE**, driven through its binary monitor. Install it from
+  any package manager; no build step required. **Pick this one** unless you
+  specifically need SID register read-back or the raw keyboard matrix (see
+  below).
+- **A custom, non-upstream fork**
+  ([barryw/vice-mcp](https://github.com/barryw/vice-mcp)), exposing an HTTP
+  endpoint. It must be built from source.
+
+### Which VICE you get, per package manager
+
+Checked live against each ecosystem on 2026-08-18. `CPUHISTORY_GET`, the
+opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**:
+
+| Ecosystem | Install command | Version it ships | Clears the 3.10 gate? |
+|-----------|-----------------|-------------------|------------------------|
+| Debian 13 "trixie" | `sudo apt install vice` | 3.9+dfsg-1 | ✗ no |
+| Debian "forky" (testing) | `sudo apt install vice` | 3.9+dfsg-1+b1 | ✗ no |
+| Ubuntu 25.10 (multiverse) | `sudo apt install vice` (enable multiverse first) | 3.9+dfsg-1 | ✗ no |
+| Arch Linux | `sudo pacman -S vice` | 3.10-3 | ✓ yes |
+| Fedora (via RPM Fusion Non-Free — not Fedora's own base repos) | enable RPM Fusion Non-Free, then `sudo dnf install vice` | 3.10-4 (F45/devel), 3.10-3 (F44), 3.10-2 (F43 updates); 3.9-4 on F43 base before updates | ✓ once on the updates channel — single-source confirmation (one live fetch), not independently re-verified |
+| Alpine Linux | enable the `edge`/`testing` repo, then `apk add vice` | 3.10-r0, edge/testing only | ✓ where available — not present in any stable Alpine release branch (3.20/3.21/3.22) |
+| Homebrew (macOS + Linux) | `brew install vice` | 3.10 | ✓ yes |
+| Official Windows downloads (vice-emu.sourceforge.io) | download the GTK3/SDL2 win64 zip | 3.9 — the site's own release announcement says 3.10 shipped, but the Windows binaries page still only offers 3.9 zips | ✗ no — "official" does not mean "latest" here |
+
+No MSYS2/pacman package exists for VICE on Windows; the alternatives there are
+the official SourceForge 3.9 zips above or a source build.
+
+Flatpak and Snap builds of VICE exist but are **unverified** here — this
+project has not confirmed whether their sandboxing permits reaching the
+binary monitor on `127.0.0.1`, so neither is recommended either way.
+
+### What a sub-3.10 VICE costs
+
+Nothing breaks. `CPUHISTORY_GET` (the exact per-instruction cycle counter) is
+absent below VICE 3.10, so the cycle stopwatch degrades to an honest
+within-one-frame approximation instead of an exact count. This is
+already-shipped graceful degradation — every other tool works the same
+either way.
+
+### Choosing the backend
+
+The backend is selected by one config value, `VICE_BACKEND`, set to `stock`
+or `fork` in the `vice` MCP server's environment — the `env` block of the
+`vice` entry in `.mcp.json`. When it is unset, the server probes the
+configured binary's `--help` output once at startup and caches the verdict;
+an indeterminate probe falls back to `fork` (this project's pre-existing
+default), and either way you can always force a choice explicitly by setting
+`VICE_BACKEND`.
+
+Consequences of the choice:
+
+- The two backends deliberately advertise **different tool lists**. A tool
+  advertised on both keeps the same name and argument shape on either one.
+- Calling a tool the active backend does not advertise returns an error
+  naming the tool, the reason, and which backend provides it — it fails
+  loudly, not silently.
+- **`vice_sid_get_state` and `vice_keyboard_matrix` require the fork
+  backend**, and are unrecoverable on stock: SID `$D400`-`$D418` is
+  write-only in hardware and the binary monitor has no SID command, and the
+  raw keyboard matrix is not readable over the wire at all (stock's
+  `KEYBOARD_FEED` only injects PETSCII text into the KERNAL buffer).
+- For the full per-tool answer, see the generated
+  [`docs/tool-support.md`](docs/tool-support.md) — derived from the two
+  shipped tool manifests, not maintained by hand.
+
+### Verifying a stock install
+
+This exact command was run live against a genuine, unpatched stock VICE 3.9
+binary (`/usr/bin/x64sc`, invoked by absolute path since a fork build shadows
+`x64sc` on `PATH`) and observed to bind its monitor port:
+
+```
+x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502
+```
+
+Stock VICE's binary monitor serves **exactly one client** — a second
+connection sits unserviced with no reply and no EOF, indistinguishable from a
+hang. Do not leave a hand-run monitor session open while the plugin is also
+driving the same emulator instance.
+
 ## How it locates the project
 
 At runtime the MCP writes host-synchronised state (`.vice-supervisor/`) and
@@ -80,6 +166,8 @@ is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
   mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
   skills/            # the six skills above (canonical source)
 installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
+docs/
+  tool-support.md    # generated per-backend tool support table (see below)
 scripts/
   ensure-mcp-deps.sh    # SessionStart dependency provisioning (plugin mode)
   package.sh            # validates manifests + builds the plugin release zip
@@ -119,11 +207,6 @@ npm ci
 npm run typecheck
 npm test
 ```
-
-Two repo-wide documentation guardrail tests (`skill-docs.test.ts`,
-`vice-mcp-selector-docs.test.ts`) intentionally did **not** move here — they
-validate a full project's docs (`CLAUDE.md`, `.planning/`, `docs/`) against the
-tool surface and remain in the originating project.
 
 ## License
 
