@@ -36,9 +36,16 @@
 //     `machine_trigger_reset(POWER_CYCLE)` one call deep (CLAUDE.md's Safety
 //     constraint) -- this file only ever sends RESOURCE_GET (0x51), read-side
 //     only, and only for this one resource name.
-import { CommandType, memspaceBody, resourceGetBody, type ParsedCpuHistoryEntry } from "./stock-protocol.ts";
+import {
+  CommandType,
+  memspaceBody,
+  resourceGetBody,
+  type ParsedCpuHistoryEntry,
+  type StockProtocolError,
+} from "./stock-protocol.ts";
 import { clampCpuHistoryCount, type StockConnectSession } from "./stock-connect.ts";
 import { registerCatalogFor } from "./stock-registers.ts";
+import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler, type StockOkResult } from "./stock-handler.ts";
 
 // ---------------------------------------------------------------------------
 // Video standards -- MachineVideoStandard's OWN integer resource values,
@@ -196,8 +203,8 @@ async function readProgramCounter(session: StockConnectSession): Promise<number>
 }
 
 /**
- * The shared cycle-baseline primitive `handleCyclesStopwatch()` (Task 2)
- * and (07-06) `stock-diagnose.ts`'s liveness bracket both consume. Route
+ * The shared cycle-baseline primitive `handleCyclesStopwatch()` below and
+ * (07-06) `stock-diagnose.ts`'s liveness bracket both consume. Route
  * selection is a SINGLE read of `session.capabilities.cpuHistory` -- Phase
  * 2's BACK-04 already settled this once per connect; there is no second
  * probe here (Pattern 2, 07-RESEARCH.md).
@@ -284,3 +291,129 @@ export function resetTimingStateForTest(): void {
   videoStandardCache = new Map<string, VideoStandardResult>();
   stopwatchBaselines = new Map<string, CycleBaseline>();
 }
+
+// ---------------------------------------------------------------------------
+// handleCyclesStopwatch -- vice_cycles_stopwatch (TIME-01/TIME-03).
+//
+// An unmeasurable bracket emits NO `cycles` key at all -- `0` is a wrong
+// answer, not a null answer.
+// ---------------------------------------------------------------------------
+
+const VALID_ACTIONS = ["reset", "read", "reset_and_read"] as const;
+type StopwatchAction = (typeof VALID_ACTIONS)[number];
+
+function isValidAction(value: unknown): value is StopwatchAction {
+  return typeof value === "string" && (VALID_ACTIONS as readonly string[]).includes(value);
+}
+
+export const handleCyclesStopwatch: StockSessionHandler = async (args, session) => {
+  const unexpectedKeys = Object.keys(args).filter((key) => key !== "action");
+  if (unexpectedKeys.length > 0) {
+    return isErrorText(`vice_cycles_stopwatch: unexpected argument(s): ${unexpectedKeys.join(", ")} -- this tool takes only "action"`);
+  }
+  const rawAction = args.action;
+  if (!isValidAction(rawAction)) {
+    return isErrorText(
+      `vice_cycles_stopwatch: "action" is required and must be one of ${VALID_ACTIONS.join(", ")}, got ${JSON.stringify(rawAction)}`,
+    );
+  }
+  const action = rawAction;
+
+  let sample: CycleBaseline;
+  try {
+    sample = await readCycleBaseline(session);
+  } catch (err) {
+    return convertWireError("vice_cycles_stopwatch", err as StockProtocolError | Error);
+  }
+
+  if (action === "reset") {
+    stopwatchBaselines.set(session.targetId, sample);
+    return stockAnswer(session.client, {
+      requested: "cycles_stopwatch",
+      action: "reset",
+      route: sample.route,
+      measurable: false,
+      reason: "a baseline was recorded; call read to measure elapsed cycles",
+    });
+  }
+
+  // action is "read" or "reset_and_read" from here on.
+  const baseline = stopwatchBaselines.get(session.targetId);
+
+  function finish(payload: Record<string, unknown>): StockOkResult {
+    // reset_and_read stores the new sample as the NEXT baseline on EVERY
+    // path, including the unmeasurable ones -- a failed measurement must
+    // not silently leave a stale baseline behind.
+    if (action === "reset_and_read") {
+      stopwatchBaselines.set(session.targetId, sample);
+    }
+    return stockAnswer(session.client, { requested: "cycles_stopwatch", action, ...payload });
+  }
+
+  if (!baseline) {
+    return finish({
+      route: sample.route,
+      measurable: false,
+      reason: `no baseline recorded on this instance -- call vice_cycles_stopwatch with action:"reset" before action:"${action}"`,
+    });
+  }
+
+  if (sample.route === "unavailable") {
+    return finish({ route: "unavailable", measurable: false, reason: sample.reason });
+  }
+
+  if (baseline.route !== sample.route) {
+    return finish({
+      route: sample.route,
+      measurable: false,
+      reason:
+        `the baseline was recorded on route "${baseline.route}" but the current sample is route "${sample.route}" -- ` +
+        "this is possible only across a reconnect that changed this build's cpu-history capability; reset again before reading",
+    });
+  }
+
+  if (sample.route === "cpu_history" && baseline.route === "cpu_history") {
+    const delta = sample.cycle - baseline.cycle;
+    if (delta < 0n) {
+      return finish({
+        route: "cpu_history",
+        measurable: false,
+        reason: `the monotonic CPUHISTORY_GET clock went backwards (baseline cycle ${baseline.cycle}, current cycle ${sample.cycle}) -- the machine restarted or its history was cleared`,
+      });
+    }
+    return finish({
+      route: "cpu_history",
+      measurable: true,
+      cycles: Number(delta),
+      cyclesExact: delta.toString(),
+      exactness: "exact",
+    });
+  }
+
+  // Route B: frame_position (the only remaining route once cpu_history and
+  // unavailable are handled above, and the mismatch check above proved
+  // baseline.route === sample.route).
+  const before = baseline as FramePositionBaseline;
+  const after = sample as FramePositionBaseline;
+  if (after.position < before.position) {
+    return finish({
+      route: "frame_position",
+      measurable: false,
+      reason:
+        "at least one frame boundary was crossed between reset and read -- LIN/CYC's within-frame position went backwards, and the elapsed " +
+        "cycle count cannot be reconstructed from LIN/CYC alone on a VICE build below 3.10; CPUHISTORY_GET (VICE >= 3.10) is the route that " +
+        "can measure a bracket that may cross a frame boundary",
+    });
+  }
+  return finish({
+    route: "frame_position",
+    measurable: true,
+    cycles: after.position - before.position,
+    exactness: "within-one-frame-unverified",
+    caveat:
+      "LIN/CYC cannot distinguish \"0 frames elapsed\" from \"exactly N whole frames elapsed\" -- this figure is trustworthy only for a " +
+      "bracket known to be bounded well under one frame",
+    standard: after.standard.name,
+    standardAssumed: after.standard.assumed,
+  });
+};
