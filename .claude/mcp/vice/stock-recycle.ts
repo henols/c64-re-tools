@@ -141,8 +141,26 @@ async function captureStep<T>(fn: () => Promise<T>): Promise<CaptureStepResult<T
  * genuinely ran and genuinely compared two same-route samples). */
 function bracketEvidenceValue(bracket: StockLivenessBracketResult): Record<string, unknown> {
   if (bracket.before.route === "cpu_history" && bracket.after.route === "cpu_history") {
-    const delta = Number(bracket.after.cycle - bracket.before.cycle);
-    return { cycles: delta, elapsedMs: bracket.elapsedMs, route: bracket.route };
+    // WR-13 (07-REVIEW.md): this value is written into a PERMANENT,
+    // repo-tracked incident record, and it used to be the narrowed
+    // `Number(...)` with no exact counterpart at all -- so a delta above
+    // Number.MAX_SAFE_INTEGER was silently rounded in the one artifact that
+    // outlives the session. `cyclesExact` carries the bigint's exact decimal
+    // string alongside it (incident-record.ts's renderer only prints
+    // `cycles`/`elapsedMs`, so the string rides in `cycles` itself when the
+    // narrowing is lossy -- the record must never present a rounded figure as
+    // if it were the measurement).
+    const exact = bracket.after.cycle - bracket.before.cycle;
+    const narrowed = Number(exact);
+    if (exact > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return {
+        cycles: `${exact.toString()} (exact; exceeds Number.MAX_SAFE_INTEGER, so the narrowed JS number ${narrowed} would be rounded)`,
+        cyclesExact: exact.toString(),
+        elapsedMs: bracket.elapsedMs,
+        route: bracket.route,
+      };
+    }
+    return { cycles: narrowed, cyclesExact: exact.toString(), elapsedMs: bracket.elapsedMs, route: bracket.route };
   }
   if (bracket.before.route === "frame_position" && bracket.after.route === "frame_position") {
     const delta = bracket.after.position - bracket.before.position;

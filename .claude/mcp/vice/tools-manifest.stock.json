@@ -3361,7 +3361,7 @@
     },
     {
       "name": "vice_cycles_stopwatch",
-      "description": "Measure elapsed CPU cycles for timing-critical code analysis. Use 'reset' to start timing, 'read' to get elapsed cycles, or 'reset_and_read' for atomic read-and-reset. Ideal for measuring raster routine timing. On VICE >= 3.10 the figure is exact (CPUHISTORY_GET); below 3.10 it is a within-one-frame reconstruction from LIN/CYC, and a bracket that crossed a frame boundary is refused rather than approximated.",
+      "description": "Measure elapsed CPU cycles for timing-critical code analysis. Use 'reset' to start timing, 'read' to get elapsed cycles, or 'reset_and_read' for atomic read-and-reset. Ideal for measuring raster routine timing. On VICE >= 3.10 the figure is exact (CPUHISTORY_GET); below 3.10 it is a within-one-frame reconstruction from LIN/CYC, and a bracket that crossed a frame boundary is refused rather than approximated. On the cpu_history route \"cyclesExact\" carries the uint64 delta as an exact decimal STRING and is always authoritative: \"cycles\" is that value narrowed to a JS number, so when the delta exceeds Number.MAX_SAFE_INTEGER the narrowing rounds and \"exactness\" reads \"exact-but-narrowed\" with a \"caveat\" saying so -- use cyclesExact for any arithmetic that matters.",
       "inputSchema": {
         "type": "object",
         "properties": {

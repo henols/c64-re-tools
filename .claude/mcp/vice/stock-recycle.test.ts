@@ -310,6 +310,33 @@ test("gatherStockWedgeEvidence: a healthy session produces all four items availa
   assert.equal(evidence.irqHandler!.available, true);
 });
 
+// 07-REVIEW.md WR-13: the bracket's cycle delta is written into a PERMANENT,
+// repo-tracked incident record. It used to be the narrowed `Number(...)` with no
+// exact counterpart at all, so a uint64 delta above Number.MAX_SAFE_INTEGER was
+// silently rounded in the one artifact that outlives the session.
+test("gatherStockWedgeEvidence (WR-13): the cpu_history bracket carries cyclesExact alongside the narrowed cycles", async () => {
+  const { session } = makeFakeSession({ cpuHistoryValues: [1_000_000n, 1_002_500n] });
+  const evidence = await gatherStockWedgeEvidence(session, {} as unknown as StockDispatchDeps);
+  assert.equal(evidence.bracket!.available, true);
+  const value = evidence.bracket!.value as Record<string, unknown>;
+  assert.equal(value.route, "cpu_history");
+  assert.equal(value.cycles, 2500);
+  assert.equal(value.cyclesExact, "2500", "the incident record must always carry the exact decimal value, not only the narrowed number");
+});
+
+test("gatherStockWedgeEvidence (WR-13): a delta above Number.MAX_SAFE_INTEGER is recorded as an exact string, never a silently rounded number", async () => {
+  const huge = BigInt(Number.MAX_SAFE_INTEGER) + 1000n;
+  const { session } = makeFakeSession({ cpuHistoryValues: [1n, huge] });
+  const evidence = await gatherStockWedgeEvidence(session, {} as unknown as StockDispatchDeps);
+  assert.equal(evidence.bracket!.available, true);
+  const value = evidence.bracket!.value as Record<string, unknown>;
+  const exact = (huge - 1n).toString();
+  assert.equal(value.cyclesExact, exact);
+  assert.equal(typeof value.cycles, "string", "incident-record.ts's renderer only prints cycles/elapsedMs, so the exact figure must ride in cycles itself");
+  assert.match(value.cycles as string, new RegExp(exact));
+  assert.match(value.cycles as string, /MAX_SAFE_INTEGER/);
+});
+
 test("gatherStockWedgeEvidence: a session whose every send() rejects still resolves with all four items unavailable and a non-empty reason each", async () => {
   const { session } = makeFakeSession({ alwaysReject: true });
   const evidence = await gatherStockWedgeEvidence(session, {} as unknown as StockDispatchDeps);

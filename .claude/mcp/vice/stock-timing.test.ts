@@ -286,6 +286,62 @@ test("Route A decode: reset then read 12345 cycles later yields cycles===12345 a
   assert.equal(answer.exactness, "exact");
 });
 
+// 07-REVIEW.md WR-13: `cycles` is a JS number, but a uint64 clock delta does
+// not always fit one. Above Number.MAX_SAFE_INTEGER, Number(delta) silently
+// rounds -- and the answer still said exactness:"exact", while
+// ParsedCpuHistoryEntry's own doc comment says the cycle is "never narrowed to
+// Number, since ... the stopwatch's whole value is exactness".
+test("Route A (WR-13): a delta above Number.MAX_SAFE_INTEGER is labelled exact-but-narrowed, with cyclesExact carrying the true value", async () => {
+  const baseCycle = 1n;
+  const hugeCycle = BigInt(Number.MAX_SAFE_INTEGER) + 1000n; // delta = MAX_SAFE_INTEGER + 999
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(baseCycle)] }, { count: 1, entries: [historyEntry(hugeCycle)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }], [{ id: 0, value: 0x105 }]],
+  });
+
+  await handleCyclesStopwatch({ action: "reset" }, session, FAKE_DEPS);
+  const readResult = await handleCyclesStopwatch({ action: "read" }, session, FAKE_DEPS);
+  assert.equal(readResult.isError, false);
+  const answer = parseAnswer(readResult);
+  assert.equal(answer.measurable, true);
+  assert.equal(answer.exactness, "exact-but-narrowed", "a rounded figure must never be labelled exact");
+  assert.equal(answer.cyclesExact, (hugeCycle - baseCycle).toString(), "cyclesExact is the authoritative, unrounded value");
+  assert.match(answer.caveat as string, /MAX_SAFE_INTEGER/);
+  assert.match(answer.caveat as string, /cyclesExact/);
+});
+
+test("Route A (WR-13): a delta exactly AT Number.MAX_SAFE_INTEGER is still exact -- the boundary is inclusive, not off by one", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    cpuHistoryReplies: [
+      { count: 1, entries: [historyEntry(0n)] },
+      { count: 1, entries: [historyEntry(BigInt(Number.MAX_SAFE_INTEGER))] },
+    ],
+    registersGetReplies: [[{ id: 0, value: 0x100 }], [{ id: 0, value: 0x105 }]],
+  });
+
+  await handleCyclesStopwatch({ action: "reset" }, session, FAKE_DEPS);
+  const answer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, session, FAKE_DEPS));
+  assert.equal(answer.exactness, "exact");
+  assert.equal(answer.cycles, Number.MAX_SAFE_INTEGER);
+  assert.equal(answer.caveat, undefined, "no caveat when the narrowing is lossless");
+});
+
+test("Route A (WR-13): an ordinary small delta is unchanged -- exact, no caveat", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    cpuHistoryReplies: [{ count: 1, entries: [historyEntry(1_000_000n)] }, { count: 1, entries: [historyEntry(1_012_345n)] }],
+    registersGetReplies: [[{ id: 0, value: 0x100 }], [{ id: 0, value: 0x105 }]],
+  });
+  await handleCyclesStopwatch({ action: "reset" }, session, FAKE_DEPS);
+  const answer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, session, FAKE_DEPS));
+  assert.equal(answer.exactness, "exact");
+  assert.equal(answer.cycles, 12345);
+  assert.equal(answer.cyclesExact, "12345");
+  assert.equal(answer.caveat, undefined);
+});
+
 test("Route A backwards clock: a lower second sample yields measurable:false, no cycles key", async () => {
   const { session } = makeFakeSession({
     cpuHistory: "available",

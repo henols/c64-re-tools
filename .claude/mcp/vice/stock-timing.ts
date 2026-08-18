@@ -402,13 +402,28 @@ export const handleCyclesStopwatch: StockSessionHandler = async (args, session) 
         reason: `the monotonic CPUHISTORY_GET clock went backwards (baseline cycle ${baseline.cycle}, current cycle ${sample.cycle}) -- the machine restarted or its history was cleared`,
       });
     }
-    return finish({
+    // WR-13 (07-REVIEW.md): `cycles` is a JS number for the manifest's sake,
+    // but a uint64 clock delta does not always fit one. ParsedCpuHistoryEntry's
+    // own doc comment says the cycle is "never narrowed to Number, since a
+    // uint64 clock does not fit a JS number safely and the stopwatch's whole
+    // value is exactness" -- and this is the narrowing site. Above
+    // Number.MAX_SAFE_INTEGER, `Number(delta)` silently rounds, so labelling
+    // that "exact" is false on its face. `cyclesExact` (the decimal string) is
+    // always the authoritative figure; the LABEL is what changes.
+    const narrowable = delta <= BigInt(Number.MAX_SAFE_INTEGER);
+    const measured: Record<string, unknown> = {
       route: "cpu_history",
       measurable: true,
       cycles: Number(delta),
       cyclesExact: delta.toString(),
-      exactness: "exact",
-    });
+      exactness: narrowable ? "exact" : "exact-but-narrowed",
+    };
+    if (!narrowable) {
+      measured.caveat =
+        `the elapsed count ${delta} exceeds Number.MAX_SAFE_INTEGER (${Number.MAX_SAFE_INTEGER}), so the "cycles" field has been ` +
+        "rounded by the narrowing to a JS number -- read cyclesExact, which is the exact decimal value, for any arithmetic that matters";
+    }
+    return finish(measured);
   }
 
   // Route B: frame_position (the only remaining route once cpu_history and
