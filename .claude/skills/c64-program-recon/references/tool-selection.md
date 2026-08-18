@@ -19,7 +19,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` (**both backends**) |
 | Find a known byte pattern | `vice_memory_search` (**both backends**) |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` and regenerator2000 output share this channel |
-| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence. **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
+| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (the two backends' verdict sets differ by one; see `docs/stock-vice-parity.md` D-03). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.planning/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
 
@@ -35,10 +35,14 @@ usage, not measured). Individual rows that have since been exercised live are ma
 
 ## Three traps in this table
 
-**`vice_run_until` has no working timeout.** Its schema documents `cycles` as *"not yet
-implemented"*, so a run to an address the program never reaches has nothing to bound it and looks
-exactly like a wedged emulator. Prefer `vice_checkpoint_add` + a bounded poll when the address is
-a hypothesis rather than a certainty. **Confidence: MEDIUM** — read off the schema, not reproduced.
+**`vice_run_until`'s timeout is backend-qualified — it has none on the fork, but stock bounds it
+(Phase 7, D-02).** On the fork, `cycles` is documented as *"not yet implemented"* and there is no
+`timeout_ms` either, so a run to an address the program never reaches has nothing to bound it and
+looks exactly like a wedged emulator; prefer `vice_checkpoint_add` + a bounded poll when the
+address is a hypothesis rather than a certainty. **Confidence: MEDIUM on the fork** — read off the
+schema, not reproduced. On stock, `timeout_ms` (default 30000, ceiling 600000) bounds the wait, and
+a timed-out answer says the machine is left halted rather than looking like a wedge — see
+`vice-wedge-triage` for the full triage judgement and its live evidence; do not restate it here.
 
 **`vice_diagnose` leaves the machine paused.** When it measures a cycle bracket it resumes the
 machine once or twice and then leaves it **paused** — resuming is your own next call. And a

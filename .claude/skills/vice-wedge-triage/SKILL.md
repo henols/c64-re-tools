@@ -26,7 +26,11 @@ services exactly one client and the fork's non-pausing `vice_ping` has no stock 
 `docs/stock-vice-parity.md` D-03 for the full reasoning). The fork answers `restarted`,
 `checkpoint_trap`, `wedged`, `stale_read_path`, `live`; stock answers `restarted`,
 `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`. Read the tool's own schema for the
-exact contract on whichever backend is active; this skill is the judgement around it.
+exact contract on whichever backend is active — as of **07-16 (WR-07)** this instruction is
+finally sound: `tools/list`'s advertised stock schema is the corrected stock manifest entry, not
+the fork's synthetic literal it was silently overwritten by before. Stock `vice_diagnose` can also
+answer a `diagnosis_unavailable` outcome when no verdict could be established at all — that is
+**not** a sixth verdict; see the table below.
 
 ## The order
 
@@ -36,7 +40,13 @@ exact contract on whichever backend is active; this skill is the judgement aroun
 2. **Read the verdict, not the vibe.** Each verdict has exactly one correct response — the table
    below. A verdict is not a suggestion to try things.
 3. **`diagnose` leaves the machine paused** when it ran a bracket. Resuming is your own next call.
-   Do not treat "still paused afterwards" as a symptom.
+   Do not treat "still paused afterwards" as a symptom. Every established verdict also reports
+   `machinePaused` plus `machinePausedSource` (07-15), so you can tell an actual observation from
+   an inference: `observed` means a wire `stopped`/`resumed`/`jam` event directly reported the
+   state; `structural` means it was inferred from the fact that every stock read halts the machine
+   (D-05), not from a specific event; `no_session` means no session was ever obtained (e.g. the
+   `monitor_held_elsewhere` verdict, or a `diagnosis_unavailable` acquisition failure) so no claim
+   about pause state is being made at all.
 4. **If the verdict is `wedged`, capture evidence before recovering.** `vice_recycle` requires a
    `reason`, and that string is written verbatim into a permanent, repo-tracked incident record
    under `.planning/incidents/` **before anything is killed**. That record is the evidence
@@ -54,6 +64,24 @@ exact contract on whichever backend is active; this skill is the judgement aroun
 | `stale_read_path` **(fork only)** | Some reads move while others do not | Do not trust any measurement taken across the boundary. Treat as void and re-derive |
 | `monitor_held_elsewhere` **(stock only)** | A different client already holds this instance's single binary-monitor slot | Release or identify the other holder. **Never a reason to recycle** — recycling here destroys an instance that is not even wedged |
 | `wedged` | Two brackets, zero cycles, no epoch change | Last resort: `vice_recycle` with a real reason |
+| `diagnosis_unavailable` **(stock only, non-verdict outcome — not one of the five)** | No verdict could be established at all; the message starts `vice_diagnose: diagnosis_unavailable (<reason>)`. The machine's state is **UNKNOWN**, not any of the five above | **Do not recycle on this answer alone.** Read the reason class in the message and act on it — see below |
+
+### `diagnosis_unavailable` — reason classes and response (07-15)
+
+`diagnosis_unavailable` is what `vice_diagnose` answers, on the `isError:true` channel, when it
+could not reach any of the five verdicts above — including a CR-01-class decode failure. It is
+never added to the verdict enum and is never grounds to `vice_recycle` by itself: the message says
+so explicitly. Seven reason classes exist, each with its own next move:
+
+| Reason | What it means | Do |
+|---|---|---|
+| `connection_lost` | The socket died mid-session | Retry once. If it recurs, treat as a real transport problem, not a wedge |
+| `request_timeout` | The wire went silent past the request bound | Retry once. If it recurs, fall to the manual cycle bracket below |
+| `monitor_acquisition_timeout` | Another client holds the monitor and the wait bound expired | Wait for the current holder to release, then retry — this is the bounded sibling of `monitor_held_elsewhere`, not a wedge |
+| `session_refused` | The broker/lease itself refused the session | Read the raw detail in the message; this is a broker-level problem, not an emulator state |
+| `protocol_decode_failure` | This build answered a frame the client cannot decode | Report it as a tool defect — check `docs/stock-vice-parity.md`'s `CPUHISTORY_GET` history for a known class of this — and fall back to the manual cycle bracket below |
+| `evidence_gathering_failed` | A session was obtained but a read needed to build the verdict failed | `vice_execution_run` may be needed to unstick a stalled read path, then retry |
+| `unknown` | None of the above classified the failure | Read the raw detail in the message; retry once before escalating |
 
 ## What is not recoverable
 
@@ -84,11 +112,23 @@ implemented"* on both backends, and the fork has no timeout to bound the wait fo
 either — an unreachable address there is unbounded and indistinguishable from a wedge.
 **On stock, this is now bounded (D-02):** pass `timeout_ms` (default 30000, clamped to a ceiling of
 600000); an unreachable address returns an explicit, bounded `timedOut: true` answer — with the
-temporary checkpoint already cleaned up — rather than looking like a wedge. The underlying
-judgement is unchanged and still the right first question on either backend: before concluding
-anything, check whether you asked the machine to run to an address it cannot reach. **Confidence:
-HIGH on stock** — live-confirmed (a real KERNAL address reached within its timeout, an unreached
-one timing out with cleanup); **MEDIUM on the fork** — read off the tool schema, not reproduced.
+temporary checkpoint already cleaned up — rather than looking like a wedge. **Two further
+behaviours (07-14, closing WR-01/WR-02):** every non-error answer, hit or timeout, now carries
+`machineHalted: true` plus a `machineHaltedNote` naming `vice_execution_run` as the resume call —
+the tool halts the machine on every read and now says so explicitly. And a timeout whose cleanup
+delete lands on an already-gone race no longer asserts `reached: false` outright: it reads the
+program counter and resolves the race (`raceResolved: "pc_at_address"` / `"pc_elsewhere"`), or, if
+the PC read itself fails, omits `reached` entirely and reports `reachedUnknown: true`
+(`raceResolved: "unresolved"`). **An absent `reached` is not "false"** — check `reachedUnknown`
+before assuming a miss. The underlying judgement is unchanged and still the right first question on
+either backend: before concluding anything, check whether you asked the machine to run to an
+address it cannot reach. **Confidence: HIGH on stock for the reach/timeout mechanism** —
+live-confirmed against genuine, unmodified `/usr/bin/x64sc` (VICE 3.9) and `/usr/local/bin/x64sc`
+(VICE 3.10): a real KERNAL address ($EA31) reached within its timeout, an unreached one ($C000)
+timing out with the checkpoint deleted (07-10's live pass). **MEDIUM for the WR-01/WR-02 honesty
+fields above** — unit-proven (`stock-run-until.test.ts`, 21/21, 07-14) but not independently
+re-exercised against a real emulator by this gap-closure batch. **MEDIUM on the fork** — read off
+the tool schema, not reproduced.
 
 ## The manual fallback, when `vice_diagnose` cannot answer
 
@@ -140,7 +180,7 @@ session, the last three all on that call).
 | A checkpoint trap explains all three recorded "silent stalls" | Cross-read, 3/3 correlation, mechanism consistent with every symptom — **not reproduced** | MEDIUM |
 | `vice_diagnose`'s five-verdict path behaves as its schema says | Schema read, and cross-checked against the tracked implementation's own report builders. **Not exercised end to end** | MEDIUM |
 | `vice_run_until` has no working timeout **(fork only)** | Its schema says `cycles` is "not yet implemented"; the fork has no `timeout_ms` bound | MEDIUM |
-| Stock's five-verdict path (`restarted`, `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`) and its bounded `vice_run_until` | Unit-proven (25/25 `stock-diagnose.test.ts`, 15/15 `stock-run-until.test.ts`); live-checked against genuine stock VICE 3.9 and VICE 3.10 for the `live` verdict, a reached address, and a timed-out address with cleanup — `checkpoint_trap`, `wedged`, `restarted` and `monitor_held_elsewhere` **not yet exercised against a real emulator** | MEDIUM — unit HIGH, live partial |
+| Stock's five-verdict path (`restarted`, `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`) and its bounded `vice_run_until` | Unit-proven (40/40 `stock-diagnose.test.ts`, 21/21 `stock-run-until.test.ts`, 07-15/07-14). **Live-proven** against genuine `/usr/bin/x64sc` (VICE 3.9) and `/usr/local/bin/x64sc` (VICE 3.10) for `live` (07-10), `checkpoint_trap`, `wedged` (confirmed on both capability routes — `frame_position` on 3.9, `cpu_history` on 3.10) and `restarted` (07-17) — but 07-17's `restarted` respawn was **performed by the test itself**, not the host broker's own supervision loop, which stays unit-proven only. `monitor_held_elsewhere`'s **socket-level** contention bound is live-proven (07-13, ~1501-1502ms against a 1500ms bound); its **broker-mediated** verdict path (a real second `claimMonitor()` refusal) stays unit-proven only. `vice_run_until`'s reach/timeout mechanism is live-proven against both binaries (07-10); its WR-01/WR-02 honesty fields (`machineHalted`, `raceResolved`, `reachedUnknown`) are unit-proven only (07-14) | HIGH for the five verdicts and the run_until reach/timeout mechanism; MEDIUM for the run_until honesty fields, the broker-mediated `monitor_held_elsewhere` path, and the broker-supervised (vs. test-performed) `restarted` path, all of which stay unit-only |
 
 Full provenance in `.planning/RE-FINDINGS.md`. **Log a new incident there at the moment you hit
 it**, graded with `Evidence:` and `Confidence:`; promote by re-logging, never by editing a grade.

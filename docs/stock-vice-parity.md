@@ -71,10 +71,12 @@ below is renumbered to stay contiguous.)
    §1. There is no hardware stopwatch reset on either route, so "atomic
    reset_and_read" is client-side baseline math regardless of route. Live-
    confirmed on genuine stock VICE 3.9 (Route B, including a live wraparound
-   refusal) and VICE 3.10 (Route B measurable within one frame; Route A's live
-   decode against this build surfaced a wire-layout mismatch not yet
-   root-caused — see `.planning/phases/07-cycle-timing-and-wedge-triage/
-   deferred-items.md`, "Route A live decode mismatch").
+   refusal) and VICE 3.10 (Route B measurable within one frame; Route A's
+   wire-layout mismatch recorded here as unresolved was root-caused and fixed
+   by **07-12** and live-proven by **07-13** against `/usr/local/bin/x64sc`
+   (VICE 3.10.0.0) — see the `probeCpuHistory()` correction below and
+   `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md`'s
+   resolution note for "Route A live decode mismatch").
 
 5. **`vice_vicii_get_state` ("internal") / `vice_cia_get_state` (timers) → partial loss, and a stock GAIN in the same breath (Phase 5, DERIV-05).**
    Phase 5 shipped both tools reading their chip's memory-mapped register block
@@ -339,16 +341,96 @@ below is renumbered to stay contiguous.)
      the destructive recycle RPC on both backends — that record-before-RPC
      ordering is not a divergence, and is itself proven live by a test that
      observes the incidents directory from inside the RPC stub at call time.
-   - **A stock correctness gain (Phase 7, `probeCpuHistory()`'s `count=0`
-     fix).** The stock connect handshake's `CPUHISTORY_GET` capability probe
-     sent `count=0`, which real VICE rejects with `InvalidParameter` (`0x81`)
-     — `monitor_binary.c` requires `requested_count >= 1`. Every stock connect
-     to a genuine VICE >= 3.10 build therefore failed outright before Phase 7,
-     regardless of anything else in this document. Fixed by probing with
-     `count=1` (the minimum VICE accepts) and classifying `0x81` as the
-     capability answer `"absent"`, so the capability now actually resolves to
-     `"available"` where the build supports it, live-confirmed against the
-     fork's own genuine VICE 3.10.0.0 build.
+   - **A stock correctness history worth reading in order, not smoothed over
+     (Phase 7, `probeCpuHistory()`, CR-01).** The stock connect handshake's
+     `CPUHISTORY_GET` capability probe originally sent `count=0`, which real
+     VICE rejects with `InvalidParameter` (`0x81`) — `monitor_binary.c`
+     requires `requested_count >= 1`. 07-01 fixed that by probing with
+     `count=1` (the minimum VICE accepts). That fix exposed a worse failure
+     on any build that actually *supports* the opcode: the real
+     `CPUHISTORY_GET` reply could not be decoded by this client's parser, the
+     resulting `StockFramingError` was not classified as a capability answer,
+     and it propagated out of `resolveCapabilities()` as a fatal error — so
+     the **entire stock handshake failed on any genuine VICE >= 3.10**
+     (finding CR-01, live-reproduced independently twice: once in
+     `07-REVIEW.md`, once in `07-VERIFICATION.md` against a freshly-launched,
+     unmodified `/usr/local/bin/x64sc`). A previous version of this paragraph
+     claimed the opposite of that finding — that the capability "now actually
+     resolves to `available` ... live-confirmed against the fork's own
+     genuine VICE 3.10.0.0 build" — and that claim was **wrong**: at the time
+     it was written, the connect failed before any capability value existed.
+     Two fixes closed CR-01. **07-11** made a `CPUHISTORY_GET` decode failure
+     (`StockFramingError`, `StockDesyncError`, `StockResponseMismatchError`)
+     answer a capability value (`"absent"`) instead of rethrowing, and
+     guarded `resolveCapabilities()`'s probe call site so no uninterpreted
+     error can reach `stockConnect()`'s fatal catch — only real
+     transport/instance failures (`StockConnectionClosedError`,
+     `StockRequestTimeoutError`, `MachineRestartedError`) still reject the
+     handshake. **07-12** re-derived the real per-entry wire layout from
+     `monitor_binary_process_cpuhistory()` (`monitor_binary.c`) against three
+     committed real captures from genuine VICE 3.10 and 3.9 binaries: after
+     the 4-byte `count(u32LE)`, each entry is a 1-byte `item_size` (the byte
+     count of everything below it in that entry), a `regCount(u16LE)` plus
+     that many 4-byte register items, an 8-byte `cycle(u64LE)`, a 1-byte
+     `instruction_length`, and that many instruction data bytes.
+     `instruction_length` is a **hardcoded constant 4 in VICE**
+     (`monitor_binary.c:1468`) — it is not a decoded instruction size. 07-12
+     also corrected a second, previously never-live-verified claim: the real
+     multi-entry capture decodes to strictly ascending cycle values, so
+     `entries[0]` is the **OLDEST** of the returned window, not the newest as
+     this document previously claimed — functionally inert for Route A's
+     shipped behaviour, which always requests `count:1`. It further
+     established that genuine VICE 3.9 answers the unrecognized
+     `CPUHISTORY_GET` opcode with `INVALID_TYPE` (`0x83`), not `CMD_FAILURE`
+     (`0x8f`) — the opcode itself, not merely the history feature, is
+     unrecognized on 3.9. **07-13's live status**, verbatim, against
+     freshly-launched, genuine, unmodified binaries: `stockConnect()`
+     resolves against `/usr/bin/x64sc` (VICE 3.9.0.0) with
+     `cpuHistory: "absent"`, and against `/usr/local/bin/x64sc` (VICE
+     3.10.0.0) with `cpuHistory: "available"` — the exact inversion of the
+     CR-01 failure. A real ~500ms Route A bracket on the VICE 3.10.0.0 build,
+     dispatched through the real `dispatchStock()` seam, measured **511,061**
+     exact cycles on one run and **530,713** on another — both
+     `route: "cpu_history"`, `exactness: "exact"`, both inside the documented
+     sanity band. So the capability now genuinely resolves to `"available"`
+     where the build supports it, live-confirmed against
+     `/usr/local/bin/x64sc` (VICE 3.10.0.0) by **07-13** — not, as this
+     paragraph previously and falsely claimed, by the original 07-01 fix
+     alone.
+   - **`vice_diagnose`'s `diagnosis_unavailable` outcome (Phase 7, 07-15).**
+     Every non-verdict failure of `vice_diagnose` — a CR-01-class decode
+     error, a lost connection, a request timeout, a session-acquisition
+     timeout/refusal, or a failure gathering evidence — now answers a
+     classified, greppable `isError:true` outcome whose text begins
+     `vice_diagnose: diagnosis_unavailable (<reason>)`, naming one of seven
+     reason classes: `protocol_decode_failure`, `connection_lost`,
+     `request_timeout`, `monitor_acquisition_timeout`, `session_refused`,
+     `evidence_gathering_failed`, `unknown`. This is **not** a sixth verdict
+     — D-03's verdict set stays exactly the five named above (`restarted`,
+     `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`), and
+     `diagnosis_unavailable` never appears in the manifest's `verdict` enum.
+     It means the emulated machine's state is UNKNOWN, and it is never on its
+     own grounds to `vice_recycle` — the message says so explicitly.
+   - **`vice_run_until`'s honest race resolution and halted-machine reporting
+     (Phase 7, 07-14).** A timed-out call whose cleanup delete lands on an
+     already-gone race (`cleanup: "already_gone"`) no longer asserts
+     `reached: false` outright (WR-01) — it reads the program counter and
+     reports `reached: true`/`false` if that resolves the race, or omits
+     `reached` entirely and reports `reachedUnknown: true` if the PC read
+     itself fails. Every non-error answer, hit or timeout, now carries
+     `machineHalted: true` plus a `machineHaltedNote` naming
+     `vice_execution_run` as the resume call (WR-02) — so `reached` is no
+     longer unconditionally present on stock, and an absent `reached` is not
+     "false".
+   - **The advertised stock schema now reaches `tools/list` (Phase 7, WR-07,
+     07-16).** `vice-proxy.ts` previously overwrote `vice_diagnose`'s and
+     `vice_recycle`'s manifest entries with the fork's own synthetic tool
+     definitions unconditionally, so an agent reading the schema `tools/list`
+     serves on stock saw the fork's verdict vocabulary — including
+     `stale_read_path`, a verdict stock cannot produce — and was missing
+     `monitor_held_elsewhere`, one it can. `resolveAdvertisedToolDefinition()`
+     now selects the stock manifest's own corrected entry per backend, so the
+     schema an agent reads on stock matches what the handler actually emits.
 
 ## B. Extra stock features worth exposing (things stock does *more*)
 
