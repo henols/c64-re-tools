@@ -80,8 +80,8 @@ opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**:
 
 | Ecosystem | Install command | Version it ships | Clears the 3.10 gate? |
 |-----------|-----------------|-------------------|------------------------|
-| Debian 13 "trixie" | `sudo apt install vice` | 3.9+dfsg-1 | ✗ no |
-| Debian "forky" (testing) | `sudo apt install vice` | 3.9+dfsg-1+b1 | ✗ no |
+| Debian 13 "trixie" | `sudo apt install vice` (enable the `contrib` component first — VICE ships there, not `main`; a stock `debian:trixie` installation has no `vice` candidate until it is) | 3.9+dfsg-1 | ✗ no |
+| Debian "forky" (testing) | `sudo apt install vice` (same `contrib`-component requirement as trixie) | 3.9+dfsg-1+b1 | ✗ no |
 | Ubuntu 25.10 (multiverse) | `sudo apt install vice` (enable multiverse first) | 3.9+dfsg-1 | ✗ no |
 | Arch Linux | `sudo pacman -S vice` | 3.10-3 | ✓ yes |
 | Fedora (via RPM Fusion Non-Free — not Fedora's own base repos) | enable RPM Fusion Non-Free, then `sudo dnf install vice` | 3.10-4 (F45/devel), 3.10-3 (F44), 3.10-2 (F43 updates); 3.9-4 on F43 base before updates | ✓ once on the updates channel — single-source confirmation (one live fetch), not independently re-verified |
