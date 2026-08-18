@@ -96,6 +96,20 @@ function countCalls(calls: SendSpyCall[], commandType: number): number {
   return calls.filter(([ct]) => ct === commandType).length;
 }
 
+/** REGISTERS_AVAILABLE (0x83) reply enumerating just PC -- the minimum a
+ * build must enumerate for readProgramCounter() (stock-timing.ts) to
+ * resolve the register name through registerCatalogFor(), matching that
+ * file's own DEFAULT_REGISTERS fixture shape (stock-timing.test.ts). */
+function registersAvailableWithPc(pcId = 0) {
+  return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: pcId, size: 16, name: "PC" }] };
+}
+
+/** REGISTERS_GET (0x31) reply reporting `pcValue` for the register id the
+ * catalog resolved PC to. */
+function registersGetWithPc(pcValue: number, pcId = 0) {
+  return { type: "registers" as const, requestId: 1, errorCode: 0, registers: [{ id: pcId, value: pcValue }] };
+}
+
 /** A generic sendImpl covering CheckpointSet/Exit/CheckpointDelete for tests
  * that only care about call counts / listener hygiene, never firing a hit
  * event -- every wait in a test using this reaches its timeout. */
@@ -240,7 +254,10 @@ test("run_until: timeout path answers timedOut:true within the bound and deletes
 // 5. ObjectMissing tolerance
 // ---------------------------------------------------------------------------
 
-test("run_until: a CheckpointDelete rejected with ObjectMissing is tolerated as already_gone, still a non-error result", async () => {
+test("run_until: a CheckpointDelete rejected with ObjectMissing is tolerated as already_gone, still a non-error result (WR-01: unresolvable race omits reached)", async () => {
+  // This stub answers no RegistersAvailable/RegistersGet at all, so the
+  // WR-01 race-resolution PC read (added to the already_gone branch) throws
+  // -- the honest "unresolved" shape, never a fabricated reached:false.
   const { client, calls } = makeFakeClient(async (commandType, _body, _emitter) => {
     if (commandType === CommandType.CheckpointSet) {
       return checkpointInfoResponse(fakeCheckpoint({ id: 9 }));
@@ -258,7 +275,10 @@ test("run_until: a CheckpointDelete rejected with ObjectMissing is tolerated as 
   const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
   assertOk(result);
   const payload = okText(result);
-  assert.equal(payload.reached, false);
+  assert.equal("reached" in payload, false, "reached must be omitted, never asserted false, on an unresolvable race");
+  assert.equal(payload.reachedUnknown, true);
+  assert.equal(payload.raceResolved, "unresolved");
+  assert.equal(typeof payload.pcReadError, "string");
   assert.equal(payload.timedOut, true);
   assert.equal(payload.cleanup, "already_gone");
   assert.equal(countCalls(calls, CommandType.CheckpointDelete), 1);
@@ -307,6 +327,152 @@ test("run_until: a MachineRestartedError from the resume propagates, and no dele
     (err: unknown) => err instanceof MachineRestartedError,
   );
   assert.equal(countCalls(calls, CommandType.CheckpointDelete), 0);
+});
+
+test("run_until: WR-01 a MachineRestartedError mid-wait sends zero RegistersGet -- a restarted instance is never probed for a PC", async () => {
+  const { client, calls } = makeFakeClient(async (commandType, _body, _emitter) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: 6 }));
+    }
+    if (commandType === CommandType.Exit) {
+      throw new MachineRestartedError("machine restarted mid-wait", { baselineEpoch: 1, currentEpoch: 2 });
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+  const session = makeSession(client);
+
+  await assert.rejects(
+    () => handleRunUntil({ address: "$c000", timeout_ms: 5000 }, session, FAKE_DEPS),
+    (err: unknown) => err instanceof MachineRestartedError,
+  );
+  assert.equal(countCalls(calls, CommandType.CheckpointDelete), 0);
+  // 07-14/T-07-14-03: a restarted instance must never be probed for a PC --
+  // zero RegistersGet sends proves the WR-01 race-resolution read was
+  // never attempted on this path.
+  assert.equal(countCalls(calls, CommandType.RegistersGet), 0);
+});
+
+// ---------------------------------------------------------------------------
+// 6b. WR-01/WR-02 gap-closure regression cases (07-14)
+// ---------------------------------------------------------------------------
+
+test("run_until: WR-01 already_gone + PC at the requested address resolves reached:true, raceResolved:pc_at_address", async () => {
+  const address = 0xc000;
+  const { client } = makeFakeClient(async (commandType, _body, _emitter) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: 9, start: address, end: address }));
+    }
+    if (commandType === CommandType.Exit) {
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      throw new StockProtocolError("object missing", { errorCode: ErrorCode.ObjectMissing });
+    }
+    if (commandType === CommandType.RegistersAvailable) {
+      return registersAvailableWithPc();
+    }
+    if (commandType === CommandType.RegistersGet) {
+      return registersGetWithPc(address);
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, true);
+  assert.equal(payload.timedOut, true);
+  assert.equal(payload.raceResolved, "pc_at_address");
+  assert.equal(typeof payload.pcAtCleanup, "number");
+  assert.equal(payload.pcAtCleanup, address);
+});
+
+test("run_until: WR-01 already_gone + PC at a different address resolves reached:false, raceResolved:pc_elsewhere", async () => {
+  const address = 0xc000;
+  const elsewhere = 0xd000;
+  const { client } = makeFakeClient(async (commandType, _body, _emitter) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: 9, start: address, end: address }));
+    }
+    if (commandType === CommandType.Exit) {
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      throw new StockProtocolError("object missing", { errorCode: ErrorCode.ObjectMissing });
+    }
+    if (commandType === CommandType.RegistersAvailable) {
+      return registersAvailableWithPc();
+    }
+    if (commandType === CommandType.RegistersGet) {
+      return registersGetWithPc(elsewhere);
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, false);
+  assert.equal(payload.raceResolved, "pc_elsewhere");
+  assert.equal(payload.pcAtCleanup, elsewhere);
+});
+
+test("run_until: WR-01 already_gone + a rejecting PC read omits reached entirely and reports reachedUnknown:true, raceResolved:unresolved", async () => {
+  const { client } = makeFakeClient(async (commandType, _body, _emitter) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: 9 }));
+    }
+    if (commandType === CommandType.Exit) {
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      throw new StockProtocolError("object missing", { errorCode: ErrorCode.ObjectMissing });
+    }
+    if (commandType === CommandType.RegistersAvailable) {
+      throw new StockProtocolError("command failed", { errorCode: ErrorCode.CmdFailure });
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal("reached" in payload, false);
+  assert.equal(payload.reachedUnknown, true);
+  assert.equal(payload.raceResolved, "unresolved");
+  assert.equal(typeof payload.pcReadError, "string");
+});
+
+test("run_until: WR-02 a clean timeout delete reports machineHalted:true with a note naming vice_execution_run", async () => {
+  const { client } = makeFakeClient(timeoutOnlySendImpl(12));
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.cleanup, "deleted");
+  assert.equal(payload.machineHalted, true);
+  assert.equal(typeof payload.machineHaltedNote, "string");
+  assert.match(payload.machineHaltedNote as string, /vice_execution_run/);
+  assert.match(payload.explanation as string, /not that the connection is unresponsive/);
+  assert.match(payload.explanation as string, /stopped/);
+});
+
+test("run_until: WR-02 the hit path also reports machineHalted:true, and Exit is still sent exactly once", async () => {
+  const { client, calls } = makeFakeClient(immediateHitSendImpl(13));
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, true);
+  assert.equal(payload.machineHalted, true);
+  assert.equal(typeof payload.machineHaltedNote, "string");
+  assert.match(payload.machineHaltedNote as string, /vice_execution_run/);
+  assert.equal(countCalls(calls, CommandType.Exit), 1, "no second resume introduced by the machineHalted reporting change");
 });
 
 // ---------------------------------------------------------------------------
