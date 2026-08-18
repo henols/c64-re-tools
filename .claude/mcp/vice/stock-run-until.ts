@@ -147,14 +147,44 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     return isErrorText("vice_run_until: arguments must be an object");
   }
 
+  // WR-18 (07-REVIEW.md), part 1: refuse unexpected keys BY NAME, exactly as
+  // the sibling handler added in this same phase does (handleCyclesStopwatch,
+  // stock-timing.ts). Accepting them silently means a typo -- `timeoutMs` for
+  // `timeout_ms`, `addr` for `address` -- runs with the DEFAULT bound and
+  // reports a confident answer, and the caller has no way to tell.
+  const RUN_UNTIL_KEYS = ["address", "cycles", "timeout_ms"];
+  const unexpectedKeys = Object.keys(args).filter((key) => !RUN_UNTIL_KEYS.includes(key));
+  if (unexpectedKeys.length > 0) {
+    return isErrorText(
+      `vice_run_until: unexpected argument(s): ${unexpectedKeys.join(", ")} -- this tool takes only ${RUN_UNTIL_KEYS.join(", ")}`,
+    );
+  }
+
+  // WR-18, part 2: `cycles` is refused WHENEVER it is present, not only when
+  // `address` is absent.
+  //
+  // Before this, the "cycles-only mode not yet implemented" refusal was
+  // reachable only on the no-address path, so `{ address: "$c000", cycles: 5000 }`
+  // silently DROPPED the cycle bound and answered `reached: true` -- a caller
+  // who asked for "run to this address but give up after 5000 cycles" got an
+  // unbounded-by-cycles run reported as a success. Refusing is the honest
+  // answer: this backend has no cycles-bounded execution at all (TIME-03), and
+  // the fork never shipped one either.
+  if (args.cycles !== undefined) {
+    // The fork's own refusal wording (mcp_tools_debug.c:772), matched
+    // verbatim rather than inventing a cycles-bounded execution the fork
+    // never shipped -- TIME-03's own requirement. Extended with the
+    // address-present case, which the fork's wording does not cover because
+    // the fork never silently dropped the bound the way this handler did.
+    return isErrorText(
+      args.address === undefined
+        ? "vice_run_until: cycles-only mode not yet implemented; provide an address"
+        : "vice_run_until: cycles-only mode not yet implemented; \"cycles\" is not supported alongside \"address\" either -- it would be " +
+          "silently ignored, so it is refused rather than dropped. Remove \"cycles\" and bound the wait with \"timeout_ms\" instead.",
+    );
+  }
+
   if (args.address === undefined) {
-    const cyclesIsPositiveNumber = typeof args.cycles === "number" && Number.isFinite(args.cycles) && args.cycles > 0;
-    if (cyclesIsPositiveNumber) {
-      // The fork's own refusal wording (mcp_tools_debug.c:772), matched
-      // verbatim rather than inventing a cycles-bounded execution the fork
-      // never shipped -- TIME-03's own requirement.
-      return isErrorText("vice_run_until: cycles-only mode not yet implemented; provide an address");
-    }
     return isErrorText("vice_run_until: address is required");
   }
 

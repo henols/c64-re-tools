@@ -129,9 +129,12 @@ at a checkpoint — VICE's flag flips before the trap fires. Checkpoint bookkeep
 throughout a real wedge, so "the tools respond" proves nothing.
 
 **A `vice_run_until` on an address that is never reached looks exactly like a wedge — on the fork,
-still without a bound.** Its `cycles` parameter remains documented in its own schema as *"not yet
-implemented"* on both backends, and the fork has no timeout to bound the wait for an address
-either — an unreachable address there is unbounded and indistinguishable from a wedge.
+still without a bound.** Its `cycles` parameter is *"not yet implemented"* on both backends, and the
+fork has no timeout to bound the wait for an address either — an unreachable address there is
+unbounded and indistinguishable from a wedge. **On stock, passing `cycles` is now REFUSED rather
+than ignored** (07-REVIEW WR-18) — including alongside `address`, where it used to be silently
+dropped while the answer still reported `reached: true`. Unexpected argument names are refused by
+name too, so a `timeoutMs`/`timeout_ms` typo can no longer run with the default bound in silence.
 **On stock, this is now bounded (D-02):** pass `timeout_ms` (default 30000, clamped to a ceiling of
 600000); an unreachable address returns an explicit, bounded `timedOut: true` answer — with the
 temporary checkpoint already cleaned up — rather than looking like a wedge. **Two further

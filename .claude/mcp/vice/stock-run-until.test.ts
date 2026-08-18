@@ -608,6 +608,55 @@ test("run_until: an absent timeout_ms uses RUN_UNTIL_DEFAULT_TIMEOUT_MS, no clam
 // 8. cycles-only refusal
 // ---------------------------------------------------------------------------
 
+// 07-REVIEW.md WR-18: `cycles` was only refused when `address` was ABSENT, so
+// `{ address, cycles }` silently dropped the cycle bound and answered
+// `reached: true`. Unknown keys were accepted silently too, unlike the sibling
+// handler added in the same phase (handleCyclesStopwatch refuses them by name).
+test("run_until (WR-18): cycles alongside an address is REFUSED, not silently dropped, and nothing is armed", async () => {
+  const { client, calls } = makeFakeClient(timeoutOnlySendImpl());
+  const result = await handleRunUntil({ address: "$c000", cycles: 5000 }, makeSession(client), FAKE_DEPS);
+  assertErr(result);
+  const text = result.content[0]!.text;
+  assert.match(text, /cycles-only mode not yet implemented/);
+  assert.match(text, /not supported alongside/);
+  assert.match(text, /timeout_ms/, "the refusal must name the argument that DOES bound the wait");
+  assert.equal(calls.length, 0, "a refused call must arm no checkpoint and send nothing");
+});
+
+test("run_until (WR-18): a cycles value of 0 or a non-number is still refused when address is present -- presence is what matters, not the value", async () => {
+  for (const cycles of [0, -1, "5000", null, {}]) {
+    const { client, calls } = makeFakeClient(timeoutOnlySendImpl());
+    const result = await handleRunUntil({ address: "$c000", cycles }, makeSession(client), FAKE_DEPS);
+    assertErr(result);
+    assert.match(result.content[0]!.text, /cycles-only mode not yet implemented/, `cycles=${JSON.stringify(cycles)} must be refused`);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("run_until (WR-18): an unexpected argument is refused BY NAME, matching handleCyclesStopwatch's own discipline", async () => {
+  const { client, calls } = makeFakeClient(timeoutOnlySendImpl());
+  // `timeoutMs` is the realistic typo: camelCase instead of snake_case. Before
+  // this guard it was accepted and the DEFAULT 30000ms bound was used silently.
+  const result = await handleRunUntil({ address: "$c000", timeoutMs: 50 }, makeSession(client), FAKE_DEPS);
+  assertErr(result);
+  const text = result.content[0]!.text;
+  assert.match(text, /unexpected argument\(s\): timeoutMs/);
+  assert.match(text, /address, cycles, timeout_ms/, "the refusal must name the accepted set");
+  assert.equal(calls.length, 0);
+});
+
+test("run_until (WR-18): the accepted key set still works -- address alone, and address + timeout_ms", async () => {
+  const bare = makeFakeClient(immediateHitSendImpl(31));
+  const bareResult = await handleRunUntil({ address: "$c000" }, makeSession(bare.client), FAKE_DEPS);
+  assertOk(bareResult);
+  assert.equal(okText(bareResult).reached, true);
+
+  const bounded = makeFakeClient(immediateHitSendImpl(32));
+  const boundedResult = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, makeSession(bounded.client), FAKE_DEPS);
+  assertOk(boundedResult);
+  assert.equal(okText(boundedResult).reached, true);
+});
+
 test("run_until: a cycles-only call with no address is refused in the fork's own words, nothing armed", async () => {
   const { client, calls } = makeFakeClient(timeoutOnlySendImpl());
   const session = makeSession(client);

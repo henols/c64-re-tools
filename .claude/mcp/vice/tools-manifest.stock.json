@@ -3440,7 +3440,7 @@
     },
     {
       "name": "vice_run_until",
-      "description": "Run until address or for N cycles (with timeout). timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. machineHalted is stamped on every answer (never omitted, so an absent field can never be read as false) and is DERIVED, not asserted: true on a hit and on a timeout whose cleanup CHECKPOINT_DELETE was answered over a live socket, false when that delete failed or the socket is gone and the run-state projection does not say stopped. machineHalted false means the state could not be established, NOT that the machine is running -- machineHaltedNote says which case applies and names vice_execution_run (halted) or vice_diagnose (unestablished) as the next call. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way).",
+      "description": "Run until an address is reached. \"cycles\" is NOT implemented on stock and is refused whenever present, including alongside \"address\" (it used to be silently dropped while the answer still said reached:true); unexpected argument names are refused by name too. timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. machineHalted is stamped on every answer (never omitted, so an absent field can never be read as false) and is DERIVED, not asserted: true on a hit and on a timeout whose cleanup CHECKPOINT_DELETE was answered over a live socket, false when that delete failed or the socket is gone and the run-state projection does not say stopped. machineHalted false means the state could not be established, NOT that the machine is running -- machineHaltedNote says which case applies and names vice_execution_run (halted) or vice_diagnose (unestablished) as the next call. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3450,7 +3450,7 @@
           },
           "cycles": {
             "type": "number",
-            "description": "Max cycles to run (timeout, not yet implemented)"
+            "description": "Not implemented on stock, and REFUSED whenever present -- including alongside \"address\", where it used to be silently dropped while the answer still reported reached:true. Bound the wait with \"timeout_ms\" instead."
           },
           "timeout_ms": {
             "type": "number",
