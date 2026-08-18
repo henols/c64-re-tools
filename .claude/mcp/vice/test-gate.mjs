@@ -3,7 +3,7 @@
 // versus safe for the automated regression gate (`npm run test:automated`).
 //
 // WHY THIS FILE EXISTS: a bare `node --test '*.test.*'` (the `npm test`
-// script) globs all test files in this directory, but four of them depend on
+// script) globs all test files in this directory, but five of them depend on
 // manual host setup -- a real broker topology and a real emulator/display
 // environment -- so they hang or need an opt-in env var rather than report
 // outside the devcontainer. This is a disposition, not a bug: see
@@ -19,23 +19,31 @@
 // VICE_LIVE_STOCK_BIN, which is exactly the "manual host setup" disposition
 // the other three already share.
 //
-// WHAT NOT TO DO: do not re-list these four file names in a CI workflow, an
-// npm script, or a second test runner anywhere else in this repo. If a fifth
+// WHAT NOT TO DO: do not re-list these five file names in a CI workflow, an
+// npm script, or a second test runner anywhere else in this repo. If a sixth
 // file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
 // nowhere else -- test-gate.test.ts's drift guard fails the build if a test
 // file ever escapes both this list and the automated set, so a silent second
 // list would desync from that guard the moment it existed.
+//
+// `stock-live-triage.test.ts` (plan 07-17) joined this list as the fifth
+// entry: like `stock-live.test.ts`, it is default-SKIP everywhere (never
+// hangs) but spawns a real emulator process -- including, for one of its own
+// cases, a genuine kill-and-relaunch -- when opted in via
+// VICE_LIVE_TRIAGE_BIN. Concurrent plan 07-13's `stock-live.test.ts` sibling
+// stays this list's fourth entry unchanged.
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact four test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a fifth file needs the same
+/** The exact five test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a sixth file needs the same
  * treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
   "vice-proxy.test.ts",
   "broker-e2e.test.ts",
   "stock-live.test.ts",
+  "stock-live-triage.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS
