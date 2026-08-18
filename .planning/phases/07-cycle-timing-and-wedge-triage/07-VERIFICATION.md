@@ -1,163 +1,32 @@
 ---
 phase: 07-cycle-timing-and-wedge-triage
-verified: 2026-08-18T00:00:00Z
-status: gaps_found
-score: 1/4 must-haves verified
+verified: 2026-08-18T12:29:43Z
+status: human_needed
+score: 4/4 truths substantively verified; 1 named residual sub-item requires a human/live decision
 overrides_applied: 0
-gaps:
-  - truth: "A user can measure elapsed cycles across an operation on the stock backend, and a bracket that cannot be measured says so rather than returning zero."
-    status: failed
-    reason: >
-      Live-reproduced against genuine /usr/local/bin/x64sc (VICE 3.10, unpatched): the stock
-      connect handshake itself (stockConnect() -> resolveCapabilities() -> probeCpuHistory())
-      throws StockFramingError before any session is returned. ensureStockSession() (the seam
-      every stock tool including vice_cycles_stopwatch, vice_run_until, vice_diagnose and
-      vice_recycle goes through) never resolves on this build. Reproduced independently of
-      07-REVIEW.md's CR-01 using this tree's own stockConnect()/ViceMonitorClient, same error:
-      "StockFramingError | response type 0x86 body is 52 byte(s), needs at least 65". On
-      genuine /usr/bin/x64sc (VICE 3.9) the same probe connects successfully and
-      session.capabilities.cpuHistory resolves to "absent" (Route B only). So "a user can
-      measure elapsed cycles on the stock backend" is true only for pre-3.10 builds; on any
-      build that actually implements CPUHISTORY_GET (the opcode this milestone explicitly
-      targets, and the version CLAUDE.md names as the one official/Homebrew builds ship) the
-      user reaches no tool at all, not merely a degraded stopwatch.
-    artifacts:
-      - path: ".claude/mcp/vice/stock-connect.ts"
-        issue: >
-          probeCpuHistory() (lines 117-133) sends CPUHISTORY_GET with count=1 (07-01's fix for
-          the pre-3.10 InvalidParameter/0x81 case) but only catches StockProtocolError. On a
-          compliant >=3.10 build the monitor answers with a real, well-formed CPUHISTORY_GET
-          reply that stock-protocol.ts's own parser cannot decode (see next row), which throws
-          StockFramingError -- a different class, not caught here, so it rethrows at line 131,
-          propagates through resolveCapabilities() (no try/catch, stock-connect.ts:163) and out
-          of stockConnect() step 5 (stock-connect.ts:341), which treats it as a fatal handshake
-          failure and rejects. This is 07-01's own must_have truth ("A stock connect handshake
-          against a real VICE >= 3.10 build completes instead of throwing out of
-          resolveCapabilities()") re-failing via a different, unhandled error class -- the fix
-          only handled the pre-3.10 refusal path, not the >=3.10 success-that-cant-be-decoded
-          path it created exposure to.
-      - path: ".claude/mcp/vice/stock-protocol.ts"
-        issue: >
-          The CpuHistoryGet parser case (lines 1414-1447) still carries the comment "confirmed
-          against monitor_binary.c:1563-1617" (WR-13, unfixed) despite the phase's own
-          deferred-items.md recording, with a byte-level live capture, that a real VICE 3.10
-          reply for count:1 is 52 bytes with item_size=47 -- leaving no room for the documented
-          trailing cycle+instruction fields the parser requires (>= 65 bytes). This is the root
-          decode defect that CR-01 shows escapes into a handshake-fatal error.
-      - path: "docs/stock-vice-parity.md"
-        issue: >
-          Lines 349-352 still claim "the capability now actually resolves to \"available\"
-          where the build supports it, live-confirmed against the fork's own genuine VICE
-          3.10.0.0 build" -- directly contradicted by the live reproduction above: the capability
-          never resolves to anything because the handshake fails before any capability value is
-          produced. This claim is unfixed since 07-REVIEW.md flagged it as CR-01.
-    missing:
-      - "probeCpuHistory() must also catch StockFramingError and answer a capability value (e.g. \"absent\", per CR-01's suggested fix) instead of rethrowing -- a decode bug must never fail the whole handshake."
-      - "The CPUHISTORY_GET per-entry wire layout must be re-derived from a real VICE >= 3.10 build (deferred-items.md's own recommendation) so Route A actually decodes, not just fails safely."
-      - "docs/stock-vice-parity.md:349-352's false live-confirmed claim must be corrected or removed."
-      - "REQUIREMENTS.md's TIME-01 'Complete' marking ('on any supported VICE version') must be reverted -- it is contradicted by this live evidence."
-  - truth: "A user can run to an exact address on the stock backend, with the temporary checkpoint cleaned up whether the run succeeded, timed out, or the machine restarted underneath it."
-    status: partial
-    reason: >
-      Only reachable at all on VICE 3.9 in practice -- on genuine VICE 3.10 the same CR-01
-      handshake failure blocks vice_run_until before any checkpoint is ever set, since it too
-      goes through ensureStockSession() -> stockConnect(). On 3.9, the cleanup mechanism itself
-      is real (temporary:true on CHECKPOINT_SET, exactly one CHECKPOINT_DELETE on both the hit
-      and timeout paths, ObjectMissing tolerated as benign, delete skipped on
-      MachineRestartedError) and unit-tested (stock-run-until.test.ts, 15/15) plus live-checked
-      against both binaries per deferred-items.md (before the CR-01 regression's blast radius
-      was understood). But two unfixed WARNING-level defects (07-REVIEW.md WR-01, WR-02, both
-      confirmed still present in the current stock-run-until.ts) mean the tool actively
-      misreports what happened: on a benign already-gone race it still answers
-      `reached: false, timedOut: true` even though the checkpoint almost certainly fired
-      (WR-01), and the timeout path's own cleanup delete halts the machine with nothing to
-      resume it and no field in the answer says so (WR-02, live-reproduced in the review). The
-      underlying cleanup mechanism works; the tool's honesty about outcome and machine state
-      does not.
-    artifacts:
-      - path: ".claude/mcp/vice/stock-run-until.ts"
-        issue: >
-          Lines 252-279: on ObjectMissing during cleanup, `cleanup = "already_gone"` but the
-          top-level answer still asserts `reached: false` (WR-01, unfixed). No `machineHalted`
-          field exists anywhere in the file (WR-02, unfixed) despite the timeout path's own
-          cleanup delete provably halting the machine on stock.
-    missing:
-      - "WR-01: do not assert reached:false when cleanup is already_gone -- re-derive via PC read or degrade to reached:\"unknown\"."
-      - "WR-02: report machineHalted:true (and a resume hint) after the timeout cleanup delete, or resume once after cleanup."
-  - truth: "vice_diagnose distinguishes, on the stock backend, an emulator that is genuinely wedged from one stopped at the user's own checkpoint, one that crashed and respawned, one merely paused, AND one whose binary monitor is already held by another client."
-    status: partial
-    reason: >
-      All five verdicts (restarted, checkpoint_trap, wedged, monitor_held_elsewhere, live) are
-      implemented and unit-tested (stock-diagnose.test.ts, 25/25). But this whole path is gated
-      behind the same ensureStockSession()->stockConnect() seam CR-01 breaks: on genuine VICE
-      3.10, handleDiagnoseStock()'s session-acquisition catch block (stock-diagnose.ts:604) is
-      reached with a StockFramingError, which is neither MonitorOwnershipError nor
-      MachineRestartedError, so it falls through to a generic
-      `diagnoseErrorResult("vice_diagnose: session acquisition failed (...)")` -- not one of the
-      five documented verdicts, and not actionable via the wedge-triage table (the caller gets a
-      raw protocol-decode message, not a triage answer). Additionally, WR-03 (unfixed, verified
-      in current code at stock-diagnose.ts:640-648) means the checkpoint_trap verdict reports
-      `machinePaused: false` when the machine is in fact paused (every wire read in
-      gatherStockCheckpointTrapEvidence halts it). 07-VALIDATION.md's own Manual-Only table
-      marks checkpoint_trap/wedged/restarted as NOT exercised live (only "live" was), so this
-      truth is unit-verified but not fully live-verified even setting CR-01 aside.
-    artifacts:
-      - path: ".claude/mcp/vice/stock-diagnose.ts"
-        issue: >
-          machinePaused:false hand-passed on the checkpoint_trap path (line ~648) despite the
-          machine being paused by that path's own evidence-gathering reads (WR-03, unfixed).
-          Session-acquisition failures that are neither MonitorOwnershipError nor
-          MachineRestartedError (including CR-01's StockFramingError) fall through to a generic
-          error result rather than a named verdict.
-      - path: ".claude/mcp/vice/tools-manifest.stock.json / vice-proxy.ts"
-        issue: >
-          WR-07 (unfixed, confirmed at vice-proxy.ts:3191-3192): `tools[DIAGNOSE_TOOL.name]` and
-          `tools[RECYCLE_TOOL.name]` are overwritten by the fork's synthetic tool definitions
-          after the manifest loop runs, so the advertised stock vice_diagnose schema still lists
-          "stale_read_path" (a verdict stock cannot produce) and omits
-          "monitor_held_elsewhere" (one it can). An agent reading the tool's own schema on stock
-          -- exactly what SKILL.md tells it to do -- sees the wrong contract.
-    missing:
-      - "WR-03: derive machinePaused from observed run-state rather than a hand-passed boolean."
-      - "A sixth, explicit outcome (or documented fallback) for 'session acquisition failed for a reason that is not one of the five verdicts' so a CR-01-class failure doesn't surface as an opaque protocol error."
-      - "WR-07: make the manifest overwrite backend-aware so stock's corrected description/outputSchema actually reaches tools/list."
-  - truth: "vice-wedge-triage's documented opening move works on stock rather than returning fork HTTP failure text."
-    status: partial
-    reason: >
-      handleDiagnoseStock() does not literally return fork HTTP failure text -- it returns a
-      graceful, backend-appropriate error object even when the underlying connect throws. But on
-      genuine VICE 3.10 the "opening move" (call vice_diagnose first, per SKILL.md line 33)
-      returns "vice_diagnose: session acquisition failed (StockFramingError: response type 0x86
-      body is 52 byte(s), needs at least 65)" -- a raw protocol decode message with zero triage
-      value, not one of the five states the skill's own table lists, and not something the
-      skill's guidance tells the user how to act on. SKILL.md itself (lines 90, 143) claims the
-      live/reached/timeout behaviors were "live-confirmed against genuine stock VICE 3.9 and
-      VICE 3.10" -- a claim this verification's live reproduction directly contradicts for the
-      connect step every one of those calls depends on.
-    artifacts:
-      - path: ".claude/skills/vice-wedge-triage/SKILL.md"
-        issue: >
-          Lines 90 and 143 claim live confirmation against VICE 3.10 for behaviors that require
-          a successful stock connect, which this verification shows fails unconditionally on a
-          genuine 3.10 build via CR-01.
-    missing:
-      - "Fix CR-01 first (see gap 1) -- everything in this gap is downstream of the same root cause."
-deferred: []
+re_verification:
+  previous_status: gaps_found
+  previous_score: 1/4
+  gaps_closed:
+    - "Truth 1 (cycle stopwatch / no fabricated zero): CR-01 root cause fixed in 07-11 (probeCpuHistory()/resolveCapabilities() now classify StockFramingError/StockDesyncError/StockResponseMismatchError as a capability answer, never a fatal rethrow) and 07-12 (CPUHISTORY_GET per-entry wire layout re-derived from real VICE 3.10 fixtures, decodes correctly). Independently re-reproduced live in this verification pass against genuine /usr/bin/x64sc (3.9) and /usr/local/bin/x64sc (3.10) — the exact CR-01 failure string no longer occurs; stockConnect() resolves cpuHistory correctly on both."
+    - "Truth 2 (vice_run_until cleanup honesty): WR-01 and WR-02 fixed in 07-14 -- the already_gone race branch now resolves `reached` from a live PC read (or reports `reachedUnknown`, never a fabricated `reached:false`), and every answer stamps `machineHalted`/`machineHaltedNote`. Verified directly in stock-run-until.ts source and 21/21 stock-run-until.test.ts."
+    - "Truth 3 (vice_diagnose five/six-state distinction): WR-03 fixed in 07-15 (machinePaused now derived via deriveMachinePaused()/runStateFor(), never hand-passed, with machinePausedSource provenance label); WR-07 fixed in 07-16 (resolveAdvertisedToolDefinition() makes the manifest overwrite backend-aware -- confirmed 'stale_read_path' no longer appears anywhere in tools-manifest.stock.json, grep count 0); a sixth, non-verdict `diagnosis_unavailable` outcome (7 reason classes) now classifies every non-verdict session-acquisition failure, including a CR-01-class decode error, instead of falling through to an opaque error. checkpoint_trap, wedged (both capability routes), and restarted are now live-proven (07-17) -- independently re-run by this verification against both real binaries with identical results."
+    - "Truth 4 (SKILL.md opening move / no false claims): docs/stock-vice-parity.md's false 'live-confirmed... resolves to available' claim (lines 349-352 in the old tree) is corrected in 07-18 with the full honest history and 07-13's real measured figures (511,061 / 530,713 cycles) -- independently reproduced by this verification (530,713 exactly reappeared on a fresh live run). vice-wedge-triage/SKILL.md's Provenance table now grades confidence per-claim (HIGH for the five verdicts and run_until mechanism, MEDIUM for the honesty fields and the broker-mediated monitor_held_elsewhere/restarted paths) instead of making a blanket VICE-3.10 'live-confirmed' claim."
+  gaps_remaining:
+    - "The broker-mediated `monitor_held_elsewhere` verdict (a real second `claimMonitor()` refusal surfaced through the host broker's own control plane) is unit-proven only (stock-diagnose.test.ts, injecting a real MonitorOwnershipError at the exact ensureStockSession() call boundary handleDiagnoseStock() catches). The related but distinct socket-level contention case (a second raw connect() against an already-claimed monitor, with no broker involved) IS live-proven, independently re-run by this verification: it settles in ~1502ms against a 1500ms bound, answering `diagnosis_unavailable (monitor_acquisition_timeout)` -- not a hang, but also not literally the `monitor_held_elsewhere` verdict. This is 07-18's own named residual gap (07-VALIDATION.md's last open Manual-Only row, nyquist_compliant left false for exactly this reason), reported here as a human-verification item rather than silently passed."
+  regressions: []
 human_verification:
-  - test: "Induce a real wedge (two consecutive zero-cycle brackets) and a real kill-and-respawn on the stock backend, and confirm vice_diagnose answers wedged / restarted respectively."
-    expected: "vice_diagnose returns the correct verdict for each induced state."
-    why_human: "07-VALIDATION.md's own Manual-Only Verifications table records these two live states as not yet exercised (only checkpoint_trap and restarted's epoch-comparison path are unit-tested, not live-triggered); requires a deliberate, longer live session to force a genuine wedge and a genuine broker-mediated respawn."
-  - test: "Open a second binary-monitor client against the same stock instance while vice_diagnose is mid-call, on a build unaffected by CR-01 (VICE 3.9), and confirm monitor_held_elsewhere is returned within its bound rather than hanging."
-    expected: "vice_diagnose returns verdict monitor_held_elsewhere within diagnoseSessionTimeoutMs, not an indefinite hang."
-    why_human: "Requires two real concurrent broker-mediated sessions against a live emulator; the review's own live pass only confirmed the raw-socket-level fact (a second connect() sits unserviced), not the broker-mediated end-to-end verdict."
+  - test: "Stand up the host broker control plane with two real, independently-acquired stock sessions against the same live instance (not the dispatch-level harness stock-live.test.ts/stock-live-triage.test.ts use), and call vice_diagnose from the second session while the first still holds the monitor via a real claimMonitor()/MonitorOwnershipError round trip."
+    expected: "vice_diagnose answers verdict:\"monitor_held_elsewhere\" (not diagnosis_unavailable) within its configured session-acquisition bound, using the real broker-refused grant's holderGrantId/holderClaimedAt/port evidence fields."
+    why_human: "Requires standing up the actual host broker daemon with two concurrent, genuinely broker-managed leases -- out of scope for the per-test emulator harnesses this phase's live tests use (07-13 Task 3's own recorded scope boundary), and REQUIREMENTS.md/07-VALIDATION.md both already name this as the one item keeping nyquist_compliant false. This verification independently confirmed the closely-related but distinct socket-level contention bound live; only the broker-mediated verdict path itself remains unexercised end-to-end."
 ---
 
 # Phase 7: Cycle Timing and Wedge Triage Verification Report
 
 **Phase Goal:** "How long did that take" and "is the emulator still advancing" work on the stock backend
-**Verified:** 2026-08-18
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-18T12:29:43Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (8 gap-closure plans, 07-11 through 07-18)
 
 ## Goal Achievement
 
@@ -165,134 +34,140 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | User can measure elapsed cycles on the stock backend; unmeasurable brackets say so, never `0` | ✗ FAILED | Live-reproduced: `stockConnect()` throws `StockFramingError` before any session exists, on genuine VICE 3.10 (`/usr/local/bin/x64sc`). Works only on VICE 3.9. See gap 1. |
-| 2 | User can run to an exact address, with temporary-checkpoint cleanup on hit, timeout, or restart | ⚠️ PARTIAL | Mechanism (temporary checkpoint + single delete + ObjectMissing tolerance) is real and unit-tested, but (a) only reachable on VICE 3.9 due to gap 1's blast radius, and (b) the tool misreports outcome/machine-state on the timeout path (WR-01, WR-02, unfixed). |
-| 3 | `vice_diagnose` distinguishes wedged / checkpoint-trap / restarted / paused / monitor-held-elsewhere on stock | ⚠️ PARTIAL | All five verdicts implemented and unit-tested; blocked entirely on VICE 3.10 by gap 1 (falls through to a generic, non-actionable error, not a verdict); `machinePaused` misreported on the `checkpoint_trap` verdict (WR-03, unfixed); manifest schema still advertises the fork's verdict vocabulary (WR-07, unfixed); 3 of 5 verdicts never exercised live per the phase's own validation doc. |
-| 4 | `vice-wedge-triage`'s opening move works on stock, not fork HTTP failure text | ⚠️ PARTIAL | Technically not literal "fork HTTP failure text" — a graceful stock-side error object is returned — but on VICE 3.10 it is an opaque protocol-decode message with no triage value, none of the five documented states, and SKILL.md's own "live-confirmed against ... VICE 3.10" claims (lines 90, 143) are contradicted by this verification. |
+| 1 | A user can measure elapsed cycles across an operation on the stock backend, and a bracket that cannot be measured says so rather than returning zero | ✓ VERIFIED | Independently re-reproduced live in this pass (not trusted from SUMMARY): `node --test stock-live.test.ts` against real `/usr/bin/x64sc` (3.9) and `/usr/local/bin/x64sc` (3.10) -- 14/14 pass, including the exact former CR-01 failure site now resolving `cpuHistory:"available"` on 3.10 and `"absent"` on 3.9, and a real ~500ms Route A bracket measuring an exact `530713` cycles through the real `dispatchStock()` seam. Route B's wraparound refusal (`measurable:false`, never `0`) is unit- and live-confirmed (07-VALIDATION.md, unchanged from the original pass). |
+| 2 | A user can run to an exact address on the stock backend, with the temporary checkpoint cleaned up whether the run succeeded, timed out, or the machine restarted underneath it | ✓ VERIFIED | Cleanup mechanism read directly in `stock-run-until.ts`: VICE auto-deletes the temporary checkpoint on hit (no delete attempted); exactly one `CHECKPOINT_DELETE` on timeout with `ObjectMissing` tolerated; no delete attempted when `MachineRestartedError` propagates (instance already gone). WR-01/WR-02 (the reporting-honesty defects the prior verification flagged) are fixed: the `already_gone` race branch now resolves `reached` from a live PC read or reports `reachedUnknown`, and every answer stamps `machineHalted`. Confirmed in source and 21/21 `stock-run-until.test.ts`. |
+| 3 | `vice_diagnose` distinguishes, on the stock backend, wedged / checkpoint-trap / restarted / paused / monitor-held-elsewhere | ⚠️ MOSTLY VERIFIED, one named residual gap | `restarted`, `checkpoint_trap`, `wedged` (both capability routes) all independently re-proven live by this verification against both real binaries (`node --test stock-live-triage.test.ts`, 3/3 on each binary, 6/6 total). `machinePaused`/`machinePausedSource` now genuinely derived (WR-03 fixed, `deriveMachinePaused()`). Manifest schema is backend-aware and `stale_read_path`-free (WR-07 fixed, grep count 0). The **broker-mediated** `monitor_held_elsewhere` verdict (two real, independently-acquired broker leases) is unit-proven only -- see Human Verification. |
+| 4 | `vice-wedge-triage`'s documented opening move works on stock rather than returning fork HTTP failure text | ✓ VERIFIED | `vice_diagnose` (the documented opening move, SKILL.md line 37) now succeeds end-to-end on both binaries per truth 1/3's live evidence -- the CR-01 failure it used to hit before any verdict existed is gone. `docs/stock-vice-parity.md`'s false "live-confirmed... resolves to available" claim is corrected with full honest history and the exact re-verified figures. `SKILL.md`'s Provenance table now grades confidence per-claim (HIGH / MEDIUM) instead of a blanket false "live-confirmed against ... VICE 3.10" claim. |
 
-**Score:** 1/4 truths fully verified (0 fully verified as stated; truth 1 is FAILED outright, truths 2-4 are PARTIAL/gated by the same root cause). Rounding to the stricter of the two conventions this report uses **1/4** to reflect that only a narrowed, VICE-3.9-only version of the phase goal is currently true.
+**Score:** 4/4 truths hold in substance; 1 narrow, honestly-named sub-item within truth 3 (broker-mediated `monitor_held_elsewhere`, live end-to-end) is not yet exercised and is routed to human verification rather than silently accepted or used to fail the whole phase.
 
-### Root-Cause Note
+### Root-Cause Note (previous gap 1 / CR-01)
 
-All four gaps trace to one place: `probeCpuHistory()` in `.claude/mcp/vice/stock-connect.ts`
-only classifies `StockProtocolError`, not `StockFramingError`, and the `CPUHISTORY_GET`
-per-entry parser it calls (`stock-protocol.ts`) is known-wrong for real VICE ≥ 3.10 replies
-(documented by the phase's own `deferred-items.md`, live-reproduced independently in
-`07-REVIEW.md` as CR-01, and **re-reproduced independently in this verification** using this
-tree's own `stockConnect()` against a genuine, unmodified `/usr/local/bin/x64sc` VICE 3.10:
+The single root cause that previously failed 3 of 4 truths outright -- `probeCpuHistory()` rethrowing
+`StockFramingError` out of a decode bug and killing the entire stock handshake on any genuine VICE
+≥ 3.10 build -- is fixed and independently re-verified live in this pass, not merely re-read from
+source:
 
 ```
-CONNECT FAILED: StockFramingError | response type 0x86 body is 52 byte(s), needs at least 65
+$ VICE_LIVE_STOCK_BIN=/usr/bin/x64sc VICE_LIVE_STOCK_BIN_39=/usr/bin/x64sc \
+  VICE_LIVE_STOCK_BIN_310=/usr/local/bin/x64sc node --test stock-live.test.ts
+ok 11 - stockConnect() resolves against genuine VICE 3.9, with cpuHistory absent and a usable session
+ok 12 - stockConnect() resolves against genuine VICE 3.10, inverting the previously live-reproduced
+        failure "StockFramingError | response type 0x86 body is 52 byte(s), needs at least 65",
+        with cpuHistory available
+ok 13 - a real ~500ms bracket on genuine VICE 3.10 measures an exact, non-zero, plausible cycle
+        count via route cpu_history, through the real dispatchStock() seam
+ok 14 - vice_diagnose settles within its own bound when a second real client dials a monitor
+        already held by a first
+# tests 14 / pass 14 / fail 0
 ```
 
-Fixing this one function (CR-01's suggested fix: also catch `StockFramingError` and answer a
-capability value instead of rethrowing) unblocks all four truths for connectivity purposes,
-though gaps 2-4's secondary defects (WR-01, WR-02, WR-03, WR-07) remain separately open.
+```
+$ VICE_LIVE_TRIAGE_BIN=/usr/bin/x64sc  node --test stock-live-triage.test.ts   # VICE 3.9
+$ VICE_LIVE_TRIAGE_BIN=/usr/local/bin/x64sc node --test stock-live-triage.test.ts  # VICE 3.10
+ok 1 - checkpoint_trap is live-proven
+ok 2 - wedged is live-proven (frame_position on 3.9, cpu_history on 3.10)
+ok 3 - restarted is live-proven (test-performed relaunch + epoch bump)
+# tests 3 / pass 3 / fail 0   (both runs)
+```
+
+Both live-emulator sessions were freshly launched for this verification and left no stray
+processes afterward (checked via `ps aux | grep x64sc`, empty at the end of the pass).
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `.claude/mcp/vice/stock-connect.ts` | `probeCpuHistory()` never fails the whole handshake on any wire outcome | ✗ STUB-LIKE (functional for pre-3.10, fatal for compliant ≥3.10) | Only catches `StockProtocolError`; `StockFramingError` from a real ≥3.10 reply rethrows and fails `stockConnect()` |
-| `.claude/mcp/vice/stock-protocol.ts` | `CPUHISTORY_GET` parser decodes real wire replies | ✗ WRONG LAYOUT | 52-byte real reply vs. 65-byte minimum the parser requires (deferred-items.md, re-confirmed) |
-| `.claude/mcp/vice/stock-run-until.ts` | Exact-address run with correct cleanup reporting | ⚠️ PARTIAL | Cleanup mechanism correct; outcome/machine-state reporting wrong (WR-01, WR-02) |
-| `.claude/mcp/vice/stock-diagnose.ts` | Five-verdict triage | ⚠️ PARTIAL | Verdicts implemented; `machinePaused` wrong on one verdict (WR-03); non-verdict failures (CR-01-class) fall through to opaque error |
-| `.claude/mcp/vice/stock-recycle.ts` | Incident-record-before-RPC ordering | ✓ VERIFIED (unit + ordering test) | Not directly implicated in the live-reproduced blocker; scope of this verification did not re-litigate |
-| `.claude/skills/vice-wedge-triage/SKILL.md` | Documents stock's opening move and five-state table | ⚠️ PARTIAL | Correct content, but makes VICE-3.10 "live-confirmed" claims this verification contradicts |
-| `docs/stock-vice-parity.md` | Accurate divergence/gain record | ✗ FALSE CLAIM (lines 349-352) | Still claims "live-confirmed against ... VICE 3.10.0.0" resolving to `"available"` — contradicted live |
-| `.claude/mcp/vice/tools-manifest.stock.json` + `vice-proxy.ts` | Backend-correct advertised schema for `vice_diagnose`/`vice_recycle` | ✗ SHADOWED (WR-07) | Manifest entries overwritten by fork's synthetic `DIAGNOSE_TOOL`/`RECYCLE_TOOL` definitions |
+| `.claude/mcp/vice/stock-connect.ts` | `probeCpuHistory()`/`resolveCapabilities()` never fail the whole handshake on a decode-class error | ✓ VERIFIED | `probeCpuHistory()` catches `StockFramingError`/`StockDesyncError`/`StockResponseMismatchError` -> `"absent"`; `resolveCapabilities()`'s own call-site guard degrades anything else unclassified to `"absent"` without caching, while still rethrowing real transport/instance failures. Read directly, lines ~148-215. |
+| `.claude/mcp/vice/stock-protocol.ts` | `CPUHISTORY_GET` parser decodes real ≥3.10 wire replies | ✓ VERIFIED | Re-derived layout (count u32LE, then per-entry item_size/regCount/registers/cycle u64LE/instruction bytes) matches three committed real fixtures captured from genuine VICE 3.10/3.9 (`fixtures/binmon/cpuhistory-get*.bin/json`), all `need()`-guarded (StockFramingError on short frames, never a RangeError). Live-decoded correctly in this verification's own re-run. |
+| `.claude/mcp/vice/stock-run-until.ts` | Exact-address run with correct cleanup + reporting | ✓ VERIFIED | `readProgramCounter()`-based race resolution (WR-01), unconditional `machineHalted`/`machineHaltedNote` (WR-02). 21/21 `stock-run-until.test.ts`. |
+| `.claude/mcp/vice/stock-diagnose.ts` | Six-outcome triage (five verdicts + non-verdict `diagnosis_unavailable`) | ✓ VERIFIED (four verdicts + non-verdict outcome live-proven; `monitor_held_elsewhere` unit-proven only) | `deriveMachinePaused()` (WR-03), `classifyDiagnoseUnavailable()`/`diagnoseUnavailableResult()` (7 reason classes) confirmed in source; 40/40 `stock-diagnose.test.ts`. |
+| `.claude/mcp/vice/tools-manifest.stock.json` + `stock-dispatch.ts`/`vice-proxy.ts` | Backend-correct advertised schema | ✓ VERIFIED | `resolveAdvertisedToolDefinition()` selects the stock manifest entry over the fork's synthetic literal; `grep -c stale_read_path tools-manifest.stock.json` = 0; `vice_run_until`/`vice_diagnose` outputSchema fields match what the handlers actually emit (`machineHalted`, `reachedUnknown`, `raceResolved`, `machinePausedSource`, etc.), confirmed by direct read. |
+| `.claude/skills/vice-wedge-triage/SKILL.md` | Opening move + accurate confidence grading | ✓ VERIFIED | No blanket false "live-confirmed against ... VICE 3.10" claim remains; Provenance table grades each claim HIGH/MEDIUM with the specific unit-only vs. live-proven scope named. |
+| `docs/stock-vice-parity.md` | Accurate divergence/gain record | ✓ VERIFIED | Lines ~344-409 now record the disproven original claim, both fixes (07-11/07-12), and 07-13's exact re-verified live figures, matching this verification's own independent re-run. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `stock-dispatch.ts: ensureStockSession()` | `stock-connect.ts: stockConnect()` | direct call | WIRED but FAILS ON 3.10 | Confirmed by direct read (`stock-dispatch.ts:236` calls into `stockConnect()`) and by live reproduction |
-| `stock-connect.ts: resolveCapabilities()` | `stock-connect.ts: probeCpuHistory()` | direct call, no try/catch at call site | WIRED, UNGUARDED | `resolveCapabilities()` (line 163) has no try/catch around `probeCpuHistory()`; any thrown error propagates to `stockConnect()`'s own top-level try/catch, which treats it as fatal |
-| `stock-diagnose.ts: handleDiagnoseStock()` | `stock-dispatch.ts: ensureStockSession()` | `Promise.race` against a timeout | WIRED | Confirmed; catches `MonitorOwnershipError`/`MachineRestartedError` by name but not `StockFramingError`, which falls to generic error text |
-| `vice-proxy.ts` tool registration | `tools-manifest.stock.json` | name-keyed object assignment | PARTIAL (WR-07) | Registration order means `DIAGNOSE_TOOL`/`RECYCLE_TOOL` overwrite the stock-specific manifest entries |
+| `stock-dispatch.ts: ensureStockSession()` | `stock-connect.ts: stockConnect()` | direct call | ✓ WIRED, now succeeds on both VICE 3.9 and 3.10 | Re-verified live in this pass. |
+| `stock-connect.ts: resolveCapabilities()` | `stock-connect.ts: probeCpuHistory()` | direct call, guarded try/catch | ✓ WIRED, GUARDED | Decode-class errors degrade to a capability value; transport/instance errors still propagate. |
+| `stock-diagnose.ts: handleDiagnoseStock()` | `stock-dispatch.ts: ensureStockSession()` | `Promise.race` against a timeout | ✓ WIRED | `MonitorOwnershipError`/`MachineRestartedError` route to their real verdicts; everything else routes to a classified `diagnosis_unavailable`, never an opaque error. |
+| `vice-proxy.ts` tool registration | `tools-manifest.stock.json` via `resolveAdvertisedToolDefinition()` | backend-aware selector | ✓ WIRED | No longer an unconditional overwrite; 6 conformance tests assert the served definition, not just the source file. |
+| `stock-run-until.ts` timeout/already_gone branch | `stock-timing.ts: readProgramCounter()` | direct call | ✓ WIRED | Confirmed the exported seam is reused rather than reimplemented. |
 
-### Behavioral Spot-Checks / Live Probe Execution
+### Live Verification (independently re-run by this verification pass, not taken from SUMMARY)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| `stockConnect()` against genuine VICE 3.10 (`/usr/local/bin/x64sc -default -binarymonitor`) | Custom script calling this tree's `stockConnect()` with a mocked `brokerControl`, `deps: {}` | `CONNECT FAILED: StockFramingError \| response type 0x86 body is 52 byte(s), needs at least 65` | ✗ FAIL (confirms gap 1 / CR-01, independently reproduced) |
-| `stockConnect()` against genuine VICE 3.9 (`/usr/bin/x64sc -default -binarymonitor`) | Same script, port pointed at the 3.9 instance | `CONNECT OK: {"cpuHistory":"absent"}` | ✓ PASS (confirms Route B path is reachable on pre-3.10 builds) |
-| Raw `PING` against the same 3.9 instance | Direct `ViceMonitorClient` script | `PING reply` decoded, connection healthy | ✓ PASS (control — proves the 3.9 instance itself is healthy and reachable) |
+| `stockConnect()` against genuine VICE 3.9 and 3.10 | `node --test stock-live.test.ts` (both `VICE_LIVE_STOCK_BIN_39`/`_310` set) | 14/14 pass, incl. the exact former CR-01 site now resolving correctly on both | ✓ PASS |
+| Route A stopwatch, real ~500ms bracket, VICE 3.10 | (same run) | `530713` exact cycles, `route:"cpu_history"`, `exactness:"exact"` | ✓ PASS |
+| Second-client socket contention bound | (same run) | Settled in `1502ms` against a `1500ms` bound, answered `diagnosis_unavailable (monitor_acquisition_timeout)` -- no hang | ✓ PASS (proves the socket-level bound; does not by itself prove the broker-mediated `monitor_held_elsewhere` verdict -- see Human Verification) |
+| `checkpoint_trap`/`wedged`/`restarted` verdicts, VICE 3.9 | `VICE_LIVE_TRIAGE_BIN=/usr/bin/x64sc node --test stock-live-triage.test.ts` | 3/3 pass | ✓ PASS |
+| `checkpoint_trap`/`wedged`/`restarted` verdicts, VICE 3.10 | `VICE_LIVE_TRIAGE_BIN=/usr/local/bin/x64sc node --test stock-live-triage.test.ts` | 3/3 pass, `wedged` confirmed on `cpu_history` route this time (vs. `frame_position` on 3.9) | ✓ PASS |
+| Full automated gate | `node test-gate.mjs` | 1565 pass / 0 fail / 5 todo across 21 suites | ✓ PASS (matches orchestrator-supplied evidence, independently re-run) |
+| Typecheck | `npx tsc --noEmit` | exit 0 | ✓ PASS (independently re-run) |
 
-Both live emulators were freshly launched for this verification and cleanly terminated afterward
-(`pkill -9 -f x64sc`); no stray processes were left running.
+No stray `x64sc` processes were left running after this verification's own live test runs.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description (REQUIREMENTS.md) | Status | Evidence |
 |--------------|-----------------|--------------------------------|--------|----------|
-| TIME-01 | 07-01, 07-02, 07-04, 07-05, 07-08, 07-10 | "User can measure elapsed CPU cycles on the stock backend, on any supported VICE version" | ✗ BLOCKED | REQUIREMENTS.md marks this "Complete" — contradicted by live reproduction on VICE 3.10, a version the description explicitly claims to cover ("any supported VICE version") and one CLAUDE.md itself names as a supported/official build |
-| TIME-02 | 07-03, 07-08, 07-10 | "User can run until an address is reached, exactly" | ⚠️ PARTIAL | Mechanism correct on VICE 3.9 only (gated by TIME-01's same root cause); reporting-honesty defects unfixed (WR-01, WR-02) |
-| TIME-03 | 07-03, 07-05, 07-08, 07-10 | "Cycle-bounded execution is either supported or reports its approximation honestly" | ⚠️ PARTIAL | Route B's wraparound refusal live-confirmed on 3.9 (never fabricates a number); Route A unusable on any build where it would matter (3.10+) due to the same decode defect |
-| TIME-04 | 07-04, 07-06, 07-07, 07-09, 07-10 | "`vice-wedge-triage`'s 'is the emulator advancing' check works on the stock backend" | ⚠️ PARTIAL | Implemented and unit-tested; gated by TIME-01's root cause on 3.10; `machinePaused`/manifest-schema defects unfixed on any build |
+| TIME-01 | 07-01, 07-02, 07-05, 07-08, 07-10, 07-11, 07-12, 07-13 | User can measure elapsed CPU cycles on the stock backend, on any supported VICE version | ✓ SATISFIED | Independently re-verified live against both genuine 3.9 and 3.10 in this pass. REQUIREMENTS.md's "Complete" marking is now justified. |
+| TIME-02 | 07-03, 07-08, 07-10, 07-14, 07-16 | User can run until an address is reached, exactly | ✓ SATISFIED | Reach/timeout mechanism live-proven (07-10, unchanged); WR-01/WR-02 honesty fields unit-proven (21/21) and confirmed correct by direct source read. REQUIREMENTS.md's "Complete" marking is justified, though the honesty-fields half is unit-only (accurately reflected in REQUIREMENTS.md's own citation text, not overclaimed). |
+| TIME-03 | 07-03, 07-05, 07-08, 07-10, 07-12, 07-13 | Cycle-bounded execution is either supported or reports its approximation honestly | ✓ SATISFIED | Route B wraparound refusal (live, unchanged) + Route A now decodes and live-measures correctly (re-verified in this pass). |
+| TIME-04 | 07-04, 07-06, 07-07, 07-09, 07-10, 07-15, 07-16, 07-17 | `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend | ⚠️ PARTIAL (matches REQUIREMENTS.md's own "Partial" marking) | Four of five verdicts plus the non-verdict outcome are live-proven; the broker-mediated `monitor_held_elsewhere` verdict and a broker-supervised (not test-performed) `restarted` respawn remain unit-proven only. REQUIREMENTS.md correctly marks this "Partial", not "Complete" -- no discrepancy between the doc and the code found. |
 
-**No orphaned requirements found** — `.planning/REQUIREMENTS.md`'s "Phase 7" row maps exactly
-TIME-01 through TIME-04, and every one of the 10 plans in this phase declares a subset of that
-same set in its `requirements:` frontmatter. **However, all four "Complete" markings in
-REQUIREMENTS.md are not justified by the current codebase state** and should be reverted to
-reflect the gaps above.
+**No orphaned requirements found.** `.planning/REQUIREMENTS.md`'s "Phase 7" row maps exactly TIME-01
+through TIME-04, and every one of the 18 plans (10 original + 8 gap-closure) declares a subset of
+that same set in its `requirements:` frontmatter.
 
 ### Anti-Patterns Found
 
-| File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| `.claude/mcp/vice/stock-connect.ts` | 117-133 | Incomplete error-class handling (`StockFramingError` not caught) | 🛑 BLOCKER | Fails the entire stock handshake on genuine VICE ≥ 3.10 (CR-01, unfixed, independently reproduced) |
-| `.claude/mcp/vice/stock-protocol.ts` | 1414-1447 | Wire-layout comment claims "confirmed" against source it demonstrably does not match | 🛑 BLOCKER (root cause of above) | Misleads future readers into trusting a disproven layout (WR-13, unfixed) |
-| `.claude/mcp/vice/stock-protocol.ts` | 1455-1461 | `RESOURCE_GET` integer branch reads 4 bytes behind a 2-byte guard | ⚠️ WARNING | `RangeError` escapes `parseResponse()` on wire-controlled short `size` (CR-02, unfixed, not re-tested live this pass but confirmed present by direct read) |
-| `.claude/mcp/vice/stock-run-until.ts` | 252-279 | `reached: false` asserted despite near-proof of a race hit; no `machineHalted` field | ⚠️ WARNING | Caller told the address was never reached when it likely was, and not told the machine is now frozen (WR-01/WR-02, unfixed) |
-| `.claude/mcp/vice/stock-diagnose.ts` | 640-648 | Hand-passed `machinePaused: false` on a path that provably paused the machine | ⚠️ WARNING | Evidence field lies to the consumer deciding whether to resume/step (WR-03, unfixed) |
-| `.claude/mcp/vice/vice-proxy.ts` | 3191-3192 | Manifest entry overwritten by fork-only synthetic tool definition | ⚠️ WARNING | Advertised stock schema for `vice_diagnose`/`vice_recycle` is wrong (WR-07, unfixed) |
-| `docs/stock-vice-parity.md` | 349-352 | Claims a live-confirmed result that this verification's own live reproduction disproves | 🛑 BLOCKER (documentation integrity) | Directly contradicts CR-01; a future reader would trust a false "resolved" claim |
-| `.claude/skills/vice-wedge-triage/SKILL.md` | 90, 143 | Claims "live-confirmed against genuine stock VICE 3.9 and VICE 3.10" for behaviors gated by the broken connect path | ⚠️ WARNING | Overstates verification depth; the connect prerequisite for these claims is proven broken on 3.10 |
-
-No `TBD`/`FIXME`/`XXX` debt markers found in the phase's touched files (`stock-connect.ts`,
+None in the phase's touched files. `grep -n -E "TBD|FIXME|XXX"` across `stock-connect.ts`,
 `stock-protocol.ts`, `stock-timing.ts`, `stock-run-until.ts`, `stock-diagnose.ts`,
-`stock-recycle.ts`, `stock-dispatch.ts`) — the debt-marker gate itself is not triggered, but the
-functional and documentation defects above are.
+`stock-recycle.ts`, `stock-dispatch.ts`, `vice-proxy.ts`, `tools-manifest.stock.json` returns
+nothing. The `stale_read_path` string (the WR-07 anti-pattern the previous verification flagged) is
+now absent from the manifest entirely, including from description prose (`grep -c` = 0).
 
 ### Human Verification Required
 
-See `human_verification` in frontmatter — inducing a genuine wedge/respawn live, and proving
-`monitor_held_elsewhere` end-to-end through the broker with two real concurrent sessions, both
-require a longer deliberate live session than this verification pass's scope.
+See `human_verification` in frontmatter. One item: standing up the host broker control plane with
+two real, independently-acquired sessions to prove the `monitor_held_elsewhere` verdict end-to-end
+through a genuine `claimMonitor()` refusal (rather than the unit-injected `MonitorOwnershipError`
+this phase's tests use, or the live-proven-but-distinct raw-socket contention case). This is not a
+hidden gap -- it is the one item 07-18 itself named as open, `07-VALIDATION.md` names as the sole
+reason `nyquist_compliant` stays `false`, and `REQUIREMENTS.md` already marks `TIME-04` "Partial"
+(not "Complete") for exactly this reason. Reporting it here rather than silently passing the phase
+matches that existing, honest self-assessment.
 
 ### Gaps Summary
 
-Phase 7 shipped substantial, well-tested code (354 unit tests green, four new stock tools, a
-corrected skill and parity doc) but the one fix this phase itself identified as its own
-**Wave-0 blocking prerequisite** — "a stock connect handshake against a real VICE ≥ 3.10 build
-completes instead of throwing out of `resolveCapabilities()`" (07-01's own must-have truth) —
-does not hold. It was fixed for the specific `InvalidParameter` (0x81) refusal a pre-3.10 build
-sends, but the same probe change (`count=0` → `count=1`) opened a new, more severe failure mode
-on any build that actually *supports* the opcode: the real reply cannot be decoded, and that
-decode failure is not classified as a capability answer, so it kills the entire handshake. This
-was found once already, live, in `07-REVIEW.md` (CR-01) with a documented fix; it remains
-unfixed in the current tree, and this verification independently reproduced it from a clean
-process against a freshly-launched, genuine, unmodified `/usr/local/bin/x64sc` (VICE 3.10).
+The phase's Wave-0 blocking defect (CR-01: the entire stock handshake failing on any genuine VICE
+≥ 3.10 build) — which previously failed 3 of 4 success criteria outright — is fixed and
+independently re-verified live in this pass against both a genuine VICE 3.9 and a genuine VICE 3.10
+build, with results matching the gap-closure plans' own SUMMARY claims exactly (including the
+specific cycle counts). The four secondary defects the prior verification named (WR-01, WR-02,
+WR-03, WR-07) are each fixed and confirmed by direct source read plus passing regression tests. The
+two "live-confirmed" claims the prior verification found to be false (`docs/stock-vice-parity.md`,
+`SKILL.md`) are now corrected with accurate, appropriately-graded provenance.
 
-The practical consequence: on any VICE build that actually implements the opcode this milestone
-is built around, **every** stock tool — not just the stopwatch — refuses to work. On VICE 3.9
-(no `CPUHISTORY_GET` at all) the backend is genuinely usable, and Route B's stopwatch,
-`vice_run_until`'s cleanup mechanism, and `vice_diagnose`'s `live` verdict all live-check out —
-but three further unfixed WARNING-level defects (`WR-01`, `WR-02`, `WR-03`) mean even the
-working path over- and under-reports what actually happened. `docs/stock-vice-parity.md` and
-`vice-wedge-triage/SKILL.md` both contain claims of live-confirmed VICE-3.10 success that this
-verification's own reproduction disproves.
-
-Recommend a dedicated gap-closure plan that: (1) applies CR-01's fix (catch
-`StockFramingError` in `probeCpuHistory()`, answer a capability value, never rethrow), (2)
-re-derives the real `CPUHISTORY_GET` per-entry wire layout from a genuine ≥3.10 build so Route A
-actually decodes, (3) applies CR-02's fix to the `RESOURCE_GET` integer-branch guard, (4) fixes
-WR-01/WR-02/WR-03/WR-07, and (5) corrects the two now-false "live-confirmed" claims in
-`docs/stock-vice-parity.md` and `SKILL.md` before `REQUIREMENTS.md`'s TIME-01..04 rows are
-re-marked Complete.
+One narrow, honestly-named residual item remains: the **broker-mediated** `monitor_held_elsewhere`
+verdict — a real second `claimMonitor()` refusal surfaced through the host broker's own control
+plane, as opposed to the unit-injected `MonitorOwnershipError` or the live-proven raw-socket
+contention bound this phase's tests exercise — has not been proven end-to-end. This was named as
+an explicit, deliberate scope boundary by the plan that came closest to it (07-13 Task 3), is
+reflected honestly in `07-VALIDATION.md` (the sole row keeping `nyquist_compliant: false`) and in
+`REQUIREMENTS.md` (`TIME-04` marked "Partial", not "Complete"). Given the code path is real,
+correctly wired to the same error class the broker would genuinely throw, and unit-tested at the
+exact injection boundary `handleDiagnoseStock()` uses in production, this is classified here as a
+human-verification item rather than a phase-blocking defect — but it should not be silently
+dropped either, since the phase's own success criterion 3 explicitly names "one whose binary
+monitor is already held by another client" as a state that must be distinguished, and the fullest
+possible proof of that exact scenario is still outstanding.
 
 ---
 
-_Verified: 2026-08-18_
+_Verified: 2026-08-18T12:29:43Z_
 _Verifier: Claude (gsd-verifier)_
