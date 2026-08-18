@@ -79,3 +79,45 @@ address ($EA31, the KERNAL IRQ entry) and timing out on an unreached one
 ($C000) with checkpoint auto-cleanup, and `vice_diagnose`'s `live` verdict via
 a real liveness bracket. See `07-VALIDATION.md`'s Manual-Only Verifications
 table for the recorded results.
+
+### Resolution (2026-08-18, gap-closure batch: 07-11, 07-12, 07-13)
+
+This entry's own recommendation — "re-derive the real entry layout from
+source... and fix `stock-protocol.ts`'s `CpuHistoryGet` parser and/or
+`stock-timing.ts`'s Route A consumer" — is done.
+
+- **07-11** made a `CPUHISTORY_GET` decode failure (`StockFramingError`,
+  `StockDesyncError`, `StockResponseMismatchError`) answer a capability value
+  (`"absent"`) instead of rethrowing out of `resolveCapabilities()`, so a
+  decode bug of exactly this shape can never again fail the entire stock
+  handshake (CR-01) — independent of whether the layout itself is later
+  proven correct or not.
+- **07-12** re-derived the real per-entry wire layout directly from
+  `monitor_binary_process_cpuhistory()` in a real VICE source tree
+  (`monitor_binary.c:1452-1620`) against three newly committed real captures
+  from genuine VICE 3.10 and 3.9 binaries (`.claude/mcp/vice/fixtures/binmon/
+  cpuhistory-get*.bin`/`.json`). The real layout is: after the 4-byte
+  `count(u32LE)`, each entry is a 1-byte `item_size` (the byte count of
+  everything below it in that entry — **not**, as this entry's own analysis
+  above guessed, the raw register-block byte count alone), a `regCount(u16LE)`
+  plus that many 4-byte register items, an 8-byte `cycle(u64LE)`, a 1-byte
+  `instruction_length` (a **hardcoded constant 4 in VICE**, not a decoded
+  instruction size), and that many instruction data bytes. The 52-byte real
+  capture this entry recorded (`item_size=0x2f=47`) decodes exactly under the
+  corrected layout: `2 (regCount) + 32 (8 register items x 4 bytes) + 8
+  (cycle) + 1 (instruction_length) + 4 (instruction data) = 47`.
+- **07-13** live-proved the corrected parser end-to-end through the real
+  `dispatchStock()` seam against genuine `/usr/local/bin/x64sc` (VICE
+  3.10.0.0): a real ~500ms Route A bracket measured **511,061** exact cycles
+  on one run and **530,713** on another, both inside the documented sanity
+  band, with a second immediate read reporting the identical figure both
+  times (proving the count is not fabricated or drifting).
+
+**Nothing from this entry remains open.** The observed outcome matches the
+original recommendation exactly: the decode-vs-transport classification
+guard (07-11) and the corrected layout (07-12) together closed both this
+entry's live decode mismatch and the wider CR-01 whole-backend-outage
+regression it was downstream of. See `07-VALIDATION.md`'s Manual-Only
+Verifications table for the updated "Route A stopwatch on a ≥ 3.10 build"
+row (now a full PASS) and `docs/stock-vice-parity.md`'s corrected §A entry
+for the full corrected history.
