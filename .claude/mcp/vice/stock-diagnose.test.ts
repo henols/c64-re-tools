@@ -954,6 +954,65 @@ test("diagnosis_unavailable (T-07-15-02): every message names vice_recycle and m
 });
 
 // ---------------------------------------------------------------------------
+// 07-REVIEW.md WR-15: both env-var timeout parsers accepted `parsed >= 0`. With
+// 0, Promise.race always resolves the timeout branch -- and 07-15 changed what
+// the caller is told, so a misconfiguration was reported as
+// `diagnosis_unavailable (monitor_acquisition_timeout)` with guidance about a
+// second monitor client. A wrong, actionable theory is worse than no theory.
+// ---------------------------------------------------------------------------
+
+test("diagnoseSessionTimeoutMs (WR-15): a 0 override is REJECTED in favour of the default, with the rejection logged", () => {
+  const previous = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  try {
+    process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "0";
+    assert.equal(diagnoseSessionTimeoutMs(), 10000, "0 must fall back to the default, never make every wait expire instantly");
+  } finally {
+    console.error = originalConsoleError;
+    if (previous === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+    else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = previous;
+  }
+  assert.ok(
+    captured.some((line) => line.includes("VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS") && line.includes("10000")),
+    `the rejected value and the default in use must be logged, got: ${JSON.stringify(captured)}`,
+  );
+  assert.ok(
+    captured.some((line) => line.includes("monitor_acquisition_timeout")),
+    "the log must name the misdiagnosis a 0 would otherwise produce",
+  );
+});
+
+test("diagnoseSessionTimeoutMs/diagnoseBracketWindowMs (WR-15): negative, non-numeric and non-finite overrides all fall back; a positive one is honoured", () => {
+  const previousSession = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+  const previousBracket = process.env.VICE_STOCK_DIAGNOSE_BRACKET_MS;
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    for (const bad of ["0", "-1", "-0.5", "abc", "NaN", "Infinity", "-Infinity"]) {
+      process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = bad;
+      process.env.VICE_STOCK_DIAGNOSE_BRACKET_MS = bad;
+      assert.equal(diagnoseSessionTimeoutMs(), 10000, `session timeout must reject ${JSON.stringify(bad)}`);
+      assert.equal(diagnoseBracketWindowMs(), 250, `bracket window must reject ${JSON.stringify(bad)}`);
+    }
+    // A test that needs an effectively-instant timeout passes 1, not 0.
+    process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "1";
+    process.env.VICE_STOCK_DIAGNOSE_BRACKET_MS = "1";
+    assert.equal(diagnoseSessionTimeoutMs(), 1);
+    assert.equal(diagnoseBracketWindowMs(), 1);
+  } finally {
+    console.error = originalConsoleError;
+    if (previousSession === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+    else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = previousSession;
+    if (previousBracket === undefined) delete process.env.VICE_STOCK_DIAGNOSE_BRACKET_MS;
+    else process.env.VICE_STOCK_DIAGNOSE_BRACKET_MS = previousBracket;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 07-REVIEW.md WR-02: the advertised contract is that EVERY isError answer
 // from this handler begins `vice_diagnose: diagnosis_unavailable (<reason>)`.
 // Two paths did not: the inconclusive-bracket path (reachable on any build

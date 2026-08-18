@@ -314,6 +314,39 @@ test("gatherStockWedgeEvidence: a healthy session produces all four items availa
 // repo-tracked incident record. It used to be the narrowed `Number(...)` with no
 // exact counterpart at all, so a uint64 delta above Number.MAX_SAFE_INTEGER was
 // silently rounded in the one artifact that outlives the session.
+// 07-REVIEW.md WR-15: `parsed >= 0` accepted 0, which made every
+// evidence-capture step's deadline fire immediately -- producing an
+// evidence-free incident record for a DESTRUCTIVE recycle, with nothing in the
+// record hinting that a misconfiguration rather than a wedged emulator was why.
+test("stockCaptureStepTimeoutMs (WR-15): 0, negative, and non-numeric overrides all fall back to the default, with the rejection logged", () => {
+  const previous = process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS;
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  const defaultMs = (() => {
+    delete process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS;
+    return stockCaptureStepTimeoutMs();
+  })();
+  try {
+    for (const bad of ["0", "-1", "abc", "NaN", "Infinity"]) {
+      process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS = bad;
+      assert.equal(stockCaptureStepTimeoutMs(), defaultMs, `must reject ${JSON.stringify(bad)}`);
+    }
+    process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS = "25";
+    assert.equal(stockCaptureStepTimeoutMs(), 25, "a positive override is still honoured -- this file's own tests need a short deadline");
+  } finally {
+    console.error = originalConsoleError;
+    if (previous === undefined) delete process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS;
+    else process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS = previous;
+  }
+  assert.ok(
+    captured.some((line) => line.includes("VICE_RECYCLE_CAPTURE_TIMEOUT_MS") && line.includes("evidence-free incident record")),
+    `the rejection must be logged, naming what a 0 would cause: ${JSON.stringify(captured)}`,
+  );
+});
+
 test("gatherStockWedgeEvidence (WR-13): the cpu_history bracket carries cyclesExact alongside the narrowed cycles", async () => {
   const { session } = makeFakeSession({ cpuHistoryValues: [1_000_000n, 1_002_500n] });
   const evidence = await gatherStockWedgeEvidence(session, {} as unknown as StockDispatchDeps);

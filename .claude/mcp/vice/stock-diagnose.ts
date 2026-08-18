@@ -347,13 +347,40 @@ function describeStockError(err: unknown): string {
 const DEFAULT_DIAGNOSE_SESSION_TIMEOUT_MS = 10000;
 const DEFAULT_DIAGNOSE_BRACKET_WINDOW_MS = 250;
 
+/**
+ * WR-15 (07-REVIEW.md): the bound must be `> 0`, not `>= 0`.
+ *
+ * With `VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS=0` the `Promise.race` in
+ * handleDiagnoseStock() always resolves the timeout branch, and 07-15 changed
+ * what the caller is then told: it now receives
+ * `diagnosis_unavailable (monitor_acquisition_timeout)` with the guidance
+ * "this is behaviourally indistinguishable from a second client already
+ * holding the monitor socket ... retry once the current holder releases". A
+ * misconfiguration was thereby reported as a specific, plausible, actionable
+ * diagnosis of the emulator's ENVIRONMENT -- strictly worse than the
+ * unclassified refusal it replaced, because the caller now has a wrong theory
+ * instead of no theory.
+ *
+ * A rejected value is logged with the default being used instead, once per
+ * read: a silent fallback is how a `0` in a shell profile stays invisible for
+ * a whole session. Never widen this back to `>= 0` "for tests" -- a test that
+ * needs an instant timeout can pass 1.
+ */
 function envMs(envVar: string, fallback: number): number {
   const raw = process.env[envVar];
   if (raw === undefined || raw === "") {
     return fallback;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  console.error(
+    `${envVar}=${JSON.stringify(raw)} is not a positive number of milliseconds -- ignoring it and using the default ${fallback}ms. ` +
+      `A value of 0 would make every bounded wait expire instantly, which vice_diagnose would then report as a real ` +
+      `monitor_acquisition_timeout diagnosis of the emulator rather than as this misconfiguration.`,
+  );
+  return fallback;
 }
 
 /** Read fresh on EVERY call -- deliberately not a module-level constant the

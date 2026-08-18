@@ -104,7 +104,20 @@ export function stockCaptureStepTimeoutMs(): number {
   const raw = process.env.VICE_RECYCLE_CAPTURE_TIMEOUT_MS;
   if (raw === undefined || raw === "") return DEFAULT_CAPTURE_STEP_TIMEOUT_MS;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_CAPTURE_STEP_TIMEOUT_MS;
+  // WR-15 (07-REVIEW.md): `> 0`, not `>= 0`. With 0 every capture step's
+  // deadline fires immediately, so a DESTRUCTIVE action (a recycle) writes a
+  // permanent, repo-tracked incident record containing no evidence at all --
+  // and the record itself gives no hint that a misconfiguration, rather than a
+  // wedged emulator, is why every item came back unavailable. A rejected value
+  // is logged with the default being used; a silent fallback is how a stray 0
+  // in a shell profile stays invisible for a whole session.
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  console.error(
+    `VICE_RECYCLE_CAPTURE_TIMEOUT_MS=${JSON.stringify(raw)} is not a positive number of milliseconds -- ignoring it and using the ` +
+      `default ${DEFAULT_CAPTURE_STEP_TIMEOUT_MS}ms. A value of 0 would make every evidence-capture step time out instantly, ` +
+      `producing an evidence-free incident record for a destructive recycle.`,
+  );
+  return DEFAULT_CAPTURE_STEP_TIMEOUT_MS;
 }
 
 async function captureStep<T>(fn: () => Promise<T>): Promise<CaptureStepResult<T>> {
