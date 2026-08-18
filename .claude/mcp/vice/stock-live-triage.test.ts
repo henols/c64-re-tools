@@ -592,6 +592,27 @@ test(
 // stays unit-proven only.
 // ---------------------------------------------------------------------------
 
+/** The evidence keys that only an emulator-touching verdict can produce --
+ * read off the four expensive `diagnoseVerdictResult()` call sites and
+ * `StockCheckpointTrapEvidence` (`stock-diagnose.ts:157-168`, `:929-935`,
+ * `:950`, `:969`, `:977`). The restarted-is-live-proven test below asserts
+ * NONE of these are present, which is what actually proves the answer cost
+ * the emulator nothing -- the exact key-set equality this array replaces
+ * proved the same thing only incidentally, and broke on any additive field. */
+const EMULATOR_COST_EVIDENCE_KEYS = [
+  "bracketsRun",
+  "bracket",
+  "bracket1",
+  "bracket2",
+  "isTrap",
+  "checkpoints",
+  "checkpointsUnavailable",
+  "pc",
+  "handler",
+  "trapCheckpoint",
+  "trapReason",
+] as const;
+
 /** Writes a real epoch record to `supervisorDir/epoch.json`, in the EXACT
  * format `readEpoch()` parses -- via the real `writeEpochRecord()` writer
  * (`broker-epoch.mts`), never a hand-invented shape. Returns the written
@@ -675,11 +696,35 @@ test(
       assert.equal(evidence.currentEpoch, BASELINE_EPOCH + 1, `evidence.currentEpoch must be ${BASELINE_EPOCH + 1}, got: ${JSON.stringify(evidence)}`);
       assert.ok(typeof postPayload.report === "string" && (postPayload.report as string).length > 0, "report must be a non-empty string");
 
-      // 6. Zero emulator cost: no bracket, no checkpoint-list evidence.
-      assert.ok(!("bracket" in evidence), `restarted evidence must carry no "bracket" key, got: ${JSON.stringify(evidence)}`);
-      assert.ok(!("bracket1" in evidence), `restarted evidence must carry no "bracket1" key, got: ${JSON.stringify(evidence)}`);
-      assert.ok(!("checkpoints" in evidence), `restarted evidence must carry no "checkpoints" key, got: ${JSON.stringify(evidence)}`);
-      assert.equal(Object.keys(evidence).sort().join(","), "baselineEpoch,currentEpoch", `restarted evidence must carry ONLY baselineEpoch/currentEpoch, got keys: ${Object.keys(evidence).join(",")}`);
+      // 6. Shape: the two epoch keys must be present -- their VALUES were
+      //    already pinned above (lines 674-675); this pins the shape without
+      //    also pinning exclusivity, because exclusivity is exactly what
+      //    broke this live proof.
+      assert.ok("baselineEpoch" in evidence, `restarted evidence must carry a "baselineEpoch" key, got: ${JSON.stringify(evidence)}`);
+      assert.ok("currentEpoch" in evidence, `restarted evidence must carry a "currentEpoch" key, got: ${JSON.stringify(evidence)}`);
+
+      // 7. Zero emulator cost: this is the real intent an exact-key-set
+      //    equality used to serve, restated so it TOLERATES additive
+      //    widening instead of breaking on it. `88b9a15` (WR-04) added
+      //    `jamObserved` to every verdict's evidence -- including this
+      //    restarted branch, deliberately, per D-01 in this quick task's
+      //    plan -- and the old assertion, which sorted and joined the two
+      //    epoch key names and compared the result against a fixed
+      //    comma-joined string literal, went red on BOTH real stock
+      //    binaries even though `vice_diagnose`'s answer was correct
+      //    throughout: the product did not regress, the assertion's shape
+      //    went stale. The exact evidence shape for each restarted
+      //    branch is now owned by the automated unit oracle in
+      //    `stock-diagnose.test.ts` (the shape oracle added alongside this
+      //    fix) -- that oracle runs under `node test-gate.mjs` with no
+      //    emulator, so a future additive change reds THERE first. This
+      //    live test, which can only ever run manually against a real
+      //    binary, deliberately asserts only the two things a real emulator
+      //    run can prove: the verdict is reached, and reaching it cost the
+      //    emulator none of the eleven keys below.
+      for (const key of EMULATOR_COST_EVIDENCE_KEYS) {
+        assert.ok(!(key in evidence), `restarted evidence must carry no "${key}" key, got: ${JSON.stringify(evidence)}`);
+      }
     });
   },
 );
