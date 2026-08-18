@@ -47,6 +47,7 @@ import {
 } from "./stock-protocol.ts";
 import { parseAddress } from "./stock-address.ts";
 import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
+import { readProgramCounter } from "./stock-timing.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -233,6 +234,13 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     // Hit: VICE already deleted the temporary checkpoint itself
     // (mon_breakpoint.c:605-607) -- issuing CHECKPOINT_DELETE here would
     // target an object that no longer exists.
+    //
+    // machineHalted (07-14/WR-02): the checkpoint that just fired STOPPED
+    // the machine (it was armed with stop:true) -- on stock, any inbound
+    // byte halts the machine (CLAUDE.md, monitor_binary.c:281) and nothing
+    // in this handler resumes it. Emitted unconditionally, never only when
+    // true, so an absent field can never be read as "not halted" (the exact
+    // ambiguity WR-02 is about).
     const payload: Record<string, unknown> = {
       requested: "run_until",
       reached: true,
@@ -240,6 +248,10 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
       checkpointId,
       hitCount: outcome.hitCount,
       timeoutMs,
+      machineHalted: true,
+      machineHaltedNote:
+        "the checkpoint at the requested address stopped the emulated machine when it fired, and nothing here resumed it -- " +
+        "this is expected, not a wedge. Call vice_execution_run to resume.",
     };
     if (timeoutClamped) payload.timeoutClamped = true;
     return stockAnswer(session.client, payload);
@@ -262,19 +274,74 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     }
   }
 
+  // machineHalted (07-14/WR-02): the CHECKPOINT_DELETE just sent above is
+  // itself an inbound byte, so it halted the machine on every one of the
+  // three cleanup branches -- including "already_gone", where the delete
+  // was rejected but still travelled over the wire. Nothing here resumes it.
+  const machineHaltedNote =
+    "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), and " +
+    "nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume.";
+
   const payload: Record<string, unknown> = {
     requested: "run_until",
-    reached: false,
     timedOut: true,
     address,
     timeoutMs,
     cleanup,
+    machineHalted: true,
+    machineHaltedNote,
     explanation:
       "an address that never executes within the timeout window is, from the caller's side, indistinguishable from " +
       "a genuinely wedged emulator -- see vice-wedge-triage/SKILL.md. This bounded answer means the address itself " +
-      "did not execute in time, not that the connection is unresponsive.",
+      "did not execute in time, not that the connection is unresponsive. The machine is now stopped (see " +
+      "machineHalted) and needs vice_execution_run to resume.",
   };
   if (timeoutClamped) payload.timeoutClamped = true;
   if (cleanupError !== undefined) payload.cleanupError = cleanupError;
+
+  if (cleanup === "already_gone") {
+    // WR-01: an ObjectMissing on this delete means the temporary checkpoint
+    // was already gone before the delete arrived -- VICE only does that the
+    // instant the checkpoint fires (mon_breakpoint.c:605-607), so the
+    // address almost certainly WAS reached, between the deadline expiring
+    // and this cleanup delete being sent. Never assert reached:false on
+    // this branch; resolve it from the program counter instead, or declare
+    // it unresolved -- never fabricate a PC value.
+    try {
+      const pc = await readProgramCounter(session);
+      if (pc === address) {
+        payload.reached = true;
+        payload.raceResolved = "pc_at_address";
+        payload.pcAtCleanup = pc;
+        payload.raceNote =
+          "the temporary checkpoint fired between the deadline expiring and the cleanup delete being sent -- the program " +
+          "counter still at the requested address confirms the address executed.";
+      } else {
+        payload.reached = false;
+        payload.raceResolved = "pc_elsewhere";
+        payload.pcAtCleanup = pc;
+        payload.raceNote =
+          `the temporary checkpoint was already gone before the cleanup delete arrived, but the program counter is at ` +
+          `0x${pc.toString(16)}, not the requested 0x${address.toString(16)} -- the race is resolved against a hit.`;
+      }
+    } catch (err) {
+      // The one path where this tool genuinely does not know: never emit
+      // `reached` and `reachedUnknown` together, and never emit
+      // `reached: false` here -- that would assert a falsehood exactly as
+      // confidently as the defect this plan closes.
+      payload.reachedUnknown = true;
+      payload.raceResolved = "unresolved";
+      payload.pcReadError = convertWireError("vice_run_until", err).content[0]!.text;
+      payload.raceNote =
+        "the temporary checkpoint was already gone before the cleanup delete arrived (it likely fired), but the program " +
+        "counter could not be read to confirm it -- read the program counter yourself (vice_registers_get) to settle it.";
+    }
+  } else {
+    // "deleted" and "delete_failed": the checkpoint provably still existed
+    // at cleanup time (or its state is reported separately via
+    // cleanupError), so no race resolution is warranted.
+    payload.reached = false;
+  }
+
   return stockAnswer(session.client, payload);
 };
