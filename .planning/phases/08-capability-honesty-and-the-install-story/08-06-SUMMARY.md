@@ -188,3 +188,10 @@ This is the last plan (wave 3) of Phase 8. `check-skill-tool-coverage.mjs` now h
 ---
 *Phase: 08-capability-honesty-and-the-install-story*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/08-capability-honesty-and-the-install-story/08-06-SUMMARY.md`
+- FOUND: commit `fec3cac` (Task 1)
+- FOUND: commit `22ade8e` (Task 2)
+- FOUND: commit `c8b9479` (SUMMARY.md)
