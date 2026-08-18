@@ -449,6 +449,62 @@ test("stockConnect: cpuhistory error code 0x8f (CMD_FAILURE) maps to capabilitie
   });
 });
 
+// Regression fixture for Pitfall 8 (07-RESEARCH.md): a hand-built raw
+// binary-monitor client observed live, in this session, on 2026-08-18,
+// against the fork's own genuine VICE 3.10.0.0 build's binary monitor
+// (`/usr/local/bin/x64sc`, core upstream monitor.c/monitor_binary.c code,
+// not fork-patched) that CPUHISTORY_GET count=0 returns errorCode=0x81
+// (InvalidParameter) while count=1 succeeds. This is a reproduced field
+// observation, not a guess.
+test("stockConnect (07-RESEARCH Pitfall 8, live-captured 2026-08-18 against genuine VICE 3.10.0.0): cpuhistory error code 0x81 (INVALID_PARAMETER) maps to capabilities.cpuHistory === 'absent' and the handshake still completes", async () => {
+  await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidParameter }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5a", brokerControl });
+    assert.equal(session.capabilities.cpuHistory, "absent");
+    await stockDisconnect(session);
+  });
+});
+
+test("stockConnect: the CPUHISTORY_GET request body carries count=1, never count=0", async () => {
+  let cpuHistoryBody: Buffer | undefined;
+  await withStockStubServer(
+    happyPathResponder({
+      onRequest: (req) => {
+        if (req.commandType === CommandType.CpuHistoryGet) cpuHistoryBody = req.body;
+      },
+    }),
+    async (port) => {
+      const { brokerControl } = makeStubBrokerControl();
+      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5b", brokerControl });
+      await stockDisconnect(session);
+    },
+  );
+  assert.ok(cpuHistoryBody, "CPUHISTORY_GET must have been sent during the handshake");
+  assert.equal(cpuHistoryBody!.length, 5);
+  assert.equal(cpuHistoryBody![0], 0x00); // memspace: main
+  assert.equal(cpuHistoryBody!.readUInt32LE(1), 1);
+  assert.notEqual(cpuHistoryBody!.readUInt32LE(1), 0);
+});
+
+test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) still rejects", async () => {
+  await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidType }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5c", brokerControl });
+    assert.equal(session.capabilities.cpuHistory, "absent");
+    await stockDisconnect(session);
+  });
+  await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.CmdFailure }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5d", brokerControl });
+    assert.equal(session.capabilities.cpuHistory, "not_compiled_in");
+    await stockDisconnect(session);
+  });
+  await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidApiVersion }), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    await assert.rejects(() => stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl }));
+  });
+});
+
 test("stockConnect: capability probe short-circuits when readCapabilityRecord already matches the observed version quad", async () => {
   const seenCommands: number[] = [];
   await withStockStubServer(
