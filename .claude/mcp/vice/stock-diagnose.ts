@@ -647,11 +647,13 @@ function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
  *     verdicts, `monitor_held_elsewhere` and the thrown-`MachineRestartedError`
  *     acquisition path). Nothing in this process touched the machine, so no
  *     claim about a pause is being made; `machinePaused` is `false`.
- *   - "observed" -- `runStateFor(session.client)` reported `"stopped"` or
- *     `"running"` directly from the wire's own stopped/resumed/jam events.
- *   - "structural" -- the tracker reported `"unknown"`. See
- *     deriveMachinePaused()'s own comment for why "not observed running" is
- *     still treated as paused in this specific case. */
+ *   - "observed" -- `runStateFor(session.client)` reported `"stopped"`
+ *     directly from the wire's own stopped/jam events, agreeing with what
+ *     this path's own halting reads must have caused.
+ *   - "structural" -- the tracker reported `"unknown"`, OR it reported
+ *     `"running"` and thereby CONTRADICTED this path's own reads (see
+ *     deriveMachinePaused()'s comment on the reproduced stale-tracker race).
+ *     Either way the value is an inference, never a direct observation. */
 export type MachinePausedSource = "no_session" | "observed" | "structural";
 
 /**
@@ -665,8 +667,25 @@ export type MachinePausedSource = "no_session" | "observed" | "structural";
  * so no claim about a pause is being made.
  *
  * `session !== null` -> read `runStateFor(session.client)`:
- *   - "stopped" -> `true`/"observed".
- *   - "running" -> `false`/"observed".
+ *   - "stopped" -> `true`/"observed". The wire said stopped and this path's
+ *     own halting reads say the same; the two agree, so it is reported as an
+ *     observation.
+ *   - "running" -> `true`/"structural". 07-REVIEW.md WR-03: this branch used
+ *     to answer `false`/"observed", which labelled as a direct wire
+ *     observation the one projection this phase itself proved can be stale.
+ *     Commit c5ac707 ("absorb a real stale-tracker race") records the
+ *     empirical failure in the OTHER direction -- the tracker read "stopped"
+ *     at t+0/1ms while the real machine had already resumed -- and
+ *     resumeUntilCheckpointHits() exists solely because a "stopped" read
+ *     could not be trusted. The symmetric error is a stale "running" after a
+ *     halting read, and by construction EVERY path that reaches a verdict has
+ *     already sent at least one halting read (D-05; every inbound byte halts
+ *     the machine on stock, `monitor_binary.c:281`). So a "running" reading
+ *     here is a CONTRADICTION of this path's own reads, not an observation of
+ *     the machine. Report the structural conclusion (paused) and label it
+ *     "structural" so the caller knows nothing was directly observed --
+ *     never hand back `false`/"observed", which invites the caller to skip a
+ *     resume it actually needs.
  *   - "unknown" -> `true`/"structural". By the time ANY verdict is built,
  *     this file's own path has already sent at least one wire read, every
  *     inbound byte halts the machine on stock (`monitor_binary.c:281`,
@@ -685,9 +704,9 @@ function deriveMachinePaused(session: StockConnectSession | null): { machinePaus
   if (runState === "stopped") {
     return { machinePaused: true, machinePausedSource: "observed" };
   }
-  if (runState === "running") {
-    return { machinePaused: false, machinePausedSource: "observed" };
-  }
+  // WR-03: "running" and "unknown" collapse to the same answer on purpose --
+  // neither is an observation of a machine this path has already halted. Do
+  // not split "running" back out into `false`/"observed".
   return { machinePaused: true, machinePausedSource: "structural" };
 }
 

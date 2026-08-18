@@ -445,6 +445,88 @@ test("handleDiagnoseStock (WR-03): checkpoint_trap with the run-state tracker at
   assert.equal(answer.machinePausedSource, "structural");
 });
 
+// 07-REVIEW.md WR-03: the third tracker reading, `"running"`, was the one no
+// test covered -- and it was the one that answered `machinePaused: false`
+// with `machinePausedSource: "observed"`, i.e. presented as a direct wire
+// observation the exact projection commit c5ac707 proved can be stale. Every
+// path that reaches a verdict has already sent a halting read (D-05), so a
+// `"running"` reading contradicts this path's own reads and is reported as a
+// structural inference, not an observation.
+test("handleDiagnoseStock (WR-03): a 'running' run-state reading is a CONTRADICTION, not an observation -> machinePaused true, machinePausedSource 'structural'", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+  });
+  attachRunStateTracker(session.client);
+  // A RESUMED event leaves the projection at "running". By the time a verdict
+  // is built this path has sent halting reads, so this reading is stale.
+  session.client.emit("event", { type: "resumed", requestId: 0xffffffff, errorCode: 0, programCounter: 0xc000 });
+
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "checkpoint_trap");
+  assert.equal(answer.machinePaused, true, "a stale 'running' must never answer machinePaused:false -- that invites skipping a resume the caller needs");
+  assert.equal(answer.machinePausedSource, "structural", "'running' after this path's own halting reads is an inference, never a direct observation");
+});
+
+// WR-03: the `live` and `wedged` verdicts hardcoded machinePaused:true before
+// 07-15 and were left unasserted by that batch. Both derive it now, so assert
+// it on both -- these are the two verdicts the liveness bracket produces, and
+// the bracket is the only thing in this file that ever resumes.
+test("handleDiagnoseStock (WR-03): the live verdict reports a derived machinePaused/machinePausedSource pair", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 999999n }],
+  });
+  attachRunStateTracker(session.client);
+  session.client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const result = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "live");
+  // The bracket's own final read halts the machine, and the tracker saw a
+  // STOPPED event -- so a `live` verdict still leaves it paused. "live"
+  // describes the cycles that advanced, not the state it is left in.
+  assert.equal(answer.machinePaused, true);
+  assert.equal(answer.machinePausedSource, "observed");
+});
+
+test("handleDiagnoseStock (WR-03): the wedged verdict reports machinePaused true with the source it actually derived", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 500n }],
+  });
+  attachRunStateTracker(session.client);
+  session.client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const result = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "wedged");
+  assert.equal(answer.machinePaused, true);
+  assert.equal(answer.machinePausedSource, "observed");
+});
+
 // ---------------------------------------------------------------------------
 // Task 3, tests 1/2/3: monitor_held_elsewhere / restarted (thrown + epoch)
 // ---------------------------------------------------------------------------
