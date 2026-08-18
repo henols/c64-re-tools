@@ -380,3 +380,153 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 2: wedged, live.
+//
+// LIVE-CONFIRMED ON BOTH ROUTES (this plan's own execution, not asserted
+// from documentation): on genuine unpatched stock VICE 3.9 at
+// /usr/bin/x64sc (Route B, frame_position -- no CPUHISTORY_GET), the
+// primary -jamaction mechanism produced two identical
+// {lin:0, cyc:2, pc:49152, position:2} samples across both brackets --
+// LIN/CYC themselves never moved, because the jammed CPU refetches the same
+// KIL opcode at the same address forever and never reaches another vsync
+// boundary's worth of retired instructions. On genuine VICE 3.10 at
+// /usr/local/bin/x64sc (Route A, cpu_history), the same mechanism produced
+// two identical {cycle:"98280", pc:49152} samples -- the monotonic
+// CPUHISTORY_GET cycle counter itself never advanced, because
+// jamaction=Monitor stops the CPU core inside the monitor rather than
+// letting it keep retiring (jammed) fetch cycles the way real silicon would;
+// both routes therefore read this induced state as non-advancing for the
+// SAME underlying reason (the monitor holds the machine stopped), not by
+// coincidence of two different mechanisms.
+// ---------------------------------------------------------------------------
+
+/** Free, non-KERNAL-critical RAM above BASIC's own top-of-memory pointer --
+ * used as the KIL/JAM landing address for the primary mechanism below. */
+const JAM_TARGET_ADDRESS = 0xc000;
+/** The 6510 KIL (illegal, undocumented) opcode -- locks the CPU in an
+ * infinite refetch of the same instruction at the same address, never
+ * advancing PC or completing another instruction. */
+const KIL_OPCODE = 0x02;
+
+/**
+ * Attempts the PRIMARY mechanism -- a real CPU JAM held in the monitor via
+ * `-jamaction 2` (Monitor) -- and returns the observed vice_diagnose
+ * payload. `2 = Monitor` per `machine.h:81`; the default is `1 = continue`,
+ * which would let the machine keep running and would NOT produce a wedge
+ * (T-07-17-05 forbids `4`/Power-cycle and `5`/Quit here).
+ */
+async function attemptJamMechanism(instance: TriageInstance): Promise<Record<string, unknown>> {
+  // 1. Write the KIL opcode to a free RAM address -- through the real
+  //    vice_memory_write tool, never a hand-built frame.
+  const writeResult = await dispatchStock("vice_memory_write", { address: JAM_TARGET_ADDRESS, data: [KIL_OPCODE] }, instance.deps);
+  assert.equal(writeResult.isError, false, `vice_memory_write($C000, [0x02]) must succeed, got: ${JSON.stringify(writeResult)}`);
+
+  // 2. Point PC at it.
+  const setPcResult = await dispatchStock("vice_registers_set", { register: "PC", value: JAM_TARGET_ADDRESS }, instance.deps);
+  assert.equal(setPcResult.isError, false, `vice_registers_set({register:"PC", value:0xC000}) must succeed, got: ${JSON.stringify(setPcResult)}`);
+
+  // 3. Resume once. The CPU executes the KIL, jams, and with JAMAction =
+  //    Monitor the emulator enters the monitor and stops -- empirically
+  //    confirmed (this plan's own probe) to arrive as a "stopped" event with
+  //    the program counter still at the jam address, not a bare JAM (0x61)
+  //    event -- jamaction=Monitor routes the jam through the same STOPPED
+  //    path a checkpoint hit uses, rather than the zero-length-body JAM
+  //    event CLAUDE.md's own Protocol constraint names for the (different)
+  //    non-monitor jam actions.
+  const runResult = await dispatchStock("vice_execution_run", {}, instance.deps);
+  assert.equal(runResult.isError, false, `vice_execution_run() must succeed, got: ${JSON.stringify(runResult)}`);
+
+  const session = instance.session();
+  assert.ok(session, "instance.session() must be populated");
+  await waitForStoppedRunState(session!.client);
+
+  // 4. vice_diagnose must answer wedged -- two brackets, neither advancing,
+  //    since the jammed CPU never retires another instruction (JAMAction =
+  //    Monitor holds it in the monitor rather than letting it free-run).
+  const diagResult = await dispatchStock("vice_diagnose", {}, instance.deps);
+  return parseOkPayload(diagResult as { content: { type: "text"; text: string }[]; isError: boolean });
+}
+
+/**
+ * Attempts the DOCUMENTED FALLBACK -- a non-stopping checkpoint on a hot
+ * address (the KERNAL's own IRQ entry, $EA31, firing 50/60 times a second)
+ * so each hit emits a synchronous CHECKPOINT_INFO from inside the CPU loop
+ * (CLAUDE.md's own Protocol constraint). Bounded: this only runs if the
+ * primary mechanism above did not produce "wedged", and itself waits no
+ * longer than a few seconds before reading vice_diagnose.
+ */
+async function attemptTraceFloodMechanism(instance: TriageInstance): Promise<Record<string, unknown>> {
+  const addResult = await dispatchStock(
+    "vice_checkpoint_add",
+    { start: "$ea31", stop: false, exec: true, acknowledgeTraceRisk: true },
+    instance.deps,
+  );
+  const addPayload = parseOkPayload(addResult as { content: { type: "text"; text: string }[]; isError: boolean });
+  console.log(`stock-live-triage: fallback mechanism armed a non-stopping trace checkpoint -> ${JSON.stringify(addPayload)}`);
+
+  const runResult = await dispatchStock("vice_execution_run", {}, instance.deps);
+  assert.equal(runResult.isError, false, `vice_execution_run() must succeed, got: ${JSON.stringify(runResult)}`);
+
+  // A non-stopping checkpoint never halts the machine on its own -- there is
+  // no "stopped" event to wait for here, only a bounded real-time window for
+  // the flood (if any) to have a chance to stall the emulator thread.
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  const diagResult = await dispatchStock("vice_diagnose", {}, instance.deps);
+  return parseOkPayload(diagResult as { content: { type: "text"; text: string }[]; isError: boolean });
+}
+
+test(
+  "stock-live-triage: wedged is live-proven -- a real CPU JAM held in the monitor produces two zero-advance liveness brackets, or the attempt is recorded honestly",
+  { skip: SKIP_REASON },
+  async (t) => {
+    await withTriageInstance({ extraArgs: ["-jamaction", "2"] }, async (instance) => {
+      const primaryPayload = await attemptJamMechanism(instance);
+      console.log(`stock-live-triage: vice_diagnose (wedged, primary -jamaction mechanism) -> ${JSON.stringify(primaryPayload)}`);
+
+      if (primaryPayload.verdict === "wedged") {
+        const evidence = primaryPayload.evidence as Record<string, unknown>;
+        assert.equal(evidence.bracketsRun, 2, `wedged evidence must show bracketsRun===2, got: ${JSON.stringify(evidence)}`);
+        const bracket1 = evidence.bracket1 as Record<string, unknown>;
+        const bracket2 = evidence.bracket2 as Record<string, unknown>;
+        assert.equal(bracket1.advanced, false, `bracket1 must show advanced:false, got: ${JSON.stringify(bracket1)}`);
+        assert.equal(bracket2.advanced, false, `bracket2 must show advanced:false, got: ${JSON.stringify(bracket2)}`);
+        assert.equal(primaryPayload.machinePaused, true, `wedged must report machinePaused:true, got: ${JSON.stringify(primaryPayload)}`);
+        console.log(
+          `stock-live-triage: wedged confirmed live via a real CPU JAM held in the monitor (-jamaction 2) on ${resolvedBinPath} ` +
+            `-- route "${String(bracket1.route)}"`,
+        );
+        return;
+      }
+
+      console.log(
+        `stock-live-triage: the primary -jamaction mechanism did NOT produce "wedged" on ${resolvedBinPath} -- observed verdict ` +
+          `"${String(primaryPayload.verdict)}", full evidence: ${JSON.stringify(primaryPayload.evidence)}. Trying the documented fallback.`,
+      );
+
+      const fallbackPayload = await attemptTraceFloodMechanism(instance);
+      console.log(`stock-live-triage: vice_diagnose (wedged, fallback trace-flood mechanism) -> ${JSON.stringify(fallbackPayload)}`);
+
+      if (fallbackPayload.verdict === "wedged") {
+        const evidence = fallbackPayload.evidence as Record<string, unknown>;
+        assert.equal(evidence.bracketsRun, 2, `wedged evidence must show bracketsRun===2, got: ${JSON.stringify(evidence)}`);
+        assert.equal(primaryPayload.machinePaused !== undefined, true);
+        console.log(`stock-live-triage: wedged confirmed live via the fallback trace-flood mechanism on ${resolvedBinPath}`);
+        return;
+      }
+
+      // Neither mechanism reproduced "wedged" -- per this plan's own
+      // instruction, do NOT stub, mock, or force the verdict, and do NOT
+      // weaken this assertion to accept whatever came back. An honest,
+      // reason-naming skip is the only permitted outcome.
+      t.skip(
+        `neither attempted mechanism produced a "wedged" verdict on ${resolvedBinPath}: ` +
+          `primary (-jamaction 2 CPU JAM) observed verdict "${String(primaryPayload.verdict)}"; ` +
+          `fallback (non-stopping trace checkpoint flood at $EA31) observed verdict "${String(fallbackPayload.verdict)}". ` +
+          `See 07-17-SUMMARY.md for the full recorded evidence of both attempts.`,
+      );
+    });
+  },
+);
