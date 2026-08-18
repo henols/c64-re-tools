@@ -382,10 +382,43 @@ under `.planning/phases/`; renumbering would invalidate every cross-reference.
   3. `vice_diagnose` distinguishes, on the stock backend, an emulator that is genuinely wedged from one stopped at the user's own checkpoint, one that crashed and respawned, one merely paused, **and one whose binary monitor is already held by another client**.
   4. `vice-wedge-triage`'s documented opening move works on stock rather than returning fork HTTP failure text.
 
-**Plans**: TBD
+**Plans**: 10 plans in 7 waves
+Plans:
+**Wave 1** *(four independent plans, disjoint file ownership -- none writes a shared registration file)*
+
+- [ ] 07-01-PLAN.md — Wave-0 blocker: `probeCpuHistory()` sends `count=1` and classifies `InvalidParameter` (0x81), with the live-captured regression fixture [wave 1]
+- [ ] 07-02-PLAN.md — `stock-protocol.ts`: the `CPUHISTORY_GET` response parser and the `RESOURCE_GET` encoder + parser, both `need()`-guarded, no SET-side encoder [wave 1]
+- [ ] 07-03-PLAN.md — `stock-run-until.ts`: temporary stopping exec checkpoint, event-driven bounded wait, three distinct cleanup paths, stock-only `timeout_ms` (D-02) [wave 1]
+- [ ] 07-04-PLAN.md — doc corrections: `rewriteArguments()` cited at `vice-proxy.ts:2889`/`1368`, and `phase0-binmon-findings.md` §1's frame-counter fallback marked SUPERSEDED [wave 1]
+
+**Wave 2** *(blocked on 07-01 and 07-02)*
+
+- [ ] 07-05-PLAN.md — `stock-timing.ts`: `vice_cycles_stopwatch` over Route A (`CPUHISTORY_GET` u64 clock) and Route B (`LIN`/`CYC` frame position), with every unmeasurable path carrying no `cycles` key at all [wave 2]
+
+**Wave 3** *(blocked on 07-05)*
+
+- [ ] 07-06-PLAN.md — `stock-diagnose.ts`: the five D-03 verdicts, the ported checkpoint-trap algorithm, the snapshot-resume-wait-halt-compare bracket, and a bounded acquisition that cannot hang while diagnosing a hang [wave 3]
+
+**Wave 4** *(blocked on 07-06)*
+
+- [ ] 07-07-PLAN.md — `stock-recycle.ts` (D-01): the stock-native evidence gatherer with no screenshot, the incident record written before the destructive broker RPC, and `stockDisconnect()` teardown [wave 4]
+
+**Wave 5** *(blocked on 07-03 and 07-05; sole owner of every shared registration file this wave)*
+
+- [ ] 07-08-PLAN.md — register `vice_cycles_stopwatch` and `vice_run_until`: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 34 -> 36, `files[]`, two conformance cases [wave 5]
+
+**Wave 6** *(blocked on 07-06/07-07/07-08; takes the same shared files over)*
+
+- [ ] 07-09-PLAN.md — register `vice_diagnose` and `vice_recycle`: manifest 36 -> 38 with the five-verdict enum pinned, the new `PROXY_LOCAL_TOOLS` category, two conformance cases [wave 6]
+
+**Wave 7** *(blocked on 07-09)*
+
+- [ ] 07-10-PLAN.md — `docs/stock-vice-parity.md` divergences, `vice-wedge-triage/SKILL.md`'s stock route (criterion 4), and `07-VALIDATION.md`'s resolved task-ID map [wave 7]
 
 Notes:
 
+- **Manifest-count correction (planning, 2026-08-18):** `07-RESEARCH.md` says the stock manifest goes 34 -> 37. Reading the code shows `vice_diagnose` and `vice_recycle` are proxy-local synthetic tools with no manifest entry on either backend, while `stock-dispatch.test.ts`'s bidirectional table/manifest agreement test requires a manifest entry for every dispatch-table key. The real path is 34 -> 36 (plan 07-08) -> 38 (plan 07-09).
+- **`vice_recycle` is in scope by decision D-01**, though no `TIME-*` requirement names it: the research found it broken on stock for the same root cause as the other two (`gatherWedgeEvidence()` calls `rewriteArguments()`/`call()`), so without it a stock `wedged` verdict has no working next step and criterion 4 is satisfied only in letter.
 - These are the last two skill-called tools missing on stock: `vice_cycles_stopwatch` and `vice_run_until`. Together with Phase 5's eight, that closes the buildable half of the 12-tool gap.
 - Criterion 3's fourth state is new and comes from `PROTO-08`'s human half: stock VICE's binary monitor serves exactly one client, and a second connection is behaviourally identical to a hang. Tracked as a pending todo dated 2026-08-17.
 - `vice-sync.ts`'s invariants survive unchanged: exactly one resume per wait; poll on `hit_count`, never on paused state; never delete a VICE-marked temporary checkpoint.
