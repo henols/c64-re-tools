@@ -93,7 +93,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it (completed 2026-08-17)
 - [x] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side (13 plans: 8 executed 2026-08-17 + 5 gap-closure 2026-08-17 after verification returned gaps_found on criteria 3 and 4 — the hardcoded CPU-view `bank: 0x0000` in all four chip/sprite reads; re-verified 5/5 2026-08-17, both criteria closed and live-confirmed against genuine stock VICE 3.9) (completed 2026-08-17)
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
-- [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock
+- [x] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (completed 2026-08-18)
 - [ ] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have
 
 ## Phase Details
@@ -413,7 +413,7 @@ Plans:
 
 **Wave 7** *(blocked on 07-09)*
 
-- [ ] 07-10-PLAN.md — `docs/stock-vice-parity.md` divergences, `vice-wedge-triage/SKILL.md`'s stock route (criterion 4), and `07-VALIDATION.md`'s resolved task-ID map [wave 7]
+- [x] 07-10-PLAN.md — `docs/stock-vice-parity.md` divergences, `vice-wedge-triage/SKILL.md`'s stock route (criterion 4), and `07-VALIDATION.md`'s resolved task-ID map [wave 7]
 
 Notes:
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 9/10 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 10/10 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
