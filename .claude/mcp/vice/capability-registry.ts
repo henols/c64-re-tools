@@ -333,8 +333,10 @@ export function capabilityEntryFor(name: string): CapabilityEntry | undefined {
  * Otherwise renders one of three wordings, selected by `entry.category`:
  *   - "hardware": names the tool, states it is unrecoverable on
  *     `activeBackend`, gives `entry.reason`, then names `entry.providedBy`
- *     with the actionable `Set VICE_BACKEND=...`. No "wait for a later
- *     phase" framing -- none is coming for a hardware loss.
+ *     with the actionable `Set VICE_BACKEND=...`, then `entry.alternative`
+ *     when present. No "wait for a later phase" framing -- none is coming
+ *     for a hardware loss, but a stock route may still exist and must be
+ *     named here, since this is where the caller actually reads it.
  *   - "descoped": names the tool, states it is not implemented on
  *     `activeBackend`, gives `entry.reason`, then `entry.providedBy` and
  *     `Set VICE_BACKEND=...`, then `entry.alternative` when present. The
@@ -353,15 +355,23 @@ export function capabilityRefusalMessage(
   if (!entry) return undefined;
   if (entry.providedBy === activeBackend) return undefined;
 
+  // `alternative` is rendered in EVERY branch that has one. It used to be
+  // read only inside the "descoped" branch, which made the field dead at
+  // runtime: all five entries that carry an alternative are category
+  // "hardware", and no "descoped" entry has one. The generated support
+  // table, the skill playbooks and README all printed the stock route while
+  // the runtime refusal -- the one surface BACK-05 exists for -- dropped it.
+  // Do not re-scope this back into a single branch.
+  const alt = entry.alternative ? ` ${entry.alternative}` : "";
+
   if (entry.category === "hardware") {
     return (
       `${entry.name} is unrecoverable on the ${activeBackend} backend: ${entry.reason} ` +
-      `Use the ${entry.providedBy} backend instead (Set VICE_BACKEND=${entry.providedBy}).`
+      `Use the ${entry.providedBy} backend instead (Set VICE_BACKEND=${entry.providedBy}).${alt}`
     );
   }
 
   if (entry.category === "descoped") {
-    const alt = entry.alternative ? ` ${entry.alternative}` : "";
     return (
       `${entry.name} is not implemented on the ${activeBackend} backend: ${entry.reason} ` +
       `Use the ${entry.providedBy} backend instead (Set VICE_BACKEND=${entry.providedBy}).${alt}`
@@ -373,6 +383,6 @@ export function capabilityRefusalMessage(
   // above already excluded the activeBackend === "stock" case.
   return (
     `${entry.name} is not implemented on the fork backend: ${entry.reason} ` +
-    `Use the stock backend instead (Set VICE_BACKEND=stock).`
+    `Use the stock backend instead (Set VICE_BACKEND=stock).${alt}`
   );
 }

@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY, capabilityEntryFor, capabilityRefusalMessage } from "./capability-registry.ts";
+import type { ViceBackend } from "./backend-detect.mts";
 import { DENY_LIST } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -146,4 +147,59 @@ test("vice_sid_get_state's reason and vice_sid_set_state's reason are not equal 
   const setState = capabilityEntryFor("vice_sid_set_state");
   assert.ok(getState && setState, "expected both SID entries to exist in the registry");
   assert.notEqual(getState!.reason, setState!.reason);
+});
+
+test("every entry carrying an `alternative` renders it in capabilityRefusalMessage (CR-01 regression)", () => {
+  // Phase 8 code review, CR-01: `alternative` was read only inside the
+  // "descoped" branch of capabilityRefusalMessage(), but all five entries
+  // that carry one are category "hardware" and no "descoped" entry has one
+  // -- so the field was dead at runtime while the generated table, the skill
+  // playbooks and README all printed the stock route. Neither pre-existing
+  // test caught it: the hardware case used vice_sid_get_state and the
+  // descoped case used vice_memory_fill, and neither has an alternative.
+  //
+  // This asserts the property rather than one example, so it stays true if a
+  // future entry in ANY category gains an alternative.
+  const withAlternative = CAPABILITY_REGISTRY.filter((e) => e.alternative);
+
+  assert.ok(
+    withAlternative.length > 0,
+    "non-vacuity: no registry entry carries an `alternative`, so this test proves nothing -- " +
+      "if the field was deliberately removed, delete this test too rather than leaving it green.",
+  );
+
+  for (const entry of withAlternative) {
+    const absentBackend: ViceBackend = entry.providedBy === "fork" ? "stock" : "fork";
+    const message = capabilityRefusalMessage(entry.name, absentBackend);
+    assert.ok(
+      message,
+      `${entry.name} produced no refusal on the ${absentBackend} backend, but it is a known ` +
+        `capability gap there`,
+    );
+    assert.ok(
+      message!.includes(entry.alternative!),
+      `${entry.name} (category "${entry.category}") carries an \`alternative\` that its refusal ` +
+        `message does not render. The caller is told the capability is unavailable but not what ` +
+        `to use instead -- which is the whole point of BACK-05. Render \`alternative\` in the ` +
+        `"${entry.category}" branch.`,
+    );
+  }
+});
+
+test("a hardware entry WITHOUT an alternative does not gain stray text (CR-01 fix is conditional)", () => {
+  // Guards the other direction: the CR-01 fix hoisted `alt` to function
+  // scope, so a bug there would append "undefined" or a stale value to
+  // entries that have no alternative at all.
+  const entry = capabilityEntryFor("vice_sid_get_state");
+  assert.ok(entry && !entry.alternative, "expected vice_sid_get_state to carry no alternative");
+  const message = capabilityRefusalMessage("vice_sid_get_state", "stock");
+  assert.ok(message, "expected a refusal for vice_sid_get_state on stock");
+  assert.ok(
+    !/undefined/.test(message!),
+    `refusal leaked the literal "undefined": ${message}`,
+  );
+  assert.ok(
+    message!.trimEnd() === message!,
+    `refusal has trailing whitespace from an empty alternative: ${JSON.stringify(message)}`,
+  );
 });
