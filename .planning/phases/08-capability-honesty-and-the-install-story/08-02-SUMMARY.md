@@ -168,3 +168,12 @@ BACK-05's runtime wiring is now live and end-to-end tested. Plan 08-03 (generate
 ---
 *Phase: 08-capability-honesty-and-the-install-story*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/vice-proxy.ts`
+- FOUND: `.claude/mcp/vice/vice-proxy.test.ts`
+- FOUND: `.planning/phases/08-capability-honesty-and-the-install-story/08-02-SUMMARY.md`
+- FOUND commit `262d9ee` (Task 1: feat)
+- FOUND commit `ec346d8` (Task 2: test)
+- FOUND commit `b004941` (docs: SUMMARY)
