@@ -148,3 +148,10 @@ None — no external service configuration required.
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+All created/modified files verified present (`stock-dispatch.ts`, `vice-proxy.ts`,
+`tools-manifest.stock.json`, `stock-dispatch.test.ts`, this SUMMARY.md) and all task
+commit hashes (25c2c60, a08802c, 53976e9) plus this SUMMARY's own commit (e2dc507)
+verified present in `git log --oneline --all`.
