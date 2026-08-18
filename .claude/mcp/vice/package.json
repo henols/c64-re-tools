@@ -49,6 +49,8 @@
     "stock-sprites.ts",
     "stock-timing.ts",
     "stock-run-until.ts",
+    "stock-diagnose.ts",
+    "stock-recycle.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",

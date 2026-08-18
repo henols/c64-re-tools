@@ -3508,6 +3508,95 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_diagnose",
+      "description": "Read-mostly. Answers which of five states this session's emulator is in on the stock backend -- restarted, checkpoint_trap, wedged, monitor_held_elsewhere, or live -- with the evidence that produced the verdict. The fork's sixth verdict, stale_read_path, is absent on stock: every stock read pauses the machine uniformly, so the stale-versus-fresh distinction that verdict describes is unreachable by construction. It may resume the machine once or twice to measure a cycle bracket, so it is never something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- resuming is your own next call. A \"checkpoint_trap\" verdict means the machine stopped ITSELF at an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a healthy instance. \"monitor_held_elsewhere\" means a different client already holds this instance's single binary-monitor slot -- the instance is healthy, just claimed elsewhere.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "restarted",
+              "checkpoint_trap",
+              "wedged",
+              "monitor_held_elsewhere",
+              "live"
+            ]
+          },
+          "report": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object"
+          },
+          "machinePaused": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "verdict",
+          "report",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_recycle",
+      "description": "DESTRUCTIVE. Kills and respawns THIS session's own emulator in place, on the same port, via the host supervisor's existing respawn loop -- the same instance, not a different one. The restart epoch changes, so any run in flight is void and must be resumed from the last recorded milestone snapshot. A self-inflicted checkpoint stop (the emulator merely paused at an armed checkpoint) is NOT a wedge and must not be recycled. Requires a non-empty \"reason\" naming why this recycle is happening; that reason is written to a permanent, repo-tracked incident record BEFORE anything is killed. On stock, the incident record's evidence is gathered entirely from stock's own wire primitives (liveness bracket, registers, checkpoints, IRQ handler) -- no screenshot is captured (SHOT-* is out of scope for this milestone and stock has no screenshot tool).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Why this recycle is happening -- written verbatim into the incident record."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "recycled": {
+            "type": "boolean"
+          },
+          "recordPath": {
+            "type": "string"
+          },
+          "killStage": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "recycled",
+          "recordPath",
+          "killStage",
+          "runState"
+        ]
+      }
     }
   ]
 }

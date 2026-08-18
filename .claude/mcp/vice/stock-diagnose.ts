@@ -542,7 +542,27 @@ function diagnoseErrorResult(message: string): StockToolResult {
  * (carrying a verdict) or isError:true (naming what could not be established)
  * result.
  */
-export const handleDiagnoseStock: DerivedPureHandler = async (_args, deps) => {
+// Declared as a `function` (hoisted at module INSTANTIATION time), not a
+// `const` arrow expression -- REQUIRED, not stylistic, given this plan's own
+// registration (07-09): stock-dispatch.ts now imports this name AND
+// stock-diagnose.ts imports ensureStockSession (a real, non-type-only
+// runtime import) FROM stock-dispatch.ts, so the two modules form a genuine
+// two-node runtime cycle. A `const` binding is only initialised when module
+// EVALUATION reaches its assignment statement; a `function` declaration is
+// initialised during module INSTANTIATION, before ANY module in the whole
+// graph starts evaluating -- so it is immune to which module the cycle is
+// entered through. Reproduced live: entering the cycle via stock-recycle.ts
+// (which also imports resolveStockLiveIrqHandler et al. from this file)
+// crashed with "ReferenceError: Cannot access 'handleDiagnoseStock' before
+// initialization" at stock-dispatch.ts's own STOCK_DISPATCH_TABLE literal,
+// while entering via stock-dispatch.ts itself did not -- an entry-point-
+// order-dependent crash is exactly the hazard a `function` declaration
+// avoids structurally, matching ensureStockSession's OWN `function`
+// declaration in stock-dispatch.ts (never a `const`, for the identical
+// reason). See also handleRecycleStock's identical fix in stock-recycle.ts.
+// The `DerivedPureHandler` type is still enforced -- see the `satisfies`
+// check just below this function.
+export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
   try {
     const timeoutMs = diagnoseSessionTimeoutMs();
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -674,4 +694,12 @@ export const handleDiagnoseStock: DerivedPureHandler = async (_args, deps) => {
   } catch (err) {
     return diagnoseErrorResult(`vice_diagnose: an unexpected error occurred (${describeStockError(err)}).`);
   }
-};
+}
+
+// Compile-time-only check that the function declaration above still
+// satisfies DerivedPureHandler's shape -- the type annotation moved off the
+// declaration itself (a `function` cannot carry a variable's type
+// annotation the way a `const` could), so this is where that contract is
+// still enforced. Erased entirely at runtime (a type-only reference).
+const _handleDiagnoseStockShapeCheck: DerivedPureHandler = handleDiagnoseStock;
+void _handleDiagnoseStockShapeCheck;

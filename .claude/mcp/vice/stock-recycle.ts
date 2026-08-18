@@ -61,7 +61,7 @@ import {
   type StockLivenessBracketResult,
 } from "./stock-diagnose.ts";
 import { handleRegistersGet } from "./stock-registers.ts";
-import { stockAnswer, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
+import { stockAnswer, isErrorText, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import { stockDisconnect, type StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import { readEpoch } from "./vice.ts";
@@ -335,7 +335,24 @@ function recycleAckOutcomeMessage(ack: { outcome: string; kill_stage: string; re
  * result naming whether a record was written and whether the request was
  * sent.
  */
-export const handleRecycleStock: StockSessionHandler = async (args, session, deps) => {
+// Declared as a `function` (hoisted at module INSTANTIATION time), not a
+// `const` arrow expression -- REQUIRED, not stylistic, matching
+// handleDiagnoseStock's identical fix in stock-diagnose.ts. This module
+// already imports resolveStockLiveIrqHandler/gatherStockCheckpointTrapEvidence/
+// runStockLivenessBracket (real, runtime) from stock-diagnose.ts, which
+// itself imports ensureStockSession (real, runtime) from stock-dispatch.ts,
+// which (this plan, 07-09) now imports handleRecycleStock back from THIS
+// file -- a genuine multi-node runtime cycle. A `const` binding only
+// initialises when module EVALUATION reaches its assignment statement; a
+// `function` declaration initialises during module INSTANTIATION, before ANY
+// module in the graph starts evaluating, so it survives being entered from
+// any node in the cycle. Reproduced live: entering via stock-recycle.test.ts
+// (-> this file -> stock-diagnose.ts -> stock-dispatch.ts -> back to this
+// file for handleRecycleStock, and to stock-diagnose.ts for
+// handleDiagnoseStock) crashed with "ReferenceError: Cannot access
+// 'handleDiagnoseStock' before initialization" inside stock-dispatch.ts's own
+// STOCK_DISPATCH_TABLE literal.
+export async function handleRecycleStock(args: Record<string, unknown>, session: StockConnectSession, deps: StockDispatchDeps): Promise<StockToolResult> {
   const rawReason = args && typeof args.reason === "string" ? args.reason : "";
   const reason = rawReason.trim();
   if (!reason) {
@@ -441,4 +458,12 @@ export const handleRecycleStock: StockSessionHandler = async (args, session, dep
         `${recordPath ? ` (${recordPath})` : ""}. Request sent: ${requestSent}.`,
     );
   }
-};
+}
+
+// Compile-time-only check that the function declaration above still
+// satisfies StockSessionHandler's shape -- the type annotation moved off the
+// declaration itself (a `function` cannot carry a variable's type
+// annotation the way a `const` could), so this is where that contract is
+// still enforced. Erased entirely at runtime (a type-only reference).
+const _handleRecycleStockShapeCheck: StockSessionHandler = handleRecycleStock;
+void _handleRecycleStockShapeCheck;

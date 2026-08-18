@@ -68,6 +68,8 @@ import { handleCiaGetState } from "./stock-cia.ts";
 import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
 import { handleCyclesStopwatch } from "./stock-timing.ts";
 import { handleRunUntil } from "./stock-run-until.ts";
+import { handleDiagnoseStock } from "./stock-diagnose.ts";
+import { handleRecycleStock } from "./stock-recycle.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -635,6 +637,21 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
 
   // derived (TIME-02)
   vice_run_until: withDerivedTool("vice_run_until", { needsSession: true }, handleRunUntil),
+
+  // derived (TIME-04) -- the two proxy-local synthetic tools (RECYCLE_TOOL/
+  // DIAGNOSE_TOOL in vice-proxy.ts), backend-routed to dispatchStock() by
+  // buildBackendAwareTool() rather than served from the fork's HTTP
+  // transport. Deliberate asymmetry, documented at this call site (see also
+  // DerivedPureHandler's amended doc comment in stock-derived.ts):
+  // vice_diagnose uses needsSession:false because its own handler acquires
+  // the session itself (inside its own try/catch) so it can convert a
+  // thrown MonitorOwnershipError into the monitor_held_elsewhere VERDICT
+  // rather than let withDerivedTool()'s preamble turn it into refusal text
+  // -- the exact generic error string that verdict exists to replace.
+  // vice_recycle keeps needsSession:true: it needs a live session to gather
+  // evidence and has no verdict vocabulary of its own to preserve.
+  vice_diagnose: withDerivedTool("vice_diagnose", { needsSession: false }, handleDiagnoseStock),
+  vice_recycle: withDerivedTool("vice_recycle", { needsSession: true }, handleRecycleStock),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a
