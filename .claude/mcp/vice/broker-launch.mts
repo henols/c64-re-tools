@@ -580,12 +580,38 @@ function binmonRequest(commandType: number, requestId: number): Buffer {
   return header;
 }
 
+/** The wire's own "this is not a reply to any request I sent" sentinel
+ * (CLAUDE.md's Protocol constraint) -- REGISTER_INFO (0x31) arrives
+ * unsolicited at THIS id on every monitor open, and CHECKPOINT_INFO/STOPPED/
+ * RESUMED/JAM can too. A response-type byte alone is not enough to
+ * distinguish "an event that happens to share a type with a real reply" from
+ * an actual reply -- request-id is the only field the wire promises never
+ * collides between the two, which is exactly why demux must key on it. */
+const BINMON_UNSOLICITED_REQUEST_ID = 0xffffffff;
+
 /**
  * WR-01: one PING (0x81) over the binary monitor, requiring a WELL-FORMED 0x81
  * reply -- STX, the expected api_version, response type 0x81, error code 0x00,
  * and this probe's own request id. A bare TCP accept is explicitly insufficient
  * here for exactly the reason probeReady()'s own comment gives for the HTTP
  * route: a C64 can accept a connection before it has finished booting.
+ *
+ * quick task 260818-obc (live-discovered): a NEW binmon connection ALWAYS
+ * emits an unsolicited REGISTER_INFO (0x31) frame at request-id 0xffffffff
+ * the instant it opens (CLAUDE.md's own Protocol constraint) -- BEFORE this
+ * probe's own PING reply ever arrives. The naive "the first 12 bytes ARE the
+ * reply" read this code used to do treated that event frame's OWN response-
+ * type byte (0x31) as a malformed PING reply and answered `false` forever,
+ * live-reproduced against a real crash-respawned stock x64sc: the respawn
+ * never left "launching" because THIS probe could never see it as ready,
+ * even though the emulator was genuinely up and answering fine underneath.
+ * The fix walks frame boundaries using each frame's own body-length field and
+ * discards every frame whose request-id is the unsolicited sentinel (or
+ * simply is not this probe's own id) rather than assuming the first frame
+ * on the wire is the reply -- the same "demux by request-id, never by
+ * arrival order" discipline CLAUDE.md's Protocol constraint already requires
+ * of every OTHER binmon consumer in this tree (stock-protocol.ts's
+ * ViceMonitorClient chief among them).
  *
  * Then EXIT (0xaa), unconditionally, before closing -- because the PING ITSELF
  * HALTS THE MACHINE. Any inbound byte does (docs/phase0-binmon-findings.md §4,
@@ -629,29 +655,53 @@ async function defaultBinmonProbe(port: number, timeoutMs: number): Promise<bool
     });
     socket.on("data", (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length < BINMON_RESPONSE_HEADER_LEN) return;
-      const wellFormed =
-        buffer[0] === BINMON_STX &&
-        buffer[1] === BINMON_API_VERSION &&
-        buffer[6] === BINMON_CMD_PING &&
-        buffer[7] === 0x00 &&
-        buffer.readUInt32LE(8) === BINMON_PROBE_REQUEST_ID;
-      if (!wellFormed) {
-        finish(false);
+      // Walk complete frames off the front of the buffer -- never assume the
+      // first BINMON_RESPONSE_HEADER_LEN bytes on the wire are this probe's
+      // own reply (see this function's own header comment on why an
+      // unsolicited event frame can and does arrive first in practice).
+      for (;;) {
+        if (buffer.length < BINMON_RESPONSE_HEADER_LEN) return; // wait for more data
+        const bodyLen = buffer.readUInt32LE(2);
+        const frameLen = BINMON_RESPONSE_HEADER_LEN + bodyLen;
+        if (buffer.length < frameLen) return; // header seen, body still incoming
+
+        const responseType = buffer[6];
+        const errorCode = buffer[7];
+        const requestId = buffer.readUInt32LE(8);
+        const stxOk = buffer[0] === BINMON_STX && buffer[1] === BINMON_API_VERSION;
+
+        if (!stxOk) {
+          finish(false);
+          return;
+        }
+
+        if (requestId === BINMON_UNSOLICITED_REQUEST_ID || requestId !== BINMON_PROBE_REQUEST_ID) {
+          // Not a reply to anything this probe sent (an unsolicited event, or
+          // a stale reply to a previous probe's own request id) -- discard
+          // this one frame only and keep walking the rest of the buffer.
+          buffer = buffer.subarray(frameLen);
+          continue;
+        }
+
+        if (responseType !== BINMON_CMD_PING || errorCode !== 0x00) {
+          finish(false);
+          return;
+        }
+
+        // Resume the machine this probe's own PING halted, then close GRACEFULLY:
+        // socket.end(data, cb) writes the EXIT and then sends FIN, so the bytes
+        // are delivered before the connection goes away. A bare write() followed
+        // by destroy() can discard them (destroy may RST), which would leave the
+        // instance "ready" and frozen -- the exact outcome the EXIT exists to
+        // prevent. The resume is best-effort in its OUTCOME, though: a failed
+        // resume must not turn a READY instance into a not-ready one, since the
+        // emulator demonstrably answered, which is what this function reports on.
+        try {
+          socket.end(binmonRequest(BINMON_CMD_EXIT, BINMON_PROBE_REQUEST_ID + 1), () => finish(true));
+        } catch {
+          finish(true);
+        }
         return;
-      }
-      // Resume the machine this probe's own PING halted, then close GRACEFULLY:
-      // socket.end(data, cb) writes the EXIT and then sends FIN, so the bytes
-      // are delivered before the connection goes away. A bare write() followed
-      // by destroy() can discard them (destroy may RST), which would leave the
-      // instance "ready" and frozen -- the exact outcome the EXIT exists to
-      // prevent. The resume is best-effort in its OUTCOME, though: a failed
-      // resume must not turn a READY instance into a not-ready one, since the
-      // emulator demonstrably answered, which is what this function reports on.
-      try {
-        socket.end(binmonRequest(BINMON_CMD_EXIT, BINMON_PROBE_REQUEST_ID + 1), () => finish(true));
-      } catch {
-        finish(true);
       }
     });
   });
