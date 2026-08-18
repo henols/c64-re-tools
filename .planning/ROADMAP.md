@@ -409,7 +409,7 @@ Plans:
 
 **Wave 6** *(blocked on 07-06/07-07/07-08; takes the same shared files over)*
 
-- [ ] 07-09-PLAN.md — register `vice_diagnose` and `vice_recycle`: manifest 36 -> 38 with the five-verdict enum pinned, the new `PROXY_LOCAL_TOOLS` category, two conformance cases [wave 6]
+- [x] 07-09-PLAN.md — register `vice_diagnose` and `vice_recycle`: manifest 36 -> 38 with the five-verdict enum pinned, the new `PROXY_LOCAL_TOOLS` category, two conformance cases [wave 6]
 
 **Wave 7** *(blocked on 07-09)*
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 8/10 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 9/10 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
