@@ -94,7 +94,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side (13 plans: 8 executed 2026-08-17 + 5 gap-closure 2026-08-17 after verification returned gaps_found on criteria 3 and 4 — the hardcoded CPU-view `bank: 0x0000` in all four chip/sprite reads; re-verified 5/5 2026-08-17, both criteria closed and live-confirmed against genuine stock VICE 3.9) (completed 2026-08-17)
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
 - [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 executed 2026-08-18 in 3 waves; re-verification 2026-08-18 returned human_needed -- 4/4 truths hold in substance, all four prior gaps closed and independently re-proven live against genuine VICE 3.9 and 3.10, with 1 outstanding human-verification item: the broker-mediated monitor_held_elsewhere verdict is unit-proven only, see 07-HUMAN-UAT.md. Code review found 1 blocker introduced by the CR-01 fix, see 07-REVIEW.md. NOT complete)
-- [ ] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have
+- [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
 
 ## Phase Details
 
@@ -471,8 +471,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 08-05-PLAN.md — README VICE-install story, per-ecosystem version table, VICE_BACKEND consequences, CI wiring, and the human install walkthrough (DIST-02, DIST-03)
-- [ ] 08-06-PLAN.md — consolidate check-skill-tool-coverage.mjs onto the registry and purge four stale forward-looking claims from docs/stock-vice-parity.md (DIST-01, SKILL-01)
+- [x] 08-05-PLAN.md — README VICE-install story, per-ecosystem version table, VICE_BACKEND consequences, CI wiring, and the human install walkthrough (DIST-02, DIST-03)
+- [x] 08-06-PLAN.md — consolidate check-skill-tool-coverage.mjs onto the registry and purge four stale forward-looking claims from docs/stock-vice-parity.md (DIST-01, SKILL-01)
 
 Notes:
 
@@ -526,7 +526,7 @@ their references.
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
-| 8. Capability Honesty and the Install Story | 4/6 | In Progress|  |
+| 8. Capability Honesty and the Install Story | 6/6 | Complete   | 2026-08-18 |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
