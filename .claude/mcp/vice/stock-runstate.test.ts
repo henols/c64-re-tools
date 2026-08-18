@@ -7,7 +7,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { attachRunStateTracker, runStateFor, resetRunStateTrackersForTest } from "./stock-runstate.ts";
+import { attachRunStateTracker, runStateFor, jamObservedFor, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
 
 beforeEach(() => {
@@ -49,6 +49,49 @@ test("runstate: a jam event moves the state to \"stopped\"", () => {
   attachRunStateTracker(client);
   client.emit("event", { type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: null });
   assert.equal(runStateFor(client), "stopped");
+});
+
+// 07-REVIEW.md WR-04: the JAM signal used to be collapsed into "stopped" and
+// thereby discarded at its only consumer -- so vice_diagnose could answer
+// `wedged` (jamaction 2) or even `live` (default jamaction, the CPU refetching
+// the same opcode still burns cycles) for a CPU that will never execute
+// another instruction. It is now recorded separately AND latched.
+test("runstate (WR-04): jamObserved is false until a jam arrives, and a plain stopped event never sets it", () => {
+  const client = fakeClient();
+  const tracker = attachRunStateTracker(client);
+  assert.equal(tracker.jamObserved(), false);
+  assert.equal(jamObservedFor(client), false);
+
+  client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+  assert.equal(runStateFor(client), "stopped");
+  assert.equal(jamObservedFor(client), false, "a plain STOPPED is not a jam -- collapsing the two is the defect WR-04 fixes");
+});
+
+test("runstate (WR-04): a jam event sets jamObserved, and it LATCHES across a subsequent resume", () => {
+  const client = fakeClient();
+  attachRunStateTracker(client);
+  client.emit("event", { type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: null });
+  assert.equal(jamObservedFor(client), true);
+
+  // A later RESUMED moves the run state but must NOT erase the jam: with the
+  // default jamaction the emulator keeps running a dead CPU, which is exactly
+  // the case where the flag is the only remaining evidence.
+  client.emit("event", { type: "resumed", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+  assert.equal(runStateFor(client), "running");
+  assert.equal(jamObservedFor(client), true, "a jam is a latching fact about the instance, not a transient state");
+});
+
+test("runstate (WR-04): jamObservedFor() on an unattached client is false, never a throw", () => {
+  assert.equal(jamObservedFor(fakeClient()), false);
+});
+
+test("runstate (WR-04): resetRunStateTrackersForTest() also forgets an observed jam", () => {
+  const client = fakeClient();
+  attachRunStateTracker(client);
+  client.emit("event", { type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: null });
+  assert.equal(jamObservedFor(client), true);
+  resetRunStateTrackersForTest();
+  assert.equal(jamObservedFor(client), false);
 });
 
 test("runstate: a checkpoint_info event leaves the value unchanged", () => {

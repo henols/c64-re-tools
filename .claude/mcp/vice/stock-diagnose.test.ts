@@ -527,6 +527,80 @@ test("handleDiagnoseStock (WR-03): the wedged verdict reports machinePaused true
   assert.equal(answer.machinePausedSource, "observed");
 });
 
+// 07-REVIEW.md WR-04: the JAM event is now surfaced as evidence on EVERY
+// verdict, so a jammed CPU can no longer be answered as `live` (default
+// jamaction: the CPU refetches the same opcode forever, so both brackets
+// advance) or destroyed as `wedged` (-jamaction 2: the machine stops, so both
+// brackets read zero) without the caller being told a reset is the recovery.
+test("handleDiagnoseStock (WR-04): evidence.jamObserved is present and false when no JAM arrived", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+  });
+  attachRunStateTracker(session.client);
+
+  const result = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  const evidence = answer.evidence as Record<string, unknown>;
+  assert.equal("jamObserved" in evidence, true, "always present -- an absent field must never be readable as 'no jam'");
+  assert.equal(evidence.jamObserved, false);
+  assert.doesNotMatch(answer.report as string, /JAM OBSERVED/);
+});
+
+test("handleDiagnoseStock (WR-04): a JAM makes the 'live' verdict carry jamObserved:true and a report naming vice_machine_reset, not vice_recycle", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    // Both samples advance -- the DEFAULT jamaction case: a dead CPU
+    // refetching the same opcode still burns cycles.
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 999999n }],
+  });
+  attachRunStateTracker(session.client);
+  session.client.emit("event", { type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: null });
+
+  const result = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "live", "D-03: jamObserved is evidence on the five verdicts, never a sixth verdict");
+  assert.equal((answer.evidence as Record<string, unknown>).jamObserved, true);
+  const report = answer.report as string;
+  assert.match(report, /JAM OBSERVED/);
+  assert.match(report, /vice_machine_reset/);
+  assert.match(report, /do NOT vice_recycle/);
+});
+
+test("handleDiagnoseStock (WR-04): a JAM on the wedged path also carries jamObserved:true, so recycle is not the advertised recovery", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 500n }],
+  });
+  attachRunStateTracker(session.client);
+  session.client.emit("event", { type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: null });
+
+  const result = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "wedged");
+  assert.equal((answer.evidence as Record<string, unknown>).jamObserved, true);
+  assert.match(answer.report as string, /vice_machine_reset/);
+});
+
 // ---------------------------------------------------------------------------
 // Task 3, tests 1/2/3: monitor_held_elsewhere / restarted (thrown + epoch)
 // ---------------------------------------------------------------------------

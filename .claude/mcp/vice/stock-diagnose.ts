@@ -47,7 +47,7 @@ import { stockAnswer, derivedAnswer, isErrorText, type StockToolResult } from ".
 import { ensureStockSession, type StockDispatchDeps, type EnsureStockSessionOutcome } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import { runStateFor } from "./stock-runstate.ts";
+import { runStateFor, jamObservedFor } from "./stock-runstate.ts";
 import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 
@@ -710,6 +710,26 @@ function deriveMachinePaused(session: StockConnectSession | null): { machinePaus
   return { machinePaused: true, machinePausedSource: "structural" };
 }
 
+/** WR-04: the sentence appended to EVERY verdict's report when a JAM was
+ * observed. Wording is deliberately imperative about the recovery, because
+ * both verdicts a jam can reach carry the wrong default action: `wedged`
+ * points at vice_recycle (destroys a healthy-but-jammed instance, which a
+ * reset would have fixed) and `live` points at "carry on" (for a CPU that
+ * will never execute another instruction). */
+const JAM_OBSERVED_NOTE =
+  "\n\nJAM OBSERVED: a JAM (0x61) event arrived on this instance's wire -- the 6510 executed an illegal " +
+  "opcode and the CPU is dead, regardless of what the verdict above says. With -jamaction 2 the machine " +
+  "stops and the brackets read zero, which looks like a wedge; with the default jamaction the emulator " +
+  "keeps burning cycles refetching the same opcode, so the brackets ADVANCE and it looks live. Neither is " +
+  "a wedge. Recover with vice_machine_reset -- do NOT vice_recycle, which destroys an instance a reset " +
+  "would have fixed.";
+
+/** WR-04: `jamObserved` is derived HERE, from the same seam as
+ * `machinePaused`, and stamped into EVERY verdict's evidence -- not added
+ * per-call-site, for the same reason WR-03 removed the hand-passed
+ * `machinePaused`. It is evidence on the existing five verdicts, never a
+ * sixth verdict (D-03). Always present (never omitted when false), so an
+ * absent field can never be read as "no jam". */
 function diagnoseVerdictResult(
   session: StockConnectSession | null,
   verdict: StockDiagnoseVerdict,
@@ -717,7 +737,14 @@ function diagnoseVerdictResult(
   report: string,
 ): StockToolResult {
   const { machinePaused, machinePausedSource } = deriveMachinePaused(session);
-  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused, machinePausedSource };
+  const jamObserved = session === null ? false : jamObservedFor(session.client);
+  const payload: Record<string, unknown> = {
+    verdict,
+    evidence: { ...evidence, jamObserved },
+    report: jamObserved ? report + JAM_OBSERVED_NOTE : report,
+    machinePaused,
+    machinePausedSource,
+  };
   return session ? stockAnswer(session.client, payload) : derivedAnswer(payload);
 }
 

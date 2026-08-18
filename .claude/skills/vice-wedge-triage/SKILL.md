@@ -58,13 +58,32 @@ answer a `diagnosis_unavailable` outcome when no verdict could be established at
 
 | Verdict | What it means | Do |
 |---|---|---|
-| `live` | Cycles advanced | Resume and carry on. Suspect your own checkpoint conditions, not the emulator |
+| `live` | Cycles advanced | Resume and carry on. Suspect your own checkpoint conditions, not the emulator — **unless `evidence.jamObserved` is true** (below) |
 | `checkpoint_trap` | The machine stopped **itself** at an armed checkpoint | `vice_checkpoint_delete` or `vice_checkpoint_toggle` it, or `vice_execution_step` past it, then re-run `diagnose`. **Recycling here destroys a healthy instance** |
 | `restarted` | The epoch changed — a crash-and-respawn already happened | The run is void. `c64-ram-capture` § Void a run gives the artifact procedure. Reboot from `vice_disk_attach` |
 | `stale_read_path` **(fork only)** | Some reads move while others do not | Do not trust any measurement taken across the boundary. Treat as void and re-derive |
 | `monitor_held_elsewhere` **(stock only)** | A different client already holds this instance's single binary-monitor slot | Release or identify the other holder. **Never a reason to recycle** — recycling here destroys an instance that is not even wedged |
-| `wedged` | Two brackets, zero cycles, no epoch change | Last resort: `vice_recycle` with a real reason |
+| `wedged` | Two brackets, zero cycles, no epoch change | Last resort: `vice_recycle` with a real reason — **but check `evidence.jamObserved` first** (below) |
 | `diagnosis_unavailable` **(stock only, non-verdict outcome — not one of the five)** | No verdict could be established at all; the message starts `vice_diagnose: diagnosis_unavailable (<reason>)`. The machine's state is **UNKNOWN**, not any of the five above | **Do not recycle on this answer alone.** Read the reason class in the message and act on it — see below |
+
+### `evidence.jamObserved` — read it before acting on `wedged` *or* `live` (stock only, 07-REVIEW WR-04)
+
+Every stock `vice_diagnose` verdict carries `evidence.jamObserved` (always present, never omitted).
+It is `true` once a `JAM` (0x61) event has arrived on this instance's wire — the 6510 executed an
+illegal opcode and **the CPU is dead regardless of the verdict above**. The flag latches: it stays
+true for the rest of the session.
+
+It cuts across two verdicts in opposite directions, which is exactly why it is separate evidence
+rather than a sixth verdict:
+
+| `jamaction` | What `vice_diagnose` answers | Why | What to actually do |
+|---|---|---|---|
+| `-jamaction 2` (Monitor) | `wedged` | The machine stopped, so both brackets read zero advance | **`vice_machine_reset`, not `vice_recycle`.** Recycling destroys an instance a reset recovers — the same trap as `checkpoint_trap` |
+| default (continue) | `live` | The emulator keeps burning cycles refetching the same opcode, so both brackets **advance** | **`vice_machine_reset`.** "Cycles advanced" is true and irrelevant: the machine will never execute another instruction |
+
+**`jamObserved: true` is never a reason to recycle.** A jam is recovered by a reset; the instance
+itself is healthy. Treat a `live` verdict with `jamObserved: true` as a false negative on liveness,
+and a `wedged` verdict with it as a false positive on wedging.
 
 ### `diagnosis_unavailable` — reason classes and response (07-15)
 

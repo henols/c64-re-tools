@@ -41,6 +41,16 @@ export type RunState = "running" | "stopped" | "unknown";
 
 export interface RunStateTracker {
   get(): RunState;
+  /** WR-04: true once a JAM (0x61) event has been seen on this client's wire,
+   * and never reset -- a jam is a latching fact about this instance, not a
+   * transient state. Kept SEPARATE from `get()` on purpose: a jam and a
+   * plain STOPPED both leave the run state "stopped", but only one of them
+   * means the CPU will never execute another instruction, and only one of
+   * them is recovered by a reset rather than a recycle. Collapsing the two
+   * (which this file used to do) threw the distinction away at its only
+   * consumer, after stock-protocol.ts went to the trouble of parsing JAM's
+   * zero-length body without fabricating a PC. */
+  jamObserved(): boolean;
 }
 
 let trackers = new WeakMap<ViceMonitorClient, RunStateTracker>();
@@ -68,12 +78,23 @@ export function attachRunStateTracker(client: ViceMonitorClient): RunStateTracke
   }
 
   let state: RunState = "unknown";
+  // WR-04: latched, never cleared -- not even by a subsequent RESUMED. A CPU
+  // that has jammed stays a machine whose evidence must mention the jam; the
+  // recovery is vice_machine_reset, and nothing on this wire can undo the
+  // fact that a jam happened on this instance.
+  let jamSeen = false;
 
   client.on("event", (item: ParsedResponse | StockProtocolError | StockFramingError) => {
     if (!hasParsedType(item)) {
       return;
     }
-    if (item.type === "stopped" || item.type === "jam") {
+    if (item.type === "jam") {
+      // A jam halts the CPU, so the run state is "stopped" as before -- but
+      // the jam itself is recorded separately rather than being collapsed
+      // into it and lost.
+      jamSeen = true;
+      state = "stopped";
+    } else if (item.type === "stopped") {
       state = "stopped";
     } else if (item.type === "resumed") {
       state = "running";
@@ -82,7 +103,7 @@ export function attachRunStateTracker(client: ViceMonitorClient): RunStateTracke
     // state untouched.
   });
 
-  const tracker: RunStateTracker = { get: () => state };
+  const tracker: RunStateTracker = { get: () => state, jamObserved: () => jamSeen };
   trackers.set(client, tracker);
   return tracker;
 }
@@ -94,6 +115,29 @@ export function attachRunStateTracker(client: ViceMonitorClient): RunStateTracke
 export function runStateFor(client: ViceMonitorClient): RunState {
   const tracker = trackers.get(client);
   return tracker ? tracker.get() : "unknown";
+}
+
+/** WR-04: whether a JAM (0x61) has been observed on `client`'s wire -- `false`
+ * when nothing is attached, never a throw, same contract as runStateFor().
+ *
+ * WHY THIS IS SEPARATE FROM runStateFor(): the two jamaction settings produce
+ * opposite-looking symptoms from the same underlying dead CPU, and neither is
+ * distinguishable from the run state alone.
+ *   - `-jamaction 2` (Monitor): the machine stops, both liveness brackets
+ *     read zero advance, and vice_diagnose answers `wedged` -- whose
+ *     documented response is `vice_recycle`, i.e. destroy the instance, when
+ *     a vice_machine_reset recovers a jam. Same shape as the
+ *     `checkpoint_trap` hazard the wedge-triage SKILL already warns about.
+ *   - default jamaction (continue): the emulator keeps burning cycles
+ *     refetching the same opcode, so BOTH brackets advance and vice_diagnose
+ *     answers `live` -- for a machine that will never execute another
+ *     instruction.
+ * The JAM frame that settles it arrived on the wire in both cases. This is
+ * how it stops being discarded. It is reported as EVIDENCE on the existing
+ * verdicts, never as a sixth verdict (D-03). */
+export function jamObservedFor(client: ViceMonitorClient): boolean {
+  const tracker = trackers.get(client);
+  return tracker ? tracker.jamObserved() : false;
 }
 
 /** Test-only: replaces the module-level WeakMap with a fresh one, matching
