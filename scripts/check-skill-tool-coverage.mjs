@@ -19,12 +19,23 @@
 // how a coverage check rots into a permanent exemption (see the plan's own
 // D-05-05/T-05-08-02).
 //
-// This script only ever readFileSync()s and regex-matches. It never
-// import()s, require()s, eval()s or spawns anything from .claude/skills/ --
-// skill content is untrusted input that is matched, never executed.
+// D-E, ONE SOURCE OF TRUTH (Phase 8, plan 08-06): FORK_ONLY_UNRECOVERABLE
+// below is a PROJECTION of capability-registry.ts's CAPABILITY_REGISTRY
+// (the hardware-category, fork-provided entries), never a second
+// hand-maintained copy of the same three-tool set. If a reason reads wrong,
+// the fix is always in capability-registry.ts, never here.
+//
+// This script only ever readFileSync()s and regex-matches skill content, and
+// imports exactly one first-party TypeScript module from .claude/mcp/vice/
+// (capability-registry.ts, Node's native type-stripping resolves it with no
+// build step and no flag). That one new import does not weaken this script's
+// standing rule: it still never import()s, require()s, eval()s or spawns anything from .claude/skills/ --
+// skill content remains untrusted input that is matched, never executed.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -165,23 +176,23 @@ const NOT_A_TOOL_NAMES = [
 ];
 
 // 4. Present on the fork, provably unrecoverable on stock. Asserted below to
-// be present in the fork manifest AND absent from the stock manifest. Each
-// reason names the Phase 8 route: BACK-05 for the runtime error, SKILL-01
-// for the playbook note.
-const FORK_ONLY_UNRECOVERABLE = [
-  [
-    "vice_sid_get_state",
-    "SID $D400-$D418 is write-only in hardware and the binary monitor has no SID command; read-back is unrecoverable on stock. Route: BACK-05 (runtime error), SKILL-01 (playbook note), both Phase 8.",
-  ],
-  [
-    "vice_keyboard_matrix",
-    "KEYBOARD_FEED (0x72) injects PETSCII buffer text only; it cannot drive the raw keyboard matrix. Route: BACK-05 (runtime error), SKILL-01 (playbook note), both Phase 8.",
-  ],
-  [
-    "vice_keyboard_restore",
-    "The RESTORE key pulses the NMI line and is not in the keyboard matrix; KEYBOARD_FEED cannot produce it. Route: BACK-05 (runtime error), SKILL-01 (playbook note), both Phase 8.",
-  ],
-];
+// be present in the fork manifest AND absent from the stock manifest.
+//
+// D-E consolidation (Phase 8, plan 08-06): this array is DERIVED from
+// capability-registry.ts's CAPABILITY_REGISTRY -- filtered to the "hardware"
+// category entries whose providedBy is "fork" -- rather than a second,
+// hand-typed copy of the same three-tool set. The registry's hardware set
+// currently has 6 members (only 3 of which any shipped skill references; see
+// the set-equality liveness assertion below), so this array now has 6
+// entries, up from the 3 it used to carry literally. Each reason is
+// capability-registry.ts's own user-facing refusal text: it deliberately
+// carries NO planning identifier (no BACK-05, no SKILL-01) -- those routing
+// annotations moved out of the reason text when the registry became the
+// source of truth. capability-registry.ts is now where a reason is edited,
+// never this file.
+const FORK_ONLY_UNRECOVERABLE = CAPABILITY_REGISTRY.filter(
+  (entry) => entry.category === "hardware" && entry.providedBy === "fork"
+).map((entry) => [entry.name, entry.reason]);
 
 // 5. Not yet built on stock, scheduled for a later phase. Asserted below to
 // be ABSENT from the stock manifest -- the drift guard: when Phase 7 lands
@@ -254,10 +265,26 @@ for (const [name, reason] of NOT_A_TOOL_NAMES) {
 }
 
 // --- Assertion: FORK_ONLY_UNRECOVERABLE present in fork, absent from stock -
+// D-E consolidation: the old reason assertion required both "BACK-05" and
+// "SKILL-01" to appear in the reason text -- a check that can never hold
+// against capability-registry.ts's reasons, which are user-facing refusal
+// prose and deliberately carry no planning identifier. Replaced with three
+// checks that hold against the registry itself: the reason is non-empty and
+// long enough to be a real explanation, and the source entry's own
+// category/providedBy are exactly what this classification claims.
 for (const [name, reason] of FORK_ONLY_UNRECOVERABLE) {
   need(
-    Boolean(reason) && reason.includes("BACK-05") && reason.includes("SKILL-01"),
-    `${name}: FORK_ONLY_UNRECOVERABLE reason must name both BACK-05 and SKILL-01`
+    Boolean(reason) && reason.length >= 40,
+    `${name}: FORK_ONLY_UNRECOVERABLE reason must be non-empty and at least 40 characters`
+  );
+  const registryEntry = CAPABILITY_REGISTRY.find((e) => e.name === name);
+  need(
+    Boolean(registryEntry) && registryEntry.category === "hardware",
+    `${name}: FORK_ONLY_UNRECOVERABLE but its capability-registry.ts entry's category is not "hardware"`
+  );
+  need(
+    Boolean(registryEntry) && registryEntry.providedBy === "fork",
+    `${name}: FORK_ONLY_UNRECOVERABLE but its capability-registry.ts entry's providedBy is not "fork"`
   );
   need(forkNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but absent from the FORK manifest`);
   need(!stockNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but present in the STOCK manifest -- it is no longer unrecoverable and this entry must be deleted`);
@@ -272,15 +299,51 @@ for (const [name, reason] of PENDING_LATER_PHASE) {
   );
 }
 
-// --- Assertion: the allowlist is LIVE -- every FORK_ONLY_UNRECOVERABLE and
-// PENDING_LATER_PHASE entry must actually be referenced by a skill file. A
-// stale entry for a reference that no longer exists is dead weight.
-for (const [name] of [...FORK_ONLY_UNRECOVERABLE, ...PENDING_LATER_PHASE]) {
+// --- Assertion: the allowlist is LIVE -- every PENDING_LATER_PHASE entry
+// must actually be referenced by a skill file. A stale entry for a reference
+// that no longer exists is dead weight.
+for (const [name] of PENDING_LATER_PHASE) {
   need(
     extracted.has(name),
-    `${name}: allowlisted (FORK_ONLY_UNRECOVERABLE/PENDING_LATER_PHASE) but not referenced by any skill file -- stale entry, delete it`
+    `${name}: allowlisted (PENDING_LATER_PHASE) but not referenced by any skill file -- stale entry, delete it`
   );
 }
+
+// --- Assertion: FORK_ONLY_UNRECOVERABLE's skill-referenced subset is EXACTLY
+// the three names ROADMAP.md's Phase 5 criterion 5 names (D-05-08) --------
+// D-E consolidation: FORK_ONLY_UNRECOVERABLE now derives all 6 of the
+// registry's hardware/fork entries, but only 3 (vice_sid_get_state,
+// vice_keyboard_matrix, vice_keyboard_restore) are actually referenced by any
+// shipped skill file (vice_keyboard_chord, vice_keyboard_key_press and
+// vice_keyboard_key_release appear in no skill). Plain per-entry liveness
+// (every allowlisted name must be referenced) is too weak here -- it would
+// pass vacuously for 3 unreferenced entries. A set-equality assertion is
+// strictly stronger: it pins the corrected three-tool exception list
+// mechanically, and fails in BOTH directions -- a new bare skill reference to
+// one of the other three hardware tools, or one of the three current three
+// ceasing to be referenced.
+const EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS = new Set([
+  "vice_sid_get_state",
+  "vice_keyboard_matrix",
+  "vice_keyboard_restore",
+]);
+const actualSkillReferencedHardwareTools = new Set(
+  FORK_ONLY_UNRECOVERABLE.filter(([name]) => extracted.has(name)).map(([name]) => name)
+);
+const missingFromSkillReferences = [...EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS].filter(
+  (name) => !actualSkillReferencedHardwareTools.has(name)
+);
+const unexpectedSkillReferences = [...actualSkillReferencedHardwareTools].filter(
+  (name) => !EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS.has(name)
+);
+need(
+  missingFromSkillReferences.length === 0,
+  `FORK_ONLY_UNRECOVERABLE set-equality: expected skill-referenced hardware tool(s) no longer referenced by any skill file -- stale expectation, update EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS: ${missingFromSkillReferences.join(", ")}`
+);
+need(
+  unexpectedSkillReferences.length === 0,
+  `FORK_ONLY_UNRECOVERABLE set-equality: a hardware tool not in EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS is now referenced by a skill file -- add it to the expected set (and to ROADMAP.md's Phase 5 criterion 5 exception list) or remove the skill reference: ${unexpectedSkillReferences.join(", ")}`
+);
 
 // --- The core check ---------------------------------------------------------
 // WR-11: PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY is deliberately NOT allowlisted.
@@ -338,11 +401,19 @@ if (errors.length) {
 }
 
 const categoryCount = (set) => [...set].filter(([name]) => extracted.has(name)).length;
+// FORK_ONLY_UNRECOVERABLE is reported by its full length, not categoryCount()'s
+// extracted-filtered count: since the D-E consolidation this array is the
+// registry's complete hardware/fork set (6), not only the subset a skill
+// happens to reference (3) -- the report now answers "how many entries does
+// this classification hold", matching what the other 5 non-liveness-checked
+// registry entries would report too, rather than conflating classification
+// size with skill-reference liveness (that is what the set-equality
+// assertion above already checks, precisely).
 console.log(
   `check-skill-tool-coverage: OK -- ${extracted.size} distinct vice_* names extracted from ${skillFiles.length} files across ${topLevelDirs.length} skill directories; ` +
     `${resolvedAdvertisedCount} resolved as advertised on the stock manifest (${stockNames.size} tools total). ` +
     `Classified: ${categoryCount(PROXY_LOCAL_TOOLS)} proxy-local (neither manifest), ` +
     `${categoryCount(PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY)} proxy-local-with-stock-manifest-entry, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
-    `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${categoryCount(FORK_ONLY_UNRECOVERABLE)} fork-only-unrecoverable, ` +
+    `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${FORK_ONLY_UNRECOVERABLE.length} fork-only-unrecoverable, ` +
     `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase.`
 );
