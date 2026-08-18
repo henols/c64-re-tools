@@ -1560,13 +1560,35 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // e_MON_RESOURCE_TYPE_INT. For the integer case size is always 4 and
       // the payload is a uint32LE; for the string case size is the payload's
       // own byte length. [CITED monitor_binary.c:938-965]
+      //
+      // CR-02 (code review, plan 07-12 Task 3): the integer branch used to
+      // read a FIXED 4 bytes at offset 2 behind only `need(body, 2 + size,
+      // ...)` -- a body of `[0x01, 0x00]` (size=0) satisfies that guard and
+      // then `readUInt32LE(2)` throws a bare RangeError straight out of
+      // parseResponse(), violating this function's own normative rule
+      // (never add a case that reads at a fixed or wire-derived offset
+      // without a preceding need() for the bytes it ACTUALLY reads). A
+      // 4-byte payload is part of e_MON_RESOURCE_TYPE_INT's own contract,
+      // not a value to read past -- so the size mismatch is checked FIRST,
+      // independent of how many bytes the (possibly also-lying) body
+      // physically has, naming the observed size rather than surfacing as
+      // a generic "body too short" message. Only once size is confirmed to
+      // be exactly 4 does need(body, 2 + 4, ...) bounds-check the actual
+      // payload bytes before reading them.
       need(body, 2, responseType, requestId);
       const valueTypeByte = body[0]!;
       const size = body[1]!;
-      need(body, 2 + size, responseType, requestId);
       if (valueTypeByte === 1) {
+        if (size !== 4) {
+          throw new StockFramingError(
+            `RESOURCE_GET integer response declares size ${size}, expected 4 (a uint32LE payload)`,
+            { observed: size, expected: 4, responseType, requestId },
+          );
+        }
+        need(body, 2 + 4, responseType, requestId);
         return { type: "resource_get", requestId, errorCode, valueType: "integer", value: body.readUInt32LE(2) };
       }
+      need(body, 2 + size, responseType, requestId);
       return {
         type: "resource_get",
         requestId,

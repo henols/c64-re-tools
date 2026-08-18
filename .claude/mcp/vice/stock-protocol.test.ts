@@ -1779,6 +1779,158 @@ test("RESOURCE_GET: a body with the type byte present but the size byte missing 
   assert.ok(responses[0] instanceof StockFramingError);
 });
 
+// ===========================================================================
+// CR-02 regressions (plan 07-12, Task 3): the integer branch used to read a
+// fixed 4 bytes at offset 2 behind only need(body, 2 + size, ...), so a
+// declared size shorter than 4 satisfied that guard and then threw a bare
+// RangeError out of parseResponse() -- past parseBuffer()'s try/catch and
+// straight into the "BUG:" undocumented-error arm, mislabelling an ordinary
+// wire-format event as an internal defect.
+// ===========================================================================
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 0 is a returned StockFramingError, never a RangeError", () => {
+  const body = Buffer.from([1, 0]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 50, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b0\b/);
+});
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 2 (2 payload bytes) is a returned StockFramingError naming the observed size", () => {
+  const body = Buffer.from([1, 2, 0xaa, 0xbb]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 51, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b2\b/);
+});
+
+test("RESOURCE_GET (CR-02): an integer response declaring size 3 (3 payload bytes) is a returned StockFramingError naming the observed size", () => {
+  const body = Buffer.from([1, 3, 0xaa, 0xbb, 0xcc]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 52, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /\b3\b/);
+});
+
+test("RESOURCE_GET (CR-02): a valid size-4 integer response still decodes to { valueType: 'integer', value: 42 }", () => {
+  const body = Buffer.from([1, 4, 0x2a, 0, 0, 0]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 53, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: number };
+  assert.equal(parsed.type, "resource_get");
+  assert.equal(parsed.valueType, "integer");
+  assert.equal(parsed.value, 42);
+});
+
+test("RESOURCE_GET (CR-02): a [1, 0] body does NOT log an internal 'BUG:' line -- it is an ordinary wire-format event, not an undocumented defect", () => {
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  try {
+    const body = Buffer.from([1, 0]);
+    const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 54, body });
+    parseBuffer(frame, { desyncBytes: 0 });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.ok(
+    !captured.some((line) => line.includes("BUG:")),
+    `expected no "BUG:" line, got: ${JSON.stringify(captured)}`,
+  );
+});
+
+// ===========================================================================
+// Real-bytes CPUHISTORY_GET regressions (plan 07-12, Task 3): decode the
+// captured fixtures from Task 1 through the same public entry point the
+// client uses, asserting non-synthetic provenance so a future re-record to
+// a synthesized fallback fails loudly here rather than silently.
+// ===========================================================================
+
+test("CPUHISTORY_GET (real bytes): the captured single-entry fixture is non-synthetic and decodes to count=1, one bigint-cycle entry", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; count: number; entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.type, "cpu_history");
+  assert.equal(parsed.count, 1);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(typeof parsed.entries[0]!.cycle, "bigint");
+  assert.ok(parsed.entries[0]!.cycle > 0n);
+});
+
+test("CPUHISTORY_GET (real bytes): the captured multi-entry fixture is non-synthetic and decodes every entry at the item_size-derived stride", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get-multi");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; count: number; entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.type, "cpu_history");
+  assert.equal(parsed.entries.length, parsed.count);
+  assert.ok(parsed.count >= 4, `expected the multi-entry capture to hold at least 4 entries, got ${parsed.count}`);
+  for (const entry of parsed.entries) {
+    assert.equal(typeof entry.cycle, "bigint");
+  }
+  // Observed order (WR-13 correction, plan 07-12 Task 2): entries[0] is the
+  // OLDEST of the returned window, entries[count-1] is the NEWEST -- cycles
+  // are strictly ascending across the array, the opposite of this file's
+  // previous "entries[0] is the newest" assumption. Irrelevant to Route A's
+  // live stopwatch, which always requests count:1.
+  for (let index = 1; index < parsed.entries.length; index += 1) {
+    assert.ok(
+      parsed.entries[index]!.cycle > parsed.entries[index - 1]!.cycle,
+      `expected strictly ascending cycles, got entries[${index - 1}]=${parsed.entries[index - 1]!.cycle} then entries[${index}]=${parsed.entries[index]!.cycle}`,
+    );
+  }
+});
+
+test("CPUHISTORY_GET (real bytes): the captured 3.9 refusal fixture is non-synthetic and decodes to the real observed error shape", () => {
+  const fixture = loadCapturedFixture("cpuhistory-get-unsupported");
+  assert.equal(fixture.synthetic, false);
+  const { responses } = parseBuffer(fixture.bytes, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  // Real 3.9 build's observed answer: a 0-byte body, responseType 0x00, and
+  // errorCode 0x83 (e_MON_ERR_CMD_INVALID_TYPE) -- NOT the 0x8f CMD_FAILURE
+  // monitor_binary.c's FEATURE_CPUMEMHISTORY #else branch would send. 3.9's
+  // command dispatcher does not recognize opcode 0x86 at all.
+  assert.ok(responses[0] instanceof StockProtocolError);
+  assert.equal((responses[0] as StockProtocolError).errorCode, 0x83);
+  assert.equal((responses[0] as StockProtocolError).responseType, 0x00);
+});
+
+// ===========================================================================
+// Hostile-input regressions (plan 07-12, Task 3): mirrors of Task 2's
+// guards, asserted here so they cannot be silently removed later.
+// ===========================================================================
+
+test("CPUHISTORY_GET (hostile): a declared count of 70000 is a returned StockFramingError, not a hang and not a RangeError", () => {
+  const body = Buffer.alloc(4);
+  body.writeUInt32LE(70000, 0);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 60, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+  assert.match((responses[0] as StockFramingError).message, /70000/);
+});
+
+test("CPUHISTORY_GET (hostile): an item_size too small to hold its own regCount field is a returned StockFramingError naming item_size", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0);
+  // item_size = 1: only one byte follows the size byte, but regCount alone
+  // needs 2 bytes -- cannot possibly hold a valid register block.
+  const body = Buffer.concat([count, Buffer.from([1, 0xff])]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 61, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
 test("structural: stock-protocol.ts defines no resourceSetBody() and no case ResponseType.ResourceSet, outside comments (T-07-04)", () => {
   const source = readFileSync(new URL("./stock-protocol.ts", import.meta.url), "utf8");
   const nonCommentSource = source
