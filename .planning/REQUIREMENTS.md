@@ -102,8 +102,8 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 ### Distribution and documentation
 
 - [ ] **DIST-01**: The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — including tools absent from the active backend's trimmed manifest (D-07)
-- [ ] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
-- [ ] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
+- [x] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
+- [x] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
 
 ### Skill playbooks
 
@@ -222,8 +222,8 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | BROK-02 | Phase 2 | Complete |
 | BROK-03 | Phase 2 | Complete |
 | DIST-01 | Phase 8 | Pending |
-| DIST-02 | Phase 8 | Pending |
-| DIST-03 | Phase 8 | Pending |
+| DIST-02 | Phase 8 | Complete |
+| DIST-03 | Phase 8 | Complete |
 | SKILL-01 | Phase 8 | Pending |
 | VERIF-01 | Phase 1 | Complete |
 | VERIF-02 | Phase 2 | Complete |
