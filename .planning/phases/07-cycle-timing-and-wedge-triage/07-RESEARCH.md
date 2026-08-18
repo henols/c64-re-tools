@@ -723,7 +723,9 @@ once Phase 7 lands (a doc-correction task, not a code task).
 
 **If this table is empty:** N/A — see rows above.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three resolved by operator decision during `/gsd-plan-phase 7`: Q1 → **D-01**, Q2 → **D-02**, Q3 → **D-03**. The decisions are carried in plans 07-03, 07-06, 07-07 and 07-09.
 
 1. **Should `vice_recycle` also get a stock implementation in this phase, even
    though no `TIME-*` requirement names it?**
