@@ -40,9 +40,12 @@ import {
   CommandType,
   memspaceBody,
   resourceGetBody,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
   type ParsedCpuHistoryEntry,
   type StockProtocolError,
 } from "./stock-protocol.ts";
+import { MachineRestartedError } from "./vice.ts";
 import { clampCpuHistoryCount, type StockConnectSession } from "./stock-connect.ts";
 import { registerCatalogFor } from "./stock-registers.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler, type StockOkResult } from "./stock-handler.ts";
@@ -166,6 +169,27 @@ export async function resolveVideoStandard(session: StockConnectSession): Promis
     videoStandardCache.set(session.targetId, { result, epoch: session.baselineEpoch });
     return result;
   } catch (err) {
+    // WR-17 (07-REVIEW.md): a TRANSPORT failure is not a value-shaped failure
+    // and must NOT be laundered into "assuming PAL".
+    //
+    // This is the last wire call inside Route B's readCycleBaseline(), which
+    // runStockLivenessBracket() calls -- so a socket that dies HERE used to be
+    // swallowed, and 07-15's new `connection_lost` / `request_timeout`
+    // diagnosis_unavailable reason classes (which both the stock manifest and
+    // vice-wedge-triage/SKILL.md now promise) could never be reached from this
+    // path. The failure re-surfaced later, if at all, as
+    // `evidence_gathering_failed`. The new classification is only ever as
+    // honest as the narrowest catch on the path, and this was it.
+    //
+    // Rethrow the three typed conditions that mean "the connection or the
+    // machine, not the value": handleCyclesStopwatch()'s own
+    // convertWireError() and handleDiagnoseStock()'s classifier both know what
+    // to do with them. Keep the PAL fallback for value-shaped failures only
+    // (an unexpected reply shape, an unrecognised standard, a build with no
+    // such resource). Do NOT widen this back to a bare catch.
+    if (err instanceof MachineRestartedError || err instanceof StockConnectionClosedError || err instanceof StockRequestTimeoutError) {
+      throw err;
+    }
     const message = err instanceof Error ? err.message : String(err);
     return palFallback(`resolveVideoStandard: reading the MachineVideoStandard resource failed (${message}) -- assuming PAL`);
   }

@@ -10,7 +10,15 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
+import {
+  CommandType,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
+  type ResolvedResponse,
+  type ViceMonitorClient,
+} from "./stock-protocol.ts";
+import { MachineRestartedError } from "./vice.ts";
+import { classifyDiagnoseUnavailable } from "./stock-diagnose.ts";
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import {
@@ -85,6 +93,11 @@ interface FakeSessionOptions {
    * entry across. Defaults to null (identity unprovable), matching the
    * pre-WR-14 fixture shape so existing cases keep exercising the same path. */
   baselineEpoch?: number | null;
+  /** WR-17: a RESOURCE_GET that rejects with a SPECIFIC typed error, rather
+   * than the generic Error the `"reject"` fixture throws. A transport error
+   * must propagate out of resolveVideoStandard() so the diagnose classifier can
+   * name it, never be laundered into an "assuming PAL" value. */
+  resourceGetRejectsWith?: unknown;
 }
 
 /** Builds a fake session + client pair. Every reply source is a QUEUE (see
@@ -112,6 +125,9 @@ function makeFakeSession(options: FakeSessionOptions = {}): { session: StockConn
         return { type: "cpu_history", requestId: 1, errorCode: 0, count: reply.count, entries: reply.entries, related: [] } as unknown as ResolvedResponse;
       }
       if (commandType === CommandType.ResourceGet) {
+        if (options.resourceGetRejectsWith !== undefined) {
+          throw options.resourceGetRejectsWith;
+        }
         const reply = nextFromQueue(resourceGetReplies, "resourceGetReplies");
         if (reply === "reject") {
           throw new Error("RESOURCE_GET failed (synthetic)");
@@ -301,6 +317,73 @@ test("forgetTimingForOtherTargets (WR-14): evicts every OTHER target's baseline 
   const bAnswer = parseAnswer(await handleCyclesStopwatch({ action: "read" }, bRead.session, FAKE_DEPS));
   assert.equal(bAnswer.measurable, true, "the ACTIVE target must keep its baseline");
   assert.equal(bAnswer.cycles, 400);
+});
+
+// ---------------------------------------------------------------------------
+// 07-REVIEW.md WR-17: resolveVideoStandard()'s catch-all converted EVERYTHING,
+// including typed transport failures, into a PAL result with assumed:true. It
+// is the last wire call inside Route B's readCycleBaseline(), which
+// runStockLivenessBracket() calls -- so a socket that died there could never be
+// classified as 07-15's `connection_lost` or `request_timeout`
+// diagnosis_unavailable reason class (both promised by the stock manifest AND
+// the wedge-triage SKILL). The new classification is only ever as honest as the
+// narrowest catch on the path, and this was it.
+// ---------------------------------------------------------------------------
+
+test("resolveVideoStandard (WR-17): a StockConnectionClosedError PROPAGATES -- it is not laundered into 'assuming PAL'", async () => {
+  const err = new StockConnectionClosedError("socket closed", { port: 6502, abandoned: 1, trigger: "close" });
+  const { session } = makeFakeSession({ resourceGetRejectsWith: err });
+  await assert.rejects(resolveVideoStandard(session), (thrown: unknown) => thrown === err);
+});
+
+test("resolveVideoStandard (WR-17): a StockRequestTimeoutError PROPAGATES", async () => {
+  const err = new StockRequestTimeoutError("RESOURCE_GET never answered", { requestId: 1, commandType: CommandType.ResourceGet, elapsedMs: 5000 });
+  const { session } = makeFakeSession({ resourceGetRejectsWith: err });
+  await assert.rejects(resolveVideoStandard(session), (thrown: unknown) => thrown === err);
+});
+
+test("resolveVideoStandard (WR-17): a MachineRestartedError PROPAGATES -- a restart is never a video standard", async () => {
+  const err = new MachineRestartedError("the machine restarted", { baselineEpoch: 1, currentEpoch: 2 });
+  const { session } = makeFakeSession({ resourceGetRejectsWith: err });
+  await assert.rejects(resolveVideoStandard(session), (thrown: unknown) => thrown === err);
+});
+
+test("resolveVideoStandard (WR-17): a VALUE-shaped failure still falls back to PAL with assumed:true -- the narrowing must not remove the honest fallback", async () => {
+  const { session } = makeFakeSession({ resourceGetRejectsWith: new Error("MachineVideoStandard: no such resource on this build") });
+  const result = await resolveVideoStandard(session);
+  assert.equal(result.assumed, true);
+  assert.equal(result.name, VIDEO_STANDARDS[1]!.name, "the fallback is PAL");
+  assert.match(result.reason as string, /assuming PAL/);
+});
+
+test("readCycleBaseline (WR-17): a transport failure inside Route B's video-standard read reaches the caller, so the diagnose classifier can name it", async () => {
+  const err = new StockConnectionClosedError("socket closed mid-bracket", { port: 6502, abandoned: 1, trigger: "close" });
+  const withLinCyc = [...DEFAULT_REGISTERS, { id: 1, size: 16, name: "LIN" }, { id: 2, size: 8, name: "CYC" }];
+  const { session } = makeFakeSession({
+    cpuHistory: "absent",
+    registersAvailable: withLinCyc,
+    registersGetReplies: [[{ id: 0, value: 0x100 }, { id: 1, value: 100 }, { id: 2, value: 20 }]],
+    resourceGetRejectsWith: err,
+  });
+  await assert.rejects(
+    readCycleBaseline(session),
+    (thrown: unknown) => thrown === err,
+    "Route B's last wire call must not swallow a dead socket -- classifyDiagnoseUnavailable() maps this to connection_lost",
+  );
+});
+
+test("handleDiagnoseStock-side effect of WR-17: classifyDiagnoseUnavailable maps the errors resolveVideoStandard now rethrows", () => {
+  // The point of rethrowing is that the classifier can see them. Asserted here
+  // rather than only in stock-diagnose.test.ts so the two halves of the fix are
+  // visibly connected.
+  assert.equal(
+    classifyDiagnoseUnavailable(new StockConnectionClosedError("closed", { port: 1, abandoned: 0, trigger: "close" })),
+    "connection_lost",
+  );
+  assert.equal(
+    classifyDiagnoseUnavailable(new StockRequestTimeoutError("timed out", { requestId: 1, commandType: CommandType.ResourceGet, elapsedMs: 1 })),
+    "request_timeout",
+  );
 });
 
 // ---------------------------------------------------------------------------
