@@ -1586,16 +1586,25 @@ test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
 });
 
 // ===========================================================================
-// CPUHISTORY_GET (0x86) -- plan 07-02, Task 1. Body layout confirmed against
-// monitor_binary.c:1563-1617: count(u32LE) then per entry item_size(1) a
-// register block of item_size bytes (deliberately not decoded -- VICE
+// CPUHISTORY_GET (0x86) -- plan 07-12, Task 2. Body layout re-derived
+// 2026-08-18 from monitor_binary_process_cpuhistory() (monitor_binary.c:
+// 1452-1620), verified against the real captures fixtures/binmon/
+// cpuhistory-get.bin and cpuhistory-get-multi.bin: count(u32LE) then per
+// entry item_size(1) -- the byte count of EVERYTHING after this byte, so the
+// entry stride is item_size + 1 -- containing a register block written by
+// write_registers() (regCount(u16LE) then regCount items of
+// size(1)+id(1)+value(u16LE), deliberately not decoded by the parser: VICE
 // hard-fills LIN/CYC with the sentinel 0xffff inside CPU-history entries,
-// monitor_binary.c:1585-1590) cycle(u64LE) instruction_length(1) opcode(1)
-// p1(1) p2(1) and one trailing placeholder byte.
+// monitor_binary.c:1585-1590) then cycle(u64LE) instruction_length(1)
+// opcode(1) p1(1) p2(1) and one trailing placeholder byte. The PREVIOUS
+// layout this comment (and cpuHistoryEntry() below) used treated item_size
+// as just the register-block length before cycle -- disproven live against
+// a genuine VICE 3.10 build; see deferred-items.md's "Route A live decode
+// mismatch" (WR-13, plan 07-12).
 // ===========================================================================
 
 interface CpuHistoryEntryOptions {
-  itemSize?: number;
+  regCount?: number;
   cycle: bigint;
   instructionLength: number;
   opcode: number;
@@ -1604,10 +1613,28 @@ interface CpuHistoryEntryOptions {
   placeholder?: number;
 }
 
-function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p2, placeholder = 0 }: CpuHistoryEntryOptions): Buffer {
-  // Register block filled with 0xff, matching VICE's own LIN/CYC 0xffff
-  // sentinel fill for CPU-history entries -- this parser never reads it.
-  const registerBlock = Buffer.alloc(itemSize, 0xff);
+function cpuHistoryEntry({
+  regCount = 8,
+  cycle,
+  instructionLength,
+  opcode,
+  p1,
+  p2,
+  placeholder = 0xff,
+}: CpuHistoryEntryOptions): Buffer {
+  // Register block: regCount(u16LE) then regCount items of
+  // size(1)+id(1)+value(u16LE) -- MON_REGISTER_ITEM_SIZE is 3 on the real
+  // wire (monitor_binary.c:431), giving each item a 4-byte stride. Content
+  // is arbitrary (0xffff, matching VICE's own LIN/CYC sentinel fill) -- this
+  // parser never decodes it.
+  const registerBlock = Buffer.alloc(2 + regCount * 4);
+  registerBlock.writeUInt16LE(regCount, 0);
+  for (let index = 0; index < regCount; index += 1) {
+    const off = 2 + index * 4;
+    registerBlock[off] = 3; // MON_REGISTER_ITEM_SIZE
+    registerBlock[off + 1] = index; // register id, arbitrary for this test
+    registerBlock.writeUInt16LE(0xffff, off + 2);
+  }
   const tail = Buffer.alloc(8 + 5);
   tail.writeBigUInt64LE(cycle, 0);
   tail[8] = instructionLength;
@@ -1615,7 +1642,8 @@ function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p
   tail[10] = p1;
   tail[11] = p2;
   tail[12] = placeholder;
-  return Buffer.concat([Buffer.from([itemSize]), registerBlock, tail]);
+  const content = Buffer.concat([registerBlock, tail]);
+  return Buffer.concat([Buffer.from([content.length]), content]);
 }
 
 function cpuHistoryFrame(entries: Buffer[], requestId = 30): Buffer {
@@ -1646,10 +1674,10 @@ test("CPUHISTORY_GET: a single-entry body decodes to type cpu_history with an ex
   assert.equal(parsed.entries[0]!.p2, 0x00);
 });
 
-test("CPUHISTORY_GET: a two-entry body preserves order -- entries[0] is the newest, the one Route A's stopwatch reads", () => {
-  const newest = cpuHistoryEntry({ cycle: 999999n, instructionLength: 1, opcode: 0xea, p1: 0, p2: 0 });
-  const older = cpuHistoryEntry({ cycle: 500000n, instructionLength: 2, opcode: 0xa2, p1: 0x05, p2: 0 });
-  const frame = cpuHistoryFrame([newest, older]);
+test("CPUHISTORY_GET: a two-entry body decodes entries in wire order without reordering (WR-13 correction: entries[0] is the OLDEST per the real multi-entry capture, not the newest -- see ParsedCpuHistoryResponse's doc comment; irrelevant to Route A, which always requests count:1)", () => {
+  const first = cpuHistoryEntry({ cycle: 999999n, instructionLength: 4, opcode: 0xea, p1: 0, p2: 0 });
+  const second = cpuHistoryEntry({ cycle: 500000n, instructionLength: 3, opcode: 0xa2, p1: 0x05, p2: 0 });
+  const frame = cpuHistoryFrame([first, second]);
   const { responses } = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(responses.length, 1);
   const parsed = responses[0] as { entries: Array<{ cycle: bigint }> };
