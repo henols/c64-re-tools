@@ -4,13 +4,13 @@ milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
 last_updated: "2026-08-18T10:46:37.709Z"
-last_activity: 2026-08-18 -- Completed quick task 260818-nh5: Phase 07 UAT test-8 gap closed (live proof restored 6/6 on both stock binaries, gate hole closed by an automated shape oracle); 07-UAT.md now 12/12, 1 code-review blocker outstanding
+last_activity: 2026-08-18 -- Completed quick task 260818-obc: live-proved the broker-mediated monitor_held_elsewhere verdict AND the broker-supervised restarted respawn against a real host broker daemon and genuine stock VICE (both /usr/bin/x64sc 3.9 and /usr/local/bin/x64sc 3.10) via new stock-live-broker-monitor.test.ts; TIME-04 now Complete, 07-VALIDATION.md's nyquist_compliant flipped to true, 07-VERIFICATION.md's human_verification item closed. Along the way, fixed a live-discovered pre-existing bug in defaultBinmonProbe() (broker-launch.mts) that never demuxed unsolicited binmon event frames by request-id, which would have silently blocked every real crash-respawn-then-warm-promotion on the stock backend. The prior 07-REVIEW.md code-review blocker was ALREADY resolved by 07-REVIEW-FIX.md (all_fixed, 20/20) before this task started -- 07-REVIEW.md's own status is corrected to issues_resolved by this task as a record-hygiene fix, since it had never been updated to reflect that.
 progress:
-  total_phases: 6
-  completed_phases: 5
+  total_phases: 7
+  completed_phases: 6
   total_plans: 70
   completed_plans: 70
-  percent: 83
+  percent: 86
 ---
 
 # Project State
@@ -26,10 +26,12 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 ## Current Position
 
-Phase: 07 (cycle-timing-and-wedge-triage) — EXECUTING
-Plan: 1 of 18
-Status: Executing Phase 07
-Last activity: 2026-08-18 -- Phase 07 execution started
+Phase: 07 (cycle-timing-and-wedge-triage) — COMPLETE (18/18 plans)
+Next: Phase 08 (capability-honesty-and-the-install-story) — not started, 0/TBD plans
+Status: Phase 07 closed 2026-08-18; ready to plan Phase 08
+Last activity: 2026-08-18 -- Phase 07's last open item closed. TIME-01..TIME-04 all
+Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
+human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 28 tools -- 16 already
@@ -110,6 +112,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 260817-n6p | Fix WR-01 — bound `decode()`'s `startAddress` to `0..0xffff` in `disasm-decoder.ts` | 2026-08-17 | e19d8eb | [260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i](./quick/260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i/) |
 | 260818-nh5 | Close Phase 07 UAT gap: fix stale evidence-key assertion in `stock-live-triage.test.ts`, restore the restarted live proof, and close the manual-only gate hole | 2026-08-18 | acc9933 (+84cca54, 9831fa8) | [260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc](./quick/260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc/) |
+| 260818-obc | Live-prove the broker-mediated `monitor_held_elsewhere` verdict and the broker-supervised `restarted` respawn against a real host broker daemon and genuine stock VICE (both 3.9/3.10); closes TIME-04 | 2026-08-18 | 662dfd4, 0b236f1, b3965eb, d2a9235 | [260818-obc-live-prove-the-broker-mediated-monitor-h](./quick/260818-obc-live-prove-the-broker-mediated-monitor-h/) |
 
 ### Blockers/Concerns
 
@@ -125,10 +128,11 @@ Recent decisions affecting current work:
 - **Requirement count discrepancy resolved:** REQUIREMENTS.md said 63; the file
   contains 67 items. Corrected to 67 in the Coverage block.
 
-- **Open coverage gap:** no requirement covers revising the playbook prose in the
-  3 of 6 skills whose documented methodology depends on fork-only capabilities.
-  Runtime symptom is covered by BACK-05. Decide: add `SKILL-01` mapped to Phase
-  8, or defer explicitly. See ROADMAP.md "Coverage Notes".
+- ~~**Open coverage gap:** ... Decide: add `SKILL-01` mapped to Phase 8, or defer
+  explicitly.~~ **Decided (recorded 2026-08-18).** `SKILL-01` exists, is written up at
+  `REQUIREMENTS.md:110`, and is mapped to Phase 8 in both `REQUIREMENTS.md:227` and
+  ROADMAP.md's Phase 8 Requirements list. The decision had already been taken; only
+  this note lagged.
 
 - **`CPUHISTORY_GET` needs VICE ≥ 3.10**; Debian and all current Ubuntu ship 3.9,
   so the milestone's headline gain is unavailable on the most common `apt`
