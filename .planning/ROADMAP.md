@@ -456,7 +456,15 @@ Notes:
   3. A user installs the plugin and a working VICE from a package manager by following the documentation, with the backend choice and its consequences stated.
   4. The documentation states which backend each tool works on, derived from the shipped manifests rather than maintained by hand.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — capability-registry.ts: the 26-entry single source of truth for per-backend capability data, its unit proof, and its packaging entry (BACK-05)
+- [ ] 08-02-PLAN.md — wire the registry into vice-proxy.ts's tools/call miss branch, strictly after DENY_LIST, proven end-to-end over real stdio (BACK-05)
+- [ ] 08-03-PLAN.md — generate docs/tool-support.md from both manifests plus the registry, with a byte-identity drift guard (DIST-01)
+- [ ] 08-04-PLAN.md — section-scoped skill-honesty lint plus the four bare fork-only mentions annotated with the fork requirement and the stock route (SKILL-01)
+- [ ] 08-05-PLAN.md — README VICE-install story, per-ecosystem version table, VICE_BACKEND consequences, CI wiring, and the human install walkthrough (DIST-02, DIST-03)
+- [ ] 08-06-PLAN.md — consolidate check-skill-tool-coverage.mjs onto the registry and purge four stale forward-looking claims from docs/stock-vice-parity.md (DIST-01, SKILL-01)
 
 Notes:
 
@@ -510,7 +518,7 @@ their references.
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
-| 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
+| 8. Capability Honesty and the Install Story | 0/6 | Planned | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
