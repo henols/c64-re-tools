@@ -1483,6 +1483,11 @@ test("structure/proxy (CR-06): buildHeldLease() threads epochFile and supervisor
 const CONFORMANCE_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  // Phase 7, plan 07-09: vice_recycle's conformance case needs a `recycle`
+  // stub too -- every other conformance case never calls it, so a single
+  // shared "always succeeds" ack is safe to add here rather than a
+  // per-case override.
+  recycle: async () => ({ ok: true as const, ack: { outcome: "killed", kill_stage: "sigterm", reason: "" } }),
 } as unknown as BrokerControlSession;
 
 type ConformanceSendImpl = (commandType: number, body: Buffer) => unknown;
@@ -2412,6 +2417,163 @@ conformanceTest("vice_run_until", async () => {
   const deps = buildConformanceDeps(session);
   const result = await dispatchStock("vice_run_until", { address: "$c000", timeout_ms: 25 }, deps);
   assertAnswerConforms("vice_run_until", result);
+});
+
+// --------------------------------------------------------- wedge triage (Phase 7, TIME-04)
+
+/** Sets `process.env[name]` for the duration of `fn`, restoring the previous
+ * value (or deleting it, if previously unset) afterwards -- matching
+ * incident-record.test.ts's own withTempIncidentsDir()/stock-diagnose.test.ts's
+ * own before()/after() env-restore convention. */
+async function withEnvOverride<T>(name: string, value: string, fn: () => Promise<T>): Promise<T> {
+  const prev = process.env[name];
+  process.env[name] = value;
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env[name];
+    else process.env[name] = prev;
+  }
+}
+
+conformanceTest("vice_diagnose", async () => {
+  // VICE_STOCK_DIAGNOSE_BRACKET_MS is set small so a case that DID reach the
+  // liveness bracket would not add a quarter second per run -- this
+  // particular case never reaches the bracket at all (see below), but the
+  // override is set defensively per this plan's own instruction.
+  await withEnvOverride("VICE_STOCK_DIAGNOSE_BRACKET_MS", "5", async () => {
+    // The checkpoint_trap shape is the cheapest deterministic verdict -- it
+    // never resumes (zero CommandType.Exit sends), unlike live/wedged which
+    // both require at least one liveness bracket.
+    let memoryGetCallCount = 0;
+    const session = buildConformanceSession("conformance-vice_diagnose", (commandType) => {
+      if (commandType === CommandType.MemoryGet) {
+        memoryGetCallCount += 1;
+        // $01 (HIRAM set -- banked in), then the RAM IRQ vector pair. Not
+        // the trap here -- the checkpoint below traps on the CURRENT PC.
+        return memoryGetCallCount === 1
+          ? { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x37]), related: [] }
+          : { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x00, 0xc1]), related: [] };
+      }
+      if (commandType === CommandType.RegistersAvailable) {
+        return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 16, name: "PC" }], related: [] };
+      }
+      if (commandType === CommandType.RegistersGet) {
+        return { type: "registers" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, value: 0xc000 }], related: [] };
+      }
+      if (commandType === CommandType.CheckpointList) {
+        // fakeConformanceCheckpoint()'s own default shape: start 0xc000,
+        // stopWhenHit:true, enabled:true, operation Exec, hitCount:0 -- an
+        // armed stopping exec checkpoint at the SAME address as the PC
+        // above, so this traps on "pc" (the cheapest of the two trap shapes).
+        return { type: "checkpoint_list" as const, requestId: 1, errorCode: 0, total: 1, checkpoints: [], related: [checkpointInfoReply()] };
+      }
+      throw new Error(`vice_diagnose: unexpected commandType ${commandType} -- the checkpoint_trap path must never resume`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_diagnose", {}, deps);
+    assertAnswerConforms("vice_diagnose", result);
+    const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+    const stock = readManifest(STOCK_MANIFEST_PATH);
+    const entry = stock.tools.find((t) => t.name === "vice_diagnose")!;
+    const verdictEnum = (entry.outputSchema?.properties?.verdict as { enum?: unknown[] } | undefined)?.enum ?? [];
+    assert.ok(verdictEnum.includes(parsed.verdict), `vice_diagnose's real verdict "${String(parsed.verdict)}" must be a member of the manifest's own declared enum`);
+    assert.equal(parsed.verdict, "checkpoint_trap", "this fixture is deliberately shaped to trap at the current PC");
+  });
+});
+
+conformanceTest("vice_recycle", async () => {
+  const incidentsDir = mkdtempSync(join(tmpdir(), "vice-recycle-conformance-"));
+  try {
+    await withEnvOverride("VICE_INCIDENTS_DIR", incidentsDir, async () => {
+      // gatherStockWedgeEvidence()'s bracket step (gatherBracketEvidence())
+      // reuses runStockLivenessBracket() verbatim, which waits a real
+      // diagnoseBracketWindowMs() -- set small so this case stays fast, the
+      // same override stock-diagnose.test.ts itself uses.
+      await withEnvOverride("VICE_STOCK_DIAGNOSE_BRACKET_MS", "5", async () => {
+        let memoryGetCallCount = 0;
+        const session = buildConformanceSession("conformance-vice_recycle", (commandType) => {
+          if (commandType === CommandType.MemoryGet) {
+            // resolveStockLiveIrqHandler() runs twice across the gather (once
+            // inside the checkpoints step, once as its own irqHandler step) --
+            // alternates $01 (HIRAM set) then the RAM IRQ vector pair, cycling.
+            memoryGetCallCount += 1;
+            return memoryGetCallCount % 2 === 1
+              ? { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x37]), related: [] }
+              : { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x00, 0xc1]), related: [] };
+          }
+          if (commandType === CommandType.RegistersAvailable) {
+            return {
+              type: "registers_available" as const,
+              requestId: 1,
+              errorCode: 0,
+              registers: [
+                { id: 0, size: 16, name: "PC" },
+                { id: 1, size: 16, name: "LIN" },
+                { id: 2, size: 8, name: "CYC" },
+              ],
+              related: [],
+            };
+          }
+          if (commandType === CommandType.RegistersGet) {
+            return {
+              type: "registers" as const,
+              requestId: 1,
+              errorCode: 0,
+              registers: [
+                { id: 0, value: 0xc000 },
+                { id: 1, value: 100 },
+                { id: 2, value: 20 },
+              ],
+              related: [],
+            };
+          }
+          if (commandType === CommandType.ResourceGet) {
+            return { type: "resource_get" as const, requestId: 1, errorCode: 0, valueType: "integer" as const, value: 1 };
+          }
+          if (commandType === CommandType.CheckpointList) {
+            return { type: "checkpoint_list" as const, requestId: 1, errorCode: 0, total: 1, checkpoints: [], related: [checkpointInfoReply()] };
+          }
+          if (commandType === CommandType.Exit) {
+            return conformanceAckReply(CommandType.Exit);
+          }
+          throw new Error(`vice_recycle: unexpected commandType ${commandType}`);
+        });
+        const deps = buildConformanceDeps(session);
+        const result = await dispatchStock("vice_recycle", { reason: "conformance test recycle" }, deps);
+        assertAnswerConforms("vice_recycle", result);
+      });
+    });
+  } finally {
+    rmSync(incidentsDir, { recursive: true, force: true });
+  }
+});
+
+test("regression (Phase 7, TIME-04): stockHandlerFor resolves both proxy-local tools -- a stock call no longer reaches dispatchStock()'s refuse-by-name branch", async () => {
+  assert.equal(typeof stockHandlerFor("vice_diagnose"), "function", "vice_diagnose must have a stock dispatch handler");
+  assert.equal(typeof stockHandlerFor("vice_recycle"), "function", "vice_recycle must have a stock dispatch handler");
+
+  // A deliberately refused lease drives both tools down their own refusal
+  // path WITHOUT ever touching the wire -- proving the answer comes from
+  // their own handler (ensureStockSession's lease refusal, verbatim), never
+  // dispatchStock()'s miss branch, which never even reads deps.
+  const refusedLeaseDeps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: false, message: "regression check: deliberately refused lease" }),
+  };
+
+  const diagnoseResult = await dispatchStock("vice_diagnose", {}, refusedLeaseDeps);
+  assert.doesNotMatch(
+    JSON.stringify(diagnoseResult.content),
+    /is not implemented by the stock backend/,
+    "vice_diagnose must never fall through to dispatchStock()'s refuse-by-name text",
+  );
+
+  const recycleResult = await dispatchStock("vice_recycle", { reason: "regression check" }, refusedLeaseDeps);
+  assert.doesNotMatch(
+    JSON.stringify(recycleResult.content),
+    /is not implemented by the stock backend/,
+    "vice_recycle must never fall through to dispatchStock()'s refuse-by-name text",
+  );
 });
 
 // --------------------------------------------------------- completeness guard and negative control
