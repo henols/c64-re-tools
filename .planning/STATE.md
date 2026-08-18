@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-18T19:01:34.897Z"
-last_activity: 2026-08-18 -- Phase 8 planning complete
+last_updated: "2026-08-18T19:51:38.053Z"
+last_activity: 2026-08-18 -- Phase 08 execution started
 progress:
   total_phases: 7
   completed_phases: 6
@@ -22,14 +22,15 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 07 — cycle-timing-and-wedge-triage
+**Current focus:** Phase 08 — capability-honesty-and-the-install-story
 
 ## Current Position
 
-Phase: 07 (cycle-timing-and-wedge-triage) — COMPLETE (18/18 plans)
+Phase: 08 (capability-honesty-and-the-install-story) — EXECUTING
+Plan: 1 of 6
 Next: Phase 08 (capability-honesty-and-the-install-story) — not started, 0/TBD plans
-Status: Ready to execute
-Last activity: 2026-08-18 -- Phase 8 planning complete
+Status: Executing Phase 08
+Last activity: 2026-08-18 -- Phase 08 execution started
 Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
 human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
 

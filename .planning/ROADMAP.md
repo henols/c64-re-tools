@@ -461,7 +461,7 @@ Notes:
 Plans:
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — capability-registry.ts: the 26-entry single source of truth for per-backend capability data, its unit proof, and its packaging entry (BACK-05)
+- [x] 08-01-PLAN.md — capability-registry.ts: the 26-entry single source of truth for per-backend capability data, its unit proof, and its packaging entry (BACK-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -526,7 +526,7 @@ their references.
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
-| 8. Capability Honesty and the Install Story | 0/6 | Planned | - |
+| 8. Capability Honesty and the Install Story | 1/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
