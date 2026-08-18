@@ -16,6 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -494,4 +495,186 @@ function assertAllModuleScopeCallsGuarded() {
 
 test("call-site guard: every module-scope repoRoot() call in the real production tree passes an explicit `from:`", () => {
   assertAllModuleScopeCallsGuarded();
+});
+
+// ============================================================================
+// Part 4: the STOCK dispatch runtime cycle (07-REVIEW.md WR-16).
+//
+// Parts 1-3 above are all seeded from repo-root, so they say nothing about a
+// second, unrelated runtime cycle this milestone created:
+//
+//   stock-dispatch.ts -> stock-diagnose.ts -> stock-dispatch.ts
+//   stock-dispatch.ts -> stock-recycle.ts  -> stock-diagnose.ts -> stock-dispatch.ts
+//
+// It is live and load-bearing: stock-dispatch.ts must import the handlers to
+// register them in STOCK_DISPATCH_TABLE, and stock-diagnose.ts must import
+// ensureStockSession() to acquire a session. It does not crash ONLY because
+// every export participating in it is a hoisted `function` declaration -- a
+// `const` arrow is initialised in module-body order, so whichever module
+// finishes evaluating second reads a TDZ binding. That failure was reproduced
+// live during Phase 7 as `ReferenceError: Cannot access 'handleDiagnoseStock'
+// before initialization`, and it had no test: the `function`-not-`const` rule
+// was asserted only in doc comments, and this batch added a THIRD such export
+// (resolveAdvertisedToolDefinition) whose comment repeats the claim.
+//
+// Two complementary guards, matching this file's own belt-and-braces shape:
+//   (a) A real `import` of each cycle entry point in its own child process --
+//       the runtime proof. A TDZ regression is a load-time crash, so importing
+//       each member FIRST (module evaluation order differs per entry point) is
+//       what actually exercises it.
+//   (b) A source-text check that no handler exported from a cycle member is a
+//       `const` arrow -- the categorical rule, which holds even for an
+//       ordering that (a) happens not to hit today. Same rationale as Part 1's
+//       static check over a runtime-crash test.
+// ============================================================================
+
+/** Like extractRelativeImportSpecifiers() above, but VALUE imports only: a
+ * statement beginning `import type` / `export type` erases completely under
+ * `verbatimModuleSyntax`, so it creates no runtime edge and cannot participate
+ * in a TDZ hazard. This distinction is load-bearing here and NOT a refinement
+ * of Part 2's graph: with type edges included, essentially every stock-*
+ * module appears to be "in the cycle" (they all type-import StockToolResult /
+ * StockDispatchDeps), which would make the guard below police 19 files for a
+ * hazard only 3 of them can actually have -- and would fail today on
+ * stock-checkpoints.ts's perfectly safe `const` handlers.
+ *
+ * A statement mixing values with inline `{ type X }` specifiers IS a value
+ * import and is deliberately still counted; only the wholly type-only form is
+ * skipped, which is exactly what the compiler erases. */
+function extractValueImportSpecifiers(text: string): Set<string> {
+  const specifiers = new Set<string>();
+  for (const m of text.matchAll(/^[ \t]*(?:import|export)\s+(?!type\s)[^;]*?from\s+["'](\.[^"']+)["']/gm)) {
+    specifiers.add(m[1]!);
+  }
+  for (const m of text.matchAll(/^[ \t]*import\s+["'](\.[^"']+)["']/gm)) {
+    specifiers.add(m[1]!);
+  }
+  return specifiers;
+}
+
+function buildValueImportGraph(moduleNames: string[]): Map<string, string[]> {
+  const moduleSet = new Set(moduleNames);
+  const graph = new Map<string, string[]>();
+  for (const name of moduleNames) {
+    const text = readFileSync(join(HERE, name), "utf8");
+    const edges: string[] = [];
+    for (const specifier of extractValueImportSpecifiers(text)) {
+      const basename = specifier.split("/").pop()!;
+      if (moduleSet.has(basename) && basename !== name) edges.push(basename);
+    }
+    graph.set(name, edges);
+  }
+  return graph;
+}
+
+/** The cycle's members, DERIVED from the real VALUE-import graph rather than
+ * hardcoded, seeded from stock-dispatch.ts (the registration end -- every
+ * cycle in this family passes through it). Returns the flat set of modules
+ * participating in any runtime cycle through the seed, including the seed. */
+function stockDispatchCycleMembers(): string[] {
+  const seed = resolveModuleByStem("stock-dispatch");
+  const graph = buildValueImportGraph(listModuleFiles());
+  const members = new Set<string>([seed]);
+  for (const cycle of findCyclesThroughNode(graph, seed)) {
+    for (const member of cycle) members.add(member);
+  }
+  return [...members].sort();
+}
+
+test("stock cycle (WR-16): the dispatch/diagnose/recycle runtime cycle is REAL -- this guard is not vacuous", () => {
+  const members = stockDispatchCycleMembers();
+  // If this ever shrinks to just the seed the cycle was broken structurally,
+  // which is a fine outcome -- but then the two guards below are policing
+  // nothing and this assertion is the signal to retire them deliberately
+  // rather than let them pass vacuously (exactly the failure mode
+  // 01.6.1-08 found in Part 2's own DFS seed).
+  assert.ok(
+    members.length >= 2,
+    `expected a real import cycle through stock-dispatch.ts, found only ${JSON.stringify(members)} -- if the cycle was ` +
+      "broken structurally, retire Part 4 deliberately instead of leaving it vacuous"
+  );
+  assert.ok(members.includes(resolveModuleByStem("stock-diagnose")), `expected stock-diagnose in the cycle, got ${JSON.stringify(members)}`);
+});
+
+test("stock cycle (WR-16): importing each cycle member FIRST, in its own process, does not throw -- the live ReferenceError regression", () => {
+  for (const member of stockDispatchCycleMembers()) {
+    // A fresh child per entry point: module evaluation order is decided by
+    // whichever module the loader starts from, and the TDZ hazard only bites
+    // for some starting points. Importing them all in one process would let
+    // the first import warm the graph for the rest.
+    const result = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", `await import(${JSON.stringify("./" + member)});`],
+      { cwd: HERE, encoding: "utf8" }
+    );
+    assert.equal(
+      result.status,
+      0,
+      `importing ./${member} first crashed at load time -- this is the ${""}` +
+        `stock-dispatch/stock-diagnose/stock-recycle cycle biting. A member's exported handler was probably changed from a ` +
+        `hoisted \`function\` declaration to a \`const\` arrow (see the next test).\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      /before initialization/,
+      `importing ./${member} first produced a TDZ error: ${result.stderr}`
+    );
+  }
+});
+
+/** Every `export const <name> = ... =>` (or `= async (`/`= function`) binding
+ * in `text` whose name looks like a dispatch handler -- i.e. `handle*` or
+ * `resolve*`/`dispatch*`, the three shapes the cycle members actually export
+ * into each other. Source-text only, block-comment aware, so a doc comment
+ * QUOTING the forbidden shape (which several of these files do, to warn
+ * against it) is never counted. */
+function exportedConstHandlers(text: string): string[] {
+  const found: string[] = [];
+  let inBlockComment = false;
+  for (const line of text.split("\n")) {
+    if (inBlockComment) {
+      if (line.includes("*/")) inBlockComment = false;
+      continue;
+    }
+    const trimmed = line.replace(/^[ \t]+/, "");
+    if (trimmed.startsWith("//")) continue;
+    if (trimmed.startsWith("/*")) {
+      if (!line.includes("*/")) inBlockComment = true;
+      continue;
+    }
+    const m = /^export\s+const\s+((?:handle|dispatch|resolve)\w*)\s*(?::[^=]*)?=/.exec(trimmed);
+    if (m) found.push(m[1]!);
+  }
+  return found;
+}
+
+test("exportedConstHandlers(): recognises the forbidden shape and ignores comments and non-handlers (WR-16, red-then-green)", () => {
+  assert.deepEqual(exportedConstHandlers("export const handleFoo = async () => {};"), ["handleFoo"]);
+  assert.deepEqual(exportedConstHandlers("export const handleFoo: StockSessionHandler = async (a, b) => {};"), ["handleFoo"]);
+  assert.deepEqual(exportedConstHandlers("export const dispatchThing = () => {};"), ["dispatchThing"]);
+  assert.deepEqual(exportedConstHandlers("export const resolveThing = () => {};"), ["resolveThing"]);
+  assert.deepEqual(exportedConstHandlers("export async function handleFoo() {}"), [], "a hoisted function declaration is the REQUIRED shape");
+  assert.deepEqual(exportedConstHandlers("export const STOCK_DIAGNOSE_VERDICTS = Object.freeze([]);"), [], "a plain data export is not a handler");
+  assert.deepEqual(exportedConstHandlers("// export const handleFoo = () => {};"), [], "a line comment quoting the shape must not count");
+  assert.deepEqual(
+    exportedConstHandlers("/**\n * Never write `export const handleFoo = () => {}` here.\n */\nexport async function handleFoo() {}"),
+    [],
+    "a block comment quoting the shape must not count -- these files deliberately document the rule in prose"
+  );
+});
+
+test("stock cycle (WR-16): no handler exported from a cycle member is a `const` arrow -- the rule the doc comments only asserted", () => {
+  const members = stockDispatchCycleMembers();
+  for (const member of members) {
+    const offenders = exportedConstHandlers(readFileSync(join(HERE, member), "utf8"));
+    assert.deepEqual(
+      offenders,
+      [],
+      `${member} exports ${JSON.stringify(offenders)} as \`const\` arrow(s) while participating in the runtime cycle ` +
+        `${JSON.stringify(members)}. A \`const\` is initialised in module-body order, so whichever module finishes ` +
+        "evaluating second reads a TDZ binding -- reproduced live in Phase 7 as \"Cannot access 'handleDiagnoseStock' " +
+        "before initialization\". Declare it as a hoisted `function` instead. (Handlers in NON-cycle modules, e.g. " +
+        "stock-timing.ts's handleCyclesStopwatch, are unaffected and deliberately not policed here.)"
+    );
+  }
 });
