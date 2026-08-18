@@ -52,9 +52,15 @@ probe script (`.claude/mcp/vice/probe-binmon.mjs`).
   correctly states that `REGISTERS_GET` can source `LIN`/`CYC` cycle data; it
   no longer proposes building a frame-counter stopwatch from it.
 - **`CPUHISTORY_GET` (0x86) is the other stopwatch route.** Each history entry
-  ends with a **uint64 absolute clock** (`write_uint64(current->cycle, …)` in
-  `monitor_binary.c`). Read the newest entry's cycle before and after a run; the
-  difference is a cycle-accurate elapsed count.
+  carries a **uint64 absolute clock** (`write_uint64(current->cycle, …)` in
+  `monitor_binary.c`), followed by `instruction_length` and the instruction
+  bytes — the cycle is **not** the last field of an entry. Read the **newest**
+  entry's cycle before and after a run; the difference is a cycle-accurate
+  elapsed count. **The newest entry is the LAST element of the returned array,
+  not the first** — entries arrive oldest-first (proven 2026-08-18 against
+  `fixtures/binmon/cpuhistory-get-multi.bin`, four entries with strictly
+  ascending cycles). See §5's corrected response layout below for the exact
+  wire shape.
 - **VERIFY — the availability gate is the VICE version, not a build flag.**
   `--enable-cpuhistory` is on by default (`configure.ac:120,521`), and Debian,
   Ubuntu, Homebrew and official VICE CI all build with it — whether the feature
@@ -155,9 +161,40 @@ INVALID_LENGTH `0x80`, INVALID_PARAMETER `0x81`, INVALID_API_VERSION `0x82`,
 INVALID_TYPE `0x83`, CMD_FAILURE `0x8f`.
 
 **`CPUHISTORY_GET` request body:** `memspace` (1 byte, `0x00` = main) +
-`count` (uint32). Response: uint32 entry count, then per entry:
-`item_size`(1) + register block + **cycle (uint64)** + instr_len(1) + opcode +
-operands.
+`count` (uint32).
+
+**`CPUHISTORY_GET` response body (CORRECTED 2026-08-18, plan 07-12 — re-derived
+from `monitor_binary_process_cpuhistory()` and verified byte-by-byte against
+`.claude/mcp/vice/fixtures/binmon/cpuhistory-get.bin` and
+`cpuhistory-get-multi.bin`, both genuine captures from VICE 3.10):**
+
+```
+count(u32LE), then per entry:
+  item_size(1)          -- the byte count of EVERYTHING AFTER this byte, so the
+                           entry stride is item_size + 1. It is NOT the
+                           register-block length alone.
+  regCount(u16LE)       -- number of register items that follow
+  regCount x { size(1), id(1), value(u16LE) }
+  cycle(u64LE)
+  instruction_length(1) -- a hardcoded 4 in VICE, never a decoded instruction
+                           size
+  instruction_length bytes of instruction data (opcode, p1, p2, and a trailing
+  placeholder byte for a third parameter that exists on some machines)
+```
+
+Entries arrive **OLDEST-first**: `entries[count-1]` is the newest, so a
+stopwatch must index from the END of the array, never `entries[0]`.
+
+The earlier wording in this section — `item_size`(1) + register block + cycle +
+instr_len + opcode + operands, read as "`item_size` denotes the raw
+register-block byte count alone", with "read the *newest* entry" and no
+statement of the ordering — was **disproven live** and produced a real decode
+bug (07-VERIFICATION.md gap 1: a genuine 52-byte reply was rejected as
+"needs at least 65", which in turn killed the connect handshake). Do not
+restore it. The authoritative implementations are
+`.claude/mcp/vice/stock-protocol.ts`'s `ResponseType.CpuHistoryGet` parse branch
+and its hostile-input regressions in `stock-protocol.test.ts`; this section and
+those must be changed together.
 
 ## The empirical probe has been run — see docs/phase1-probe-results.md
 
