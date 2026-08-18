@@ -89,7 +89,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 ### Timing
 
 - [x] **TIME-01**: User can measure elapsed CPU cycles on the stock backend, on any supported VICE version
-- [ ] **TIME-02**: User can run until an address is reached, exactly
+- [x] **TIME-02**: User can run until an address is reached, exactly
 - [x] **TIME-03**: Cycle-bounded execution is either supported or reports its approximation honestly
 - [x] **TIME-04**: `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend
 
@@ -206,7 +206,7 @@ and the sequencing rationale.
 | GAIN-08 | Phase 6 | Pending |
 | GAIN-09 | Phase 6 | Pending |
 | TIME-01 | Phase 7 | Complete |
-| TIME-02 | Phase 7 | Pending |
+| TIME-02 | Phase 7 | Complete |
 | TIME-03 | Phase 7 | Complete |
 | TIME-04 | Phase 7 | Complete |
 | BROK-01 | Phase 2 | Complete |
