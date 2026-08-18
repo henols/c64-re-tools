@@ -204,3 +204,11 @@ No blockers for 08-05. One pre-existing, narrowly-scoped documentation gap (`too
 ---
 *Phase: 08-capability-honesty-and-the-install-story*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: `scripts/check-skill-fork-honesty.mjs`
+- FOUND: `.planning/phases/08-capability-honesty-and-the-install-story/08-04-SUMMARY.md`
+- FOUND commit: `03e3308` (Task 1)
+- FOUND commit: `3038edb` (Task 2)
+- FOUND commit: `a835e06` (plan metadata)
