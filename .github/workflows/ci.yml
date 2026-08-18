@@ -88,6 +88,14 @@ jobs:
       - name: Validate skill tool coverage against the stock manifest (Phase 5 criterion 5)
         run: node scripts/check-skill-tool-coverage.mjs
 
+      # Blocking: a skill playbook naming a tool the active backend does not
+      # advertise breaks a user's session with an unwarned refusal, and a
+      # README that no longer tells a reader which VICE to install or which
+      # tools require the fork silently reopens Phase 8's install-honesty
+      # gap (DIST-02/DIST-03, SKILL-01).
+      - name: Validate skill playbook and README backend-honesty (Phase 8)
+        run: node scripts/check-skill-fork-honesty.mjs
+
       - name: Build installable package
         run: bash scripts/package.sh
 

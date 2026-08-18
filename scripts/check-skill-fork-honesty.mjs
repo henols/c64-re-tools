@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-// SKILL-01: a playbook naming a fork-only tool with no fork-requirement
-// sentence nearby sends Claude into a refusal it was never warned about --
-// and CLAUDE.md's Compatibility constraint says such a skill *breaks* on
-// stock rather than degrading. This is the ONE place that checks proximity
-// honesty of fork-only tool mentions in playbook prose: every mention of a
-// tool the active backend might not advertise must sit in a markdown section
-// that also states the fork requirement (and the stock route, when one
-// exists).
+// SKILL-01/DIST-02/DIST-03: a playbook naming a fork-only tool with no
+// fork-requirement sentence nearby sends Claude into a refusal it was never
+// warned about -- and CLAUDE.md's Compatibility constraint says such a skill
+// *breaks* on stock rather than degrading. This is the ONE place that checks
+// documentation honesty over first-party prose, and it now covers TWO
+// surfaces sharing that same failure class:
+//   1. playbook prose (.claude/skills/): every mention of a tool the active
+//      backend might not advertise must sit in a markdown section that also
+//      states the fork requirement (and the stock route, when one exists).
+//   2. README.md: it must name the VICE_BACKEND switch, the two named
+//      fork-only tools, the generated support-table link and the version
+//      gate, and it must never re-introduce the ghost guardrail-test claim
+//      or the regenerator2000 name Phase 8 removed.
+// Both are documentation-honesty checks over first-party prose read as data,
+// and one CI-blocking step is cheaper to keep green than two.
 //
 // WHAT NOT TO DO: do not hand-maintain a second list of fork-only tool names
 // here. The list is derived from capability-registry.ts's CAPABILITY_REGISTRY
@@ -16,8 +23,9 @@
 //
 // This script only ever readFileSync()s and regex-matches. It never uses a
 // dynamic import, require, eval, or a spawn against anything under
-// .claude/skills/ -- skill content is untrusted input that is matched, never
-// executed. The only import is the first-party capability-registry.ts.
+// .claude/skills/ or README.md -- both are untrusted/first-party prose that
+// is matched, never executed. The only import is the first-party
+// capability-registry.ts.
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -26,6 +34,7 @@ import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts"
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
 const SKILLS_DIR = join(ROOT, ".claude/skills");
+const README_PATH = join(ROOT, "README.md");
 
 const errors = [];
 const need = (cond, msg) => {
@@ -197,6 +206,50 @@ for (const f of skillFiles) {
   }
 }
 
+// --- README presence assertions (08-05, DIST-02/DIST-03) -------------------
+// Plan 08-05 extends this script rather than re-deriving its walk/report
+// shape (08-04-SUMMARY.md's own "Next Phase Readiness" note). README.md is
+// read ONCE with readFileSync and matched by plain substring containment --
+// never a regex constructed from its content, never eval, never a spawn.
+const readmeSource = readFileSync(README_PATH, "utf8");
+
+const REQUIRED_README_SUBSTRINGS = [
+  ["VICE_BACKEND", "a reader cannot select a backend at all"],
+  [
+    "vice_sid_get_state",
+    "a stock user is not warned this tool requires the fork before they design a method around it",
+  ],
+  [
+    "vice_keyboard_matrix",
+    "a stock user is not warned this tool requires the fork before they design a method around it",
+  ],
+  ["docs/tool-support.md", "the reader loses their route to the full per-tool answer"],
+  ["3.10", "the reader cannot tell what an `apt install` of VICE gives them relative to the version gate"],
+];
+for (const [needle, whatIsLost] of REQUIRED_README_SUBSTRINGS) {
+  need(
+    readmeSource.includes(needle),
+    `README.md is missing the required string "${needle}" -- without it, ${whatIsLost}.`
+  );
+}
+
+// Inverse assertions: catch a regression back into a false claim, in either
+// direction of drift.
+const FORBIDDEN_README_SUBSTRINGS = [
+  ["regenerator2000", "D-B: this phase's install docs must stay regenerator2000-free"],
+  [
+    "skill-docs.test.ts",
+    "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo",
+  ],
+  [
+    "vice-mcp-selector-docs.test.ts",
+    "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo",
+  ],
+];
+for (const [needle, why] of FORBIDDEN_README_SUBSTRINGS) {
+  need(!readmeSource.includes(needle), `README.md must not contain "${needle}" -- ${why}.`);
+}
+
 // --- Non-vacuity controls ---------------------------------------------------
 // A lint that finds nothing passes everything -- these are need()s, not
 // comments.
@@ -231,5 +284,6 @@ if (errors.length) {
 console.log(
   `check-skill-fork-honesty: OK -- ${totalForkMentions} fork-only mentions across ${skillFiles.length} files in ` +
     `${topLevelDirs.length} skill directories, all section-scoped-compliant; ${FORK_ONLY_NAMES.size} fork-only ` +
-    `names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found.`
+    `names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all ` +
+    `${REQUIRED_README_SUBSTRINGS.length} required strings and none of the ${FORBIDDEN_README_SUBSTRINGS.length} forbidden ones.`
 );
