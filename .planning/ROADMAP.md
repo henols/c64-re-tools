@@ -143,7 +143,7 @@ Notes:
   4. Against recorded and synthesised frames, the client survives byte-at-a-time delivery, a ~157 KB `DISPLAY_GET`, a zero-length `JAM`, an event interleaved between a request and its reply, a `CHECKPOINT_LIST` answering N+1 frames on one request id, an error reply typed `0x00`, a duplicate reply on a settled id, and a mid-stream desync — and it never resolves a pending request with a `0xffffffff` event, including when the event shares a response type with a legitimate reply.
   5. A user can ask which backend is active and which VICE version is connected and gets both; the version-gated capabilities of that build are determined at connect time rather than at first use, and an emulator that died or restarted underneath the client is reported distinctly from a timeout.
 
-**Plans**: 10 plans in 7 waves
+**Plans**: 18 plans — 10 executed in 7 waves, plus 8 gap-closure plans in 3 further waves
 Plans:
 **Wave 1**
 
@@ -382,7 +382,7 @@ under `.planning/phases/`; renumbering would invalidate every cross-reference.
   3. `vice_diagnose` distinguishes, on the stock backend, an emulator that is genuinely wedged from one stopped at the user's own checkpoint, one that crashed and respawned, one merely paused, **and one whose binary monitor is already held by another client**.
   4. `vice-wedge-triage`'s documented opening move works on stock rather than returning fork HTTP failure text.
 
-**Plans**: 10 plans in 7 waves
+**Plans**: 18 plans — 10 executed in 7 waves, plus 8 gap-closure plans in 3 further waves
 Plans:
 **Wave 1** *(four independent plans, disjoint file ownership -- none writes a shared registration file)*
 
@@ -414,6 +414,25 @@ Plans:
 **Wave 7** *(blocked on 07-09)*
 
 - [x] 07-10-PLAN.md — `docs/stock-vice-parity.md` divergences, `vice-wedge-triage/SKILL.md`'s stock route (criterion 4), and `07-VALIDATION.md`'s resolved task-ID map [wave 7]
+
+**Gap closure** *(planned 2026-08-18 after `07-VERIFICATION.md` returned `gaps_found`, 1/4 must-haves verified; waves renumbered from 1 for this batch — execute-phase runs only the unexecuted plans. Plans 07-01..07-10 are shipped history and were not modified.)*
+
+**Wave 1** *(four independent plans, disjoint file ownership)*
+
+- [ ] 07-11-PLAN.md — gap 1 / CR-01: a `CPUHISTORY_GET` decode failure becomes a capability value instead of failing the whole stock handshake [wave 1]
+- [ ] 07-12-PLAN.md — gap 1 root cause / WR-13 + CR-02: re-derive the `CPUHISTORY_GET` per-entry layout from `monitor_binary.c` against three real captured fixtures, and fix the `RESOURCE_GET` integer guard [wave 1]
+- [ ] 07-14-PLAN.md — gap 2 / WR-01 + WR-02: resolve the cleanup race from the program counter, and report `machineHalted` on every `vice_run_until` answer [wave 1]
+- [ ] 07-15-PLAN.md — gap 3 / WR-03: derive `machinePaused` from observed run state, and add the classified non-verdict `diagnosis_unavailable` outcome (D-03's five verdicts unchanged) [wave 1]
+
+**Wave 2** *(blocked on wave 1; disjoint file ownership)*
+
+- [ ] 07-13-PLAN.md — gaps 1/3/4 live proof: `stockConnect()` on both real binaries, the Route A stopwatch on genuine VICE 3.10, and bounded diagnosis under real second-client contention [wave 2]
+- [ ] 07-16-PLAN.md — gap 3 / WR-07: backend-aware advertisement for `vice_diagnose`/`vice_recycle`, plus the manifest `outputSchema` deltas for the new answer fields [wave 2]
+- [ ] 07-17-PLAN.md — gap 3 live proof: `checkpoint_trap`, `wedged` (a real CPU JAM held in the monitor) and `restarted` (a real kill-and-relaunch) against a real emulator [wave 2]
+
+**Wave 3** *(blocked on all of the above)*
+
+- [ ] 07-18-PLAN.md — gap 4: correct `docs/stock-vice-parity.md`'s false live-confirmed claim, give the skill a `diagnosis_unavailable` response, and re-mark `TIME-01`..`TIME-04` from recorded evidence [wave 3]
 
 Notes:
 
