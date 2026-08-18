@@ -2318,6 +2318,74 @@ conformanceTest("vice_ping", async () => {
   assertAnswerConforms("vice_ping", result);
 });
 
+// --------------------------------------------------------- timing (Phase 7, TIME-01/TIME-02)
+
+conformanceTest("vice_cycles_stopwatch", async () => {
+  // buildConformanceSession()'s capabilities.cpuHistory is always "absent",
+  // so this case exercises Route B (frame-position reconstruction via
+  // REGISTERS_AVAILABLE/REGISTERS_GET), not Route A (CPUHISTORY_GET) --
+  // dispatched with action:"reset", the action that produces an ok answer
+  // with no prior baseline needed.
+  const session = buildConformanceSession("conformance-vice_cycles_stopwatch", (commandType) => {
+    if (commandType === CommandType.RegistersAvailable) {
+      return {
+        type: "registers_available" as const,
+        requestId: 1,
+        errorCode: 0,
+        registers: [
+          { id: 0, size: 16, name: "PC" },
+          { id: 1, size: 16, name: "LIN" },
+          { id: 2, size: 8, name: "CYC" },
+        ],
+        related: [],
+      };
+    }
+    if (commandType === CommandType.RegistersGet) {
+      return {
+        type: "registers" as const,
+        requestId: 2,
+        errorCode: 0,
+        registers: [
+          { id: 0, value: 0x0801 },
+          { id: 1, value: 100 },
+          { id: 2, value: 20 },
+        ],
+        related: [],
+      };
+    }
+    if (commandType === CommandType.ResourceGet) {
+      return { type: "resource_get" as const, requestId: 3, errorCode: 0, valueType: "integer" as const, value: 1 };
+    }
+    throw new Error(`vice_cycles_stopwatch: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_cycles_stopwatch", { action: "reset" }, deps);
+  assertAnswerConforms("vice_cycles_stopwatch", result);
+});
+
+conformanceTest("vice_run_until", async () => {
+  // The conformance harness's client never synthesises a checkpoint_info
+  // event, so this case exercises the TIMEOUT answer shape -- the shape a
+  // caller sees on an address that never executes. An explicit small
+  // timeout_ms (25ms) keeps this case fast; it must never wait out the
+  // production 30000ms default.
+  const session = buildConformanceSession("conformance-vice_run_until", (commandType) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoReply();
+    }
+    if (commandType === CommandType.Exit) {
+      return conformanceAckReply(CommandType.Exit);
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      return conformanceAckReply(CommandType.CheckpointDelete);
+    }
+    throw new Error(`vice_run_until: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_run_until", { address: "$c000", timeout_ms: 25 }, deps);
+  assertAnswerConforms("vice_run_until", result);
+});
+
 // --------------------------------------------------------- completeness guard and negative control
 
 test("conformance (D-02) completeness guard: CONFORMANCE_TOOL_NAMES covers exactly the stock manifest's tool names", () => {
