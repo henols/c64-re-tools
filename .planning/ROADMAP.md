@@ -401,7 +401,7 @@ Plans:
 
 **Wave 4** *(blocked on 07-06)*
 
-- [ ] 07-07-PLAN.md — `stock-recycle.ts` (D-01): the stock-native evidence gatherer with no screenshot, the incident record written before the destructive broker RPC, and `stockDisconnect()` teardown [wave 4]
+- [x] 07-07-PLAN.md — `stock-recycle.ts` (D-01): the stock-native evidence gatherer with no screenshot, the incident record written before the destructive broker RPC, and `stockDisconnect()` teardown [wave 4]
 
 **Wave 5** *(blocked on 07-03 and 07-05; sole owner of every shared registration file this wave)*
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 7/10 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 8/10 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
