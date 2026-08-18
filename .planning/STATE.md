@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-18T10:46:37.709Z"
-last_activity: 2026-08-18 -- Completed quick task 260818-obc: live-proved the broker-mediated monitor_held_elsewhere verdict AND the broker-supervised restarted respawn against a real host broker daemon and genuine stock VICE (both /usr/bin/x64sc 3.9 and /usr/local/bin/x64sc 3.10) via new stock-live-broker-monitor.test.ts; TIME-04 now Complete, 07-VALIDATION.md's nyquist_compliant flipped to true, 07-VERIFICATION.md's human_verification item closed. Along the way, fixed a live-discovered pre-existing bug in defaultBinmonProbe() (broker-launch.mts) that never demuxed unsolicited binmon event frames by request-id, which would have silently blocked every real crash-respawn-then-warm-promotion on the stock backend. The prior 07-REVIEW.md code-review blocker was ALREADY resolved by 07-REVIEW-FIX.md (all_fixed, 20/20) before this task started -- 07-REVIEW.md's own status is corrected to issues_resolved by this task as a record-hygiene fix, since it had never been updated to reflect that.
+last_updated: "2026-08-18T19:01:34.897Z"
+last_activity: 2026-08-18 -- Phase 8 planning complete
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 70
+  total_plans: 76
   completed_plans: 70
   percent: 86
 ---
@@ -28,8 +28,8 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 Phase: 07 (cycle-timing-and-wedge-triage) — COMPLETE (18/18 plans)
 Next: Phase 08 (capability-honesty-and-the-install-story) — not started, 0/TBD plans
-Status: Phase 07 closed 2026-08-18; ready to plan Phase 08
-Last activity: 2026-08-18 -- Phase 07's last open item closed. TIME-01..TIME-04 all
+Status: Ready to execute
+Last activity: 2026-08-18 -- Phase 8 planning complete
 Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
 human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
 

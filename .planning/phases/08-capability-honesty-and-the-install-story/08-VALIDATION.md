@@ -49,8 +49,8 @@ weakened.
 | TBD | TBD | 0 | BACK-05 | — | A genuinely unknown name still yields the plain `Unknown tool: X`; registry returns `undefined` | unit (regression guard) | `node --test capability-registry.test.ts` | ❌ W0 | ⬜ pending |
 | TBD | TBD | 1 | BACK-05 | T-08 (DENY_LIST ordering) | Registry lookup runs strictly **after** the pre-existing `DENY_LIST` check in the `CallToolRequestSchema` override — never before, never instead | unit + structural | `node --test vice-proxy.test.ts` | ✓ harness / ❌ case | ⬜ pending |
 | TBD | TBD | 1 | BACK-05 | — | Real stdio proxy under `VICE_BACKEND=stock` answers a live `tools/call` for `vice_sid_get_state` with `isError:true` and the structured text | integration | `node --test vice-proxy.test.ts` (reuse `startProxy()`/`handshake()`) | ✓ harness / ❌ case | ⬜ pending |
-| TBD | TBD | 0 | DIST-01 | — | Generated support table is byte-identical to a fresh regeneration from both manifests + registry | unit (drift guard) | `node --test tool-support-table.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1 | DIST-01 | — | Per-tool fork/stock columns are mechanically derived — a scratch-manifest fixture with a changed tool count changes the generated row count | structural | `node --test tool-support-table.test.ts` | ❌ W0 | ⬜ pending |
+| TBD | TBD | 0 | DIST-01 | — | Generated support table is byte-identical to a fresh regeneration from both manifests + registry | unit (drift guard) | `node --test tool-support-table.test.mjs` | ❌ W0 | ⬜ pending |
+| TBD | TBD | 1 | DIST-01 | — | Per-tool fork/stock columns are mechanically derived — a scratch-manifest fixture with a changed tool count changes the generated row count | structural | `node --test tool-support-table.test.mjs` | ❌ W0 | ⬜ pending |
 | TBD | TBD | 1 | SKILL-01 | — | Every mention of `vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore` in all six skills sits within bounded proximity of a fork-requirement sentence | lint (mechanical) | `node scripts/check-skill-fork-honesty.mjs` | ❌ W0 | ⬜ pending |
 | TBD | TBD | 1 | DIST-02, DIST-03 | — | `README.md` contains the literal strings `VICE_BACKEND`, `vice_sid_get_state`, `vice_keyboard_matrix` | lint (presence) | `node scripts/check-skill-fork-honesty.mjs` | ❌ W0 | ⬜ pending |
 | TBD | TBD | — | DIST-03 | — | A human installs stock VICE from a package manager, sets the backend, and runs one skill end to end | **manual only** | see § Manual-Only Verifications | N/A | ⬜ pending |
@@ -63,7 +63,7 @@ weakened.
 
 - [ ] `.claude/mcp/vice/capability-registry.ts` + `.claude/mcp/vice/capability-registry.test.ts` — the BACK-05 data/function and its unit tests
 - [ ] New assertion in `.claude/mcp/vice/vice-proxy.test.ts` exercising the real `CallToolRequestSchema` override end-to-end (reuse the existing `startProxy()`/`handshake()` harness; model on the existing `tools_call`-refusal test)
-- [ ] `scripts/generate-tool-support-table.mjs` + a drift test (`.claude/mcp/vice/tool-support-table.test.ts`) modelled line-for-line on `resources-sync.test.ts`
+- [ ] `scripts/generate-tool-support-table.mjs` + a drift test (`.claude/mcp/vice/tool-support-table.test.mjs`) modelled line-for-line on `resources-sync.test.ts` (the `.mjs` extension is forced, not stylistic: a `.ts` test importing the repo-root `.mjs` generator fails `tsc --noEmit` with `TS7016`, because `.claude/mcp/vice/tsconfig.json` sets `allowJs: false` and includes only `**/*.ts` and `**/*.mts`)
 - [ ] `scripts/check-skill-fork-honesty.mjs` for SKILL-01's mechanical check, CI-wired alongside the existing `check-skill-tool-coverage.mjs` step
 - [ ] A presence-check assertion that `README.md` contains the required literal strings — may be folded into `check-skill-fork-honesty.mjs` rather than a separate file
 

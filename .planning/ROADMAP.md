@@ -289,6 +289,7 @@ Notes:
 - **Two planning-time corrections to the note above (Phase 4 research, 2026-08-17).** (a) The real illegal-`NOP` set is **27 opcodes across 6 addressing-mode groups** (6 implied/1-byte, 5 immediate/2-byte, 3 zeropage/2-byte, 6 zeropage,X/2-byte, 1 absolute/3-byte, 6 absolute,X/3-byte) — no grouping of them yields twelve. Criterion 2 above is corrected accordingly, and the verification is written exhaustively over all 256 opcodes, which is a strict superset. (b) **`fluffy-6502` could not be located under that name** on GitHub or the general web, so it is **not** a cross-check source. The `aaabbbcc` bit-pattern derivation test and the byte-exact real-ACME round-trip carry that burden instead, and `THIRD-PARTY-NOTICES.md` records `fluffy-6502` as an unavailable non-source rather than citing it.
 - Over-read by two bytes and drop instructions starting past the requested end, so truncation only ever happens at a genuine memspace boundary.
 - Blocks: DERIV-02 (backtrace needs instruction lengths) and GAIN-01 (CPU-history decode uses the same table).
+
 ### Phase 5: Skill-Critical Derived Tools
 
 **Goal**: Every tool the six shipped skills actually call either works on stock or is explicitly routed to the fork
@@ -457,12 +458,19 @@ Notes:
   4. The documentation states which backend each tool works on, derived from the shipped manifests rather than maintained by hand.
 
 **Plans**: 6 plans
-
 Plans:
+**Wave 1**
+
 - [ ] 08-01-PLAN.md — capability-registry.ts: the 26-entry single source of truth for per-backend capability data, its unit proof, and its packaging entry (BACK-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 08-02-PLAN.md — wire the registry into vice-proxy.ts's tools/call miss branch, strictly after DENY_LIST, proven end-to-end over real stdio (BACK-05)
 - [ ] 08-03-PLAN.md — generate docs/tool-support.md from both manifests plus the registry, with a byte-identity drift guard (DIST-01)
 - [ ] 08-04-PLAN.md — section-scoped skill-honesty lint plus the four bare fork-only mentions annotated with the fork requirement and the stock route (SKILL-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 08-05-PLAN.md — README VICE-install story, per-ecosystem version table, VICE_BACKEND consequences, CI wiring, and the human install walkthrough (DIST-02, DIST-03)
 - [ ] 08-06-PLAN.md — consolidate check-skill-tool-coverage.mjs onto the registry and purge four stale forward-looking claims from docs/stock-vice-parity.md (DIST-01, SKILL-01)
 
@@ -589,6 +597,7 @@ and finish the install and playbook story (Phase 12).
 - **`--vice` is never passed.** Guarded in the launch path, not merely
   documented (`R2000-01`). This is the constraint the whole milestone shape
   follows from.
+
 - **regenerator2000 runs on the MCP proxy's side of the container boundary.** No
   `hostpath.ts` / `containerpath.ts` translation is applied to any argument
   passed to it (`R2000-02`). This is what makes devcontainer use and two
@@ -596,13 +605,16 @@ and finish the install and playbook story (Phase 12).
   namespaces mean the hardcoded `127.0.0.1:3000` stops colliding. Note the
   inversion hazard: were it host-side, the project-file argument *would* need
   host translation, the mirror image of the `DERIV-07` screenshot-path trap.
+
 - **Phase 4's disassembler stays.** Its sole non-test consumer is
   `stock-disassemble.ts` — `vice_disassemble` against live RAM at a checkpoint,
   which a file-based static tool cannot serve. Phase 5's backtrace also needs
   the opcode table.
+
 - **Phase 5 does not shrink.** regenerator2000's sprite/bitmap/charset views are
   TUI-only and not MCP-exposed, so the agent-readable ASCII rendering is still
   required.
+
 - **The emulator depack route stays.** regenerator2000's unpacker becomes the
   fast path for the packers it recognises; the emulator handles custom loaders
   and disk-based loads its sandbox cannot.
@@ -634,6 +646,7 @@ Consequences carried, not solved: r2000-assisted two-release diffing in
 user (`R2000-04`) rather than worked around. Synthesizing a `.regen2000proj`
 ourselves was considered and rejected — it depends on an undocumented serde
 format, and the pty bootstrap makes it unnecessary.
+
 ## Phases
 
 Two phases, not four. Collapsed 2026-08-17 by the same test applied to v0.2.0:

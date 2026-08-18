@@ -371,27 +371,34 @@ test("resources/ is byte-identical to a fresh build of its TypeScript source", (
 | A3 | Flatpak's `net.sf.VICE` current version and sandboxing implications for reaching `127.0.0.1` from a sandboxed process | Environment Availability | Not resolved this session (search returned no current version). If the planner's install docs recommend Flatpak, this needs a fresh check — flagged as an Open Question below rather than asserted. |
 | A4 | The exact wording/threshold for "proximity" between a `vice_keyboard_matrix` mention and a fork-requirement sentence, for a lint-style SKILL-01 check | Validation Architecture | If too strict, a legitimate mention (e.g. in a table cell referencing a different file) could false-positive; if too loose, a genuinely bare mention could pass. This is a planner/implementer judgment call, not verified against an existing script (no such lint exists yet). |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four were resolved during Phase 8 planning. Each carries an inline resolution
+> note below, for future-phase traceability. Nothing here is still open.
 
 1. **Should `capability-registry.ts` be imported directly by `scripts/*.mjs` (cross-boundary `.ts` import from a plain Node script), or should `check-skill-tool-coverage.mjs` keep its own copy with a drift test asserting the two stay in sync?**
    - What we know: Node's native type-stripping (already required project-wide, ≥22.18) supports a `.mjs` file importing a sibling `.ts` file with an explicit extension; no root-level `package.json`/`engines` field constrains `scripts/`'s own Node version separately from the rest of the repo.
    - What's unclear: whether a direct cross-package import (`scripts/generate-tool-support-table.mjs` importing `../.claude/mcp/vice/capability-registry.ts`) is desirable stylistically, versus keeping `scripts/` fully dependency-free of the npm-packaged `.claude/mcp/vice/` tree (its current posture — every existing `scripts/*.mjs` only ever `readFileSync`s/`JSON.parse`s `.claude/mcp/vice/` files, never imports TS from it).
    - Recommendation: prefer the direct import (simpler, single source of truth, no drift risk) unless the planner finds a concrete reason `scripts/` must stay import-free of `.claude/mcp/vice/`'s TypeScript; if the planner instead keeps two copies, add a `resources-sync.test.ts`-style byte/structural comparison test between them, never leave them silently divergent.
+   - **RESOLVED — direct cross-boundary import.** `scripts/generate-tool-support-table.mjs` imports `CAPABILITY_REGISTRY` from `../.claude/mcp/vice/capability-registry.ts` directly; empirically verified working under Node 22.22 with no flag. This satisfies **D-E** (one source of truth) with no second copy and therefore no sync test. It is a new precedent for `scripts/`, recorded in the generator's header comment. Owned by plan 08-03 Task 1.
 
 2. **Does `vice_diagnose`'s reason "route" note in `check-skill-tool-coverage.mjs`'s comments (`PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY`, lines ~74-83) need any Phase 8 change at all?**
    - What we know: this classification is already correct and already excludes these two tools from the "capability gap" accounting (Pitfall 2's fix is already partially applied in this one script).
    - What's unclear: whether the NEW capability-registry module needs to duplicate this exclusion explicitly (so the runtime refusal function never wrongly fires for `vice_diagnose`/`vice_recycle`), or whether it's structurally impossible for the refusal to fire for them anyway (since they are *always* registered into `tools` regardless of backend, per `buildBackendAwareTool()`, so the "miss" branch the refusal lives in can never see these two names).
    - Recommendation: verify this structurally in a unit test (e.g., "no synthetic proxy-local tool name ever reaches the capability-registry lookup") rather than relying on it being true by construction and undocumented.
+   - **RESOLVED — a test, not a runtime guard.** The refusal genuinely cannot fire for these names by construction (they are always registered into `tools` regardless of backend), so no runtime guard is added. The structural fact is pinned instead by plan 08-01 Task 2's synthetic-tool guard assertion in `capability-registry.test.ts`. Note that plan 08-03 additionally discovers a *third* proxy-local synthetic tool, `vice_result_continue`, which is in neither manifest and so never enters the manifest-divergence set this question is about.
 
 3. **Should `docs/tool-support.md` (or wherever the generated table lands) ship inside the `@henols/vice-mcp` npm tarball, or stay a GitHub-only doc?**
    - What we know: `.claude/mcp/vice/package.json`'s `files[]` is an explicit allow-list (Rule 2); `check-npm-packages.mjs`'s transitive-closure check only walks imports reachable from `vice-proxy.ts`, so a markdown file with no code importing it would need an explicit `files[]` entry, not just "being importable."
    - What's unclear: whether an npm-installed user (versus a GitHub-browsing user) needs this table locally, given the primary entry points (`README.md`, GitHub) already exist outside the tarball.
    - Recommendation: default to GitHub-only (repo-root `docs/`), matching every other `docs/*.md` file's current placement (none of `docs/phase0-binmon-findings.md`, `docs/stock-vice-parity.md`, etc. are in `files[]` today) — ship it in the tarball only if the planner has a concrete reason an offline/npm-only user needs it.
+   - **RESOLVED by D-H — GitHub-only.** The table lives at repo-root `docs/tool-support.md`, linked from `README.md`, and is **not** added to either tarball's `files[]`. Plan 08-01 confirms `scripts/check-npm-packages.mjs` still passes unchanged; plan 08-03 asserts no `docs/` entry was added to `package.json`'s `files[]`.
 
 4. **Flatpak/Snap sandboxing and the binary monitor's `127.0.0.1` bind.**
    - What we know: this repo defaults the binary-monitor bind to `127.0.0.1` (`broker-launch.mts:163`), and warns once if widened.
    - What's unclear: whether VICE installed via Flatpak (network-namespaced by default in some Flatpak sandboxes) can be reached at `127.0.0.1` by a broker running outside the sandbox — not verified this session (Flatpak's current VICE version wasn't even confirmed, see A3).
    - Recommendation: if the install docs mention Flatpak as an option, either verify this live or explicitly flag it as untested/"package-manager installs (apt, dnf, pacman, brew) are the tested path; Flatpak/Snap are unverified" — do not silently imply parity.
+   - **RESOLVED by D-I — out of scope.** No Flatpak or Snap claim is made. Plan 08-05 either omits them entirely or marks them explicitly unverified alongside the tested package-manager paths (apt, dnf, pacman, brew); it never asserts either works. Assumption A3 therefore stays unverified by design rather than blocking the phase.
 
 ## Environment Availability
 
