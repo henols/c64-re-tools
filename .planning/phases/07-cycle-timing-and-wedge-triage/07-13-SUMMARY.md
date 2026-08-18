@@ -123,3 +123,10 @@ This is exactly what 07-18's `07-VALIDATION.md`/`SKILL.md` corrections should ca
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/stock-live.test.ts`
+- FOUND: `.planning/phases/07-cycle-timing-and-wedge-triage/07-13-SUMMARY.md`
+- FOUND commit: `ac0cd57` (Tasks 1-3, test)
+- FOUND commit: `86b77b9` (SUMMARY)
