@@ -62,7 +62,11 @@ One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
   **Evidence: live, established on this project during recovery work. Confidence: HIGH. Cost: an
   afternoon.** Games and cracks bypass the KERNAL keyboard buffer and read the matrix directly.
   Assume it until shown otherwise, and drive input with `vice_keyboard_matrix` or the joystick
-  tools instead.
+  tools instead. **`vice_keyboard_matrix` requires the fork backend** — the binary monitor's
+  `KEYBOARD_FEED` only injects PETSCII buffer text and cannot drive the raw matrix. On stock, use
+  `vice_keyboard_type` / `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or
+  `vice_joystick_set` when it polls the matrix directly; buffer injection stays invisible to a
+  program polling `$DC00`/`$DC01` itself.
 
 ## Finding input handling from the observable side
 

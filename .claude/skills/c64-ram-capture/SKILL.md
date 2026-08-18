@@ -156,6 +156,11 @@ only after the provenance diff partitions loader from cracktro from game — see
 ## Find an entry point
 
 1. Press past any "hit any key" gate with `mcp__plugin_c64-re-tools_vice__vice_keyboard_matrix`.
+   **This call requires the fork backend** — the binary monitor's `KEYBOARD_FEED` only injects
+   PETSCII text into the KERNAL buffer and cannot drive the raw matrix. On stock, use
+   `vice_keyboard_type` / `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or
+   `vice_joystick_set` when it polls the matrix directly; buffer injection stays invisible to a
+   program polling `$DC00`/`$DC01` itself.
 2. Step forward in batches with `mcp__plugin_c64-re-tools_vice__vice_execution_step`, reading
    `mcp__plugin_c64-re-tools_vice__vice_registers_get` after each batch.
 3. Stop when the program counter and the stack pointer both settle into a

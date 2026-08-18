@@ -103,6 +103,14 @@ Games and cracks poll the `$DC00`/`$DC01` matrix directly, bypassing the KERNAL 
 `vice_keyboard_type` is invisible to them. Use `vice_keyboard_matrix`, and hold a key across a
 gate by releasing it at the trigger checkpoint, never earlier.
 
+**`vice_keyboard_matrix` requires the fork backend.** The binary monitor's `KEYBOARD_FEED` (0x72)
+only injects PETSCII text into the KERNAL keyboard buffer; the emulator recomputes CIA port B from
+its own keyboard array on every read, so there is no wire command that can drive the raw matrix —
+this is unrecoverable on stock, not merely unbuilt. On stock, use `vice_keyboard_type` /
+`vice_keyboard_petscii` when the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls
+the matrix directly instead; either way, buffer injection is invisible to a program polling
+`$DC00`/`$DC01` itself, so a matrix-polling gate must be driven by the joystick or not at all.
+
 ## 5. Most state reads pause the emulator and do not resume it
 
 Read all state first, poll with `vice_ping` (the non-pausing poll), and resume **exactly once** at
