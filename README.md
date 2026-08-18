@@ -106,13 +106,32 @@ either way.
 
 ### Choosing the backend
 
-The backend is selected by one config value, `VICE_BACKEND`, set to `stock`
-or `fork` in the `vice` MCP server's environment — the `env` block of the
-`vice` entry in `.mcp.json`. When it is unset, the server probes the
-configured binary's `--help` output once at startup and caches the verdict;
-an indeterminate probe falls back to `fork` (this project's pre-existing
-default), and either way you can always force a choice explicitly by setting
-`VICE_BACKEND`.
+The backend is selected by `VICE_BACKEND`, set to `stock` or `fork`. When it
+is unset, each process probes the configured binary's `--help` output once at
+startup and caches the verdict; an indeterminate probe falls back to `fork`
+(this project's pre-existing default), and you can always force a choice
+explicitly by setting `VICE_BACKEND`.
+
+**Two processes read it, each from its own environment**, and they must
+agree:
+
+1. **The MCP server** — the `env` block of the `vice` entry in `.mcp.json`.
+2. **The host broker**, which is what actually launches the emulator — its
+   own environment on the host where you start it.
+
+If both run on the same host and share one environment, setting it once
+covers both. If they do not — the containerised setup this project is
+architected around, where the MCP server runs in a container and the
+emulator runs on the host — you must set it in **both** places. The MCP
+server cannot see the host's binary, so its own probe cannot reach the right
+answer on its own.
+
+Getting this wrong is detected, not silently tolerated: the broker's verdict
+wins, because it is what the emulator was actually launched with, and the
+server refuses every call with a `backend mismatch` error naming both
+resolved values and the exact variable to set. The two backends speak
+different protocols on the same port, so proceeding would put HTTP on a
+binary-monitor port or the reverse.
 
 Consequences of the choice:
 
