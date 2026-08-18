@@ -23,11 +23,12 @@ import {
   stockDisconnect,
   withStockSession,
   withDerivedTool,
+  resolveAdvertisedToolDefinition,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
-import { DENY_LIST, MachineRestartedError } from "./vice.ts";
+import { DENY_LIST, MachineRestartedError, type ToolInfo } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
@@ -186,6 +187,95 @@ test("manifest/backend (D-03 name coverage): every non-stock-only, non-proxy-loc
     assert.ok(stock.tools.some((t) => t.name === name), `PROXY_LOCAL_TOOLS name "${name}" must be present in the stock manifest`);
     assert.ok(!forkNames.has(name), `PROXY_LOCAL_TOOLS name "${name}" must be absent from the fork manifest (tools-manifest.json) -- it is served proxy-locally, never via that manifest`);
     assert.ok(!STOCK_ONLY_TOOLS.has(name), `PROXY_LOCAL_TOOLS name "${name}" must not also be in STOCK_ONLY_TOOLS -- both backends serve it, it is not stock-only`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// WR-07 (plan 07-16): resolveAdvertisedToolDefinition() -- the ADVERTISED
+// contract, not just the source file. stock-diagnose.test.ts's own
+// source-level "stale_read_path appears only inside a comment" assertion
+// proved nothing about what vice-proxy.ts actually SERVED in tools/list --
+// vice-proxy.ts's two unconditional overwrites (`tools[RECYCLE_TOOL.name] =
+// ...` / `tools[DIAGNOSE_TOOL.name] = ...`) replaced the stock manifest's own
+// corrected entries with the fork's literal (stale_read_path-bearing) text
+// on EVERY backend, so that source-level test passed while the advertised
+// schema was still wrong. These tests assert on the RESOLVED definition --
+// what resolveAdvertisedToolDefinition() actually hands to
+// buildBackendAwareTool() -- so a future re-introduction of an unconditional
+// overwrite fails here, not just at the source-text level.
+// ---------------------------------------------------------------------------
+
+/** Minimal stand-ins for vice-proxy.ts's own RECYCLE_TOOL/DIAGNOSE_TOOL
+ * literals -- constructed here, not imported, so these tests PROVE the
+ * selection rather than assuming vice-proxy.ts's real literals still carry
+ * the fork's stale_read_path wording. Deliberately carries that exact fork
+ * wording so test 1 below can distinguish "the synthetic stand-in won" from
+ * "the manifest entry won" by content, not just by reference identity. */
+const FORK_WORDED_DIAGNOSE_STANDIN: ToolInfo = {
+  name: "vice_diagnose",
+  description:
+    "Read-mostly. Answers which of five states this session's emulator is in -- restarted, checkpoint_trap, wedged, stale_read_path, or live -- with the evidence that produced the verdict.",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const FORK_WORDED_RECYCLE_STANDIN: ToolInfo = {
+  name: "vice_recycle",
+  description: "DESTRUCTIVE. Kills and respawns THIS session's own emulator in place, on the same port, via the host supervisor's existing respawn loop.",
+  inputSchema: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
+};
+
+function stockManifestToolInfos(): ToolInfo[] {
+  return readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[];
+}
+
+test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_diagnose's resolved description drops stale_read_path and names monitor_held_elsewhere", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", stockManifestToolInfos());
+  const description = String(resolved.description ?? "");
+  assert.ok(!description.includes("stale_read_path"), `resolved vice_diagnose description must not mention stale_read_path: ${description}`);
+  assert.ok(description.includes("monitor_held_elsewhere"), `resolved vice_diagnose description must mention monitor_held_elsewhere: ${description}`);
+});
+
+test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_diagnose's resolved outputSchema.verdict.enum is exactly D-03's five values, in order", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", stockManifestToolInfos());
+  const outputSchema = resolved.outputSchema as { properties?: { verdict?: { enum?: unknown[] } } } | undefined;
+  const verdictEnum = outputSchema?.properties?.verdict?.enum;
+  assert.deepEqual(verdictEnum, ["restarted", "checkpoint_trap", "wedged", "monitor_held_elsewhere", "live"]);
+});
+
+test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_recycle's resolved description states the stock incident record carries no screenshot (D-01)", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "stock", stockManifestToolInfos());
+  const description = String(resolved.description ?? "");
+  assert.ok(/no screenshot/i.test(description), `resolved vice_recycle description must state no screenshot is captured on stock: ${description}`);
+});
+
+test("WR-07/resolveAdvertisedToolDefinition (fork): both names resolve to the synthetic stand-in, byte-identical -- the fork's advertised surface is untouched", () => {
+  const manifestTools = stockManifestToolInfos();
+  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "fork", manifestTools);
+  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "fork", manifestTools);
+  assert.equal(resolvedDiagnose, FORK_WORDED_DIAGNOSE_STANDIN, "the fork backend must return the exact synthetic reference, never a manifest substitute");
+  assert.equal(resolvedRecycle, FORK_WORDED_RECYCLE_STANDIN, "the fork backend must return the exact synthetic reference, never a manifest substitute");
+});
+
+test("WR-07/resolveAdvertisedToolDefinition (stock, empty/malformed manifest): both names fall back to the synthetic stand-in rather than advertising nothing", () => {
+  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", []);
+  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "stock", []);
+  assert.equal(resolvedDiagnose, FORK_WORDED_DIAGNOSE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
+  assert.equal(resolvedRecycle, FORK_WORDED_RECYCLE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
+});
+
+test("WR-07/resolveAdvertisedToolDefinition (guard): every PROXY_LOCAL_TOOLS name resolves to its OWN stock manifest entry, tying the source and manifest levels together", () => {
+  const manifestTools = stockManifestToolInfos();
+  const standins: Record<string, ToolInfo> = {
+    vice_diagnose: FORK_WORDED_DIAGNOSE_STANDIN,
+    vice_recycle: FORK_WORDED_RECYCLE_STANDIN,
+  };
+  for (const name of PROXY_LOCAL_TOOLS) {
+    const manifestEntry = manifestTools.find((t) => t.name === name);
+    assert.ok(manifestEntry, `the stock manifest must carry an entry named "${name}"`);
+    const synthetic = standins[name];
+    assert.ok(synthetic, `this guard needs a synthetic stand-in for "${name}"`);
+    const resolved = resolveAdvertisedToolDefinition(synthetic!, "stock", manifestTools);
+    assert.equal(resolved, manifestEntry, `"${name}" must resolve to the stock manifest's OWN entry, not the synthetic stand-in -- a future unconditional overwrite would fail here`);
   }
 });
 
