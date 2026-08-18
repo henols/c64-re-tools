@@ -1046,6 +1046,34 @@ export interface ParsedUndumpResponse extends ParsedBaseResponse {
   programCounter: number;
 }
 
+/**
+ * One CPUHISTORY_GET (0x86) entry. `cycle` is the monotonic absolute clock
+ * value Phase 7's Route A stopwatch reads -- a `bigint` via
+ * `readBigUInt64LE`, never narrowed to `Number`, since a uint64 clock does
+ * not fit a JS number safely and the stopwatch's whole value is exactness.
+ * The per-entry register block ([monitor_binary.c:1563-1617]'s `item_size`
+ * bytes between the `item_size` byte and `cycle`) is deliberately NOT
+ * decoded here: VICE hard-fills `LIN`/`CYC` inside CPU-history entries with
+ * the sentinel `0xffff` (`monitor_binary.c:1585-1590`), so those per-entry
+ * raster positions carry no real value and this phase never interprets
+ * them.
+ */
+export interface ParsedCpuHistoryEntry {
+  cycle: bigint;
+  opcode: number;
+  instructionLength: number;
+  p1: number;
+  p2: number;
+}
+
+/** CPUHISTORY_GET (0x86) parsed shape. `entries[0]` is the newest entry --
+ * the one Route A's stopwatch reads. [CITED monitor_binary.c:1563-1617] */
+export interface ParsedCpuHistoryResponse extends ParsedBaseResponse {
+  type: "cpu_history";
+  count: number;
+  entries: ParsedCpuHistoryEntry[];
+}
+
 /** Fallback shape for any responseType this module has no specific case for
  * (including VERIF-02 case 6's response type byte 0x00, which is never a
  * real response/event type on the wire) -- the parser must produce this
@@ -1069,6 +1097,7 @@ export type ParsedResponse =
   | ParsedResumedEvent
   | ParsedJamEvent
   | ParsedUndumpResponse
+  | ParsedCpuHistoryResponse
   | ParsedUnknownResponse;
 
 // ---------------------------------------------------------------------------
@@ -1319,6 +1348,38 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
     case ResponseType.Undump:
       need(body, 2, responseType, requestId);
       return { type: "undump", requestId, errorCode, programCounter: body.readUInt16LE(0) };
+    case ResponseType.CpuHistoryGet: {
+      // CPUHISTORY_GET (0x86) body layout, confirmed against
+      // monitor_binary.c:1563-1617: count(u32LE) at offset 0, then per entry
+      // -- item_size(1), a register block of item_size bytes (skipped, see
+      // ParsedCpuHistoryEntry's own doc comment), cycle(u64LE),
+      // instruction_length(1), opcode(1), p1(1), p2(1), and one trailing
+      // placeholder byte (five bytes total after the cycle field). Each
+      // entry's declared item_size runs the cursor an extra item_size + 14
+      // bytes (1 item_size byte + item_size register bytes + 8 cycle bytes +
+      // 5 trailing bytes) -- an entry whose item_size overruns the body end
+      // is a StockFramingError through need(), never a truncated silent
+      // success and never a RangeError.
+      need(body, 4, responseType, requestId);
+      const count = body.readUInt32LE(0);
+      let offset = 4;
+      const entries: ParsedCpuHistoryEntry[] = [];
+      for (let index = 0; index < count; index += 1) {
+        need(body, offset + 1, responseType, requestId);
+        const itemSize = body[offset]!;
+        need(body, offset + 1 + itemSize + 8 + 5, responseType, requestId);
+        const cycleOffset = offset + 1 + itemSize;
+        entries.push({
+          cycle: body.readBigUInt64LE(cycleOffset),
+          instructionLength: body[cycleOffset + 8]!,
+          opcode: body[cycleOffset + 9]!,
+          p1: body[cycleOffset + 10]!,
+          p2: body[cycleOffset + 11]!,
+        });
+        offset += 1 + itemSize + 8 + 5;
+      }
+      return { type: "cpu_history", requestId, errorCode, count, entries };
+    }
     default:
       return { type: "unknown", requestId, errorCode, responseType };
   }
@@ -1540,6 +1601,7 @@ const RESPONSE_TYPE_OF_PARSED_KIND: Partial<Record<ParsedResponse["type"], Respo
   resumed: ResponseType.Resumed,
   jam: ResponseType.Jam,
   undump: ResponseType.Undump,
+  cpu_history: ResponseType.CpuHistoryGet,
 };
 
 /** The wire ResponseType byte a parsed response was decoded from, for

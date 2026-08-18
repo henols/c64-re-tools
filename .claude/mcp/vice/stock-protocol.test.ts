@@ -1582,3 +1582,97 @@ test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
     },
   );
 });
+
+// ===========================================================================
+// CPUHISTORY_GET (0x86) -- plan 07-02, Task 1. Body layout confirmed against
+// monitor_binary.c:1563-1617: count(u32LE) then per entry item_size(1) a
+// register block of item_size bytes (deliberately not decoded -- VICE
+// hard-fills LIN/CYC with the sentinel 0xffff inside CPU-history entries,
+// monitor_binary.c:1585-1590) cycle(u64LE) instruction_length(1) opcode(1)
+// p1(1) p2(1) and one trailing placeholder byte.
+// ===========================================================================
+
+interface CpuHistoryEntryOptions {
+  itemSize?: number;
+  cycle: bigint;
+  instructionLength: number;
+  opcode: number;
+  p1: number;
+  p2: number;
+  placeholder?: number;
+}
+
+function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p2, placeholder = 0 }: CpuHistoryEntryOptions): Buffer {
+  // Register block filled with 0xff, matching VICE's own LIN/CYC 0xffff
+  // sentinel fill for CPU-history entries -- this parser never reads it.
+  const registerBlock = Buffer.alloc(itemSize, 0xff);
+  const tail = Buffer.alloc(8 + 5);
+  tail.writeBigUInt64LE(cycle, 0);
+  tail[8] = instructionLength;
+  tail[9] = opcode;
+  tail[10] = p1;
+  tail[11] = p2;
+  tail[12] = placeholder;
+  return Buffer.concat([Buffer.from([itemSize]), registerBlock, tail]);
+}
+
+function cpuHistoryFrame(entries: Buffer[], requestId = 30): Buffer {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(entries.length, 0);
+  return encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId, body: Buffer.concat([count, ...entries]) });
+}
+
+test("CPUHISTORY_GET: a single-entry body decodes to type cpu_history with an exact bigint cycle, opcode and operand bytes", () => {
+  const entry = cpuHistoryEntry({ cycle: 123456789012345n, instructionLength: 3, opcode: 0xa9, p1: 0x01, p2: 0x00 });
+  const frame = cpuHistoryFrame([entry]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as {
+    type: string;
+    count: number;
+    entries: Array<{ cycle: bigint; opcode: number; instructionLength: number; p1: number; p2: number }>;
+  };
+  assert.equal(parsed.type, "cpu_history");
+  assert.notEqual(parsed.type, "unknown");
+  assert.equal(parsed.count, 1);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(typeof parsed.entries[0]!.cycle, "bigint");
+  assert.equal(parsed.entries[0]!.cycle, 123456789012345n);
+  assert.equal(parsed.entries[0]!.opcode, 0xa9);
+  assert.equal(parsed.entries[0]!.instructionLength, 3);
+  assert.equal(parsed.entries[0]!.p1, 0x01);
+  assert.equal(parsed.entries[0]!.p2, 0x00);
+});
+
+test("CPUHISTORY_GET: a two-entry body preserves order -- entries[0] is the newest, the one Route A's stopwatch reads", () => {
+  const newest = cpuHistoryEntry({ cycle: 999999n, instructionLength: 1, opcode: 0xea, p1: 0, p2: 0 });
+  const older = cpuHistoryEntry({ cycle: 500000n, instructionLength: 2, opcode: 0xa2, p1: 0x05, p2: 0 });
+  const frame = cpuHistoryFrame([newest, older]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.entries.length, 2);
+  assert.equal(parsed.entries[0]!.cycle, 999999n);
+  assert.equal(parsed.entries[1]!.cycle, 500000n);
+});
+
+test("CPUHISTORY_GET: a body truncated inside the cycle field is a returned StockFramingError, never a RangeError", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0); // claims one entry
+  const partialEntry = Buffer.concat([Buffer.from([0]), Buffer.alloc(3)]); // item_size=0, only 3 of the 8 cycle bytes
+  const body = Buffer.concat([count, partialEntry]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 31, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+test("CPUHISTORY_GET: an item_size of 0xff with only a few trailing bytes is a returned StockFramingError, not an out-of-bounds read", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0); // claims one entry
+  const body = Buffer.concat([count, Buffer.from([0xff, 0x01, 0x02, 0x03])]); // declares a 255-byte register block, supplies 3
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 32, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
