@@ -122,3 +122,15 @@ None — no external service configuration required. Live execution requires `VI
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: .claude/mcp/vice/stock-live-triage.test.ts
+- FOUND: .claude/mcp/vice/test-gate.mjs
+- FOUND: .claude/mcp/vice/test-gate.test.ts
+- FOUND: .planning/phases/07-cycle-timing-and-wedge-triage/07-17-SUMMARY.md
+- FOUND commit: 02fab9e (Task 1)
+- FOUND commit: 346c0fc (Task 2)
+- FOUND commit: 25a76e6 (Task 3)
+- FOUND commit: c5ac707 (deviation fix)
+- FOUND commit: ec10844 (SUMMARY)
