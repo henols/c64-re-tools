@@ -3,7 +3,7 @@
 // versus safe for the automated regression gate (`npm run test:automated`).
 //
 // WHY THIS FILE EXISTS: a bare `node --test '*.test.*'` (the `npm test`
-// script) globs all test files in this directory, but five of them depend on
+// script) globs all test files in this directory, but six of them depend on
 // manual host setup -- a real broker topology and a real emulator/display
 // environment -- so they hang or need an opt-in env var rather than report
 // outside the devcontainer. This is a disposition, not a bug: see
@@ -19,9 +19,9 @@
 // VICE_LIVE_STOCK_BIN, which is exactly the "manual host setup" disposition
 // the other three already share.
 //
-// WHAT NOT TO DO: do not re-list these five file names in a CI workflow, an
-// npm script, or a second test runner anywhere else in this repo. If a sixth
-// file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
+// WHAT NOT TO DO: do not re-list these six file names in a CI workflow, an
+// npm script, or a second test runner anywhere else in this repo. If a
+// seventh file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
 // nowhere else -- test-gate.test.ts's drift guard fails the build if a test
 // file ever escapes both this list and the automated set, so a silent second
 // list would desync from that guard the moment it existed.
@@ -32,6 +32,13 @@
 // cases, a genuine kill-and-relaunch -- when opted in via
 // VICE_LIVE_TRIAGE_BIN. Concurrent plan 07-13's `stock-live.test.ts` sibling
 // stays this list's fourth entry unchanged.
+//
+// `stock-live-broker-monitor.test.ts` (quick task 260818-obc) joined this
+// list as the SIXTH entry: it spawns a real broker daemon (resources/
+// vice-broker.mjs, under bare node) AND a real emulator process it kills and
+// lets the broker itself respawn, live-proving the broker-mediated
+// monitor_held_elsewhere verdict. Like every sibling above it is default-SKIP
+// everywhere (opt in via VICE_LIVE_BROKER_BIN) and never hangs CI.
 //
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
@@ -50,8 +57,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact five test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a sixth file needs the same
+/** The exact six test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a seventh file needs the same
  * treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -59,6 +66,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "broker-e2e.test.ts",
   "stock-live.test.ts",
   "stock-live-triage.test.ts",
+  "stock-live-broker-monitor.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS

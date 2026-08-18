@@ -727,6 +727,40 @@ test("handleDiagnoseStock (shape oracle): both restarted branches carry EXACTLY 
   );
 });
 
+// SHAPE ORACLE for the monitor_held_elsewhere verdict's evidence -- the
+// standing-rule mirror quick task 260818-obc adds alongside its own live
+// broker-mediated proof (stock-live-broker-monitor.test.ts), modeled directly
+// on the restarted-branch oracle just above. That live suite is
+// MANUAL_ONLY_TESTS' sixth entry and therefore invisible to `node
+// test-gate.mjs` by construction -- an additive widening of this evidence
+// shape (the same kind of change WR-04's `jamObserved` addition already made
+// once, to the restarted branches) must red HERE, at zero emulator cost,
+// before it can silently red the live suite's own tolerant assertion the way
+// 260818-nh5 had to fix for the restarted branch.
+test("handleDiagnoseStock (shape oracle): the monitor_held_elsewhere verdict carries EXACTLY {holderGrantId, holderClaimedAt, port, jamObserved}", async () => {
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => {
+      throw new MonitorOwnershipError("stockConnect: monitor for target t-1 on port 6502 is already claimed by grant grant-other", {
+        holderGrantId: "grant-other",
+        holderClaimedAt: 12345,
+        port: 6502,
+      });
+    },
+  } as unknown as StockDispatchDeps;
+
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "monitor_held_elsewhere");
+  const evidence = answer.evidence as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(evidence).sort(),
+    ["holderClaimedAt", "holderGrantId", "jamObserved", "port"],
+    `monitor_held_elsewhere evidence must be EXACTLY {holderGrantId,holderClaimedAt,port,jamObserved}, got: ${JSON.stringify(evidence)}`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Task 3, tests 7/8: wedged / live through the full handler
 // ---------------------------------------------------------------------------
