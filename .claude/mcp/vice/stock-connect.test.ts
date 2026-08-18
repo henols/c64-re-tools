@@ -131,7 +131,22 @@ function happyPathResponder({ cpuHistoryErrorCode = ErrorCode.Ok, version = [3, 
           body: encodeViceInfoBody(version),
         });
       case CommandType.CpuHistoryGet:
-        return encodeResponseFrame({ responseType: ResponseType.CpuHistoryGet, errorCode: cpuHistoryErrorCode, requestId: req.requestId });
+        // Plan 07-02 added a real CPUHISTORY_GET body parser (need()-guarded,
+        // requiring at least the 4-byte count field on an OK reply) where
+        // this stub previously sent a zero-length body no real stock build
+        // would ever produce -- a genuine CPUHISTORY_GET success reply always
+        // carries at least count(u32LE), even when the probe requests zero
+        // entries (monitor_binary.c:1563-1617). This body is only meaningful
+        // on the Ok path; the error-code paths never reach parseResponse()'s
+        // switch at all (parseResponse() throws StockProtocolError on the
+        // errorCode check before the switch), so they carry no body either
+        // way.
+        return encodeResponseFrame({
+          responseType: ResponseType.CpuHistoryGet,
+          errorCode: cpuHistoryErrorCode,
+          requestId: req.requestId,
+          body: cpuHistoryErrorCode === ErrorCode.Ok ? Buffer.alloc(4) : undefined,
+        });
       case CommandType.Exit:
         return Buffer.concat([
           encodeResponseFrame({ responseType: ResponseType.Exit, errorCode: ErrorCode.Ok, requestId: req.requestId }),

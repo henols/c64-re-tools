@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
 
 import {
   parseBuffer,
@@ -51,6 +52,7 @@ import {
   autostartBody,
   dumpBody,
   undumpBody,
+  resourceGetBody,
 } from "./stock-protocol.ts";
 import {
   encodeResponseFrame,
@@ -1580,5 +1582,184 @@ test("undumpBody: a non-ASCII filename is refused, naming its index", () => {
       assert.match((err as Error).message, /index 2/);
       return true;
     },
+  );
+});
+
+// ===========================================================================
+// CPUHISTORY_GET (0x86) -- plan 07-02, Task 1. Body layout confirmed against
+// monitor_binary.c:1563-1617: count(u32LE) then per entry item_size(1) a
+// register block of item_size bytes (deliberately not decoded -- VICE
+// hard-fills LIN/CYC with the sentinel 0xffff inside CPU-history entries,
+// monitor_binary.c:1585-1590) cycle(u64LE) instruction_length(1) opcode(1)
+// p1(1) p2(1) and one trailing placeholder byte.
+// ===========================================================================
+
+interface CpuHistoryEntryOptions {
+  itemSize?: number;
+  cycle: bigint;
+  instructionLength: number;
+  opcode: number;
+  p1: number;
+  p2: number;
+  placeholder?: number;
+}
+
+function cpuHistoryEntry({ itemSize = 0, cycle, instructionLength, opcode, p1, p2, placeholder = 0 }: CpuHistoryEntryOptions): Buffer {
+  // Register block filled with 0xff, matching VICE's own LIN/CYC 0xffff
+  // sentinel fill for CPU-history entries -- this parser never reads it.
+  const registerBlock = Buffer.alloc(itemSize, 0xff);
+  const tail = Buffer.alloc(8 + 5);
+  tail.writeBigUInt64LE(cycle, 0);
+  tail[8] = instructionLength;
+  tail[9] = opcode;
+  tail[10] = p1;
+  tail[11] = p2;
+  tail[12] = placeholder;
+  return Buffer.concat([Buffer.from([itemSize]), registerBlock, tail]);
+}
+
+function cpuHistoryFrame(entries: Buffer[], requestId = 30): Buffer {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(entries.length, 0);
+  return encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId, body: Buffer.concat([count, ...entries]) });
+}
+
+test("CPUHISTORY_GET: a single-entry body decodes to type cpu_history with an exact bigint cycle, opcode and operand bytes", () => {
+  const entry = cpuHistoryEntry({ cycle: 123456789012345n, instructionLength: 3, opcode: 0xa9, p1: 0x01, p2: 0x00 });
+  const frame = cpuHistoryFrame([entry]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as {
+    type: string;
+    count: number;
+    entries: Array<{ cycle: bigint; opcode: number; instructionLength: number; p1: number; p2: number }>;
+  };
+  assert.equal(parsed.type, "cpu_history");
+  assert.notEqual(parsed.type, "unknown");
+  assert.equal(parsed.count, 1);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(typeof parsed.entries[0]!.cycle, "bigint");
+  assert.equal(parsed.entries[0]!.cycle, 123456789012345n);
+  assert.equal(parsed.entries[0]!.opcode, 0xa9);
+  assert.equal(parsed.entries[0]!.instructionLength, 3);
+  assert.equal(parsed.entries[0]!.p1, 0x01);
+  assert.equal(parsed.entries[0]!.p2, 0x00);
+});
+
+test("CPUHISTORY_GET: a two-entry body preserves order -- entries[0] is the newest, the one Route A's stopwatch reads", () => {
+  const newest = cpuHistoryEntry({ cycle: 999999n, instructionLength: 1, opcode: 0xea, p1: 0, p2: 0 });
+  const older = cpuHistoryEntry({ cycle: 500000n, instructionLength: 2, opcode: 0xa2, p1: 0x05, p2: 0 });
+  const frame = cpuHistoryFrame([newest, older]);
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { entries: Array<{ cycle: bigint }> };
+  assert.equal(parsed.entries.length, 2);
+  assert.equal(parsed.entries[0]!.cycle, 999999n);
+  assert.equal(parsed.entries[1]!.cycle, 500000n);
+});
+
+test("CPUHISTORY_GET: a body truncated inside the cycle field is a returned StockFramingError, never a RangeError", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0); // claims one entry
+  const partialEntry = Buffer.concat([Buffer.from([0]), Buffer.alloc(3)]); // item_size=0, only 3 of the 8 cycle bytes
+  const body = Buffer.concat([count, partialEntry]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 31, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+test("CPUHISTORY_GET: an item_size of 0xff with only a few trailing bytes is a returned StockFramingError, not an out-of-bounds read", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0); // claims one entry
+  const body = Buffer.concat([count, Buffer.from([0xff, 0x01, 0x02, 0x03])]); // declares a 255-byte register block, supplies 3
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 32, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+// ===========================================================================
+// RESOURCE_GET (0x51) -- plan 07-02, Task 2. Request body:
+// name_length(1) name(ASCII, not NUL-terminated). Response body: type(1)
+// size(1) payload(size bytes) -- type 0 = string, 1 = integer (uint32LE).
+// ===========================================================================
+
+test("resourceGetBody: MachineVideoStandard encodes as name_length(1) + ASCII name, no trailing NUL", () => {
+  const body = resourceGetBody({ name: "MachineVideoStandard" });
+  assert.equal(body.length, 1 + 20);
+  assert.equal(body[0], 20);
+  assert.equal(body.subarray(1).toString("ascii"), "MachineVideoStandard");
+});
+
+test("resourceGetBody: a non-string name is refused", () => {
+  assert.throws(() => resourceGetBody({ name: 123 as unknown as string }), StockEncodingError);
+});
+
+test("resourceGetBody: an empty name is refused", () => {
+  assert.throws(() => resourceGetBody({ name: "" }), StockEncodingError);
+});
+
+test("resourceGetBody: a name over 255 bytes is refused, naming the bound", () => {
+  assert.throws(
+    () => resourceGetBody({ name: "A".repeat(256) }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /255/);
+      return true;
+    },
+  );
+});
+
+test("resourceGetBody: a non-printable-ASCII byte is refused, naming its index", () => {
+  assert.throws(
+    () => resourceGetBody({ name: "Machine\x01Standard" }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /index 7/);
+      return true;
+    },
+  );
+});
+
+test("RESOURCE_GET: an integer response body parses to { valueType: 'integer', value }", () => {
+  const body = Buffer.from([0x01, 0x04, 0x01, 0x00, 0x00, 0x00]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 40, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: number };
+  assert.deepEqual(parsed, { type: "resource_get", requestId: 40, errorCode: 0x00, valueType: "integer", value: 1 });
+});
+
+test("RESOURCE_GET: a string response body parses to { valueType: 'string', value }", () => {
+  const payload = Buffer.from("PAL-G", "ascii");
+  const body = Buffer.concat([Buffer.from([0x00, payload.length]), payload]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 41, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: string };
+  assert.equal(parsed.type, "resource_get");
+  assert.equal(parsed.valueType, "string");
+  assert.equal(parsed.value, "PAL-G");
+});
+
+test("RESOURCE_GET: a body with the type byte present but the size byte missing is a returned StockFramingError", () => {
+  const body = Buffer.from([0x01]); // type byte only, no size byte
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 42, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+test("structural: stock-protocol.ts defines no resourceSetBody() and no case ResponseType.ResourceSet, outside comments (T-07-04)", () => {
+  const source = readFileSync(new URL("./stock-protocol.ts", import.meta.url), "utf8");
+  const nonCommentSource = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  assert.ok(!nonCommentSource.includes("resourceSetBody"), "no non-comment line should define resourceSetBody");
+  assert.ok(
+    !nonCommentSource.includes("case ResponseType.ResourceSet"),
+    "no non-comment line should contain a case ResponseType.ResourceSet parser branch",
   );
 });

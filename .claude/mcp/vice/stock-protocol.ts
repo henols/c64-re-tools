@@ -914,6 +914,60 @@ function requireAsciiFilename(callerName: string, filename: string): Buffer {
   return filenameBuf;
 }
 
+/** Shared name guard for resourceGetBody(): refuses a non-string, a length
+ * of 0 or over 255 (name_length is a uint8), and any byte outside printable
+ * ASCII (0x20-0x7e), naming the offending value/index and the valid bound --
+ * the same discipline as requireAsciiFilename() above. Returns the encoded
+ * ASCII Buffer so the caller never re-encodes. */
+function requireResourceName(name: unknown): Buffer {
+  if (typeof name !== "string") {
+    throw new StockEncodingError(`resourceGetBody: name must be a string, got ${typeof name}`, { field: "name" });
+  }
+  if (name.length === 0) {
+    throw new StockEncodingError("resourceGetBody: name must not be empty", { field: "name" });
+  }
+  for (let index = 0; index < name.length; index += 1) {
+    const codePoint = name.charCodeAt(index);
+    if (codePoint < 0x20 || codePoint > 0x7e) {
+      throw new StockEncodingError(
+        `resourceGetBody: name contains a non-printable-ASCII character at index ${index} (code point ${codePoint}) -- printable ASCII is 0x20-0x7e`,
+        { field: "name" },
+      );
+    }
+  }
+  const nameBuf = Buffer.from(name, "ascii");
+  if (nameBuf.length > 255) {
+    throw new StockEncodingError(`resourceGetBody: name exceeds 255 bytes (${nameBuf.length}) -- name_length is a uint8`, { field: "name" });
+  }
+  return nameBuf;
+}
+
+export interface ResourceGetBodyOptions {
+  name: string;
+}
+
+/**
+ * RESOURCE_GET (0x51) request body -- `name_length(1) name(ASCII, NOT
+ * NUL-terminated)`. [CITED monitor_binary.c:918-935]
+ *
+ * READ-SIDE ONLY: this encoder exists so this phase's sole production
+ * caller can read `MachineVideoStandard` to pick the right cycles-per-line
+ * and lines-per-frame constants. There is no `RESOURCE_SET` (0x52) encoder
+ * in this tree and this plan does not add one -- the SET side of
+ * `MachineVideoStandard`, `VICIIModel` and `MachinePowerFrequency` reaches
+ * `machine_trigger_reset(POWER_CYCLE)` one call deep (`c64/c64.c:1367`) and
+ * destroys all emulation state (CLAUDE.md's Safety constraint). Do not add
+ * a `resourceSetBody()` or a `case ResponseType.ResourceSet` beside this one
+ * without re-deriving that deny-list boundary first.
+ */
+export function resourceGetBody({ name }: ResourceGetBodyOptions): Buffer {
+  const nameBuf = requireResourceName(name);
+  const body = Buffer.alloc(1 + nameBuf.length);
+  body[0] = nameBuf.length;
+  nameBuf.copy(body, 1);
+  return body;
+}
+
 // CHECKPOINT_LIST (0x14), PING (0x81), BANKS_AVAILABLE (0x82),
 // EXECUTE_UNTIL_RETURN (0x73) and EXIT (0xaa) take EMPTY bodies --
 // deliberately no encoder for any of the five: ViceMonitorClient.send()
@@ -1046,6 +1100,45 @@ export interface ParsedUndumpResponse extends ParsedBaseResponse {
   programCounter: number;
 }
 
+/**
+ * One CPUHISTORY_GET (0x86) entry. `cycle` is the monotonic absolute clock
+ * value Phase 7's Route A stopwatch reads -- a `bigint` via
+ * `readBigUInt64LE`, never narrowed to `Number`, since a uint64 clock does
+ * not fit a JS number safely and the stopwatch's whole value is exactness.
+ * The per-entry register block ([monitor_binary.c:1563-1617]'s `item_size`
+ * bytes between the `item_size` byte and `cycle`) is deliberately NOT
+ * decoded here: VICE hard-fills `LIN`/`CYC` inside CPU-history entries with
+ * the sentinel `0xffff` (`monitor_binary.c:1585-1590`), so those per-entry
+ * raster positions carry no real value and this phase never interprets
+ * them.
+ */
+export interface ParsedCpuHistoryEntry {
+  cycle: bigint;
+  opcode: number;
+  instructionLength: number;
+  p1: number;
+  p2: number;
+}
+
+/** CPUHISTORY_GET (0x86) parsed shape. `entries[0]` is the newest entry --
+ * the one Route A's stopwatch reads. [CITED monitor_binary.c:1563-1617] */
+export interface ParsedCpuHistoryResponse extends ParsedBaseResponse {
+  type: "cpu_history";
+  count: number;
+  entries: ParsedCpuHistoryEntry[];
+}
+
+/**
+ * RESOURCE_GET (0x51) parsed shape. A discriminated union on `valueType` --
+ * `e_MON_RESOURCE_TYPE_STRING` (wire byte 0) decodes to `value: string`,
+ * `e_MON_RESOURCE_TYPE_INT` (wire byte 1) decodes to `value: number`.
+ * [CITED monitor_binary.c:938-965]
+ */
+export type ParsedResourceGetResponse = ParsedBaseResponse & { type: "resource_get" } & (
+    | { valueType: "integer"; value: number }
+    | { valueType: "string"; value: string }
+  );
+
 /** Fallback shape for any responseType this module has no specific case for
  * (including VERIF-02 case 6's response type byte 0x00, which is never a
  * real response/event type on the wire) -- the parser must produce this
@@ -1069,6 +1162,8 @@ export type ParsedResponse =
   | ParsedResumedEvent
   | ParsedJamEvent
   | ParsedUndumpResponse
+  | ParsedCpuHistoryResponse
+  | ParsedResourceGetResponse
   | ParsedUnknownResponse;
 
 // ---------------------------------------------------------------------------
@@ -1319,6 +1414,59 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
     case ResponseType.Undump:
       need(body, 2, responseType, requestId);
       return { type: "undump", requestId, errorCode, programCounter: body.readUInt16LE(0) };
+    case ResponseType.CpuHistoryGet: {
+      // CPUHISTORY_GET (0x86) body layout, confirmed against
+      // monitor_binary.c:1563-1617: count(u32LE) at offset 0, then per entry
+      // -- item_size(1), a register block of item_size bytes (skipped, see
+      // ParsedCpuHistoryEntry's own doc comment), cycle(u64LE),
+      // instruction_length(1), opcode(1), p1(1), p2(1), and one trailing
+      // placeholder byte (five bytes total after the cycle field). Each
+      // entry's declared item_size runs the cursor an extra item_size + 14
+      // bytes (1 item_size byte + item_size register bytes + 8 cycle bytes +
+      // 5 trailing bytes) -- an entry whose item_size overruns the body end
+      // is a StockFramingError through need(), never a truncated silent
+      // success and never a RangeError.
+      need(body, 4, responseType, requestId);
+      const count = body.readUInt32LE(0);
+      let offset = 4;
+      const entries: ParsedCpuHistoryEntry[] = [];
+      for (let index = 0; index < count; index += 1) {
+        need(body, offset + 1, responseType, requestId);
+        const itemSize = body[offset]!;
+        need(body, offset + 1 + itemSize + 8 + 5, responseType, requestId);
+        const cycleOffset = offset + 1 + itemSize;
+        entries.push({
+          cycle: body.readBigUInt64LE(cycleOffset),
+          instructionLength: body[cycleOffset + 8]!,
+          opcode: body[cycleOffset + 9]!,
+          p1: body[cycleOffset + 10]!,
+          p2: body[cycleOffset + 11]!,
+        });
+        offset += 1 + itemSize + 8 + 5;
+      }
+      return { type: "cpu_history", requestId, errorCode, count, entries };
+    }
+    case ResponseType.ResourceGet: {
+      // RESOURCE_GET (0x51) response layout: type(1) size(1) payload(size
+      // bytes). type: 0 = e_MON_RESOURCE_TYPE_STRING, 1 =
+      // e_MON_RESOURCE_TYPE_INT. For the integer case size is always 4 and
+      // the payload is a uint32LE; for the string case size is the payload's
+      // own byte length. [CITED monitor_binary.c:938-965]
+      need(body, 2, responseType, requestId);
+      const valueTypeByte = body[0]!;
+      const size = body[1]!;
+      need(body, 2 + size, responseType, requestId);
+      if (valueTypeByte === 1) {
+        return { type: "resource_get", requestId, errorCode, valueType: "integer", value: body.readUInt32LE(2) };
+      }
+      return {
+        type: "resource_get",
+        requestId,
+        errorCode,
+        valueType: "string",
+        value: body.subarray(2, 2 + size).toString("ascii"),
+      };
+    }
     default:
       return { type: "unknown", requestId, errorCode, responseType };
   }
@@ -1540,6 +1688,8 @@ const RESPONSE_TYPE_OF_PARSED_KIND: Partial<Record<ParsedResponse["type"], Respo
   resumed: ResponseType.Resumed,
   jam: ResponseType.Jam,
   undump: ResponseType.Undump,
+  cpu_history: ResponseType.CpuHistoryGet,
+  resource_get: ResponseType.ResourceGet,
 };
 
 /** The wire ResponseType byte a parsed response was decoded from, for
