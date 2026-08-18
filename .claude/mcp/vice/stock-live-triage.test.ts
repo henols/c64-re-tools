@@ -173,6 +173,53 @@ async function waitForStoppedRunState(client: ViceMonitorClient, deadlineMs = 50
   throw new Error(`waitForStoppedRunState: runState never reached "stopped" within ${deadlineMs}ms (last seen: ${runStateFor(client)})`);
 }
 
+/**
+ * Resumes (`vice_execution_run`), waits (via the tracker, never a wire
+ * poll) for "stopped", and then VERIFIES via a real `vice_checkpoint_list`
+ * read that `checkpointId`'s own `hitCount` actually advanced -- because a
+ * bare `waitForStoppedRunState()` call can observe a STALE "stopped"
+ * projection left over from the checkpoint's own ARMING halt (CHECKPOINT_SET
+ * is itself an inbound byte that halts the machine) if the "resumed" event
+ * for THIS resume has not yet been processed by the time the wait's first
+ * poll runs -- empirically reproduced during this plan's own execution: the
+ * tracker read "stopped" at t+0/1ms while the real machine (server-side)
+ * had genuinely resumed and kept running in the background, only caught
+ * later by the liveness bracket's own resume, landing on "live" instead of
+ * "checkpoint_trap". Retries the resume+wait cycle (bounded) rather than
+ * accepting the stale read -- a real environmental race, not a mechanism
+ * this test papers over.
+ */
+async function resumeUntilCheckpointHits(
+  instance: TriageInstance,
+  checkpointId: number,
+  { maxAttempts = 5, perAttemptDeadlineMs = 5000 }: { maxAttempts?: number; perAttemptDeadlineMs?: number } = {},
+): Promise<Record<string, unknown>> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const runResult = await dispatchStock("vice_execution_run", {}, instance.deps);
+    assert.equal(runResult.isError, false, `vice_execution_run() must succeed, got: ${JSON.stringify(runResult)}`);
+
+    const session = instance.session();
+    assert.ok(session, "instance.session() must be populated");
+    await waitForStoppedRunState(session!.client, perAttemptDeadlineMs);
+
+    const listResult = await dispatchStock("vice_checkpoint_list", {}, instance.deps);
+    const listPayload = parseOkPayload(listResult as { content: { type: "text"; text: string }[]; isError: boolean });
+    const checkpoints = listPayload.checkpoints as Array<Record<string, unknown>>;
+    const cp = checkpoints.find((c) => c.id === checkpointId);
+    const hitCount = typeof cp?.hitCount === "number" ? cp.hitCount : 0;
+    console.log(`stock-live-triage: resumeUntilCheckpointHits attempt ${attempt}/${maxAttempts} -- checkpoint ${checkpointId} hitCount=${hitCount}`);
+    if (hitCount > 0) {
+      return listPayload;
+    }
+    // Stale "stopped" read (the race this function exists to absorb) -- the
+    // machine is, per the tracker, currently "stopped" but the checkpoint
+    // never actually fired, so the NEXT vice_execution_run genuinely resumes
+    // it again rather than taking handleExecutionRun's "already running"
+    // short-circuit.
+  }
+  throw new Error(`resumeUntilCheckpointHits: checkpoint ${checkpointId} did not report hitCount > 0 within ${maxAttempts} resume attempts`);
+}
+
 const CONFORMANCE_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
@@ -348,19 +395,17 @@ test(
 
       // 3. Resume -- CHECKPOINT_SET itself halted the machine (any inbound
       //    byte does, stock's own standing rule), so nothing will hit the
-      //    checkpoint until execution actually continues.
-      const runResult = await dispatchStock("vice_execution_run", {}, instance.deps);
-      assert.equal(runResult.isError, false, `vice_execution_run() must succeed, got: ${JSON.stringify(runResult)}`);
+      //    checkpoint until execution actually continues. Wait, bounded,
+      //    until the tracker itself reports "stopped" (never a wire poll
+      //    while waiting -- this file's own WHAT NOT TO DO list), then
+      //    verify via a real read that the checkpoint's own hitCount
+      //    actually advanced, retrying the resume if a stale tracker read
+      //    was observed instead (resumeUntilCheckpointHits()'s own header
+      //    comment).
+      const checkpointId = addPayload.id as number;
+      await resumeUntilCheckpointHits(instance, checkpointId);
 
-      // 4. Wait, bounded, until the tracker itself reports "stopped" -- the
-      //    checkpoint really fired. Never poll with a wire read while
-      //    waiting (this file's own WHAT NOT TO DO list) -- read the
-      //    tracker's own event-driven projection instead.
-      const session = instance.session();
-      assert.ok(session, "instance.session() must be populated after the vice_checkpoint_add dispatch above");
-      await waitForStoppedRunState(session!.client);
-
-      // 5. vice_diagnose must answer checkpoint_trap, with WR-03's derived
+      // 4. vice_diagnose must answer checkpoint_trap, with WR-03's derived
       //    machinePaused/machinePausedSource, and no liveness bracket run --
       //    the trap check precedes the bracket in handleDiagnoseStock()'s
       //    own order.
