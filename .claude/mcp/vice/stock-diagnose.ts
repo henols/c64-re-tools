@@ -34,8 +34,13 @@
 import { CommandType, memGetBody } from "./stock-protocol.ts";
 import { handleCheckpointList } from "./stock-checkpoints.ts";
 import { handleRegistersGet } from "./stock-registers.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import { readCycleBaseline, type CycleBaseline } from "./stock-timing.ts";
+import { stockAnswer, derivedAnswer, isErrorText, type StockToolResult } from "./stock-handler.ts";
+import { ensureStockSession, type StockDispatchDeps, type EnsureStockSessionOutcome } from "./stock-dispatch.ts";
+import type { DerivedPureHandler } from "./stock-derived.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
+import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
+import { MonitorOwnershipError } from "./vice-broker-client.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention,
@@ -276,3 +281,397 @@ export function renderStockCheckpointTrapReport(evidence: StockCheckpointTrapEvi
       "the verdict becomes wedged and recycle is the fallback after all.",
   ].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Task 2 (this commit): runStockLivenessBracket() and the five-verdict
+// handleDiagnoseStock().
+//
+// WHY THE HANDLER OWNS ITS OWN SESSION ACQUISITION: this tool is registered
+// (07-09) with withDerivedTool("vice_diagnose", { needsSession: false }, ...)
+// yet calls ensureStockSession(deps) itself, inside its own try/catch --
+// the ONE declared exception to DerivedPureHandler's doc comment in
+// stock-derived.ts ("a needsSession:false handler structurally cannot reach
+// the wire"). The reason: the fork's handleDiagnose() never throws past its
+// own boundary and always answers isError:false with a verdict, but
+// withDerivedTool({ needsSession: true })'s own preamble would convert a
+// thrown MonitorOwnershipError into refusal TEXT before this handler's own
+// return value ever existed -- turning the fifth verdict into exactly the
+// generic error string it exists to replace. Amending stock-derived.ts's
+// doc comment for this exception is plan 07-09's job (the registration
+// plan), not this one's.
+//
+// Because this handler owns its own acquisition, it also owns constructing
+// its own answer: when a session was actually obtained, every answer goes
+// through stockAnswer(session.client, payload) (D-06 -- a real client
+// exists, so a real runState is knowable). When acquisition itself failed
+// or timed out -- monitor_held_elsewhere, restarted from a thrown
+// MachineRestartedError, or the bounded-acquisition timeout -- there IS no
+// client (stockConnect() rejected before or while building one), so those
+// paths go through derivedAnswer() instead, whose honest "unknown" runState
+// is exactly right: this handler genuinely never observed the machine.
+//
+// WHAT NOT TO DO (Task 2's own additions to this file's list):
+//   - Never invent a sixth verdict, and never report one of the five
+//     STOCK_DIAGNOSE_VERDICTS the evidence did not actually establish. The
+//     bounded-acquisition timeout and the bracket's "unavailable" route both
+//     answer isError:true refusal text naming what could not be
+//     established, never a verdict field.
+//   - Never resume the machine (send CommandType.Exit) anywhere except
+//     inside runStockLivenessBracket().
+//   - Never cache DIAGNOSE_SESSION_TIMEOUT_MS/DIAGNOSE_BRACKET_WINDOW_MS as a
+//     module-level constant the way vice-proxy.ts's CAPTURE_STEP_TIMEOUT_MS
+//     is -- this file's own test drives many distinct timeout/window values
+//     within ONE process, and a value frozen at import time could never be
+//     overridden per test without a dynamic re-import for every case. Read
+//     the environment variable fresh on every call instead (below).
+//   - Never let a raw bigint (CycleBaseline's cpu_history `cycle` field)
+//     reach JSON.stringify() -- stockAnswer()/derivedAnswer() both
+//     serialize the payload, and JSON.stringify() throws on a bigint.
+//     serializeCycleBaseline()/serializeBracket() below are the ONE place a
+//     CycleBaseline is converted to a JSON-safe shape.
+// ---------------------------------------------------------------------------
+
+function describeStockError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+const DEFAULT_DIAGNOSE_SESSION_TIMEOUT_MS = 10000;
+const DEFAULT_DIAGNOSE_BRACKET_WINDOW_MS = 250;
+
+function envMs(envVar: string, fallback: number): number {
+  const raw = process.env[envVar];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+/** Read fresh on EVERY call -- deliberately not a module-level constant the
+ * way vice-proxy.ts's CAPTURE_STEP_TIMEOUT_MS is (see this file's own
+ * WHAT NOT TO DO). Defaults to 10000ms; overridable via
+ * VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS. */
+export function diagnoseSessionTimeoutMs(): number {
+  return envMs("VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS", DEFAULT_DIAGNOSE_SESSION_TIMEOUT_MS);
+}
+
+/** Read fresh on EVERY call, same rationale as diagnoseSessionTimeoutMs()
+ * above. Defaults to 250ms; overridable via VICE_STOCK_DIAGNOSE_BRACKET_MS. */
+export function diagnoseBracketWindowMs(): number {
+  return envMs("VICE_STOCK_DIAGNOSE_BRACKET_MS", DEFAULT_DIAGNOSE_BRACKET_WINDOW_MS);
+}
+
+/** The verdict set is EXACTLY the five of D-03.
+ * `stale_read_path` is deliberately absent: it exists on the fork only
+ * because the fork mixes a non-pausing vice_ping with pausing reads, and on
+ * stock every read pauses uniformly, so that state is unreachable by
+ * construction. Frozen so the manifest enum (plan 07-09) and this file's
+ * own tests both drive one list. */
+export const STOCK_DIAGNOSE_VERDICTS = Object.freeze([
+  "restarted",
+  "checkpoint_trap",
+  "wedged",
+  "monitor_held_elsewhere",
+  "live",
+] as const);
+
+export type StockDiagnoseVerdict = (typeof STOCK_DIAGNOSE_VERDICTS)[number];
+
+export interface StockLivenessBracketResult {
+  route: CycleBaseline["route"];
+  before: CycleBaseline;
+  after: CycleBaseline;
+  /** null when either sample's route is "unavailable" (or the route changed
+   * mid-bracket, e.g. a reconnect) -- the verdict path must then report the
+   * bracket as inconclusive rather than as wedged (never fabricate a false
+   * "no advance"). */
+  advanced: boolean | null;
+  elapsedMs: number;
+}
+
+/**
+ * Pattern 5 (07-RESEARCH.md), exported for plan 07-07. Exactly: one
+ * readCycleBaseline() (a halting read), one CommandType.Exit (resume), one
+ * await on a real wall-clock setTimeout of diagnoseBracketWindowMs() with
+ * ZERO socket traffic inside the wait, then one more readCycleBaseline()
+ * (a halting read which both re-pauses and samples).
+ *
+ * This deliberately uses wall-clock time, unlike vice-sync.ts's standing
+ * "poll on hit_count, never on paused state" rule -- that rule's rationale
+ * depended on a non-pausing vice_ping, and stock has no non-pausing
+ * observation of any kind (monitor_binary.c:281 halts on any inbound byte),
+ * so there is nothing to poll without itself perturbing the machine.
+ */
+export async function runStockLivenessBracket(session: StockConnectSession): Promise<StockLivenessBracketResult> {
+  const before = await readCycleBaseline(session);
+  const startedAt = Date.now();
+  await session.client.send(CommandType.Exit);
+  const windowMs = diagnoseBracketWindowMs();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, windowMs);
+  });
+  const after = await readCycleBaseline(session);
+  const elapsedMs = Date.now() - startedAt;
+
+  let advanced: boolean | null;
+  if (before.route === "unavailable" || after.route === "unavailable" || before.route !== after.route) {
+    advanced = null;
+  } else if (before.route === "cpu_history" && after.route === "cpu_history") {
+    advanced = after.cycle > before.cycle;
+  } else if (before.route === "frame_position" && after.route === "frame_position") {
+    advanced = after.position !== before.position || after.pc !== before.pc;
+  } else {
+    advanced = null;
+  }
+
+  return { route: after.route, before, after, advanced, elapsedMs };
+}
+
+/** Converts a CycleBaseline to a JSON-safe shape -- the ONE place a raw
+ * bigint (`cycle`) is turned into a string before it can reach
+ * JSON.stringify() inside stockAnswer()/derivedAnswer(). */
+function serializeCycleBaseline(baseline: CycleBaseline): Record<string, unknown> {
+  if (baseline.route === "cpu_history") {
+    return { route: baseline.route, cycle: baseline.cycle.toString(), pc: baseline.pc };
+  }
+  if (baseline.route === "frame_position") {
+    return {
+      route: baseline.route,
+      lin: baseline.lin,
+      cyc: baseline.cyc,
+      pc: baseline.pc,
+      position: baseline.position,
+      standard: baseline.standard.name,
+      standardAssumed: baseline.standard.assumed,
+    };
+  }
+  return { route: baseline.route, reason: baseline.reason };
+}
+
+function serializeBracket(bracket: StockLivenessBracketResult): Record<string, unknown> {
+  return {
+    route: bracket.route,
+    before: serializeCycleBaseline(bracket.before),
+    after: serializeCycleBaseline(bracket.after),
+    advanced: bracket.advanced,
+    elapsedMs: bracket.elapsedMs,
+  };
+}
+
+function renderStockRestartedReport(baselineEpoch: number | null | undefined, currentEpoch: number | null | undefined): string {
+  return (
+    "vice_diagnose verdict: restarted\n\n" +
+    `The instance's epoch changed from ${baselineEpoch ?? "unknown"} to ${currentEpoch ?? "unknown"} -- the emulator ` +
+    "behind this session restarted (or its identity across a reconnect could not be proven at all, which is " +
+    "treated the same way, per D-3's own posture). This is answered at zero-to-minimal emulator cost; no " +
+    "checkpoint enumeration and no liveness bracket were attempted. Any run in flight before this point is void."
+  );
+}
+
+function renderMonitorHeldElsewhereReport(err: MonitorOwnershipError): string {
+  return (
+    "vice_diagnose verdict: monitor_held_elsewhere\n\n" +
+    `This instance's monitor socket is already claimed by a different grant (grant ${err.holderGrantId ?? "unknown"}, ` +
+    `claimed at ${err.holderClaimedAt ?? "unknown"}, port ${err.port ?? "unknown"}). Stock VICE services exactly ` +
+    "one binary-monitor client, so this session could not open its own connection at all -- at zero emulator " +
+    "calls. This is not a wedge and recycling would not help: the instance is healthy, just claimed elsewhere."
+  );
+}
+
+function renderStockLiveReport(bracket: StockLivenessBracketResult): string {
+  return (
+    "vice_diagnose verdict: live\n\n" +
+    `The liveness bracket measured an advance on route "${bracket.route}" in ~${bracket.elapsedMs}ms. Load-bearing ` +
+    "evidence: the bracket's own before/after sample -- one resume call, one wall-clock wait with zero socket " +
+    "traffic, one halting read. Machine state left: paused, after the bracket that reached this verdict -- " +
+    "resuming is your own deliberate next call."
+  );
+}
+
+function renderStockWedgedReport(bracket1: StockLivenessBracketResult, bracket2: StockLivenessBracketResult): string {
+  return (
+    "vice_diagnose verdict: wedged\n\n" +
+    `Two consecutive liveness brackets showed no advance (bracket 1: route "${bracket1.route}", ~${bracket1.elapsedMs}ms; ` +
+    `bracket 2: route "${bracket2.route}", ~${bracket2.elapsedMs}ms). This is the definitive liveness test on ` +
+    "stock -- every read pauses the machine uniformly, so there is no separate stale-read-path state to " +
+    "distinguish here (unlike the fork). Machine state left: paused, after two zero-advance brackets. Capture " +
+    "evidence before recovering, then vice_recycle with a real reason as a last resort."
+  );
+}
+
+function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
+  const reason =
+    bracket.before.route === "unavailable"
+      ? bracket.before.reason
+      : bracket.after.route === "unavailable"
+        ? bracket.after.reason
+        : `the bracket's route changed mid-measurement (before "${bracket.before.route}", after "${bracket.after.route}")`;
+  return (
+    `vice_diagnose: the liveness bracket could not be measured (${reason}). This is reported as inconclusive, ` +
+    "never as wedged -- a bracket that cannot measure at all must not be mistaken for one that measured zero " +
+    "advance. Establishing liveness needs CPUHISTORY_GET (VICE >= 3.10) or a build enumerating LIN/CYC by name."
+  );
+}
+
+function diagnoseVerdictResult(
+  session: StockConnectSession | null,
+  verdict: StockDiagnoseVerdict,
+  evidence: Record<string, unknown>,
+  report: string,
+  machinePaused: boolean,
+): StockToolResult {
+  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused };
+  return session ? stockAnswer(session.client, payload) : derivedAnswer(payload);
+}
+
+function diagnoseErrorResult(message: string): StockToolResult {
+  return isErrorText(message);
+}
+
+/**
+ * Handles vice_diagnose on the stock backend. Fixed check order, cheap to
+ * expensive, mirroring the fork's own D-14 ordering:
+ *   1. Bounded session acquisition (finding 4) -- MonitorOwnershipError ->
+ *      monitor_held_elsewhere; MachineRestartedError -> restarted; a
+ *      deadline expiry -> a plain refusal naming the bound, never a sixth
+ *      verdict and never one of the five unestablished.
+ *   2. Epoch comparison -- zero emulator calls.
+ *   3. gatherStockCheckpointTrapEvidence() -- several reads, no resume.
+ *   4. The liveness bracket(s) -- the only step that resumes.
+ * Never throws past this point -- every branch is a well-formed isError:false
+ * (carrying a verdict) or isError:true (naming what could not be established)
+ * result.
+ */
+export const handleDiagnoseStock: DerivedPureHandler = async (_args, deps) => {
+  try {
+    const timeoutMs = diagnoseSessionTimeoutMs();
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutSignal = new Promise<{ timedOut: true }>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+    });
+
+    let outcome: EnsureStockSessionOutcome;
+    try {
+      const raced = await Promise.race([
+        ensureStockSession(deps).then((o) => ({ timedOut: false as const, outcome: o })),
+        timeoutSignal,
+      ]);
+      if (raced.timedOut) {
+        return diagnoseErrorResult(
+          `vice_diagnose: session acquisition did not complete within ${timeoutMs}ms -- this is behaviourally ` +
+            "indistinguishable from a second client already holding the monitor socket (stock VICE services " +
+            "exactly one binary-monitor client). This is not one of the five established verdicts and is reported " +
+            "as a plain refusal rather than guessing monitor_held_elsewhere without evidence -- if a second client " +
+            "is not the cause, retry once the current holder releases.",
+        );
+      }
+      outcome = raced.outcome;
+    } catch (err) {
+      if (err instanceof MonitorOwnershipError) {
+        return diagnoseVerdictResult(
+          null,
+          "monitor_held_elsewhere",
+          { holderGrantId: err.holderGrantId ?? null, holderClaimedAt: err.holderClaimedAt ?? null, port: err.port ?? null },
+          renderMonitorHeldElsewhereReport(err),
+          false,
+        );
+      }
+      if (err instanceof MachineRestartedError) {
+        return diagnoseVerdictResult(
+          null,
+          "restarted",
+          { baselineEpoch: err.baselineEpoch ?? null, currentEpoch: err.currentEpoch ?? null },
+          renderStockRestartedReport(err.baselineEpoch, err.currentEpoch),
+          false,
+        );
+      }
+      return diagnoseErrorResult(`vice_diagnose: session acquisition failed (${describeStockError(err)}).`);
+    } finally {
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+
+    if (!outcome.ok) {
+      return diagnoseErrorResult(`vice_diagnose: ${outcome.message}`);
+    }
+    const session = outcome.session;
+
+    // Step 2: epoch comparison, zero emulator calls.
+    const readEpochFn = session.deps.readEpochFn ?? readEpoch;
+    const currentRecord: EpochResult | null = session.deps.epochPath ? readEpochFn(session.deps.epochPath) : null;
+    if (session.baselineEpoch !== null && currentRecord?.present && currentRecord.epoch !== session.baselineEpoch) {
+      return diagnoseVerdictResult(
+        session,
+        "restarted",
+        { baselineEpoch: session.baselineEpoch, currentEpoch: currentRecord.epoch },
+        renderStockRestartedReport(session.baselineEpoch, currentRecord.epoch),
+        false,
+      );
+    }
+
+    // Step 3: checkpoint-trap evidence, no resume.
+    let trapEvidence: StockCheckpointTrapEvidence;
+    try {
+      trapEvidence = await gatherStockCheckpointTrapEvidence(session, deps);
+    } catch (err) {
+      return diagnoseErrorResult(`vice_diagnose: gathering checkpoint-trap evidence failed (${describeStockError(err)}).`);
+    }
+    if (trapEvidence.isTrap) {
+      return diagnoseVerdictResult(
+        session,
+        "checkpoint_trap",
+        trapEvidence as unknown as Record<string, unknown>,
+        renderStockCheckpointTrapReport(trapEvidence),
+        false,
+      );
+    }
+
+    // Step 4: the liveness bracket -- the only step that resumes.
+    let bracket1: StockLivenessBracketResult;
+    try {
+      bracket1 = await runStockLivenessBracket(session);
+    } catch (err) {
+      return diagnoseErrorResult(`vice_diagnose: the liveness bracket failed (${describeStockError(err)}).`);
+    }
+
+    if (bracket1.advanced === null) {
+      return diagnoseErrorResult(inconclusiveBracketText(bracket1));
+    }
+    if (bracket1.advanced) {
+      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1), true);
+    }
+
+    // Run a second bracket only when the first shows no advance -- mirroring
+    // the fork's own short-circuit.
+    let bracket2: StockLivenessBracketResult;
+    try {
+      bracket2 = await runStockLivenessBracket(session);
+    } catch (err) {
+      return diagnoseErrorResult(`vice_diagnose: the second liveness bracket failed (${describeStockError(err)}).`);
+    }
+
+    if (bracket2.advanced === null) {
+      return diagnoseErrorResult(inconclusiveBracketText(bracket2));
+    }
+    if (bracket2.advanced) {
+      return diagnoseVerdictResult(
+        session,
+        "live",
+        { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
+        renderStockLiveReport(bracket2),
+        true,
+      );
+    }
+
+    return diagnoseVerdictResult(
+      session,
+      "wedged",
+      { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
+      renderStockWedgedReport(bracket1, bracket2),
+      true,
+    );
+  } catch (err) {
+    return diagnoseErrorResult(`vice_diagnose: an unexpected error occurred (${describeStockError(err)}).`);
+  }
+};
