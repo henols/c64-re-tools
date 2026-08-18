@@ -296,7 +296,7 @@ const TRIMMED_TOOL_DECISIONS: Array<[string, string]> = [
   ["vice_checkpoint_set_ignore_count", "D-15"],
   ["vice_snapshot_list", "D-16"],
   ["vice_disk_detach", "D-13"],
-  ["vice_joystick_tap", "needs a resume plus Phase 7's timing route"],
+  ["vice_joystick_tap", "cut from scope -- no skill calls it and no requirement names it"],
   ["vice_disk_read_sector", "CUT from scope 2026-08-17 -- no skill calls it"],
   ["vice_sid_get_state", "hard loss -- SID is write-only in hardware"],
   ["vice_key_press", "hard loss -- low-level keyboard family"],
@@ -963,11 +963,12 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 34 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
- * tools, 04-05's vice_disassemble, and Phase 5's eight DERIV-01/DERIV-04/
- * DERIV-05/DERIV-06 derived tools), driven from an explicit array literal
- * (per this plan's own acceptance criteria) so a missing entry fails as a
- * NAMED assertion rather than a generic count mismatch. */
+/** The 36 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+ * tools, 04-05's vice_disassemble, Phase 5's eight DERIV-01/DERIV-04/
+ * DERIV-05/DERIV-06 derived tools, and Phase 7's two TIME-01/TIME-02 derived
+ * tools), driven from an explicit array literal (per this plan's own
+ * acceptance criteria) so a missing entry fails as a NAMED assertion rather
+ * than a generic count mismatch. */
 const REGISTERED_TOOL_NAMES = [
   "vice_ping",
   "vice_memory_read",
@@ -1003,6 +1004,8 @@ const REGISTERED_TOOL_NAMES = [
   "vice_cia_get_state",
   "vice_sprite_get",
   "vice_sprite_inspect",
+  "vice_cycles_stopwatch",
+  "vice_run_until",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -1019,20 +1022,20 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-test("dispatch: stockHandlerFor returns a function for every one of the 34 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 36 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 34", () => {
+test("dispatch: the table's key count is exactly 36", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 34-name list rather than reaching into the
+  // this test drives the same 36-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 34);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 34);
+  assert.equal(hits.length, 36);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 36);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
@@ -2313,6 +2316,74 @@ conformanceTest("vice_ping", async () => {
   };
   const result = await dispatchStock("vice_ping", {}, deps);
   assertAnswerConforms("vice_ping", result);
+});
+
+// --------------------------------------------------------- timing (Phase 7, TIME-01/TIME-02)
+
+conformanceTest("vice_cycles_stopwatch", async () => {
+  // buildConformanceSession()'s capabilities.cpuHistory is always "absent",
+  // so this case exercises Route B (frame-position reconstruction via
+  // REGISTERS_AVAILABLE/REGISTERS_GET), not Route A (CPUHISTORY_GET) --
+  // dispatched with action:"reset", the action that produces an ok answer
+  // with no prior baseline needed.
+  const session = buildConformanceSession("conformance-vice_cycles_stopwatch", (commandType) => {
+    if (commandType === CommandType.RegistersAvailable) {
+      return {
+        type: "registers_available" as const,
+        requestId: 1,
+        errorCode: 0,
+        registers: [
+          { id: 0, size: 16, name: "PC" },
+          { id: 1, size: 16, name: "LIN" },
+          { id: 2, size: 8, name: "CYC" },
+        ],
+        related: [],
+      };
+    }
+    if (commandType === CommandType.RegistersGet) {
+      return {
+        type: "registers" as const,
+        requestId: 2,
+        errorCode: 0,
+        registers: [
+          { id: 0, value: 0x0801 },
+          { id: 1, value: 100 },
+          { id: 2, value: 20 },
+        ],
+        related: [],
+      };
+    }
+    if (commandType === CommandType.ResourceGet) {
+      return { type: "resource_get" as const, requestId: 3, errorCode: 0, valueType: "integer" as const, value: 1 };
+    }
+    throw new Error(`vice_cycles_stopwatch: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_cycles_stopwatch", { action: "reset" }, deps);
+  assertAnswerConforms("vice_cycles_stopwatch", result);
+});
+
+conformanceTest("vice_run_until", async () => {
+  // The conformance harness's client never synthesises a checkpoint_info
+  // event, so this case exercises the TIMEOUT answer shape -- the shape a
+  // caller sees on an address that never executes. An explicit small
+  // timeout_ms (25ms) keeps this case fast; it must never wait out the
+  // production 30000ms default.
+  const session = buildConformanceSession("conformance-vice_run_until", (commandType) => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoReply();
+    }
+    if (commandType === CommandType.Exit) {
+      return conformanceAckReply(CommandType.Exit);
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      return conformanceAckReply(CommandType.CheckpointDelete);
+    }
+    throw new Error(`vice_run_until: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await dispatchStock("vice_run_until", { address: "$c000", timeout_ms: 25 }, deps);
+  assertAnswerConforms("vice_run_until", result);
 });
 
 // --------------------------------------------------------- completeness guard and negative control

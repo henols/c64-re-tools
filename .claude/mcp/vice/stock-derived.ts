@@ -89,6 +89,8 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_cia_get_state", // Phase 5, DERIV-05
   "vice_sprite_get", // Phase 5, DERIV-06
   "vice_sprite_inspect", // Phase 5, DERIV-06
+  "vice_cycles_stopwatch", // Phase 7, TIME-01
+  "vice_run_until", // Phase 7, TIME-02
 ]);
 
 /**

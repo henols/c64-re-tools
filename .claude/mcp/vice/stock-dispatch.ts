@@ -66,6 +66,8 @@ import { handleSymbolsLoad, handleSymbolsLookup } from "./stock-symbols.ts";
 import { handleViciiGetState } from "./stock-vicii.ts";
 import { handleCiaGetState } from "./stock-cia.ts";
 import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
+import { handleCyclesStopwatch } from "./stock-timing.ts";
+import { handleRunUntil } from "./stock-run-until.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -627,6 +629,12 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   // derived (DERIV-06)
   vice_sprite_get: withDerivedTool("vice_sprite_get", { needsSession: true }, handleSpriteGet),
   vice_sprite_inspect: withDerivedTool("vice_sprite_inspect", { needsSession: true }, handleSpriteInspect),
+
+  // derived (TIME-01)
+  vice_cycles_stopwatch: withDerivedTool("vice_cycles_stopwatch", { needsSession: true }, handleCyclesStopwatch),
+
+  // derived (TIME-02)
+  vice_run_until: withDerivedTool("vice_run_until", { needsSession: true }, handleRunUntil),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a

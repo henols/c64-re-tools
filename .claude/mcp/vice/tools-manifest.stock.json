@@ -3358,6 +3358,156 @@
           "dataBank"
         ]
       }
+    },
+    {
+      "name": "vice_cycles_stopwatch",
+      "description": "Measure elapsed CPU cycles for timing-critical code analysis. Use 'reset' to start timing, 'read' to get elapsed cycles, or 'reset_and_read' for atomic read-and-reset. Ideal for measuring raster routine timing. On VICE >= 3.10 the figure is exact (CPUHISTORY_GET); below 3.10 it is a within-one-frame reconstruction from LIN/CYC, and a bracket that crossed a frame boundary is refused rather than approximated.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Action to perform: 'reset' (start timing), 'read' (get elapsed cycles), or 'reset_and_read' (atomic read and reset)",
+            "enum": [
+              "reset",
+              "read",
+              "reset_and_read"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string",
+            "enum": [
+              "cpu_history",
+              "frame_position",
+              "unavailable"
+            ]
+          },
+          "measurable": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          },
+          "cycles": {
+            "type": "number"
+          },
+          "cyclesExact": {
+            "type": "string"
+          },
+          "exactness": {
+            "type": "string"
+          },
+          "caveat": {
+            "type": "string"
+          },
+          "standard": {
+            "type": "string"
+          },
+          "standardAssumed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "action",
+          "route",
+          "measurable",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_run_until",
+      "description": "Run until address or for N cycles (with timeout). timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Target address: number, hex, or symbol (stops when PC reaches this)"
+          },
+          "cycles": {
+            "type": "number",
+            "description": "Max cycles to run (timeout, not yet implemented)"
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Stock-only. Milliseconds to wait for the address to be reached before giving up; default 30000, clamped to a ceiling of 600000."
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "string"
+          },
+          "reached": {
+            "type": "boolean"
+          },
+          "address": {
+            "type": "number"
+          },
+          "timeoutMs": {
+            "type": "number"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          },
+          "checkpointId": {
+            "type": "number"
+          },
+          "hitCount": {
+            "type": "number"
+          },
+          "timedOut": {
+            "type": "boolean"
+          },
+          "cleanup": {
+            "type": "string"
+          },
+          "timeoutClamped": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "reached",
+          "address",
+          "timeoutMs",
+          "runState"
+        ]
+      }
     }
   ]
 }
