@@ -670,6 +670,63 @@ test("handleDiagnoseStock: an on-disk epoch differing from the session's baselin
   assert.equal(sendCalls.length, 0, "the epoch comparison must cost zero emulator calls");
 });
 
+// SHAPE ORACLE for the restarted verdict's evidence -- added for the
+// 2026-08-18 UAT test-8 miss (260818-nh5): `stock-live-triage.test.ts` is
+// the ONLY live proof of the restarted verdict, but it is entry 5 of
+// `MANUAL_ONLY_TESTS` in `test-gate.mjs` and therefore never runs under
+// `node test-gate.mjs`. `88b9a15` (WR-04) additively widened every
+// verdict's evidence with `jamObserved`, including this branch, and that
+// widening reddened the live suite on both real stock binaries with zero
+// automated signal -- the gate reported 1624/0 the whole time. This test
+// exercises BOTH restarted call sites (thrown MachineRestartedError with a
+// null session, and an on-disk epoch differing from the session's
+// baseline with a non-null session) and pins the EXACT evidence key set
+// for each, at zero emulator cost. If this test fails, the live suite is
+// about to fail too: fix the shape, or update BOTH this oracle and the
+// live suite's tolerant assertion in the same change.
+test("handleDiagnoseStock (shape oracle): both restarted branches carry EXACTLY {baselineEpoch, currentEpoch, jamObserved}", async () => {
+  // Branch A: session-null (thrown MachineRestartedError during acquisition).
+  const thrownDeps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => {
+      throw new MachineRestartedError("test: machine restarted across reconnect", { baselineEpoch: 1, currentEpoch: 2 });
+    },
+  } as unknown as StockDispatchDeps;
+
+  const thrownResult = await handleDiagnoseStock({}, thrownDeps);
+  assert.equal(thrownResult.isError, false);
+  const thrownAnswer = parseAnswer(thrownResult);
+  assert.equal(thrownAnswer.verdict, "restarted");
+  const thrownEvidence = thrownAnswer.evidence as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(thrownEvidence).sort(),
+    ["baselineEpoch", "currentEpoch", "jamObserved"],
+    `session-null restarted evidence must be EXACTLY {baselineEpoch,currentEpoch,jamObserved}, got: ${JSON.stringify(thrownEvidence)}`,
+  );
+
+  // Branch B: session-non-null (on-disk epoch differing from the session's baseline).
+  const { session: epochSession } = makeFakeSession({
+    baselineEpoch: 10,
+    epochPath: "/fake/epoch.json",
+    readEpochFn: () => ({ present: true, epoch: 20, spawned_at: null, pid: null, path: "/fake/epoch.json" }),
+  });
+  const epochDeps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => epochSession,
+  } as unknown as StockDispatchDeps;
+
+  const epochResult = await handleDiagnoseStock({}, epochDeps);
+  assert.equal(epochResult.isError, false);
+  const epochAnswer = parseAnswer(epochResult);
+  assert.equal(epochAnswer.verdict, "restarted");
+  const epochEvidence = epochAnswer.evidence as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(epochEvidence).sort(),
+    ["baselineEpoch", "currentEpoch", "jamObserved"],
+    `session-non-null restarted evidence must be EXACTLY {baselineEpoch,currentEpoch,jamObserved}, got: ${JSON.stringify(epochEvidence)}`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Task 3, tests 7/8: wedged / live through the full handler
 // ---------------------------------------------------------------------------

@@ -32,6 +32,21 @@
 // cases, a genuine kill-and-relaunch -- when opted in via
 // VICE_LIVE_TRIAGE_BIN. Concurrent plan 07-13's `stock-live.test.ts` sibling
 // stays this list's fourth entry unchanged.
+//
+// STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
+// shape a manual-only live suite depends on MUST have a mirror assertion in
+// the automated set. A manual-only file is invisible to this gate by
+// design, so a shape change with no automated mirror can red it silently --
+// exactly what happened on 2026-08-18: `88b9a15` (WR-04) additively widened
+// the restarted verdict's evidence with `jamObserved`, and
+// `stock-live-triage.test.ts`'s exact-key-set assertion for that verdict
+// went red on both real stock binaries with zero signal from this gate
+// (1624/0 the whole time), surfacing only as a UAT test-8 miss. The worked
+// example fixing it is `stock-diagnose.test.ts`'s shape oracle for the
+// restarted verdict's evidence ("both restarted branches carry EXACTLY
+// {baselineEpoch, currentEpoch, jamObserved}") -- it needs no emulator, so
+// it runs here, and it fails the moment the live suite's assumed shape
+// would.
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
