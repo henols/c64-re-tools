@@ -108,19 +108,36 @@ const stockNames = new Set(stockManifest.tools.map((t) => t.name));
 // 1. Served inside vice-proxy.ts itself as synthetic proxy-local tools --
 // present in NEITHER manifest by design. Asserted below to still be declared
 // as `name: "<tool>"` literals in vice-proxy.ts, so a rename upstream fails
-// here instead of being silently reclassified as a miss.
+// here instead of being silently reclassified as a miss, AND to be genuinely
+// absent from both manifests (07-REVIEW.md WR-11: this was the ONE
+// classification with no manifest-presence assertion, which is how it kept
+// claiming "present in neither manifest by design" for two tools Phase 7 had
+// added to the stock manifest -- while stock-dispatch.test.ts:186-190 asserts
+// they MUST be there. Two committed sources of truth stating opposite facts,
+// with only one of them failing on drift).
 const PROXY_LOCAL_TOOLS = [
   [
     "vice_result_continue",
     "Served inside vice-proxy.ts itself (paginated/truncated tool-result continuation); present in neither manifest by design.",
   ],
+];
+
+// 1b. Served proxy-locally BUT advertised from the stock manifest (Phase 7,
+// WR-07). These are the hybrid case set 1 above used to mis-file: the handler
+// lives in vice-proxy.ts (so they are not forwarded to any emulator), while
+// their advertised tool DEFINITION comes from tools-manifest.stock.json on the
+// stock backend, because a proxy-local tool still has to be described to the
+// client with backend-correct schemas. Asserted below to be declared in
+// vice-proxy.ts AND present in the stock manifest -- the exact inverse of set
+// 1's assertion, so neither list can absorb the other's members silently.
+const PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY = [
   [
     "vice_recycle",
-    "Served inside vice-proxy.ts itself (forces a broker recycle of the current VICE instance); present in neither manifest by design.",
+    "Served inside vice-proxy.ts (forces a broker recycle of the current VICE instance); advertised from tools-manifest.stock.json on the stock backend (Phase 7, WR-07).",
   ],
   [
     "vice_diagnose",
-    "Served inside vice-proxy.ts itself (wedge/hang diagnosis, vice-wedge-triage's own entry point); present in neither manifest by design.",
+    "Served inside vice-proxy.ts (wedge/hang diagnosis, vice-wedge-triage's own entry point); advertised from tools-manifest.stock.json on the stock backend (Phase 7, WR-07).",
   ],
 ];
 
@@ -185,6 +202,33 @@ for (const [name, reason] of PROXY_LOCAL_TOOLS) {
     viceProxySrc.includes(`name: "${name}"`),
     `${name}: classified as PROXY_LOCAL_TOOLS but no longer declared as \`name: "${name}"\` in vice-proxy.ts -- a rename upstream must not be silently reclassified as a miss`
   );
+  // WR-11: the missing half. "Present in neither manifest by design" is a
+  // claim, so check it. Without this, a tool added to the stock manifest kept
+  // its "neither manifest" reason string forever AND was silently excluded
+  // from resolvedAdvertisedCount, because allowlistedNames short-circuits the
+  // core check below.
+  need(
+    !forkNames.has(name),
+    `${name}: classified as PROXY_LOCAL_TOOLS ("present in neither manifest by design") but present in the FORK manifest -- reclassify rather than leaving two sources of truth disagreeing`
+  );
+  need(
+    !stockNames.has(name),
+    `${name}: classified as PROXY_LOCAL_TOOLS ("present in neither manifest by design") but present in the STOCK manifest -- move it to PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY`
+  );
+}
+
+// --- Assertion: PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY declared in
+// vice-proxy.ts AND present in the stock manifest (WR-11) -------------------
+for (const [name, reason] of PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY) {
+  need(Boolean(reason) && reason.length > 0, `${name}: PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY reason must not be empty`);
+  need(
+    viceProxySrc.includes(`name: "${name}"`),
+    `${name}: classified as PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY but no longer declared as \`name: "${name}"\` in vice-proxy.ts`
+  );
+  need(
+    stockNames.has(name),
+    `${name}: classified as advertised-from-the-stock-manifest but ABSENT from tools-manifest.stock.json -- either it moved back to PROXY_LOCAL_TOOLS or the manifest entry was dropped (stock-dispatch.test.ts asserts it must be present)`
+  );
 }
 
 // --- Assertion: DENY_LISTED_TOOLS still in vice.ts's DENY_LIST, absent from
@@ -239,6 +283,14 @@ for (const [name] of [...FORK_ONLY_UNRECOVERABLE, ...PENDING_LATER_PHASE]) {
 }
 
 // --- The core check ---------------------------------------------------------
+// WR-11: PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY is deliberately NOT allowlisted.
+// Its members ARE in the stock manifest, so they must resolve through the
+// normal `stockNames.has(name)` path and count toward
+// resolvedAdvertisedCount. Allowlisting them (which is what the old
+// PROXY_LOCAL_TOOLS classification did) short-circuited the core check and
+// silently excluded them from the count -- shrinking the coverage number the
+// script exists to report while claiming they were "present in neither
+// manifest by design".
 const allowlistedNames = new Set(
   [...PROXY_LOCAL_TOOLS, ...DENY_LISTED_TOOLS, ...NOT_A_TOOL_NAMES, ...FORK_ONLY_UNRECOVERABLE, ...PENDING_LATER_PHASE].map(
     ([n]) => n
@@ -289,7 +341,8 @@ const categoryCount = (set) => [...set].filter(([name]) => extracted.has(name)).
 console.log(
   `check-skill-tool-coverage: OK -- ${extracted.size} distinct vice_* names extracted from ${skillFiles.length} files across ${topLevelDirs.length} skill directories; ` +
     `${resolvedAdvertisedCount} resolved as advertised on the stock manifest (${stockNames.size} tools total). ` +
-    `Classified: ${categoryCount(PROXY_LOCAL_TOOLS)} proxy-local, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
+    `Classified: ${categoryCount(PROXY_LOCAL_TOOLS)} proxy-local (neither manifest), ` +
+    `${categoryCount(PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY)} proxy-local-with-stock-manifest-entry, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
     `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${categoryCount(FORK_ONLY_UNRECOVERABLE)} fork-only-unrecoverable, ` +
     `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase.`
 );
