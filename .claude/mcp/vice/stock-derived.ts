@@ -18,21 +18,42 @@
 // hazard. There, NOT translating an emulator-side path is the bug -- four
 // tools carry a filename stock VICE opens on the HOST, and stock-paths.ts's
 // whole job is making sure that translation happens. HERE, translating a
-// CLIENT-SIDE-DERIVED path is the bug: rewriteArguments() runs INSIDE the
-// fork-forwarding function at vice-proxy.ts:2773, before call() -- a derived
-// tool sitting behind call() would receive HOST-translated paths and act on
-// them INSIDE THE CONTAINER (ROADMAP Phase 4 Notes, CLAUDE.md). The
-// derived-tool seam this file anchors exists so a derived tool's handler is
-// reached BEFORE that fork-forwarding function ever runs
-// rewriteArguments() at all.
+// CLIENT-SIDE-DERIVED path is the bug: `forwardToVice()` calls
+// `rewriteArguments(args, name)` itself, before it ever delegates to
+// `call()` -- so a derived tool sitting behind `call()` would receive
+// HOST-translated paths and act on them INSIDE THE CONTAINER (ROADMAP Phase 4
+// Notes, CLAUDE.md). The derived-tool seam this file anchors exists so a
+// derived tool's handler is reached BEFORE `forwardToVice()` runs
+// `rewriteArguments()` at all.
 //
-// SECOND CONSUMER, named now so Phase 5's edit is a one-liner:
-// gatherWedgeEvidence() (vice-proxy.ts:1343) calls rewriteArguments() itself
-// at line 1367. On the stock backend, PERFORMING that translation becomes
-// the bug -- its own comment inverts. Phase 5 criterion 5 owns that fix; it
-// is deliberately NOT repointed here (it is currently unreachable on stock
-// anyway: handleRecycle() is backend-aware and refused by name after CR-07,
-// and vice_display_screenshot does not exist on stock until Phase 5).
+// SECOND CONSUMER: `gatherWedgeEvidence()` in vice-proxy.ts calls
+// `rewriteArguments()` itself, for `vice_display_screenshot`. On the stock
+// backend, PERFORMING that translation becomes the bug -- its own comment
+// inverts. Phase 5 criterion 5 owns that fix; it is deliberately NOT
+// repointed here.
+//
+// CITATION STYLE, deliberate (07-REVIEW.md WR-12): the two call sites above
+// are named by SYMBOL (`forwardToVice()`'s own `rewriteArguments(args, name)`
+// call; `gatherWedgeEvidence()`'s own call), never by line number. This header
+// used to cite `vice-proxy.ts:2773`, `:1343` and `:1367`; by the time WR-12 was
+// filed the real lines were 2889, 1344 and 1368 -- 07-16 edited vice-proxy.ts
+// without re-verifying them, and this header is the in-tree statement of
+// CLAUDE.md's derived-tool constraint, so its citations are load-bearing. Line
+// numbers in this file drift every phase; grep for the symbol instead.
+//
+// WHY THE HAZARD IS UNREACHABLE ON STOCK TODAY -- restated in terms of what
+// actually enforces it (WR-12 again; the previous reason had gone stale):
+// `buildBackendAwareTool()` routes EVERY stock tool call to
+// `dispatchStock()`, so `forwardToVice()`, `handleRecycle()` and
+// `gatherWedgeEvidence()` are reachable only on the fork arm. That is a
+// structural property of the registration, not of any tool's name. The reason
+// this header used to give -- "handleRecycle() is backend-aware and refused by
+// name after CR-07, and vice_display_screenshot does not exist on stock until
+// Phase 5" -- is now WRONG on its first clause: Phase 7 implemented
+// `vice_recycle` on stock (`handleRecycleStock`) and registered it in
+// STOCK_DERIVED_TOOLS below. The conclusion held; the stated reason did not,
+// which is worse than no reason for a constraint a future reader will
+// re-derive.
 //
 // WHAT NOT TO DO:
 //   - Never `import` hostpath.ts from this file, or from any module listed
