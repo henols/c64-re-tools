@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
 
 import {
   parseBuffer,
@@ -51,6 +52,7 @@ import {
   autostartBody,
   dumpBody,
   undumpBody,
+  resourceGetBody,
 } from "./stock-protocol.ts";
 import {
   encodeResponseFrame,
@@ -1675,4 +1677,89 @@ test("CPUHISTORY_GET: an item_size of 0xff with only a few trailing bytes is a r
   const { responses } = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(responses.length, 1);
   assert.ok(responses[0] instanceof StockFramingError);
+});
+
+// ===========================================================================
+// RESOURCE_GET (0x51) -- plan 07-02, Task 2. Request body:
+// name_length(1) name(ASCII, not NUL-terminated). Response body: type(1)
+// size(1) payload(size bytes) -- type 0 = string, 1 = integer (uint32LE).
+// ===========================================================================
+
+test("resourceGetBody: MachineVideoStandard encodes as name_length(1) + ASCII name, no trailing NUL", () => {
+  const body = resourceGetBody({ name: "MachineVideoStandard" });
+  assert.equal(body.length, 1 + 20);
+  assert.equal(body[0], 20);
+  assert.equal(body.subarray(1).toString("ascii"), "MachineVideoStandard");
+});
+
+test("resourceGetBody: a non-string name is refused", () => {
+  assert.throws(() => resourceGetBody({ name: 123 as unknown as string }), StockEncodingError);
+});
+
+test("resourceGetBody: an empty name is refused", () => {
+  assert.throws(() => resourceGetBody({ name: "" }), StockEncodingError);
+});
+
+test("resourceGetBody: a name over 255 bytes is refused, naming the bound", () => {
+  assert.throws(
+    () => resourceGetBody({ name: "A".repeat(256) }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /255/);
+      return true;
+    },
+  );
+});
+
+test("resourceGetBody: a non-printable-ASCII byte is refused, naming its index", () => {
+  assert.throws(
+    () => resourceGetBody({ name: "Machine\x01Standard" }),
+    (err: unknown) => {
+      assert.ok(err instanceof StockEncodingError);
+      assert.match((err as Error).message, /index 7/);
+      return true;
+    },
+  );
+});
+
+test("RESOURCE_GET: an integer response body parses to { valueType: 'integer', value }", () => {
+  const body = Buffer.from([0x01, 0x04, 0x01, 0x00, 0x00, 0x00]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 40, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: number };
+  assert.deepEqual(parsed, { type: "resource_get", requestId: 40, errorCode: 0x00, valueType: "integer", value: 1 });
+});
+
+test("RESOURCE_GET: a string response body parses to { valueType: 'string', value }", () => {
+  const payload = Buffer.from("PAL-G", "ascii");
+  const body = Buffer.concat([Buffer.from([0x00, payload.length]), payload]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 41, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: string };
+  assert.equal(parsed.type, "resource_get");
+  assert.equal(parsed.valueType, "string");
+  assert.equal(parsed.value, "PAL-G");
+});
+
+test("RESOURCE_GET: a body with the type byte present but the size byte missing is a returned StockFramingError", () => {
+  const body = Buffer.from([0x01]); // type byte only, no size byte
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 42, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError);
+});
+
+test("structural: stock-protocol.ts defines no resourceSetBody() and no case ResponseType.ResourceSet, outside comments (T-07-04)", () => {
+  const source = readFileSync(new URL("./stock-protocol.ts", import.meta.url), "utf8");
+  const nonCommentSource = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  assert.ok(!nonCommentSource.includes("resourceSetBody"), "no non-comment line should define resourceSetBody");
+  assert.ok(
+    !nonCommentSource.includes("case ResponseType.ResourceSet"),
+    "no non-comment line should contain a case ResponseType.ResourceSet parser branch",
+  );
 });
