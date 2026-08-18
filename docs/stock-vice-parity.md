@@ -164,8 +164,11 @@ below is renumbered to stay contiguous.)
      manifest carries no `outputSchema` on any tool, so there is no
      documented fork shape to reproduce; the stock manifest declares an
      `outputSchema` on every entry (D-02) and that schema is the contract. A
-     skill that parses fork answer *fields* breaks on stock — SKILL-01
-     (Phase 8) must cover answer-shape drift, not only capability gaps.
+     skill that parses fork answer *fields* breaks on stock — the skills'
+     playbooks name the fork requirement at each fork-only call site
+     (`SKILL-01`); answer-shape drift between the two backends is documented
+     here only, with no mechanical check, so it remains an open concern
+     rather than something a landed requirement covers.
    - **Every stock answer carries a `runState` field (D-06).** Values
      `running`, `stopped`, `unknown`, derived only from the
      `STOPPED`/`RESUMED`/`JAM` event stream. `unknown` is the honest
@@ -192,19 +195,18 @@ below is renumbered to stay contiguous.)
      keyboard buffer of a machine that is now halted.** Nothing consumes the
      buffer until the agent resumes. The answer's `runState` reports
      `stopped`; this is D-05's divergence applied to input, not a failure.
-   - **`vice_joystick_tap` is absent from the stock manifest** and is
-     deferred to Phase 7. A tap is "hold for N frames, then release", which
-     requires the machine to *run* for a measured interval — an unrequested
-     resume (D-05) plus a cycle/frame measurement that does not exist on
-     stock until Phase 7's timing route lands. `vice_joystick_set` (hold /
-     release / centre) ships in Phase 3 and satisfies DIRECT-07's joystick
-     half. BACK-05 reports the absence in Phase 8. Record this as the same
+   - **`vice_joystick_tap` is absent from the stock manifest and is not
+     built.** A tap is "hold for N frames, then release", which requires the
+     machine to *run* for a measured interval — an unrequested resume that
+     collides with D-05's no-unrequested-resume policy. `vice_joystick_set`
+     (hold / release / centre) ships in Phase 3 and satisfies DIRECT-07's
+     joystick half. BACK-05 reports the absence. Record this as the same
      class of decision as D-15's ignore-count trim, reached by the same
      reasoning.
-   - **`vice_disk_detach` is absent from the stock manifest** and ships in
-     Phase 7 through the text monitor (D-13). Phase 3 ships only the
-     `-remotemonitor` launch flag and a second broker-allocated port; it
-     builds no text client and dials nothing on that port.
+   - **`vice_disk_detach` is absent from the stock manifest — CUT from scope
+     2026-08-17.** No skill calls it, stock has no detach opcode, and
+     re-attaching a different disk image covers the same workflow; see
+     ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)".
    - **`vice_memory_compare`'s `mode: 'snapshot'` is refused by name (D-05-01,
      Phase 5).** No memory-only snapshot producer exists on either backend;
      `vice_snapshot_save` writes a whole-machine `.vsf`. The alternatives were
@@ -242,9 +244,10 @@ below is renumbered to stay contiguous.)
      (`vice_sid_get_state`, `vice_keyboard_matrix`); the extraction behind
      `scripts/check-skill-tool-coverage.mjs` finds a third. It routes to
      Phase 8 exactly like the other two (`BACK-05` for the runtime error,
-     `SKILL-01` for the playbook note). The ROADMAP's criterion text is
-     **not** amended by this correction — that is a developer decision,
-     flagged here for Phase 8 planning.
+     `SKILL-01` for the playbook note). The ROADMAP's criterion text **was**
+     amended to record this: Phase 5 criterion 5 now carries a dated
+     parenthetical (2026-08-17) naming all three unrecoverable tools
+     (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`).
    - **Also absent from the stock manifest, permanently or until a later
      phase:** `vice_checkpoint_set_ignore_count` (D-15), `vice_snapshot_list`
      (D-16, deleted from **both** manifests), the low-level keyboard family
@@ -258,7 +261,8 @@ below is renumbered to stay contiguous.)
      `vice_execution_until_return` (`EXECUTE_UNTIL_RETURN` 0x73) and
      `vice_registers_available` (`REGISTERS_AVAILABLE` 0x83). Permitted by
      Phase 2's D-07 (the two backends' advertised lists are genuinely
-     different). Phase 8's parity harness must expect these on stock only.
+     different). Their stock-only status is recorded mechanically in
+     `docs/tool-support.md`, generated from the shipped manifests.
    - **Disk attach is `AUTOSTART` with the run flag clear (D-14).**
      `vice_disk_attach` on stock is `AUTOSTART` (0xdd) with the run flag
      clear — a documented approximation, not an exact port. `AUTOSTART` has
