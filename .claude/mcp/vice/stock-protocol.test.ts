@@ -1845,6 +1845,40 @@ test("RESOURCE_GET (CR-02): a [1, 0] body does NOT log an internal 'BUG:' line -
   );
 });
 
+// 07-REVIEW.md WR-06: the documented contract is exactly two value types
+// (0 = string, 1 = int). Everything that was not 1 used to fall through to the
+// string branch, so an out-of-contract type byte returned `size` bytes of
+// arbitrary memory MISLABELLED as a string, where every other out-of-contract
+// input in this parser is a framing error.
+test("RESOURCE_GET (WR-06): a value-type byte outside the documented {0,1} set is a returned StockFramingError, never a mislabelled string", () => {
+  for (const valueTypeByte of [2, 7, 0x80, 0xff]) {
+    const body = Buffer.from([valueTypeByte, 4, 0x41, 0x42, 0x43, 0x44]);
+    const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 55, body });
+    const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+    assert.equal(responses.length, 1);
+    assert.ok(
+      responses[0] instanceof StockFramingError,
+      `value type ${valueTypeByte} must be refused, not decoded as "${JSON.stringify(responses[0])}"`,
+    );
+    const err = responses[0] as StockFramingError;
+    assert.match(err.message, new RegExp(`declared value type ${valueTypeByte}`));
+    assert.match(err.message, /expected 0 \(string\) or 1 \(integer\)/);
+    assert.equal(err.observed, valueTypeByte);
+  }
+});
+
+test("RESOURCE_GET (WR-06): value type 0 still decodes as a string -- the guard must not have narrowed the documented set", () => {
+  const payload = Buffer.from("PAL", "ascii");
+  const body = Buffer.concat([Buffer.from([0, payload.length]), payload]);
+  const frame = encodeResponseFrame({ responseType: 0x51, errorCode: 0x00, requestId: 56, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const parsed = responses[0] as { type: string; valueType: string; value: string };
+  assert.equal(parsed.type, "resource_get");
+  assert.equal(parsed.valueType, "string");
+  assert.equal(parsed.value, "PAL");
+});
+
 // ===========================================================================
 // Real-bytes CPUHISTORY_GET regressions (plan 07-12, Task 3): decode the
 // captured fixtures from Task 1 through the same public entry point the
@@ -1919,16 +1953,100 @@ test("CPUHISTORY_GET (hostile): a declared count of 70000 is a returned StockFra
   assert.match((responses[0] as StockFramingError).message, /70000/);
 });
 
-test("CPUHISTORY_GET (hostile): an item_size too small to hold its own regCount field is a returned StockFramingError naming item_size", () => {
+// 07-REVIEW.md WR-05 (3): this test asserted only `instanceof
+// StockFramingError` while its NAME claimed the message names item_size. It
+// passed for a different reason than its name: the body was too short, so the
+// generic body-length need() fired first with "response type 0x86 body is 6
+// byte(s), needs at least 7" -- which does not name item_size at all, leaving
+// the entry-relative guard the parser comment advertises (T-07-12-03) wholly
+// untested. Both cases below now assert the MESSAGE, and the second supplies a
+// body long enough that only the entry-relative guard can be what fires.
+test("CPUHISTORY_GET (hostile): an item_size too small to hold its own regCount names item_size even when the body is ALSO too short", () => {
   const count = Buffer.alloc(4);
   count.writeUInt32LE(1, 0);
-  // item_size = 1: only one byte follows the size byte, but regCount alone
-  // needs 2 bytes -- cannot possibly hold a valid register block.
+  // item_size = 1 with a single byte after it: the entry's declared end is
+  // within the body, but there is no room for regCount -- and the body is too
+  // short overall too. This is the original 07-12 fixture. Before WR-05 the
+  // generic body-length need() won the race and reported "body is 6 byte(s),
+  // needs at least 7", which named neither item_size nor the field that did
+  // not fit; the entry-relative guard now runs first, so the diagnostic
+  // describes the actual defect in the frame.
   const body = Buffer.concat([count, Buffer.from([1, 0xff])]);
   const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 61, body });
   const { responses } = parseBuffer(frame, { desyncBytes: 0 });
   assert.equal(responses.length, 1);
   assert.ok(responses[0] instanceof StockFramingError);
+  const message = (responses[0] as StockFramingError).message;
+  assert.match(message, /item_size 1/, `must name the observed item_size, got: ${message}`);
+  assert.match(message, /regCount/, `must name the field that did not fit, got: ${message}`);
+});
+
+test("CPUHISTORY_GET (hostile): an item_size too small to hold its own regCount, in a body long enough that ONLY the entry-relative guard can fire, names item_size", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(2, 0);
+  // Entry 0 declares item_size = 1 (one byte follows), so its declared end is
+  // offset+2 -- no room for a 2-byte regCount. Entry 1's bytes follow, so the
+  // BODY has plenty of room: before WR-05 the parser read regCount straight
+  // out of entry 1 and reported a register count assembled from bytes outside
+  // entry 0 (live: "register item 0 of 4608"). It must instead refuse,
+  // naming the real item_size it was given.
+  const body = Buffer.concat([count, Buffer.from([1, 0x00]), Buffer.from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99])]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 62, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError, `expected a StockFramingError, got ${String(responses[0])}`);
+  const message = (responses[0] as StockFramingError).message;
+  assert.match(message, /item_size 1/, `the guard must name the observed item_size, got: ${message}`);
+  assert.match(message, /regCount/, `the guard must name the field that did not fit, got: ${message}`);
+  assert.doesNotMatch(message, /register item 0 of/, "the pre-fix message named a register count read from outside the entry");
+  assert.equal((responses[0] as StockFramingError).observed, 1);
+});
+
+test("CPUHISTORY_GET (WR-05): an entry declaring an instruction_length larger than its own item_size allows is REFUSED, not parsed", () => {
+  // A well-formed 47-byte-payload entry shape (the real VICE 3.10 stride) but
+  // with instruction_length overstated as 200. Before WR-05 the guard checked
+  // a hardcoded 3, so this parsed successfully and handed
+  // `instructionLength: 200` straight to consumers.
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0);
+  const regCount = 8;
+  const regBlock = Buffer.concat(
+    Array.from({ length: regCount }, (_unused, id) => Buffer.from([3, id, 0x00, 0x00])), // size(1)+id(1)+value(u16LE)
+  );
+  const cycle = Buffer.alloc(8);
+  cycle.writeBigUInt64LE(0x031734ecn, 0);
+  const regCountField = Buffer.alloc(2);
+  regCountField.writeUInt16LE(regCount, 0);
+  const instrBytes = Buffer.from([0x8d, 0x92, 0x02, 0xff]);
+  const payload = Buffer.concat([regCountField, regBlock, cycle, Buffer.from([200]), instrBytes]);
+  const body = Buffer.concat([count, Buffer.from([payload.length]), payload]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 63, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  assert.ok(responses[0] instanceof StockFramingError, `an overstated instruction_length must be refused, got ${String(responses[0])}`);
+  assert.match((responses[0] as StockFramingError).message, /instruction_length 200/);
+});
+
+test("CPUHISTORY_GET (WR-05): the same entry shape with a truthful instruction_length of 4 still parses", () => {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(1, 0);
+  const regCount = 8;
+  const regBlock = Buffer.concat(Array.from({ length: regCount }, (_unused, id) => Buffer.from([3, id, 0x00, 0x00])));
+  const cycle = Buffer.alloc(8);
+  cycle.writeBigUInt64LE(0x031734ecn, 0);
+  const regCountField = Buffer.alloc(2);
+  regCountField.writeUInt16LE(regCount, 0);
+  const payload = Buffer.concat([regCountField, regBlock, cycle, Buffer.from([4]), Buffer.from([0x8d, 0x92, 0x02, 0xff])]);
+  const body = Buffer.concat([count, Buffer.from([payload.length]), payload]);
+  const frame = encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId: 64, body });
+  const { responses } = parseBuffer(frame, { desyncBytes: 0 });
+  assert.equal(responses.length, 1);
+  const response = responses[0] as { type: string; count: number; entries: Array<{ cycle: bigint; instructionLength: number; opcode: number }> };
+  assert.equal(response.type, "cpu_history", `expected a parsed reply, got ${String(responses[0])}`);
+  assert.equal(response.count, 1);
+  assert.equal(response.entries[0]!.instructionLength, 4);
+  assert.equal(response.entries[0]!.cycle, 0x031734ecn);
+  assert.equal(response.entries[0]!.opcode, 0x8d);
 });
 
 test("structural: stock-protocol.ts defines no resourceSetBody() and no case ResponseType.ResourceSet, outside comments (T-07-04)", () => {

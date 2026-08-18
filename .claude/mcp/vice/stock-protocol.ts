@@ -1476,7 +1476,14 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // regCount/register-items/cycle/instruction_length is a
       // StockFramingError naming the observed item_size and what did not
       // fit, never a truncated silent success and never a RangeError
-      // (T-07-12-03). count is rejected above 65535 up front: VICE's own
+      // (T-07-12-03). 07-REVIEW.md WR-05 closed two holes in that claim: the
+      // regCount read was bounds-checked against the BODY only, so a
+      // multi-entry frame whose first entry declared item_size < 2 read its
+      // regCount out of the NEXT entry and reported a fabricated number; and
+      // the instruction-bytes guard used a hardcoded 3 rather than the
+      // entry's own declared instruction_length, so an entry declaring 200
+      // with 3 bytes present parsed successfully. Both are now
+      // entry-relative. Do not reintroduce a literal in either guard. count is rejected above 65535 up front: VICE's own
       // count is a uint16_t (monitor_binary.c:1469, 1491's
       // little_endian_to_uint32() read), so a larger declared count is a
       // desynced or hostile frame and iterating it would be a
@@ -1500,6 +1507,19 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
         need(body, entryEnd, responseType, requestId);
 
         let cursor = offset + 1;
+        // WR-05 (1): bound regCount by the DECLARED ENTRY, not just the body.
+        // The body-relative need() alone let an entry with item_size < 2 in a
+        // multi-entry frame read its regCount out of the NEXT entry's bytes;
+        // the resulting diagnostic then named a fabricated register count
+        // (observed live: "does not leave room for register item 0 of 4608",
+        // where 4608 was assembled from bytes outside entry 0). Check the
+        // entry first, so the message can only ever name real numbers.
+        if (cursor + 2 > entryEnd) {
+          throw new StockFramingError(
+            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for its own 2-byte regCount field`,
+            { observed: itemSize, expected: 2, responseType, requestId },
+          );
+        }
         need(body, cursor + 2, responseType, requestId);
         const regCount = body.readUInt16LE(cursor);
         cursor += 2;
@@ -1538,13 +1558,24 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
             { observed: instructionLength, expected: 3, responseType, requestId },
           );
         }
-        if (cursor + 3 > entryEnd) {
+        // WR-05 (2): validate against what the entry DECLARES, not a
+        // hardcoded 3. The error message here has always claimed to check
+        // "room for its declared instruction_length", but the guard used a
+        // literal 3 -- so an entry declaring instruction_length 200 with only
+        // 3 instruction bytes present PARSED SUCCESSFULLY and handed
+        // `instructionLength: 200` to consumers (observed against the real
+        // parser). Bound it by instructionLength, then read the 3 fields this
+        // struct defines (opcode/p1/p2); any bytes beyond those 3 within the
+        // declared length are the trailing third-parameter placeholder VICE
+        // reserves and are deliberately not surfaced.
+        if (cursor + instructionLength > entryEnd) {
           throw new StockFramingError(
-            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for its declared instruction_length ${instructionLength}`,
-            { observed: itemSize, responseType, requestId },
+            `CPUHISTORY_GET entry ${index}'s item_size ${itemSize} does not leave room for its declared instruction_length ${instructionLength} ` +
+              `(${entryEnd - cursor} byte(s) remain in the entry)`,
+            { observed: itemSize, expected: instructionLength, responseType, requestId },
           );
         }
-        need(body, cursor + 3, responseType, requestId);
+        need(body, cursor + instructionLength, responseType, requestId);
         const opcode = body[cursor]!;
         const p1 = body[cursor + 1]!;
         const p2 = body[cursor + 2]!;
@@ -1587,6 +1618,23 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
         }
         need(body, 2 + 4, responseType, requestId);
         return { type: "resource_get", requestId, errorCode, valueType: "integer", value: body.readUInt32LE(2) };
+      }
+      // WR-06 (07-REVIEW.md): the documented contract is EXACTLY two value
+      // types -- 0 = string, 1 = int ([CITED monitor_binary.c:938-965]
+      // above). The CR-02 rewrite hardened `=== 1` and let everything else
+      // fall through to the string branch, so a wire byte of 2, 7 or 0xff was
+      // reported as `valueType: "string"` with `size` bytes of arbitrary
+      // memory rendered as ASCII -- a MISLABELLED value where every other
+      // out-of-contract input in this function produces a framing error, and
+      // a direct sibling of the CR-02 rule stated at the top of this file. It
+      // degraded safely only because the single consumer
+      // (stock-timing.ts's resolveVideoStandard) rejects any non-integer
+      // reply; that is a property of today's consumer, not of this parser.
+      if (valueTypeByte !== 0) {
+        throw new StockFramingError(
+          `RESOURCE_GET reply declared value type ${valueTypeByte}, expected 0 (string) or 1 (integer)`,
+          { observed: valueTypeByte, expected: 0, responseType, requestId },
+        );
       }
       need(body, 2 + size, responseType, requestId);
       return {
