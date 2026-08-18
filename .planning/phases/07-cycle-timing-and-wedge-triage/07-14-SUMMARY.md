@@ -133,3 +133,8 @@ Existing fields (`requested`, `address`, `timeoutMs`, `checkpointId`, `hitCount`
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+All created/modified files verified present and all task commit hashes (861279a, 62899fe,
+866f709) plus this SUMMARY's own commit (b077979) verified present in `git log --oneline --all`.
