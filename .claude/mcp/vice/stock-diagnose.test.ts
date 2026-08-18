@@ -12,13 +12,23 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
+import {
+  CommandType,
+  StockFramingError,
+  StockDesyncError,
+  StockResponseMismatchError,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
+  type ResolvedResponse,
+  type ViceMonitorClient,
+} from "./stock-protocol.ts";
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import { clearHeldStockSession } from "./stock-dispatch.ts";
 import { resetTimingStateForTest } from "./stock-timing.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
+import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { MachineRestartedError, type EpochResult } from "./vice.ts";
 import {
@@ -29,6 +39,9 @@ import {
   diagnoseSessionTimeoutMs,
   diagnoseBracketWindowMs,
   STOCK_DIAGNOSE_VERDICTS,
+  STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME,
+  STOCK_DIAGNOSE_UNAVAILABLE_REASONS,
+  classifyDiagnoseUnavailable,
 } from "./stock-diagnose.ts";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +68,7 @@ beforeEach(() => {
   resetTimingStateForTest();
   resetRegisterCatalogsForTest();
   resetCheckpointStateForTest();
+  resetRunStateTrackersForTest();
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +397,55 @@ test("runStockLivenessBracket: no send() occurs between the resume and the post-
 });
 
 // ---------------------------------------------------------------------------
+// Task 3, tests 1/2: WR-03 -- machinePaused derived from the observed run
+// state for the checkpoint_trap verdict (the exact case WR-03 says has no
+// coverage today), driven deterministically via attachRunStateTracker().
+// ---------------------------------------------------------------------------
+
+test("handleDiagnoseStock (WR-03): checkpoint_trap with the run-state tracker observed 'stopped' -> machinePaused true, machinePausedSource 'observed'", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])], // banked in, RAM vector -> $C100
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+  });
+  attachRunStateTracker(session.client);
+  session.client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0xc000 });
+
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "checkpoint_trap");
+  assert.equal(answer.machinePaused, true);
+  assert.equal(answer.machinePausedSource, "observed");
+});
+
+test("handleDiagnoseStock (WR-03): checkpoint_trap with the run-state tracker at 'unknown' -> machinePaused true, machinePausedSource 'structural'", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+  });
+  attachRunStateTracker(session.client); // attached, but no stopped/resumed/jam event ever arrives -- stays "unknown"
+
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "checkpoint_trap");
+  assert.equal(answer.machinePaused, true);
+  assert.equal(answer.machinePausedSource, "structural");
+});
+
+// ---------------------------------------------------------------------------
 // Task 3, tests 1/2/3: monitor_held_elsewhere / restarted (thrown + epoch)
 // ---------------------------------------------------------------------------
 
@@ -407,6 +470,10 @@ test("handleDiagnoseStock: MonitorOwnershipError during acquisition -> monitor_h
   assert.equal(evidence.holderClaimedAt, 12345);
   assert.equal(evidence.port, 6502);
   assert.equal(answer.runState, "unknown");
+  // WR-03/Gap 3: no session was ever obtained here -- machinePaused must be
+  // the honest "no claim made" value, never a hand-passed literal.
+  assert.equal(answer.machinePaused, false);
+  assert.equal(answer.machinePausedSource, "no_session");
 });
 
 test("handleDiagnoseStock: a thrown MachineRestartedError during acquisition -> restarted, carrying both epochs", async () => {
@@ -472,6 +539,10 @@ test("handleDiagnoseStock: two consecutive zero-advance brackets -> wedged, exac
   assert.equal((answer.evidence as Record<string, unknown>).bracketsRun, 2);
   assert.equal(sendCountFor(sendCalls, CommandType.Exit), 2);
   assert.equal(answer.machinePaused, true);
+  // No run-state tracker was ever attached to this fake session (this test
+  // does not call attachRunStateTracker()), so runStateFor() reports
+  // "unknown" -- the structural inference, not an observation.
+  assert.equal(answer.machinePausedSource, "structural");
 });
 
 test("handleDiagnoseStock: the first bracket advances -> live, exactly 1 bracket, Exit sent exactly once", async () => {
@@ -493,6 +564,12 @@ test("handleDiagnoseStock: the first bracket advances -> live, exactly 1 bracket
   assert.equal(answer.verdict, "live");
   assert.equal((answer.evidence as Record<string, unknown>).bracketsRun, 1);
   assert.equal(sendCountFor(sendCalls, CommandType.Exit), 1);
+  assert.equal(answer.machinePaused, true);
+  // Same rationale as the wedged case above: no tracker attached -> "unknown"
+  // run state -> the structural inference (the bracket's own final read
+  // halts the machine, so "paused" is correct even though it was never
+  // directly observed via a stopped/resumed/jam event in this test).
+  assert.equal(answer.machinePausedSource, "structural");
 });
 
 // ---------------------------------------------------------------------------
@@ -519,10 +596,203 @@ test("handleDiagnoseStock: a never-settling ensureLease produces a returned isEr
 // Task 3, test 11: verdict vocabulary
 // ---------------------------------------------------------------------------
 
-test("STOCK_DIAGNOSE_VERDICTS: exactly the five of D-03, stale_read_path absent", () => {
+test("STOCK_DIAGNOSE_VERDICTS: exactly the five of D-03, in order, neither stale_read_path nor diagnosis_unavailable present (Gap 3/T-07-15-05)", () => {
   assert.deepEqual([...STOCK_DIAGNOSE_VERDICTS], ["restarted", "checkpoint_trap", "wedged", "monitor_held_elsewhere", "live"]);
   assert.equal(STOCK_DIAGNOSE_VERDICTS.length, 5);
   assert.equal((STOCK_DIAGNOSE_VERDICTS as readonly string[]).includes("stale_read_path"), false);
+  assert.equal(
+    (STOCK_DIAGNOSE_VERDICTS as readonly string[]).includes(STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME),
+    false,
+    "diagnosis_unavailable is a named non-verdict outcome, never a sixth verdict",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Task 3, test 5: classifyDiagnoseUnavailable() -- unit cases for the
+// classifier's own reason classes. STOCK_DIAGNOSE_UNAVAILABLE_REASONS has
+// seven members total; monitor_acquisition_timeout, session_refused and
+// evidence_gathering_failed are never produced BY the classifier (they are
+// assigned directly at their own call sites in handleDiagnoseStock()) --
+// those three are covered end-to-end below instead (Task 3, test 6).
+// ---------------------------------------------------------------------------
+
+test("classifyDiagnoseUnavailable: STOCK_DIAGNOSE_UNAVAILABLE_REASONS has exactly the seven documented reason classes", () => {
+  assert.deepEqual(
+    [...STOCK_DIAGNOSE_UNAVAILABLE_REASONS],
+    [
+      "protocol_decode_failure",
+      "connection_lost",
+      "request_timeout",
+      "monitor_acquisition_timeout",
+      "session_refused",
+      "evidence_gathering_failed",
+      "unknown",
+    ],
+  );
+});
+
+test("classifyDiagnoseUnavailable: StockFramingError/StockDesyncError/StockResponseMismatchError -> protocol_decode_failure", () => {
+  assert.equal(classifyDiagnoseUnavailable(new StockFramingError("bad frame")), "protocol_decode_failure");
+  assert.equal(classifyDiagnoseUnavailable(new StockDesyncError("desynced")), "protocol_decode_failure");
+  assert.equal(classifyDiagnoseUnavailable(new StockResponseMismatchError("wrong type")), "protocol_decode_failure");
+});
+
+test("classifyDiagnoseUnavailable: StockConnectionClosedError -> connection_lost", () => {
+  assert.equal(classifyDiagnoseUnavailable(new StockConnectionClosedError("socket closed")), "connection_lost");
+});
+
+test("classifyDiagnoseUnavailable: StockRequestTimeoutError -> request_timeout", () => {
+  assert.equal(classifyDiagnoseUnavailable(new StockRequestTimeoutError("no reply in time")), "request_timeout");
+});
+
+test("classifyDiagnoseUnavailable: an unrecognised error class or non-Error value -> unknown", () => {
+  assert.equal(classifyDiagnoseUnavailable(new Error("some other failure")), "unknown");
+  assert.equal(classifyDiagnoseUnavailable("a plain string"), "unknown");
+  assert.equal(classifyDiagnoseUnavailable(undefined), "unknown");
+});
+
+test("classifyDiagnoseUnavailable (WR-03/Gap 3): MonitorOwnershipError and MachineRestartedError are never classified -- handleDiagnoseStock() routes them to their own verdicts instead", async () => {
+  // Both cases below are the SAME synthetic errors the classifier's own
+  // input type (`unknown`) would happily accept and misclassify as
+  // "unknown" if they ever reached it -- proving instead, by driving the
+  // full handler, that they never do: handleDiagnoseStock()'s acquisition
+  // catch checks `instanceof MonitorOwnershipError` / `instanceof
+  // MachineRestartedError` BEFORE classifyDiagnoseUnavailable() is ever
+  // called, so both reach a real verdict, never `diagnosis_unavailable`.
+  const ownershipDeps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => {
+      throw new MonitorOwnershipError("monitor already claimed", { holderGrantId: "g", holderClaimedAt: 1, port: 6502 });
+    },
+  } as unknown as StockDispatchDeps;
+  const ownershipResult = await handleDiagnoseStock({}, ownershipDeps);
+  const ownershipAnswer = parseAnswer(ownershipResult);
+  assert.equal(ownershipAnswer.verdict, "monitor_held_elsewhere");
+  assert.notEqual(ownershipAnswer.verdict, STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME);
+
+  const restartDeps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => {
+      throw new MachineRestartedError("restarted across reconnect", { baselineEpoch: 1, currentEpoch: 2 });
+    },
+  } as unknown as StockDispatchDeps;
+  const restartResult = await handleDiagnoseStock({}, restartDeps);
+  const restartAnswer = parseAnswer(restartResult);
+  assert.equal(restartAnswer.verdict, "restarted");
+  assert.notEqual(restartAnswer.verdict, STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3, test 6: handleDiagnoseStock() end-to-end -- the diagnosis_unavailable
+// text prefix for each reason class reachable through a real failure exit.
+// ---------------------------------------------------------------------------
+
+function unavailableDeps(connectErr: unknown): StockDispatchDeps {
+  return {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => {
+      throw connectErr;
+    },
+  } as unknown as StockDispatchDeps;
+}
+
+test("handleDiagnoseStock: a StockFramingError during session acquisition -> diagnosis_unavailable (protocol_decode_failure) (Gap 4/CR-01)", async () => {
+  const result = await handleDiagnoseStock({}, unavailableDeps(new StockFramingError("response type 0x86 body is 52 byte(s), needs at least 65")));
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(protocol_decode_failure\)/);
+});
+
+test("handleDiagnoseStock: a StockConnectionClosedError during session acquisition -> diagnosis_unavailable (connection_lost)", async () => {
+  const result = await handleDiagnoseStock({}, unavailableDeps(new StockConnectionClosedError("socket closed")));
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(connection_lost\)/);
+});
+
+test("handleDiagnoseStock: a StockRequestTimeoutError during session acquisition -> diagnosis_unavailable (request_timeout)", async () => {
+  const result = await handleDiagnoseStock({}, unavailableDeps(new StockRequestTimeoutError("no reply")));
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(request_timeout\)/);
+});
+
+test("handleDiagnoseStock: a never-settling ensureLease -> diagnosis_unavailable (monitor_acquisition_timeout), still naming the configured bound and the 'exactly one binary-monitor client' clause", async () => {
+  const deps = {
+    ensureLease: () => new Promise(() => {}), // never settles
+  } as unknown as StockDispatchDeps;
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(monitor_acquisition_timeout\)/);
+  assert.ok(text.includes(String(diagnoseSessionTimeoutMs())), "the refusal must still name the configured bound");
+  assert.ok(text.includes("exactly one binary-monitor client"), "the refusal must still carry the pre-existing second-client explanation");
+});
+
+test("handleDiagnoseStock: outcome.ok === false (ensureLease itself refuses) -> diagnosis_unavailable (session_refused), surfacing the upstream message", async () => {
+  // ensureStockSession() returns {ok:false} straight from deps.ensureLease()
+  // ({ok:false}) or the VICE_MCP_URL-override lease:null case -- never from
+  // connect() (connect() either resolves a session or throws). Refusing at
+  // ensureLease() is the reachable path to outcome.ok===false.
+  const deps = {
+    ensureLease: async () => ({ ok: false as const, message: "upstream refused: synthetic session_refused fixture" }),
+  } as unknown as StockDispatchDeps;
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(session_refused\)/);
+  assert.ok(text.includes("synthetic session_refused fixture"), "the raw upstream message must be surfaced verbatim");
+});
+
+test("handleDiagnoseStock: gatherStockCheckpointTrapEvidence() throwing -> diagnosis_unavailable (evidence_gathering_failed)", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }]],
+  });
+  // resolveStockLiveIrqHandler() sends MemoryGet directly with no try/catch
+  // of its own (unlike handleRegistersGet/handleCheckpointList, which both
+  // convert a wire failure to isError:true rather than throwing) -- so a
+  // MemoryGet failure is the one that actually propagates out of
+  // gatherStockCheckpointTrapEvidence() and reaches this catch.
+  const originalSend = session.client.send.bind(session.client);
+  (session.client as unknown as { send: typeof session.client.send }).send = async (commandType, body) => {
+    if (commandType === CommandType.MemoryGet) {
+      throw new Error("synthetic mid-gather MemoryGet failure");
+    }
+    return originalSend(commandType, body as Buffer);
+  };
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(evidence_gathering_failed\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3, test 8: the anti-escalation contract -- every diagnosis_unavailable
+// message must state the machine state is unknown and that recycling on this
+// answer alone is wrong (T-07-15-02).
+// ---------------------------------------------------------------------------
+
+test("diagnosis_unavailable (T-07-15-02): every message names vice_recycle and marks the machine state UNKNOWN, never live or wedged", async () => {
+  const fixtures: unknown[] = [
+    new StockFramingError("decode fault"),
+    new StockConnectionClosedError("closed"),
+    new StockRequestTimeoutError("timed out"),
+    new Error("unclassified"),
+  ];
+  for (const err of fixtures) {
+    const result = await handleDiagnoseStock({}, unavailableDeps(err));
+    assert.equal(result.isError, true);
+    const text = result.content[0]!.text;
+    assert.match(text, /vice_recycle/, `expected "${text}" to mention vice_recycle`);
+    assert.match(text, /UNKNOWN/, `expected "${text}" to state the machine state is unknown`);
+    assert.doesNotMatch(text, /verdict: live/i, `must never read as a live verdict: "${text}"`);
+    assert.doesNotMatch(text, /verdict: wedged/i, `must never read as a wedged verdict: "${text}"`);
+  }
 });
 
 // ---------------------------------------------------------------------------
