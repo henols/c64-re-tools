@@ -74,9 +74,12 @@ export interface StockCapabilities {
  * request body but VICE stores it internally in a uint16_t
  * (monitor_binary.c:1492) -- any count >= 65536 wraps silently server-side.
  * Clamp client-side rather than ever sending an unclamped value. This
- * handshake only ever probes with count 0 (it wants the capability answer,
- * not any history), but the clamp is a general guard for any future caller
- * of this same request shape. */
+ * handshake now probes with count 1, never 0 -- real VICE
+ * (monitor_binary.c:1491-1497) rejects `requested_count < 1` with
+ * InvalidParameter (0x81), so 0 is a malformed request, not a valid "give me
+ * the newest entry" request (confirmed live, see 07-RESEARCH.md Pitfall 8).
+ * The clamp remains a general guard for any future caller of this same
+ * request shape. */
 const CPU_HISTORY_MAX_COUNT = 65535;
 
 /** WR-02/WR-12: bounded at BOTH ends, and against non-finite input. A bare
@@ -93,15 +96,26 @@ export function clampCpuHistoryCount(count: number): number {
   return Math.min(Math.max(Math.trunc(count), 0), CPU_HISTORY_MAX_COUNT);
 }
 
-/** Sends CPUHISTORY_GET (0x86) with memspace=main and a zero, clamped count,
- * and maps the wire outcome to CpuHistoryCapability's three-way answer --
- * 0x00 OK -> "available", 0x83 INVALID_TYPE -> "absent" (the pre-3.10 case),
- * 0x8f CMD_FAILURE -> "not_compiled_in" (the distinct compiled-without-
- * support case). Any other rejection (a timeout, a closed socket, an
- * unrecognized error code) is not this function's to interpret -- it
- * propagates unchanged. */
+/** Sends CPUHISTORY_GET (0x86) with memspace=main and a clamped count of 1
+ * (the minimum real VICE accepts -- monitor_binary.c:1491-1497 rejects
+ * `requested_count < 1` with InvalidParameter, confirmed live in
+ * 07-RESEARCH.md Pitfall 8; count=1 is also probe-binmon.mjs's own
+ * already-verified value), and maps the wire outcome to
+ * CpuHistoryCapability's three-way answer -- 0x00 OK -> "available", 0x83
+ * INVALID_TYPE -> "absent" (the pre-3.10 case), 0x8f CMD_FAILURE ->
+ * "not_compiled_in" (the distinct compiled-without-support case), 0x81
+ * INVALID_PARAMETER -> "absent" (with a well-formed count=1 request, this
+ * code can no longer originate from this client's own malformed count -- it
+ * means the connected build's CPUHISTORY_GET rejected a minimal well-formed
+ * request, so the route is unusable on this build; collapsing to "absent"
+ * rather than a fourth capability value matches resolveCapabilities()'s own
+ * cache comment, which already documents "absent" and "not_compiled_in" as
+ * both meaning "never attempt CPUHISTORY_GET again", differing only in
+ * why). Any other rejection (a timeout, a closed socket, an unrecognized
+ * error code) is not this function's to interpret -- it propagates
+ * unchanged. */
 async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryCapability> {
-  const count = clampCpuHistoryCount(0);
+  const count = clampCpuHistoryCount(1);
   const body = Buffer.alloc(5);
   body[0] = 0x00; // memspace: main
   body.writeUInt32LE(count, 1);
@@ -112,6 +126,7 @@ async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryCap
     if (err instanceof StockProtocolError) {
       if (err.errorCode === ErrorCode.InvalidType) return "absent"; // 0x83 -- opcode absent, pre-3.10
       if (err.errorCode === ErrorCode.CmdFailure) return "not_compiled_in"; // 0x8f -- compiled without support
+      if (err.errorCode === ErrorCode.InvalidParameter) return "absent"; // 0x81 -- minimal well-formed request rejected by this build
     }
     throw err;
   }
