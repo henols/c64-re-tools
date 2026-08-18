@@ -6183,3 +6183,136 @@ test("structural: SEAM_HAZARDS's checkpoint-arming detector and renderer never r
     assert.doesNotMatch(body, /await call\(/, `${fnName} must make no forwarded call of its own -- T-01.3-13`);
   }
 });
+
+// -----------------------------------------------------------------------
+// Plan 08-02 (BACK-05): end-to-end proof that the CallToolRequestSchema
+// override's tools[name] miss branch renders a capability refusal -- naming
+// the tool, the reason, and the providing backend -- rather than the
+// generic "Unknown tool" fallback, for a tool the ACTIVE backend's trimmed
+// manifest (D-07) never registered. VICE_BACKEND=stock/fork resolves via
+// backend-detect.mts's override branch, which returns immediately (PATH
+// resolution only, never a spawn -- see resolvedBackend()), so none of these
+// four tests needs an emulator, a stand-in HTTP server, or a broker.
+//
+// capability-registry.test.ts (plan 08-01) is the automated mirror for
+// these exact wordings, per test-gate.mjs's STANDING RULE (this file is
+// manual-only and therefore invisible to the automated gate) -- the
+// assertions below intentionally check only the distinguishing tokens
+// (tool name, "unrecoverable", "VICE_BACKEND=<backend>"), not the full
+// verbatim string, so a wording tweak reviewed against the registry's own
+// test does not also require touching this file.
+// -----------------------------------------------------------------------
+
+test("BACK-05: stock refuses vice_sid_get_state (a fork-only hardware capability) by name and reason, not as Unknown tool", async () => {
+  const proxy = startProxy({ VICE_BACKEND: "stock" });
+  try {
+    await handshake(proxy);
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "vice_sid_get_state", arguments: {} },
+    });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, true, "vice_sid_get_state must be refused on the stock backend");
+    const text = resp.result.content[0].text;
+    assert.match(text, /vice_sid_get_state/, "the refusal must name the tool");
+    assert.match(text, /unrecoverable/, "a hardware-category refusal must say unrecoverable");
+    assert.match(text, /VICE_BACKEND=fork/, "the refusal must name the providing backend");
+    assert.doesNotMatch(
+      text,
+      /Unknown tool/,
+      "REGRESSION GUARD: this is the exact bug this plan exists to fix -- a stock user must never see the generic unknown-tool fallback for a capability the fork backend has"
+    );
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
+
+test("BACK-05: fork refuses vice_execution_until_return (a stock-only-gain capability) by name and providing backend", async () => {
+  const proxy = startProxy({ VICE_BACKEND: "fork" });
+  try {
+    await handshake(proxy);
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "vice_execution_until_return", arguments: {} },
+    });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, true, "vice_execution_until_return must be refused on the fork backend");
+    const text = resp.result.content[0].text;
+    assert.match(text, /vice_execution_until_return/, "the refusal must name the tool");
+    assert.match(text, /VICE_BACKEND=stock/, "the refusal must name the providing backend");
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
+
+test("BACK-05: a genuine typo still gets the plain Unknown tool fallback, verbatim, unchanged by the capability lookup", async () => {
+  const proxy = startProxy({ VICE_BACKEND: "stock" });
+  try {
+    await handshake(proxy);
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "vice_totally_made_up_xyz", arguments: {} },
+    });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, true);
+    assert.equal(
+      resp.result.content[0].text,
+      "Unknown tool: vice_totally_made_up_xyz",
+      "a genuinely unregistered name (no CAPABILITY_REGISTRY entry at all) must fall through to the pre-existing generic fallback, byte-for-byte"
+    );
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
+
+test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a capability refusal for tools_call, and the synthetic tools are never refused", async () => {
+  const proxy = startProxy({ VICE_BACKEND: "stock" });
+  try {
+    await handshake(proxy);
+
+    // The ordering invariant: a nested tools_call bypass attempt must get
+    // the DENY_LIST refusal (permanently forbidden / tools_call), never a
+    // capability refusal (VICE_BACKEND=...) -- complementing Task 1's
+    // source-offset assertion with a wire-level observation of the same
+    // invariant. DENY_LIST's construction-time skip (`if
+    // (DENY_LIST.includes(def.name)) continue;`) also means tools_call is
+    // never a key in `tools` at all, so even if the ordering inside the
+    // override were somehow wrong, this call could not silently reach a
+    // capability-refusal branch instead.
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "tools_call", arguments: { name: "vice_disk_list", arguments: {} } },
+    });
+    const denyResp = await proxy.nextMessage();
+    assert.equal(denyResp.result.isError, true);
+    const denyText = denyResp.result.content[0].text;
+    assert.match(denyText, /permanently forbidden/, "tools_call must still get the deny-list refusal");
+    assert.match(denyText, /tools_call/, "the deny-list refusal must name tools_call");
+    assert.doesNotMatch(
+      denyText,
+      /VICE_BACKEND=/,
+      "the deny-list refusal must never be mistaken for (or replaced by) a capability refusal"
+    );
+
+    // vice_diagnose is registered on BOTH backends via synthetic
+    // registration (buildBackendAwareTool/resolveAdvertisedToolDefinition),
+    // so it must reach its real handler rather than either wrong message --
+    // whatever that handler answers without a live emulator is acceptable
+    // here; only the absence of both wrong messages is asserted.
+    proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "vice_diagnose", arguments: {} } });
+    const diagResp = await proxy.nextMessage();
+    const diagText = diagResp.result.content[0].text;
+    assert.doesNotMatch(diagText, /VICE_BACKEND=fork/, "vice_diagnose must never be treated as a capability gap");
+    assert.doesNotMatch(diagText, /Unknown tool/, "vice_diagnose must never fall through to the generic fallback");
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
