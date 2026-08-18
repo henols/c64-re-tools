@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,36 @@ import {
   VICE_BROADCAST_REQUEST_ID,
   RESPONSE_HEADER_LEN,
 } from "./binmon-fixtures.ts";
+
+/** WR-10: the per-case version gate, read out of probe-binmon.mjs ITSELF so
+ * this test and the capture tool can never disagree about which build family a
+ * case requires. Loaded via a child process rather than a static import
+ * because probe-binmon.mjs is plain `.mjs` and this package's tsconfig sets
+ * `allowJs: false` -- importing it directly is a TS7016. Declaring a second
+ * copy of the table here instead would be exactly the "two sources of truth"
+ * shape WR-11 is separately about, so it is deliberately not done. Regexes
+ * cross the process boundary as their `source` string and are rebuilt here. */
+function captureRequiresVersion(): Record<string, { pattern: RegExp; describe: string }> {
+  const script =
+    'import { CAPTURE_REQUIRES_VERSION as t } from "./probe-binmon.mjs";' +
+    "process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(t).map(([k, v]) => [k, { source: v.pattern.source, flags: v.pattern.flags, describe: v.describe }]))));";
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: dirname(fileURLToPath(import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, `reading CAPTURE_REQUIRES_VERSION out of probe-binmon.mjs failed: ${result.stderr}`);
+  const raw = JSON.parse(result.stdout) as Record<string, { source: string; flags: string; describe: string }>;
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { pattern: new RegExp(v.source, v.flags), describe: v.describe }]));
+}
+
+test("WR-10: probe-binmon.mjs's own offline selftest passes, which is what machine-checks the CAPTURE_REQUIRES_VERSION table", () => {
+  const result = spawnSync(process.execPath, ["probe-binmon.mjs", "--selftest"], {
+    cwd: dirname(fileURLToPath(import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, `probe-binmon.mjs --selftest failed:\n${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /SELFTEST PASS/);
+});
 
 test("encodeResponseFrame: builds the normative 12-byte response header", () => {
   const frame = encodeResponseFrame({
@@ -223,6 +254,50 @@ test("WR-10/WR-09 loadCapturedFixture: `synthetic` is surfaced as a real boolean
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// WR-10 (07-REVIEW.md): `cpuhistory-get`/`-multi` need a >= 3.10 build and
+// `cpuhistory-get-unsupported` needs a 3.9 one, but their capture runners are
+// BYTE-IDENTICAL -- the connected build is the only thing distinguishing them.
+// `--capture all` runs every case against the one connected target, so a run
+// against a 3.10 build used to overwrite cpuhistory-get-unsupported.bin with a
+// successful history frame while its sidecar still said "against a build without
+// FEATURE_CPUMEMHISTORY". probe-binmon.mjs's CAPTURE_REQUIRES_VERSION is the
+// machine-checked gate; this test asserts the committed fixtures actually agree
+// with it, so a fixture recorded off the wrong build family fails HERE rather
+// than in a downstream errorCode assertion after the bytes are already
+// clobbered.
+test("WR-10: every committed sidecar's viceVersion satisfies its case's CAPTURE_REQUIRES_VERSION gate", () => {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "binmon");
+  const table = captureRequiresVersion();
+  assert.ok(Object.keys(table).length >= 3, "the gate table must actually be populated -- an empty table would pass vacuously");
+  for (const [caseName, requirement] of Object.entries(table)) {
+    const provenance = JSON.parse(readFileSync(join(dir, `${caseName}.json`), "utf8")) as { viceVersion?: string };
+    assert.equal(typeof provenance.viceVersion, "string", `${caseName}.json must record a viceVersion`);
+    assert.match(
+      provenance.viceVersion as string,
+      requirement.pattern,
+      `${caseName}.json records viceVersion "${provenance.viceVersion}" but this case needs ${requirement.describe} -- it was recorded off the wrong build family`,
+    );
+  }
+});
+
+test("WR-10: the two CPUHISTORY_GET version gates are mutually exclusive, so one --capture all run can never satisfy both", () => {
+  const table = captureRequiresVersion();
+  const supported = table["cpuhistory-get"]!;
+  const unsupported = table["cpuhistory-get-unsupported"]!;
+  for (const version of ["3.9.0.0", "3.10.0.0", "3.11.0.0", "4.0.0.0", "unknown", ""]) {
+    assert.ok(
+      !(supported.pattern.test(version) && unsupported.pattern.test(version)),
+      `version "${version}" satisfies BOTH gates -- the byte-identical runners would then be indistinguishable`,
+    );
+  }
+  // And the gate must actually bite in each direction.
+  assert.ok(supported.pattern.test("3.10.0.0") && !supported.pattern.test("3.9.0.0"));
+  assert.ok(unsupported.pattern.test("3.9.0.0") && !unsupported.pattern.test("3.10.0.0"));
+  // An unreadable VICE_INFO reply (viceVersion "unknown") must satisfy
+  // NEITHER: skipping is correct, clobbering on a guess is not.
+  assert.ok(!supported.pattern.test("unknown") && !unsupported.pattern.test("unknown"));
 });
 
 test("WR-09: every committed sidecar under fixtures/binmon/ STATES its provenance, and the three CPUHISTORY_GET captures state it as real", () => {
