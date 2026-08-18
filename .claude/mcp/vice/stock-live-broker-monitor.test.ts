@@ -192,6 +192,38 @@ async function waitForAsync(predicate: () => Promise<boolean>, deadlineMs: numbe
   }
 }
 
+/** One-shot "is anything listening yet" probe -- a bare TCP connect with no
+ * command sent, immediately closed. Used ONLY to bound-wait for a
+ * cold-launched x64sc to finish booting and bind its binmon port before this
+ * file's own FIRST claim attempt: handleAcquire()'s cold-launch arm marks a
+ * fresh record "granted" the instant the process is SPAWNED (never waiting
+ * for the readiness probe the warm arm already ran) -- discovered live while
+ * writing this harness (a plain retry against status()'s own "state" field
+ * can never observe "ready" for a cold-granted record; it goes straight
+ * "launching" -> "granted"). Distinct from defaultBinmonProbe()
+ * (broker-launch.mts) -- that one also sends a PING/EXIT pair to prove the
+ * emulator ANSWERS, not merely that the port is bound; this file does not
+ * need that distinction because the very next thing it does is run the real
+ * stockConnect() handshake, which proves liveness itself. */
+function waitForPortOpen(host: string, port: number, deadlineMs: number): Promise<boolean> {
+  return waitForAsync(
+    () =>
+      new Promise<boolean>((resolvePromise) => {
+        const socket = connect({ host, port });
+        socket.once("connect", () => {
+          socket.destroy();
+          resolvePromise(true);
+        });
+        socket.once("error", () => {
+          socket.destroy();
+          resolvePromise(false);
+        });
+      }),
+    deadlineMs,
+    250,
+  );
+}
+
 interface BrokerHandle {
   child: ChildProcessWithoutNullStreams;
   stateDir: string;
@@ -436,6 +468,21 @@ test(
         const grantA = acquire1.grant;
         const P = grantA.port;
         const { deps: deps1 } = depsFor(grantA, session1, stateDir);
+
+        // A cold acquire's grant is handed back the instant the process is
+        // SPAWNED (handleAcquire()'s cold-launch arm marks the record
+        // "granted" without ever waiting for a readiness probe -- unlike the
+        // warm arm, which selectWarmInstance() already probe-confirmed
+        // before granting, and unlike status()'s own "state" field, which for
+        // a cold-granted record goes straight "launching" -> "granted" and
+        // never visits "ready" at all). Dialling the binmon port before
+        // x64sc has finished booting genuinely races ECONNREFUSED, discovered
+        // live while writing this harness -- bounded-wait for the port to
+        // actually accept a connection here rather than either retrying
+        // dispatchStock() (which would blur the load-bearing FIRST claim
+        // with a retry loop) or loosening any assertion.
+        const coldLaunchReady = await waitForPortOpen(host, P, 30000);
+        assert.ok(coldLaunchReady, `the cold-launched instance's binmon port ${P} never accepted a connection within 30s`);
 
         const diag1 = await dispatchStock("vice_diagnose", {}, deps1);
         const diag1Payload = parseOkPayload(diag1 as { content: { type: "text"; text: string }[]; isError: boolean });
