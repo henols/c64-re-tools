@@ -4,7 +4,7 @@ milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
 last_updated: "2026-08-18T10:46:37.709Z"
-last_activity: 2026-08-18 -- Phase 07 gap closure executed (18/18 plans); re-verification human_needed, 1 UAT item + 1 code-review blocker outstanding
+last_activity: 2026-08-18 -- Completed quick task 260818-nh5: Phase 07 UAT test-8 gap closed (live proof restored 6/6 on both stock binaries, gate hole closed by an automated shape oracle); 07-UAT.md now 12/12, 1 code-review blocker outstanding
 progress:
   total_phases: 6
   completed_phases: 5
@@ -109,6 +109,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260817-n6p | Fix WR-01 — bound `decode()`'s `startAddress` to `0..0xffff` in `disasm-decoder.ts` | 2026-08-17 | e19d8eb | [260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i](./quick/260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i/) |
+| 260818-nh5 | Close Phase 07 UAT gap: fix stale evidence-key assertion in `stock-live-triage.test.ts`, restore the restarted live proof, and close the manual-only gate hole | 2026-08-18 | acc9933 (+84cca54, 9831fa8) | [260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc](./quick/260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc/) |
 
 ### Blockers/Concerns
 

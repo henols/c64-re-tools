@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 07-cycle-timing-and-wedge-triage
 source: 07-01-SUMMARY.md, 07-02-SUMMARY.md, 07-03-SUMMARY.md, 07-04-SUMMARY.md, 07-05-SUMMARY.md, 07-06-SUMMARY.md, 07-07-SUMMARY.md, 07-08-SUMMARY.md, 07-09-SUMMARY.md, 07-10-SUMMARY.md, 07-11-SUMMARY.md, 07-12-SUMMARY.md, 07-13-SUMMARY.md, 07-14-SUMMARY.md, 07-15-SUMMARY.md, 07-16-SUMMARY.md, 07-17-SUMMARY.md, 07-18-SUMMARY.md
 started: 2026-08-18T14:31:30Z
-updated: 2026-08-18T14:52:00Z
+updated: 2026-08-18T15:24:00Z
 ---
 
 ## Current Test
@@ -82,7 +82,9 @@ detail: |
 
 ### 8. vice_diagnose Recognises a Crashed-and-Respawned Emulator
 expected: Against a real kill-and-relaunch underneath the session, `vice_diagnose` on stock answers `verdict: "restarted"` rather than reporting a hang.
-result: issue
+result: pass
+resolved_by: "quick task 260818-nh5 (commits acc9933, 84cca54, 9831fa8)"
+original_result: "issue (severity: major). Retained verbatim below in `reported`/`detail` --- the verdict was always correct, only its proof was broken, and the history of that is worth keeping."
 reported: "The live proof is red on both binaries. `vice_diagnose` DOES answer verdict:\"restarted\" correctly — the failure is a stale assertion in stock-live-triage.test.ts:682 that demands the restarted evidence carry exactly {baselineEpoch,currentEpoch}, but WR-04 (commit 88b9a15) later added jamObserved to every verdict's evidence. Because stock-live-triage.test.ts is manual-only and excluded from test-gate.mjs, the code-review fix batch reported a green 1624/0 gate while breaking the phase's only executable live proof of this verdict."
 severity: major
 detail: |
@@ -113,6 +115,44 @@ detail: |
       binary, 6/6 total" -- true when written, false now.
     - `07-REVIEW-FIX.md`'s gate (`node test-gate.mjs`, 1624/0) structurally cannot see it:
       `stock-live-triage.test.ts` is entry 5 of `MANUAL_ONLY_TESTS`.
+
+**RESOLVED 2026-08-18 by quick task 260818-nh5.** The assertion was relaxed, not the
+product changed --- `stock-diagnose.ts` is byte-identical to its pre-task state
+(D-01: `jamObserved` STAYS on the restarted branch; both restarted call sites were
+read, and `stock-diagnose.ts:911`'s epoch-comparison branch passes a NON-null session,
+so `jamObservedFor()` reads the live latching tracker there and the field is genuinely
+load-bearing, not inert).
+
+What changed:
+  - `stock-live-triage.test.ts:682`'s exact-key-set equality became a presence
+    assertion on `baselineEpoch`/`currentEpoch` plus an absence loop over a named
+    `EMULATOR_COST_EVIDENCE_KEYS` array of ELEVEN cost-bearing keys (`bracketsRun`,
+    `bracket`, `bracket1`, `bracket2`, `isTrap`, `checkpoints`,
+    `checkpointsUnavailable`, `pc`, `handler`, `trapCheckpoint`, `trapReason`).
+    The zero-emulator-cost guarantee is now stated directly and comes out STRONGER
+    than the three ad-hoc checks it replaces --- the old equality proved it only
+    incidentally, and broke on any additive field.
+  - The gate hole is closed by a zero-cost unit SHAPE ORACLE in
+    `stock-diagnose.test.ts`, exercising BOTH restarted call sites and pinning the
+    exact key set `{baselineEpoch, currentEpoch, jamObserved}`. It needs no emulator,
+    so it runs under `node test-gate.mjs` --- where a doc note would not have caught
+    `88b9a15`. `MANUAL_ONLY_TESTS` stays at exactly five entries (`test-gate.test.ts`
+    guards that list); `test-gate.mjs`'s header now carries the standing rule.
+
+Independently re-verified on merged `main` by the orchestrator, not just self-reported
+by the executor:
+  `npx tsc --noEmit`                                                 -> exit 0
+  `node test-gate.mjs`                    -> 1630 tests, 1625 pass / **0 fail** / 5 todo
+  `VICE_LIVE_TRIAGE_BIN=/usr/bin/x64sc ...`       -> **3/3** (genuine stock 3.9)
+  `VICE_LIVE_TRIAGE_BIN=/usr/local/bin/x64sc ...` -> **3/3** (genuine stock 3.10)
+                                                     = 6/6, restoring the recorded claim
+  no stray `x64sc` processes left behind.
+
+The gate-hole closure was proven by INJECTION, not assumed: adding a dummy extra field
+to `diagnoseVerdictResult()`'s evidence (reproducing `88b9a15`'s exact failure mode)
+reds the new oracle under `node --test stock-diagnose.test.ts` while the live suite
+stays 3/3 --- precisely the inversion of the original failure. `stock-diagnose.ts` was
+restored afterwards and `git status` confirms it unmodified.
 
 ### 9. Diagnosing Under Second-Client Contention Settles, Never Hangs
 expected: When a second client dials a binary monitor a first client already holds, `vice_diagnose` settles well inside its configured session-acquisition bound and returns a classified answer (`monitor_held_elsewhere`, or the non-verdict `diagnosis_unavailable` with a named reason) — it does not sit there indistinguishable from the hang it is meant to diagnose.
@@ -168,8 +208,8 @@ detail: |
 ## Summary
 
 total: 12
-passed: 11
-issues: 1
+passed: 12
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
@@ -177,7 +217,9 @@ blocked: 0
 ## Gaps
 
 - truth: "Against a real kill-and-relaunch underneath the session, vice_diagnose on stock answers verdict:\"restarted\", and that proof is executable"
-  status: failed
+  status: closed
+  closed_by: "quick task 260818-nh5, 2026-08-18 (commits acc9933 test relax, 84cca54 shape oracle, 9831fa8 doc correction)"
+  closure_note: "All four `missing:` items below were addressed. Item 2 (does jamObserved belong on the restarted branch?) was resolved as KEEP --- stock-diagnose.ts:911 passes a non-null session, so the field reads the live latching JAM tracker and is not inert on that path. Item 4 was closed with an automated unit shape oracle rather than a doc note, and its effectiveness was proven by injecting the same additive widening that caused the original break."
   reason: "User reported: the live proof is red on both binaries. The verdict itself is correct; stock-live-triage.test.ts:682 asserts an exact evidence key set {baselineEpoch,currentEpoch} that WR-04 (88b9a15) invalidated by adding jamObserved to every verdict's evidence. stock-live-triage.test.ts is manual-only and excluded from test-gate.mjs, so the fix batch's green 1624/0 gate could not see the break."
   severity: major
   test: 8
