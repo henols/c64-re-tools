@@ -48,6 +48,7 @@ import {
 import { parseAddress } from "./stock-address.ts";
 import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
 import { readProgramCounter } from "./stock-timing.ts";
+import { runStateFor } from "./stock-runstate.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -274,13 +275,34 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     }
   }
 
-  // machineHalted (07-14/WR-02): the CHECKPOINT_DELETE just sent above is
-  // itself an inbound byte, so it halted the machine on every one of the
-  // three cleanup branches -- including "already_gone", where the delete
-  // was rejected but still travelled over the wire. Nothing here resumes it.
-  const machineHaltedNote =
-    "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), and " +
-    "nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume.";
+  // machineHalted (07-14/WR-02, corrected by 07-REVIEW.md WR-01).
+  //
+  // 07-14 hardcoded `true` here for all three cleanup branches, reasoning
+  // that the CHECKPOINT_DELETE above is itself an inbound byte and so halted
+  // the machine. That holds for "deleted" and "already_gone" -- both mean
+  // the delete travelled over the wire and was answered -- but NOT for
+  // "delete_failed", which is reachable precisely when the socket is already
+  // gone: waitForCheckpointHit()'s own `close` handler settles the wait as
+  // `{ status: "timeout" }`, the delete then rejects with
+  // StockConnectionClosedError, and a hardcoded `true` claims a halted
+  // machine over a dead connection while telling the caller to send
+  // vice_execution_run down it. stockAnswer() stamps runState into this same
+  // object, so that answer could read {"machineHalted": true, "runState":
+  // "running"} -- self-contradictory in one JSON body.
+  //
+  // So derive it, from the same seam stock-diagnose.ts's deriveMachinePaused()
+  // uses, and keep the note honest per branch. This is the rule
+  // stock-diagnose.ts:642-656 states normatively: a hand-passed state flag
+  // drifts from reality the moment a call site changes. Do not reintroduce a
+  // literal here.
+  const deleteWasAnswered = cleanup !== "delete_failed";
+  const machineHalted = deleteWasAnswered && session.client.connected ? true : runStateFor(session.client) === "stopped";
+  const machineHaltedNote = machineHalted
+    ? "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), and " +
+      "nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume."
+    : "the machine's run state could NOT be established: the cleanup CHECKPOINT_DELETE did not complete (see cleanupError) " +
+      "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_diagnose before acting -- " +
+      "in particular do not assume vice_execution_run will reach this instance.";
 
   const payload: Record<string, unknown> = {
     requested: "run_until",
@@ -288,13 +310,14 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     address,
     timeoutMs,
     cleanup,
-    machineHalted: true,
+    machineHalted,
     machineHaltedNote,
     explanation:
       "an address that never executes within the timeout window is, from the caller's side, indistinguishable from " +
       "a genuinely wedged emulator -- see vice-wedge-triage/SKILL.md. This bounded answer means the address itself " +
-      "did not execute in time, not that the connection is unresponsive. The machine is now stopped (see " +
-      "machineHalted) and needs vice_execution_run to resume.",
+      "did not execute in time, not that the connection is unresponsive. Whether the machine is now stopped -- and " +
+      "therefore whether vice_execution_run is the right next call -- is reported by machineHalted and " +
+      "machineHaltedNote; read those rather than assuming either way.",
   };
   if (timeoutClamped) payload.timeoutClamped = true;
   if (cleanupError !== undefined) payload.cleanupError = cleanupError;

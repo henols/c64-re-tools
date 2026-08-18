@@ -113,9 +113,14 @@ either — an unreachable address there is unbounded and indistinguishable from 
 **On stock, this is now bounded (D-02):** pass `timeout_ms` (default 30000, clamped to a ceiling of
 600000); an unreachable address returns an explicit, bounded `timedOut: true` answer — with the
 temporary checkpoint already cleaned up — rather than looking like a wedge. **Two further
-behaviours (07-14, closing WR-01/WR-02):** every non-error answer, hit or timeout, now carries
-`machineHalted: true` plus a `machineHaltedNote` naming `vice_execution_run` as the resume call —
-the tool halts the machine on every read and now says so explicitly. And a timeout whose cleanup
+behaviours (07-14, closing WR-01/WR-02):** every non-error answer, hit or timeout, carries
+`machineHalted` plus a `machineHaltedNote` naming the resume call — the tool halts the machine on
+every read and says so explicitly. **`machineHalted` is `true` on a hit and on a timeout whose
+cleanup delete was answered (`cleanup: "deleted"` / `"already_gone"`); it is `false` when
+`cleanup: "delete_failed"` or the socket is already gone** and the run-state projection does not
+say `"stopped"`. **Do not read `machineHalted: false` as "still running"** — it means nothing here
+could establish the state, `machineHaltedNote` says so, and the next call should be
+`vice_diagnose`, not `vice_execution_run` (which may not reach the instance at all). And a timeout whose cleanup
 delete lands on an already-gone race no longer asserts `reached: false` outright: it reads the
 program counter and resolves the race (`raceResolved: "pc_at_address"` / `"pc_elsewhere"`), or, if
 the PC read itself fails, omits `reached` entirely and reports `reachedUnknown: true`

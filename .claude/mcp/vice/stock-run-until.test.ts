@@ -17,7 +17,16 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { handleRunUntil, RUN_UNTIL_DEFAULT_TIMEOUT_MS, RUN_UNTIL_MAX_TIMEOUT_MS } from "./stock-run-until.ts";
-import { CommandType, CheckpointOperation, ErrorCode, StockProtocolError, type ParsedCheckpoint, type ViceMonitorClient } from "./stock-protocol.ts";
+import {
+  CommandType,
+  CheckpointOperation,
+  ErrorCode,
+  StockProtocolError,
+  StockConnectionClosedError,
+  type ParsedCheckpoint,
+  type ViceMonitorClient,
+} from "./stock-protocol.ts";
+import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { MachineRestartedError } from "./vice.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
@@ -41,8 +50,17 @@ interface FakeClient {
  * without decoding a real response. `sendImpl` is handed the emitter itself
  * so a test can schedule an `event`/`close` emission from inside a
  * particular command's resolution (e.g. emitting a matching CHECKPOINT_INFO
- * right after the Exit/resume send). */
-function makeFakeClient(sendImpl: (commandType: number, body: Buffer, emitter: EventEmitter) => Promise<unknown>): FakeClient {
+ * right after the Exit/resume send).
+ *
+ * `connected` mirrors the real ViceMonitorClient getter of the same name and
+ * defaults to `true` (a live socket, which is what all but the WR-01
+ * closed-socket cases exercise). handleRunUntil() reads it to decide whether
+ * it may claim `machineHalted` -- see the WR-01 tests below -- so a stub
+ * without it would silently exercise the dead-socket branch everywhere. */
+function makeFakeClient(
+  sendImpl: (commandType: number, body: Buffer, emitter: EventEmitter) => Promise<unknown>,
+  opts: { connected?: boolean } = {},
+): FakeClient {
   const emitter = new EventEmitter();
   const calls: SendSpyCall[] = [];
   const client = emitter as unknown as ViceMonitorClient;
@@ -50,6 +68,7 @@ function makeFakeClient(sendImpl: (commandType: number, body: Buffer, emitter: E
     calls.push([commandType, body]);
     return sendImpl(commandType, body, emitter);
   };
+  Object.defineProperty(client, "connected", { get: () => opts.connected ?? true, configurable: true });
   return { client, calls, emitter };
 }
 
@@ -473,6 +492,78 @@ test("run_until: WR-02 the hit path also reports machineHalted:true, and Exit is
   assert.equal(typeof payload.machineHaltedNote, "string");
   assert.match(payload.machineHaltedNote as string, /vice_execution_run/);
   assert.equal(countCalls(calls, CommandType.Exit), 1, "no second resume introduced by the machineHalted reporting change");
+});
+
+// 07-REVIEW.md WR-01: `machineHalted` was a hardcoded `true` on all three
+// cleanup branches. It is now DERIVED -- a cleanup delete that never
+// completed, or a socket that is already gone, cannot establish that the
+// machine is halted, and claiming it told the caller to send
+// vice_execution_run down a dead connection. stockAnswer() stamps runState
+// into the SAME object, so the hardcoded value could also contradict it
+// inside one JSON body.
+test("run_until: WR-01 a StockConnectionClosedError on the cleanup delete does NOT answer machineHalted:true", async () => {
+  const { client } = makeFakeClient(
+    async (commandType, _body, _emitter) => {
+      if (commandType === CommandType.CheckpointSet) {
+        return checkpointInfoResponse(fakeCheckpoint({ id: 21 }));
+      }
+      if (commandType === CommandType.Exit) {
+        return { type: "unknown", requestId: 1, errorCode: 0 };
+      }
+      if (commandType === CommandType.CheckpointDelete) {
+        throw new StockConnectionClosedError("socket closed", { port: 6502, abandoned: 1, trigger: "close" });
+      }
+      throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+    },
+    { connected: false },
+  );
+  const session = makeSession(client);
+
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, session, FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.cleanup, "delete_failed");
+  assert.equal(payload.machineHalted, false, "a dead socket cannot establish that the machine is halted");
+  assert.match(payload.machineHaltedNote as string, /could NOT be established/);
+  assert.match(payload.machineHaltedNote as string, /vice_diagnose/);
+  assert.doesNotMatch(
+    payload.explanation as string,
+    /needs vice_execution_run to resume/,
+    "the explanation must not instruct a resume over a connection nothing established is alive",
+  );
+});
+
+test("run_until: WR-01 machineHalted is false when the delete fails even on a still-connected socket, unless the run-state projection says stopped", async () => {
+  const sendImpl = async (commandType: number, _body: Buffer, _emitter: EventEmitter): Promise<unknown> => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: 22 }));
+    }
+    if (commandType === CommandType.Exit) {
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      throw new StockProtocolError("command failed", { errorCode: ErrorCode.CmdFailure });
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  };
+
+  // No tracker attached -> runStateFor() is "unknown" -> not halted.
+  const bare = makeFakeClient(sendImpl);
+  const bareResult = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, makeSession(bare.client), FAKE_DEPS);
+  assertOk(bareResult);
+  assert.equal(okText(bareResult).machineHalted, false);
+
+  // A tracker that HAS seen a STOPPED event on the wire is a real
+  // observation, so the same failed delete may report halted -- the point of
+  // deriving rather than asserting.
+  resetRunStateTrackersForTest();
+  const tracked = makeFakeClient(sendImpl);
+  attachRunStateTracker(tracked.client);
+  tracked.emitter.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, pc: 0xea31 });
+  const trackedResult = await handleRunUntil({ address: "$c000", timeout_ms: 20 }, makeSession(tracked.client), FAKE_DEPS);
+  assertOk(trackedResult);
+  assert.equal(okText(trackedResult).machineHalted, true, "an observed STOPPED event IS an establishment of the halted state");
+  resetRunStateTrackersForTest();
 });
 
 // ---------------------------------------------------------------------------
