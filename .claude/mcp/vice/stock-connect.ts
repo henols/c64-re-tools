@@ -30,7 +30,17 @@
 //     a connect() that silently sits unserviced in the backlog (PROTO-08,
 //     D-13, vice-broker-client.ts's own MonitorOwnershipError header
 //     comment).
-import { ViceMonitorClient, CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts";
+import {
+  ViceMonitorClient,
+  CommandType,
+  ErrorCode,
+  StockProtocolError,
+  StockFramingError,
+  StockDesyncError,
+  StockResponseMismatchError,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
+} from "./stock-protocol.ts";
 import { readCapabilityRecord, writeCapabilityRecord, type CapabilityDeps } from "./backend-detect.mts";
 import { MachineRestartedError, ViceError, readEpoch, type EpochResult } from "./vice.ts";
 import {
@@ -111,9 +121,28 @@ export function clampCpuHistoryCount(count: number): number {
  * rather than a fourth capability value matches resolveCapabilities()'s own
  * cache comment, which already documents "absent" and "not_compiled_in" as
  * both meaning "never attempt CPUHISTORY_GET again", differing only in
- * why). Any other rejection (a timeout, a closed socket, an unrecognized
- * error code) is not this function's to interpret -- it propagates
- * unchanged. */
+ * why).
+ *
+ * CR-01 (07-VERIFICATION.md gap 1, live-reproduced against a genuine VICE
+ * >= 3.10 build): a build that DOES support the opcode answers with a real,
+ * well-formed CPUHISTORY_GET frame -- `StockFramingError | response type
+ * 0x86 body is 52 byte(s), needs at least 65` -- that this client's parser
+ * cannot yet decode (the layout fix is a separate plan, 07-12). A decode
+ * failure is not a wire error code, so it is NOT a StockProtocolError, and
+ * before this fix it fell through to the final `throw err` below and killed
+ * the entire handshake. The rule this function now enforces: a *decode*
+ * failure (StockFramingError, StockDesyncError, StockResponseMismatchError
+ * -- the monitor answered with SOME frame, so the opcode demonstrably
+ * exists, but this client could not read the answer) resolves to "absent",
+ * exactly like the pre-3.10 case above, because "absent" already means
+ * "never attempt CPUHISTORY_GET again" to every consumer. A *transport*
+ * failure (StockConnectionClosedError, StockRequestTimeoutError, or any
+ * other unrecognized error) is a different thing entirely -- the connection
+ * itself is unusable, not just this one opcode -- and must still propagate
+ * unchanged so stockConnect()'s own retry/restart posture can see it. Do
+ * NOT widen this into a bare `catch { return "absent"; }`: that would also
+ * swallow a dead socket and hand back a capability answer for a session
+ * nobody could actually establish. */
 async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryCapability> {
   const count = clampCpuHistoryCount(1);
   const body = Buffer.alloc(5);
@@ -128,6 +157,14 @@ async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryCap
       if (err.errorCode === ErrorCode.CmdFailure) return "not_compiled_in"; // 0x8f -- compiled without support
       if (err.errorCode === ErrorCode.InvalidParameter) return "absent"; // 0x81 -- minimal well-formed request rejected by this build
     }
+    // CR-01: the opcode answered with a real frame this client could not
+    // decode -- the opcode exists, Route A is merely unusable on this build.
+    if (err instanceof StockFramingError) return "absent";
+    if (err instanceof StockDesyncError) return "absent";
+    if (err instanceof StockResponseMismatchError) return "absent";
+    // Anything else -- notably StockConnectionClosedError and
+    // StockRequestTimeoutError -- is a transport failure, not a capability
+    // answer, and must still fail the handshake.
     throw err;
   }
 }
@@ -160,7 +197,25 @@ async function resolveCapabilities(client: ViceMonitorClient, versionQuad: strin
     }
   }
 
-  const cpuHistory = await probeCpuHistory(client);
+  // CR-01: probeCpuHistory() is guarded against decode failures, but this
+  // call site guards against anything ELSE this function is not prepared to
+  // interpret -- so no uninterpreted error can reach stockConnect()'s fatal
+  // catch. Real transport/instance conditions (a closed socket, a timed-out
+  // request, or a proven machine restart) still rethrow, because those mean
+  // the handshake itself must fail, not just this one capability. Anything
+  // unclassifiable degrades to "absent" WITHOUT writing a capability cache
+  // record -- a capability answer nobody could actually establish must
+  // never be persisted for the next connect.
+  let cpuHistory: CpuHistoryCapability;
+  try {
+    cpuHistory = await probeCpuHistory(client);
+  } catch (err) {
+    if (err instanceof StockConnectionClosedError || err instanceof StockRequestTimeoutError || err instanceof MachineRestartedError) {
+      throw err;
+    }
+    console.error(`resolveCapabilities: unclassified error resolving CPUHISTORY_GET capability, falling back to "absent": ${String(err)}`);
+    return { cpuHistory: "absent" };
+  }
   if (deps.binPath) {
     writeCap(deps.binPath, { versionQuad, cpuHistoryAvailable: cpuHistory === "available" }, { supervisorDir: deps.supervisorDir });
   }

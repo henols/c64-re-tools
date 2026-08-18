@@ -501,7 +501,16 @@ test("stockConnect: the CPUHISTORY_GET request body carries count=1, never count
   assert.notEqual(cpuHistoryBody!.readUInt32LE(1), 0);
 });
 
-test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) still rejects", async () => {
+// CR-01 note: this test's third case previously asserted that an
+// unclassified CPUHISTORY_GET error code (0x82) still rejected the whole
+// handshake. That was the pre-CR-01-fix behaviour this plan exists to
+// change -- resolveCapabilities()'s new guard (Task 1b) means ANY error
+// this module cannot interpret (not just a decode failure) degrades to
+// `cpuHistory: "absent"` rather than failing stockConnect() outright, so
+// every downstream stock tool stays reachable even when a future,
+// currently-unmapped wire error code appears. Updated here rather than
+// left green-but-wrong.
+test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) degrades to absent rather than rejecting (CR-01)", async () => {
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidType }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
     const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5c", brokerControl });
@@ -516,7 +525,9 @@ test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged 
   });
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidApiVersion }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
-    await assert.rejects(() => stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl }));
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl });
+    assert.equal(session.capabilities.cpuHistory, "absent", "an unclassified CPUHISTORY_GET error code must degrade to absent, not fail the handshake");
+    await stockDisconnect(session);
   });
 });
 
