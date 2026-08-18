@@ -397,7 +397,7 @@ Plans:
 
 **Wave 3** *(blocked on 07-05)*
 
-- [ ] 07-06-PLAN.md — `stock-diagnose.ts`: the five D-03 verdicts, the ported checkpoint-trap algorithm, the snapshot-resume-wait-halt-compare bracket, and a bounded acquisition that cannot hang while diagnosing a hang [wave 3]
+- [x] 07-06-PLAN.md — `stock-diagnose.ts`: the five D-03 verdicts, the ported checkpoint-trap algorithm, the snapshot-resume-wait-halt-compare bracket, and a bounded acquisition that cannot hang while diagnosing a hang [wave 3]
 
 **Wave 4** *(blocked on 07-06)*
 
@@ -405,7 +405,7 @@ Plans:
 
 **Wave 5** *(blocked on 07-03 and 07-05; sole owner of every shared registration file this wave)*
 
-- [ ] 07-08-PLAN.md — register `vice_cycles_stopwatch` and `vice_run_until`: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 34 -> 36, `files[]`, two conformance cases [wave 5]
+- [x] 07-08-PLAN.md — register `vice_cycles_stopwatch` and `vice_run_until`: dispatch table, `STOCK_DERIVED_TOOLS`, manifest 34 -> 36, `files[]`, two conformance cases [wave 5]
 
 **Wave 6** *(blocked on 07-06/07-07/07-08; takes the same shared files over)*
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 5/10 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 7/10 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
