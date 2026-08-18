@@ -465,9 +465,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-02-PLAN.md — wire the registry into vice-proxy.ts's tools/call miss branch, strictly after DENY_LIST, proven end-to-end over real stdio (BACK-05)
-- [ ] 08-03-PLAN.md — generate docs/tool-support.md from both manifests plus the registry, with a byte-identity drift guard (DIST-01)
-- [ ] 08-04-PLAN.md — section-scoped skill-honesty lint plus the four bare fork-only mentions annotated with the fork requirement and the stock route (SKILL-01)
+- [x] 08-02-PLAN.md — wire the registry into vice-proxy.ts's tools/call miss branch, strictly after DENY_LIST, proven end-to-end over real stdio (BACK-05)
+- [x] 08-03-PLAN.md — generate docs/tool-support.md from both manifests plus the registry, with a byte-identity drift guard (DIST-01)
+- [x] 08-04-PLAN.md — section-scoped skill-honesty lint plus the four bare fork-only mentions annotated with the fork requirement and the stock route (SKILL-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -526,7 +526,7 @@ their references.
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
-| 8. Capability Honesty and the Install Story | 1/6 | In Progress|  |
+| 8. Capability Honesty and the Install Story | 4/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
