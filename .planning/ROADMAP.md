@@ -393,7 +393,7 @@ Plans:
 
 **Wave 2** *(blocked on 07-01 and 07-02)*
 
-- [ ] 07-05-PLAN.md — `stock-timing.ts`: `vice_cycles_stopwatch` over Route A (`CPUHISTORY_GET` u64 clock) and Route B (`LIN`/`CYC` frame position), with every unmeasurable path carrying no `cycles` key at all [wave 2]
+- [x] 07-05-PLAN.md — `stock-timing.ts`: `vice_cycles_stopwatch` over Route A (`CPUHISTORY_GET` u64 clock) and Route B (`LIN`/`CYC` frame position), with every unmeasurable path carrying no `cycles` key at all [wave 2]
 
 **Wave 3** *(blocked on 07-05)*
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 4/10 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 5/10 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
