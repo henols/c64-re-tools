@@ -426,9 +426,9 @@ Plans:
 
 **Wave 2** *(blocked on wave 1; disjoint file ownership)*
 
-- [ ] 07-13-PLAN.md — gaps 1/3/4 live proof: `stockConnect()` on both real binaries, the Route A stopwatch on genuine VICE 3.10, and bounded diagnosis under real second-client contention [wave 2]
-- [ ] 07-16-PLAN.md — gap 3 / WR-07: backend-aware advertisement for `vice_diagnose`/`vice_recycle`, plus the manifest `outputSchema` deltas for the new answer fields [wave 2]
-- [ ] 07-17-PLAN.md — gap 3 live proof: `checkpoint_trap`, `wedged` (a real CPU JAM held in the monitor) and `restarted` (a real kill-and-relaunch) against a real emulator [wave 2]
+- [x] 07-13-PLAN.md — gaps 1/3/4 live proof: `stockConnect()` on both real binaries, the Route A stopwatch on genuine VICE 3.10, and bounded diagnosis under real second-client contention [wave 2]
+- [x] 07-16-PLAN.md — gap 3 / WR-07: backend-aware advertisement for `vice_diagnose`/`vice_recycle`, plus the manifest `outputSchema` deltas for the new answer fields [wave 2]
+- [x] 07-17-PLAN.md — gap 3 live proof: `checkpoint_trap`, `wedged` (a real CPU JAM held in the monitor) and `restarted` (a real kill-and-relaunch) against a real emulator [wave 2]
 
 **Wave 3** *(blocked on all of the above)*
 
@@ -509,7 +509,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 14/18 | In Progress|  |
+| 7. Cycle Timing and Wedge Triage | 17/18 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
