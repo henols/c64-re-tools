@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-18T10:43:20.954Z"
-last_activity: 2026-08-18 -- Phase 07 planning complete
+last_updated: "2026-08-18T10:46:37.709Z"
+last_activity: 2026-08-18 -- Phase 07 execution started
 progress:
   total_phases: 6
   completed_phases: 5
@@ -27,9 +27,9 @@ inspect chip state — and keep working when the emulator misbehaves.
 ## Current Position
 
 Phase: 07 (cycle-timing-and-wedge-triage) — EXECUTING
-Plan: 1 of 10
-Status: Ready to execute
-Last activity: 2026-08-18 -- Phase 07 planning complete
+Plan: 1 of 18
+Status: Executing Phase 07
+Last activity: 2026-08-18 -- Phase 07 execution started
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 28 tools -- 16 already

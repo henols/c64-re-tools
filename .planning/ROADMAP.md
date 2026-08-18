@@ -419,10 +419,10 @@ Plans:
 
 **Wave 1** *(four independent plans, disjoint file ownership)*
 
-- [ ] 07-11-PLAN.md — gap 1 / CR-01: a `CPUHISTORY_GET` decode failure becomes a capability value instead of failing the whole stock handshake [wave 1]
-- [ ] 07-12-PLAN.md — gap 1 root cause / WR-13 + CR-02: re-derive the `CPUHISTORY_GET` per-entry layout from `monitor_binary.c` against three real captured fixtures, and fix the `RESOURCE_GET` integer guard [wave 1]
-- [ ] 07-14-PLAN.md — gap 2 / WR-01 + WR-02: resolve the cleanup race from the program counter, and report `machineHalted` on every `vice_run_until` answer [wave 1]
-- [ ] 07-15-PLAN.md — gap 3 / WR-03: derive `machinePaused` from observed run state, and add the classified non-verdict `diagnosis_unavailable` outcome (D-03's five verdicts unchanged) [wave 1]
+- [x] 07-11-PLAN.md — gap 1 / CR-01: a `CPUHISTORY_GET` decode failure becomes a capability value instead of failing the whole stock handshake [wave 1]
+- [x] 07-12-PLAN.md — gap 1 root cause / WR-13 + CR-02: re-derive the `CPUHISTORY_GET` per-entry layout from `monitor_binary.c` against three real captured fixtures, and fix the `RESOURCE_GET` integer guard [wave 1]
+- [x] 07-14-PLAN.md — gap 2 / WR-01 + WR-02: resolve the cleanup race from the program counter, and report `machineHalted` on every `vice_run_until` answer [wave 1]
+- [x] 07-15-PLAN.md — gap 3 / WR-03: derive `machinePaused` from observed run state, and add the classified non-verdict `diagnosis_unavailable` outcome (D-03's five verdicts unchanged) [wave 1]
 
 **Wave 2** *(blocked on wave 1; disjoint file ownership)*
 
@@ -509,7 +509,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 10/10 | Complete   | 2026-08-18 |
+| 7. Cycle Timing and Wedge Triage | 14/18 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
