@@ -59,11 +59,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createServer } from "node:net";
+import { createServer, connect as netConnect } from "node:net";
 
 import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
-import { ViceMonitorClient } from "./stock-protocol.ts";
-import type { StockConnectSession } from "./stock-connect.ts";
+import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
+import { stockConnect, stockDisconnect, type StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { attachRunStateTracker, runStateFor } from "./stock-runstate.ts";
 
@@ -147,6 +147,97 @@ async function connectWithRetry(client: ViceMonitorClient, host: string, port: n
     }
   }
   throw new Error(`connectWithRetry: could not connect to ${host}:${port} within ${deadlineMs}ms (last error: ${String(lastErr)})`);
+}
+
+// ---------------------------------------------------------------------------
+// 07-13: two more opt-in gates, one per resolved binary, so Gap 1's proofs
+// (Tasks 1-2) and the contention proof (Task 3) can each name the SPECIFIC
+// binary they need without depending on the shared before()/after() fixture
+// above (which stays untouched -- 03-16/05-09/05-10/WR-01/WR-03/WR-06's
+// cases all depend on it exactly as it is).
+// ---------------------------------------------------------------------------
+
+const VICE_LIVE_STOCK_BIN_39_DEFAULT = "/usr/bin/x64sc";
+const resolvedBin39Path = process.env.VICE_LIVE_STOCK_BIN_39 ?? VICE_LIVE_STOCK_BIN_39_DEFAULT;
+const SKIP_REASON_39: string | false = !process.env.VICE_LIVE_STOCK_BIN_39
+  ? `07-13's genuine-VICE-3.9 proofs are opt-in and default-skipped -- set VICE_LIVE_STOCK_BIN_39=/usr/bin/x64sc ` +
+    `(or another real, genuinely unpatched stock VICE 3.9 binary's absolute path) to run them. Defaults to ` +
+    `${VICE_LIVE_STOCK_BIN_39_DEFAULT} when set to a truthy non-path value. A bare "x64sc" on PATH resolves to the ` +
+    `fork build -- always name the stock binary by absolute path.`
+  : !existsSync(resolvedBin39Path)
+    ? `VICE_LIVE_STOCK_BIN_39="${resolvedBin39Path}" does not exist on disk -- opt-in requires a real, genuinely ` +
+      `unpatched stock VICE 3.9 binary at that absolute path.`
+    : false;
+
+const VICE_LIVE_STOCK_BIN_310_DEFAULT = "/usr/local/bin/x64sc";
+const resolvedBin310Path = process.env.VICE_LIVE_STOCK_BIN_310 ?? VICE_LIVE_STOCK_BIN_310_DEFAULT;
+const SKIP_REASON_310: string | false = !process.env.VICE_LIVE_STOCK_BIN_310
+  ? `07-13's genuine-VICE-3.10 proofs (Gap 1, CR-01's inversion) are opt-in and default-skipped -- set ` +
+    `VICE_LIVE_STOCK_BIN_310=/usr/local/bin/x64sc (or another real VICE >= 3.10 binary's absolute path) to run ` +
+    `them. Defaults to ${VICE_LIVE_STOCK_BIN_310_DEFAULT} when set to a truthy non-path value.`
+  : !existsSync(resolvedBin310Path)
+    ? `VICE_LIVE_STOCK_BIN_310="${resolvedBin310Path}" does not exist on disk -- opt-in requires a real VICE >= ` +
+      `3.10 binary at that absolute path.`
+    : false;
+
+/** A fresh, minimal broker-control stub: `claimMonitor`/`releaseMonitor` both
+ * resolve `{ ok: true }` unconditionally. Reused across every 07-13 test
+ * below (rather than one instance per test) -- none of these tests exercise
+ * broker-level contention (Task 3's contention is at the SOCKET, not the
+ * broker claim; see that test's own header comment on what it does NOT
+ * prove). */
+const STOCK_LIVE_1313_BROKER_CONTROL = {
+  claimMonitor: async () => ({ ok: true as const }),
+  releaseMonitor: async () => ({ ok: true as const }),
+} as unknown as BrokerControlSession;
+
+/**
+ * Spawns `binPath` as its OWN, independent stock VICE instance -- never the
+ * shared before()/after() fixture's process -- on a fresh ephemeral port and
+ * a fresh scratch XDG_CONFIG_HOME, waits (bounded, via the same
+ * connectWithRetry() idiom the shared fixture uses) until its binary monitor
+ * is actually accepting connections, invokes `fn`, and ALWAYS tears the
+ * instance down afterward: SIGKILL, a bounded wait for exit, and scratch-dir
+ * removal. Teardown runs even when `fn` throws (T-07-13-02) -- this is the
+ * leaked-resource failure mode this file's header already names.
+ *
+ * `-default` MUST precede `-binarymonitor` in the spawned argv or the
+ * monitor never binds (MEMORY: "Stock VICE flag order") -- the shared
+ * fixture's own before() above omits `-default` and must NOT be taken as
+ * the pattern here.
+ *
+ * The readiness probe itself opens and then immediately disconnects a
+ * throwaway ViceMonitorClient BEFORE `fn` runs, so `fn` (and, in
+ * particular, Task 3's own "first" holding socket) is the first REAL client
+ * the instance ever services.
+ */
+async function withOwnStockInstance<T>(binPath: string, fn: (info: { port: number; binPath: string }) => Promise<T>): Promise<T> {
+  const port = await freeEphemeralPort();
+  const scratchDir = mkdtempSync(join(tmpdir(), "gsd-0713-vicerc-"));
+  const child = spawn(
+    binPath,
+    ["-default", "-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`],
+    { stdio: "ignore", env: { ...process.env, XDG_CONFIG_HOME: scratchDir } },
+  );
+  child.once("error", (err) => {
+    console.error(`stock-live.test.ts: withOwnStockInstance(${binPath}) spawned emulator process error: ${String(err)}`);
+  });
+  try {
+    const probe = new ViceMonitorClient();
+    await connectWithRetry(probe, "127.0.0.1", port);
+    await probe.disconnect();
+    return await fn({ port, binPath });
+  } finally {
+    child.kill("SIGKILL");
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 3000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    rmSync(scratchDir, { recursive: true, force: true });
+  }
 }
 
 before(async () => {
@@ -812,3 +903,296 @@ test("stock-live (05-10): the hi-res legend, live -- sprite 0's legend names onl
     assert.ok(legend.includes(ch), `every character actually rendered must be mentioned in the legend -- "${ch}" is missing from: ${legend}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 07-13 Task 1: prove stockConnect() completes on both real binaries, with
+// the right capability on each -- the inversion of 07-VERIFICATION.md's own
+// live reproduction (Gap 1 / CR-01). Each test owns its OWN spawned
+// instance via withOwnStockInstance() above, entirely independent of the
+// shared before()/after() fixture (which stubs capabilities.cpuHistory to a
+// hardcoded "absent" and would prove nothing about a real handshake).
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-live (07-13 Task 1c, Gap 1): stockConnect() resolves against genuine VICE 3.9, with cpuHistory absent and a usable session",
+  { skip: SKIP_REASON_39 },
+  async () => {
+    await withOwnStockInstance(resolvedBin39Path, async ({ port }) => {
+      const session = await stockConnect({
+        host: "127.0.0.1",
+        port,
+        targetId: "stock-live-1313-connect-39",
+        brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
+        deps: {},
+      });
+      try {
+        assert.ok(session.client, "stockConnect() must resolve with a client");
+        console.log(`stock-live: genuine VICE 3.9 versionQuad=${session.versionQuad}, capabilities=${JSON.stringify(session.capabilities)}`);
+        assert.ok(
+          session.versionQuad.startsWith("3.9"),
+          `expected versionQuad to start with "3.9" on a genuine VICE 3.9 binary, got "${session.versionQuad}"`,
+        );
+        const observedCapability = session.capabilities.cpuHistory;
+        assert.equal(
+          observedCapability,
+          "absent",
+          `expected cpuHistory capability "absent" on genuine VICE 3.9, got "${observedCapability}"`,
+        );
+        // Send one PING to prove the session is actually usable, not just
+        // constructed -- must not throw.
+        await session.client.send(CommandType.Ping);
+      } finally {
+        await stockDisconnect(session);
+      }
+    });
+  },
+);
+
+test(
+  'stock-live (07-13 Task 1d, Gap 1, CR-01): stockConnect() resolves against genuine VICE 3.10, inverting the previously live-reproduced failure "StockFramingError | response type 0x86 body is 52 byte(s), needs at least 65", with cpuHistory available',
+  { skip: SKIP_REASON_310 },
+  async () => {
+    await withOwnStockInstance(resolvedBin310Path, async ({ port }) => {
+      const session = await stockConnect({
+        host: "127.0.0.1",
+        port,
+        targetId: "stock-live-1313-connect-310",
+        brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
+        deps: {},
+      });
+      try {
+        assert.ok(session.client, "stockConnect() must resolve with a client -- CR-01's whole point: this used to REJECT");
+        console.log(`stock-live: genuine VICE 3.10 versionQuad=${session.versionQuad}, capabilities=${JSON.stringify(session.capabilities)}`);
+        assert.ok(
+          session.versionQuad.startsWith("3.10"),
+          `expected versionQuad to start with "3.10" on a genuine VICE >= 3.10 binary, got "${session.versionQuad}"`,
+        );
+        const observedCapability = session.capabilities.cpuHistory;
+        // Do NOT relax this to "absent" if it fails -- that is exactly the
+        // accommodation that produced this gap (07-13 Task 1's own
+        // instruction). A failure here means 07-12's parser still cannot
+        // decode the real reply; report it as a finding, do not soften it.
+        assert.equal(
+          observedCapability,
+          "available",
+          `expected cpuHistory capability "available" on genuine VICE >= 3.10 (07-12's re-derived parser should decode the real reply), got "${observedCapability}"`,
+        );
+        await session.client.send(CommandType.Ping);
+      } finally {
+        await stockDisconnect(session);
+      }
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 07-13 Task 2: measure a real bracket on genuine VICE 3.10 through the
+// real dispatchStock() seam -- Route A ("cpu_history"), the Manual-Only
+// "Route A stopwatch on a >= 3.10 build" row 07-VALIDATION.md leaves
+// outstanding. `deps.connect` is the REAL stockConnect (not the file's
+// hardcoded-absent-capability before()/after() stub session, which would
+// silently select Route B and prove nothing).
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-live (07-13 Task 2, Manual-Only Route A stopwatch): a real ~500ms bracket on genuine VICE 3.10 measures an exact, non-zero, plausible cycle count via route cpu_history, through the real dispatchStock() seam",
+  { skip: SKIP_REASON_310 },
+  async () => {
+    await withOwnStockInstance(resolvedBin310Path, async ({ port }) => {
+      const targetId = "stock-live-1313-routeA-310";
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({
+          ok: true as const,
+          lease: {
+            host: "127.0.0.1",
+            port,
+            targetId,
+            brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
+            epochFile: "",
+            supervisorDir: "",
+          } as HeldLease,
+        }),
+        connect: stockConnect,
+      };
+      try {
+        // 1. reset -- also proves Route A was actually selected (can only
+        //    hold if 07-12's parser decodes a real CPUHISTORY_GET reply).
+        const resetResult = await dispatchStock("vice_cycles_stopwatch", { action: "reset" }, deps);
+        const resetPayload = parseOkPayload(resetResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        assert.equal(
+          resetPayload.route,
+          "cpu_history",
+          `expected Route A ("cpu_history") to be selected on genuine VICE 3.10, got "${resetPayload.route}"`,
+        );
+
+        // 2. one resume.
+        const runResult = await dispatchStock("vice_execution_run", {}, deps);
+        assert.equal(runResult.isError, false, `vice_execution_run must succeed, got: ${JSON.stringify(runResult)}`);
+
+        // 3. a real wall-clock wait with NO calls at all -- 07-CONTEXT.md's
+        //    own rule that runCycleBracket()'s ping-polling must not be
+        //    ported: every inbound byte halts the machine on stock.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // 4. read.
+        const readResult = await dispatchStock("vice_cycles_stopwatch", { action: "read" }, deps);
+        const readPayload = parseOkPayload(readResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        assert.equal(readPayload.route, "cpu_history", `expected route "cpu_history" on read, got "${readPayload.route}"`);
+        assert.equal(readPayload.measurable, true, `expected measurable:true, got: ${JSON.stringify(readPayload)}`);
+        assert.equal(readPayload.exactness, "exact", `expected exactness:"exact", got "${readPayload.exactness}"`);
+        assert.ok("cyclesExact" in readPayload, "measurable:true must carry cyclesExact");
+        const cyclesExact = readPayload.cyclesExact as string;
+        const cyclesExactBig = BigInt(cyclesExact);
+        assert.ok(cyclesExactBig > 0n, `cyclesExact must parse to a positive BigInt, got "${cyclesExact}"`);
+        const cycles = readPayload.cycles as number;
+        assert.ok(typeof cycles === "number" && cycles > 0, `cycles must be a positive number, got ${JSON.stringify(cycles)}`);
+        console.log(`stock-live: Route A measured ${cycles} cycles (${cyclesExact} exact) over a ~500ms wait`);
+
+        // 5. sanity-bound (not pin) the figure -- a PAL C64 runs ~985,000
+        //    cycles/s, so a 500ms wait should fall comfortably inside
+        //    [100000, 5000000]. This band exists to catch a fabricated or
+        //    wrongly-scaled number, not to pin timing.
+        assert.ok(
+          cycles >= 100000 && cycles <= 5000000,
+          `measured cycles ${cycles} fall outside the sanity band [100000, 5000000] for a ~500ms wait -- this band ` +
+            "catches a fabricated or wrongly-scaled figure, not exact timing",
+        );
+
+        // 6. TIME-03 honesty, asserted positively: cycles is never 0, and no
+        //    "cycles" key exists on a measurable:false payload.
+        assert.notEqual(cycles, 0, "cycles must never be 0 -- see this file's own header on the 258,504,308-cycle incident this rule prevents");
+
+        // Anti-fabrication guard: a second immediate read (no resume, no
+        // wait) must answer either a non-negative figure consistent with
+        // "nothing ran in between" or an explicit measurable:false with a
+        // reason -- never negative, never a fabricated large number.
+        //
+        // NOTE ON THE EXPECTED FIGURE (established empirically, not assumed):
+        // plain "read" (as opposed to "reset_and_read") never moves the
+        // stored baseline -- only "reset"/"reset_and_read" do (stock-timing.ts's
+        // own handleCyclesStopwatch()). Because the FIRST read's own
+        // CPUHISTORY_GET is itself a halting read (any inbound byte halts
+        // the machine on stock) and nothing resumed it before this SECOND
+        // read, no further execution occurred between the two reads -- so
+        // the honest answer is the delta AGAINST THE SAME ORIGINAL "reset"
+        // baseline, EXACTLY UNCHANGED from the first read's figure, not a
+        // "small" number close to zero. An anti-fabrication bug would show
+        // up as a DIFFERENT (especially larger) or negative figure here.
+        const secondReadResult = await dispatchStock("vice_cycles_stopwatch", { action: "read" }, deps);
+        const secondReadPayload = parseOkPayload(secondReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        console.log(`stock-live: second immediate read (no resume, no wait) -> ${JSON.stringify(secondReadPayload)}`);
+        if (secondReadPayload.measurable === true) {
+          const secondCycles = secondReadPayload.cycles as number;
+          assert.ok(secondCycles >= 0, `a second immediate read must never be negative, got ${secondCycles}`);
+          assert.equal(
+            secondCycles,
+            cycles,
+            `a second immediate read with no resume and no wait in between must report the EXACT SAME cycle count as ` +
+              `the first read (both measure the delta against the same unmoved "reset" baseline, and nothing ran in ` +
+              `between) -- a different figure would mean the count is drifting/fabricating progress that did not ` +
+              `happen. First read: ${cycles}, second read: ${secondCycles}`,
+          );
+        } else {
+          assert.equal(secondReadPayload.measurable, false);
+          assert.ok(
+            !("cycles" in secondReadPayload),
+            `a measurable:false payload must carry no "cycles" key (TIME-03 honesty), got: ${JSON.stringify(secondReadPayload)}`,
+          );
+          assert.ok(
+            typeof secondReadPayload.reason === "string" && (secondReadPayload.reason as string).length > 0,
+            "a measurable:false payload must carry a non-empty reason",
+          );
+        }
+      } finally {
+        clearHeldStockSession();
+      }
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 07-13 Task 3: prove the diagnostician stays bounded when a second client
+// holds the monitor (Gap 3 / Gap 4, 07-VERIFICATION.md human_verification
+// item 2). Deliberately VICE 3.9 -- isolates the contention behaviour from
+// anything version-gated.
+//
+// WHAT THIS TEST DOES NOT PROVE: the BROKER-MEDIATED monitor_held_elsewhere
+// path via a real claimMonitor() refusal from a second broker-managed
+// session still requires the host broker control plane running two real
+// sessions, which this file's dispatch-level harness does not stand up.
+// That half stays recorded as unit-proven only (see stock-diagnose.test.ts)
+// -- this test proves only the SOCKET-level contention bound, via a real
+// second stockConnect() dial against an already-held single-client monitor.
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-live (07-13 Task 3, Gap 3/Gap 4): vice_diagnose settles within its own bound when a second real client dials a monitor already held by a first",
+  { skip: SKIP_REASON_39 },
+  async () => {
+    await withOwnStockInstance(resolvedBin39Path, async ({ port }) => {
+      // --- 1. Open and hold a first raw socket -- the "other client"
+      //        already occupying stock VICE's single-client monitor slot. ---
+      const holdingSocket = netConnect({ host: "127.0.0.1", port });
+      await new Promise<void>((resolve, reject) => {
+        holdingSocket.once("connect", () => resolve());
+        holdingSocket.once("error", reject);
+      });
+
+      const originalTimeout = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+      process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "1500";
+      try {
+        const targetId = "stock-live-1313-contention-39";
+        const deps: StockDispatchDeps = {
+          ensureLease: async () => ({
+            ok: true as const,
+            lease: {
+              host: "127.0.0.1",
+              port,
+              targetId,
+              brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
+              epochFile: "",
+              supervisorDir: "",
+            } as HeldLease,
+          }),
+          // The REAL stockConnect -- this is the second connect() that will
+          // sit unserviced behind the holding socket above.
+          connect: stockConnect,
+        };
+        clearHeldStockSession();
+
+        const startedAt = Date.now();
+        const result = await dispatchStock("vice_diagnose", {}, deps);
+        const elapsedMs = Date.now() - startedAt;
+        console.log(`stock-live: vice_diagnose under second-client contention settled in ${elapsedMs}ms (bound: 1500ms)`);
+        assert.ok(
+          elapsedMs < 5000,
+          `vice_diagnose must settle well inside its bound -- expected < 5000ms for a 1500ms configured bound, took ${elapsedMs}ms`,
+        );
+
+        const text = (result as { content: { type: "text"; text: string }[] }).content[0]!.text;
+        let observedOutcome: "monitor_held_elsewhere" | "diagnosis_unavailable_timeout" | "neither" = "neither";
+        if (result.isError === false) {
+          const payload = JSON.parse(text) as Record<string, unknown>;
+          if (payload.verdict === "monitor_held_elsewhere") observedOutcome = "monitor_held_elsewhere";
+          assert.notEqual(payload.verdict, "live", "vice_diagnose must not answer the live verdict under second-client contention");
+        } else if (/^vice_diagnose: diagnosis_unavailable \(monitor_acquisition_timeout\)/.test(text)) {
+          observedOutcome = "diagnosis_unavailable_timeout";
+        }
+        console.log(`stock-live: observed contention outcome -- ${observedOutcome}`);
+        assert.notEqual(
+          observedOutcome,
+          "neither",
+          `vice_diagnose must answer either the monitor_held_elsewhere verdict or an isError:true ` +
+            `"diagnosis_unavailable (monitor_acquisition_timeout)" text under contention -- which of the two depends ` +
+            `on whether the contention is detected at the broker claim or at the socket, and both are correct, ` +
+            `documented outcomes; got isError=${result.isError}, text: ${text}`,
+        );
+      } finally {
+        if (originalTimeout === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+        else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = originalTimeout;
+        holdingSocket.destroy();
+        clearHeldStockSession();
+      }
+    });
+  },
+);
