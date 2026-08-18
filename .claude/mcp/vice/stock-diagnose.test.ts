@@ -885,6 +885,122 @@ test("handleDiagnoseStock: a never-settling ensureLease -> diagnosis_unavailable
   assert.match(text, /^vice_diagnose: diagnosis_unavailable \(monitor_acquisition_timeout\)/);
   assert.ok(text.includes(String(diagnoseSessionTimeoutMs())), "the refusal must still name the configured bound");
   assert.ok(text.includes("exactly one binary-monitor client"), "the refusal must still carry the pre-existing second-client explanation");
+  // WR-19: the caller must be told the acquisition is not cancelled.
+  assert.match(text, /still be IN FLIGHT/);
+  assert.match(text, /stderr/);
+});
+
+// 07-REVIEW.md WR-19: when the timeout branch wins the race, the in-flight
+// ensureStockSession() keeps running. A later SUCCESS installs a module-level
+// heldSession after this tool already answered diagnosis_unavailable, and a
+// later REJECTION -- including a MonitorOwnershipError that has its own verdict
+// -- was absorbed by the settled race and reached nothing, not even stderr.
+// Both are invisible state changes attributable to a call that reported failure.
+// It cannot be cancelled (no cancellation in ensureStockSession()'s contract),
+// so it is OBSERVED instead.
+test("handleDiagnoseStock (WR-19): an abandoned acquisition that later SUCCEEDS is reported on stderr", async () => {
+  const previous = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  let releaseLease: ((value: unknown) => void) | undefined;
+  try {
+    process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "5";
+    const deps = {
+      // Settles only AFTER the 5ms bound has already won the race.
+      ensureLease: () => new Promise((resolve) => {
+        releaseLease = resolve;
+      }),
+    } as unknown as StockDispatchDeps;
+
+    const result = await handleDiagnoseStock({}, deps);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /^vice_diagnose: diagnosis_unavailable \(monitor_acquisition_timeout\)/);
+
+    // Now let the abandoned acquisition settle, and give its .then() a turn.
+    releaseLease!({ ok: false, message: "refused after the bound expired" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    console.error = originalConsoleError;
+    if (previous === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+    else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = previous;
+  }
+  assert.ok(
+    captured.some((line) => line.includes("abandoned by the") && line.includes("COMPLETED afterwards")),
+    `the abandoned acquisition's completion must reach stderr, got: ${JSON.stringify(captured)}`,
+  );
+});
+
+test("handleDiagnoseStock (WR-19): an abandoned acquisition that later FAILS is reported on stderr, naming a MonitorOwnershipError specially", async () => {
+  const previous = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  let rejectLease: ((reason: unknown) => void) | undefined;
+  try {
+    process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "5";
+    const deps = {
+      ensureLease: () => new Promise((_resolve, reject) => {
+        rejectLease = reject;
+      }),
+    } as unknown as StockDispatchDeps;
+
+    const result = await handleDiagnoseStock({}, deps);
+    assert.equal(result.isError, true);
+
+    rejectLease!(new MonitorOwnershipError("held elsewhere", { holderGrantId: "grant-other", port: 6502 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    console.error = originalConsoleError;
+    if (previous === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
+    else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = previous;
+  }
+  assert.ok(
+    captured.some((line) => line.includes("FAILED afterwards")),
+    `the abandoned acquisition's failure must reach stderr, got: ${JSON.stringify(captured)}`,
+  );
+  assert.ok(
+    captured.some((line) => line.includes("monitor_held_elsewhere verdict")),
+    "a MonitorOwnershipError absorbed by the settled race must be called out -- it had its own verdict",
+  );
+});
+
+test("handleDiagnoseStock (WR-19): the NORMAL path logs no abandoned-acquisition line -- the observer must not double-report", async () => {
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  try {
+    // (a) a session that acquires fine and reaches a real verdict.
+    const { session } = makeFakeSession({
+      memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+      registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+      checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+    });
+    const okResult = await handleDiagnoseStock({}, {
+      ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+      connect: async () => session,
+    } as unknown as StockDispatchDeps);
+    assert.equal(okResult.isError, false);
+
+    // (b) an acquisition that REJECTS promptly -- the race itself reports it.
+    const errResult = await handleDiagnoseStock({}, unavailableDeps(new StockFramingError("decode fault")));
+    assert.equal(errResult.isError, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.deepEqual(
+    captured.filter((line) => line.includes("abandoned by the")),
+    [],
+    `no abandoned-acquisition line may be logged when the race settled normally, got: ${JSON.stringify(captured)}`,
+  );
 });
 
 test("handleDiagnoseStock: outcome.ok === false (ensureLease itself refuses) -> diagnosis_unavailable (session_refused), surfacing the upstream message", async () => {

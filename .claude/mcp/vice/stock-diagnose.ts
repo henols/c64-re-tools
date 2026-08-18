@@ -819,19 +819,66 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     });
 
     let outcome: EnsureStockSessionOutcome;
+    // WR-19 (07-REVIEW.md): the in-flight acquisition is OBSERVED, not
+    // abandoned. When the timeout branch wins the race, ensureStockSession()
+    // keeps running -- a later success installs a module-level `heldSession`
+    // AFTER this tool answered `diagnosis_unavailable`, and a later rejection
+    // (including a MonitorOwnershipError, which has its own verdict) was
+    // absorbed by the already-settled race and reached nothing, not even
+    // stderr. Both are invisible state changes attributable to a call that
+    // reported failure.
+    //
+    // This cannot be fixed by cancelling: there is no cancellation in
+    // ensureStockSession()'s contract, and inventing one here would race the
+    // broker claim. What CAN be fixed is the silence -- so the outcome is
+    // recorded on stderr either way, and the refusal text says an acquisition
+    // may still be in flight so the caller knows a later `heldSession` is not a
+    // ghost.
+    //
+    // The observer is attached ONLY inside the timed-out branch, deliberately.
+    // Attaching it before the race looks equivalent but is not: both the race's
+    // own continuation and the observer would be queued on the SAME promise,
+    // the observer (registered first) would run first, and any "already
+    // settled" flag the race's continuation sets would still be false -- so the
+    // NORMAL path would log a spurious abandonment line. Inside the branch the
+    // acquisition is by definition still pending, so no settlement can be
+    // missed, and a later rejection cannot go unhandled either (the race has
+    // already settled and would otherwise drop it).
+    const acquisition = ensureStockSession(deps);
+
     try {
-      const raced = await Promise.race([
-        ensureStockSession(deps).then((o) => ({ timedOut: false as const, outcome: o })),
-        timeoutSignal,
-      ]);
+      const raced = await Promise.race([acquisition.then((o) => ({ timedOut: false as const, outcome: o })), timeoutSignal]);
       if (raced.timedOut) {
+        acquisition.then(
+          (o) => {
+            console.error(
+              `handleDiagnoseStock: the session acquisition abandoned by the ${timeoutMs}ms bound COMPLETED afterwards ` +
+                `(ok=${o.ok}) -- vice_diagnose already answered diagnosis_unavailable (monitor_acquisition_timeout), and a ` +
+                `held session may now exist that that answer did not describe.`,
+            );
+          },
+          (err) => {
+            console.error(
+              `handleDiagnoseStock: the session acquisition abandoned by the ${timeoutMs}ms bound FAILED afterwards ` +
+                `(${describeStockError(err)}) -- vice_diagnose already answered diagnosis_unavailable ` +
+                `(monitor_acquisition_timeout), so this failure reached no caller.` +
+                (err instanceof MonitorOwnershipError
+                  ? " NOTE: this was a MonitorOwnershipError, which has its own monitor_held_elsewhere verdict."
+                  : ""),
+            );
+          },
+        );
         return diagnoseUnavailableResult(
           "monitor_acquisition_timeout",
-          `session acquisition did not complete within ${timeoutMs}ms.`,
+          `session acquisition did not complete within ${timeoutMs}ms. NOTE: that acquisition may still be IN FLIGHT -- it is not ` +
+            `cancelled, so a session may be established (and held) shortly after this answer; its outcome is written to stderr. ` +
+            `Do not treat a later-appearing held session as a ghost.`,
         );
       }
       outcome = raced.outcome;
     } catch (err) {
+      // The race REJECTED, so the acquisition's outcome did reach a caller --
+      // no observer was ever attached on this path, and none is wanted.
       if (err instanceof MonitorOwnershipError) {
         return diagnoseVerdictResult(
           null,

@@ -98,7 +98,7 @@ its own next move:
 |---|---|---|
 | `connection_lost` | The socket died mid-session | Retry once. If it recurs, treat as a real transport problem, not a wedge |
 | `request_timeout` | The wire went silent past the request bound | Retry once. If it recurs, fall to the manual cycle bracket below |
-| `monitor_acquisition_timeout` | Another client holds the monitor and the wait bound expired | Wait for the current holder to release, then retry — this is the bounded sibling of `monitor_held_elsewhere`, not a wedge |
+| `monitor_acquisition_timeout` | Another client holds the monitor and the wait bound expired | Wait for the current holder to release, then retry — this is the bounded sibling of `monitor_held_elsewhere`, not a wedge. **The abandoned acquisition is not cancelled** (07-REVIEW WR-19): a session may be established moments after this answer, so a later-appearing held session is not a ghost. Its real outcome is written to stderr |
 | `session_refused` | The broker/lease itself refused the session | Read the raw detail in the message; this is a broker-level problem, not an emulator state |
 | `protocol_decode_failure` | This build answered a frame the client cannot decode | Report it as a tool defect — check `docs/stock-vice-parity.md`'s `CPUHISTORY_GET` history for a known class of this — and fall back to the manual cycle bracket below |
 | `evidence_gathering_failed` | A session was obtained but a read needed to build the verdict failed | `vice_execution_run` may be needed to unstick a stalled read path, then retry |
