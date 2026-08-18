@@ -88,7 +88,7 @@ import { ViceMonitorClient } from "./stock-protocol.ts";
 import { stockConnect, stockReconnect, type StockConnectSession, type StockConnectOptions, type StockReconnectOptions } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { runStateFor } from "./stock-runstate.ts";
-import { writeEpochRecord } from "./broker-epoch.mts";
+import { writeEpochRecord, type EpochRecord } from "./broker-epoch.mts";
 
 // ---------------------------------------------------------------------------
 // Opt-in gate -- mirrors stock-live.test.ts's own gate exactly, with this
@@ -186,6 +186,10 @@ interface TriageInstance {
   /** The port THIS instance (and any relaunch on the same port, via
    * `relaunch()`) binds to. */
   port: number;
+  /** This test's own mkdtempSync() scratch directory -- Task 3 writes its
+   * forged epoch record here (T-07-17-03: never anywhere but this
+   * directory), reusing the same one XDG_CONFIG_HOME already points at. */
+  scratchDir: string;
   /** The StockDispatchDeps every dispatchStock() call in a test uses.
    * `connect`/`reconnect` are thin pass-throughs to the REAL stockConnect()/
    * stockReconnect() -- captured here only so this harness can hand back the
@@ -288,6 +292,7 @@ async function withTriageInstance(opts: { extraArgs?: string[] }, fn: (instance:
 
     const instance: TriageInstance = {
       port,
+      scratchDir,
       deps,
       session: () => capturedSession,
       setEpochFile: (path: string) => {
@@ -527,6 +532,109 @@ test(
           `fallback (non-stopping trace checkpoint flood at $EA31) observed verdict "${String(fallbackPayload.verdict)}". ` +
           `See 07-17-SUMMARY.md for the full recorded evidence of both attempts.`,
       );
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Task 3: restarted, live -- a real kill-and-relaunch with a bumped epoch.
+//
+// HONEST LIMIT (stated here and repeated in 07-17-SUMMARY.md): the respawn
+// below is performed by THIS TEST, not by the host broker's own supervision
+// loop. This closes "a real kill-and-relaunch with a bumped epoch produces
+// restarted" and does NOT close "the broker's supervision loop produces
+// restarted" -- that path (broker-mediated monitor_held_elsewhere included)
+// stays unit-proven only.
+// ---------------------------------------------------------------------------
+
+/** Writes a real epoch record to `supervisorDir/epoch.json`, in the EXACT
+ * format `readEpoch()` parses -- via the real `writeEpochRecord()` writer
+ * (`broker-epoch.mts`), never a hand-invented shape. Returns the written
+ * file's path. */
+function writeTestEpoch(supervisorDir: string, port: number, epoch: number): string {
+  const record: EpochRecord = {
+    epoch,
+    spawned_at: new Date().toISOString(),
+    // The emulator CHILD's own pid has no consumer in this test (readEpoch()
+    // only type-checks it); a fixed placeholder keeps this call's intent
+    // clear without threading the real child pid through the harness.
+    pid: 0,
+    supervisor_pid: process.pid,
+    vice_bin: resolvedBinPath,
+    vice_args: ["-default", "-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`],
+    log: "logs/stock-live-triage-test.log",
+    dry_run: false,
+  };
+  return writeEpochRecord({ supervisorDir, record });
+}
+
+test(
+  "stock-live-triage: restarted is live-proven -- a real kill-and-relaunch on the same port with a bumped epoch file yields restarted at zero emulator cost",
+  { skip: SKIP_REASON },
+  async () => {
+    await withTriageInstance({}, async (instance) => {
+      // 1. Write a real epoch record (epoch E) into this test's OWN scratch
+      //    directory (T-07-17-03) -- never the real .vice-supervisor/ tree --
+      //    and point deps.ensureLease's lease at it BEFORE the first connect,
+      //    so the session's baselineEpoch is fixed to E at connect time via
+      //    the exact stockConnectDepsFor()-shaped path production uses.
+      const BASELINE_EPOCH = 7;
+      const epochPath = writeTestEpoch(instance.scratchDir, instance.port, BASELINE_EPOCH);
+      instance.setEpochFile(epochPath);
+
+      // 2. Pre-condition: the FIRST dispatch performs the real connect (and
+      //    therefore reads baselineEpoch = E from the file above). With the
+      //    epoch file unchanged, this must NOT answer restarted -- proving
+      //    the later positive result comes from the epoch change, not from
+      //    an unrelated default.
+      const preResult = await dispatchStock("vice_diagnose", {}, instance.deps);
+      const prePayload = parseOkPayload(preResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-live-triage: vice_diagnose (restarted pre-condition, epoch unchanged) -> ${JSON.stringify(prePayload)}`);
+      assert.notEqual(
+        prePayload.verdict,
+        "restarted",
+        `the pre-condition dispatch must NOT answer "restarted" while the epoch file is unchanged, got: ${JSON.stringify(prePayload)}`,
+      );
+      const sessionBefore = instance.session();
+      assert.ok(sessionBefore, "instance.session() must be populated after the pre-condition dispatch");
+      assert.equal(sessionBefore!.baselineEpoch, BASELINE_EPOCH, `the session's own baselineEpoch must be ${BASELINE_EPOCH}, got: ${String(sessionBefore!.baselineEpoch)}`);
+
+      // 3. Genuinely restart the instance -- SIGKILL, wait bounded for exit,
+      //    relaunch on the SAME port -- the same two facts (same port, same
+      //    target) a broker-mediated respawn produces.
+      await instance.relaunch();
+
+      // 4. Bump the epoch file to E + 1, in the same real format -- the
+      //    second fact (new epoch) a broker-mediated respawn produces.
+      writeTestEpoch(instance.scratchDir, instance.port, BASELINE_EPOCH + 1);
+
+      // 5. Dispatch again. Depending on exactly when the OLD socket notices
+      //    the killed process (a race this test does not need to resolve --
+      //    both outcomes are the SAME correct answer): either
+      //    ensureStockSession() still sees the old session as "connected"
+      //    and handleDiagnoseStock()'s own step-2 epoch comparison fires
+      //    (zero emulator calls, session non-null), or it has already
+      //    noticed the closed socket and attempts stockReconnect(), whose
+      //    OWN epoch check (stock-connect.ts) runs BEFORE any wire traffic
+      //    and throws MachineRestartedError (session null in the resulting
+      //    verdict) -- also zero emulator calls. Both are the real,
+      //    documented mechanism; this test asserts only the observable
+      //    result both converge on.
+      const postResult = await dispatchStock("vice_diagnose", {}, instance.deps);
+      const postPayload = parseOkPayload(postResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-live-triage: vice_diagnose (restarted, post-relaunch+epoch-bump) -> ${JSON.stringify(postPayload)}`);
+
+      assert.equal(postPayload.verdict, "restarted", `expected verdict "restarted", got the full payload: ${JSON.stringify(postPayload)}`);
+      const evidence = postPayload.evidence as Record<string, unknown>;
+      assert.equal(evidence.baselineEpoch, BASELINE_EPOCH, `evidence.baselineEpoch must be ${BASELINE_EPOCH}, got: ${JSON.stringify(evidence)}`);
+      assert.equal(evidence.currentEpoch, BASELINE_EPOCH + 1, `evidence.currentEpoch must be ${BASELINE_EPOCH + 1}, got: ${JSON.stringify(evidence)}`);
+      assert.ok(typeof postPayload.report === "string" && (postPayload.report as string).length > 0, "report must be a non-empty string");
+
+      // 6. Zero emulator cost: no bracket, no checkpoint-list evidence.
+      assert.ok(!("bracket" in evidence), `restarted evidence must carry no "bracket" key, got: ${JSON.stringify(evidence)}`);
+      assert.ok(!("bracket1" in evidence), `restarted evidence must carry no "bracket1" key, got: ${JSON.stringify(evidence)}`);
+      assert.ok(!("checkpoints" in evidence), `restarted evidence must carry no "checkpoints" key, got: ${JSON.stringify(evidence)}`);
+      assert.equal(Object.keys(evidence).sort().join(","), "baselineEpoch,currentEpoch", `restarted evidence must carry ONLY baselineEpoch/currentEpoch, got keys: ${Object.keys(evidence).join(",")}`);
     });
   },
 );
