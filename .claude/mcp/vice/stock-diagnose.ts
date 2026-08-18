@@ -39,6 +39,7 @@ import { stockAnswer, derivedAnswer, isErrorText, type StockToolResult } from ".
 import { ensureStockSession, type StockDispatchDeps, type EnsureStockSessionOutcome } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
+import { runStateFor } from "./stock-runstate.ts";
 import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 
@@ -513,14 +514,64 @@ function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
   );
 }
 
+/** The source label carried alongside `machinePaused`, so a caller can tell
+ * an observation from an inference:
+ *   - "no_session" -- no session was ever obtained (the two pre-session
+ *     verdicts, `monitor_held_elsewhere` and the thrown-`MachineRestartedError`
+ *     acquisition path). Nothing in this process touched the machine, so no
+ *     claim about a pause is being made; `machinePaused` is `false`.
+ *   - "observed" -- `runStateFor(session.client)` reported `"stopped"` or
+ *     `"running"` directly from the wire's own stopped/resumed/jam events.
+ *   - "structural" -- the tracker reported `"unknown"`. See
+ *     deriveMachinePaused()'s own comment for why "not observed running" is
+ *     still treated as paused in this specific case. */
+export type MachinePausedSource = "no_session" | "observed" | "structural";
+
+/**
+ * WR-03: `machinePaused` is derived HERE, from the observed run state, and
+ * NEVER hand-passed by a call site again -- a hand-passed flag drifts from
+ * reality the moment a call site changes (exactly what happened before this
+ * fix: the `checkpoint_trap` verdict hardcoded `false` even though every
+ * evidence-gathering read that got it there halts the machine on stock).
+ *
+ * `session === null` -> `false`/"no_session": no session was ever obtained,
+ * so no claim about a pause is being made.
+ *
+ * `session !== null` -> read `runStateFor(session.client)`:
+ *   - "stopped" -> `true`/"observed".
+ *   - "running" -> `false`/"observed".
+ *   - "unknown" -> `true`/"structural". By the time ANY verdict is built,
+ *     this file's own path has already sent at least one wire read, every
+ *     inbound byte halts the machine on stock (`monitor_binary.c:281`,
+ *     CLAUDE.md's Protocol constraint), and no function in this file ever
+ *     sends a resume except runStockLivenessBracket(), which itself ends
+ *     with a read. So "not observed running" after this path's reads means
+ *     paused -- but the tracker's own event-driven update can still lag a
+ *     command reply, so this is an inference, never an observation, and the
+ *     "structural" label is what keeps it honest.
+ */
+function deriveMachinePaused(session: StockConnectSession | null): { machinePaused: boolean; machinePausedSource: MachinePausedSource } {
+  if (session === null) {
+    return { machinePaused: false, machinePausedSource: "no_session" };
+  }
+  const runState = runStateFor(session.client);
+  if (runState === "stopped") {
+    return { machinePaused: true, machinePausedSource: "observed" };
+  }
+  if (runState === "running") {
+    return { machinePaused: false, machinePausedSource: "observed" };
+  }
+  return { machinePaused: true, machinePausedSource: "structural" };
+}
+
 function diagnoseVerdictResult(
   session: StockConnectSession | null,
   verdict: StockDiagnoseVerdict,
   evidence: Record<string, unknown>,
   report: string,
-  machinePaused: boolean,
 ): StockToolResult {
-  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused };
+  const { machinePaused, machinePausedSource } = deriveMachinePaused(session);
+  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused, machinePausedSource };
   return session ? stockAnswer(session.client, payload) : derivedAnswer(payload);
 }
 
@@ -593,7 +644,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
           "monitor_held_elsewhere",
           { holderGrantId: err.holderGrantId ?? null, holderClaimedAt: err.holderClaimedAt ?? null, port: err.port ?? null },
           renderMonitorHeldElsewhereReport(err),
-          false,
         );
       }
       if (err instanceof MachineRestartedError) {
@@ -602,7 +652,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
           "restarted",
           { baselineEpoch: err.baselineEpoch ?? null, currentEpoch: err.currentEpoch ?? null },
           renderStockRestartedReport(err.baselineEpoch, err.currentEpoch),
-          false,
         );
       }
       return diagnoseErrorResult(`vice_diagnose: session acquisition failed (${describeStockError(err)}).`);
@@ -626,7 +675,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "restarted",
         { baselineEpoch: session.baselineEpoch, currentEpoch: currentRecord.epoch },
         renderStockRestartedReport(session.baselineEpoch, currentRecord.epoch),
-        false,
       );
     }
 
@@ -643,7 +691,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "checkpoint_trap",
         trapEvidence as unknown as Record<string, unknown>,
         renderStockCheckpointTrapReport(trapEvidence),
-        false,
       );
     }
 
@@ -659,7 +706,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
       return diagnoseErrorResult(inconclusiveBracketText(bracket1));
     }
     if (bracket1.advanced) {
-      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1), true);
+      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1));
     }
 
     // Run a second bracket only when the first shows no advance -- mirroring
@@ -680,7 +727,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "live",
         { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
         renderStockLiveReport(bracket2),
-        true,
       );
     }
 
@@ -689,7 +735,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
       "wedged",
       { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
       renderStockWedgedReport(bracket1, bracket2),
-      true,
     );
   } catch (err) {
     return diagnoseErrorResult(`vice_diagnose: an unexpected error occurred (${describeStockError(err)}).`);
