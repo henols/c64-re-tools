@@ -95,3 +95,7 @@ The Wave-0 blocking defect is fixed: `resolveCapabilities()` no longer throws on
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+All 4 created/modified files exist on disk; all 3 task/summary commit hashes (8df94d4, e90294f, 8d0546a) found in `git log`.
