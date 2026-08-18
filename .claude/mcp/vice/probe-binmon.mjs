@@ -27,7 +27,8 @@
  * Bounded fixture capture (needs a real x64sc; writes fixtures/binmon/):
  *   node .claude/mcp/vice/probe-binmon.mjs --capture <case>
  *   node .claude/mcp/vice/probe-binmon.mjs --capture all [--capture-out <dir>]
- * <case> is one of "display-get", "event-interleaved", "checkpoint-list", or
+ * <case> is one of "display-get", "event-interleaved", "checkpoint-list",
+ * "cpuhistory-get", "cpuhistory-get-multi", "cpuhistory-get-unsupported", or
  * "all". Writes <case>.bin (raw concatenated wire bytes) and <case>.json (a
  * provenance sidecar: capturedFrom, viceVersion, capturedAt, command) into
  * --capture-out (defaults to fixtures/binmon/ next to this script), each via
@@ -103,8 +104,17 @@ const MAX_BODY_LEN = 4 * 1024 * 1024;
 // the other cases.
 const MAX_CAPTURE_FRAMES = 32;
 
-// The three real-capture VERIF-02 cases --capture accepts (plus "all").
-const CAPTURE_CASES = ["display-get", "event-interleaved", "checkpoint-list"];
+// The real-capture cases --capture accepts (plus "all"). The three
+// VERIF-02 cases plus plan 07-12's three CPUHISTORY_GET (0x86) captures --
+// see cpuhistory-get{,-multi,-unsupported} runners below.
+const CAPTURE_CASES = [
+  "display-get",
+  "event-interleaved",
+  "checkpoint-list",
+  "cpuhistory-get",
+  "cpuhistory-get-multi",
+  "cpuhistory-get-unsupported",
+];
 
 const ERR_NAME = {
   0x00: "OK",
@@ -117,9 +127,25 @@ const ERR_NAME = {
   0x8f: "CMD_FAILURE",
 };
 
+// Plan 07-12, Task 1 (blocking fix): `--capture <case>` and `--capture-out
+// <dir>` each consume the bare word immediately after them as their OWN
+// argument, not a host/port positional -- but the naive `!a.startsWith("--")`
+// filter below could not tell the difference and picked up the case name
+// (e.g. "cpuhistory-get") as `host`, silently breaking every `--capture`
+// invocation's VICE_BINMON env-var fallback (getaddrinfo ENOTFOUND
+// "cpuhistory-get"). Strip both flags AND the single argument each consumes
+// before falling through to host/port positionals.
 function parseTarget() {
   const env = process.env.VICE_BINMON;
-  const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const argv = process.argv.slice(2);
+  const consumed = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--capture" || argv[index] === "--capture-out") {
+      consumed.add(index);
+      consumed.add(index + 1);
+    }
+  }
+  const positional = argv.filter((a, index) => !consumed.has(index) && !a.startsWith("--"));
   let host = positional[0] || (env && env.split(":")[0]) || "127.0.0.1";
   let port = Number(positional[1] || (env && env.split(":")[1]) || 6502);
   return { host, port };
@@ -355,6 +381,22 @@ function parseResource(r) {
   return { type: "int", value: r.body.readInt32LE(2) };
 }
 
+// CPUHISTORY_GET (0x86) request body: memspace(1)=0x00 (main) + count(u32LE).
+// Plan 07-12, Task 1: VICE reads `count` off the wire as a uint32
+// (`little_endian_to_uint32`, monitor_binary.c:1491) but stores it in a
+// `uint16_t requested_count` (monitor_binary.c:1469) -- CLAUDE.md's own
+// Protocol constraint -- so a count >= 65536 silently wraps on the wire
+// rather than being honoured. Clamp here so this harness can never send a
+// count that would misrepresent what it asked for. VICE itself rejects a
+// count below 1 with InvalidParameter (0x81, monitor_binary.c:1493-1497).
+function cpuHistoryGetBody(count) {
+  const clamped = Math.max(1, Math.min(65535, count));
+  const body = Buffer.alloc(5);
+  body[0] = 0x00; // memspace: main
+  body.writeUInt32LE(clamped, 1);
+  return body;
+}
+
 // PALETTE_GET (0x91) request body: 1 byte, use_vic = 0x00 on x64sc.
 function paletteGetBody() {
   return Buffer.from([0x00]);
@@ -472,6 +514,18 @@ function selftest() {
   // paletteGetBody: single 0x00 byte.
   const pg = paletteGetBody();
   assertTrue(pg.length === 1 && pg[0] === 0x00, "paletteGetBody: single 0x00 byte");
+
+  // cpuHistoryGetBody: 5-byte body, memspace(1)=0x00 + count(u32LE), and the
+  // uint16_t wrap ceiling (monitor_binary.c:1469/1491) clamps a huge count
+  // to 65535 rather than sending a value VICE would silently truncate.
+  const chg = cpuHistoryGetBody(1);
+  assertTrue(chg.length === 5, "cpuHistoryGetBody: exactly 5 bytes");
+  assertTrue(chg[0] === 0x00, "cpuHistoryGetBody: memspace byte is 0x00 (main)");
+  assertTrue(chg.readUInt32LE(1) === 1, "cpuHistoryGetBody: count round-trips through readUInt32LE");
+  const chgMulti = cpuHistoryGetBody(4);
+  assertTrue(chgMulti.readUInt32LE(1) === 4, "cpuHistoryGetBody: a count of 4 round-trips");
+  const chgClamped = cpuHistoryGetBody(100000);
+  assertTrue(chgClamped.readUInt32LE(1) === 65535, "cpuHistoryGetBody: a count of 100000 clamps to 65535");
 
   // parsePalette: synthesised 16-entry buffer.
   const palBody = Buffer.alloc(2 + 16 * 4);
@@ -1248,15 +1302,45 @@ async function captureCheckpointListCase(mon) {
   }
 }
 
+// Plan 07-12, Task 1: three CPUHISTORY_GET (0x86) captures. cpuhistory-get
+// and cpuhistory-get-multi are run against a genuine >= 3.10 build (count=1
+// and count=4, respectively -- the multi-entry case is the stride proof, not
+// just a bigger single-entry case). cpuhistory-get-unsupported is run
+// against a genuine 3.9 build, which lacks the opcode entirely, to record
+// the real refusal frame rather than assume one.
+async function captureCpuHistoryGetCase(mon) {
+  return withFrameCapture(mon, async () => {
+    await mon.send(CMD.CPUHISTORY_GET, cpuHistoryGetBody(1));
+  });
+}
+
+async function captureCpuHistoryGetMultiCase(mon) {
+  return withFrameCapture(mon, async () => {
+    await mon.send(CMD.CPUHISTORY_GET, cpuHistoryGetBody(4));
+  });
+}
+
+async function captureCpuHistoryGetUnsupportedCase(mon) {
+  return withFrameCapture(mon, async () => {
+    await mon.send(CMD.CPUHISTORY_GET, cpuHistoryGetBody(1));
+  });
+}
+
 const CAPTURE_COMMAND_BY_CASE = {
   "display-get": "DISPLAY_GET (0x84)",
   "event-interleaved": "ADVANCE_INSTRUCTIONS (0x71)",
   "checkpoint-list": "CHECKPOINT_SET (0x12) x2 -> CHECKPOINT_LIST (0x14) -> CHECKPOINT_DELETE (0x13) x2",
+  "cpuhistory-get": "CPUHISTORY_GET (0x86) count=1",
+  "cpuhistory-get-multi": "CPUHISTORY_GET (0x86) count=4",
+  "cpuhistory-get-unsupported": "CPUHISTORY_GET (0x86) count=1 against a build without FEATURE_CPUMEMHISTORY",
 };
 const CAPTURE_RUNNER_BY_CASE = {
   "display-get": captureDisplayGetCase,
   "event-interleaved": captureEventInterleavedCase,
   "checkpoint-list": captureCheckpointListCase,
+  "cpuhistory-get": captureCpuHistoryGetCase,
+  "cpuhistory-get-multi": captureCpuHistoryGetMultiCase,
+  "cpuhistory-get-unsupported": captureCpuHistoryGetUnsupportedCase,
 };
 
 /**
