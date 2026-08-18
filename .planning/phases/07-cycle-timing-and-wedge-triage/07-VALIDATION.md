@@ -2,7 +2,7 @@
 phase: 7
 slug: cycle-timing-and-wedge-triage
 status: complete
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-08-18
 ---
@@ -128,9 +128,9 @@ binaries, closing the Route A decode gap 07-10 found and three of `vice_diagnose
 | Route A stopwatch on a ≥ 3.10 build | TIME-01 | Needs a real `CPUHISTORY_GET` responder; no unit fixture proves the live handshake | Launch a genuine ≥3.10 build with `-binarymonitor`, re-run the `count=0`-vs-`count=1` empirical test, commit the captured response as a fixture | ✅ **PASS** (resolved 2026-08-18, gap-closure batch, citing **07-12** and **07-13**). 07-12 re-derived the real `CPUHISTORY_GET` per-entry wire layout from `monitor_binary_process_cpuhistory()` against three committed real captures from genuine VICE 3.10 and 3.9. 07-13 live-proved the corrected parser end-to-end through the real `dispatchStock()` seam against genuine `/usr/local/bin/x64sc` (VICE 3.10.0.0): a real ~500ms bracket measured **511,061** exact cycles on one run and **530,713** on another, both `route:"cpu_history"`, `exactness:"exact"`, both inside the documented sanity band. A second immediate read (no resume) reported the identical figure both times, proving the count is neither drifting nor fabricated |
 | `vice_run_until` reaching a real address, and timing out on an unreachable one | TIME-02 | Checkpoint-hit timing only means anything against a real CPU loop | Run a real program, target a reached address (assert hit + checkpoint auto-gone), then an unreachable address (assert timeout + cleanup) | ✅ **PASS**, against both 3.9 and 3.10. `$EA31` (KERNAL IRQ entry) reached with `hitCount:1` within a 5000ms bound; `$C000` (unreached from the idle KERNAL loop) timed out within 1500ms with `cleanup:"deleted"` |
 | `vice_diagnose` against a real checkpoint trap and a real wedge | TIME-04 | The four/five verdicts are timing-dependent emulator states, not decodable from fixtures | Arm a real stopping checkpoint (expect `checkpoint_trap`); induce a wedge and a kill-and-respawn (expect `wedged`, `restarted`); open a second monitor connection (expect `monitor_held_elsewhere`) | ✅ **PASS** for `checkpoint_trap`, `wedged`, `live`, and `restarted` (07-17), with one named caveat. `checkpoint_trap`: a real stopping exec checkpoint armed at `$EA31` fires for real; `vice_diagnose` answers `verdict:"checkpoint_trap"`, `machinePaused:true`, `machinePausedSource:"observed"`. `wedged`: a real CPU JAM held in the monitor (`-jamaction 2`) produces `verdict:"wedged"`, confirmed on **both** capability routes (`frame_position` on genuine VICE 3.9, `cpu_history` on genuine VICE 3.10). `restarted`: a real epoch record, `SIGKILL`+relaunch, and epoch bump yields `verdict:"restarted"` — see the dedicated row below for the one honest limit on this result. `live` was already live-confirmed against both binaries. `monitor_held_elsewhere` is the subject of the next row, not this one |
-| Second-client contention does not itself hang the diagnostician | TIME-04 | The failure mode *is* an indefinite hang with no reply and no EOF — only a live second `connect()` proves the guard | With one client attached, run `vice_diagnose` from a second; assert it returns `monitor_held_elsewhere` within its bound rather than blocking | ⚠️ **PARTIAL** (updated 2026-08-18 with measured data, **07-13** Task 3). A real second `stockConnect()` dial against genuine VICE 3.9's single-client binary monitor, already held by a raw first socket, settled in **~1501-1502ms** against the configured 1500ms bound (`VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS`) — comfortably inside the `<5000ms` acceptance bound — answering `vice_diagnose: diagnosis_unavailable (monitor_acquisition_timeout)` on every observed run. This proves the **socket-level** contention bound. The **broker-mediated** `monitor_held_elsewhere` verdict (a real second `claimMonitor()` refusal from a genuinely broker-managed session) remains unit-proven only (`stock-diagnose.test.ts`) — standing up the host broker control plane with two real acquired sessions is out of scope for this dispatch-level harness. **This is the row now blocking `nyquist_compliant: true`** |
+| Second-client contention does not itself hang the diagnostician | TIME-04 | The failure mode *is* an indefinite hang with no reply and no EOF — only a live second `connect()` proves the guard | With one client attached, run `vice_diagnose` from a second; assert it returns `monitor_held_elsewhere` within its bound rather than blocking | ✅ **PASS** (updated 2026-08-18, quick task 260818-obc — appended, socket-level history preserved below). A real second `stockConnect()` dial against genuine VICE 3.9's single-client binary monitor, already held by a raw first socket, settled in **~1501-1502ms** against the configured 1500ms bound (`VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS`) — comfortably inside the `<5000ms` acceptance bound — answering `vice_diagnose: diagnosis_unavailable (monitor_acquisition_timeout)` on every observed run (**07-13** Task 3). This proved the **socket-level** contention bound only. **The broker-mediated `monitor_held_elsewhere` verdict is now ALSO live-proven** (quick task 260818-obc, `stock-live-broker-monitor.test.ts`): a real host broker daemon (`resources/vice-broker.mjs`) granted two real sessions the SAME crash-respawned instance (session A's original grant, externally `SIGKILL`ed and relaunched by the broker's own crash supervision, then session B's acquire served from the same respawned instance per `VICE_BROKER_MAX=1`); the session whose real `claimMonitor()` arrived second was refused `monitor_held_elsewhere`, naming the OTHER grant's real id, on both genuine `/usr/bin/x64sc` (VICE 3.9) and `/usr/local/bin/x64sc` (VICE 3.10), settling in **1ms** against the 10000ms bound (`DEFAULT_DIAGNOSE_SESSION_TIMEOUT_MS`) on both binaries. This was the last remaining blocker for `nyquist_compliant: true` |
 | `stockConnect()` resolves with the correct capability on both real binaries | TIME-01 | The whole CR-01 regression was a connect-time failure; only a real connect against each binary proves the fix | Dial a real, unmocked `stockConnect()` against `/usr/bin/x64sc` and `/usr/local/bin/x64sc`; assert it resolves (not throws) with the right `cpuHistory` value on each | ✅ **PASS** (**07-13** Task 1). `stockConnect()` resolves against genuine `/usr/bin/x64sc` (VICE 3.9.0.0) with `cpuHistory:"absent"`, and against genuine `/usr/local/bin/x64sc` (VICE 3.10.0.0) with `cpuHistory:"available"` — the exact inversion of 07-VERIFICATION.md's own live-reproduced CR-01 failure. Both sessions proven usable via a real `PING` after connect |
-| `restarted` verdict after a real kill-and-relaunch | TIME-04 | The verdict depends on a genuine epoch mismatch across a real process replacement, not decodable from a fixture | Establish a session's `baselineEpoch` via a real epoch record; `SIGKILL` the instance, relaunch on the same port, bump the epoch; assert `vice_diagnose` answers `verdict:"restarted"` | ✅ **PASS** (**07-17** Task 3), with one named limit. `evidence.baselineEpoch`/`evidence.currentEpoch` differed by exactly 1; `machinePausedSource:"no_session"` confirmed the real `stockReconnect()` epoch-check path fired. The respawn was **performed by the test itself** (a real `SIGKILL` + relaunch + epoch bump), not the host broker's own supervision loop — this closes "a real kill-and-relaunch with a bumped epoch produces `restarted`", not "the broker's supervision loop produces `restarted`", which stays unit-proven only |
+| `restarted` verdict after a real kill-and-relaunch | TIME-04 | The verdict depends on a genuine epoch mismatch across a real process replacement, not decodable from a fixture | Establish a session's `baselineEpoch` via a real epoch record; `SIGKILL` the instance, relaunch on the same port, bump the epoch; assert `vice_diagnose` answers `verdict:"restarted"` | ✅ **PASS** (**07-17** Task 3), with one named limit at the time. `evidence.baselineEpoch`/`evidence.currentEpoch` differed by exactly 1; `machinePausedSource:"no_session"` confirmed the real `stockReconnect()` epoch-check path fired. The respawn was **performed by the test itself** (a real `SIGKILL` + relaunch + epoch bump), not the host broker's own supervision loop — this closed "a real kill-and-relaunch with a bumped epoch produces `restarted`", not "the broker's supervision loop produces `restarted`". **Updated 2026-08-18, quick task 260818-obc: the broker-supervised half is now ALSO live-proven.** In `stock-live-broker-monitor.test.ts`, session A's grant is externally `SIGKILL`ed and the HOST BROKER's OWN crash supervision (`handleExit()`/`launchSupervised()`, never the test itself) relaunches it on the same port; `vice_diagnose` on the same session then answered `verdict:"restarted"` with `evidence.baselineEpoch:1`/`evidence.currentEpoch:2`, at zero-to-minimal emulator cost, on both genuine `/usr/bin/x64sc` and `/usr/local/bin/x64sc` — closing the residual this row's own caveat named |
 
 ---
 
@@ -142,22 +142,27 @@ binaries, closing the Route A decode gap 07-10 found and three of `vice_diagnose
 - [x] Wave 0 covers all MISSING references
 - [x] No watch-mode flags
 - [x] Feedback latency < 5s
-- [ ] Every Manual-Only row has a recorded live result — **updated 2026-08-18: six of seven rows
-      now have a full PASS (one of those six, `restarted`, carries an explicit test-performed-vs-
-      broker-supervised caveat within its own PASS); one row (second-client contention) remains
-      PARTIAL — the broker-mediated `monitor_held_elsewhere` verdict stays unit-proven only. The
-      Route A row that was previously the sole blocker is now a full PASS (07-12, 07-13)**
-- [ ] `nyquist_compliant: true` set in frontmatter — **left `false`.** The Route A blocker that
-      previously held this flag `false` is resolved (07-12, 07-13). The **new** blocking row is
-      "Second-client contention does not itself hang the diagnostician": the broker-mediated
-      `monitor_held_elsewhere` verdict has not been exercised end-to-end against two real
-      broker-managed sessions (07-13 Task 3's own recorded scope boundary). Setting this flag
-      `true` before that row resolves would tick a checklist to reach a flag rather than reflect
-      recorded evidence — the standing instruction this document itself carries (T-07-19).
+- [x] Every Manual-Only row has a recorded live result — **updated 2026-08-18, quick task
+      260818-obc: all seven rows now carry a full PASS.** The last remaining row (second-client
+      contention) is now a full PASS, appended (never overwritten) with the broker-mediated
+      `monitor_held_elsewhere` live proof against a real host broker daemon and genuine stock VICE
+      on both `/usr/bin/x64sc` and `/usr/local/bin/x64sc`. The `restarted` row's own
+      test-performed-vs-broker-supervised caveat is likewise closed — the broker-supervised half
+      is now live-proven too. The Route A row that was previously the sole blocker was already a
+      full PASS (07-12, 07-13)
+- [x] `nyquist_compliant: true` set in frontmatter — **flipped to `true`, quick task 260818-obc.**
+      The last remaining PARTIAL row ("Second-client contention does not itself hang the
+      diagnostician") is now a full PASS: the broker-mediated `monitor_held_elsewhere` verdict was
+      exercised end-to-end against two real broker-managed sessions
+      (`stock-live-broker-monitor.test.ts`), settling in 1ms (bound 10000ms) on both genuine
+      binaries, naming the other real grant's id. No other row in the Manual-Only table is PARTIAL
+      or open.
 
-**Approval (updated 2026-08-18):** the Route A live-decode finding that previously blocked
-approval is resolved (07-12, 07-13) — no follow-up plan is owed for it. The remaining blocker is
-narrower: the broker-mediated `monitor_held_elsewhere` verdict has not been exercised end-to-end
-against two real broker-managed sessions (07-13 Task 3's own recorded scope boundary). Recommend
-standing up the host broker control plane with two real acquired sessions in a future plan, then
-re-running this one remaining PARTIAL row before setting `nyquist_compliant: true`.
+**Approval (updated 2026-08-18, quick task 260818-obc):** every finding that previously blocked
+approval is now resolved. The Route A live-decode finding was resolved by 07-12/07-13; the
+broker-mediated `monitor_held_elsewhere` verdict and the broker-supervised `restarted` respawn —
+the two residuals this document's own prior revision named as the standing blockers — are now both
+live-proven against genuine stock VICE (both `/usr/bin/x64sc` and `/usr/local/bin/x64sc`) through a
+real host broker daemon, in `stock-live-broker-monitor.test.ts`. `nyquist_compliant: true` reflects
+recorded evidence, not merely a ticked checklist (T-07-19's own standing instruction). No follow-up
+plan is owed for either residual.

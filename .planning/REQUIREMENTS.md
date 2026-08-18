@@ -91,7 +91,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 - [x] **TIME-01**: User can measure elapsed CPU cycles on the stock backend, on any supported VICE version *(re-verified 2026-08-18: 07-11/07-12 closed CR-01's decode-failure regression, and 07-13 live-proved `stockConnect()` resolving with the correct capability against both genuine `/usr/bin/x64sc` (VICE 3.9.0.0, `cpuHistory:"absent"`) and `/usr/local/bin/x64sc` (VICE 3.10.0.0, `cpuHistory:"available"`), with a real ~500ms Route A bracket measuring an exact cycle count)*
 - [x] **TIME-02**: User can run until an address is reached, exactly *(the reach/timeout mechanism was already live-proven against both binaries in 07-10; 07-14 additionally closed WR-01/WR-02's misreporting defects — unit-proven, `stock-run-until.test.ts` 21/21 — not independently re-exercised live by this gap-closure batch)*
 - [x] **TIME-03**: Cycle-bounded execution is either supported or reports its approximation honestly *(re-verified 2026-08-18: Route B's wraparound refusal was already live-proven on genuine VICE 3.9; 07-12/07-13 closed the Route A decode defect and live-proved it on genuine VICE 3.10.0.0)*
-- [ ] **TIME-04**: `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend — **Partial (07-15, 07-16, 07-17).** `machinePaused` derivation (WR-03, 07-15) and the advertised-schema fix (WR-07, 07-16) are shipped and unit-proven; `checkpoint_trap`, `wedged` (both capability routes) and a test-performed `restarted` respawn are now live-proven against genuine stock VICE (07-17). Missing: the **broker-mediated** `monitor_held_elsewhere` verdict (a real second `claimMonitor()` refusal) and a **broker-supervised** (not test-performed) `restarted` respawn both remain unit-proven only (07-13 Task 3, 07-17) — 07-VERIFICATION.md's `human_verification` item 2's broker-mediated half is still open
+- [x] **TIME-04**: `vice-wedge-triage`'s "is the emulator advancing" check works on the stock backend — **Complete (07-15, 07-16, 07-17, quick-260818-obc).** `machinePaused` derivation (WR-03, 07-15), the advertised-schema fix (WR-07, 07-16), `checkpoint_trap`, `wedged` (both capability routes) and a test-performed `restarted` respawn were already live-proven (07-17). quick-260818-obc closed BOTH remaining residuals in one real broker-mediated run against genuine stock VICE, on both `/usr/bin/x64sc` (3.9) and `/usr/local/bin/x64sc` (3.10): (1) the **broker-mediated** `monitor_held_elsewhere` verdict — a real second `claimMonitor()` refusal from the real broker control plane, naming the other grant's real id, settling in 1ms (bound 10000ms) on both binaries; (2) the **broker-supervised** (not test-performed) `restarted` respawn — the host broker's own crash supervision genuinely relaunched the killed instance, and `vice_diagnose` answered `restarted` with the real `baselineEpoch`/`currentEpoch` pair (1→2 on both binaries), at zero emulator cost, before the test ever touched grant B
 
 ### Broker and launcher
 
@@ -217,7 +217,7 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | TIME-01 | Phase 7 | Complete (07-11, 07-12, 07-13) |
 | TIME-02 | Phase 7 | Complete (07-10, 07-14) |
 | TIME-03 | Phase 7 | Complete (07-12, 07-13) |
-| TIME-04 | Phase 7 | Partial (07-15, 07-16, 07-17) — broker-mediated `monitor_held_elsewhere` and broker-supervised `restarted` remain unit-proven only |
+| TIME-04 | Phase 7 | Complete (07-15, 07-16, 07-17, quick-260818-obc) |
 | BROK-01 | Phase 2 | Complete |
 | BROK-02 | Phase 2 | Complete |
 | BROK-03 | Phase 2 | Complete |
@@ -233,29 +233,31 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 **Coverage (revised 2026-08-17 after the scope cut):**
 - v0.2.0 requirements defined: 68
 - **Cut**: 21 (`DERIV-02`, `DERIV-03`, `SHOT-01`..`SHOT-05`, `GAIN-01`..`GAIN-09`, `VERIF-03`, plus the `DIRECT-06` detach half and the `fill`/`*_set_state` halves of `DERIV-01`/`05`/`06`)
-- **In scope**: 47 — 38 already complete, **9 open** *(revised 2026-08-18, plan
-  07-18: Phase 7's contribution to this total moves from 4 open to 1 open —
-  `TIME-01`/`TIME-02`/`TIME-03` are now genuinely `Complete` on the
-  gap-closure batch's own recorded evidence (07-11..07-14), leaving only
-  `TIME-04` `Partial`. This is a +3 complete / -3 open delta on the previous
-  35/12 split, shown as arithmetic in `07-18-SUMMARY.md`. The per-phase
-  breakdown below is not fully exhaustive across every phase — e.g. `DIRECT-06`
-  (Phase 3, `Partial`) is not itemised in it — so this total should not be
-  read as independently re-derived from a full per-phase audit; only Phase 7's
-  own contribution was corrected by this plan*)
+- **In scope**: 47 — 39 already complete, **8 open** *(revised 2026-08-18, quick
+  task 260818-obc: Phase 7's contribution to this total moves from 1 open to 0
+  open — `TIME-04` is now genuinely `Complete`, its last two residuals
+  (broker-mediated `monitor_held_elsewhere`, broker-supervised `restarted`)
+  closed in one real broker-mediated live run against genuine stock VICE on
+  both `/usr/bin/x64sc` and `/usr/local/bin/x64sc`. This is a +1 complete / -1
+  open delta on the previous 38/9 split (itself set by plan 07-18, which
+  moved Phase 7 from 4 open to 1 open on `TIME-01`/`TIME-02`/`TIME-03`'s own
+  gap-closure evidence, 07-11..07-14). The per-phase breakdown below is not
+  fully exhaustive across every phase — e.g. `DIRECT-06` (Phase 3, `Partial`)
+  is not itemised in it — so this total should not be read as independently
+  re-derived from a full per-phase audit; only Phase 7's own contribution was
+  corrected by 07-18 and by this task*)
 - Mapped to phases: 47 · Unmapped: 0 ✓
 
 **Open requirements per phase:** Phase 5: **0** — all four (`DERIV-01`,
 `DERIV-04`, `DERIV-05`, `DERIV-06`) complete; the per-phase line previously
 double-counted `DERIV-01` as open when the checklist already marked it `[x]`
 Complete, a second stale number found and fixed alongside DERIV-04/05/06
-(plan 05-13) · Phase 6: **cut** · Phase 7: **1** (`TIME-04` only —
-`TIME-01`/`TIME-02`/`TIME-03` are `Complete` per the gap-closure evidence
-above; this line previously read "4 (`TIME-01`..`TIME-04`)", a stale figure
-that predated the checklist's own `[x]` marks for three of the four rows,
-corrected here per the same class of defect as Phase 5's DERIV-01
-double-count above) · Phase 8: 5 (`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`,
-`SKILL-01`)
+(plan 05-13) · Phase 6: **cut** · Phase 7: **0** (`TIME-04` is now `Complete`
+per quick task 260818-obc's own live broker-mediated evidence, closing the
+last open Phase 7 item; `TIME-01`/`TIME-02`/`TIME-03` were already `Complete`
+per the gap-closure evidence above. This line previously read "1 (`TIME-04`
+only ...)", corrected here to 0 now that TIME-04 itself is closed) · Phase 8:
+5 (`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`, `SKILL-01`)
 
 ### The cut criterion
 

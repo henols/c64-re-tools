@@ -45,7 +45,9 @@ findings:
   warning: 19
   info: 0
   total: 20
-status: issues_found
+status: issues_resolved
+previous_status: issues_found
+resolved_by: 07-REVIEW-FIX.md (all_fixed, 20/20)
 ---
 
 # Phase 7: Code Review Report (re-review after gap closure)
@@ -53,7 +55,18 @@ status: issues_found
 **Reviewed:** 2026-08-18
 **Depth:** standard
 **Files Reviewed:** 36
-**Status:** issues_found
+**Status:** issues_resolved (previously `issues_found`; resolved by `07-REVIEW-FIX.md`, `all_fixed`, 20/20)
+
+**Resolution note (unconditional record-hygiene correction, quick task 260818-obc):** every
+finding this report records below is preserved unedited — history is not erased, only the
+verdict changes. `07-REVIEW-FIX.md` independently fixed and re-verified all 20 findings
+(critical + warning) this report raised, including the two most load-bearing: the critical
+CR-01-introduced capability-cache poisoning is closed by `CAPABILITY_SCHEMA_VERSION = 2`
+(`backend-detect.mts:224`, a schema bump that invalidates any pre-fix on-disk record rather
+than trusting its shape), and the wire-vs-decode-failure conflation is closed by the
+`source: "wire" | "decode_failure"` discrimination (`stock-connect.ts:164` and the call site
+that reads it) — a decode failure can no longer be written to disk indistinguishable from a
+genuine wire answer.
 
 ## Summary
 

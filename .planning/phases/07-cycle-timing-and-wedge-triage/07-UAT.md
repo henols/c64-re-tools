@@ -160,11 +160,21 @@ result: pass
 detail: |
   ok 14 in `stock-live.test.ts` -- `vice_diagnose` settles within its own bound when a real
   second client dials a monitor a first already holds.
-  Scope note, unchanged and honestly recorded: this is the SOCKET-level contention path.
-  The BROKER-mediated `monitor_held_elsewhere` verdict (two real, independently-acquired
-  broker leases producing a genuine `claimMonitor()`/`MonitorOwnershipError` round trip)
-  remains unit-proven only and is already tracked as the single open item in
-  `07-HUMAN-UAT.md`. Not re-raised here as a gap.
+  Scope note, unchanged and honestly recorded: this proves the SOCKET-level contention
+  path only -- settling in ~1502ms against a 1500ms bound, answering the non-verdict
+  `diagnosis_unavailable (monitor_acquisition_timeout)`.
+
+  UPDATED 2026-08-18 (quick task 260818-obc): the BROKER-mediated `monitor_held_elsewhere`
+  VERDICT (as opposed to the socket-level bound above) is now ALSO live-proven, distinctly.
+  `stock-live-broker-monitor.test.ts` stood up a real host broker daemon
+  (`resources/vice-broker.mjs`) with two real, independently-acquired
+  `openBrokerControl()` sessions resolving to the SAME crash-respawned instance; the
+  session whose real `claimMonitor()` arrived second was refused
+  `verdict:"monitor_held_elsewhere"` (never the non-verdict `diagnosis_unavailable`),
+  naming the OTHER grant's real id, on both genuine `/usr/bin/x64sc` (3.9) and
+  `/usr/local/bin/x64sc` (3.10), settling in **1ms** against the 10000ms bound on both.
+  This was the single open item tracked in `07-HUMAN-UAT.md` -- now closed with this
+  transcript, not re-raised here as a gap.
 
 ### 10. vice_recycle Records Evidence Before It Kills
 expected: `vice_recycle` on stock gathers four deadline-bounded evidence items (bracket, registers, checkpoints, IRQ handler — no screenshot), writes the incident record to disk with its evidence section complete, and only then sends the broker's destructive recycle RPC.
