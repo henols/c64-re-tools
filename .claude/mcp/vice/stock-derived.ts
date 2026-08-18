@@ -91,6 +91,8 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_sprite_inspect", // Phase 5, DERIV-06
   "vice_cycles_stopwatch", // Phase 7, TIME-01
   "vice_run_until", // Phase 7, TIME-02
+  "vice_diagnose", // Phase 7, TIME-04
+  "vice_recycle", // Phase 7, TIME-04
 ]);
 
 /**
@@ -99,6 +101,21 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
  * wire -- there is no `session.client` to send anything through. `deps` is
  * threaded down for anything the handler needs beyond the session (matching
  * StockSessionHandler's own `deps` parameter).
+ *
+ * THE ONE DECLARED EXCEPTION (Phase 7, plan 07-09): `vice_diagnose`
+ * (`handleDiagnoseStock`, stock-diagnose.ts) is registered with
+ * `needsSession: false` yet DOES reach the wire -- it calls
+ * `ensureStockSession(deps)` itself, inside its own try/catch, rather than
+ * through withDerivedTool()'s session preamble. This is deliberate, not a
+ * contradiction of the rule above: a thrown MonitorOwnershipError or
+ * MachineRestartedError during acquisition must become one of
+ * vice_diagnose's own five VERDICTS (`monitor_held_elsewhere`, `restarted`)
+ * rather than withDerivedTool()'s generic refusal text -- the exact string
+ * those verdicts exist to replace. Every other `needsSession: false` handler
+ * in STOCK_DERIVED_TOOLS still structurally cannot reach the wire; this is
+ * the one named handler that opts out of that guarantee, and it does so by
+ * calling the SAME ensureStockSession() every session-needing handler
+ * calls, never a lighter-weight variant of it.
  *
  * `StockDispatchDeps` is imported `type`-only from stock-dispatch.ts -- under
  * verbatimModuleSyntax an `import type` erases completely at compile time,
