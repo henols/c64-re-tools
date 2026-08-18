@@ -31,7 +31,15 @@
 //     liveness bracket actually had to run to establish.
 //   - Never hardcode HIRAM_MASK as an inline literal at the comparison site
 //     -- it is a named constant (below) for exactly this reason.
-import { CommandType, memGetBody } from "./stock-protocol.ts";
+import {
+  CommandType,
+  memGetBody,
+  StockFramingError,
+  StockDesyncError,
+  StockResponseMismatchError,
+  StockConnectionClosedError,
+  StockRequestTimeoutError,
+} from "./stock-protocol.ts";
 import { handleCheckpointList } from "./stock-checkpoints.ts";
 import { handleRegistersGet } from "./stock-registers.ts";
 import { readCycleBaseline, type CycleBaseline } from "./stock-timing.ts";
@@ -39,6 +47,7 @@ import { stockAnswer, derivedAnswer, isErrorText, type StockToolResult } from ".
 import { ensureStockSession, type StockDispatchDeps, type EnsureStockSessionOutcome } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
+import { runStateFor } from "./stock-runstate.ts";
 import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 
@@ -377,6 +386,104 @@ export const STOCK_DIAGNOSE_VERDICTS = Object.freeze([
 
 export type StockDiagnoseVerdict = (typeof STOCK_DIAGNOSE_VERDICTS)[number];
 
+// ---------------------------------------------------------------------------
+// diagnosis_unavailable -- the named, classified non-verdict outcome (Gap 3 /
+// Gap 4 / CR-01). D-03 locks STOCK_DIAGNOSE_VERDICTS at exactly the five
+// above; this is NOT a sixth verdict -- it is a named outcome on the existing
+// `isError: true` channel, the only shape the manifest's
+// `required: ["verdict", ...]` output schema permits when no verdict could be
+// established. `diagnosis_unavailable` must never be added to
+// STOCK_DIAGNOSE_VERDICTS above.
+// ---------------------------------------------------------------------------
+
+/** Frozen outcome name, exported so tests and documentation (07-16, 07-18)
+ * can name it without re-deriving the literal string. */
+export const STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME = "diagnosis_unavailable" as const;
+
+/** Frozen reason-class list -- every classification `classifyDiagnoseUnavailable()`
+ * and the route table below can produce. */
+export const STOCK_DIAGNOSE_UNAVAILABLE_REASONS = Object.freeze([
+  "protocol_decode_failure",
+  "connection_lost",
+  "request_timeout",
+  "monitor_acquisition_timeout",
+  "session_refused",
+  "evidence_gathering_failed",
+  "unknown",
+] as const);
+
+export type StockDiagnoseUnavailableReason = (typeof STOCK_DIAGNOSE_UNAVAILABLE_REASONS)[number];
+
+/**
+ * Maps an error's class to a reason class. `MonitorOwnershipError` and
+ * `MachineRestartedError` must NEVER reach this classifier -- they carry real
+ * verdicts (`monitor_held_elsewhere`/`restarted`) and are handled by their own
+ * branches in handleDiagnoseStock() before this function is ever called.
+ */
+export function classifyDiagnoseUnavailable(err: unknown): StockDiagnoseUnavailableReason {
+  if (err instanceof StockFramingError || err instanceof StockDesyncError || err instanceof StockResponseMismatchError) {
+    return "protocol_decode_failure";
+  }
+  if (err instanceof StockConnectionClosedError) {
+    return "connection_lost";
+  }
+  if (err instanceof StockRequestTimeoutError) {
+    return "request_timeout";
+  }
+  return "unknown";
+}
+
+/** Per-reason-class guidance text: the concrete next step a triage agent
+ * should take, in the exact terms vice-wedge-triage/SKILL.md's verdict table
+ * already uses. */
+function diagnoseUnavailableGuidance(reason: StockDiagnoseUnavailableReason, detail: string): string {
+  switch (reason) {
+    case "protocol_decode_failure":
+      return (
+        "the connected build answered a frame this client could not decode " +
+        `(${detail}) -- see docs/stock-vice-parity.md for known decode gaps.`
+      );
+    case "connection_lost":
+    case "request_timeout":
+      return "retry once, and if the same failure recurs, check the broker (a crashed or recycled instance can look like this).";
+    case "monitor_acquisition_timeout":
+      return (
+        "this is behaviourally indistinguishable from a second client already holding the monitor socket (stock " +
+        "VICE services exactly one binary-monitor client) -- if a second client is not the cause, retry once the " +
+        "current holder releases."
+      );
+    case "session_refused":
+      return `the upstream session refused with: ${detail}`;
+    case "evidence_gathering_failed":
+      return "a read failed mid-diagnosis -- the machine is very likely halted, so vice_execution_run may be needed.";
+    case "unknown":
+    default:
+      return `an unclassified failure occurred (${detail}).`;
+  }
+}
+
+/**
+ * Builds the diagnosis_unavailable outcome text -- structured and greppable,
+ * opening with a stable, machine-parseable prefix. States, in order: (1) no
+ * verdict was established and this is deliberately not one of the five
+ * documented verdicts; (2) the machine's state is therefore unknown -- never
+ * `live`, never a wedge; (3) recycling on this answer alone is wrong,
+ * `vice_recycle` is destructive and `wedged` was not established; (4) the
+ * concrete next step for this reason class; (5) the raw detail string last,
+ * for stable machine-readable prefix parsing.
+ */
+export function diagnoseUnavailableResult(reason: StockDiagnoseUnavailableReason, detail: string): StockToolResult {
+  const text = [
+    `vice_diagnose: ${STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME} (${reason}) -- no verdict could be established. This is ` +
+      `deliberately NOT one of the five documented verdicts (${STOCK_DIAGNOSE_VERDICTS.join(", ")}).`,
+    "The emulated machine's state is therefore UNKNOWN -- do not read this as live and do not treat it as a wedge.",
+    "Recycling on this answer alone is wrong: vice_recycle is destructive and wedged was not established.",
+    diagnoseUnavailableGuidance(reason, detail),
+    detail,
+  ].join(" ");
+  return isErrorText(text);
+}
+
 export interface StockLivenessBracketResult {
   route: CycleBaseline["route"];
   before: CycleBaseline;
@@ -513,14 +620,64 @@ function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
   );
 }
 
+/** The source label carried alongside `machinePaused`, so a caller can tell
+ * an observation from an inference:
+ *   - "no_session" -- no session was ever obtained (the two pre-session
+ *     verdicts, `monitor_held_elsewhere` and the thrown-`MachineRestartedError`
+ *     acquisition path). Nothing in this process touched the machine, so no
+ *     claim about a pause is being made; `machinePaused` is `false`.
+ *   - "observed" -- `runStateFor(session.client)` reported `"stopped"` or
+ *     `"running"` directly from the wire's own stopped/resumed/jam events.
+ *   - "structural" -- the tracker reported `"unknown"`. See
+ *     deriveMachinePaused()'s own comment for why "not observed running" is
+ *     still treated as paused in this specific case. */
+export type MachinePausedSource = "no_session" | "observed" | "structural";
+
+/**
+ * WR-03: `machinePaused` is derived HERE, from the observed run state, and
+ * NEVER hand-passed by a call site again -- a hand-passed flag drifts from
+ * reality the moment a call site changes (exactly what happened before this
+ * fix: the `checkpoint_trap` verdict hardcoded `false` even though every
+ * evidence-gathering read that got it there halts the machine on stock).
+ *
+ * `session === null` -> `false`/"no_session": no session was ever obtained,
+ * so no claim about a pause is being made.
+ *
+ * `session !== null` -> read `runStateFor(session.client)`:
+ *   - "stopped" -> `true`/"observed".
+ *   - "running" -> `false`/"observed".
+ *   - "unknown" -> `true`/"structural". By the time ANY verdict is built,
+ *     this file's own path has already sent at least one wire read, every
+ *     inbound byte halts the machine on stock (`monitor_binary.c:281`,
+ *     CLAUDE.md's Protocol constraint), and no function in this file ever
+ *     sends a resume except runStockLivenessBracket(), which itself ends
+ *     with a read. So "not observed running" after this path's reads means
+ *     paused -- but the tracker's own event-driven update can still lag a
+ *     command reply, so this is an inference, never an observation, and the
+ *     "structural" label is what keeps it honest.
+ */
+function deriveMachinePaused(session: StockConnectSession | null): { machinePaused: boolean; machinePausedSource: MachinePausedSource } {
+  if (session === null) {
+    return { machinePaused: false, machinePausedSource: "no_session" };
+  }
+  const runState = runStateFor(session.client);
+  if (runState === "stopped") {
+    return { machinePaused: true, machinePausedSource: "observed" };
+  }
+  if (runState === "running") {
+    return { machinePaused: false, machinePausedSource: "observed" };
+  }
+  return { machinePaused: true, machinePausedSource: "structural" };
+}
+
 function diagnoseVerdictResult(
   session: StockConnectSession | null,
   verdict: StockDiagnoseVerdict,
   evidence: Record<string, unknown>,
   report: string,
-  machinePaused: boolean,
 ): StockToolResult {
-  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused };
+  const { machinePaused, machinePausedSource } = deriveMachinePaused(session);
+  const payload: Record<string, unknown> = { verdict, evidence, report, machinePaused, machinePausedSource };
   return session ? stockAnswer(session.client, payload) : derivedAnswer(payload);
 }
 
@@ -577,12 +734,9 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         timeoutSignal,
       ]);
       if (raced.timedOut) {
-        return diagnoseErrorResult(
-          `vice_diagnose: session acquisition did not complete within ${timeoutMs}ms -- this is behaviourally ` +
-            "indistinguishable from a second client already holding the monitor socket (stock VICE services " +
-            "exactly one binary-monitor client). This is not one of the five established verdicts and is reported " +
-            "as a plain refusal rather than guessing monitor_held_elsewhere without evidence -- if a second client " +
-            "is not the cause, retry once the current holder releases.",
+        return diagnoseUnavailableResult(
+          "monitor_acquisition_timeout",
+          `session acquisition did not complete within ${timeoutMs}ms.`,
         );
       }
       outcome = raced.outcome;
@@ -593,7 +747,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
           "monitor_held_elsewhere",
           { holderGrantId: err.holderGrantId ?? null, holderClaimedAt: err.holderClaimedAt ?? null, port: err.port ?? null },
           renderMonitorHeldElsewhereReport(err),
-          false,
         );
       }
       if (err instanceof MachineRestartedError) {
@@ -602,10 +755,9 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
           "restarted",
           { baselineEpoch: err.baselineEpoch ?? null, currentEpoch: err.currentEpoch ?? null },
           renderStockRestartedReport(err.baselineEpoch, err.currentEpoch),
-          false,
         );
       }
-      return diagnoseErrorResult(`vice_diagnose: session acquisition failed (${describeStockError(err)}).`);
+      return diagnoseUnavailableResult(classifyDiagnoseUnavailable(err), describeStockError(err));
     } finally {
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
@@ -613,7 +765,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     }
 
     if (!outcome.ok) {
-      return diagnoseErrorResult(`vice_diagnose: ${outcome.message}`);
+      return diagnoseUnavailableResult("session_refused", outcome.message);
     }
     const session = outcome.session;
 
@@ -626,7 +778,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "restarted",
         { baselineEpoch: session.baselineEpoch, currentEpoch: currentRecord.epoch },
         renderStockRestartedReport(session.baselineEpoch, currentRecord.epoch),
-        false,
       );
     }
 
@@ -635,7 +786,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     try {
       trapEvidence = await gatherStockCheckpointTrapEvidence(session, deps);
     } catch (err) {
-      return diagnoseErrorResult(`vice_diagnose: gathering checkpoint-trap evidence failed (${describeStockError(err)}).`);
+      return diagnoseUnavailableResult("evidence_gathering_failed", `gathering checkpoint-trap evidence failed (${describeStockError(err)}).`);
     }
     if (trapEvidence.isTrap) {
       return diagnoseVerdictResult(
@@ -643,7 +794,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "checkpoint_trap",
         trapEvidence as unknown as Record<string, unknown>,
         renderStockCheckpointTrapReport(trapEvidence),
-        false,
       );
     }
 
@@ -652,14 +802,14 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     try {
       bracket1 = await runStockLivenessBracket(session);
     } catch (err) {
-      return diagnoseErrorResult(`vice_diagnose: the liveness bracket failed (${describeStockError(err)}).`);
+      return diagnoseUnavailableResult("evidence_gathering_failed", `the liveness bracket failed (${describeStockError(err)}).`);
     }
 
     if (bracket1.advanced === null) {
       return diagnoseErrorResult(inconclusiveBracketText(bracket1));
     }
     if (bracket1.advanced) {
-      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1), true);
+      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1));
     }
 
     // Run a second bracket only when the first shows no advance -- mirroring
@@ -668,7 +818,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     try {
       bracket2 = await runStockLivenessBracket(session);
     } catch (err) {
-      return diagnoseErrorResult(`vice_diagnose: the second liveness bracket failed (${describeStockError(err)}).`);
+      return diagnoseUnavailableResult("evidence_gathering_failed", `the second liveness bracket failed (${describeStockError(err)}).`);
     }
 
     if (bracket2.advanced === null) {
@@ -680,7 +830,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
         "live",
         { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
         renderStockLiveReport(bracket2),
-        true,
       );
     }
 
@@ -689,7 +838,6 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
       "wedged",
       { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
       renderStockWedgedReport(bracket1, bracket2),
-      true,
     );
   } catch (err) {
     return diagnoseErrorResult(`vice_diagnose: an unexpected error occurred (${describeStockError(err)}).`);
