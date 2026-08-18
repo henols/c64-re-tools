@@ -26,10 +26,31 @@ probe script (`.claude/mcp/vice/probe-binmon.mjs`).
   checkpoint over a wide address range is dangerous — this reconstruction uses a
   single frame-boundary address, not a range, but the hazard applies to any
   other non-stopping checkpoint the client adds alongside it.
-- This reconstruction route is a **second, always-available stopwatch**, not a
-  replacement for CPU history — Phase 7 picks between the two routes with
-  measured socket cost; this document states that `REGISTERS_GET` can source
-  cycle data, it does not re-litigate that routing decision.
+
+  **SUPERSEDED (Phase 7, 2026-08-18):** this frame-counter fallback is rejected,
+  not merely costed. A frame-boundary exec checkpoint at `$EA31` fires
+  ~50.1 times/second on PAL and ~59.8 times/second on NTSC — and this client's
+  own D-11 trace-hazard guard caps a non-stopping checkpoint at
+  `TRACE_HITS_PER_SECOND_LIMIT = 20` hits/second (`stock-checkpoints.ts`),
+  sending its own `CHECKPOINT_TOGGLE` with `enabled:false` once that count is
+  exceeded. The checkpoint this fallback depends on therefore auto-disables
+  roughly 0.4-0.5 real seconds into any bracket, silently truncating the frame
+  count the reconstruction needs. The guard is a safety mechanism this project
+  deliberately built; a stopwatch design that fights it is a stopwatch built
+  against its own codebase. Two routes replace it: **Route A**,
+  `CPUHISTORY_GET`'s per-entry monotonic uint64 cycle field, on VICE >= 3.10;
+  **Route B** below 3.10, `LIN`/`CYC` frame-position reconstruction that
+  reports an exact delta only when no wraparound is detected and **refuses
+  explicitly** — never returning zero and never guessing a
+  `+ k * cyclesPerFrame` correction — when a frame boundary is proven crossed.
+- This reconstruction route was considered as a second stopwatch alongside CPU
+  history, but is not always available — see the SUPERSEDED note above. Phase 7
+  did not pick between the two routes with measured socket cost; it rejected
+  the frame-counter fallback outright and routes exclusively through Route A
+  (`CPUHISTORY_GET`) or Route B (`LIN`/`CYC` reconstruction with explicit
+  refusal on a crossed frame boundary), per VICE version. This document still
+  correctly states that `REGISTERS_GET` can source `LIN`/`CYC` cycle data; it
+  no longer proposes building a frame-counter stopwatch from it.
 - **`CPUHISTORY_GET` (0x86) is the other stopwatch route.** Each history entry
   ends with a **uint64 absolute clock** (`write_uint64(current->cycle, …)` in
   `monitor_binary.c`). Read the newest entry's cycle before and after a run; the
