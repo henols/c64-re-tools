@@ -176,6 +176,11 @@ import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
 import * as stockDispatch from "./stock-dispatch.ts";
+// Plan 08-02: the single per-backend capability lookup (BACK-05), consumed
+// only inside the CallToolRequestSchema override's tools[name] miss branch
+// below, strictly after the DENY_LIST check -- see the comment at that call
+// site for why the ordering is load-bearing.
+import { capabilityRefusalMessage } from "./capability-registry.ts";
 
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -3253,6 +3258,19 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
   // .planning/todos/pending/2026-08-05-generic-surface-deny-list-gap-tools-call-nested-vice-disk-list.md.
   const tool = tools[name];
   if (!tool || !tool.execute) {
+    // Layer 3 (BACK-05, plan 08-02): fires ONLY when the ACTIVE backend's
+    // trimmed manifest (D-07) never registered this name -- i.e. `tools`
+    // has no key for it -- and MUST stay strictly after the DENY_LIST check
+    // above: those four meta-tool names are a confused-deputy bypass hazard
+    // (01.4-01), not a capability gap, and must never be reachable here.
+    // This lookup renders undefined for a genuinely unknown name (or a
+    // same-backend miss), so a real typo still falls through to the generic
+    // message below unchanged. capability-registry.ts is the ONE place to
+    // edit this data -- never hand-add a per-tool special case here.
+    const capabilityRefusal = capabilityRefusalMessage(name, ACTIVE_BACKEND.backend);
+    if (capabilityRefusal !== undefined) {
+      return { content: [{ type: "text", text: capabilityRefusal }], isError: true };
+    }
     return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
   }
   try {
