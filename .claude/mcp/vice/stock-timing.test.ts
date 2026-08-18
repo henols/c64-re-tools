@@ -216,6 +216,53 @@ for (const capability of ["absent", "not_compiled_in"] as const) {
   });
 }
 
+// 07-REVIEW.md WR-07: entries[] arrives OLDEST-first (proven by 07-12 against
+// fixtures/binmon/cpuhistory-get-multi.bin). Route A read entries[0] and named
+// it `newest` -- correct only while count === 1, and nothing enforces that
+// coupling, so a build returning a full window would have made the stopwatch
+// sample a STALE baseline and report it with exactness:"exact".
+test("readCycleBaseline (WR-07): a multi-entry reply samples the LAST entry (the newest), never entries[0]", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    cpuHistoryReplies: [
+      {
+        count: 4,
+        // Strictly ascending, mirroring the real capture's own ordering.
+        entries: [historyEntry(0x04616d0bn), historyEntry(0x04616d0fn), historyEntry(0x04616d12n), historyEntry(0x04616d15n)],
+      },
+    ],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+  });
+  const baseline = await readCycleBaseline(session);
+  assert.equal(baseline.route, "cpu_history");
+  assert.equal(
+    (baseline as { cycle: bigint }).cycle,
+    0x04616d15n,
+    "the HIGHEST (last) cycle is the newest -- sampling entries[0] would report a stale baseline as exact",
+  );
+});
+
+test("Route A (WR-07): a two-entry reply makes the stopwatch measure from the newest sample, so the delta uses the higher cycle", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    cpuHistoryReplies: [
+      { count: 2, entries: [historyEntry(1_000_000n), historyEntry(1_000_100n)] }, // reset -> baseline 1_000_100
+      { count: 2, entries: [historyEntry(1_002_000n), historyEntry(1_002_600n)] }, // read  -> sample   1_002_600
+    ],
+    registersGetReplies: [[{ id: 0, value: 0x100 }], [{ id: 0, value: 0x105 }]],
+  });
+
+  await handleCyclesStopwatch({ action: "reset" }, session, FAKE_DEPS);
+  const readResult = await handleCyclesStopwatch({ action: "read" }, session, FAKE_DEPS);
+  assert.equal(readResult.isError, false);
+  const answer = parseAnswer(readResult);
+  assert.equal(answer.measurable, true);
+  // newest-to-newest: 1_002_600 - 1_000_100 = 2500. Reading entries[0] on both
+  // sides would give 2000; mixing the two would give 1600 or 2600.
+  assert.equal(answer.cycles, 2500);
+  assert.equal(answer.cyclesExact, "2500");
+});
+
 // ---------------------------------------------------------------------------
 // Task 2: Route A decode / backwards clock
 // ---------------------------------------------------------------------------

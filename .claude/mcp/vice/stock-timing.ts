@@ -218,7 +218,8 @@ export async function readProgramCounter(session: StockConnectSession): Promise<
  *
  * Returns a `"route"`-discriminated record, never a fabricated figure:
  *   - `"cpu_history"`: Route A. CPUHISTORY_GET's newest entry's exact
- *     bigint `cycle`, plus PC via one extra REGISTERS_GET.
+ *     bigint `cycle` -- the LAST element of `entries[]`, which arrives
+ *     oldest-first (WR-07) -- plus PC via one extra REGISTERS_GET.
  *   - `"frame_position"`: Route B. `LIN`/`CYC`/`PC` all read from ONE
  *     REGISTERS_GET reply, plus the resolved video standard and the
  *     computed within-frame `position`.
@@ -240,7 +241,20 @@ export async function readCycleBaseline(session: StockConnectSession): Promise<C
     if (response.entries.length === 0) {
       throw new Error("readCycleBaseline: CPUHISTORY_GET(count:1) returned zero entries");
     }
-    const newest: ParsedCpuHistoryEntry = response.entries[0]!;
+    // WR-07 (07-REVIEW.md): entries[] is in WIRE order -- entries[0] is the
+    // OLDEST of the returned window, entries[length-1] the NEWEST. 07-12
+    // proved this against fixtures/binmon/cpuhistory-get-multi.bin (four
+    // entries, strictly ascending cycles) and corrected the parser's own
+    // documentation, but this consumer still read entries[0] and named it
+    // `newest`. That is correct ONLY while count === 1, and nothing enforces
+    // that coupling: the parser returns whatever `count` the server sent, so a
+    // future caller -- or a build that returns a full window regardless of the
+    // requested count -- would silently sample the OLDEST entry and report a
+    // stale baseline with `exactness: "exact"`. Index from the END so this
+    // stays correct if the window ever grows, and do not rename this back to a
+    // positional read: the misleading identifier is what would make such a
+    // change look correct.
+    const newest: ParsedCpuHistoryEntry = response.entries[response.entries.length - 1]!;
     const pc = await readProgramCounter(session);
     return { route: "cpu_history", cycle: newest.cycle, pc };
   }
