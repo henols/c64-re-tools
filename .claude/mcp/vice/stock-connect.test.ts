@@ -25,6 +25,7 @@ import {
   StockResponseMismatchError,
   StockConnectionClosedError,
   StockRequestTimeoutError,
+  StockProtocolError,
   type ConnectOptions,
   type ResolvedResponse,
 } from "./stock-protocol.ts";
@@ -506,16 +507,23 @@ test("stockConnect: the CPUHISTORY_GET request body carries count=1, never count
   assert.notEqual(cpuHistoryBody!.readUInt32LE(1), 0);
 });
 
-// CR-01 note: this test's third case previously asserted that an
-// unclassified CPUHISTORY_GET error code (0x82) still rejected the whole
-// handshake. That was the pre-CR-01-fix behaviour this plan exists to
-// change -- resolveCapabilities()'s new guard (Task 1b) means ANY error
-// this module cannot interpret (not just a decode failure) degrades to
-// `cpuHistory: "absent"` rather than failing stockConnect() outright, so
-// every downstream stock tool stays reachable even when a future,
-// currently-unmapped wire error code appears. Updated here rather than
-// left green-but-wrong.
-test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified code (0x82) degrades to absent rather than rejecting (CR-01)", async () => {
+// CR-01 history, two revisions deep -- read both before changing this test.
+//
+// Revision 1 (plan 07-11) widened resolveCapabilities() so ANY error it
+// could not interpret, including an unclassified WIRE error code, degraded
+// to `cpuHistory: "absent"` instead of rejecting the handshake, and this
+// test's third case was updated to assert that for 0x82.
+//
+// Revision 2 (07-REVIEW.md re-review, CR-01) reverted that half: 0x82 is
+// InvalidApiVersion, and an api-version rejection is the one condition step
+// 3 of the handshake exists to make FATAL. Reporting it as "Route A is
+// absent" hands back a session over a connection the server has said it
+// will not speak to. The narrow CR-01 guarantee -- a DECODE failure is a
+// capability answer, a transport or unclassified-wire failure is not -- is
+// what the cases below and the block further down assert. Do not re-widen
+// this to a bare degrade-on-anything: the decode classes are enumerated in
+// probeCpuHistory() precisely so that no unnamed condition needs to be.
+test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged and an unclassified wire code (0x82 InvalidApiVersion) still rejects the handshake (CR-01)", async () => {
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidType }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
     const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5c", brokerControl });
@@ -530,9 +538,15 @@ test("stockConnect: the classification set is closed -- 0x83/0x8f are unchanged 
   });
   await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidApiVersion }), async (port) => {
     const { brokerControl } = makeStubBrokerControl();
-    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl });
-    assert.equal(session.capabilities.cpuHistory, "absent", "an unclassified CPUHISTORY_GET error code must degrade to absent, not fail the handshake");
-    await stockDisconnect(session);
+    await assert.rejects(
+      stockConnect({ host: "127.0.0.1", port, targetId: "grant-5e", brokerControl }),
+      (err: unknown) => {
+        assert.ok(err instanceof StockProtocolError, `an unclassified wire error code must surface as itself, got ${String(err)}`);
+        assert.equal((err as StockProtocolError).errorCode, ErrorCode.InvalidApiVersion);
+        return true;
+      },
+      "an api-version rejection must fail the handshake, never degrade to a capability answer",
+    );
   });
 });
 
@@ -643,6 +657,84 @@ test("stockConnect (CR-01): an unclassifiable error resolving CPUHISTORY_GET deg
     assert.equal(writeCalls, 0, "a capability answer nobody could establish must never be persisted for the next connect");
     await stockDisconnect(session);
   });
+});
+
+// The missing half of the CR-01 fix (07-REVIEW.md re-review): the three
+// decode classes answer "absent" IN PROCESS but must never be written to the
+// on-disk capability record. Persisting one pinned Route A off for that
+// binary + version quad with no invalidation path a code change could reach
+// -- a single transient desync during one handshake silently downgraded the
+// exact stopwatch to Route B's within-one-frame figure, forever, until VICE
+// itself was upgraded. Each case asserts BOTH halves: the in-process answer
+// AND that nothing was persisted.
+test("stockConnect (CR-01): a decode failure from CPUHISTORY_GET answers 'absent' in-process and writes NO capability record", async () => {
+  const cases: Array<{ name: string; err: Error }> = [
+    {
+      name: "StockFramingError",
+      err: new StockFramingError("response type 0x86 body is 52 byte(s), needs at least 65", { observed: 52, expected: 65, responseType: ResponseType.CpuHistoryGet }),
+    },
+    { name: "StockDesyncError", err: new StockDesyncError("accumulated buffer desynced", { bytesSkipped: 4 }) },
+    {
+      name: "StockResponseMismatchError",
+      err: new StockResponseMismatchError("reply type did not match the pending command", { expected: ResponseType.CpuHistoryGet, received: ResponseType.Ping }),
+    },
+  ];
+  for (const { name, err } of cases) {
+    await withStockStubServer(happyPathResponder(), async (port) => {
+      const { brokerControl } = makeStubBrokerControl();
+      const writeCalls: Array<{ versionQuad: string; cpuHistoryAvailable: boolean }> = [];
+      const session = await withCpuHistoryRejecting(err, () =>
+        stockConnect({
+          host: "127.0.0.1",
+          port,
+          targetId: `grant-cr01-nopersist-${name}`,
+          brokerControl,
+          deps: {
+            binPath: "x64sc",
+            readCapabilityRecordFn: () => null,
+            writeCapabilityRecordFn: (_binPath: string, capability: { versionQuad: string; cpuHistoryAvailable: boolean }) => {
+              writeCalls.push(capability);
+            },
+          },
+        }),
+      );
+      assert.equal(session.capabilities.cpuHistory, "absent", `${name} must still answer "absent" for THIS process`);
+      assert.equal(
+        writeCalls.length,
+        0,
+        `${name} is a decode failure, not an observation of the build -- persisting it would disable Route A for this binary with no invalidation path (wrote ${JSON.stringify(writeCalls)})`,
+      );
+      await stockDisconnect(session);
+    });
+  }
+});
+
+test("stockConnect (CR-01): a WIRE-sourced capability answer is still persisted -- the fix must not stop the cache working", async () => {
+  for (const { code, expected } of [
+    { code: ErrorCode.InvalidType, expected: false },
+    { code: ErrorCode.CmdFailure, expected: false },
+  ]) {
+    await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: code }), async (port) => {
+      const { brokerControl } = makeStubBrokerControl();
+      const writeCalls: Array<{ versionQuad: string; cpuHistoryAvailable: boolean }> = [];
+      const session = await stockConnect({
+        host: "127.0.0.1",
+        port,
+        targetId: `grant-cr01-persist-${code}`,
+        brokerControl,
+        deps: {
+          binPath: "x64sc",
+          readCapabilityRecordFn: () => null,
+          writeCapabilityRecordFn: (_binPath: string, capability: { versionQuad: string; cpuHistoryAvailable: boolean }) => {
+            writeCalls.push(capability);
+          },
+        },
+      });
+      assert.equal(writeCalls.length, 1, `wire error code ${code} IS an answer about the build and must be persisted exactly once`);
+      assert.equal(writeCalls[0]!.cpuHistoryAvailable, expected);
+      await stockDisconnect(session);
+    });
+  }
 });
 
 test("stockConnect (CR-01 regression guard -- the whole point of the plan): a framing rejection from CPUHISTORY_GET still yields a usable session, not a thrown handshake failure", async () => {

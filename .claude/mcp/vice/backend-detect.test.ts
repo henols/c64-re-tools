@@ -33,6 +33,7 @@ import {
   resetResolvedBackendForTests,
   readCapabilityRecord,
   writeCapabilityRecord,
+  CAPABILITY_SCHEMA_VERSION,
   type ResolvedBackendDeps,
   type SpawnHelpResult,
 } from "./backend-detect.mts";
@@ -506,6 +507,65 @@ test("readCapabilityRecord: a stored versionQuad differing from the observed one
     });
     assert.ok(record);
     assert.equal(record!.stale, true, "an observed version quad different from the stored one must be reported stale");
+  });
+});
+
+// CR-01 (07-REVIEW.md re-review): staleness must also be keyed on the CLIENT
+// schema that decided the capability, not the VICE version quad alone. Before
+// this, a capability answer produced by a buggy client parser survived every
+// subsequent parser fix and could only be cleared by upgrading VICE or
+// hand-deleting a file under .vice-supervisor/.
+test("readCapabilityRecord: a record written by a DIFFERENT client capability schema is stale even when the version quad matches (CR-01)", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    writeCapabilityRecord(
+      "/fake/x64sc",
+      { versionQuad: "3.10.0.0", cpuHistoryAvailable: false },
+      { supervisorDir: dir, resolveBinPath: () => "/fake/x64sc", stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }) },
+    );
+
+    // Hand-rewrite the stamped schema to an older one, exactly as a record
+    // written by a previous release would read back.
+    const cachePath = join(dir, "backend.json");
+    const onDisk = JSON.parse(readFileSync(cachePath, "utf8")) as Record<string, unknown>;
+    assert.equal(onDisk.capabilitySchema, CAPABILITY_SCHEMA_VERSION, "every write must stamp the schema that decided the capability");
+    onDisk.capabilitySchema = CAPABILITY_SCHEMA_VERSION - 1;
+    writeFileSync(cachePath, JSON.stringify(onDisk, null, 2) + "\n");
+
+    const record = readCapabilityRecord("/fake/x64sc", {
+      supervisorDir: dir,
+      resolveBinPath: () => "/fake/x64sc",
+      observedVersionQuad: "3.10.0.0",
+    });
+    assert.ok(record);
+    assert.equal(record!.capabilitySchema, CAPABILITY_SCHEMA_VERSION - 1);
+    assert.equal(record!.stale, true, "a matching version quad must NOT rescue a record decided by a different client schema");
+  });
+});
+
+test("readCapabilityRecord: a record with NO capabilitySchema at all (written before the field existed) is stale (CR-01)", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    writeCapabilityRecord(
+      "/fake/x64sc",
+      { versionQuad: "3.10.0.0", cpuHistoryAvailable: false },
+      { supervisorDir: dir, resolveBinPath: () => "/fake/x64sc", stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }) },
+    );
+    const cachePath = join(dir, "backend.json");
+    const onDisk = JSON.parse(readFileSync(cachePath, "utf8")) as Record<string, unknown>;
+    delete onDisk.capabilitySchema;
+    writeFileSync(cachePath, JSON.stringify(onDisk, null, 2) + "\n");
+
+    const record = readCapabilityRecord("/fake/x64sc", {
+      supervisorDir: dir,
+      resolveBinPath: () => "/fake/x64sc",
+      observedVersionQuad: "3.10.0.0",
+    });
+    assert.ok(record);
+    assert.equal(record!.capabilitySchema, undefined);
+    assert.equal(record!.stale, true, "a pre-field record is exactly the record a possibly-broken parser wrote -- it must be re-probed");
   });
 });
 

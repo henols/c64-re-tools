@@ -142,26 +142,48 @@ export function clampCpuHistoryCount(count: number): number {
  * unchanged so stockConnect()'s own retry/restart posture can see it. Do
  * NOT widen this into a bare `catch { return "absent"; }`: that would also
  * swallow a dead socket and hand back a capability answer for a session
- * nobody could actually establish. */
-async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryCapability> {
+ * nobody could actually establish.
+ *
+ * CR-01 (07-REVIEW.md re-review): the three decode classes above answer a
+ * capability VALUE but they are NOT an observation of the build's
+ * capability -- the server answered, this client could not read the answer.
+ * So the probe now reports its PROVENANCE alongside the value, and
+ * resolveCapabilities() persists only `"wire"`-sourced answers. Persisting a
+ * decode failure wrote `cpuHistoryAvailable: false` to a record whose only
+ * invalidation key was the VICE version quad, so a single transient desync
+ * -- or any parser bug -- permanently disabled Route A for that binary and
+ * no shipped parser fix could ever invalidate it. Keep the two concepts
+ * separate: `capability` is what this process should do next, `source` is
+ * whether anyone actually established it. */
+interface CpuHistoryProbe {
+  /** What this process should do about Route A, right now. */
+  capability: CpuHistoryCapability;
+  /** `"wire"` -- the monitor's own answer, decoded: a fact about this build,
+   * safe to persist. `"decode_failure"` -- the monitor answered with a frame
+   * this client could not decode: usable in-process, NEVER persistable. */
+  source: "wire" | "decode_failure";
+}
+
+async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryProbe> {
   const count = clampCpuHistoryCount(1);
   const body = Buffer.alloc(5);
   body[0] = 0x00; // memspace: main
   body.writeUInt32LE(count, 1);
   try {
     await client.send(CommandType.CpuHistoryGet, body);
-    return "available";
+    return { capability: "available", source: "wire" };
   } catch (err) {
     if (err instanceof StockProtocolError) {
-      if (err.errorCode === ErrorCode.InvalidType) return "absent"; // 0x83 -- opcode absent, pre-3.10
-      if (err.errorCode === ErrorCode.CmdFailure) return "not_compiled_in"; // 0x8f -- compiled without support
-      if (err.errorCode === ErrorCode.InvalidParameter) return "absent"; // 0x81 -- minimal well-formed request rejected by this build
+      if (err.errorCode === ErrorCode.InvalidType) return { capability: "absent", source: "wire" }; // 0x83 -- opcode absent, pre-3.10
+      if (err.errorCode === ErrorCode.CmdFailure) return { capability: "not_compiled_in", source: "wire" }; // 0x8f -- compiled without support
+      if (err.errorCode === ErrorCode.InvalidParameter) return { capability: "absent", source: "wire" }; // 0x81 -- minimal well-formed request rejected by this build
     }
     // CR-01: the opcode answered with a real frame this client could not
-    // decode -- the opcode exists, Route A is merely unusable on this build.
-    if (err instanceof StockFramingError) return "absent";
-    if (err instanceof StockDesyncError) return "absent";
-    if (err instanceof StockResponseMismatchError) return "absent";
+    // decode -- the opcode EXISTS, Route A is merely unusable by THIS
+    // client. An in-process "absent" is right; a persisted one is not.
+    if (err instanceof StockFramingError) return { capability: "absent", source: "decode_failure" };
+    if (err instanceof StockDesyncError) return { capability: "absent", source: "decode_failure" };
+    if (err instanceof StockResponseMismatchError) return { capability: "absent", source: "decode_failure" };
     // Anything else -- notably StockConnectionClosedError and
     // StockRequestTimeoutError -- is a transport failure, not a capability
     // answer, and must still fail the handshake.
@@ -206,20 +228,45 @@ async function resolveCapabilities(client: ViceMonitorClient, versionQuad: strin
   // unclassifiable degrades to "absent" WITHOUT writing a capability cache
   // record -- a capability answer nobody could actually establish must
   // never be persisted for the next connect.
-  let cpuHistory: CpuHistoryCapability;
+  //
+  // CR-01 (07-REVIEW.md re-review) narrows this catch in one direction and
+  // fixes the write below. A StockProtocolError this module does not
+  // classify is rethrown rather than laundered into a capability answer:
+  // the set that reaches here includes InvalidApiVersion (0x82), and an
+  // api-version rejection is the one condition step 3 of the handshake
+  // exists to make FATAL -- reporting it as "Route A is absent" hides a
+  // connection that is not actually usable. The residual catch-all below
+  // therefore covers only genuinely untyped failures (a bug in this client,
+  // not a wire answer), which still degrade without persisting.
+  let probe: CpuHistoryProbe;
   try {
-    cpuHistory = await probeCpuHistory(client);
+    probe = await probeCpuHistory(client);
   } catch (err) {
     if (err instanceof StockConnectionClosedError || err instanceof StockRequestTimeoutError || err instanceof MachineRestartedError) {
+      throw err;
+    }
+    if (err instanceof StockProtocolError) {
+      // An unclassified WIRE error code. probeCpuHistory() already maps
+      // every code that means "Route A is unusable"; anything else is a
+      // condition this client does not understand, and a handshake that
+      // cannot understand the server's refusal must fail, not guess.
       throw err;
     }
     console.error(`resolveCapabilities: unclassified error resolving CPUHISTORY_GET capability, falling back to "absent": ${String(err)}`);
     return { cpuHistory: "absent" };
   }
-  if (deps.binPath) {
-    writeCap(deps.binPath, { versionQuad, cpuHistoryAvailable: cpuHistory === "available" }, { supervisorDir: deps.supervisorDir });
+  // CR-01: persist ONLY a wire-sourced answer. A decode failure means the
+  // opcode exists and this client could not read the reply -- writing
+  // `cpuHistoryAvailable: false` for it would pin Route A off for this
+  // binary until VICE itself is upgraded, because the record's only other
+  // invalidation key is the version quad. writeCapabilityRecord() stamps
+  // CAPABILITY_SCHEMA_VERSION so a shipped parser change invalidates
+  // records written by the older parser; that is the second half of the
+  // same fix and cannot substitute for this one.
+  if (deps.binPath && probe.source === "wire") {
+    writeCap(deps.binPath, { versionQuad, cpuHistoryAvailable: probe.capability === "available" }, { supervisorDir: deps.supervisorDir });
   }
-  return { cpuHistory };
+  return { cpuHistory: probe.capability };
 }
 
 // ---------------------------------------------------------------------------

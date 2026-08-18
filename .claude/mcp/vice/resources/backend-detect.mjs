@@ -122,6 +122,19 @@ export function probeBackend(binPath, deps = {}) {
     }
     return classifyHelpOutput(text);
 }
+/** The client-side capability-decision schema version stamped into every
+ * capability record this module writes (see BackendCacheRecord's own field
+ * comment). BUMP THIS whenever the client's capability probing or the
+ * decoding it depends on changes, so records decided by the older code are
+ * re-probed instead of trusted.
+ *
+ * History:
+ *   1 -- plan 02-08's original probe (implicit; never written to disk).
+ *   2 -- CR-01 fix: decode failures are no longer persisted at all, and the
+ *        CPUHISTORY_GET body layout was corrected (07-12). Every record
+ *        written before this constant existed lacks the field and is
+ *        therefore stale, which is exactly the intent. */
+export const CAPABILITY_SCHEMA_VERSION = 2;
 function isPlainObject(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -168,6 +181,8 @@ function readCacheRecord(supervisorDir) {
         record.versionQuad = parsed.versionQuad;
     if (typeof parsed.cpuHistoryAvailable === "boolean")
         record.cpuHistoryAvailable = parsed.cpuHistoryAvailable;
+    if (typeof parsed.capabilitySchema === "number")
+        record.capabilitySchema = parsed.capabilitySchema;
     return record;
 }
 /** Tmp-sibling -> chmod 0600 -> content -> rename, the SAME atomic-write
@@ -354,10 +369,19 @@ export function readCapabilityRecord(binPath, deps = {}) {
         return null;
     if (existing.versionQuad === undefined && existing.cpuHistoryAvailable === undefined)
         return null;
-    const stale = deps.observedVersionQuad !== undefined &&
+    const versionMismatch = deps.observedVersionQuad !== undefined &&
         existing.versionQuad !== undefined &&
         existing.versionQuad !== deps.observedVersionQuad;
-    return { versionQuad: existing.versionQuad, cpuHistoryAvailable: existing.cpuHistoryAvailable, stale };
+    // CR-01: a record decided by a different client-side capability schema is
+    // as untrustworthy as one decided against a different binary. Absent
+    // counts as a mismatch -- that is every record written before the field
+    // existed, i.e. every record a possibly-broken parser could have written.
+    const schemaMismatch = existing.capabilitySchema !== CAPABILITY_SCHEMA_VERSION;
+    const stale = versionMismatch || schemaMismatch;
+    const result = { versionQuad: existing.versionQuad, cpuHistoryAvailable: existing.cpuHistoryAvailable, stale };
+    if (existing.capabilitySchema !== undefined)
+        result.capabilitySchema = existing.capabilitySchema;
+    return result;
 }
 /** Attaches `{ versionQuad, cpuHistoryAvailable }` to the EXISTING backend
  * verdict already on record for `binPath`'s resolved identity -- a no-op,
@@ -392,5 +416,9 @@ export function writeCapabilityRecord(binPath, capability, deps = {}) {
         probedAt: existing.probedAt,
         versionQuad: capability.versionQuad,
         cpuHistoryAvailable: capability.cpuHistoryAvailable,
+        // CR-01: stamp WHICH client decided this, so a later parser change
+        // invalidates it. Never accept this from the caller -- it describes this
+        // module's own code, not anything the caller observed.
+        capabilitySchema: CAPABILITY_SCHEMA_VERSION,
     });
 }

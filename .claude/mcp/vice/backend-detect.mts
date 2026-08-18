@@ -196,7 +196,32 @@ export interface BackendCacheRecord {
    * quad; only a live VICE_INFO reply over an established connection can. */
   versionQuad?: string;
   cpuHistoryAvailable?: boolean;
+  /** CR-01 (07-REVIEW.md re-review): the CLIENT-side schema version that
+   * produced `cpuHistoryAvailable`. The version quad answers "is this the
+   * same VICE build?"; it cannot answer "was the code that decided this
+   * capability the code running now?". Without this field a capability
+   * answer derived by a buggy parser was un-invalidatable by any code
+   * change -- only a VICE upgrade could clear it. A record whose value
+   * differs from CAPABILITY_SCHEMA_VERSION (including ABSENT, which is
+   * every record written before this field existed) reads back as `stale`.
+   * Bump CAPABILITY_SCHEMA_VERSION in the same commit as any change to how
+   * a capability is probed or decoded. */
+  capabilitySchema?: number;
 }
+
+/** The client-side capability-decision schema version stamped into every
+ * capability record this module writes (see BackendCacheRecord's own field
+ * comment). BUMP THIS whenever the client's capability probing or the
+ * decoding it depends on changes, so records decided by the older code are
+ * re-probed instead of trusted.
+ *
+ * History:
+ *   1 -- plan 02-08's original probe (implicit; never written to disk).
+ *   2 -- CR-01 fix: decode failures are no longer persisted at all, and the
+ *        CPUHISTORY_GET body layout was corrected (07-12). Every record
+ *        written before this constant existed lacks the field and is
+ *        therefore stale, which is exactly the intent. */
+export const CAPABILITY_SCHEMA_VERSION = 2;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -243,6 +268,7 @@ function readCacheRecord(supervisorDir: string): BackendCacheRecord | null {
   };
   if (typeof parsed.versionQuad === "string") record.versionQuad = parsed.versionQuad;
   if (typeof parsed.cpuHistoryAvailable === "boolean") record.cpuHistoryAvailable = parsed.cpuHistoryAvailable;
+  if (typeof parsed.capabilitySchema === "number") record.capabilitySchema = parsed.capabilitySchema;
   return record;
 }
 
@@ -511,11 +537,23 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
 export interface CapabilityRecordResult {
   versionQuad?: string;
   cpuHistoryAvailable?: boolean;
-  /** True only when `observedVersionQuad` was given AND differs from the
-   * stored value -- the caller has just seen a DIFFERENT VICE build than
-   * whatever wrote this record (the binary was swapped since the last
-   * capability determination), so the stored answer cannot be trusted and
-   * must be re-determined rather than reused. */
+  /** The client-side schema version stamped on the record that was read
+   * (absent for any record written before CAPABILITY_SCHEMA_VERSION
+   * existed). Surfaced so a caller can log WHY a record was stale. */
+  capabilitySchema?: number;
+  /** True when the caller has just seen a DIFFERENT VICE build than
+   * whatever wrote this record (`observedVersionQuad` was given AND differs
+   * from the stored value -- the binary was swapped since the last
+   * capability determination), OR when the record's `capabilitySchema` is
+   * not the CAPABILITY_SCHEMA_VERSION this client decides capabilities
+   * with. Either way the stored answer cannot be trusted and must be
+   * re-determined rather than reused.
+   *
+   * CR-01 (07-REVIEW.md re-review) added the schema half: keying staleness
+   * on the version quad alone meant a capability answer decided by a buggy
+   * client parser survived every subsequent parser fix, and could only be
+   * cleared by upgrading VICE or hand-deleting a file under
+   * .vice-supervisor/ that nothing tells the user about. */
   stale: boolean;
 }
 
@@ -547,12 +585,20 @@ export function readCapabilityRecord(binPath: string, deps: CapabilityDeps = {})
   if (!existing || existing.resolvedPath !== resolvedPath) return null;
   if (existing.versionQuad === undefined && existing.cpuHistoryAvailable === undefined) return null;
 
-  const stale =
+  const versionMismatch =
     deps.observedVersionQuad !== undefined &&
     existing.versionQuad !== undefined &&
     existing.versionQuad !== deps.observedVersionQuad;
+  // CR-01: a record decided by a different client-side capability schema is
+  // as untrustworthy as one decided against a different binary. Absent
+  // counts as a mismatch -- that is every record written before the field
+  // existed, i.e. every record a possibly-broken parser could have written.
+  const schemaMismatch = existing.capabilitySchema !== CAPABILITY_SCHEMA_VERSION;
+  const stale = versionMismatch || schemaMismatch;
 
-  return { versionQuad: existing.versionQuad, cpuHistoryAvailable: existing.cpuHistoryAvailable, stale };
+  const result: CapabilityRecordResult = { versionQuad: existing.versionQuad, cpuHistoryAvailable: existing.cpuHistoryAvailable, stale };
+  if (existing.capabilitySchema !== undefined) result.capabilitySchema = existing.capabilitySchema;
+  return result;
 }
 
 /** Attaches `{ versionQuad, cpuHistoryAvailable }` to the EXISTING backend
@@ -591,5 +637,9 @@ export function writeCapabilityRecord(
     probedAt: existing.probedAt,
     versionQuad: capability.versionQuad,
     cpuHistoryAvailable: capability.cpuHistoryAvailable,
+    // CR-01: stamp WHICH client decided this, so a later parser change
+    // invalidates it. Never accept this from the caller -- it describes this
+    // module's own code, not anything the caller observed.
+    capabilitySchema: CAPABILITY_SCHEMA_VERSION,
   });
 }
