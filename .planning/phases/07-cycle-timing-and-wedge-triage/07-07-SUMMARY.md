@@ -107,3 +107,10 @@ None - no external service configuration required.
 ---
 *Phase: 07-cycle-timing-and-wedge-triage*
 *Completed: 2026-08-18*
+
+## Self-Check: PASSED
+
+- FOUND: .claude/mcp/vice/stock-recycle.ts
+- FOUND: .claude/mcp/vice/stock-recycle.test.ts
+- FOUND: a884d56 (feat: stock vice_recycle -- gatherStockWedgeEvidence + handleRecycleStock)
+- FOUND: 02ab2e3 (test: stock-recycle.test.ts -- record-before-RPC ordering proven from inside the RPC stub)
