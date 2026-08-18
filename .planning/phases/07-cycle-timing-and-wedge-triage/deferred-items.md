@@ -17,6 +17,21 @@ deferred for `04-01` (commit `5499f10`) and the `260817-n6p` quick task (commit
 `stock-connect.ts` / `stock-connect.test.ts`. Not fixed here; scope boundary
 excludes pre-existing failures unrelated to the current task's files.
 
+### Recurrence (2026-08-18, quick task 260818-nh5)
+
+Same `repo-root.test.ts` failure observed again, unchanged, while executing
+quick task 260818-nh5 (close Phase 07 UAT gap / restarted evidence shape
+drift). Confirmed pre-existing and unrelated to this task's edits by running
+`node test-gate.mjs` both before and after this task's `stock-diagnose.test.ts`
+/ `test-gate.mjs` changes — the failure count (1) and identity are unchanged
+across both runs; only the pass count moves (1623 -> 1624, the +1 from the
+new shape-oracle test added by this task). `npx tsc --noEmit` exits 0 in both
+states. Still a worktree-nesting artifact (this agent's worktree lives at
+`.claude/worktrees/agent-aba4dcf6984414059/`, so `repoRoot()`'s .git-walk
+resolves a repo root that itself sits under `.claude`, tripping the "not
+under .claude" assertion) -- not caused by, and not fixable within, this
+quick task's scope.
+
 ## 07-10: Route A (`CPUHISTORY_GET`) live decode mismatch against genuine VICE 3.10 (out of scope, needs a dedicated fix plan)
 
 While performing 07-10's Task 3 manual-only verification pass (`07-VALIDATION.md`),
