@@ -169,16 +169,13 @@ const FORK_ONLY_UNRECOVERABLE = [
 // 5. Not yet built on stock, scheduled for a later phase. Asserted below to
 // be ABSENT from the stock manifest -- the drift guard: when Phase 7 lands
 // one of these, this script fails until the entry is deleted (D-05-05).
-const PENDING_LATER_PHASE = [
-  [
-    "vice_cycles_stopwatch",
-    "TIME-01, Phase 7 -- not yet built on stock. Absence from the stock manifest is asserted as a drift guard; delete this entry the day Phase 7 lands it.",
-  ],
-  [
-    "vice_run_until",
-    "TIME-02, Phase 7 -- not yet built on stock. Absence from the stock manifest is asserted as a drift guard; delete this entry the day Phase 7 lands it.",
-  ],
-];
+//
+// Phase 7 landed both of the entries this list used to carry
+// (`vice_cycles_stopwatch` in 07-08, `vice_run_until` also in 07-08) -- the
+// drift guard below caught it exactly as designed (07-10), and both entries
+// were deleted rather than left stale. Empty is the correct steady state
+// until a future phase defers a tool here again.
+const PENDING_LATER_PHASE = [];
 
 // --- Assertion: PROXY_LOCAL_TOOLS still declared in vice-proxy.ts ----------
 const viceProxySrc = readFileSync(join(VICE_DIR, "vice-proxy.ts"), "utf8");
