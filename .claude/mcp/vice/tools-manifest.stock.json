@@ -3440,7 +3440,7 @@
     },
     {
       "name": "vice_run_until",
-      "description": "Run until address or for N cycles (with timeout). timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging.",
+      "description": "Run until address or for N cycles (with timeout). timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. Every answer leaves the machine halted -- machineHalted is stamped unconditionally, with machineHaltedNote naming vice_execution_run as the call that resumes it. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3465,6 +3465,9 @@
             "type": "string"
           },
           "reached": {
+            "type": "boolean"
+          },
+          "reachedUnknown": {
             "type": "boolean"
           },
           "address": {
@@ -3493,25 +3496,51 @@
           "cleanup": {
             "type": "string"
           },
+          "cleanupError": {
+            "type": "string"
+          },
           "timeoutClamped": {
             "type": "boolean"
           },
           "explanation": {
             "type": "string"
+          },
+          "machineHalted": {
+            "type": "boolean"
+          },
+          "machineHaltedNote": {
+            "type": "string"
+          },
+          "raceResolved": {
+            "type": "string",
+            "enum": [
+              "pc_at_address",
+              "pc_elsewhere",
+              "unresolved"
+            ]
+          },
+          "pcAtCleanup": {
+            "type": "number"
+          },
+          "pcReadError": {
+            "type": "string"
+          },
+          "raceNote": {
+            "type": "string"
           }
         },
         "required": [
           "requested",
-          "reached",
           "address",
           "timeoutMs",
-          "runState"
+          "runState",
+          "machineHalted"
         ]
       }
     },
     {
       "name": "vice_diagnose",
-      "description": "Read-mostly. Answers which of five states this session's emulator is in on the stock backend -- restarted, checkpoint_trap, wedged, monitor_held_elsewhere, or live -- with the evidence that produced the verdict. The fork's sixth verdict, stale_read_path, is absent on stock: every stock read pauses the machine uniformly, so the stale-versus-fresh distinction that verdict describes is unreachable by construction. It may resume the machine once or twice to measure a cycle bracket, so it is never something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- resuming is your own next call. A \"checkpoint_trap\" verdict means the machine stopped ITSELF at an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a healthy instance. \"monitor_held_elsewhere\" means a different client already holds this instance's single binary-monitor slot -- the instance is healthy, just claimed elsewhere.",
+      "description": "Read-mostly. Answers which of five states this session's emulator is in on the stock backend -- restarted, checkpoint_trap, wedged, monitor_held_elsewhere, or live -- with the evidence that produced the verdict. The fork's sixth verdict, naming a stale-versus-fresh read distinction, is absent on stock: every stock read pauses the machine uniformly, so that distinction is unreachable by construction. It may resume the machine once or twice to measure a cycle bracket, so it is never something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- resuming is your own next call. A \"checkpoint_trap\" verdict means the machine stopped ITSELF at an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a healthy instance. \"monitor_held_elsewhere\" means a different client already holds this instance's single binary-monitor slot -- the instance is healthy, just claimed elsewhere. machinePaused is derived from the emulator's own observed run state, never hand-passed; machinePausedSource says whether that derivation was a direct wire observation (\"observed\"), inferred because no session was ever obtained (\"no_session\"), or inferred because every function on this path except the liveness bracket never resumes (\"structural\"). A failure that establishes no verdict at all answers isError:true with text beginning \"vice_diagnose: diagnosis_unavailable (<reason>)\", for one of: protocol_decode_failure, connection_lost, request_timeout, monitor_acquisition_timeout, session_refused, evidence_gathering_failed, unknown. That outcome is deliberately NOT one of the five verdicts above -- it means the machine's state is UNKNOWN, not live, wedged, or anything else, and is never on its own grounds a reason to call vice_recycle.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -3538,6 +3567,14 @@
           "machinePaused": {
             "type": "boolean"
           },
+          "machinePausedSource": {
+            "type": "string",
+            "enum": [
+              "no_session",
+              "observed",
+              "structural"
+            ]
+          },
           "runState": {
             "type": "string",
             "enum": [
@@ -3550,7 +3587,9 @@
         "required": [
           "verdict",
           "report",
-          "runState"
+          "runState",
+          "machinePaused",
+          "machinePausedSource"
         ]
       }
     },
