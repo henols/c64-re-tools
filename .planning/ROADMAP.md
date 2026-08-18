@@ -386,10 +386,10 @@ under `.planning/phases/`; renumbering would invalidate every cross-reference.
 Plans:
 **Wave 1** *(four independent plans, disjoint file ownership -- none writes a shared registration file)*
 
-- [ ] 07-01-PLAN.md — Wave-0 blocker: `probeCpuHistory()` sends `count=1` and classifies `InvalidParameter` (0x81), with the live-captured regression fixture [wave 1]
-- [ ] 07-02-PLAN.md — `stock-protocol.ts`: the `CPUHISTORY_GET` response parser and the `RESOURCE_GET` encoder + parser, both `need()`-guarded, no SET-side encoder [wave 1]
-- [ ] 07-03-PLAN.md — `stock-run-until.ts`: temporary stopping exec checkpoint, event-driven bounded wait, three distinct cleanup paths, stock-only `timeout_ms` (D-02) [wave 1]
-- [ ] 07-04-PLAN.md — doc corrections: `rewriteArguments()` cited at `vice-proxy.ts:2889`/`1368`, and `phase0-binmon-findings.md` §1's frame-counter fallback marked SUPERSEDED [wave 1]
+- [x] 07-01-PLAN.md — Wave-0 blocker: `probeCpuHistory()` sends `count=1` and classifies `InvalidParameter` (0x81), with the live-captured regression fixture [wave 1]
+- [x] 07-02-PLAN.md — `stock-protocol.ts`: the `CPUHISTORY_GET` response parser and the `RESOURCE_GET` encoder + parser, both `need()`-guarded, no SET-side encoder [wave 1]
+- [x] 07-03-PLAN.md — `stock-run-until.ts`: temporary stopping exec checkpoint, event-driven bounded wait, three distinct cleanup paths, stock-only `timeout_ms` (D-02) [wave 1]
+- [x] 07-04-PLAN.md — doc corrections: `rewriteArguments()` cited at `vice-proxy.ts:2889`/`1368`, and `phase0-binmon-findings.md` §1's frame-counter fallback marked SUPERSEDED [wave 1]
 
 **Wave 2** *(blocked on 07-01 and 07-02)*
 
@@ -490,7 +490,7 @@ their references.
 | 4. Client-Side Tool Seam and 6510 Disassembler | 7/7 | Complete    | 2026-08-17 |
 | 5. Skill-Critical Derived Tools | 13/13 | Complete    | 2026-08-17 |
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
-| 7. Cycle Timing and Wedge Triage | 0/TBD | Not started | - |
+| 7. Cycle Timing and Wedge Triage | 4/10 | In Progress|  |
 | 8. Capability Honesty and the Install Story | 0/TBD | Not started | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
