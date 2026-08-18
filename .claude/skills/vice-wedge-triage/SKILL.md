@@ -5,8 +5,9 @@ description: Decide whether a VICE emulator that has stopped responding is genui
 
 # Triage a VICE that stopped moving
 
-**Four states look identical from outside, and the intuitive fix destroys a healthy machine in
-one of them.** Work the order below. Do not start with a remedy.
+**On the fork, four states look identical from outside; on stock, it is five, and the intuitive
+fix destroys a healthy machine in more than one of them.** Work the order below. Do not start with
+a remedy.
 
 | State | Cheap tell | Safe action |
 |---|---|---|
@@ -14,14 +15,18 @@ one of them.** Work the order below. Do not start with a remedy.
 | **Stopped itself at your checkpoint** | An armed *stopping* checkpoint on the live IRQ path | Delete/disable the checkpoint. **Never recycle** |
 | **Crashed and respawned** | The proxy raises epoch drift on the next forwarded call | Void the run, reboot from scratch. Already handled for you |
 | **Genuinely wedged** | Two consecutive cycle brackets read exactly `0` | `vice_recycle` with a reason, as a last resort |
+| **Monitor held elsewhere (stock only)** | A second client already holds this instance's single binary-monitor socket | Find the other holder. **Never recycle** — the instance is healthy, just claimed elsewhere |
 
 ```
-mcp__plugin_c64-re-tools_vice__vice_diagnose        # one call, no arguments, answers which of the five it is
+mcp__plugin_c64-re-tools_vice__vice_diagnose        # one call, no arguments, answers which state it is
 ```
 
-`vice_diagnose` returns a closed five-verdict vocabulary — `restarted`, `checkpoint_trap`,
-`wedged`, `stale_read_path`, `live` — with the evidence that produced it. Read its schema for the
-contract; this skill is the judgement around it.
+`vice_diagnose`'s verdict vocabulary differs by backend, because stock VICE's binary monitor
+services exactly one client and the fork's non-pausing `vice_ping` has no stock equivalent (see
+`docs/stock-vice-parity.md` D-03 for the full reasoning). The fork answers `restarted`,
+`checkpoint_trap`, `wedged`, `stale_read_path`, `live`; stock answers `restarted`,
+`checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`. Read the tool's own schema for the
+exact contract on whichever backend is active; this skill is the judgement around it.
 
 ## The order
 
@@ -46,7 +51,8 @@ contract; this skill is the judgement around it.
 | `live` | Cycles advanced | Resume and carry on. Suspect your own checkpoint conditions, not the emulator |
 | `checkpoint_trap` | The machine stopped **itself** at an armed checkpoint | `vice_checkpoint_delete` or `vice_checkpoint_toggle` it, or `vice_execution_step` past it, then re-run `diagnose`. **Recycling here destroys a healthy instance** |
 | `restarted` | The epoch changed — a crash-and-respawn already happened | The run is void. `c64-ram-capture` § Void a run gives the artifact procedure. Reboot from `vice_disk_attach` |
-| `stale_read_path` | Some reads move while others do not | Do not trust any measurement taken across the boundary. Treat as void and re-derive |
+| `stale_read_path` **(fork only)** | Some reads move while others do not | Do not trust any measurement taken across the boundary. Treat as void and re-derive |
+| `monitor_held_elsewhere` **(stock only)** | A different client already holds this instance's single binary-monitor slot | Release or identify the other holder. **Never a reason to recycle** — recycling here destroys an instance that is not even wedged |
 | `wedged` | Two brackets, zero cycles, no epoch change | Last resort: `vice_recycle` with a real reason |
 
 ## What is not recoverable
@@ -72,10 +78,17 @@ at a checkpoint — VICE's flag flips before the trap fires. Checkpoint bookkeep
 (`vice_checkpoint_add`/`list`/`delete`) also keeps returning healthy, self-consistent responses
 throughout a real wedge, so "the tools respond" proves nothing.
 
-**A `vice_run_until` on an address that is never reached looks exactly like a wedge.** Its `cycles`
-parameter is documented in its own schema as *"not yet implemented"*, so there is no working
-timeout to bound it. Before concluding anything, check whether you asked the machine to run to an
-address it cannot reach. **Confidence: MEDIUM** — read off the tool schema, not reproduced.
+**A `vice_run_until` on an address that is never reached looks exactly like a wedge — on the fork,
+still without a bound.** Its `cycles` parameter remains documented in its own schema as *"not yet
+implemented"* on both backends, and the fork has no timeout to bound the wait for an address
+either — an unreachable address there is unbounded and indistinguishable from a wedge.
+**On stock, this is now bounded (D-02):** pass `timeout_ms` (default 30000, clamped to a ceiling of
+600000); an unreachable address returns an explicit, bounded `timedOut: true` answer — with the
+temporary checkpoint already cleaned up — rather than looking like a wedge. The underlying
+judgement is unchanged and still the right first question on either backend: before concluding
+anything, check whether you asked the machine to run to an address it cannot reach. **Confidence:
+HIGH on stock** — live-confirmed (a real KERNAL address reached within its timeout, an unreached
+one timing out with cleanup); **MEDIUM on the fork** — read off the tool schema, not reproduced.
 
 ## The manual fallback, when `vice_diagnose` cannot answer
 
@@ -84,7 +97,7 @@ exists, that is a **host action for a human** — say so and stop. Nothing conta
 the emulator by another route.
 
 When the broker is up but you want the raw measurement, the cycle bracket is the only trustworthy
-liveness test, and it is four calls:
+liveness test. **On the fork**, it is four calls:
 
 1. `vice_cycles_stopwatch` `{action: "reset"}`
 2. `vice_execution_run`
@@ -95,6 +108,18 @@ liveness test, and it is four calls:
 **Exactly `0`, twice in a row, is a wedge.** Cycles advancing but far below ~991,000/s is a third
 thing — merely slow, a separate documented hazard measured at ~6,000/s when a loop polls without
 re-resuming. Read all state first, poll with `vice_ping`, resume exactly once at the end.
+
+**On stock, there is no non-pausing call at all — any inbound byte halts the machine — so the
+`vice_ping` ×3 poll measures nothing there and is fork-only.** The stock equivalent is the same
+bracket shape with zero calls during the wait:
+
+1. `vice_cycles_stopwatch` `{action: "reset"}`
+2. `vice_execution_run`
+3. A real wall-clock wait, with **no calls at all** during it
+4. `vice_cycles_stopwatch` `{action: "read"}`
+
+`vice_diagnose` already runs exactly this bracket internally on stock, so the manual fallback above
+is only for when the broker itself is unreachable and `vice_diagnose` cannot be called at all.
 
 **Enumerate your own checkpoints before running any bracket.** `vice_checkpoint_list`, then
 resolve the live IRQ handler (`$0314/$0315`, or `$FFFE/$FFFF` when `$01` has the ROMs banked out).
@@ -114,7 +139,8 @@ session, the last three all on that call).
 | Checkpoint delete / reset / step can all fail to recover | One recorded incident, all four attempts in sequence | HIGH, single incident |
 | A checkpoint trap explains all three recorded "silent stalls" | Cross-read, 3/3 correlation, mechanism consistent with every symptom — **not reproduced** | MEDIUM |
 | `vice_diagnose`'s five-verdict path behaves as its schema says | Schema read, and cross-checked against the tracked implementation's own report builders. **Not exercised end to end** | MEDIUM |
-| `vice_run_until` has no working timeout | Its schema says `cycles` is "not yet implemented" | MEDIUM |
+| `vice_run_until` has no working timeout **(fork only)** | Its schema says `cycles` is "not yet implemented"; the fork has no `timeout_ms` bound | MEDIUM |
+| Stock's five-verdict path (`restarted`, `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`) and its bounded `vice_run_until` | Unit-proven (25/25 `stock-diagnose.test.ts`, 15/15 `stock-run-until.test.ts`); live-checked against genuine stock VICE 3.9 and VICE 3.10 for the `live` verdict, a reached address, and a timed-out address with cleanup — `checkpoint_trap`, `wedged`, `restarted` and `monitor_held_elsewhere` **not yet exercised against a real emulator** | MEDIUM — unit HIGH, live partial |
 
 Full provenance in `.planning/RE-FINDINGS.md`. **Log a new incident there at the moment you hit
 it**, graded with `Evidence:` and `Confidence:`; promote by re-logging, never by editing a grade.
@@ -146,4 +172,5 @@ others carry.
 | Zero cycles, nothing armed, epoch unchanged | A wedge. `vice_recycle` with a reason that names the evidence |
 | A run "survived a reset" | Distrust it. You cannot read the epoch to confirm — but an unintended respawn inside the bracket would have raised a drift error on the next forwarded call, so absence of that error is the only evidence available |
 | `vice_recycle` refused for a missing reason | It is required, by design — the reason *is* the incident record |
+| `vice_diagnose` answers `monitor_held_elsewhere`, or a call hangs with no reply and no EOF (stock only) | Not a wedge. Find the other client holding this instance's single binary-monitor slot |
 </content>
