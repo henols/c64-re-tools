@@ -602,6 +602,14 @@ test("CR-06: the real stockConnect, driven against a loopback binmon stub throug
         if (commandType === 0x85) {
           // VICE_INFO: [len][3,9,0,0][svnLen]
           socket.write(encodeResponseFrame({ responseType: 0x85, errorCode: 0x00, requestId, body: Buffer.from([4, 3, 9, 0, 0, 0]) }));
+        } else if (commandType === 0x86) {
+          // CPUHISTORY_GET: plan 07-02 added a real body parser (need()-
+          // guarded, requiring at least the 4-byte count field on an OK
+          // reply) where this stub previously sent a zero-length body no
+          // real stock build would ever produce -- an OK reply always
+          // carries at least count(u32LE), even for zero entries
+          // (monitor_binary.c:1563-1617). count(u32LE) = 0 here.
+          socket.write(encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId, body: Buffer.alloc(4) }));
         } else {
           socket.write(encodeResponseFrame({ responseType: commandType, errorCode: 0x00, requestId }));
         }
