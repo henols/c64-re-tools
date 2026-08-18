@@ -168,5 +168,5 @@ editing a grade in place. File-changing work enters through a GSD command (`/gsd
 | A sprite decodes as noise | Check `$D015` first; a disabled sprite's registers are stale. Then check MCM — multicolor decoded as hires comes out twice as wide. |
 | Computed mode is "INVALID — screen goes black" | You caught the registers mid-update inside a raster split. Re-read. |
 | The emulator looks dead | Enumerate armed checkpoints before anything else. See hazard 2. |
-| `vice_keyboard_type` does nothing | The game polls `$DC00`/`$DC01` directly. Use `vice_keyboard_matrix`. |
+| `vice_keyboard_type` does nothing | The game polls `$DC00`/`$DC01` directly. Use `vice_keyboard_matrix` (**requires the fork backend** — see `references/observation-hazards.md` § 4 for the stock route). |
 | Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle; use `c64-ram-capture`'s drift rules. |

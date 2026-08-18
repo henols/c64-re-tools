@@ -89,8 +89,8 @@ hard, and record where the PC actually lands.
 
 **`vice_keyboard_restore` requires the fork backend.** The RESTORE key pulses the NMI line
 directly and is not part of the keyboard matrix, so stock's `KEYBOARD_FEED` (which only injects
-PETSCII text into the buffer) cannot produce it. This call is unavailable on stock; Phase 8's
-`BACK-05` is what reports the absence at runtime.
+PETSCII text into the buffer) cannot produce it. Calling it on the stock backend returns an error
+naming the reason and the fork backend, rather than pulsing RESTORE.
 
 **Evidence:** derived mechanically from six three-run-verified captures; every value identical
 across all three runs of its release, so none of it is drift.
