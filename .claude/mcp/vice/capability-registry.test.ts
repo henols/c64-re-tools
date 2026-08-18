@@ -98,7 +98,56 @@ test("mechanical completeness: the registry's name set equals the manifest-deriv
   const forkNames = new Set(forkManifest.tools.map((t) => t.name));
   const stockNames = new Set(stockManifest.tools.map((t) => t.name));
 
-  const SYNTHETIC = new Set(["vice_diagnose", "vice_recycle"]);
+  // Phase 8 code review, WR-05: this was a hardcoded
+  // `new Set(["vice_diagnose", "vice_recycle"])` -- a second copy of data
+  // that scripts/generate-tool-support-table.mjs already derives
+  // mechanically, and it was ALREADY missing vice_result_continue. Today
+  // that omission is latent rather than wrong (vice_result_continue is in
+  // neither shipped manifest, so it can never enter `expected`), but the day
+  // it lands in one, this test would demand a CAPABILITY_REGISTRY entry for a
+  // proxy-local synthetic tool -- exactly the Pitfall 2 misclassification
+  // the registry's own header warns about.
+  //
+  // Derived from vice-proxy.ts instead. This duplicates the generator's
+  // two-hop STRUCTURE, not its data: a `tools[IDENT.name] = ...` site whose
+  // IDENT resolves to a `const IDENT: ToolDefinition = { name: "..." }`
+  // declaration is synthetic; the manifest loop's own registration is
+  // excluded by matching the loop variable structurally, never by name.
+  // scripts/generate-tool-support-table.mjs's discoverSyntheticToolNames()
+  // is the authoritative implementation -- this file cannot import it,
+  // because a .ts test importing a repo-root .mjs fails tsc's allowJs: false
+  // (the same constraint that made tool-support-table.test.mjs a .mjs file).
+  // Keep the two in step.
+  const proxySource = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+  const loopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/);
+  const loopVar = loopVarMatch ? loopVarMatch[1] : null;
+  const SYNTHETIC = new Set<string>();
+  for (const m of proxySource.matchAll(/tools\[(\w+)\.name\]\s*=/g)) {
+    const ident = m[1];
+    if (ident === loopVar) continue;
+    const decl = proxySource.match(
+      new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`),
+    );
+    if (!decl) {
+      throw new Error(
+        `could not resolve synthetic tool registration identifier "${ident}" in vice-proxy.ts to ` +
+          `a literal name -- silently dropping it would widen the exclusion set and mask a real ` +
+          `capability divergence. Fix the pattern rather than skipping the identifier.`,
+      );
+    }
+    SYNTHETIC.add(decl[1]);
+  }
+
+  // Non-vacuity: a broken derivation returning an empty set would widen
+  // `expected` by the synthetic names and fail the deepEqual below with a
+  // confusing message. Fail here instead, where the cause is legible.
+  assert.ok(
+    SYNTHETIC.size >= 3,
+    `expected at least 3 proxy-local synthetic tools derived from vice-proxy.ts, got ` +
+      `${SYNTHETIC.size} (${[...SYNTHETIC].join(", ") || "none"}) -- the registration or ` +
+      `declaration pattern has drifted.`,
+  );
+
   const excluded = new Set<string>([...DENY_LIST, ...SYNTHETIC]);
 
   const expected = new Set<string>();
