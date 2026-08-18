@@ -81,6 +81,22 @@ function readManifest(path: string): Manifest {
 // never a silently loosened "every stock name needs a fork match" assertion.
 const STOCK_ONLY_TOOLS = new Set(["vice_execution_until_return", "vice_registers_available"]);
 
+// Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
+// above. vice_diagnose/vice_recycle are served proxy-locally (RECYCLE_TOOL/
+// DIAGNOSE_TOOL in vice-proxy.ts) on BOTH backends -- buildBackendAwareTool()
+// routes them to dispatchStock() on stock and to their own fork handlers on
+// the fork, but neither is ever in tools-manifest.json, which is regenerated
+// from the host fork server's own tools/list and has no way to know about a
+// tool the PROXY itself serves. They are therefore neither "has a fork
+// manifest counterpart" (STOCK_ONLY_TOOLS's own test would wrongly demand
+// one) NOR genuinely stock-only (the fork backend serves them too, just not
+// via its manifest) -- a distinct category is the only correct label. The
+// D-03 name-coverage test below skips PROXY_LOCAL_TOOLS members in its
+// fork-counterpart branch and asserts each is present in the stock manifest,
+// absent from the fork manifest, and NOT a member of STOCK_ONLY_TOOLS (never
+// mislabelled stock-only).
+const PROXY_LOCAL_TOOLS = new Set(["vice_diagnose", "vice_recycle"]);
+
 // D-09/plan 03-13: the ONE inputSchema property permitted to omit "type"
 // entirely rather than matching the fork's declared type. The fork types
 // vice_checkpoint_set_condition's `condition` as a bare string; stock accepts
@@ -148,11 +164,12 @@ test("manifest/backend: tools-manifest.stock.json's tools array contains a vice_
 // handoff to 03-13, per this plan's own verification section.
 // ---------------------------------------------------------------------------
 
-test("manifest/backend (D-03 name coverage): every non-stock-only stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only", () => {
+test("manifest/backend (D-03 name coverage): every non-stock-only, non-proxy-local stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const fork = readManifest(FORK_MANIFEST_PATH);
   const forkNames = new Set(fork.tools.map((t) => t.name));
   for (const tool of stock.tools) {
+    if (PROXY_LOCAL_TOOLS.has(tool.name)) continue; // covered by the proxy-local assertions below
     if (STOCK_ONLY_TOOLS.has(tool.name)) {
       assert.ok(!forkNames.has(tool.name), `"${tool.name}" is in STOCK_ONLY_TOOLS but ALSO exists on the fork manifest -- it is not actually stock-only`);
     } else {
@@ -161,6 +178,14 @@ test("manifest/backend (D-03 name coverage): every non-stock-only stock tool has
   }
   for (const name of STOCK_ONLY_TOOLS) {
     assert.ok(stock.tools.some((t) => t.name === name), `STOCK_ONLY_TOOLS name "${name}" must be present in the stock manifest`);
+  }
+  // PROXY_LOCAL_TOOLS: present on stock, absent from the fork manifest (served
+  // proxy-locally there too, never via tools-manifest.json), and explicitly
+  // NOT mislabelled as STOCK_ONLY_TOOLS -- both backends serve these names.
+  for (const name of PROXY_LOCAL_TOOLS) {
+    assert.ok(stock.tools.some((t) => t.name === name), `PROXY_LOCAL_TOOLS name "${name}" must be present in the stock manifest`);
+    assert.ok(!forkNames.has(name), `PROXY_LOCAL_TOOLS name "${name}" must be absent from the fork manifest (tools-manifest.json) -- it is served proxy-locally, never via that manifest`);
+    assert.ok(!STOCK_ONLY_TOOLS.has(name), `PROXY_LOCAL_TOOLS name "${name}" must not also be in STOCK_ONLY_TOOLS -- both backends serve it, it is not stock-only`);
   }
 });
 
@@ -963,10 +988,11 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 36 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+/** The 38 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
  * tools, 04-05's vice_disassemble, Phase 5's eight DERIV-01/DERIV-04/
- * DERIV-05/DERIV-06 derived tools, and Phase 7's two TIME-01/TIME-02 derived
- * tools), driven from an explicit array literal (per this plan's own
+ * DERIV-05/DERIV-06 derived tools, and Phase 7's four TIME-01/TIME-02/TIME-04
+ * derived tools -- vice_cycles_stopwatch, vice_run_until, vice_diagnose and
+ * vice_recycle), driven from an explicit array literal (per this plan's own
  * acceptance criteria) so a missing entry fails as a NAMED assertion rather
  * than a generic count mismatch. */
 const REGISTERED_TOOL_NAMES = [
@@ -1006,6 +1032,8 @@ const REGISTERED_TOOL_NAMES = [
   "vice_sprite_inspect",
   "vice_cycles_stopwatch",
   "vice_run_until",
+  "vice_diagnose",
+  "vice_recycle",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -1022,20 +1050,20 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-test("dispatch: stockHandlerFor returns a function for every one of the 36 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 38 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 36", () => {
+test("dispatch: the table's key count is exactly 38", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 36-name list rather than reaching into the
+  // this test drives the same 38-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 36);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 36);
+  assert.equal(hits.length, 38);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 38);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
