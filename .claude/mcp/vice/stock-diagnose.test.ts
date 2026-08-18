@@ -610,13 +610,14 @@ test("STOCK_DIAGNOSE_VERDICTS: exactly the five of D-03, in order, neither stale
 // ---------------------------------------------------------------------------
 // Task 3, test 5: classifyDiagnoseUnavailable() -- unit cases for the
 // classifier's own reason classes. STOCK_DIAGNOSE_UNAVAILABLE_REASONS has
-// seven members total; monitor_acquisition_timeout, session_refused and
-// evidence_gathering_failed are never produced BY the classifier (they are
-// assigned directly at their own call sites in handleDiagnoseStock()) --
-// those three are covered end-to-end below instead (Task 3, test 6).
+// eight members total; monitor_acquisition_timeout, session_refused,
+// evidence_gathering_failed and liveness_unmeasurable are never produced BY
+// the classifier (they are assigned directly at their own call sites in
+// handleDiagnoseStock()) -- those four are covered end-to-end below instead
+// (Task 3, test 6).
 // ---------------------------------------------------------------------------
 
-test("classifyDiagnoseUnavailable: STOCK_DIAGNOSE_UNAVAILABLE_REASONS has exactly the seven documented reason classes", () => {
+test("classifyDiagnoseUnavailable: STOCK_DIAGNOSE_UNAVAILABLE_REASONS has exactly the eight documented reason classes", () => {
   assert.deepEqual(
     [...STOCK_DIAGNOSE_UNAVAILABLE_REASONS],
     [
@@ -626,6 +627,7 @@ test("classifyDiagnoseUnavailable: STOCK_DIAGNOSE_UNAVAILABLE_REASONS has exactl
       "monitor_acquisition_timeout",
       "session_refused",
       "evidence_gathering_failed",
+      "liveness_unmeasurable",
       "unknown",
     ],
   );
@@ -793,6 +795,92 @@ test("diagnosis_unavailable (T-07-15-02): every message names vice_recycle and m
     assert.doesNotMatch(text, /verdict: live/i, `must never read as a live verdict: "${text}"`);
     assert.doesNotMatch(text, /verdict: wedged/i, `must never read as a wedged verdict: "${text}"`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 07-REVIEW.md WR-02: the advertised contract is that EVERY isError answer
+// from this handler begins `vice_diagnose: diagnosis_unavailable (<reason>)`.
+// Two paths did not: the inconclusive-bracket path (reachable on any build
+// with neither CPUHISTORY_GET nor LIN/CYC -- the documented stock-3.9-class
+// outcome, i.e. exactly the population this backend exists for) and the outer
+// catch-all. Both now route through diagnoseUnavailableResult().
+// ---------------------------------------------------------------------------
+
+/** A session on a build that can measure NOTHING: no CPUHISTORY_GET
+ * (Route A) and a register catalog with neither LIN nor CYC (Route B), which
+ * is what every current Debian/Ubuntu VICE 3.9 package looks like. Its
+ * liveness bracket therefore comes back `advanced: null` -- unmeasurable,
+ * NOT zero-advance. */
+function unmeasurableLivenessSession() {
+  return makeFakeSession({
+    cpuHistory: "absent",
+    registersAvailable: DEFAULT_REGISTERS, // PC only -- no LIN, no CYC
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }]],
+  });
+}
+
+test("handleDiagnoseStock (WR-02): an unmeasurable liveness bracket answers diagnosis_unavailable (liveness_unmeasurable), never a bare isError", async () => {
+  const { session } = unmeasurableLivenessSession();
+  const deps = {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+
+  const result = await handleDiagnoseStock({}, deps);
+  assert.equal(result.isError, true);
+  const text = result.content[0]!.text;
+  assert.match(text, /^vice_diagnose: diagnosis_unavailable \(liveness_unmeasurable\)/);
+  // The substantive claim the previous wording already made must survive the
+  // reclassification -- unmeasurable is not zero-advance.
+  assert.match(text, /must not be mistaken for one that measured zero/);
+  // And it must NOT read as a wedge or a defect.
+  assert.match(text, /not a wedge/);
+  assert.doesNotMatch(text, /verdict: wedged/i);
+  // No second embedded "vice_diagnose:" prefix -- one, at position 0.
+  assert.equal(text.split("vice_diagnose:").length - 1, 1, `exactly one machine-parseable prefix expected in: ${text}`);
+});
+
+test("handleDiagnoseStock (WR-02): EVERY isError answer this handler can produce starts with the documented diagnosis_unavailable prefix", async () => {
+  const reasonPattern = new RegExp(`^vice_diagnose: diagnosis_unavailable \\((${STOCK_DIAGNOSE_UNAVAILABLE_REASONS.join("|")})\\)`);
+
+  // (a) every failure exit reachable through session acquisition, including
+  // the outer catch-all's own class of error.
+  const acquisitionFailures: unknown[] = [
+    new StockFramingError("decode fault"),
+    new StockDesyncError("desynced"),
+    new StockResponseMismatchError("mismatched reply"),
+    new StockConnectionClosedError("closed"),
+    new StockRequestTimeoutError("timed out"),
+    new Error("unclassified"),
+    "not even an Error instance",
+  ];
+  for (const err of acquisitionFailures) {
+    const result = await handleDiagnoseStock({}, unavailableDeps(err));
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, reasonPattern, `acquisition failure ${String(err)} fell off the advertised prefix contract`);
+  }
+
+  // (b) the inconclusive-bracket path -- a real verdict-path exit, not an
+  // acquisition failure, and the one the previous review found uncovered.
+  const { session } = unmeasurableLivenessSession();
+  const bracketResult = await handleDiagnoseStock({}, {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps);
+  assert.equal(bracketResult.isError, true);
+  assert.match(bracketResult.content[0]!.text, reasonPattern, "the inconclusive-bracket path fell off the advertised prefix contract");
+
+  // (c) the outer catch-all, forced by a deps object that throws somewhere
+  // this handler does not name a reason for.
+  const throwingResult = await handleDiagnoseStock({}, {
+    ensureLease: () => {
+      throw new Error("synthetic failure from outside every named branch");
+    },
+  } as unknown as StockDispatchDeps);
+  assert.equal(throwingResult.isError, true);
+  assert.match(throwingResult.content[0]!.text, reasonPattern, "the outer catch-all fell off the advertised prefix contract");
 });
 
 // ---------------------------------------------------------------------------

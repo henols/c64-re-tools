@@ -71,7 +71,9 @@ answer a `diagnosis_unavailable` outcome when no verdict could be established at
 `diagnosis_unavailable` is what `vice_diagnose` answers, on the `isError:true` channel, when it
 could not reach any of the five verdicts above — including a CR-01-class decode failure. It is
 never added to the verdict enum and is never grounds to `vice_recycle` by itself: the message says
-so explicitly. Seven reason classes exist, each with its own next move:
+so explicitly. **Every** `isError:true` answer this tool can produce carries this prefix — there is
+no unclassified no-verdict path left (07-REVIEW.md WR-02). Eight reason classes exist, each with
+its own next move:
 
 | Reason | What it means | Do |
 |---|---|---|
@@ -81,6 +83,7 @@ so explicitly. Seven reason classes exist, each with its own next move:
 | `session_refused` | The broker/lease itself refused the session | Read the raw detail in the message; this is a broker-level problem, not an emulator state |
 | `protocol_decode_failure` | This build answered a frame the client cannot decode | Report it as a tool defect — check `docs/stock-vice-parity.md`'s `CPUHISTORY_GET` history for a known class of this — and fall back to the manual cycle bracket below |
 | `evidence_gathering_failed` | A session was obtained but a read needed to build the verdict failed | `vice_execution_run` may be needed to unstick a stalled read path, then retry |
+| `liveness_unmeasurable` | The liveness bracket could not be **measured at all** — no `CPUHISTORY_GET` (needs VICE ≥ 3.10) and no `LIN`/`CYC` enumerated. **The expected outcome on a stock 3.9-class build**, e.g. every current Debian/Ubuntu package | **Not a wedge and not a tool defect.** A bracket that cannot measure is not one that measured zero. Judge liveness from outside the monitor (screenshot, process state), or use the fork backend. Retrying will produce the same answer |
 | `unknown` | None of the above classified the failure | Read the raw detail in the message; retry once before escalating |
 
 ## What is not recoverable

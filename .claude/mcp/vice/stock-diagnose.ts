@@ -409,6 +409,15 @@ export const STOCK_DIAGNOSE_UNAVAILABLE_REASONS = Object.freeze([
   "monitor_acquisition_timeout",
   "session_refused",
   "evidence_gathering_failed",
+  // 07-REVIEW.md WR-02: the inconclusive-bracket path. NOT an error and NOT
+  // a wedge -- the bracket could not be MEASURED at all, which is the
+  // documented stock-3.9-class outcome (no CPUHISTORY_GET, no LIN/CYC
+  // enumerated), i.e. exactly the population this backend exists for. Before
+  // this reason class existed that path answered isError:true with no
+  // `diagnosis_unavailable (<reason>)` prefix, so an agent following the
+  // SKILL's own instruction (match the prefix, read the reason class, act on
+  // the table) fell off the contract on the most likely outcome.
+  "liveness_unmeasurable",
   "unknown",
 ] as const);
 
@@ -456,6 +465,13 @@ function diagnoseUnavailableGuidance(reason: StockDiagnoseUnavailableReason, det
       return `the upstream session refused with: ${detail}`;
     case "evidence_gathering_failed":
       return "a read failed mid-diagnosis -- the machine is very likely halted, so vice_execution_run may be needed.";
+    case "liveness_unmeasurable":
+      return (
+        "liveness could not be MEASURED on this build -- this is not a wedge and not an error: a bracket that cannot " +
+        "measure at all must never be mistaken for one that measured zero advance. Route A needs CPUHISTORY_GET " +
+        "(VICE >= 3.10); Route B needs a build enumerating LIN/CYC by name. On a build with neither, use the fork " +
+        "backend for liveness, or judge it from outside the monitor (a screenshot, or the process itself)."
+      );
     case "unknown":
     default:
       return `an unclassified failure occurred (${detail}).`;
@@ -606,6 +622,11 @@ function renderStockWedgedReport(bracket1: StockLivenessBracketResult, bracket2:
   );
 }
 
+/** The `detail` half of the `liveness_unmeasurable` refusal (07-REVIEW.md
+ * WR-02). Deliberately carries NO "vice_diagnose:" prefix of its own --
+ * diagnoseUnavailableResult() owns the documented, machine-parseable prefix,
+ * and a second one embedded here would make the answer unparseable by the
+ * rule the manifest and the SKILL both publish. */
 function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
   const reason =
     bracket.before.route === "unavailable"
@@ -614,7 +635,7 @@ function inconclusiveBracketText(bracket: StockLivenessBracketResult): string {
         ? bracket.after.reason
         : `the bracket's route changed mid-measurement (before "${bracket.before.route}", after "${bracket.after.route}")`;
   return (
-    `vice_diagnose: the liveness bracket could not be measured (${reason}). This is reported as inconclusive, ` +
+    `the liveness bracket could not be measured (${reason}). This is reported as inconclusive, ` +
     "never as wedged -- a bracket that cannot measure at all must not be mistaken for one that measured zero " +
     "advance. Establishing liveness needs CPUHISTORY_GET (VICE >= 3.10) or a build enumerating LIN/CYC by name."
   );
@@ -681,9 +702,6 @@ function diagnoseVerdictResult(
   return session ? stockAnswer(session.client, payload) : derivedAnswer(payload);
 }
 
-function diagnoseErrorResult(message: string): StockToolResult {
-  return isErrorText(message);
-}
 
 /**
  * Handles vice_diagnose on the stock backend. Fixed check order, cheap to
@@ -806,7 +824,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     }
 
     if (bracket1.advanced === null) {
-      return diagnoseErrorResult(inconclusiveBracketText(bracket1));
+      return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket1));
     }
     if (bracket1.advanced) {
       return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1));
@@ -822,7 +840,7 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     }
 
     if (bracket2.advanced === null) {
-      return diagnoseErrorResult(inconclusiveBracketText(bracket2));
+      return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket2));
     }
     if (bracket2.advanced) {
       return diagnoseVerdictResult(
@@ -840,7 +858,10 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
       renderStockWedgedReport(bracket1, bracket2),
     );
   } catch (err) {
-    return diagnoseErrorResult(`vice_diagnose: an unexpected error occurred (${describeStockError(err)}).`);
+    // WR-02: the outer catch-all goes through the classifier too, so there is
+    // no isError answer this handler can produce that lacks the documented
+    // `vice_diagnose: diagnosis_unavailable (<reason>)` prefix.
+    return diagnoseUnavailableResult("unknown", `an unexpected error occurred (${describeStockError(err)}).`);
   }
 }
 
