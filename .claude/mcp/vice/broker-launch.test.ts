@@ -1820,12 +1820,14 @@ test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in 
 // stock launches. They do NOT prove a real broker launch is isolated --
 // deps.spawn / deps.spawnFactory is never undefined on the real broker
 // daemon's own paths, so the widened default wrapper is dead code there,
-// and the options argument is dropped again at four further hops
-// (makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
-// stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
-// body and launchSupervised()'s defaultRealSpawn in this file). Plan
-// 08.2-06 (wave 2) owns threading it through those four hops and owns that
-// non-bypassable proof.
+// and the forwarding happens at four further hops (makeLoggingSpawn() and
+// maintainWarmFloorForRealBroker's inner stashingSpawn in vice-broker.mts,
+// and withCrashSupervision()'s wrapper body and launchSupervised()'s
+// defaultRealSpawn in this file). Those four hops now forward the options
+// argument -- plan 08.2-06 closed them in this same phase, and the
+// non-bypassable proof lives in vice-broker-acquire.test.ts, which calls
+// handleAcquire() with buildColdSpawnFactory OMITTED so no injected stub
+// can satisfy it. These two tests remain seam-level by design.
 //
 // Neither test asserts anything about -drive8type (Task 1's own tests do
 // that): I-1 and I-2 are separate root causes and their acceptance stays

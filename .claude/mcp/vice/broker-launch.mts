@@ -299,14 +299,17 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   //
   // Scope boundary (do not remove this note): the production broker daemon
   // always supplies its own deps.spawn / deps.spawnFactory, so the widened
-  // default wrapper above is dead code on the real launch paths, and this
-  // options argument is dropped again at four further hops --
+  // default wrapper above is dead code on the real launch paths. This
+  // function's job is only to COMPUTE the value at the one seam that should
+  // own it; the forwarding to nodeSpawn() happens at four further hops --
   // makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
   // stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
-  // body and launchSupervised()'s defaultRealSpawn in this file. Plan
-  // 08.2-06 (wave 2) owns threading it through those four hops and owns the
-  // non-bypassable proof; this function only computes the value at the one
-  // seam that should own it.
+  // body and launchSupervised()'s defaultRealSpawn in this file. All four
+  // now forward the options argument (plan 08.2-06 closed them in this same
+  // phase, with a handleAcquire() composition test that omits
+  // buildColdSpawnFactory so an injected stub cannot fake the proof). If you
+  // add a fifth spawn hop, it must forward options too, or production stock
+  // launches silently lose their config isolation again.
   //
   // Scratch-dir lifetime: this function deliberately does NOT clean the
   // directory up -- the spawned emulator process outlives this function's
@@ -1298,8 +1301,11 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
 
 /** The single exit-listener installation point in the whole module tree.
  * Wraps `baseSpawn` (a plain spawn function of the same shape
- * `(command, args) => ChildProcess` every launch path already threads
- * through) so the returned spawn function, when called, attaches a
+ * `(command, args, options?) => ChildProcess` every launch path already
+ * threads through -- the third `options` argument is load-bearing: it
+ * carries the scratch XDG_CONFIG_HOME that isolates a stock launch from the
+ * operator's real vicerc, and this wrapper MUST forward it) so the returned
+ * spawn function, when called, attaches a
  * one-shot "exit" listener that drives handleExit() above -- the SAME
  * respawn/give-up/deliberate-teardown resolution launchSupervised()'s own
  * relaunch path already uses. Returns the child object baseSpawn produced,
