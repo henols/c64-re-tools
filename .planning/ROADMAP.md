@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v0.2.0 Switchable stock-VICE backend** — Phases 1-8, 8.1, 8.2 (shipped 2026-08-19)
-- 📋 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-10 (proposed, not opened)
+- 🚧 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-11 (open, planning)
 
 ## Phases
 
@@ -27,6 +27,9 @@ documented rather than hidden.
 - [x] Phase 8.1: Close v0.2.0 audit items (INSERTED) (5/5 plans) — completed 2026-08-19
 - [x] Phase 8.2: Close v0.2.0 blockers (INSERTED) (6/6 plans) — completed 2026-08-19
 
+**Shipped and archived 2026-08-19:** 9 phases, 87 plans, 218 tasks, 51/51
+in-scope requirements, 8 days. Final audit round 4 — `tech_debt`, no blockers.
+
 **Full phase details, standing constraints, cut-scope rationale and success
 criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 **Requirements as shipped:** [`milestones/v0.2.0-REQUIREMENTS.md`](milestones/v0.2.0-REQUIREMENTS.md)
@@ -34,10 +37,11 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 
 </details>
 
-### 📋 v0.3.0 regenerator2000 static-analysis backend (Proposed)
+### 🚧 v0.3.0 regenerator2000 static-analysis backend (Open)
 
-- [ ] Phase 9: Probe, Bootstrap, and the Removal (TBD plans)
-- [ ] Phase 10: Annotation Store, Enums, and the Symbol Round Trip (TBD plans)
+- [ ] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds
+- [ ] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim
+- [ ] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
 
 ## Progress
 
@@ -53,8 +57,9 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8. Capability Honesty and the Install Story | v0.2.0 | 6/6 | Complete | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
-| 9. Probe, Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
-| 10. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
+| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 0/TBD | Not started | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -64,44 +69,28 @@ close: 13 (see `STATE.md` → Deferred Items).
 
 ---
 
-# Milestone v0.3.0: regenerator2000 static-analysis backend (PROPOSED)
+# Milestone v0.3.0: regenerator2000 static-analysis backend
 
-**Status:** proposed, not opened.
+**Status:** open — planning. Three phases: 9, 10, 11.
+**Opened:** 2026-08-19 (numbering continues from v0.2.0, which ran 1-8 plus
+inserted 8.1 and 8.2).
+**Defined:** 2026-08-17 from `/gsd-explore`; re-shaped to three phases 2026-08-19
+when the probe was split out as a standalone gate.
+**Grounding:** `.planning/notes/regenerator2000-integration.md` (decisions
+D-R1..D-R4, overlap map, source-confirmed upstream blockers, pty bootstrap
+mechanics, the two integration tiers). Treated as research already performed —
+do not re-derive it.
+**Requirements:** the 12 in-scope `R2000-*` items in `REQUIREMENTS.md`. Four of
+the original 16 (`R2000-04`, `-07`, `-08`, `-12`) were folded or cut on
+2026-08-17; see "Cut from v0.3.0 scope" below.
+
 **Dependency on v0.2.0: none, structurally.** regenerator2000 never touches VICE
 (D-R1), so it is backend-agnostic — it behaves identically on the fork and stock
-backends. The one apparent cross-dependency, Phase 12's symbol round trip needing
-`DERIV-04`, is **already satisfied on the fork**: `vice_symbols_load` and
-`vice_symbols_lookup` ship today; `DERIV-04` only restores them on *stock*. So
-this milestone could run against the fork backend with no v0.2.0 work at all.
-
-**Phase 9's assumption probe (`R2000-16`) may be pulled forward now**, ahead of
-v0.2.0 Phases 5-8, and should be. It has no v0.2.0 dependency, it de-risks the
-whole milestone for the cost of a day, and — the real reason — it erases the only
-genuine rework between the two milestones: v0.2.0 Phase 8 writes the install
-story (`DIST-01/02/03`) and revises the playbooks (`SKILL-01`), which v0.3.0 then
-rewrites and re-touches. Knowing the probe's answers before Phase 8 lets Phase 8
-write those docs **once**, already naming regenerator2000.
-
-**What v0.2.0 still has to finish regardless of this milestone**, because
-regenerator2000 replaces none of it: stock advertises 26 tools against the fork's
-62, and Phase 5 is that gap (memory search, backtrace, sprites, chip-state
-decode, screenshots, symbols). Phase 4's disassembler has one consumer today and
-gains its second from Phase 5's backtrace. Phase 7 owns wedge triage on stock;
-disk detach (the other half of `DIRECT-06`) was cut from v0.2.0 scope entirely
-and is not outstanding work. The entire overlap analysis found
-exactly one deletable thing in this codebase: a 14-line `toacme` shim. *(As of
-2026-08-19: `tools-manifest.stock.json` ships **38** tools. 26 was the figure at
-the 2026-08-17 cut, before Phases 5 and 7 added twelve tools; the fork's 62 is
-unchanged.)*
-
-**If v0.3.0 needs to start sooner, defer Phase 6, not 5 or 7.** Phase 6 is
-"Stock-Only Gains" — value-add with no parity requirement behind it. Phases 5 and
-7 are what make the stock backend usable at all. This holds independently of
-regenerator2000.
-**Defined:** 2026-08-17 from `/gsd-explore`.
-**Grounding:** `.planning/notes/regenerator2000-integration.md` (decisions
-D-R1..D-R4, overlap map, source-confirmed upstream blockers).
-**Requirements:** `R2000-01`..`R2000-16` in `REQUIREMENTS.md` (proposed block).
+backends. The one apparent cross-dependency is **Phase 11's** symbol round trip
+needing `DERIV-04`, and that is **already satisfied on the fork**:
+`vice_symbols_load` and `vice_symbols_lookup` ship there today. `DERIV-04`
+(v0.2.0 Phase 5, complete) is what extends the round trip to *stock*. So this
+milestone could have run against the fork backend with no v0.2.0 work at all.
 
 ## Overview
 
@@ -112,46 +101,93 @@ annotation store** (labels, comments, enums, block types, scopes, undo/redo), a
 **recursive-descent disassembler with an auto-analyzer** and export to four
 assemblers, and a **sandboxed binary unpacker** covering the common C64 packers.
 
-It is adopted as a **static-analysis backend only**. It is never given
-`--vice` — our broker keeps sole ownership of stock VICE's binary monitor,
-because that monitor serves exactly one client and a second connection is
-indistinguishable from a wedge. Everything uniquely ours (broker, pool, warm
-floor, crash supervision, container path translation, incident capture, wedge
-triage, live-RAM disassembly) is untouched.
+It is adopted as a **static-analysis backend only**. It is never given `--vice` —
+our broker keeps sole ownership of stock VICE's binary monitor, because that
+monitor serves exactly one client and a second connection is indistinguishable
+from a wedge. Everything uniquely ours (broker, pool, warm floor, crash
+supervision, container path translation, incident capture, wedge triage,
+live-RAM disassembly) is untouched.
 
-The journey runs: prove the four load-bearing assumptions against a real build
-and land the batch-CLI route, which is enough to retire `acme-build`'s
-`toacme` shim (Phase 9) → stand up the container-side MCP server under the
-never-`--vice` guard (Phase 10) → make recon write queryable state and generate
-enums from `memmap.json` (Phase 11) → close the symbol round trip with DERIV-04
-and finish the install and playbook story (Phase 12).
+The journey runs: **answer the five assumptions against a real build and record a
+go/no-go verdict** (Phase 9) → **land the adoption boundaries, the automated
+bootstrap and the one deletion this milestone earns** (Phase 10) → **stand up the
+annotation store, generate enums from `memmap.json`, and close the symbol round
+trip** (Phase 11).
+
+### Why the probe is its own phase
+
+`R2000-16`'s failure mode is *reconsider the milestone*, not *replan the phase*.
+If regenerator2000 cannot be driven without a human, the annotation store is
+unreachable from a skill and the whole thesis is in question. A note inside a
+larger phase makes that gate skippable; a phase boundary makes it structural.
+
+This project learned the same lesson four times during v0.2.0, in escalating
+forms: a test written by the pass that wrote the code proves less than it looks
+like it does, and only the external check — a real assembler, a real emulator, a
+real container, a real broker launch — finds what the internal one cannot. Phase
+8.1 is the cleanest instance: running the one unwitnessed claim **falsified it**,
+exposing a real product defect (`Drive8Type=0`) rather than a documentation gap.
+Phase 9 exists so this milestone starts where that one ended.
+
+### Sequencing: the two integration tiers
+
+From the grounding notes, and it is what determines the Phase 10 / Phase 11 split:
+
+| Tier | Mechanism | Delivers | Risk |
+|---|---|---|---|
+| **Tier 1** — CLI shell-out | `--headless` plus `--export_asm` / `--export_lbl` / `--import_lbl` / `--verify-roundtrip`. No ports, no lifecycle; the same shape as `acme-build` calling `acme`. Requires a `.regen2000proj` to exist. | the `acme-build disasm` removal, the reassembly gate, and `DERIV-04`'s missing symbol producer | **low** |
+| **Tier 2** — MCP server, container-side | `r2000_set_label_name`, `set_comment`, `set_data_type`, `add_scope`, `create_project_enum`, `get_cross_references`, `search_disassembly`, `batch_execute`, `save_project`. One project at a time until `--mcp-port` lands upstream. | the annotation store — why this milestone exists | higher |
+
+**Tier 1 → Phase 10. Tier 2 → Phase 11.** Do the low-risk tier that earns the
+removals first; the annotation store follows.
+
+Note the ordering hazard inside Phase 10: `--verify-roundtrip` implies
+`--headless`, which requires a `.regen2000proj`. The bootstrap (`R2000-09`)
+therefore lands before the reassembly verification (`R2000-06`), not beside it.
 
 ## Standing Constraints
 
-- **`--vice` is never passed.** Guarded in the launch path, not merely
+Apply to every phase of this milestone. They are not repeated as per-phase
+success criteria.
+
+- **`--vice` is never passed.** Guarded in the launch path and tested, not merely
   documented (`R2000-01`). This is the constraint the whole milestone shape
-  follows from.
+  follows from: stock VICE's binary monitor services exactly one client, and a
+  second `connect()` sits unserviced with no reply and no EOF —
+  indistinguishable from a wedge.
 
-- **regenerator2000 runs on the MCP proxy's side of the container boundary.** No
-  `hostpath.ts` / `containerpath.ts` translation is applied to any argument
-  passed to it (`R2000-02`). This is what makes devcontainer use and two
-  simultaneous projects work with no upstream patch — separate network
-  namespaces mean the hardcoded `127.0.0.1:3000` stops colliding. Note the
-  inversion hazard: were it host-side, the project-file argument *would* need
-  host translation, the mirror image of the `DERIV-07` screenshot-path trap.
+- **regenerator2000 runs on the MCP proxy's side of the container boundary**
+  (D-R4). No `hostpath.ts` / `containerpath.ts` translation is applied to any
+  argument passed to it (`R2000-02`). This is what makes devcontainer use and two
+  simultaneous projects work with no upstream patch — separate network namespaces
+  mean the hardcoded `127.0.0.1:3000` stops colliding. Note the inversion
+  hazard: were it host-side, the project-file argument *would* need host
+  translation, the mirror image of the `DERIV-07` screenshot-path trap.
 
-- **Phase 4's disassembler stays.** Its sole non-test consumer is
-  `stock-disassemble.ts` — `vice_disassemble` against live RAM at a checkpoint,
-  which a file-based static tool cannot serve. Phase 5's backtrace also needs
-  the opcode table.
+- **regenerator2000 is a required prerequisite, not an optional accelerator**
+  (D-R2). Optional-with-detection was rejected: it forbids any removal, since
+  every skill would need a working fallback, and it adds a third axis of
+  conditionality on top of stock-vs-fork.
+
+- **Phase 4's disassembler stays.** Verified, not assumed: its sole non-test
+  consumer is `stock-disassemble.ts` — `vice_disassemble` against live RAM at a
+  checkpoint, which a file-based static tool cannot serve. The backtrace also
+  needs the opcode table for stack walking. All ~61KB of source and ~55KB of
+  tests are load-bearing.
 
 - **Phase 5 does not shrink.** regenerator2000's sprite/bitmap/charset views are
   TUI-only and not MCP-exposed, so the agent-readable ASCII rendering is still
-  required.
+  required. The overlap is in capability only.
 
 - **The emulator depack route stays.** regenerator2000's unpacker becomes the
-  fast path for the packers it recognises; the emulator handles custom loaders
-  and disk-based loads its sandbox cannot.
+  fast path for the packers it recognises; the emulator handles the custom
+  loaders and disk-based loads its sandbox cannot. `c64-ram-capture` becomes the
+  *bridge*, not a casualty.
+
+- **Prefer `.vsf` over `.raw` for anything leaving the emulator.** VICE snapshots
+  are parsed natively and carry memory, machine type and start address;
+  `.bin`/`.raw` loads at origin `$0000` (`file_io.rs:125-127`) with no `--origin`
+  flag to override it.
 
 ## Known upstream limits (not this milestone's work)
 
@@ -171,91 +207,144 @@ point all come from the file — and are over-restricted by a blunt extension
 check. The route through it is a **bootstrap under a pty**: `--mcp-server <raw
 binary>` loads and auto-analyses (`auto_analyze` is checked in the load path at
 `file_io.rs:391`, no keypress), then `r2000_save_project` writes the project
-file, after which every headless route unlocks. No human decisions are required.
-Whether the TUI tolerates a pty with no real TTY is `R2000-16`(a) and gates
-Phase 9.
+file, after which every headless route unlocks. No human *decisions* are
+required — only a pty, once per binary.
+
+Whether the TUI tolerates a pty with no real TTY (`enable_raw_mode` plus a
+`crossterm::event::read()` input thread) is **`R2000-16`(1), and it is Phase 9's
+gate for the whole milestone.**
 
 Consequences carried, not solved: r2000-assisted two-release diffing in
 `c64-provenance-diff` is blocked by the first limit, and is documented for the
-user (`R2000-04`) rather than worked around. Synthesizing a `.regen2000proj`
-ourselves was considered and rejected — it depends on an undocumented serde
-format, and the pty bootstrap makes it unnecessary.
+user (`R2000-03`'s install documentation, per the `R2000-04` fold) rather than
+worked around. Synthesizing a `.regen2000proj` ourselves was considered and
+rejected — it depends on an undocumented serde format, and the pty bootstrap
+makes it unnecessary.
 
-## Phases
+Also carried: the install story regresses on its own axis. No upstream release
+assets exist, so install is `cargo install regenerator2000` — a Rust toolchain.
+Accepted when D-R2 was reaffirmed; mitigation is to watch for prebuilt binaries,
+since the project was created 2025-12-20.
 
-Two phases, not four. Collapsed 2026-08-17 by the same test applied to v0.2.0:
-**does a skill need it, or does something a skill needs depend on it?**
+## Phase Details
 
-- [ ] **Phase 9: Probe, Bootstrap, and the Removal** - Answer the five load-bearing assumptions against a real build, automate project creation, and retire `acme-build`'s `toacme` shim
-- [ ] **Phase 10: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
+### Phase 9: The Assumption Probe (Go/No-Go)
 
-### Phase 9: Probe, Bootstrap, and the Removal
-
-**Goal**: The bet is de-risked, project creation needs no human, and the one thing regenerator2000 makes obsolete is gone
-**Depends on**: nothing — **may run now, ahead of v0.2.0 Phases 5-8** (see the dependency note above)
-**Requirements**: R2000-16, R2000-01, R2000-02, R2000-03, R2000-05, R2000-06, R2000-09
+**Goal**: The five load-bearing assumptions are answered against a real regenerator2000 build, and a recorded verdict says whether v0.3.0 proceeds as scoped, degrades, or should be reconsidered
+**Depends on**: Nothing — no v0.2.0 dependency, and it runs against either backend
+**Requirements**: R2000-16
 **Success Criteria** (what must be TRUE):
 
-  1. All five assumptions in `R2000-16` are answered against a real build and recorded in the repo, with any failure recorded as an accepted limit stating what it breaks.
-  2. A raw `.prg` or a `.vsf` snapshot becomes a `.regen2000proj` **without a human** — HTTP MCP mode under a pty, auto-analysis on load, then `r2000_save_project`. If `R2000-16`(a) fails, this degrades to a documented one-time interactive step and every affected playbook says so.
-  3. The launch path **refuses** to pass `--vice`, enforced in code and tested, and no argument passed to regenerator2000 is host-translated.
-  4. `acme-build`'s `disasm` verb and its `## Disassembly` section are gone, the `toacme` prerequisite is dropped, and a replacement route producing source that **reassembles** — verified by running the assembler — is documented in its place.
-  5. The install documentation names regenerator2000 as a prerequisite, states the toolchain cost plainly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
+  1. A real regenerator2000 build is present and identified in this environment, with its version recorded and the container-side toolchain cost — build time and image-size delta — **measured rather than estimated** (`R2000-16`(5)).
+  2. The pty question is answered by *running* it: `--mcp-server <raw binary>` under `script`/`tmux` with no real TTY is observed either to serve MCP requests or to refuse, and whether `r2000_save_project` then produces a `.regen2000proj` that a subsequent `--headless` invocation loads is recorded with its transcript (`R2000-16`(1)).
+  3. The three downstream assumptions are each answered against real artifacts, not source reading: `--export_asm --assembler acme` output reassembles under this project's `!cpu 6510` expectations (preferring their own `--verify-roundtrip` over building a gate); an unmodified `--export_lbl` file is handed to `vice_symbols_load` and either consumed as-is or not; and a `.vsf` written by `vice_snapshot_save` loads carrying the expected machine type and start address (`R2000-16`(2)(3)(4)).
+  4. Every answer is recorded in the repo as evidence a later session can re-read, and every failure is recorded as an **accepted limit naming what it breaks** — no assumption is left standing on inference.
+  5. A **go/no-go verdict is recorded** naming which of three routes the milestone takes: **proceed** as scoped; **degrade** — bootstrap becomes a documented one-time interactive step, every affected playbook says so, and Phase 10/11 scope is amended accordingly; or **reconsider** the milestone, because a regenerator2000 that cannot be driven without a human puts the annotation store out of a skill's reach and with it this milestone's thesis.
 
 **Plans**: TBD
 
 Notes:
 
-- **Criterion 1 gates everything, including whether Phase 10 is worth starting.** Run it first, alone, and read the result before planning further. If regenerator2000 cannot be driven without a human, the annotation store is not reachable from a skill and the milestone should be reconsidered rather than replanned.
-- **Run this phase before v0.2.0 Phase 8.** It has no v0.2.0 dependency, and knowing its answers lets Phase 8 write the install story once — already naming regenerator2000 — instead of writing it and then rewriting it here. That is the only genuine rework between the two milestones.
-- Criterion 3's "no host translation" is a deliberate *absence*, the mirror image of `DERIV-07` where translation was wrongly applied. Assert it in a test so nobody adds it later.
-- Criterion 4 is the entire deletion this milestone earns: a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`) plus ~50 lines of `SKILL.md` caveats that exist only because `toacme` does a flat linear decode. Prefer regenerator2000's own `--verify-roundtrip` over building a reassembly gate — note it implies `--headless`, so criterion 2 comes first.
-- Prefer `.vsf` over `.raw` for anything out of the emulator: snapshots carry memory, machine type and start address, while `.raw` loads at origin `$0000` with no CLI override.
+- **This phase is the gate, and its verdict is an artifact, not a judgement held in a head.** Criterion 5 is what makes the gate structural rather than skippable. Read it before planning Phase 10.
+- Criterion 2 is the sharpest item and is ordered first among the five for that reason — it decides whether `R2000-09` is automatable at all, and therefore whether Phase 10 delivers a bootstrap or a documented manual step.
+- Do not write Phase 10 or Phase 11 plans before this phase closes. `R2000-16`'s own wording is "before any further plan is written".
+- Nothing here builds product. If the probe wants throwaway scripts, they are evidence, not deliverables.
 
-### Phase 10: Annotation Store, Enums, and the Symbol Round Trip
+### Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal
 
-**Goal**: Recon findings become state a later session can query, register writes read as names, and names flow both ways between the store and the running machine
-**Depends on**: Phase 9, and v0.2.0 Phase 5 for `DERIV-04` on the stock backend
+**Goal**: regenerator2000 is a guarded, declared, container-side prerequisite that turns a raw binary into an analysed project without a human — and the one thing it makes obsolete is gone
+**Depends on**: Phase 9 — its recorded go/no-go verdict shapes criterion 3
+**Requirements**: R2000-01, R2000-02, R2000-03, R2000-09, R2000-05, R2000-06
+**Success Criteria** (what must be TRUE):
+
+  1. The launch path **refuses** to pass `--vice`, enforced in code and pinned by a test that fails if the flag is reintroduced — the broker keeps sole ownership of the binary-monitor socket.
+  2. **No** argument passed to regenerator2000 is host-translated. The absence is asserted in a test so nobody adds translation later, and it is the mirror image of `DERIV-07`, where translation was wrongly applied. A devcontainer run works with no upstream patch.
+  3. A `.prg` or a `.vsf` becomes a `.regen2000proj` **without a human** — or, if Phase 9's verdict was *degrade*, it is a documented one-time interactive step that every affected playbook names at its point of use. Either way the state is honest at the surface a user reads.
+  4. `acme-build`'s `disasm` verb, its `## Disassembly` caveat section, and its `toacme`-on-PATH prerequisite are gone, replaced by a regenerator2000 route whose output is proven reassemblable **by running a real assembler**, not asserted.
+  5. The install documentation names regenerator2000 as a required prerequisite alongside VICE, states the `cargo install` toolchain cost and the one-project-per-namespace limit plainly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is Tier 1 — CLI shell-out.** No ports, no lifecycle, the same shape as `acme-build` calling `acme`. Low risk, and it is what earns the removal.
+- Criterion 3 before criterion 4: `--verify-roundtrip` implies `--headless`, which requires the project file to already exist.
+- Criterion 4 is the entire deletion this milestone earns — a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`) plus ~50 lines of `SKILL.md` caveats that exist *only* because `toacme` does a flat linear decode: strings and tables rendered as instructions, out-of-range labels needing hand definitions, illegal-opcode lines needing re-indentation, and the `.dis.a` → `.dis.asm` Read-tool workaround. All of them disappear against a recursive-descent disassembler with an auto-analyzer.
+- Criterion 5's install-story work is the one place this milestone re-touches v0.2.0 Phase 8's output. Expect to edit, not to rewrite.
+- The two-project limit is *documented* here (the `R2000-04` fold), not detected and reported. Building detection for an upstream port collision is work in the wrong place.
+
+### Phase 11: Annotation Store, Enums, and the Symbol Round Trip
+
+**Goal**: Recon findings become state a later session can query, register writes read as names, and symbols flow both ways between the store and the running machine
+**Depends on**: Phase 10; plus one backward dependency on v0.2.0 Phase 5's `DERIV-04` (see note below)
 **Requirements**: R2000-10, R2000-11, R2000-13, R2000-14, R2000-15
 **Success Criteria** (what must be TRUE):
 
-  1. `c64-program-recon` writes labels, comments, block types and scopes into the annotation store, and a later session queries that store instead of re-deriving the findings from Markdown.
-  2. A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program.
-  3. Enums generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA writes with semantic names — `lda #$1b / sta $d011` reads as named bits.
-  4. Symbols annotated in regenerator2000 resolve live addresses through `vice_symbols_load`, and names discovered against the running machine flow back into the store — a round trip, not a one-way dump.
+  1. `c64-program-recon` writes labels, comments, block types and scopes into the annotation store, and a **later session answers a question by querying that store** instead of re-deriving the findings from Markdown prose.
+  2. A user can ask which addresses reference a given address, and can search labels, comments and instructions across an analysed program.
+  3. Enums generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA writes with semantic names — `lda #$1b / sta $d011` reads as named bits — and the generation is re-runnable from `memmap.json` rather than a one-off hand edit.
+  4. A symbol annotated in regenerator2000 resolves a live address through `vice_symbols_load`, and a name discovered against the running machine flows **back** into the store via `--import_lbl` — demonstrated as one closed loop on one real program, not as two independent one-way dumps.
 
 **Plans**: TBD
 
 Notes:
 
-- Criterion 1 is why this milestone exists. Today `templates/memory-map.template.md` produces prose that nothing can query, diff, or undo.
-- Criterion 3 is the most distinctive thing available here — **neither project can do it alone.** `memmap.json` holds the bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`.
-- Criterion 4 works on the **fork backend today** — `vice_symbols_load` and `vice_symbols_lookup` already ship there. `DERIV-04` (v0.2.0 Phase 5) is what extends it to stock, which is why this phase depends on Phase 5 but this milestone as a whole does not depend on v0.2.0.
-- `--export_lbl` / `--import_lbl` are **VICE label files** on both sides. No glue format to invent; if Phase 9's criterion 1(c) found a mismatch, resolve it here.
+- **The one backward dependency in this milestone.** `DERIV-04` (v0.2.0 Phase 5, complete) is what extends the symbol round trip to the *stock* backend. It **already works on the fork today** — `vice_symbols_load` and `vice_symbols_lookup` ship there — so this phase depends on Phase 5 while the **milestone as a whole does not depend on v0.2.0**.
+- **This is Tier 2 — the container-side MCP server.** Higher risk than Phase 10, and it is why this milestone exists.
+- Criterion 1 is the prize. Today `templates/memory-map.template.md` produces prose that nothing can query, diff, or undo.
+- Criterion 3 is the most distinctive thing available here — **neither project can do it alone.** `memmap.json` holds the per-bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`.
+- Criterion 4 closes the loop `DERIV-04` opened: it had no producer, because something must *write* those symbols. `--export_lbl` / `--import_lbl` are **VICE label files** on both sides, so there is no glue format to invent. If Phase 9's criterion 3 found a format mismatch, it is resolved here.
+- One project at a time, until `--mcp-port` lands upstream. Plan around it rather than working around it.
 
 ## Cut from v0.3.0 scope (2026-08-17)
 
+Still valid. Four of the sixteen `R2000-*` requirements were folded or cut, and
+one proposed phase was dissolved into a task.
+
 | Cut | Requirements | Why |
 |---|---|---|
-| Separate MCP-server-standup phase | (was Phase 10) | Wiring is a task inside Phase 9's criterion 3, not a phase. Nothing else was in it once the two-project limit became a documentation line. |
+| Separate MCP-server-standup phase | (was a phase of its own) | Wiring is a task inside the adoption phase, not a phase. Nothing else was in it once the two-project limit became a documentation line. |
 | HTML export with clickable xrefs | `R2000-07` | A shareable artifact no skill produces or consumes. Genuinely nice; not why we are here. Available ad-hoc via `--export_html` regardless. |
-| Two-project limit as a reported error | `R2000-04` | Folded into Phase 9's install documentation as a stated limitation. Building detection-and-reporting for an upstream port collision is work in the wrong place. |
-| Static-vs-live tool-selection axis | `R2000-12` | Folded into v0.2.0's `SKILL-01`, which is already rewriting the same playbooks for backend routing. One pass over `c64-program-recon`, not two. |
-| `.vsf`/`.raw` bridge as its own requirement | `R2000-08` | Reduced to a note on Phase 9 criterion 2 — it is which file extension you hand over, not a deliverable. |
+| Two-project limit as a reported error | `R2000-04` | Folded into Phase 10's install documentation as a stated limitation. Building detection-and-reporting for an upstream port collision is work in the wrong place. |
+| Static-vs-live tool-selection axis | `R2000-12` | Folded into v0.2.0's `SKILL-01`, which already rewrote the same playbooks for backend routing. One pass over `c64-program-recon`, not two. |
+| `.vsf`/`.raw` bridge as its own requirement | `R2000-08` | Reduced to a note on Phase 10 criterion 3 — it is which file extension you hand over, not a deliverable. Prefer `.vsf`: it carries memory, machine type and start address. |
 
-**Net effect:** 4 phases → 2, and 16 requirements → 12 (with 4 folded rather than
-abandoned). Phases 11 and 12's numbers are not reused.
+**Net effect:** 16 requirements → 12, with 4 folded rather than abandoned. The
+original four-phase shape collapsed to two on 2026-08-17, then re-split to three
+on 2026-08-19 when `R2000-16` was promoted from a criterion inside Phase 9 to a
+standalone go/no-go phase. The dissolved phase numbers are not reused.
+
+## Coverage
+
+All **12** in-scope requirements map to exactly one phase. No orphans, no
+duplicates.
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 9. The Assumption Probe (Go/No-Go) | R2000-16 | 1 |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | R2000-01, R2000-02, R2000-03, R2000-09, R2000-05, R2000-06 | 6 |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | R2000-10, R2000-11, R2000-13, R2000-14, R2000-15 | 5 |
+| **Total** | | **12 / 12** |
+
+Not counted: `R2000-04`, `-07`, `-08`, `-12` — cut or folded 2026-08-17, see
+above.
 
 ## Progress
 
-**Execution Order:** 9 → 10. Phase 9's criterion 1 may run **now**, ahead of
-v0.2.0 Phases 5-8.
+**Execution Order:** 9 → 10 → 11. Phase 9 is a **go/no-go gate**: its recorded
+verdict decides whether 10 and 11 proceed as scoped, degrade, or are
+reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. Probe, Bootstrap, and the Removal | 0/TBD | Not started | - |
-| 10. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
+| 9. The Assumption Probe (Go/No-Go) | 0/TBD | Not started | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/TBD | Not started | - |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
-*v0.3.0 appended 2026-08-17 as a proposed milestone from `/gsd-explore` — not opened*
+*v0.3.0 appended 2026-08-17 as a proposed milestone from `/gsd-explore`*
+*v0.3.0 opened 2026-08-19 as three phases (9, 10, 11), numbering continued from
+v0.2.0. `R2000-16` split out of Phase 9's body into a standalone go/no-go phase:
+its failure mode is reconsider-the-milestone, not replan-the-phase, and a phase
+boundary makes that gate structural rather than skippable.*

@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: planning
-last_updated: "2026-08-19T21:23:09.211Z"
+last_updated: "2026-08-19T21:28:58.384Z"
 last_activity: 2026-08-19
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -25,16 +25,21 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Planning next milestone — v0.3.0 regenerator2000
-static-analysis backend (proposed, not opened). Also open and arguably first:
-publishing v0.2.0, which is 386 commits ahead of `origin/main` at tag `v0.1.10`.
+**Current focus:** v0.3.0 regenerator2000 static-analysis backend is **open**.
+ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
+1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
+Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
+against a real regenerator2000 build, whose recorded verdict decides whether the
+milestone proceeds as scoped, degrades, or is reconsidered. No Phase 10/11 plan is
+written before it closes. Also open and arguably first: publishing v0.2.0, which
+is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — v0.3.0 roadmap complete, Phases 9-11 defined
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-19 — Milestone v0.3.0 started
+Status: planning
+Last activity: 2026-08-19
 
 ## Performance Metrics
 
@@ -78,6 +83,14 @@ Last activity: 2026-08-19 — Milestone v0.3.0 started
 
 - Phase 08.1 inserted after Phase 8: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift (URGENT)
 - Phase 8.2 inserted after Phase 8.1: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run (URGENT)
+- v0.3.0 opened as Phases 9-11, continuing v0.2.0's numbering rather than resetting to 1.
+- v0.3.0 re-split from two phases to three: `R2000-16`'s assumption probe was
+  promoted out of Phase 9's body into a standalone go/no-go phase. Its failure mode
+  is *reconsider the milestone*, not *replan the phase* — if regenerator2000 cannot
+  be driven without a human, the annotation store is unreachable from a skill and
+  the thesis is in question. A note inside a larger phase makes that gate skippable;
+  a phase boundary makes it structural. Precedent: v0.2.0 Phase 8.1, where running
+  the one unwitnessed claim falsified it.
 
 ### Decisions
 

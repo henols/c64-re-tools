@@ -146,3 +146,19 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 
 | Requirement | Phase |
 |-------------|-------|
+| R2000-16 | Phase 9 |
+| R2000-01 | Phase 10 |
+| R2000-02 | Phase 10 |
+| R2000-03 | Phase 10 |
+| R2000-09 | Phase 10 |
+| R2000-05 | Phase 10 |
+| R2000-06 | Phase 10 |
+| R2000-10 | Phase 11 |
+| R2000-11 | Phase 11 |
+| R2000-13 | Phase 11 |
+| R2000-14 | Phase 11 |
+| R2000-15 | Phase 11 |
+
+**12 / 12 mapped.** Not in this table: `R2000-04`, `-07`, `-08`, `-12` — cut or
+folded 2026-08-17, rationale in Out of Scope above and in ROADMAP.md's
+"Cut from v0.3.0 scope".
