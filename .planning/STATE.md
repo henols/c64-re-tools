@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: executing
-last_updated: "2026-08-19T13:23:20.621Z"
-last_activity: 2026-08-19 -- Phase 08.2 execution started
+status: milestone_complete
+last_updated: 2026-08-19T17:04:16.714Z
+last_activity: 2026-08-19 -- Phase 08.2 complete (6/6 plans, re-verified 7/7, milestone v0.2.0 phases done)
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 87
-  completed_plans: 81
-  percent: 80
+  completed_plans: 87
+  percent: 90
+stopped_at: Milestone complete (Phase 08.2 was final phase)
 ---
 
 # Project State
@@ -22,15 +23,15 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 08.2 — close-v0-2-0-blockers-drive-config-test-gate-walkthrough
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — EXECUTING
-Plan: 1 of 6
-Next: /gsd-execute-phase 8.2
-Status: Executing Phase 08.2
-Last activity: 2026-08-19 -- Phase 08.2 execution started
+Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — COMPLETE
+Plan: 6 of 6 executed
+Next: v0.2.0 milestone close-out — /gsd-audit-milestone or /gsd-complete-milestone (do NOT re-run /gsd-execute-phase 8.2; it is done)
+Status: Milestone complete — all v0.2.0 phases closed
+Last activity: 2026-08-19 -- Phase 08.2 complete (6/6 plans, re-verified 7/7)
 Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
 single human_verification item live-proven. Phase 8.1 closed the audit's one
 unwitnessed claim and its seven stale documents -- and running that claim is what
@@ -56,31 +57,42 @@ CUT-marked requirements and 4 cut halves.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
-*(Phase-based, matching frontmatter `percent`: 8 of 10 phases complete — the
-denominator moved from 9 to 10 on 2026-08-19 when Phase 8.2 was inserted after audit
-round 2 returned `gaps_found`, so the same 8 completed phases now read 80% rather than
-89%. Do not "restore" the 89%: it was correct only while 8.1 was the last phase. The
-earlier drift this note was written for is still worth knowing about --
-this line had once drifted to 99% via an SDK `state.update-progress` call that computes a
-different, real-time plan-file ratio (80 or 81 of 81 plans) with no phase-completion
-cap, unlike this file's own frontmatter recompute (`buildStateFrontmatter`, disk
--ground-truth, phase-fraction-capped), which every `state.*` mutation triggers
-automatically. Both ratios are individually valid measurements of different things;
-only the phase-based one belongs on this line, labelled here so the two are never
-conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1 and its "Correction" note
-for the 89%-vs-78% episode within Phase 8.1: 78% was this file's truth at that
-plan's Task 2 start (7 of 9 phases, Phase 8.1 still in flight) and 89% its truth once
-8.1's plans were all on disk. Both were correct for their moment, and so is 80% for
-this one. The standing rule is the point: this line is phase-based, it is whatever
-the frontmatter `percent` says, and it changes whenever the phase count does.)*
+*(Phase-based, matching frontmatter `percent`: 9 of 10 phases complete.
+
+**Why 90% and not 100%, next to `status: milestone_complete`.** The v0.2.0 phase list holds
+10 entries: 9 complete `[x]`, plus Phase 6, which was **cut** wholesale on 2026-08-17 (`[~]`)
+and will never complete. 90% is therefore the TERMINAL figure for this milestone — the two
+values are consistent, not contradictory. Phases 9 and 10 in ROADMAP.md belong to the NEXT
+milestone (regenerator2000 / `R2000-*`) and are excluded from this denominator.
+
+**Never pin this number.** `phase.complete` and every `state.*` mutation recompute it from
+disk via `buildStateFrontmatter` (disk-ground-truth, phase-fraction-capped). Assert
+body-equals-frontmatter self-consistency instead of a literal. Phase 8.1 learned this twice
+the hard way, once mid-execution.
+
+**Two different ratios exist; do not conflate them.** This line is phase-based. An SDK
+`state.update-progress` call computes a *different*, real-time plan-file ratio (which once
+drifted this line to 99% — 80 or 81 of 81 plans) with no phase-completion cap. Both are
+individually valid measurements of different things; only the phase-based one belongs on
+this line, labelled here so the two are never confused again.
+
+**Historical record, all correct for their moment.** See `08.1-CONSISTENCY-READ.md`
+RESIDUAL-1 and its "Correction" note for the 89%-vs-78% episode inside Phase 8.1: 78% was
+this file's truth at that plan's Task 2 start (7 of 9 phases, 8.1 still in flight), and 89%
+its truth once 8.1's plans were all on disk. Then 8.2 was inserted, making it 80% with 8.2
+in flight — and now 90% with 8.2 complete. Every one of those was accurate when written.
+Do not "restore" any earlier figure.
+
+The standing rule is the point: this line is phase-based, it is whatever the frontmatter
+`percent` says, and it changes whenever the phase count does.)*
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 81
+- Total plans completed: 87
 - Average duration: —
 - Total execution time: —
 
@@ -96,6 +108,7 @@ the frontmatter `percent` says, and it changes whenever the phase count does.)*
 | 07 | 18 | - | - |
 | 08 | 6 | - | - |
 | 08.1 | 5 | - | - |
+| 08.2 | 6 | - | - |
 
 **Recent Trend:**
 
