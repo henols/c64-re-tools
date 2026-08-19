@@ -21,6 +21,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import type { ChildProcess } from "node:child_process";
 
 import { build } from "./build.ts";
@@ -28,6 +30,7 @@ import type { BrokerState, InstanceRecord } from "./broker-state.mts";
 import type { HandleAcquireDeps } from "./vice-broker.mts";
 import type { AcquireOutcome } from "./broker-control.mts";
 import type { KillStage } from "./broker-kill.mts";
+import type { ViceBackend } from "./backend-detect.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.url).href;
@@ -35,6 +38,12 @@ const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.u
 interface BrokerModule {
   handleAcquire: (requestId: string, stateDir: string, state: BrokerState, deps?: HandleAcquireDeps) => Promise<AcquireOutcome>;
   handleRelease: (requestId: string, state: BrokerState) => void;
+  /** Test-only escape hatch (see vice-broker.mts's own doc comment on this
+   * export) -- drives the warm-floor arm's REAL makeLoggingSpawn()+
+   * stashingSpawn+withCrashSupervision() composition with no injected spawn
+   * override, the only way Task 3's warm-floor case can prove that arm's
+   * own independent dropper is fixed rather than merely typed. */
+  _maintainWarmFloorForRealBroker: (stateDir: string, state: BrokerState, backend: ViceBackend) => Promise<void>;
 }
 
 /** Rebuilds resources/ from the current TypeScript source, then imports the
@@ -85,6 +94,215 @@ function stubColdSpawnFactory(spawnCalls: number[]): (port: number) => (command:
 function alwaysReadyProbe(): (port: number) => Promise<boolean> {
   return () => Promise.resolve(true);
 }
+
+// ---------------------------------------------------------------------------
+// I-1 composition proof (08.2-06-PLAN.md, Task 3). The tests below are the
+// non-bypassable proof this plan exists for: they call handleAcquire() /
+// _maintainWarmFloorForRealBroker() with buildColdSpawnFactory (or any
+// spawn override) OMITTED, so the REAL makeLoggingSpawn()+
+// withCrashSupervision() composition in vice-broker.mts runs end to end,
+// all the way down to a real nodeSpawn() call. A test that injects a spawn
+// stub here proves nothing -- the defect this plan closes is precisely
+// that the composition BETWEEN the stub seam and nodeSpawn silently drops
+// its third argument, and every OTHER test in this file (correctly)
+// injects a stub below that exact composition.
+//
+// Never fetched, never installed: the throwaway recorder script below is
+// written by the test itself into its own mkdtempSync scratch dir and run
+// via its own shebang -- no dependency is added (T-08.2-SC).
+// ---------------------------------------------------------------------------
+
+/** Writes a tiny throwaway Node script that records
+ * `process.env.XDG_CONFIG_HOME ?? "<unset>"` to the path named by
+ * `process.env.VICE_BROKER_TEST_RECORD_FILE`, then blocks forever (a real
+ * timer keeps the event loop alive) rather than exiting on its own. This
+ * is deliberate: withCrashSupervision()'s exit listener treats ANY exit
+ * that isn't marked `deliberateKill` as a crash needing a real-backoff
+ * respawn, and a script that exited naturally the instant it recorded its
+ * env would trigger exactly that spiral mid-test. `killTestInstance()`
+ * below marks the instance `deliberateKill` before ending it, so the real
+ * composition's own exit handler takes the inert "deliberate teardown"
+ * branch instead. */
+function writeRecorderScript(): { scriptPath: string; scriptDir: string } {
+  const scriptDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-recorder-"));
+  const scriptPath = join(scriptDir, "recorder.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "#!/usr/bin/env node",
+      'import { writeFileSync } from "node:fs";',
+      'writeFileSync(process.env.VICE_BROKER_TEST_RECORD_FILE, process.env.XDG_CONFIG_HOME ?? "<unset>");',
+      "setInterval(() => {}, 60000);",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(scriptPath, 0o700);
+  return { scriptPath, scriptDir };
+}
+
+async function waitForFile(path: string, timeoutMs = 5000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (existsSync(path)) {
+      return readFileSync(path, "utf8");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${path} to be written`);
+}
+
+/** Marks the instance `deliberateKill` (matching broker-kill.mts's own
+ * teardown discipline) BEFORE signalling it, so the real
+ * withCrashSupervision() exit listener this test's own composition
+ * installs takes the inert "deliberate teardown" branch -- never the
+ * crash-count/backoff/respawn path a plain, unmarked SIGKILL would
+ * trigger. */
+function killTestInstance(state: BrokerState, port: number): void {
+  const record = state.instances.get(port);
+  if (!record || record.pid == null) return;
+  record.deliberateKill = true;
+  try {
+    process.kill(record.pid, "SIGKILL");
+  } catch {
+    // Already exited -- nothing left to signal.
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision composition, buildColdSpawnFactory OMITTED): a stock launch's real nodeSpawn call gets a fresh scratch XDG_CONFIG_HOME, and a fork launch gets none (BACK-02)", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-state-"));
+  const savedViceBin = process.env.VICE_BIN;
+  const savedRecordFile = process.env.VICE_BROKER_TEST_RECORD_FILE;
+  const savedAmbientXdg = process.env.XDG_CONFIG_HOME;
+  const scratchDirs: string[] = [stateDir];
+
+  try {
+    delete process.env.XDG_CONFIG_HOME;
+
+    // --- stock case: the real composition must thread a scratch dir through ---
+    const stockState = createState();
+    const stockScript = writeRecorderScript();
+    scratchDirs.push(stockScript.scriptDir);
+    const stockOutDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-out-"));
+    scratchDirs.push(stockOutDir);
+    const stockOutFile = join(stockOutDir, "stock.txt");
+    process.env.VICE_BIN = stockScript.scriptPath;
+    process.env.VICE_BROKER_TEST_RECORD_FILE = stockOutFile;
+
+    const stockOutcome = await handleAcquire("i1-stock", stateDir, stockState, { backend: "stock" });
+    assert.equal(stockOutcome.ok, true, `expected a successful grant, got ${JSON.stringify(stockOutcome)}`);
+    if (!stockOutcome.ok) return;
+    const stockRecord = stockState.instances.get(stockOutcome.grant.port);
+    assert.ok(stockRecord, "the cold-launched stock record must be present in state");
+    assert.ok(stockRecord!.pid, "the real spawn must have produced a pid");
+
+    const stockRecorded = await waitForFile(stockOutFile);
+    assert.notEqual(stockRecorded, "<unset>", "a stock launch must set XDG_CONFIG_HOME, not leave it unset");
+    assert.ok(stockRecorded.length > 0, "the recorded XDG_CONFIG_HOME must be a non-empty string");
+    assert.notEqual(stockRecorded, savedAmbientXdg, "the scratch dir must not equal the ambient XDG_CONFIG_HOME");
+    assert.ok(stockRecorded.startsWith(tmpdir()), `the scratch dir must live under os.tmpdir(), got ${stockRecorded}`);
+
+    const stockLogsDir = join(stateDir, String(stockOutcome.grant.port), "logs");
+    assert.ok(existsSync(stockLogsDir) && readdirSync(stockLogsDir).length > 0, "the per-instance log file must exist under logs/ -- proves the stdio-wins merge order");
+
+    killTestInstance(stockState, stockOutcome.grant.port);
+    await waitForProcessExit(stockRecord!.pid!);
+
+    // --- fork case (BACK-02 standing gate): the fork path receives no
+    // options object at all, so the recorded value must stay unset ---
+    const forkState = createState();
+    const forkScript = writeRecorderScript();
+    scratchDirs.push(forkScript.scriptDir);
+    const forkOutDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-out-"));
+    scratchDirs.push(forkOutDir);
+    const forkOutFile = join(forkOutDir, "fork.txt");
+    process.env.VICE_BIN = forkScript.scriptPath;
+    process.env.VICE_BROKER_TEST_RECORD_FILE = forkOutFile;
+
+    const forkOutcome = await handleAcquire("i1-fork", stateDir, forkState, { backend: "fork" });
+    assert.equal(forkOutcome.ok, true, `expected a successful grant, got ${JSON.stringify(forkOutcome)}`);
+    if (!forkOutcome.ok) return;
+    const forkRecord = forkState.instances.get(forkOutcome.grant.port);
+    assert.ok(forkRecord, "the cold-launched fork record must be present in state");
+
+    const forkRecorded = await waitForFile(forkOutFile);
+    assert.equal(forkRecorded, "<unset>", "the fork path must receive no options object -- XDG_CONFIG_HOME must stay unset");
+
+    killTestInstance(forkState, forkOutcome.grant.port);
+    if (forkRecord!.pid) await waitForProcessExit(forkRecord!.pid);
+  } finally {
+    if (savedViceBin === undefined) delete process.env.VICE_BIN;
+    else process.env.VICE_BIN = savedViceBin;
+    if (savedRecordFile === undefined) delete process.env.VICE_BROKER_TEST_RECORD_FILE;
+    else process.env.VICE_BROKER_TEST_RECORD_FILE = savedRecordFile;
+    if (savedAmbientXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = savedAmbientXdg;
+    for (const dir of scratchDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("maintainWarmFloor spare launch (real makeLoggingSpawn + withCrashSupervision composition via _maintainWarmFloorForRealBroker, no injected spawn override): a warm-floor stock launch's real nodeSpawn call also gets a fresh scratch XDG_CONFIG_HOME", async () => {
+  const { _maintainWarmFloorForRealBroker } = await loadBrokerModule();
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-warm-state-"));
+  const savedViceBin = process.env.VICE_BIN;
+  const savedRecordFile = process.env.VICE_BROKER_TEST_RECORD_FILE;
+  const savedAmbientXdg = process.env.XDG_CONFIG_HOME;
+  const scratchDirs: string[] = [stateDir];
+
+  try {
+    const script = writeRecorderScript();
+    scratchDirs.push(script.scriptDir);
+    const outDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-warm-out-"));
+    scratchDirs.push(outDir);
+    const outFile = join(outDir, "warm.txt");
+    process.env.VICE_BIN = script.scriptPath;
+    process.env.VICE_BROKER_TEST_RECORD_FILE = outFile;
+
+    const state = createState();
+    await _maintainWarmFloorForRealBroker(stateDir, state, "stock");
+
+    const records = Array.from(state.instances.values());
+    assert.equal(records.length, 1, "exactly one warm-floor spare instance must have launched toward the warm floor");
+    const record = records[0]!;
+    assert.ok(record.pid, "the real spawn must have produced a pid");
+
+    const recorded = await waitForFile(outFile);
+    assert.notEqual(recorded, "<unset>", "a warm-floor stock launch must set XDG_CONFIG_HOME, not leave it unset");
+    assert.ok(recorded.length > 0, "the recorded XDG_CONFIG_HOME must be a non-empty string");
+    assert.notEqual(recorded, savedAmbientXdg, "the scratch dir must not equal the ambient XDG_CONFIG_HOME");
+    assert.ok(recorded.startsWith(tmpdir()), `the scratch dir must live under os.tmpdir(), got ${recorded}`);
+
+    const logsDir = join(stateDir, String(record.port), "logs");
+    assert.ok(existsSync(logsDir) && readdirSync(logsDir).length > 0, "the warm-floor arm's per-instance log file must exist -- proves its own stdio-wins merge order, independent of the cold-acquire arm's");
+
+    killTestInstance(state, record.port);
+    await waitForProcessExit(record.pid!);
+  } finally {
+    if (savedViceBin === undefined) delete process.env.VICE_BIN;
+    else process.env.VICE_BIN = savedViceBin;
+    if (savedRecordFile === undefined) delete process.env.VICE_BROKER_TEST_RECORD_FILE;
+    else process.env.VICE_BROKER_TEST_RECORD_FILE = savedRecordFile;
+    if (savedAmbientXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = savedAmbientXdg;
+    for (const dir of scratchDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 // ---------------------------------------------------------------------------
 // RED-first (P-04): this test must fail against today's (pre-P-01)

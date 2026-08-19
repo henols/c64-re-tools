@@ -859,14 +859,20 @@ export interface MaintainWarmFloorDeps {
   /** Root state directory -- per-port supervisorDir/epochFile are derived
    * from this exactly like handleAcquire's own cold-launch path does. */
   stateDir: string;
-  spawn?: (command: string, args: string[]) => ChildProcess;
+  /** I-1 rider (08.2-06-PLAN.md, Task 1): widened to the same optional
+   * third `options` argument as TryLaunchDeps.spawn above, so a real
+   * warm-floor launch can thread the same scratch `XDG_CONFIG_HOME`
+   * through as the cold-acquire arm. Optional, so every pre-existing
+   * 2-arg caller and test stub keeps compiling and behaving identically. */
+  spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   /** Alternative to `spawn` -- when both are given, spawnFactory wins.
    * Receives the ALLOCATED port directly (no need to parse it back out of
    * an argv array) so a caller can open a per-port log file BEFORE
    * spawning -- exactly what vice-broker.mts's real wiring needs for
    * D-23's forensic per-instance logs, mirroring handleAcquire's own
-   * cold-launch path. */
-  spawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
+   * cold-launch path. Widened (08.2-06-PLAN.md, Task 1) to the same
+   * optional third options argument as `spawn` above. */
+  spawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
   viceBin?: string;
   mcpHost?: string;
@@ -1121,8 +1127,13 @@ export interface SuperviseChildDeps {
    * all derived from this, exactly like every other launch path. */
   stateDir: string;
   epoch: EpochWriterDeps;
-  spawn?: (command: string, args: string[]) => ChildProcess;
-  spawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
+  /** I-1 rider (08.2-06-PLAN.md, Task 1): widened to the same optional
+   * third `options` argument as every other spawn/spawnFactory field in
+   * this file, so a real crash-respawn threads the same isolation as the
+   * launch it replaces (CR-01 precedent: launch/respawn divergence has
+   * already caused one incident in this file). */
+  spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
+  spawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
   /** Injected delay for the respawn backoff wait -- tests supply an
    * immediately-resolving stub so the backoff VALUES can be asserted
@@ -1306,11 +1317,16 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
 export function withCrashSupervision(
   reason: string,
   port: number,
-  baseSpawn: (command: string, args: string[]) => ChildProcess,
+  baseSpawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess,
   deps: SuperviseChildDeps,
-): (command: string, args: string[]) => ChildProcess {
-  return (cmd: string, args: string[]): ChildProcess => {
-    const child = baseSpawn(cmd, args);
+): (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess {
+  // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
+  // in the BODY, not just the type -- this is the hop that matters most,
+  // because it wraps every real launch path (cold acquire, warm floor, and
+  // every respawn). A type-only widening would still silently drop a
+  // caller's options at this call site.
+  return (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
+    const child = baseSpawn(cmd, args, options);
     child.once("exit", () => {
       void handleExit(reason, port, deps);
     });
@@ -1367,9 +1383,18 @@ function launchSupervised(
   const logPath = join(logDir, logFileName);
   const logRelPath = `logs/${logFileName}`;
 
-  const defaultRealSpawn = (cmd: string, args: string[]): ChildProcess => {
+  // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
+  // and MERGES it with the per-instance log stdio -- caller options
+  // spread FIRST, `stdio` set LAST, so the per-instance log fd always
+  // wins. Never the other order: a caller-supplied `stdio` would silently
+  // redirect a crash-respawn's output away from the log file the epoch
+  // record names, and the forensic per-instance log (D-23) would point at
+  // a file that received nothing. Without this fix, a stock instance that
+  // crashes and respawns comes back reading the operator's real `vicerc`
+  // even though its original launch was isolated.
+  const defaultRealSpawn = (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
     const fd = openSync(logPath, "a");
-    return nodeSpawn(cmd, args, { stdio: ["ignore", fd, fd] });
+    return nodeSpawn(cmd, args, { ...options, stdio: ["ignore", fd, fd] });
   };
   const baseSpawn = deps.spawnFactory ? deps.spawnFactory(port) : (deps.spawn ?? defaultRealSpawn);
   const wrappedSpawn = withCrashSupervision(reason, port, baseSpawn, deps);
