@@ -136,7 +136,9 @@ binary-monitor port or the reverse.
 Consequences of the choice:
 
 - The two backends deliberately advertise **different tool lists**. A tool
-  advertised on both keeps the same name and argument shape on either one.
+  advertised on both keeps the same name and a backward-compatible argument
+  shape — stock may add optional parameters but never removes, retypes, or
+  newly-requires one.
 - Calling a tool the active backend does not advertise returns an error
   naming the tool, the reason, and which backend provides it — it fails
   loudly, not silently.

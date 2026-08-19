@@ -37,7 +37,9 @@ silently dropped. See `.planning/INGEST-CONFLICTS.md` § RESOLVED.
   both backends.~~ D-07 replaces this: the manifest is **trimmed per backend**,
   permanently — stock advertises only the tools it implements, so the two backends
   expose different tool lists. A tool advertised on both keeps the same name and
-  argument shape, and the fork's list is unchanged from v0.1.x.
+  a backward-compatible argument shape — stock may add optional parameters but
+  never removes, retypes, or newly-requires one — and the fork's list is
+  unchanged from v0.1.x.
 - **decision (still standing):** The single seam to swap for *direct* tools is
   `vice.ts`'s `call()` (plus `vice-sync.ts`); derived tools intercept before
   `forwardToVice()`. There must be no fall-through from the stock dispatch path to

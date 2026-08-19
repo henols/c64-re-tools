@@ -59,8 +59,10 @@ without adding a check that the test suite does not already run.
   advertises only the tools it actually implements, so the two backends expose
   **different tool lists** — this is the shipped end state, not scaffolding
   (Phase 2, D-07). What does not change: a tool advertised on both backends has
-  the **same name and the same argument shape** on both, and the fork backend's
-  advertised list is unchanged from v0.1.x. Consequence, carried by SKILL-01:
+  the same name and a **backward-compatible** argument shape on both — stock
+  may add optional parameters but never removes, retypes, or newly-requires
+  one — and the fork backend's advertised list is unchanged from v0.1.x.
+  Consequence, carried by SKILL-01:
   a skill written against the full fork surface **breaks** on stock rather than
   degrading, so the playbooks must name the stock route or the fork requirement.
   **This supersedes** the earlier "the surface must not change" constraint and

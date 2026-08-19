@@ -202,7 +202,9 @@ export function generateToolSupportTable(options = {}) {
   lines.push("");
   lines.push(
     "The fork and stock backends deliberately advertise different tool lists. A tool advertised " +
-      "on both backends keeps the same name and argument shape on either one. Calling a tool the " +
+      "on both backends keeps the same name and a backward-compatible argument shape on either " +
+      "one — stock may add optional parameters but never removes, retypes, or newly-requires " +
+      "one. Calling a tool the " +
       "active backend does not advertise returns an error naming the reason and the backend that " +
       "does provide it.",
   );
