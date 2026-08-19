@@ -31,30 +31,32 @@ Plan: 3 of 5
 Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
 Status: Ready to execute
 Last activity: 2026-08-19
-Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
-human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
+Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
+single human_verification item live-proven. Phase 8.1 is the last phase of
+v0.2.0 -- it closes the audit's one unwitnessed claim and its seven stale
+documents rather than shipping a feature.
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
-does something a skill calls depend on it? The six skills call 28 tools -- 16 already
+does something a skill calls depend on it? The six skills call 29 tools -- 16 already
 work on stock, 10 are buildable (8 in Phase 5, 2 in Phase 7), and 3 are provably
 impossible (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) and
-route to the fork via Phase 8. The fork's other 34 tools are called by no skill. Phase 6
+route to the fork via Phase 8. The fork's other 33 tools are called by no skill. Phase 6
 was cut wholesale; screenshots, backtrace, checkpoint groups, disk detach and the parity
-harness came out. See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 21
-CUT-marked items.
+harness came out. See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 17
+CUT-marked requirements and 4 cut halves.
 
 *(The impossible list was two until plan 05-08's skill-vs-manifest sweep found
 `vice_keyboard_restore`, called by `c64-program-recon/references/control-flow.md:86` and
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [██████████] 96%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 58
+- Total plans completed: 76
 - Average duration: —
 - Total execution time: —
 
@@ -67,6 +69,7 @@ Progress: [██████████] 96%
 | 03 | 18 | - | - |
 | 04 | 7 | - | - |
 | 05 | 13 | - | - |
+| 07 | 18 | - | - |
 | 08 | 6 | - | - |
 
 **Recent Trend:**
