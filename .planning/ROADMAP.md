@@ -99,7 +99,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 in 3 waves; 07-VERIFICATION.md: status verified, 4/4 truths fully verified -- the one residual human-verification item, the broker-mediated monitor_held_elsewhere verdict, was live-proven by quick task 260818-obc, and the CR-01 review blocker from 07-REVIEW.md was fixed by quick task 260818-nh5) (completed 2026-08-18)
 - [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
 - [x] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture (completed 2026-08-19)
-- [ ] **Phase 8.2: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run** (INSERTED) - Fix the Drive8Type defect that leaves DIST-03 unsatisfied, clear the red test gate that would fail CI on the tagging push, and re-run the install-to-RAM-capture walkthrough until it passes
+- [x] **Phase 8.2: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run** (INSERTED) - Fix the Drive8Type defect that leaves DIST-03 unsatisfied, clear the red test gate that would fail CI on the tagging push, and re-run the install-to-RAM-capture walkthrough until it passes (completed 2026-08-19)
 
 ## Phase Details
 
@@ -570,7 +570,7 @@ Plans:
 
 **Wave 5** *(blocked on 08.2-01, 08.2-03 and 08.2-04; runs in the main checkout, not a worktree)*
 
-- [ ] 08.2-05-PLAN.md — item 4 / E-1..E-5: DIST-03's status derived from the re-run's actual verdict, self-consistent coverage arithmetic, the two stale "two-versus-three" phrases, a verify-before-editing pass over STATE.md, and five tracked todos for Phase 8.1's orphaned findings [wave 5]
+- [x] 08.2-05-PLAN.md — item 4 / E-1..E-5: DIST-03's status derived from the re-run's actual verdict, self-consistent coverage arithmetic, the two stale "two-versus-three" phrases, a verify-before-editing pass over STATE.md, and five tracked todos for Phase 8.1's orphaned findings [wave 5]
 
 Notes:
 
@@ -635,7 +635,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 5/6 | In Progress|  |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 6/6 | Complete   | 2026-08-19 |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
