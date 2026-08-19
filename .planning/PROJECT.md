@@ -185,19 +185,42 @@ existing fork backend keeps working unchanged for the capabilities only it has.
 - Version detection (VICE ≥ 3.10) with graceful degradation
 - Empirical probe against a real build, and a two-process parity harness
 
-**Current state:** v0.2.0's phase work is complete. Phase 8.1 (inserted) closed the
-milestone's last two debts on 2026-08-19: it ran the one unwitnessed claim — the
-install-to-RAM-capture walkthrough — and corrected the seven planning-document drift items
-(D-1..D-7) that would otherwise have started the next audit from a false picture. The
-walkthrough was run for real and **recorded as failed**, which is the honest outcome: it
-surfaced a confirmed product defect rather than a documentation gap. The broker launches stock
-VICE with `Drive8Type=0` (NONE), so no drive answers unit 8, `LOAD"*",8,1` returns
-`?DEVICE NOT PRESENT ERROR`, and the 64K capture is never reached. Confirmed fix, verified live
-via the text monitor: `-drive8type 1541` at launch — deliberately **not applied**, since the
-defect is not install-path-shallow and sizes its own work. It is carried as an open product
-defect in `ROADMAP.md` and `STATE.md`. A second finding: the `acme-build` scaffold cannot build
-on any machine provisioned the documented way, because the Debian `acme` package ships no
-`cbm/c64/*.a` standard library — CI's own environment included (FINDING-A1).
+**Current state:** v0.2.0's phase work is complete — **all 9 executed phases closed**, Phase 8.2
+(inserted) being the last, on 2026-08-19. Phase 6 was cut wholesale, so 9 of 10 phase-list
+entries is the terminal figure for this milestone.
+
+Phase 8.1 first ran the one unwitnessed claim — the install-to-RAM-capture walkthrough — and
+**recorded it as failed**, which was the honest outcome: it surfaced a confirmed product defect
+rather than a documentation gap, and deliberately declined to apply the known fix to manufacture
+a pass. Phase 8.2 then closed that defect and re-ran the walkthrough to a real pass:
+
+- **I-2 (the blocker):** the broker launched stock `x64sc` with `Drive8Type=0` (NONE), so no drive
+  answered unit 8 and `LOAD"*",8,1` returned `?DEVICE NOT PRESENT ERROR`. Fixed at one site —
+  `buildViceArgs()`'s stock branch now emits `-default -drive8type 1541` ahead of
+  `-binarymonitor`, with the fork branch's argv byte-identical to before. The blast radius was
+  **measured, not inferred**, and proved wider than the audit had guessed: a bare `.prg`
+  autostart hit the identical wall, so it was **all program loads**, not just disk loads.
+- **I-1:** production stock launches now get a per-instance scratch `XDG_CONFIG_HOME` that
+  reaches the real `nodeSpawn()` on every path — cold acquire, warm-floor spare and
+  crash-respawn — so an emulator never reads the operator's real `vicerc`. Proven through the
+  real spawn composition rather than an injected stub.
+- **I-3:** the red test gate is green; CI's own bare `npm test` reports zero failures, so the
+  tagging push cannot produce a red run.
+- **DIST-03, the milestone's stated finish line:** `c64-ram-capture` reached a verified
+  65536-byte capture on a provably broker-launched genuine stock `x64sc` (VICE 3.9), approved by
+  a human at a blocking gate. Two limitations are recorded rather than glossed: the artifact was
+  a local checkout, not a published release, and an agent-proxy drove it rather than a human
+  witness.
+- Coverage added where its absence had hidden the defect: `stock-broker-live.test.ts` is the first
+  test to launch through the real broker primitive instead of hand-spawning its own argv.
+
+**Known open, tracked, non-blocking:** the `vice_keyboard_type` `LOAD` fallback route does not
+progress within a bounded poll (FINDING-E2), and the `acme-build` scaffold cannot build on any
+machine provisioned the documented way because the Debian `acme` package ships no `cbm/c64/*.a`
+standard library — CI's own environment included (FINDING-A1). Also untested by design: no
+VIC-II revision / PAL-vs-NTSC / board-revision matrix, and only drive type `1541` was exercised
+— the defect fixed was *no drive at all*, and other board and drive variants remain an open
+question rather than a verified claim.
 
 **Previously:** Phase 2 (Stock Backend Connection) complete — 2026-08-13.
 The server can now be pointed at a stock VICE and hold a correlated,
@@ -412,4 +435,4 @@ Next: v0.2.0's phase work is complete — `/gsd-audit-milestone` then
 `/gsd-complete-milestone`.
 
 ---
-*Last updated: 2026-08-19 after Phase 8.1 completion — the inserted phase that closed v0.2.0's audit debt (all seven D-1..D-7 drift items green in one run; the never-run install walkthrough finally run, and recorded as a truthful `failed` naming a real `Drive8Type=0` defect rather than manufactured into a pass; two brittle assertions replaced with self-consistency invariants after the project's own tooling legitimately advanced the numbers they pinned)*
+*Last updated: 2026-08-19 after Phase 8.2 completion — the inserted phase that closed v0.2.0's last three blockers and turned Phase 8.1's honest `failed` walkthrough into a real, human-approved pass: the `Drive8Type=0` defect fixed at one site, production config isolation threaded end to end through every spawn path, the red CI gate cleared before the tagging push, and the first live test that launches through the real broker primitive rather than hand-spawning its own argv. The blast radius was measured rather than inferred and proved wider than the audit had assumed. Re-verified 7/7 after closing two stale verification documents; every figure asserted as self-consistency rather than a pinned literal, per Phase 8.1's twice-learned lesson.*
