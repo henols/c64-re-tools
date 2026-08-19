@@ -504,7 +504,7 @@ Plans:
 **Wave 1** *(two independent tracks, disjoint file ownership)*
 
 - [x] 08.1-01-PLAN.md — Wave 0 D-1..D-7 checklist harness with a recorded RED baseline, then REQUIREMENTS.md's drift: the 17 `Pending` rows, DIRECT-06's row, the 51/51/0 coverage block, and its share of the D-6 arithmetic and D-7 manifest count [wave 1, track A]
-- [ ] 08.1-03-PLAN.md — walkthrough harness: pin the tested artifact by commit sha, probe the local-path install route, assemble a throwaway `.prg`/`.d64` via `acme-build` + `c1541`, and stand up a scratch project wired to local `HEAD` with `VICE_BACKEND=stock` [wave 1, track B]
+- [x] 08.1-03-PLAN.md — walkthrough harness: pin the tested artifact by commit sha, probe the local-path install route, assemble a throwaway `.prg`/`.d64` via `acme-build` + `c1541`, and stand up a scratch project wired to local `HEAD` with `VICE_BACKEND=stock` [wave 1, track B]
 
 **Wave 2** *(each blocked on its own track's wave 1)*
 
@@ -569,7 +569,7 @@ open items before v0.2.0 is tagged; it is the last phase of this milestone.
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
-| 8.1 Close v0.2.0 audit items (INSERTED) | 1/5 | In Progress|  |
+| 8.1 Close v0.2.0 audit items (INSERTED) | 2/5 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T08:58:33.783Z"
+last_updated: "2026-08-19T09:16:54.078Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 81
-  completed_plans: 77
+  completed_plans: 78
   percent: 78
 ---
 
@@ -27,7 +27,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 ## Current Position
 
 Phase: 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
 Status: Ready to execute
 Last activity: 2026-08-19
@@ -48,7 +48,7 @@ CUT-marked items.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [██████████] 95%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [██████████] 95%
 | Phase 03 P17 | N/A | 2 tasks | 0 files |
 | Phase 03-direct-tools P18 | 5m | 1 tasks | 0 files |
 | Phase 08.1 P01 | 15min | 3 tasks | 3 files |
+| Phase 08.1 P03 | 25m | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Route authorised: pr-branch — push a branch and open a PR against main; no push/branch/tag/publish performed by 03-17 — milestone v0.2.0 is only 3 of 8 phases done; publishing now would ship a partial stock backend to real users
 - [Phase 03-direct-tools]: CI validated via pr-branch route: PR #9 (ci/phase-03-validation -> main), GitHub Actions build job concluded success against sha f040d79efdfe02fc5a22a77589052c138f5cdc20; no push to main, no tag, no release, no npm publish; PR left open unmerged
 - [Phase 08.1]: Checklist emits one composite PASS/FAIL line per D-item (not per sub-condition) so the RED baseline shows zero PASS lines despite already-true guard conditions
+- [Phase 08.1]: 08.1-03: FINDING-A1 corrected/widened -- the acme-build scaffold's missing cbm/c64/* library gap also breaks CI's own apt-provisioned environment, verified via apt-get download + dpkg-deb -x
+- [Phase 08.1]: 08.1-03: capture target built from a new library-free ACME source (hand-rolled hardware constants) per human decision, instead of installing an ACME stdlib or hand-editing acme-build/template.a
+- [Phase 08.1]: 08.1-03: scratch project wired via route A (local installer) + hand-edited .mcp.json, not claude plugin marketplace add/install, to avoid writing into machine-global ~/.claude/plugins/ state shared with the live orchestrating session
 
 ### Pending Todos
 
@@ -161,6 +165,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-19T08:44:40.663Z
-Stopped at: Completed 08.1-01-PLAN.md
+Last session: 2026-08-19T09:16:54.056Z
+Stopped at: Completed 08.1-03-PLAN.md
 Resume file: None
