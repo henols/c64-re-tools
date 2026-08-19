@@ -70,10 +70,17 @@ test("resolveVersion(): the repo's real VERSION resolves to 0.2.0 against an inj
 });
 
 test("parseTemplate(): throws on every malformed shape", () => {
-  const bad = ["0.2", "0.2.-.-", "0.x.-", "0.2.-x", "", "   "];
+  // "-.2.3", "0.-.2", "-.-.5" (MED-1): a literal component may never follow
+  // a "-" component -- dashes only trail literals, per D-2's "literal
+  // prefix" wording and every row of CONTEXT.md's worked-example table.
+  const bad = ["0.2", "0.2.-.-", "0.x.-", "0.2.-x", "", "   ", "-.2.3", "0.-.2", "-.-.5"];
   for (const raw of bad) {
     assert.throws(() => parseTemplate(raw), `expected parseTemplate(${JSON.stringify(raw)}) to throw`);
   }
+});
+
+test("parseTemplate(): the currently-committed VERSION shape 0.2.- (dash trailing) still parses", () => {
+  assert.deepEqual(parseTemplate("0.2.-"), ["0", "2", "-"]);
 });
 
 test("parseTemplate(): accepts a well-formed template and returns its three components", () => {

@@ -58,7 +58,13 @@ const TEMPLATE_COMPONENT = /^(\d+|-)$/;
  * dot-separated components. Each component must be either a non-negative
  * integer literal or the literal string `-` (an auto-managed slot, D-2).
  * Throws on anything else: wrong component count, a non-numeric/non-`-`
- * component, or a blank/whitespace-only string.
+ * component, a blank/whitespace-only string, OR a literal component
+ * appearing after a `-` component (MED-1) -- D-2's "literal prefix" wording,
+ * and every row of CONTEXT.md's worked-example table, only ever describe
+ * dashes trailing literals, never leading or interleaved. A shape like
+ * "-.2.3" or "0.-.2" has no defined resolution semantics and must be
+ * rejected at the one seam that owns validating the hand-edited VERSION
+ * file, not silently resolved into something CONTEXT.md never specified.
  */
 export function parseTemplate(raw: string): string[] {
   const trimmed = raw.trim();
@@ -71,7 +77,17 @@ export function parseTemplate(raw: string): string[] {
       `version.ts: malformed template ${JSON.stringify(raw)} -- expected exactly 3 dot-separated components, got ${parts.length}`
     );
   }
+  let sawDash = false;
   for (const part of parts) {
+    if (part === "-") {
+      sawDash = true;
+      continue;
+    }
+    if (sawDash) {
+      throw new Error(
+        `version.ts: malformed template ${JSON.stringify(raw)} -- literal component ${JSON.stringify(part)} cannot follow a "-" component; dashes only trail literals (D-2)`
+      );
+    }
     if (!TEMPLATE_COMPONENT.test(part)) {
       throw new Error(
         `version.ts: malformed template ${JSON.stringify(raw)} -- component ${JSON.stringify(part)} is neither an integer nor "-"`
