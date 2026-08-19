@@ -98,7 +98,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
 - [x] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 in 3 waves; 07-VERIFICATION.md: status verified, 4/4 truths fully verified -- the one residual human-verification item, the broker-mediated monitor_held_elsewhere verdict, was live-proven by quick task 260818-obc, and the CR-01 review blocker from 07-REVIEW.md was fixed by quick task 260818-nh5) (completed 2026-08-18)
 - [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
-- [ ] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture
+- [x] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture (completed 2026-08-19)
 
 ## Phase Details
 
@@ -514,7 +514,7 @@ Plans:
 
 **Wave 3** *(blocked on both tracks)*
 
-- [ ] 08.1-05-PLAN.md — the closing cross-document consistency read (criterion 4): reconcile every claim shared by REQUIREMENTS.md, ROADMAP.md and STATE.md, fix residuals, and prove all seven D-items green in one run [wave 3, blocked on 08.1-02 and 08.1-04]
+- [x] 08.1-05-PLAN.md — the closing cross-document consistency read (criterion 4): reconcile every claim shared by REQUIREMENTS.md, ROADMAP.md and STATE.md, fix residuals, and prove all seven D-items green in one run [wave 3, blocked on 08.1-02 and 08.1-04]
 
 Notes:
 
@@ -578,7 +578,7 @@ open items before v0.2.0 is tagged; it is the last phase of this milestone.
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
-| 8.1 Close v0.2.0 audit items (INSERTED) | 4/5 | In Progress|  |
+| 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete   | 2026-08-19 |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work

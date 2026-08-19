@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T10:45:18.552Z"
+last_updated: "2026-08-19T11:03:12.310Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 81
-  completed_plans: 80
-  percent: 78
+  completed_plans: 81
+  percent: 89
 ---
 
 # Project State
@@ -50,15 +50,23 @@ CUT-marked requirements and 4 cut halves.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 89%
 
-*(Phase-based, matching frontmatter `percent` and ROADMAP.md's progress table: 7 of 9
-phases complete, Phase 8.1 in flight. Restored 2026-08-19 by Phase 8.1 plan 05 --
+*(Phase-based, matching frontmatter `percent`: 8 of 9 phases complete now that Phase
+8.1's own 5th plan has landed on disk. Restored 2026-08-19 by Phase 8.1 plan 05 --
 this line had drifted to 99% via an SDK `state.update-progress` call that computes a
 different, real-time plan-file ratio (80 or 81 of 81 plans) with no phase-completion
-cap, unlike `phase.complete`'s own `computeProgressPercent`. Both ratios are
-individually valid; only one belongs on this line, labelled here so the two are never
-conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1.)*
+cap, unlike this file's own frontmatter recompute (`buildStateFrontmatter`, disk
+-ground-truth, phase-fraction-capped), which every `state.*` mutation triggers
+automatically. Both ratios are individually valid measurements of different things;
+only the phase-based one belongs on this line, labelled here so the two are never
+conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1 and its "Correction" note
+for why this line reads 89%, not the 78% this same plan first wrote earlier today --
+78% was this file's own truth at Task 2's start (7 of 9 phases, Phase 8.1 still
+in flight); 89% is its truth now that Phase 8.1's plans are all on disk. Both were
+correct for their moment; ROADMAP.md's Phase 8.1 row is synced to match via
+`roadmap.update-plan-progress` in this same closing step, so no document is left
+behind at the stale figure.)*
 
 ## Performance Metrics
 
@@ -92,6 +100,7 @@ conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1.)*
 | Phase 08.1 P03 | 25m | 3 tasks | 1 files |
 | Phase 08.1 P02 | 22min | 3 tasks | 3 files |
 | Phase 08.1 P04 | 90min | 2 tasks | 5 files |
+| Phase 08.1 P05 | 45min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
