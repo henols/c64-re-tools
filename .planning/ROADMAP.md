@@ -562,7 +562,7 @@ Plans:
 
 **Wave 3** *(blocked on 08.2-02 and 08.2-06)*
 
-- [ ] 08.2-03-PLAN.md — I-2's missing coverage: `stock-broker-live.test.ts`, the first live test to launch through the real spawned broker daemon (so both `buildViceArgs()` and the supervision composition are in the call path), registered as the seventh `MANUAL_ONLY_TESTS` entry, plus the pre-fix/post-fix `.prg` measurement that settles the blast radius [wave 3]
+- [x] 08.2-03-PLAN.md — I-2's missing coverage: `stock-broker-live.test.ts`, the first live test to launch through the real spawned broker daemon (so both `buildViceArgs()` and the supervision composition are in the call path), registered as the seventh `MANUAL_ONLY_TESTS` entry, plus the pre-fix/post-fix `.prg` measurement that settles the blast radius [wave 3]
 
 **Wave 4** *(blocked on 08.2-02, 08.2-03 and 08.2-06; runs in the main checkout, not a worktree)*
 
@@ -632,7 +632,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 3/6 | In Progress|  |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 4/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
