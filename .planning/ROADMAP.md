@@ -566,7 +566,7 @@ Plans:
 
 **Wave 4** *(blocked on 08.2-02, 08.2-03 and 08.2-06; runs in the main checkout, not a worktree)*
 
-- [ ] 08.2-04-PLAN.md — item 3: re-run the install-to-RAM-capture walkthrough against a broker-launched stock instance, prove the argv from `epoch.json` + `ps` (never `resolvedBinaryPath`), assert `XDG_CONFIG_HOME` from `/proc/<pid>/environ` as a required pass, and record pass or fail in `08-HUMAN-UAT.md` [wave 4]
+- [x] 08.2-04-PLAN.md — item 3: re-run the install-to-RAM-capture walkthrough against a broker-launched stock instance, prove the argv from `epoch.json` + `ps` (never `resolvedBinaryPath`), assert `XDG_CONFIG_HOME` from `/proc/<pid>/environ` as a required pass, and record pass or fail in `08-HUMAN-UAT.md` [wave 4]
 
 **Wave 5** *(blocked on 08.2-01, 08.2-03 and 08.2-04; runs in the main checkout, not a worktree)*
 
@@ -632,7 +632,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 4/6 | In Progress|  |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 5/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
