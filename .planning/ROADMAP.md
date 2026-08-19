@@ -558,7 +558,7 @@ Plans:
 
 **Wave 2** *(blocked on 08.2-02, which co-owns `broker-launch.mts`)*
 
-- [ ] 08.2-06-PLAN.md — I-1 end to end: the options argument forwarded through the four hops that currently drop it (`makeLoggingSpawn`, `withCrashSupervision`'s wrapper body, the warm floor's `stashingSpawn`, `launchSupervised`'s `defaultRealSpawn`), both real daemon spawn-factory closures updated, `resources/vice-broker.mjs` rebuilt, and a `handleAcquire()` composition test with `buildColdSpawnFactory` omitted so an injected stub cannot fake it [wave 2]
+- [x] 08.2-06-PLAN.md — I-1 end to end: the options argument forwarded through the four hops that currently drop it (`makeLoggingSpawn`, `withCrashSupervision`'s wrapper body, the warm floor's `stashingSpawn`, `launchSupervised`'s `defaultRealSpawn`), both real daemon spawn-factory closures updated, `resources/vice-broker.mjs` rebuilt, and a `handleAcquire()` composition test with `buildColdSpawnFactory` omitted so an injected stub cannot fake it [wave 2]
 
 **Wave 3** *(blocked on 08.2-02 and 08.2-06)*
 
@@ -632,7 +632,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 2/6 | In Progress|  |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 3/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
