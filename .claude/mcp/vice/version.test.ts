@@ -166,6 +166,18 @@ test("readTemplate(): trims trailing whitespace/newline from a real VERSION file
   }
 });
 
+test("readTemplate(): returns the empty string (not null) for an existing-but-blank file (LOW-3)", () => {
+  const dir = scratchDir("version-readtemplate-empty-");
+  try {
+    writeFileSync(join(dir, "VERSION"), "   \n", "utf8");
+    const result = readTemplate(dir);
+    assert.equal(result, "", "an existing whitespace-only file must return '', not null");
+    assert.notEqual(result, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("readTemplate(): returns null, never throws, when no VERSION file exists", () => {
   const dir = scratchDir("version-readtemplate-missing-");
   try {

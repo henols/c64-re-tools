@@ -198,10 +198,13 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
 }
 
 /**
- * Read `<repoRootDir>/VERSION`, trimmed. Returns null (never throws) when
- * the file does not exist. Does NOT validate the template shape --
- * `resolveVersion`/`parseTemplate` do that; this function's only job is the
- * filesystem read.
+ * Read `<repoRootDir>/VERSION`, trimmed. Returns the empty string for an
+ * existing-but-blank (or whitespace-only) file, and null ONLY when the file
+ * is absent (never throws on either outcome) -- do not treat `=== null` as
+ * the sole "no template" signal; an empty string is also "no usable
+ * template", and every current caller checks for it via truthiness (LOW-3).
+ * Does NOT validate the template shape -- `resolveVersion`/`parseTemplate`
+ * do that; this function's only job is the filesystem read.
  */
 export function readTemplate(repoRootDir: string): string | null {
   const path = join(repoRootDir, "VERSION");
