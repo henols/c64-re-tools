@@ -103,7 +103,7 @@ Requirements are grounded in `.planning/research/` (3,553 lines, source-verified
 
 - [x] **DIST-01**: The full tool inventory is documented with its per-backend availability, so a user can see which tools each backend advertises without running anything — including tools absent from the active backend's trimmed manifest (D-07)
 - [x] **DIST-02**: A new user can read what VICE they need, where to get it, and what differs per version — including that the fork is required for SID read-back and matrix keyboard
-- [x] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator
+- [x] **DIST-03**: Installing the plugin and stock VICE from a package manager is sufficient to drive the emulator — **Complete (08-05; falsified by audit round 2 / FINDING-C1 on 2026-08-19, re-run and re-verified in Phase 8.2 plan 04).** The original Phase 8 walkthrough (`08-05`) recorded this as passing before the `Drive8Type` defect (FINDING-C1) was found live and the requirement was correctly reopened. Phase 8.2 plan 02 landed the `-drive8type 1541` fix in `buildViceArgs()`'s stock branch, plan 03 proved the fixed argv reaches a real broker launch, and plan 04 re-ran the same install-to-RAM-capture walkthrough end to end against genuine `/usr/bin/x64sc`, recording `capture_result: pass` (`08.2-WALKTHROUGH-EVIDENCE.md`) and flipping `08-HUMAN-UAT.md` Test 1 to `status: passed` (`resolved_by: Phase 8.2, plan 08.2-04`). The developer read the recorded evidence and explicitly approved it ("approved", 08.2-04 Task 3)
 
 ### Skill playbooks
 
@@ -226,7 +226,7 @@ was removed from scope on that date per the cut criterion below; it is neither
 | BROK-03 | Phase 2 | Complete |
 | DIST-01 | Phase 8 | Complete |
 | DIST-02 | Phase 8 | Complete |
-| DIST-03 | Phase 8 | Complete |
+| DIST-03 | Phase 8 | Complete (08-05; re-verified 08.2-04 after FINDING-C1) |
 | SKILL-01 | Phase 8 | Complete |
 | VERIF-01 | Phase 1 | Complete |
 | VERIF-02 | Phase 2 | Complete |
@@ -255,7 +255,15 @@ was removed from scope on that date per the cut criterion below; it is neither
   07-18's earlier move of Phase 7 from 4 open to 1 open on
   `TIME-01`/`TIME-02`/`TIME-03`'s gap-closure evidence (07-11..07-14). With
   Phase 8 now also complete, every in-scope requirement is `Complete`, making
-  51/51/0 independently derivable rather than asserted*)
+  51/51/0 independently derivable rather than asserted*) *(re-confirmed
+  2026-08-19 in Phase 8.2: audit round 2 (`v0.2.0-MILESTONE-AUDIT.md` §7 E-1)
+  found this same 51/51/0 figure freshly falsified — `DIST-03` had regressed
+  to a real, live-confirmed failure (FINDING-C1, the `Drive8Type` defect)
+  after this coverage line was written, not because the arithmetic above was
+  ever wrong. Phase 8.2 plans 02-04 fixed the defect, re-ran the DIST-03
+  walkthrough, and recorded `capture_result: pass`, so 51/51/0 is
+  re-confirmed rather than restored unchanged — the interim regression and
+  its fix are part of the record, not silently erased*)
 - Mapped to phases: 51 · Unmapped: 0 ✓
 
 **Open requirements per phase:** Phase 5: **0** — all four (`DERIV-01`,
