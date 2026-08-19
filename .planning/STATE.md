@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T08:44:40.691Z"
+last_updated: "2026-08-19T08:58:33.783Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 9
@@ -145,6 +145,8 @@ Recent decisions affecting current work:
 - **`CPUHISTORY_GET` needs VICE ≥ 3.10**; Debian and all current Ubuntu ship 3.9,
   so the milestone's headline gain is unavailable on the most common `apt`
   install path. Graceful degradation is required, not optional.
+
+- Phase 08.1 plan 03 Task 2 blocked: acme-build's own template.a cannot assemble on this machine -- the ACME binary at ~/.local/bin/acme has no accompanying cbm/c64/*.a library, apt has a candidate (acme 1:0.97~svn20211115+ds-2) but this session has no passwordless sudo. Needs a human to run 'sudo apt-get install -y acme' (or supply an ACME library at $ACME) before the criterion-1 walkthrough's capture target can be built. See 08.1-WALKTHROUGH-SETUP.md FINDING-A1.
 
 ## Deferred Items
 
