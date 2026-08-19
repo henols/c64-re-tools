@@ -50,7 +50,15 @@ CUT-marked requirements and 4 cut halves.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [██████████] 99%
+Progress: [████████░░] 78%
+
+*(Phase-based, matching frontmatter `percent` and ROADMAP.md's progress table: 7 of 9
+phases complete, Phase 8.1 in flight. Restored 2026-08-19 by Phase 8.1 plan 05 --
+this line had drifted to 99% via an SDK `state.update-progress` call that computes a
+different, real-time plan-file ratio (80 or 81 of 81 plans) with no phase-completion
+cap, unlike `phase.complete`'s own `computeProgressPercent`. Both ratios are
+individually valid; only one belongs on this line, labelled here so the two are never
+conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1.)*
 
 ## Performance Metrics
 
@@ -160,12 +168,24 @@ Recent decisions affecting current work:
 
 - Phase 08.1 plan 03 Task 2 blocked: acme-build's own template.a cannot assemble on this machine -- the ACME binary at ~/.local/bin/acme has no accompanying cbm/c64/*.a library, apt has a candidate (acme 1:0.97~svn20211115+ds-2) but this session has no passwordless sudo. Needs a human to run 'sudo apt-get install -y acme' (or supply an ACME library at $ACME) before the criterion-1 walkthrough's capture target can be built. See 08.1-WALKTHROUGH-SETUP.md FINDING-A1.
 
+- **Open product defect, confirmed live (FINDING-C1, Phase 8.1 plan 04):** the broker
+  launches stock `x64sc` with `Drive8Type=0` (NONE) by default. No tool on the stock
+  MCP surface (`vice_disk_attach`, `vice_autostart`) sets a drive type, so
+  `LOAD"*",8,1` fails `?DEVICE NOT PRESENT ERROR` and every disk-based
+  `c64-ram-capture` walkthrough against genuine stock VICE fails at the load step.
+  Confirmed sufficient fix, live: launch with `-drive8type 1541`. Unfixed as of this
+  milestone's close -- recorded here as an open defect for the next milestone or a
+  quick task, not silently absorbed into "done". Full diagnosis:
+  `08.1-WALKTHROUGH-EVIDENCE.md` FINDING-C1; recorded outcome:
+  `08-HUMAN-UAT.md` Test 1 (`status: failed`).
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
+| Defect | `Drive8Type=0` default on stock broker launch blocks disk-based `c64-ram-capture` (FINDING-C1); confirmed fix `-drive8type 1541` at launch, not yet applied | Open | v0.2.0 Phase 8.1 (2026-08-19) |
 | Upstream | UP-01/UP-02 — `KEYBOARD_MATRIX_SET` opcode upstream to VICE | Deferred | v0.2.0 scoping |
 | Quality | QUAL-01 — tests for `acme.mjs`, `driver.mjs`, `derive.mjs` | Deferred | v0.2.0 scoping |
 | Quality | QUAL-02 — orphaned planning references in source comments | Deferred | v0.2.0 scoping |

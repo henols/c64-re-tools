@@ -519,6 +519,14 @@ Plans:
 Notes:
 
 - **This phase exists to close v0.2.0, not to extend it.** It adds no requirement and ships no feature. If criterion 1's walkthrough finds a real defect, that defect is the finding — fix it here only if it is install-path-shallow, otherwise record it and let it size its own work.
+- **Criterion 1's recorded outcome: failed**, not fixed here per the Note above (the
+  defect is not install-path-shallow). Plan 08.1-04 drove `c64-ram-capture` end to end
+  against genuine stock `/usr/bin/x64sc` and hit a confirmed defect: the broker
+  launches stock VICE with `Drive8Type=0` (NONE), no stock MCP tool sets a drive type,
+  so `LOAD"*",8,1` fails and the 64K capture is never reached. Confirmed fix, live:
+  `-drive8type 1541` at launch — not yet applied. This is an open product defect
+  carried into the next milestone's backlog, not a documentation gap; see
+  `STATE.md` "Deferred Items" and `08-HUMAN-UAT.md` Test 1 (`status: failed`).
 - Criteria 1 and 2 are the same gap surfacing twice: Phase 8 is both the phase carrying the open UAT and the only non-Nyquist-compliant phase. Running the walkthrough is what clears the flag.
 - The audit's two optional follow-ons are **not** in this phase's scope: `XDG_CONFIG_HOME` isolation on the production stock launch (§4.2) and the Phase 3 / Phase 5 warning clusters. Both are tracked; neither blocks tagging.
 - Criterion 3 is mechanical and can run in parallel with criterion 1 — it touches only `.planning/` documents plus the two stale prose lines, and shares no files with the walkthrough.
