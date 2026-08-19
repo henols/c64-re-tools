@@ -5,7 +5,7 @@
 // bodies that could silently drift from the spec one at a time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,65 +196,6 @@ test("runtimeVersion(): degrades to DEV_PLACEHOLDER without throwing when given 
   }
 });
 
-// ============================================================================
-// Placeholder-consistency invariant (task 2 extends this section) -- guards
-// R-2's "six derived strings, one self-evident placeholder" requirement so
-// the four-wrong-strings problem (D-1) can never recur silently.
-// ============================================================================
-
-function findRepoRoot(from: string): string {
-  let dir = from;
-  for (let i = 0; i < 10; i++) {
-    if (readTemplate(dir) !== null) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  throw new Error(`could not find repo root (VERSION file) walking up from ${from}`);
-}
-
-test("placeholder consistency: all six derived version strings equal DEV_PLACEHOLDER", () => {
-  const root = findRepoRoot(HERE);
-  const readJson = (rel: string) => JSON.parse(readFileSync(join(root, rel), "utf8"));
-
-  const vicePkg = readJson(".claude/mcp/vice/package.json");
-  const installerPkg = readJson("installer/package.json");
-  const pluginJson = readJson(".claude-plugin/plugin.json");
-  const marketplaceJson = readJson(".claude-plugin/marketplace.json");
-
-  assert.equal(vicePkg.version, DEV_PLACEHOLDER, ".claude/mcp/vice/package.json .version");
-  assert.equal(installerPkg.version, DEV_PLACEHOLDER, "installer/package.json .version");
-  assert.equal(
-    installerPkg.dependencies["@henols/vice-mcp"],
-    DEV_PLACEHOLDER,
-    "installer/package.json .dependencies[@henols/vice-mcp]"
-  );
-  assert.equal(pluginJson.version, DEV_PLACEHOLDER, ".claude-plugin/plugin.json .version");
-  assert.equal(marketplaceJson.version, DEV_PLACEHOLDER, ".claude-plugin/marketplace.json .version");
-  assert.equal(
-    marketplaceJson.plugins[0].version,
-    DEV_PLACEHOLDER,
-    ".claude-plugin/marketplace.json .plugins[0].version"
-  );
-});
-
-test("single-implementation guard: scripts/version.mjs contains no second copy of the resolution algorithm", () => {
-  const root = findRepoRoot(HERE);
-  const src = readFileSync(join(root, "scripts", "version.mjs"), "utf8");
-  // Strip line comments before matching, so the file's own header prose
-  // (which legitimately talks ABOUT the rule literals) can't produce a false
-  // negative on this guard.
-  const stripped = src
-    .split("\n")
-    .map((line: string) => line.replace(/\/\/.*$/, ""))
-    .join("\n");
-  assert.ok(!/prefix-matches/.test(stripped), "scripts/version.mjs must not re-derive the rule literals itself");
-  assert.ok(/resolveVersion/.test(stripped), "scripts/version.mjs must call resolveVersion() from the seam");
-});
-
-test("PROXY_VERSION guard: vice-proxy.ts assigns no version literal and references runtimeVersion", () => {
-  const root = findRepoRoot(HERE);
-  const src = readFileSync(join(root, ".claude/mcp/vice/vice-proxy.ts"), "utf8");
-  assert.ok(!/PROXY_VERSION\s*=\s*"/.test(src), "PROXY_VERSION must not be assigned a literal string");
-  assert.ok(/runtimeVersion/.test(src), "vice-proxy.ts must reference runtimeVersion()");
-});
+// Task 2 adds a placeholder-consistency invariant, a single-implementation
+// guard over scripts/version.mjs, and a PROXY_VERSION guard over
+// vice-proxy.ts to this file -- once those consumers exist.
