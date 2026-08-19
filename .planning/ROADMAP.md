@@ -99,6 +99,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 in 3 waves; 07-VERIFICATION.md: status verified, 4/4 truths fully verified -- the one residual human-verification item, the broker-mediated monitor_held_elsewhere verdict, was live-proven by quick task 260818-obc, and the CR-01 review blocker from 07-REVIEW.md was fixed by quick task 260818-nh5) (completed 2026-08-18)
 - [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
 - [x] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture (completed 2026-08-19)
+- [ ] **Phase 8.2: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run** (INSERTED) - Fix the Drive8Type defect that leaves DIST-03 unsatisfied, clear the red test gate that would fail CI on the tagging push, and re-run the install-to-RAM-capture walkthrough until it passes
 
 ## Phase Details
 
@@ -532,6 +533,52 @@ Notes:
 - Criterion 3 is mechanical and can run in parallel with criterion 1 — it touches only `.planning/` documents plus the two stale prose lines, and shares no files with the walkthrough.
 - The milestone heading `# Milestone v0.2.0: ...` was added to ROADMAP.md on 2026-08-19 when this phase was inserted: without it, `extractCurrentMilestone()` matched `## Cut from scope (v0.2.0, ...)` first and extracted a 27-line slice containing no phases, so every SDK phase operation reported v0.2.0's phases as absent. Do not remove it.
 
+### Phase 8.2: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run (INSERTED)
+
+**Goal**: A user who installs stock VICE and this plugin reaches a verified 64K RAM capture on a broker-launched stock instance, and the tree is green and truthful enough to tag
+**Depends on**: Phase 8.1
+**Inserted**: 2026-08-19, from `.planning/v0.2.0-MILESTONE-AUDIT.md` §9 (round 2, verdict `gaps_found`)
+**Requirements**: TBD — closes DIST-03, which round 2 falsified; adds no new requirement. Plans map to audit items instead: I-1, I-2, I-3, E-1..E-5
+**Success Criteria** (what must be TRUE):
+
+  1. A broker-launched stock `x64sc` boots with a 1541 on unit 8 — `buildViceArgs()`'s stock branch emits `-default -drive8type 1541` ahead of `-binarymonitor`, from one fix site, with the fork branch's argv byte-identical to before (I-2).
+  2. A production stock launch never reads or writes the operator's real `$HOME/.config/vice/vicerc` — `spawnFn` takes an options parameter and stock launches get a fresh scratch `XDG_CONFIG_HOME` (I-1, same-pass rider).
+  3. A live, opt-in test drives `vice_disk_attach` and `vice_autostart` against a real `.d64` on an instance launched **through the real broker primitive**, and the `.prg`-only blast radius is settled by a pre-fix versus post-fix measurement rather than inference (I-2's coverage clause and its open question).
+  4. `node test-gate.mjs` and CI's own bare `npm test` both report zero failures, so the tagging push cannot produce a red CI run (I-3).
+  5. `c64-ram-capture` has been driven end to end against a provably broker-launched genuine-stock instance, and `08-HUMAN-UAT.md` Test 1 records the outcome as pass or fail — never pending (DIST-03).
+  6. REQUIREMENTS.md, ROADMAP.md and STATE.md agree with what the re-run actually recorded, with coverage arithmetic and body-versus-frontmatter figures internally consistent rather than pinned to a literal, and each of Phase 8.1's five orphaned walkthrough findings has a tracked home (E-1..E-5).
+
+**Plans**: 5 plans in 4 waves
+Plans:
+
+**Wave 1** *(two independent tracks, disjoint file ownership — item 2 and item 1)*
+
+- [ ] 08.2-01-PLAN.md — I-3: untrack Phase 8.1's throwaway `08.1-d-checklist.sh`, restoring a green `host-scripts.test.ts`, and prove both the narrowed gate and CI's bare `npm test` green [wave 1]
+- [ ] 08.2-02-PLAN.md — I-2 + I-1: `-default -drive8type 1541` first in `buildViceArgs()`'s stock branch, `spawnFn` gains an options parameter carrying a scratch `XDG_CONFIG_HOME`, five new unit tests, and the mandatory `node build.ts` rebuild of `resources/broker-launch.mjs` [wave 1]
+
+**Wave 2** *(blocked on 08.2-02)*
+
+- [ ] 08.2-03-PLAN.md — I-2's missing coverage: `stock-broker-live.test.ts`, the first test to launch through `buildViceArgs()`/`tryLaunchOne()` with a real stock binary, registered as the seventh `MANUAL_ONLY_TESTS` entry, plus the pre-fix/post-fix `.prg` measurement that settles the blast radius [wave 2]
+
+**Wave 3** *(blocked on 08.2-02 and 08.2-03; runs in the main checkout, not a worktree)*
+
+- [ ] 08.2-04-PLAN.md — item 3: re-run the install-to-RAM-capture walkthrough against a broker-launched stock instance, prove the argv from `epoch.json` + `ps` (never `resolvedBinaryPath`), and record pass or fail in `08-HUMAN-UAT.md` [wave 3]
+
+**Wave 4** *(blocked on 08.2-01, 08.2-03 and 08.2-04; runs in the main checkout, not a worktree)*
+
+- [ ] 08.2-05-PLAN.md — item 4 / E-1..E-5: DIST-03's status derived from the re-run's actual verdict, self-consistent coverage arithmetic, the two stale "two-versus-three" phrases, a verify-before-editing pass over STATE.md, and five tracked todos for Phase 8.1's orphaned findings [wave 4]
+
+Notes:
+
+- **This phase is the last thing between the milestone and its tag.** Round 2 of the audit says do not tag v0.2.0 yet, and names four ordered items — the three in this phase's title plus the documentation drift that the newly-found defect invalidated:
+  1. **I-2, the Drive8Type defect (CRITICAL).** The broker launches stock `x64sc` with `Drive8Type=0` (NONE) and no stock tool can set it, so `LOAD"*",8,1` fails and DIST-03's 64K capture is unreachable. Confirmed fix, live: `-drive8type 1541` in `buildViceArgs()`'s stock branch. Audit §4.2. Add the live `vice_autostart` / `vice_disk_attach` coverage through the **broker** whose absence hid this, and resolve the open `.prg`-only question — it decides whether the blast radius was "disk loads" or "all program loads".
+  2. **I-3, the red test gate (CRITICAL for tagging).** Phase 8.1's committed throwaway `08.1-d-checklist.sh` trips `host-scripts.test.ts`'s repo-wide allowlist; CI runs bare `npm test`, so this fails CI on the tagging push. Untrack the script or extend `EXPECTED_TRACKED_SHELL_SCRIPTS`. Audit §4.3.
+  3. **Re-run the walkthrough.** DIST-03 is not satisfied until `c64-ram-capture` reaches a verified 64K capture on a **broker-launched** stock instance. Record the outcome in `08-HUMAN-UAT.md` as pass or fail, never pending — the same protocol Phase 8.1 used.
+  4. **Correct E-1..E-5.** Especially E-1: REQUIREMENTS.md asserts 51/51/0, which round 2 falsifies. Audit §7.
+- **I-1 (production config isolation) is in scope only as a same-pass rider.** `buildViceArgs()` / `spawnFn` are already open for item 1, so give `spawnFn` an options parameter and set a scratch `XDG_CONFIG_HOME` for stock launches while there. Audit §4.4. It does not block tagging on its own.
+- **Not in scope:** the Phase 3 and Phase 5 warning clusters (audit §4.5), and the five untracked walkthrough findings from Phase 8.1. Both are tracked; neither blocks tagging. If they are to be worked, they size their own phase.
+- Item 1 must land before item 3 — the re-run has nothing new to prove until the drive-config fix exists. Item 2 is independent of both and must land before any push.
+
 ## Cut from scope (v0.2.0, 2026-08-17)
 
 Removed after measuring the shipped skills' actual tool usage against both
@@ -563,10 +610,12 @@ scope decision, not an archaeology exercise.
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 7 → 8 → 8.1. **Phase 6 is cut**;
-its number is retained so committed artifacts under `.planning/phases/` keep
-their references. **Phase 8.1 was inserted 2026-08-19** to close the audit's two
-open items before v0.2.0 is tagged; it is the last phase of this milestone.
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 7 → 8 → 8.1 → 8.2. **Phase 6 is
+cut**; its number is retained so committed artifacts under `.planning/phases/` keep
+their references. **Phase 8.1 was inserted 2026-08-19** to close audit round 1's two
+open items before v0.2.0 is tagged. **Phase 8.2 was inserted later the same day**:
+running 8.1's walkthrough falsified the claim it was meant to witness, audit round 2
+returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -579,6 +628,7 @@ open items before v0.2.0 is tagged; it is the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 0/0 | Not planned | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
@@ -588,9 +638,17 @@ requirements are satisfied with evidence, and "the 2 that cannot be built" is
 **3** (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`).
 See the paragraph immediately below and REQUIREMENTS.md's coverage block.)*
 
-**Remaining work is not requirement work.** All 51 in-scope requirements are
+~~**Remaining work is not requirement work.** All 51 in-scope requirements are
 satisfied with evidence (`.planning/v0.2.0-MILESTONE-AUDIT.md` §2). What Phase 8.1
-closes is one unwitnessed claim and seven stale documents.
+closes is one unwitnessed claim and seven stale documents.~~
+
+**Superseded 2026-08-19 by audit round 2.** Remaining work *is* requirement work:
+running Phase 8.1's walkthrough falsified **DIST-03**, so the 51/51/0 figure above
+and in REQUIREMENTS.md is no longer true. The two paragraphs above are left struck
+through rather than rewritten here because correcting them — audit items E-1..E-5,
+`.planning/v0.2.0-MILESTONE-AUDIT.md` §7 — is **Phase 8.2's own deliverable**, and
+the count depends on what 8.2's fix actually restores. Read §2 of that audit, not
+this section, until 8.2 closes.
 
 ---
 
