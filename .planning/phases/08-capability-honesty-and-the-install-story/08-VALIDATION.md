@@ -7,6 +7,7 @@ wave_0_complete: true
 created: 2026-08-18
 audited: 2026-08-19
 manual_only_open: 1
+manual_only_open_note: "Attempted in Phase 8.1, plan 08.1-04 (agent-driven, local-checkout-HEAD, not human-witnessed) -- outcome: failed. Genuine /usr/bin/x64sc launched by this project's own broker boots with Drive8Type=0 (NONE); no MCP tool on the stock surface sets it, so LOAD\"*\",8,1 returns DEVICE NOT PRESENT and the capture never completes. See 08-HUMAN-UAT.md and 08.1-WALKTHROUGH-EVIDENCE.md."
 ---
 
 # Phase 8 — Validation Strategy
