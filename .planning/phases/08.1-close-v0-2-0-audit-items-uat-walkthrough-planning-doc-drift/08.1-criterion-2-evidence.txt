@@ -1,0 +1,75 @@
+Criterion 2 evidence — Phase 8.1 plan 02, Task 3
+=================================================
+
+Criterion 2 (08.1-VALIDATION.md, Per-Task Verification Map): "Phase 8's
+08-VALIDATION.md is no longer status: draft / non-compliant, so every phase
+in the milestone is Nyquist-compliant." Marked "already passes — verify, do
+not re-do." This file records that verification. No edit was made to
+08-VALIDATION.md by this plan.
+
+1. Frontmatter of 08-VALIDATION.md
+-----------------------------------
+$ grep -nE '^(phase|slug|status|nyquist_compliant|wave_0_complete|created|audited|manual_only_open):' .planning/phases/08-capability-honesty-and-the-install-story/08-VALIDATION.md
+
+2:phase: 8
+3:slug: capability-honesty-and-the-install-story
+4:status: audited
+5:nyquist_compliant: true
+6:wave_0_complete: true
+7:created: 2026-08-18
+8:audited: 2026-08-19
+9:manual_only_open: 1
+
+2. Commit that flipped it
+--------------------------
+$ git log -1 --format='%H %ad %s' --date=iso -- .planning/phases/08-capability-honesty-and-the-install-story/08-VALIDATION.md
+
+43063385da9a92d75c184e9ff32bea72b0c0c6c7 2026-08-19 09:34:55 +0200 docs(phase-08): update validation strategy after Nyquist audit
+
+This is commit 4306338 (short sha), the same commit named by 08.1-RESEARCH.md
+and 08.1-VALIDATION.md as the commit that already flipped 08-VALIDATION.md
+from status: draft / non-compliant to status: audited / nyquist_compliant:
+true, with wave_0_complete: true and manual_only_open: 1. No later commit has
+touched this file (git diff --stat against the working tree at the time of
+this evidence capture shows zero changes from this plan).
+
+3. Per-phase sweep — every *-VALIDATION.md in the milestone
+-------------------------------------------------------------
+$ grep -H -E '^(status|nyquist_compliant):' .planning/phases/*/[0-9]*-VALIDATION.md
+
+.planning/phases/04-client-side-tool-seam-and-6510-disassembler/04-VALIDATION.md:status: planned
+.planning/phases/04-client-side-tool-seam-and-6510-disassembler/04-VALIDATION.md:nyquist_compliant: true
+.planning/phases/03-direct-tools/03-VALIDATION.md:status: approved
+.planning/phases/03-direct-tools/03-VALIDATION.md:nyquist_compliant: true
+.planning/phases/01-corrected-ground-truth/01-VALIDATION.md:status: approved
+.planning/phases/01-corrected-ground-truth/01-VALIDATION.md:nyquist_compliant: true
+.planning/phases/08.1-close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift/08.1-VALIDATION.md:status: draft
+.planning/phases/08.1-close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift/08.1-VALIDATION.md:nyquist_compliant: false
+.planning/phases/08-capability-honesty-and-the-install-story/08-VALIDATION.md:status: audited
+.planning/phases/08-capability-honesty-and-the-install-story/08-VALIDATION.md:nyquist_compliant: true
+.planning/phases/02-stock-backend-connection/02-VALIDATION.md:status: planned
+.planning/phases/02-stock-backend-connection/02-VALIDATION.md:nyquist_compliant: true
+.planning/phases/07-cycle-timing-and-wedge-triage/07-VALIDATION.md:status: complete
+.planning/phases/07-cycle-timing-and-wedge-triage/07-VALIDATION.md:nyquist_compliant: true
+.planning/phases/05-skill-critical-derived-tools/05-VALIDATION.md:status: planned
+.planning/phases/05-skill-critical-derived-tools/05-VALIDATION.md:nyquist_compliant: true
+
+Named exception: .planning/phases/08.1-.../08.1-VALIDATION.md is the one row
+above reading status: draft / non-compliant (see line 47 of this file's
+literal command output above). This is EXPECTED, not a regression — Phase 8.1
+itself has not been executed yet (this plan, 08.1-02, is mid-execution as
+this evidence file is written), so its own validation strategy legitimately
+remains draft/non-compliant until Phase 8.1 completes and is itself
+validated. Every OTHER phase in the v0.2.0 milestone — 01, 02, 03, 04, 05,
+07, and 08 — reads nyquist_compliant: true. Phase 6 is cut and carries no
+06-VALIDATION.md (correctly absent from the glob above).
+
+4. Verdict
+----------
+HOLDS. Phase 8's 08-VALIDATION.md already read status: audited /
+nyquist_compliant: true before this plan started, flipped by prior commit
+4306338 ("docs(phase-08): update validation strategy after Nyquist audit"),
+not by any edit made in Phase 8.1. Every phase in the v0.2.0 milestone except
+Phase 8.1 itself (not yet executed, expected) is Nyquist-compliant. Criterion
+2 of 08.1-02-PLAN.md is satisfied by verification, not by re-authoring
+08-VALIDATION.md.
