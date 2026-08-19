@@ -1772,7 +1772,43 @@ test("buildViceArgs: the VICE_ARGS override short-circuits before either backend
 
 test("buildViceArgs: stock backend defaults to a loopback binary-monitor bind", () => {
   const args = buildViceArgs(6510, { backend: "stock" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+});
+
+// ===========================================================================
+// 08.2-02-PLAN.md, Task 1: I-2 -- the stock branch must emit -default
+// -drive8type 1541 ahead of -binarymonitor, from a single fix site, so a
+// broker-launched stock x64sc boots with unit 8 answering. Task 2 (below,
+// separately) covers the XDG_CONFIG_HOME options-threading seam -- I-2 and
+// I-1 are separate root causes and their acceptance stays separable, so no
+// assertion here mentions XDG_CONFIG_HOME.
+// ===========================================================================
+
+test("buildViceArgs (I-2): stock backend emits the exact fixed argv shape -- -default -drive8type 1541 ahead of -binarymonitor", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+test("buildViceArgs (I-2): ordering invariant survives future flag additions -- -default is index 0, -drive8type precedes -binarymonitor, and 1541 follows -drive8type immediately", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.equal(args.indexOf("-default"), 0, "-default must be the very first element or it silently clobbers -drive8type");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must be set before the monitor binds");
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "the element immediately following -drive8type must be the string 1541");
+});
+
+test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in the remoteMonitorPort variant too", () => {
+  const args = buildViceArgs(6510, { backend: "stock", remoteMonitorPort: 6511 });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0 even when -remotemonitor is appended");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"));
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541");
+  assert.ok(args.includes("-remotemonitor"), "the remoteMonitorPort variant must still append -remotemonitor");
 });
 
 // MUST run before any later test in this file passes a non-loopback
@@ -1801,7 +1837,7 @@ test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly o
 
 test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
   const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
 });
 
 // ===========================================================================
@@ -1811,9 +1847,9 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
 // wiring of the real allocator below.
 // ===========================================================================
 
-test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the pre-plan argv, byte-identical", () => {
+test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the current argv, byte-identical", () => {
   const args = buildViceArgs(6600, { backend: "stock" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
 });
 
 test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
@@ -1824,6 +1860,9 @@ test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this p
 test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remotemonitor and its address, same host as the binmon bind", () => {
   const args = buildViceArgs(6600, { backend: "stock", remoteMonitorPort: 6601 });
   assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
     "-binarymonitor",
     "-binarymonitoraddress",
     "ip4://127.0.0.1:6600",

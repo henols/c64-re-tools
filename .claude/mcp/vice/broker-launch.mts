@@ -170,7 +170,31 @@ export function buildViceArgs(
           `when the MCP server itself runs in a container that must reach the host emulator\n`,
       );
     }
-    const args = ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+    // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
+    // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
+    // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point
+    // checkpoint never hits. No stock MCP tool can correct this after boot
+    // (the 38-tool stock manifest has zero resource-set names by design),
+    // so the fix must be a launch-time flag. `-default` MUST be the very
+    // first element: it is VICE's reset-to-compiled-in-defaults instruction,
+    // not an inert "these are the baselines" no-op, so any flag emitted
+    // before it (including -drive8type) is silently clobbered back to its
+    // compiled-in value. `-drive8type 1541` therefore has to come
+    // immediately after `-default`, and -- per CLAUDE.md's documented
+    // constraint -- `-default` also has to come before `-binarymonitor` or
+    // the monitor never binds and the subsequent connect hangs in the
+    // backlog looking exactly like a wedge. Confirmed sufficient live in
+    // Phase 8.1's standalone probe (08.1-WALKTHROUGH-EVIDENCE.md §4):
+    // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
+    // monitor succeeded immediately. Deliberately NOT setting
+    // -drive8truedrive / Drive8TrueEmulation here: this build's own default
+    // already reads Drive8TrueEmulation=1 (same probe), so 08.2-RESEARCH.md's
+    // primary recommendation is that only -drive8type needs adding.
+    // Assumption A3 in that doc's Assumptions Log (some other stock build
+    // might default Drive8TrueEmulation to 0) is read and deliberately not
+    // pre-emptively defended against here; plan 03's live test is what would
+    // surface it if that assumption is ever wrong on a different build.
+    const args = ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
     if (typeof remoteMonitorPort === "number") {
       if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
         warnedRemoteMonitorBindWidened = true;
