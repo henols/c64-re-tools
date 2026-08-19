@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: Awaiting next milestone
-last_updated: "2026-08-19T18:14:08.134Z"
-last_activity: 2026-08-19 — Milestone v0.2.0 completed and archived
+last_updated: "2026-08-19T21:15:43.912Z"
+last_activity: "2026-08-19 — Completed quick task 260819-vie: extracted stamp/zip/attach into one release-assets seam, wired both CI release paths to it, and attached v0.2.0's missing GitHub Release assets retroactively"
 progress:
-  total_phases: 10
+  total_phases: 9
   completed_phases: 9
   total_plans: 87
   completed_plans: 87
-  percent: 90
+  percent: 100
 ---
 
 # Project State
@@ -112,6 +112,7 @@ Recent decisions affecting current work:
 - [Phase 08.1]: Recorded criterion-1 UAT walkthrough result honestly as failed — Genuine stock x64sc boots with Drive8Type=0 by default; no MCP tool on the stock surface can set it, so the disk-based capture cannot complete; no workaround was applied to force a pass (FINDING-C1 in 08.1-WALKTHROUGH-EVIDENCE.md).
 - [Phase 08.1]: Root-caused the recurring STATE.md Progress-line drift to two disagreeing GSD SDK formulas (uncapped plan-file ratio vs phase-fraction-capped computeProgressPercent), then caught its own initial 78% fix going stale mid-execution when a state.* frontmatter auto-resync mechanism correctly advanced ground truth to 8/9 phases (89%); corrected the body line to 89%, synced ROADMAP.md via roadmap.update-plan-progress, and replaced D-5's brittle bare-literal checklist assertion with a body-vs-frontmatter self-consistency invariant.
 - [Phase 08.1]: Carried the confirmed Drive8Type=0 open product defect (plan 08.1-04's live-proven finding, confirmed fix -drive8type 1541 at launch, not yet applied) forward into STATE.md's Deferred Items/Blockers and ROADMAP.md's Phase 8.1 notes as explicit open backlog, rather than leaving it recoverable only from a dated decision-log line.
+- [Phase quick-260819-vie]: One release-assets seam (scripts/release-assets.sh) now owns stamp/zip/attach; both release and release-on-merge CI jobs call it with the version as an explicit argument — v0.2.0 shipped with zero release assets because the merge path's GITHUB_TOKEN-created tag never re-triggers the tag-gated release job
 
 ### Pending Todos
 
@@ -219,15 +220,17 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-19 — v0.2.0 milestone close-out
-Stopped at: Milestone v0.2.0 archived, tagged and committed
+Last session: 2026-08-19T21:15:30.042Z
+Stopped at: Completed quick-260819-vie: release-assets seam wired to both release paths, v0.2.0 assets attached
 Resume file: None
 
 ## Operator Next Steps
 
 - Start the next milestone with `/gsd-new-milestone` — it creates a fresh
   `REQUIREMENTS.md`, which was removed at close.
+
 - Consider publishing first: 386 commits sit unpushed ahead of `origin/main`,
   newest tag `v0.1.10`. None of v0.2.0 has reached a user.
+
 - `R2000-16`'s assumption probe gates all of v0.3.0 and has no v0.2.0
   dependency — it can run before the milestone is opened.
