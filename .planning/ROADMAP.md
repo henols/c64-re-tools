@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.2.0 Switchable stock-VICE backend** — Phases 1-8 (in progress)
+- 🚧 **v0.2.0 Switchable stock-VICE backend** — Phases 1-8, 8.1 (all requirements met; audit close-out in 8.1)
 - 📋 **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-10 (proposed, not opened)
 
 **Scope was cut on 2026-08-17** against a single test: *does a shipped skill call
@@ -11,6 +11,8 @@ skills' actual `vice_*` usage against `tools-manifest.json` and
 `tools-manifest.stock.json`. v0.2.0 went from 29 open requirements across 4
 phases to 14 across 3; v0.3.0 from 16 across 4 phases to 12 across 2. See "Cut
 from scope" in each milestone.
+
+# Milestone v0.2.0: Switchable stock-VICE backend
 
 ## Overview
 
@@ -95,6 +97,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
 - [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 executed 2026-08-18 in 3 waves; re-verification 2026-08-18 returned human_needed -- 4/4 truths hold in substance, all four prior gaps closed and independently re-proven live against genuine VICE 3.9 and 3.10, with 1 outstanding human-verification item: the broker-mediated monitor_held_elsewhere verdict is unit-proven only, see 07-HUMAN-UAT.md. Code review found 1 blocker introduced by the CR-01 fix, see 07-REVIEW.md. NOT complete)
 - [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
+- [ ] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture
 
 ## Phase Details
 
@@ -482,6 +485,44 @@ Notes:
 - **Dropped from this phase:** `VERIF-03`, the two-process cross-backend parity harness. `PROJECT.md` already declares byte-identical parity a non-goal, so the harness would measure something the project does not promise. Criterion 4's manifest-derived table gives the user the same information for far less work.
 - Re-check for prebuilt regenerator2000 binaries when writing criterion 3, in case v0.3.0's prerequisite can be stated without `cargo install`.
 
+### Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift (INSERTED)
+
+**Goal**: The milestone's own definition of done is witnessed by a person, and no planning document lies to the next audit
+**Depends on**: Phase 8
+**Inserted**: 2026-08-19, from `.planning/v0.2.0-MILESTONE-AUDIT.md` §9
+**Requirements**: none new — closes evidence and documentation debt against DIST-03 and the milestone's stated finish line
+**Success Criteria** (what must be TRUE):
+
+  1. `08-HUMAN-UAT.md` Test 1's drive-a-skill half is **run and recorded**: a person installs stock VICE and the plugin from the README alone, sets `VICE_BACKEND=stock`, and drives `c64-ram-capture` to a verified full 64K RAM capture. The result is recorded as observed — pass or fail — not as pending.
+  2. Phase 8's `08-VALIDATION.md` is no longer `status: draft` / `nyquist_compliant: false`, so every phase in the milestone is Nyquist-compliant.
+  3. All seven documentation-drift items in the audit's §7 table (D-1..D-7) are corrected: the 17 cut requirements read `Cut 2026-08-17` rather than `Pending`, `DIRECT-06`'s traceability row stops attributing detach to Phase 7, the coverage arithmetic reads 51/51/0, ROADMAP.md's Phase 7 checkbox and "NOT complete" text match its own progress table, STATE.md is synced to 7/7 and 100%, the "two provably impossible tools" prose says three, and the stock-manifest tool count is either refreshed or marked as-of-cut.
+  4. A re-read of REQUIREMENTS.md, ROADMAP.md and STATE.md by a fresh reader yields the same phase-completion and requirement-coverage picture the audit derived — no document contradicts another.
+
+**Plans**: 5 plans in 3 waves *(two independent tracks — A: documentation drift, B: the walkthrough — plus a closing consistency read)*
+Plans:
+
+**Wave 1** *(two independent tracks, disjoint file ownership)*
+
+- [ ] 08.1-01-PLAN.md — Wave 0 D-1..D-7 checklist harness with a recorded RED baseline, then REQUIREMENTS.md's drift: the 17 `Pending` rows, DIRECT-06's row, the 51/51/0 coverage block, and its share of the D-6 arithmetic and D-7 manifest count [wave 1, track A]
+- [ ] 08.1-03-PLAN.md — walkthrough harness: pin the tested artifact by commit sha, probe the local-path install route, assemble a throwaway `.prg`/`.d64` via `acme-build` + `c1541`, and stand up a scratch project wired to local `HEAD` with `VICE_BACKEND=stock` [wave 1, track B]
+
+**Wave 2** *(each blocked on its own track's wave 1)*
+
+- [ ] 08.1-02-PLAN.md — ROADMAP.md's Phase 7 checkbox and stale "NOT complete" text, both files' share of the D-6 arithmetic and D-7 as-of annotations, STATE.md's progress figures, and the criterion-2 verification evidence [wave 2, track A, blocked on 08.1-01]
+- [ ] 08.1-04-PLAN.md — drive `c64-ram-capture` end to end against genuine stock VICE and record the outcome in `08-HUMAN-UAT.md` as pass or fail (never pending) with `driven_by: agent-proxy`, the tested sha, and the local-`HEAD` limitation; point `08-VERIFICATION.md` and `08-VALIDATION.md` at it [wave 2, track B, blocked on 08.1-03]
+
+**Wave 3** *(blocked on both tracks)*
+
+- [ ] 08.1-05-PLAN.md — the closing cross-document consistency read (criterion 4): reconcile every claim shared by REQUIREMENTS.md, ROADMAP.md and STATE.md, fix residuals, and prove all seven D-items green in one run [wave 3, blocked on 08.1-02 and 08.1-04]
+
+Notes:
+
+- **This phase exists to close v0.2.0, not to extend it.** It adds no requirement and ships no feature. If criterion 1's walkthrough finds a real defect, that defect is the finding — fix it here only if it is install-path-shallow, otherwise record it and let it size its own work.
+- Criteria 1 and 2 are the same gap surfacing twice: Phase 8 is both the phase carrying the open UAT and the only non-Nyquist-compliant phase. Running the walkthrough is what clears the flag.
+- The audit's two optional follow-ons are **not** in this phase's scope: `XDG_CONFIG_HOME` isolation on the production stock launch (§4.2) and the Phase 3 / Phase 5 warning clusters. Both are tracked; neither blocks tagging.
+- Criterion 3 is mechanical and can run in parallel with criterion 1 — it touches only `.planning/` documents plus the two stale prose lines, and shares no files with the walkthrough.
+- The milestone heading `# Milestone v0.2.0: ...` was added to ROADMAP.md on 2026-08-19 when this phase was inserted: without it, `extractCurrentMilestone()` matched `## Cut from scope (v0.2.0, ...)` first and extracted a 27-line slice containing no phases, so every SDK phase operation reported v0.2.0's phases as absent. Do not remove it.
+
 ## Cut from scope (v0.2.0, 2026-08-17)
 
 Removed after measuring the shipped skills' actual tool usage against both
@@ -513,9 +554,10 @@ scope decision, not an archaeology exercise.
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 7 → 8. **Phase 6 is cut**;
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 7 → 8 → 8.1. **Phase 6 is cut**;
 its number is retained so committed artifacts under `.planning/phases/` keep
-their references.
+their references. **Phase 8.1 was inserted 2026-08-19** to close the audit's two
+open items before v0.2.0 is tagged; it is the last phase of this milestone.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -527,10 +569,15 @@ their references.
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
+| 8.1 Close v0.2.0 audit items (INSERTED) | 0/5 | Planned | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
 for the 2 that cannot be built. Was 29 requirements across 4 phases.
+
+**Remaining work is not requirement work.** All 51 in-scope requirements are
+satisfied with evidence (`.planning/v0.2.0-MILESTONE-AUDIT.md` §2). What Phase 8.1
+closes is one unwitnessed claim and seven stale documents.
 
 ---
 
