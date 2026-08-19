@@ -632,7 +632,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 0/0 | Not planned | - |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 0/6 | Planned     | - |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work

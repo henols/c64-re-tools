@@ -26,9 +26,9 @@ inspect chip state — and keep working when the emulator misbehaves.
 
 ## Current Position
 
-Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — NOT STARTED
-Plan: Not planned yet — run /gsd-plan-phase 8.2
-Next: /gsd-plan-phase 8.2
+Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — PLANNED
+Plan: 0/6 executed — 6 plans in 5 waves
+Next: /gsd-execute-phase 8.2
 Status: Ready to execute
 Last activity: 2026-08-19 -- Phase 08.2 planning complete
 Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
