@@ -33,9 +33,10 @@ stock provably cannot have, and ship an install story (Phase 8).
 
 **The finish line is not parity with the fork.** It is: a user with an
 apt-installed VICE can run the six shipped skills, and is told plainly where they
-must reach for the fork instead. The skills call 28 tools; 16 already work on
-stock, 10 are buildable and are Phases 5 and 7, and 2 are impossible and are
-Phase 8's job to route honestly. The fork's other 34 tools are called by no
+must reach for the fork instead. The skills call 29 tools; 16 already work on
+stock, 10 are buildable and are Phases 5 and 7, and 3 are impossible
+(`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) and are
+Phase 8's job to route honestly. The fork's other 33 tools are called by no
 skill and are not a gap.
 
 ## Standing Constraints
@@ -95,7 +96,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it (completed 2026-08-17)
 - [x] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side (13 plans: 8 executed 2026-08-17 + 5 gap-closure 2026-08-17 after verification returned gaps_found on criteria 3 and 4 — the hardcoded CPU-view `bank: 0x0000` in all four chip/sprite reads; re-verified 5/5 2026-08-17, both criteria closed and live-confirmed against genuine stock VICE 3.9) (completed 2026-08-17)
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
-- [ ] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 executed 2026-08-18 in 3 waves; re-verification 2026-08-18 returned human_needed -- 4/4 truths hold in substance, all four prior gaps closed and independently re-proven live against genuine VICE 3.9 and 3.10, with 1 outstanding human-verification item: the broker-mediated monitor_held_elsewhere verdict is unit-proven only, see 07-HUMAN-UAT.md. Code review found 1 blocker introduced by the CR-01 fix, see 07-REVIEW.md. NOT complete)
+- [x] **Phase 7: Cycle Timing and Wedge Triage** - The last two skill-called tools, plus "is the emulator advancing" on stock (18/18 plans executed: 10 on 2026-08-18 + 8 gap-closure plans 07-11..07-18 in 3 waves; 07-VERIFICATION.md: status verified, 4/4 truths fully verified -- the one residual human-verification item, the broker-mediated monitor_held_elsewhere verdict, was live-proven by quick task 260818-obc, and the CR-01 review blocker from 07-REVIEW.md was fixed by quick task 260818-nh5) (completed 2026-08-18)
 - [x] **Phase 8: Capability Honesty and the Install Story** - The runtime error, the playbook routes, and the install docs for the two capabilities stock provably cannot have (completed 2026-08-18)
 - [ ] **Phase 8.1: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift** (INSERTED) - Run the one unwitnessed claim in the milestone — the install-to-RAM-capture walkthrough — and correct the seven planning documents that would otherwise start the next audit from a false picture
 
@@ -347,7 +348,7 @@ Plans:
 
 Notes:
 
-- **Scope is set by what the skills call, not by parity with the fork.** Measured against `tools-manifest.json` versus `tools-manifest.stock.json`: the skills call 28 tools; 16 already work on stock, 12 do not, and 2 of those 12 are impossible on stock. That leaves **8 tools in this phase** (`vice_memory_search`, `vice_memory_compare`, `vice_symbols_load`, `vice_symbols_lookup`, `vice_vicii_get_state`, `vice_cia_get_state`, `vice_sprite_get`, `vice_sprite_inspect`) and 2 in Phase 7. Everything else the fork offers is called by **no skill** and is therefore out of scope — see "Cut from scope" below.
+- **Scope is set by what the skills call, not by parity with the fork.** Measured against `tools-manifest.json` versus `tools-manifest.stock.json`: the skills call 28 tools; 16 already work on stock, 12 do not, and 2 of those 12 are impossible on stock. That leaves **8 tools in this phase** (`vice_memory_search`, `vice_memory_compare`, `vice_symbols_load`, `vice_symbols_lookup`, `vice_vicii_get_state`, `vice_cia_get_state`, `vice_sprite_get`, `vice_sprite_inspect`) and 2 in Phase 7. Everything else the fork offers is called by **no skill** and is therefore out of scope — see "Cut from scope" below. *(Corrected 2026-08-19, during Phase 8.1: the impossible count is three, not two -- plan 05-08's skill-vs-manifest sweep found `vice_keyboard_restore` in addition to `vice_sid_get_state` and `vice_keyboard_matrix`. The measured totals move with it: 29 called / 16 already working / 13 not working / 3 impossible. The "8 tools in this phase and 2 in Phase 7" split above is unchanged.)*
 - Only the **read** halves are in scope. `vice_sprite_set`, `vice_vicii_set_state`, `vice_cia_set_state`, `vice_memory_fill` are called by no skill.
 - `DERIV-04` gains a second reason to exist beyond parity: it is the consumer half of the regenerator2000 symbol round trip (v0.3.0). Build the loader so a VICE `.lbl` file from any producer works.
 - `DERIV-07` (derived tools live in sibling modules, intercepted before `rewriteArguments()`) is already complete from Phase 4 and stands as the seam these eight tools land through.
@@ -495,7 +496,7 @@ Notes:
 
   1. `08-HUMAN-UAT.md` Test 1's drive-a-skill half is **run and recorded**: a person installs stock VICE and the plugin from the README alone, sets `VICE_BACKEND=stock`, and drives `c64-ram-capture` to a verified full 64K RAM capture. The result is recorded as observed — pass or fail — not as pending.
   2. Phase 8's `08-VALIDATION.md` is no longer `status: draft` / `nyquist_compliant: false`, so every phase in the milestone is Nyquist-compliant.
-  3. All seven documentation-drift items in the audit's §7 table (D-1..D-7) are corrected: the 17 cut requirements read `Cut 2026-08-17` rather than `Pending`, `DIRECT-06`'s traceability row stops attributing detach to Phase 7, the coverage arithmetic reads 51/51/0, ROADMAP.md's Phase 7 checkbox and "NOT complete" text match its own progress table, STATE.md is synced to 7/7 and 100%, the "two provably impossible tools" prose says three, and the stock-manifest tool count is either refreshed or marked as-of-cut.
+  3. All seven documentation-drift items in the audit's §7 table (D-1..D-7) are corrected: the 17 cut requirements read `Cut 2026-08-17` rather than `Pending`, `DIRECT-06`'s traceability row stops attributing detach to Phase 7, the coverage arithmetic reads 51/51/0, ROADMAP.md's Phase 7 checkbox and "NOT complete" text match its own progress table, STATE.md is synced to 7/7 and 100%, the "two provably impossible tools" prose says three, and the stock-manifest tool count is either refreshed or marked as-of-cut. *(Corrected 2026-08-19, during Phase 8.1 planning: the audit's "sync STATE.md to 7/7, 100%" was written before Phase 8.1 was inserted into the milestone. With 8.1 in flight, the truthful target is **7 of 9 phases complete, 78%** -- forcing 100% here would be a new false claim of exactly the kind this phase exists to remove.)*
   4. A re-read of REQUIREMENTS.md, ROADMAP.md and STATE.md by a fresh reader yields the same phase-completion and requirement-coverage picture the audit derived — no document contradicts another.
 
 **Plans**: 5 plans in 3 waves *(two independent tracks — A: documentation drift, B: the walkthrough — plus a closing consistency read)*
@@ -574,6 +575,10 @@ open items before v0.2.0 is tagged; it is the last phase of this milestone.
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
 for the 2 that cannot be built. Was 29 requirements across 4 phases.
+*(Corrected 2026-08-19, during Phase 8.1: **0 open** -- all 51 in-scope
+requirements are satisfied with evidence, and "the 2 that cannot be built" is
+**3** (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`).
+See the paragraph immediately below and REQUIREMENTS.md's coverage block.)*
 
 **Remaining work is not requirement work.** All 51 in-scope requirements are
 satisfied with evidence (`.planning/v0.2.0-MILESTONE-AUDIT.md` §2). What Phase 8.1
@@ -605,7 +610,10 @@ regenerator2000 replaces none of it: stock advertises 26 tools against the fork'
 decode, screenshots, symbols). Phase 4's disassembler has one consumer today and
 gains its second from Phase 5's backtrace. Phase 7 owns disk detach (the deferred
 half of `DIRECT-06`) and wedge triage on stock. The entire overlap analysis found
-exactly one deletable thing in this codebase: a 14-line `toacme` shim.
+exactly one deletable thing in this codebase: a 14-line `toacme` shim. *(As of
+2026-08-19: `tools-manifest.stock.json` ships **38** tools. 26 was the figure at
+the 2026-08-17 cut, before Phases 5 and 7 added twelve tools; the fork's 62 is
+unchanged.)*
 
 **If v0.3.0 needs to start sooner, defer Phase 6, not 5 or 7.** Phase 6 is
 "Stock-Only Gains" — value-add with no parity requirement behind it. Phases 5 and
