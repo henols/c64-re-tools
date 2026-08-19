@@ -879,6 +879,16 @@ function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, ba
   });
 }
 
+/** Exported ONLY so a test can drive the warm-floor arm's REAL spawn
+ * composition (this function's own makeLoggingSpawn()+stashingSpawn+
+ * withCrashSupervision() closure above) through the built artifact, the
+ * same escape-hatch pattern `_superviseDepsFor` already establishes for the
+ * respawn composition -- see vice-broker-acquire.test.ts's I-1 composition
+ * tests (08.2-06-PLAN.md, Task 3), which call this directly with no spawn
+ * override so the warm floor's own independent `stashingSpawn` dropper
+ * cannot hide behind an injected stub. */
+export const _maintainWarmFloorForRealBroker = maintainWarmFloorForRealBroker;
+
 /** Releases a grant and identity-verified-kills its instance -- but ONLY
  * when the port's CURRENT occupant is proven to be the SAME process this
  * grant was actually issued for (its own recorded `pid`, set at grant time
