@@ -542,31 +542,35 @@ Notes:
 **Success Criteria** (what must be TRUE):
 
   1. A broker-launched stock `x64sc` boots with a 1541 on unit 8 — `buildViceArgs()`'s stock branch emits `-default -drive8type 1541` ahead of `-binarymonitor`, from one fix site, with the fork branch's argv byte-identical to before (I-2).
-  2. A production stock launch never reads or writes the operator's real `$HOME/.config/vice/vicerc` — `spawnFn` takes an options parameter and stock launches get a fresh scratch `XDG_CONFIG_HOME` (I-1, same-pass rider).
+  2. A production stock launch never reads or writes the operator's real `$HOME/.config/vice/vicerc` — the scratch `XDG_CONFIG_HOME` computed in `spawnAndRecordInstance()` reaches `nodeSpawn()` on every real launch path (cold acquire, warm-floor spare, crash-respawn), proven through the real `makeLoggingSpawn` + `withCrashSupervision` composition rather than an injected stub (I-1, same-pass rider).
   3. A live, opt-in test drives `vice_disk_attach` and `vice_autostart` against a real `.d64` on an instance launched **through the real broker primitive**, and the `.prg`-only blast radius is settled by a pre-fix versus post-fix measurement rather than inference (I-2's coverage clause and its open question).
   4. `node test-gate.mjs` and CI's own bare `npm test` both report zero failures, so the tagging push cannot produce a red CI run (I-3).
   5. `c64-ram-capture` has been driven end to end against a provably broker-launched genuine-stock instance, and `08-HUMAN-UAT.md` Test 1 records the outcome as pass or fail — never pending (DIST-03).
   6. REQUIREMENTS.md, ROADMAP.md and STATE.md agree with what the re-run actually recorded, with coverage arithmetic and body-versus-frontmatter figures internally consistent rather than pinned to a literal, and each of Phase 8.1's five orphaned walkthrough findings has a tracked home (E-1..E-5).
 
-**Plans**: 5 plans in 4 waves
+**Plans**: 6 plans in 5 waves
 Plans:
 
-**Wave 1** *(two independent tracks, disjoint file ownership — item 2 and item 1)*
+**Wave 1** *(two independent tracks, disjoint file ownership — item 2 and item 1's argv half)*
 
 - [ ] 08.2-01-PLAN.md — I-3: untrack Phase 8.1's throwaway `08.1-d-checklist.sh`, restoring a green `host-scripts.test.ts`, and prove both the narrowed gate and CI's bare `npm test` green [wave 1]
-- [ ] 08.2-02-PLAN.md — I-2 + I-1: `-default -drive8type 1541` first in `buildViceArgs()`'s stock branch, `spawnFn` gains an options parameter carrying a scratch `XDG_CONFIG_HOME`, five new unit tests, and the mandatory `node build.ts` rebuild of `resources/broker-launch.mjs` [wave 1]
+- [ ] 08.2-02-PLAN.md — I-2 + I-1's first half: `-default -drive8type 1541` first in `buildViceArgs()`'s stock branch, the injected-spawn seam widened with an options parameter and the scratch `XDG_CONFIG_HOME` computed in `spawnAndRecordInstance()`, five new unit tests, and the mandatory `node build.ts` rebuild of `resources/broker-launch.mjs` [wave 1]
 
-**Wave 2** *(blocked on 08.2-02)*
+**Wave 2** *(blocked on 08.2-02, which co-owns `broker-launch.mts`)*
 
-- [ ] 08.2-03-PLAN.md — I-2's missing coverage: `stock-broker-live.test.ts`, the first test to launch through `buildViceArgs()`/`tryLaunchOne()` with a real stock binary, registered as the seventh `MANUAL_ONLY_TESTS` entry, plus the pre-fix/post-fix `.prg` measurement that settles the blast radius [wave 2]
+- [ ] 08.2-06-PLAN.md — I-1 end to end: the options argument forwarded through the four hops that currently drop it (`makeLoggingSpawn`, `withCrashSupervision`'s wrapper body, the warm floor's `stashingSpawn`, `launchSupervised`'s `defaultRealSpawn`), both real daemon spawn-factory closures updated, `resources/vice-broker.mjs` rebuilt, and a `handleAcquire()` composition test with `buildColdSpawnFactory` omitted so an injected stub cannot fake it [wave 2]
 
-**Wave 3** *(blocked on 08.2-02 and 08.2-03; runs in the main checkout, not a worktree)*
+**Wave 3** *(blocked on 08.2-02 and 08.2-06)*
 
-- [ ] 08.2-04-PLAN.md — item 3: re-run the install-to-RAM-capture walkthrough against a broker-launched stock instance, prove the argv from `epoch.json` + `ps` (never `resolvedBinaryPath`), and record pass or fail in `08-HUMAN-UAT.md` [wave 3]
+- [ ] 08.2-03-PLAN.md — I-2's missing coverage: `stock-broker-live.test.ts`, the first live test to launch through the real spawned broker daemon (so both `buildViceArgs()` and the supervision composition are in the call path), registered as the seventh `MANUAL_ONLY_TESTS` entry, plus the pre-fix/post-fix `.prg` measurement that settles the blast radius [wave 3]
 
-**Wave 4** *(blocked on 08.2-01, 08.2-03 and 08.2-04; runs in the main checkout, not a worktree)*
+**Wave 4** *(blocked on 08.2-02, 08.2-03 and 08.2-06; runs in the main checkout, not a worktree)*
 
-- [ ] 08.2-05-PLAN.md — item 4 / E-1..E-5: DIST-03's status derived from the re-run's actual verdict, self-consistent coverage arithmetic, the two stale "two-versus-three" phrases, a verify-before-editing pass over STATE.md, and five tracked todos for Phase 8.1's orphaned findings [wave 4]
+- [ ] 08.2-04-PLAN.md — item 3: re-run the install-to-RAM-capture walkthrough against a broker-launched stock instance, prove the argv from `epoch.json` + `ps` (never `resolvedBinaryPath`), assert `XDG_CONFIG_HOME` from `/proc/<pid>/environ` as a required pass, and record pass or fail in `08-HUMAN-UAT.md` [wave 4]
+
+**Wave 5** *(blocked on 08.2-01, 08.2-03 and 08.2-04; runs in the main checkout, not a worktree)*
+
+- [ ] 08.2-05-PLAN.md — item 4 / E-1..E-5: DIST-03's status derived from the re-run's actual verdict, self-consistent coverage arithmetic, the two stale "two-versus-three" phrases, a verify-before-editing pass over STATE.md, and five tracked todos for Phase 8.1's orphaned findings [wave 5]
 
 Notes:
 
