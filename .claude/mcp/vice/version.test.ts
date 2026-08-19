@@ -295,6 +295,17 @@ test("single-implementation guard: scripts/version.mjs contains no second copy o
   // Strip line comments before matching, so the file's own header prose
   // (which legitimately talks ABOUT the rule literals) can't produce a false
   // negative on this guard.
+  //
+  // LOW-2 LIMITATION (deliberately not fixed with a full tokenizer): this
+  // strip is a naive `//`-onward truncation that does NOT respect string
+  // literals -- a future line containing `//` inside a string (e.g. a
+  // doc-comment URL or an error message with a URL) would have everything
+  // after it silently truncated from the match target, which could mask a
+  // genuine reintroduction of the `prefix-matches` literal this guard exists
+  // to catch. `scripts/version.mjs` has no such line today, so this is safe
+  // as written; a proper fix would need a real tokenizer (or a "does this
+  // `//` sit inside a quoted string" check) that this low-priority guard
+  // doesn't warrant building.
   const stripped = src
     .split("\n")
     .map((line: string) => line.replace(/\/\/.*$/, ""))
