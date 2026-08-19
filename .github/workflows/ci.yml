@@ -120,38 +120,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Stamp the real version into the plugin manifests
-        # scripts/package.sh builds the zip with `git archive HEAD`, so
-        # without this step the artifact FILENAME would carry the real tag
-        # version while plugin.json inside the zip still said the working
-        # tree's placeholder (0.0.0-dev) -- the filename and the manifest
-        # would disagree. Stamping and committing LOCALLY, in this ephemeral
-        # runner checkout, is what makes `git archive HEAD` pick up the real
-        # number. This commit is never pushed -- it exists only for this
-        # job's own `git archive` to read from, and disappears with the
-        # runner. Closes the D-1 row that no automation used to touch:
-        # plugin.json is now bumped, just not in the working tree in git.
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          node scripts/version.mjs stamp "$VERSION"
-          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
-            commit -am "chore: stamp v${VERSION} into plugin manifests (ephemeral, never pushed)"
-      - name: Build installable package
-        run: bash scripts/package.sh
-      - name: Publish release assets
-        # Idempotent: create the release if it doesn't exist yet, otherwise just
-        # attach/replace the assets. This lets a release be drafted by hand (or
-        # by a re-run) without the job colliding with "release already exists".
+      - name: Stamp, package, and publish release assets
+        # quick-260819-vie D-1: the three steps this job used to run inline
+        # (stamp the manifests, build the zip, attach it to the release) now
+        # live in ONE seam, scripts/release-assets.sh, called from both
+        # release paths -- see that script's own header for the mechanism
+        # (an ephemeral stamp commit inside a throwaway detached worktree,
+        # never pushed) and for why: the merge path's GITHUB_TOKEN-created
+        # tag never re-triggers this job, so v0.2.0 shipped with zero
+        # release assets when these steps lived only here.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --clobber
-          else
-            gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.zip.sha256 --generate-notes --title "${GITHUB_REF_NAME}"
-          fi
+          bash scripts/release-assets.sh "${GITHUB_REF_NAME#v}" "${GITHUB_REF_NAME}"
 
   publish-npm:
     # On a v* tag, publish both npm packages to the public registry via
@@ -294,3 +276,19 @@ jobs:
           set -euo pipefail
           TAG="v${{ steps.ver.outputs.version }}"
           gh release create "$TAG" --target "${{ github.sha }}" --generate-notes --title "$TAG"
+
+      - name: Publish release assets
+        # quick-260819-vie D-1: this is the row the merge path used to skip
+        # entirely. This job creates the tag above with GITHUB_TOKEN, which
+        # by design does NOT re-trigger the tag-push workflow (see the
+        # comment on "Create tag + GitHub release"), so the `release` job
+        # can never run on this path -- v0.2.0 shipped with zero release
+        # assets as a direct result. Ordering is load-bearing: this step
+        # runs AFTER `gh release create`, so the release always exists by
+        # the time the seam runs and D-3's create branch never fires here.
+        if: steps.gate.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/release-assets.sh "${{ steps.ver.outputs.version }}" "${{ github.sha }}"

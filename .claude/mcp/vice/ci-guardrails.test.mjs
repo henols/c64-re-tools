@@ -371,3 +371,137 @@ test("ci-guardrails: package.json's \"test\" script still resolves to the full *
       "a bare `npm test` invocation and passes.",
   );
 });
+
+// ---------------------------------------------------------------------------
+// quick-260819-vie D-1/D-2/D-4: v0.2.0 shipped with `{"assets": []}` because
+// the `release` job's three steps (stamp manifests / build zip / attach
+// assets) are gated `startsWith(github.ref, 'refs/tags/v')`, which the
+// merge path's GITHUB_TOKEN-created tag never re-triggers. Those three steps
+// move into ONE seam, scripts/release-assets.sh, called from BOTH release
+// paths. These assertions are the drift guard: the seam must be wired into
+// exactly two gated, argument-passing step blocks, and nothing may re-derive
+// its three steps (`version.mjs stamp` directly, or a second `package.sh`
+// call) outside it.
+//
+// Written and run FIRST, against the pre-edit ci.yml, so each assertion
+// below is proven to fail for the "not wired yet" reason before ci.yml is
+// touched -- the RED half of this task's TDD gate.
+// ---------------------------------------------------------------------------
+
+/** Blocks whose body contains the given regex anywhere -- unlike
+ * findRunStepBlocksFor() above (which anchors to a single `run:` line),
+ * the release-assets.sh invocations live inside a multi-line `run: |`
+ * block scalar, so this searches the whole step block's text. */
+function findBlocksMatching(blocks, re) {
+  return blocks.filter((b) => re.test(b));
+}
+
+/** The one line inside a step block that actually INVOKES release-assets.sh
+ * (i.e. `bash scripts/release-assets.sh ...`), as opposed to a comment line
+ * merely mentioning the script's name -- both this step's own explanatory
+ * header comment and the seam's own header comment (quoted or referenced in
+ * ci.yml prose) can contain the bare string "release-assets.sh" without
+ * being the invocation line itself. */
+function releaseAssetsInvocationLine(block) {
+  return block.split("\n").find((line) => /bash scripts\/release-assets\.sh\b/.test(line));
+}
+
+test("ci-guardrails: scripts/release-assets.sh is invoked in exactly TWO step blocks of ci.yml (the tag path and the merge path) (D-1)", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /bash scripts\/release-assets\.sh\b/);
+  assert.equal(
+    matches.length,
+    2,
+    `expected exactly 2 ci.yml step blocks invoking "bash scripts/release-assets.sh", found ${matches.length} -- ` +
+      "the seam must be wired into both the tag-push release job and the release-on-merge job (D-1), no more and no fewer.",
+  );
+});
+
+test("ci-guardrails: both scripts/release-assets.sh step blocks pass the version as an explicit argument, never a bare invocation (D-2)", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /bash scripts\/release-assets\.sh\b/);
+  assert.ok(matches.length > 0, "no release-assets.sh step blocks found -- cannot assert their argument shape");
+
+  for (const block of matches) {
+    const line = releaseAssetsInvocationLine(block);
+    assert.ok(line, "matched block unexpectedly has no release-assets.sh invocation line");
+    assert.match(
+      line,
+      /release-assets\.sh\s+"?\$/,
+      `release-assets.sh invocation carries no explicit argument -- D-2 requires the version arrive as an ` +
+        `explicit argument, never read from GITHUB_REF_NAME inside the seam itself. Offending line: ${line}`,
+    );
+    assert.doesNotMatch(
+      line.trim(),
+      /release-assets\.sh$/,
+      `release-assets.sh invoked bare, with no argument at all. Offending line: ${line}`,
+    );
+  }
+});
+
+test("ci-guardrails: the release-on-merge step invoking release-assets.sh is gated on steps.gate.outputs.release == 'true' (D-4: a skipped release builds and uploads nothing)", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /bash scripts\/release-assets\.sh\b/);
+  const mergePathBlock = matches.find((b) => /steps\.ver\.outputs\.version/.test(b));
+  assert.ok(
+    mergePathBlock,
+    "no release-assets.sh step block references steps.ver.outputs.version -- the merge-path wiring is missing or renamed its version source",
+  );
+  assert.match(
+    mergePathBlock,
+    /if:\s*steps\.gate\.outputs\.release\s*==\s*'true'/,
+    `the merge-path release-assets.sh step is not gated on steps.gate.outputs.release == 'true' -- a skipped ` +
+      `release ([skip release] in the commit subject) would still build and upload assets. Offending block:\n${mergePathBlock}`,
+  );
+});
+
+test("ci-guardrails: neither scripts/release-assets.sh step block carries continue-on-error (a silently-evaporating asset step is exactly the v0.2.0 defect again)", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /bash scripts\/release-assets\.sh\b/);
+  assert.ok(matches.length > 0, "no release-assets.sh step blocks found -- cannot assert continue-on-error absence");
+  for (const block of matches) {
+    assert.equal(
+      blockHasContinueOnError(block),
+      false,
+      `a release-assets.sh step block carries continue-on-error -- this would silently evaporate the release ` +
+        `asset upload, exactly the v0.2.0 defect. Offending block:\n${block}`,
+    );
+  }
+});
+
+test("ci-guardrails: version.mjs stamp no longer appears in any ci.yml step block -- it lives inside scripts/release-assets.sh now, not re-derived in a job", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /version\.mjs stamp\b/);
+  assert.equal(
+    matches.length,
+    0,
+    `expected zero ci.yml step blocks invoking "version.mjs stamp" directly, found ${matches.length} -- ` +
+      "stamping the manifests is now the seam's job (scripts/release-assets.sh), not a job's own step; " +
+      "re-deriving it in a job would be exactly the anti-pattern D-1 exists to close.",
+  );
+
+  const seamSource = readFileSync(join(REPO_ROOT, "scripts/release-assets.sh"), "utf8");
+  assert.match(
+    seamSource,
+    /version\.mjs" stamp\b/,
+    "scripts/release-assets.sh no longer contains the version.mjs stamp call -- the seam itself must own this step",
+  );
+});
+
+test("ci-guardrails: bash scripts/package.sh appears in exactly ONE ci.yml step block (the build job's artifact build) -- every release path now reaches it only through the seam (D-1)", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findBlocksMatching(blocks, /bash scripts\/package\.sh\b/);
+  assert.equal(
+    matches.length,
+    1,
+    `expected exactly 1 ci.yml step block invoking "bash scripts/package.sh" directly, found ${matches.length} -- ` +
+      "the build job's own artifact-build step is the only direct caller; both release paths must reach " +
+      "package.sh only through scripts/release-assets.sh now.",
+  );
+});
