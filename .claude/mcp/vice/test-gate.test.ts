@@ -13,7 +13,7 @@ import { MANUAL_ONLY_TESTS, automatedTestFiles } from "./test-gate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-test("gate: MANUAL_ONLY_TESTS contains exactly the six dispositioned files", () => {
+test("gate: MANUAL_ONLY_TESTS contains exactly the seven dispositioned files", () => {
   assert.deepEqual(
     [...MANUAL_ONLY_TESTS].sort(),
     [
@@ -21,6 +21,7 @@ test("gate: MANUAL_ONLY_TESTS contains exactly the six dispositioned files", () 
       "stock-live.test.ts",
       "stock-live-triage.test.ts",
       "stock-live-broker-monitor.test.ts",
+      "stock-broker-live.test.ts",
       "vice-broker-launch.test.ts",
       "vice-proxy.test.ts",
     ].sort(),

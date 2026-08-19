@@ -3,7 +3,7 @@
 // versus safe for the automated regression gate (`npm run test:automated`).
 //
 // WHY THIS FILE EXISTS: a bare `node --test '*.test.*'` (the `npm test`
-// script) globs all test files in this directory, but six of them depend on
+// script) globs all test files in this directory, but seven of them depend on
 // manual host setup -- a real broker topology and a real emulator/display
 // environment -- so they hang or need an opt-in env var rather than report
 // outside the devcontainer. This is a disposition, not a bug: see
@@ -19,9 +19,9 @@
 // VICE_LIVE_STOCK_BIN, which is exactly the "manual host setup" disposition
 // the other three already share.
 //
-// WHAT NOT TO DO: do not re-list these six file names in a CI workflow, an
-// npm script, or a second test runner anywhere else in this repo. If a
-// seventh file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
+// WHAT NOT TO DO: do not re-list these seven file names in a CI workflow, an
+// npm script, or a second test runner anywhere else in this repo. If an
+// eighth file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
 // nowhere else -- test-gate.test.ts's drift guard fails the build if a test
 // file ever escapes both this list and the automated set, so a silent second
 // list would desync from that guard the moment it existed.
@@ -40,6 +40,15 @@
 // monitor_held_elsewhere verdict. Like every sibling above it is default-SKIP
 // everywhere (opt in via VICE_LIVE_BROKER_BIN) and never hangs CI.
 //
+// `stock-broker-live.test.ts` (audit item I-2, phase 8.2 plan 03) joined this
+// list as the SEVENTH entry: it spawns a real broker daemon (resources/
+// vice-broker.mjs, under bare node) AND a real genuine-stock emulator process
+// per test case, launched through the real `buildViceArgs()`/`tryLaunchOne()`
+// primitive rather than a hand-spawned argv -- the first test in the tree to
+// do so -- and dispatches `vice_disk_attach`/`vice_autostart` against it. Like
+// every sibling above it is default-SKIP everywhere (opt in via
+// VICE_LIVE_STOCK_BIN) and never hangs CI.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -57,8 +66,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact six test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a seventh file needs the same
+/** The exact seven test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if an eighth file needs the same
  * treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -67,6 +76,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "stock-live.test.ts",
   "stock-live-triage.test.ts",
   "stock-live-broker-monitor.test.ts",
+  "stock-broker-live.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS
