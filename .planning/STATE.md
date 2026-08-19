@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: milestone_complete
-last_updated: 2026-08-18T21:53:32.518Z
-last_activity: 2026-08-18 -- Phase 08 execution started
+status: executing
+last_updated: "2026-08-19T08:24:01.493Z"
+last_activity: 2026-08-19 -- Phase 8.1 planning complete
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 76
+  total_phases: 9
+  completed_phases: 7
+  total_plans: 81
   completed_plans: 76
-  percent: 86
-stopped_at: Milestone complete (Phase 08 was final phase)
+  percent: 78
 ---
 
 # Project State
@@ -23,15 +22,15 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Milestone complete
+**Current focus:** Phase 8.1 — close the v0.2.0 audit's two open items before tagging
 
 ## Current Position
 
-Phase: 08
+Phase: 08.1
 Plan: Not started
-Next: Phase 08 (capability-honesty-and-the-install-story) — not started, 0/TBD plans
-Status: Milestone complete
-Last activity: 2026-08-18
+Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
+Status: Ready to execute
+Last activity: 2026-08-19 -- Phase 8.1 planning complete
 Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
 human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
 
@@ -80,6 +79,10 @@ Progress: [███████░░░] 71%
 | Phase 03-direct-tools P18 | 5m | 1 tasks | 0 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 08.1 inserted after Phase 8: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift (URGENT)
 
 ### Decisions
 
