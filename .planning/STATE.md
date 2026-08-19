@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: milestone_complete
-last_updated: 2026-08-19T11:29:52.792Z
-last_activity: 2026-08-19
+status: executing
+last_updated: "2026-08-19T13:18:23.129Z"
+last_activity: 2026-08-19 -- Phase 08.2 planning complete
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 8
-  total_plans: 81
+  total_plans: 87
   completed_plans: 81
-  percent: 89
-stopped_at: Milestone complete (Phase 08.1 was final phase)
+  percent: 80
 ---
 
 # Project State
@@ -23,19 +22,25 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Milestone complete
+**Current focus:** Phase 8.2 — the three v0.2.0 tagging blockers from audit round 2
 
 ## Current Position
 
-Phase: 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — COMPLETE
-Plan: 5 of 5 executed
-Next: None — Phase 08.1 was the final phase of v0.2.0
-Status: Milestone complete
-Last activity: 2026-08-19
+Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — NOT STARTED
+Plan: Not planned yet — run /gsd-plan-phase 8.2
+Next: /gsd-plan-phase 8.2
+Status: Ready to execute
+Last activity: 2026-08-19 -- Phase 08.2 planning complete
 Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
-single human_verification item live-proven. Phase 8.1 is the last phase of
-v0.2.0 -- it closes the audit's one unwitnessed claim and its seven stale
-documents rather than shipping a feature.
+single human_verification item live-proven. Phase 8.1 closed the audit's one
+unwitnessed claim and its seven stale documents -- and running that claim is what
+falsified it: the walkthrough failed on a real defect. Audit round 2 (2026-08-19)
+therefore returned `gaps_found` and Phase 8.2 was inserted as the actual last phase
+of v0.2.0. **Do not tag v0.2.0 until 8.2 closes**, per
+`.planning/v0.2.0-MILESTONE-AUDIT.md` §9. Its three blockers: the `Drive8Type=0`
+stock-launch defect that leaves DIST-03 unsatisfied (§4.2), the red `npm test` gate
+that would fail CI on the tagging push (§4.3), and the walkthrough re-run that has to
+actually reach a verified 64K capture (plus the E-1..E-5 doc drift the defect created).
 
 **Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
 does something a skill calls depend on it? The six skills call 29 tools -- 16 already
@@ -51,23 +56,25 @@ CUT-marked requirements and 4 cut halves.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [█████████░] 89%
+Progress: [████████░░] 80%
 
-*(Phase-based, matching frontmatter `percent`: 8 of 9 phases complete now that Phase
-8.1's own 5th plan has landed on disk. Restored 2026-08-19 by Phase 8.1 plan 05 --
-this line had drifted to 99% via an SDK `state.update-progress` call that computes a
+*(Phase-based, matching frontmatter `percent`: 8 of 10 phases complete — the
+denominator moved from 9 to 10 on 2026-08-19 when Phase 8.2 was inserted after audit
+round 2 returned `gaps_found`, so the same 8 completed phases now read 80% rather than
+89%. Do not "restore" the 89%: it was correct only while 8.1 was the last phase. The
+earlier drift this note was written for is still worth knowing about --
+this line had once drifted to 99% via an SDK `state.update-progress` call that computes a
 different, real-time plan-file ratio (80 or 81 of 81 plans) with no phase-completion
 cap, unlike this file's own frontmatter recompute (`buildStateFrontmatter`, disk
 -ground-truth, phase-fraction-capped), which every `state.*` mutation triggers
 automatically. Both ratios are individually valid measurements of different things;
 only the phase-based one belongs on this line, labelled here so the two are never
 conflated again. See `08.1-CONSISTENCY-READ.md` RESIDUAL-1 and its "Correction" note
-for why this line reads 89%, not the 78% this same plan first wrote earlier today --
-78% was this file's own truth at Task 2's start (7 of 9 phases, Phase 8.1 still
-in flight); 89% is its truth now that Phase 8.1's plans are all on disk. Both were
-correct for their moment; ROADMAP.md's Phase 8.1 row is synced to match via
-`roadmap.update-plan-progress` in this same closing step, so no document is left
-behind at the stale figure.)*
+for the 89%-vs-78% episode within Phase 8.1: 78% was this file's truth at that
+plan's Task 2 start (7 of 9 phases, Phase 8.1 still in flight) and 89% its truth once
+8.1's plans were all on disk. Both were correct for their moment, and so is 80% for
+this one. The standing rule is the point: this line is phase-based, it is whatever
+the frontmatter `percent` says, and it changes whenever the phase count does.)*
 
 ## Performance Metrics
 
@@ -109,6 +116,7 @@ behind at the stale figure.)*
 ### Roadmap Evolution
 
 - Phase 08.1 inserted after Phase 8: Close v0.2.0 audit items: UAT walkthrough + planning-doc drift (URGENT)
+- Phase 8.2 inserted after Phase 8.1: Close v0.2.0 blockers: stock drive-config defect, red test gate, walkthrough re-run (URGENT)
 
 ### Decisions
 
@@ -198,7 +206,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Defect | `Drive8Type=0` default on stock broker launch blocks disk-based `c64-ram-capture` (FINDING-C1); confirmed fix `-drive8type 1541` at launch, not yet applied | Open | v0.2.0 Phase 8.1 (2026-08-19) |
+| Defect | `Drive8Type=0` default on stock broker launch blocks disk-based `c64-ram-capture` (FINDING-C1); confirmed fix `-drive8type 1541` at launch, not yet applied | Open — **now owned by Phase 8.2**, no longer deferred past v0.2.0 | v0.2.0 Phase 8.1 (2026-08-19), re-scoped into Phase 8.2 (2026-08-19) |
 | Upstream | UP-01/UP-02 — `KEYBOARD_MATRIX_SET` opcode upstream to VICE | Deferred | v0.2.0 scoping |
 | Quality | QUAL-01 — tests for `acme.mjs`, `driver.mjs`, `derive.mjs` | Deferred | v0.2.0 scoping |
 | Quality | QUAL-02 — orphaned planning references in source comments | Deferred | v0.2.0 scoping |
