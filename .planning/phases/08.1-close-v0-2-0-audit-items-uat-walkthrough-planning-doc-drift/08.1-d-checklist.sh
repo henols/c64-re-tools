@@ -80,13 +80,23 @@ d5_body_pct=$(grep -oE '^Progress: \[.*\] [0-9]+%' "$STATE" | grep -oE '[0-9]+%$
 d5_fm_pct=$(grep -oE '^  percent: [0-9]+' "$STATE" | grep -oE '[0-9]+$' | head -1)
 d5_pct_match=0
 if [ -n "$d5_body_pct" ] && [ -n "$d5_fm_pct" ] && [ "$d5_body_pct" -eq "$d5_fm_pct" ]; then d5_pct_match=1; fi
-d5_76=$(grep -cF 'Total plans completed: 76' "$STATE")
+# Corrected 2026-08-19 (second occurrence of the same brittleness class plan 05 fixed
+# for the percentage): the literal 'Total plans completed: 76' broke when the
+# orchestrator's own `phase.complete "08.1"` legitimately advanced the count to 81
+# (76 predated Phase 8.1's own five plans; 76 + 5 = 81, and the per-phase table sums
+# to 81). A hardcoded count cannot distinguish "drifted wrong" from "correctly
+# advanced", so assert the invariant instead: the body's plan-count line must equal
+# the frontmatter's own `completed_plans`, whatever the number is.
+d5_body_plans=$(grep -oE '^- Total plans completed: [0-9]+' "$STATE" | grep -oE '[0-9]+$' | head -1)
+d5_fm_plans=$(grep -oE '^  completed_plans: [0-9]+' "$STATE" | grep -oE '[0-9]+$' | head -1)
+d5_76=0
+if [ -n "$d5_body_plans" ] && [ -n "$d5_fm_plans" ] && [ "$d5_body_plans" -eq "$d5_fm_plans" ]; then d5_76=1; fi
 d5_lastphase=$(grep -cF 'Phase 08 is the last phase' "$STATE")
 d5_ph07=$(grep -cE '^\| 07 \| 18 \|' "$STATE")
 d5_ok=1; d5_detail=""
 eq "$d5_71" 0 || { d5_ok=0; d5_detail+="stale '71%' count is ${d5_71}, expected 0; "; }
 eq "$d5_pct_match" 1 || { d5_ok=0; d5_detail+="STATE.md body Progress (${d5_body_pct:-<none>}%) and frontmatter percent (${d5_fm_pct:-<none>}%) disagree; "; }
-eq "$d5_76" 1 || { d5_ok=0; d5_detail+="'Total plans completed: 76' count is ${d5_76}, expected 1; "; }
+eq "$d5_76" 1 || { d5_ok=0; d5_detail+="STATE.md body plan count (${d5_body_plans:-<none>}) and frontmatter completed_plans (${d5_fm_plans:-<none>}) disagree; "; }
 eq "$d5_lastphase" 0 || { d5_ok=0; d5_detail+="'Phase 08 is the last phase' count is ${d5_lastphase}, expected 0; "; }
 eq "$d5_ph07" 1 || { d5_ok=0; d5_detail+="Phase 07 metrics row count is ${d5_ph07}, expected 1; "; }
 report "D-5" "$d5_ok" "$d5_detail"
