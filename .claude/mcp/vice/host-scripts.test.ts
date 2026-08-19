@@ -170,19 +170,25 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // array's own history has been anticipating since it was first written.
 // Every change to it must be a deliberate edit with a commit behind it, not
 // a silent widening to make a red gate pass.
-// In this plugin repo the tracked shell-script set is exactly three: the
+// In this plugin repo the tracked shell-script set is exactly four: the
 // host-side VICE launcher (deployed from resources/), the SessionStart
-// dependency-provisioning script the plugin runs on the consumer, and the
-// packaging script that validates the manifests and builds the release zip.
-// Unlike the originating project this carries no `.devcontainer/` provisioning
-// scripts -- a plugin is installed into someone else's workspace, not shipped
-// with its own container image -- so the old ".devcontainer/-exactly-2"
-// assertion is gone. This array still shrinks/grows only by a deliberate,
-// committed edit.
+// dependency-provisioning script the plugin runs on the consumer, the
+// packaging script that validates the manifests and builds the release zip,
+// and (quick-260819-vie D-1) the release-assets seam that stamps the
+// manifests, builds the zip and attaches it to the matching GitHub Release --
+// the ONE place both `release` and `release-on-merge` call, replacing the
+// three steps that used to live only inside the `release` job and could
+// therefore never run on the merge path (v0.2.0 shipped with zero release
+// assets as a direct result). Unlike the originating project this carries no
+// `.devcontainer/` provisioning scripts -- a plugin is installed into someone
+// else's workspace, not shipped with its own container image -- so the old
+// ".devcontainer/-exactly-2" assertion is gone. This array still
+// shrinks/grows only by a deliberate, committed edit.
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   ".claude/mcp/vice/resources/vice-launcher.sh",
   "scripts/ensure-mcp-deps.sh",
   "scripts/package.sh",
+  "scripts/release-assets.sh",
 ].sort();
 
 test("structural: git ls-files enumerates the tracked shell-script set as exactly EXPECTED_TRACKED_SHELL_SCRIPTS", async () => {
