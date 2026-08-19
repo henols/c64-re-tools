@@ -1,0 +1,10 @@
+Baseline recorded at commit: 851da26884419775bdb827c46b6db03ca471c8d0
+FAIL D-1: '| Pending |' count in REQUIREMENTS.md is 17, expected 0
+FAIL D-2: stale DIRECT-06 row still present (count 1, expected 0); reconciled DIRECT-06 row count is 0, expected 1; 
+FAIL D-3: stale 47/39/8 coverage line still present; 51/51/0 coverage line count is 0, expected 1; 'Mapped to phases: 51' count is 0, expected 1; 
+FAIL D-4: unchecked Phase 7 heading checkbox count is 1, expected 0; 'NOT complete)' count is 1, expected 0; 
+FAIL D-5: stale '71%' count is 1, expected 0; '] 78%' count is 0, expected 1; 'Total plans completed: 76' count is 0, expected 1; 'Phase 08 is the last phase' count is 1, expected 0; Phase 07 metrics row count is 0, expected 1; 
+FAIL D-6: ROADMAP.md 'skills call 28 tools' count is 1, expected 0; REQUIREMENTS.md 'skills call **28** tools' count is 1, expected 0; STATE.md 'six skills call 28 tools' count is 1, expected 0; ROADMAP.md '34 tools' count is 1, expected 0; STATE.md '34 tools' count is 1, expected 0; REQUIREMENTS.md '**3** are provably impossible' count is 0, expected 1; 
+FAIL D-7: ROADMAP.md 'ships **38** tools' count is 0, expected 1; REQUIREMENTS.md 'ships **38** tools' count is 0, expected 1; 
+---
+TOTAL FAILING ITEMS: 7 of 7
