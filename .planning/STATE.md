@@ -31,7 +31,7 @@ Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — COMPL
 Plan: 6 of 6 executed
 Next: v0.2.0 milestone close-out — /gsd-audit-milestone or /gsd-complete-milestone (do NOT re-run /gsd-execute-phase 8.2; it is done)
 Status: Milestone complete — all v0.2.0 phases closed
-Last activity: 2026-08-19 -- Phase 08.2 complete (6/6 plans, re-verified 7/7)
+Last activity: 2026-08-19 - Completed quick task 260819-rop: fix D4-2 and NEW-1 from v0.2.0-MILESTONE-AUDIT.md
 Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
 single human_verification item live-proven. Phase 8.1 closed the audit's one
 unwitnessed claim and its seven stale documents -- and running that claim is what
@@ -175,6 +175,7 @@ Recent decisions affecting current work:
 | 260817-n6p | Fix WR-01 — bound `decode()`'s `startAddress` to `0..0xffff` in `disasm-decoder.ts` | 2026-08-17 | e19d8eb | [260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i](./quick/260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i/) |
 | 260818-nh5 | Close Phase 07 UAT gap: fix stale evidence-key assertion in `stock-live-triage.test.ts`, restore the restarted live proof, and close the manual-only gate hole | 2026-08-18 | acc9933 (+84cca54, 9831fa8) | [260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc](./quick/260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc/) |
 | 260818-obc | Live-prove the broker-mediated `monitor_held_elsewhere` verdict and the broker-supervised `restarted` respawn against a real host broker daemon and genuine stock VICE (both 3.9/3.10); closes TIME-04 | 2026-08-18 | 662dfd4, 0b236f1, b3965eb, d2a9235 | [260818-obc-live-prove-the-broker-mediated-monitor-h](./quick/260818-obc-live-prove-the-broker-mediated-monitor-h/) |
+| 260819-rop | Fix milestone-audit D4-2 and NEW-1: stop ROADMAP.md asserting Phase 7 owns disk detach, and correct the D-07 "same argument shape" claim to backward-compatible at all six live sites plus a structural test pinning it | 2026-08-19 | f574e21, 79af9a7, 3344809 | [260819-rop-fix-d4-2-and-new-1-from-v0-2-0-milestone](./quick/260819-rop-fix-d4-2-and-new-1-from-v0-2-0-milestone/) |
 
 ### Blockers/Concerns
 
