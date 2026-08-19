@@ -26,8 +26,9 @@
 // deliberately-killed instance, and writes the per-instance boot/crash log
 // D-23 preserves at the exact path shape the retiring bash supervisor used.
 import { spawn as nodeSpawn } from "node:child_process";
-import { mkdirSync, openSync, closeSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
+import { tmpdir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.
@@ -124,7 +125,31 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
                 `reach it; the default of 127.0.0.1 is the safe posture for a host-native install, widen only ` +
                 `when the MCP server itself runs in a container that must reach the host emulator\n`);
         }
-        const args = ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+        // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
+        // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
+        // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point
+        // checkpoint never hits. No stock MCP tool can correct this after boot
+        // (the 38-tool stock manifest has zero resource-set names by design),
+        // so the fix must be a launch-time flag. `-default` MUST be the very
+        // first element: it is VICE's reset-to-compiled-in-defaults instruction,
+        // not an inert "these are the baselines" no-op, so any flag emitted
+        // before it (including -drive8type) is silently clobbered back to its
+        // compiled-in value. `-drive8type 1541` therefore has to come
+        // immediately after `-default`, and -- per CLAUDE.md's documented
+        // constraint -- `-default` also has to come before `-binarymonitor` or
+        // the monitor never binds and the subsequent connect hangs in the
+        // backlog looking exactly like a wedge. Confirmed sufficient live in
+        // Phase 8.1's standalone probe (08.1-WALKTHROUGH-EVIDENCE.md §4):
+        // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
+        // monitor succeeded immediately. Deliberately NOT setting
+        // -drive8truedrive / Drive8TrueEmulation here: this build's own default
+        // already reads Drive8TrueEmulation=1 (same probe), so 08.2-RESEARCH.md's
+        // primary recommendation is that only -drive8type needs adding.
+        // Assumption A3 in that doc's Assumptions Log (some other stock build
+        // might default Drive8TrueEmulation to 0) is read and deliberately not
+        // pre-emptively defended against here; plan 03's live test is what would
+        // surface it if that assumption is ever wrong on a different build.
+        const args = ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
         if (typeof remoteMonitorPort === "number") {
             if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
                 warnedRemoteMonitorBindWidened = true;
@@ -154,7 +179,7 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
  * spawning, so a bad configuration value is visible rather than silently
  * mis-parsed, exactly like the bash launcher's own logging discipline. */
 function spawnAndRecordInstance(reason, port, deps) {
-    const spawnFn = deps.spawn ?? ((cmd, args) => nodeSpawn(cmd, args));
+    const spawnFn = deps.spawn ?? ((cmd, args, opts) => nodeSpawn(cmd, args, opts));
     const now = deps.now ?? (() => Date.now());
     const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
     const backend = deps.backend ?? "fork";
@@ -165,8 +190,49 @@ function spawnAndRecordInstance(reason, port, deps) {
         remoteMonitorPort: deps.remoteMonitorPort,
     });
     const log = deps.log ?? defaultLog;
-    log(`vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`);
-    const child = spawnFn(viceBin, viceArgs);
+    // I-1 rider (audit §4.4, 08.2-02-PLAN.md Task 2): production stock
+    // launches used to set no scratch XDG_CONFIG_HOME and would read whatever
+    // vicerc the operator's own $HOME already carried -- shared with the
+    // operator's own VICE usage and with the fork build. For backend ===
+    // "stock" only, compute a fresh, isolated config dir with mkdtempSync
+    // (atomic creation, random suffix, 0700 permissions -- the primitive that
+    // makes a collision or a symlink-swap into the operator's real config
+    // unreachable) and pass it as a third options argument carrying `env`
+    // only. Never `shell: true`: the existing array-form spawn(viceBin,
+    // viceArgs) call avoids shell interpretation entirely and that property
+    // must survive this widening. For backend === "fork", spawnFn is called
+    // with NO third argument at all, so the fork path's observable behaviour
+    // stays bit-for-bit what it was (BACK-02 is a standing gate and the fork
+    // backend has been the sole production backend across all of v0.1.x).
+    //
+    // Scope boundary (do not remove this note): the production broker daemon
+    // always supplies its own deps.spawn / deps.spawnFactory, so the widened
+    // default wrapper above is dead code on the real launch paths, and this
+    // options argument is dropped again at four further hops --
+    // makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
+    // stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
+    // body and launchSupervised()'s defaultRealSpawn in this file. Plan
+    // 08.2-06 (wave 2) owns threading it through those four hops and owns the
+    // non-bypassable proof; this function only computes the value at the one
+    // seam that should own it.
+    //
+    // Scratch-dir lifetime: this function deliberately does NOT clean the
+    // directory up -- the spawned emulator process outlives this function's
+    // return and needs the directory for its whole lifetime. Per-launch
+    // scratch dirs therefore accumulate under the OS temp dir for the life of
+    // the host; this is a recorded trade-off, not an oversight. If reaping
+    // them is ever worth doing, the broker's own kill/recycle path is the
+    // component that would own it (it already knows when an instance's
+    // process has actually exited).
+    let spawnOptions;
+    let logLine = `vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`;
+    if (backend === "stock") {
+        const scratchConfigDir = mkdtempSync(join(tmpdir(), "vice-broker-vicerc-"));
+        spawnOptions = { env: { ...process.env, XDG_CONFIG_HOME: scratchConfigDir } };
+        logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
+    }
+    log(logLine);
+    const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
     const record = {
         port,
         url: `http://127.0.0.1:${port}/mcp`,

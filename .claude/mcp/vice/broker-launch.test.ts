@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, SpawnOptionsWithoutStdio } from "node:child_process";
 
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 import {
@@ -1772,7 +1772,108 @@ test("buildViceArgs: the VICE_ARGS override short-circuits before either backend
 
 test("buildViceArgs: stock backend defaults to a loopback binary-monitor bind", () => {
   const args = buildViceArgs(6510, { backend: "stock" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+});
+
+// ===========================================================================
+// 08.2-02-PLAN.md, Task 1: I-2 -- the stock branch must emit -default
+// -drive8type 1541 ahead of -binarymonitor, from a single fix site, so a
+// broker-launched stock x64sc boots with unit 8 answering. Task 2 (below,
+// separately) covers the XDG_CONFIG_HOME options-threading seam -- I-2 and
+// I-1 are separate root causes and their acceptance stays separable, so no
+// assertion here mentions XDG_CONFIG_HOME.
+// ===========================================================================
+
+test("buildViceArgs (I-2): stock backend emits the exact fixed argv shape -- -default -drive8type 1541 ahead of -binarymonitor", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+test("buildViceArgs (I-2): ordering invariant survives future flag additions -- -default is index 0, -drive8type precedes -binarymonitor, and 1541 follows -drive8type immediately", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.equal(args.indexOf("-default"), 0, "-default must be the very first element or it silently clobbers -drive8type");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must be set before the monitor binds");
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "the element immediately following -drive8type must be the string 1541");
+});
+
+test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in the remoteMonitorPort variant too", () => {
+  const args = buildViceArgs(6510, { backend: "stock", remoteMonitorPort: 6511 });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0 even when -remotemonitor is appended");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"));
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541");
+  assert.ok(args.includes("-remotemonitor"), "the remoteMonitorPort variant must still append -remotemonitor");
+});
+
+// ===========================================================================
+// 08.2-02-PLAN.md, Task 2: I-1 rider, first half -- the injected-spawn seam
+// itself. These two tests inject a THREE-ARG spawn stub directly into
+// tryLaunchOne(), BELOW the real daemon's makeLoggingSpawn() +
+// withCrashSupervision() composition (vice-broker.mts), and therefore prove
+// only that the seam accepts and forwards a scratch XDG_CONFIG_HOME for
+// stock launches. They do NOT prove a real broker launch is isolated --
+// deps.spawn / deps.spawnFactory is never undefined on the real broker
+// daemon's own paths, so the widened default wrapper is dead code there,
+// and the options argument is dropped again at four further hops
+// (makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
+// stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
+// body and launchSupervised()'s defaultRealSpawn in this file). Plan
+// 08.2-06 (wave 2) owns threading it through those four hops and owns that
+// non-bypassable proof.
+//
+// Neither test asserts anything about -drive8type (Task 1's own tests do
+// that): I-1 and I-2 are separate root causes and their acceptance stays
+// separable.
+// ===========================================================================
+
+test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a stock launch's injected spawn stub receives a third options argument whose env.XDG_CONFIG_HOME is a fresh, existing, tmpdir-scoped scratch directory", () => {
+  const state = createBrokerState();
+  const spawnArgsSeen: unknown[][] = [];
+  const record = tryLaunchOne("acquire", 6700, {
+    state,
+    supervisorDir: "/tmp/i1-stock-seam",
+    epochFile: "/tmp/i1-stock-seam/epoch.json",
+    backend: "stock",
+    spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+      spawnArgsSeen.push([command, args, options]);
+      return stubChild(4243);
+    },
+  });
+  assert.ok(record, "the stock launch must succeed");
+  assert.equal(spawnArgsSeen.length, 1);
+  const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+  assert.ok(options, "a stock launch must receive a third options argument");
+  const scratchDir = options?.env?.XDG_CONFIG_HOME;
+  assert.equal(typeof scratchDir, "string", "XDG_CONFIG_HOME must be a non-empty string");
+  assert.ok(scratchDir && scratchDir.length > 0, "XDG_CONFIG_HOME must be non-empty");
+  assert.ok(scratchDir && existsSync(scratchDir), "the scratch directory must actually exist on disk");
+  assert.notEqual(scratchDir, process.env.XDG_CONFIG_HOME, "the scratch dir must differ from the ambient XDG_CONFIG_HOME");
+  assert.ok(scratchDir && scratchDir.startsWith(tmpdir()), "the scratch dir must live under os.tmpdir()");
+});
+
+test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a fork launch's injected spawn stub receives NO third argument at all", () => {
+  const state = createBrokerState();
+  const spawnArgsSeen: unknown[][] = [];
+  const record = tryLaunchOne("acquire", 6701, {
+    state,
+    supervisorDir: "/tmp/i1-fork-seam",
+    epochFile: "/tmp/i1-fork-seam/epoch.json",
+    backend: "fork",
+    spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+      spawnArgsSeen.push([command, args, options]);
+      return stubChild(4244);
+    },
+  });
+  assert.ok(record, "the fork launch must succeed");
+  assert.equal(spawnArgsSeen.length, 1);
+  const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+  assert.equal(options, undefined, "the fork path must neither receive nor need the new options parameter");
 });
 
 // MUST run before any later test in this file passes a non-loopback
@@ -1801,7 +1902,7 @@ test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly o
 
 test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
   const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
 });
 
 // ===========================================================================
@@ -1811,9 +1912,9 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
 // wiring of the real allocator below.
 // ===========================================================================
 
-test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the pre-plan argv, byte-identical", () => {
+test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the current argv, byte-identical", () => {
   const args = buildViceArgs(6600, { backend: "stock" });
-  assert.deepEqual(args, ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
+  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
 });
 
 test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
@@ -1824,6 +1925,9 @@ test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this p
 test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remotemonitor and its address, same host as the binmon bind", () => {
   const args = buildViceArgs(6600, { backend: "stock", remoteMonitorPort: 6601 });
   assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
     "-binarymonitor",
     "-binarymonitoraddress",
     "ip4://127.0.0.1:6600",

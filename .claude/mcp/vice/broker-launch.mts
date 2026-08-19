@@ -19,9 +19,10 @@
 // cleanly after too many crashes inside a window, never respawns a
 // deliberately-killed instance, and writes the per-instance boot/crash log
 // D-23 preserves at the exact path shape the retiring bash supervisor used.
-import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, openSync, closeSync, existsSync } from "node:fs";
+import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
+import { tmpdir } from "node:os";
 // TYPE-ONLY import, deliberately -- this module must be importable and
 // runnable directly (native Node type-stripping, no build step) by its own
 // unit tests, exactly like every other host-bound module's test file
@@ -170,7 +171,31 @@ export function buildViceArgs(
           `when the MCP server itself runs in a container that must reach the host emulator\n`,
       );
     }
-    const args = ["-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+    // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
+    // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
+    // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point
+    // checkpoint never hits. No stock MCP tool can correct this after boot
+    // (the 38-tool stock manifest has zero resource-set names by design),
+    // so the fix must be a launch-time flag. `-default` MUST be the very
+    // first element: it is VICE's reset-to-compiled-in-defaults instruction,
+    // not an inert "these are the baselines" no-op, so any flag emitted
+    // before it (including -drive8type) is silently clobbered back to its
+    // compiled-in value. `-drive8type 1541` therefore has to come
+    // immediately after `-default`, and -- per CLAUDE.md's documented
+    // constraint -- `-default` also has to come before `-binarymonitor` or
+    // the monitor never binds and the subsequent connect hangs in the
+    // backlog looking exactly like a wedge. Confirmed sufficient live in
+    // Phase 8.1's standalone probe (08.1-WALKTHROUGH-EVIDENCE.md §4):
+    // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
+    // monitor succeeded immediately. Deliberately NOT setting
+    // -drive8truedrive / Drive8TrueEmulation here: this build's own default
+    // already reads Drive8TrueEmulation=1 (same probe), so 08.2-RESEARCH.md's
+    // primary recommendation is that only -drive8type needs adding.
+    // Assumption A3 in that doc's Assumptions Log (some other stock build
+    // might default Drive8TrueEmulation to 0) is read and deliberately not
+    // pre-emptively defended against here; plan 03's live test is what would
+    // surface it if that assumption is ever wrong on a different build.
+    const args = ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
     if (typeof remoteMonitorPort === "number") {
       if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
         warnedRemoteMonitorBindWidened = true;
@@ -193,7 +218,14 @@ export interface TryLaunchDeps {
   state: BrokerState;
   supervisorDir: string;
   epochFile: string;
-  spawn?: (command: string, args: string[]) => ChildProcess;
+  /** I-1 rider (08.2-02-PLAN.md, Task 2): widened to an optional third
+   * `options` argument so `spawnAndRecordInstance()` below can thread a
+   * scratch `XDG_CONFIG_HOME` through for stock launches. The parameter is
+   * optional, so every pre-existing 2-arg caller and every pre-existing
+   * 2-arg test stub keeps compiling and behaving identically -- JS/TS
+   * function-type compatibility allows a function that ignores its extra
+   * argument to satisfy a type that offers one. */
+  spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
   viceBin?: string;
   mcpHost?: string;
@@ -238,7 +270,7 @@ export interface TryLaunchDeps {
  * spawning, so a bad configuration value is visible rather than silently
  * mis-parsed, exactly like the bash launcher's own logging discipline. */
 function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDeps): InstanceRecord {
-  const spawnFn = deps.spawn ?? ((cmd: string, args: string[]) => nodeSpawn(cmd, args));
+  const spawnFn = deps.spawn ?? ((cmd: string, args: string[], opts?: SpawnOptionsWithoutStdio) => nodeSpawn(cmd, args, opts));
   const now = deps.now ?? ((): number => Date.now());
   const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
   const backend = deps.backend ?? "fork";
@@ -250,9 +282,50 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   });
   const log = deps.log ?? defaultLog;
 
-  log(`vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`);
+  // I-1 rider (audit §4.4, 08.2-02-PLAN.md Task 2): production stock
+  // launches used to set no scratch XDG_CONFIG_HOME and would read whatever
+  // vicerc the operator's own $HOME already carried -- shared with the
+  // operator's own VICE usage and with the fork build. For backend ===
+  // "stock" only, compute a fresh, isolated config dir with mkdtempSync
+  // (atomic creation, random suffix, 0700 permissions -- the primitive that
+  // makes a collision or a symlink-swap into the operator's real config
+  // unreachable) and pass it as a third options argument carrying `env`
+  // only. Never `shell: true`: the existing array-form spawn(viceBin,
+  // viceArgs) call avoids shell interpretation entirely and that property
+  // must survive this widening. For backend === "fork", spawnFn is called
+  // with NO third argument at all, so the fork path's observable behaviour
+  // stays bit-for-bit what it was (BACK-02 is a standing gate and the fork
+  // backend has been the sole production backend across all of v0.1.x).
+  //
+  // Scope boundary (do not remove this note): the production broker daemon
+  // always supplies its own deps.spawn / deps.spawnFactory, so the widened
+  // default wrapper above is dead code on the real launch paths, and this
+  // options argument is dropped again at four further hops --
+  // makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
+  // stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
+  // body and launchSupervised()'s defaultRealSpawn in this file. Plan
+  // 08.2-06 (wave 2) owns threading it through those four hops and owns the
+  // non-bypassable proof; this function only computes the value at the one
+  // seam that should own it.
+  //
+  // Scratch-dir lifetime: this function deliberately does NOT clean the
+  // directory up -- the spawned emulator process outlives this function's
+  // return and needs the directory for its whole lifetime. Per-launch
+  // scratch dirs therefore accumulate under the OS temp dir for the life of
+  // the host; this is a recorded trade-off, not an oversight. If reaping
+  // them is ever worth doing, the broker's own kill/recycle path is the
+  // component that would own it (it already knows when an instance's
+  // process has actually exited).
+  let spawnOptions: SpawnOptionsWithoutStdio | undefined;
+  let logLine = `vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`;
+  if (backend === "stock") {
+    const scratchConfigDir = mkdtempSync(join(tmpdir(), "vice-broker-vicerc-"));
+    spawnOptions = { env: { ...process.env, XDG_CONFIG_HOME: scratchConfigDir } };
+    logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
+  }
+  log(logLine);
 
-  const child = spawnFn(viceBin, viceArgs);
+  const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
   const record: InstanceRecord = {
     port,
     url: `http://127.0.0.1:${port}/mcp`,
@@ -303,8 +376,13 @@ export interface AcquirePortAndLaunchDeps {
   state: BrokerState;
   stateDir: string;
   allocatePort: (state: BrokerState) => Promise<PortAllocationResult>;
-  spawn?: (command: string, args: string[]) => ChildProcess;
-  spawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
+  /** I-1 rider -- same widened, optional third `options` argument as
+   * TryLaunchDeps.spawn's own doc comment describes; this value is passed
+   * straight through to spawnAndRecordInstance() unchanged. */
+  spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
+  /** Same widening applied to the returned function's own signature -- this
+   * factory's result is assigned directly to the `spawn` field above. */
+  spawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
   viceBin?: string;
   mcpHost?: string;
