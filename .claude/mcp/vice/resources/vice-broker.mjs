@@ -184,14 +184,22 @@ function writeBrokerRecordFile(stateDir, record) {
  * closure and the log's path relative to supervisorDir (the epoch
  * record's own `log` field). Shared by both launch paths -- a cold
  * acquire and warm-floor maintenance -- so there is exactly one place that
- * opens a launch log fd. */
+ * opens a launch log fd.
+ *
+ * I-1 rider (08.2-06-PLAN.md, Task 2): the returned `spawn` now also
+ * forwards a caller options object (audit item I-1), MERGING it into the
+ * object handed to nodeSpawn() -- caller options spread FIRST, `stdio` set
+ * LAST, so the launch log fd always wins over any caller-supplied `stdio`.
+ * Merging in the other order would silently redirect a launch's output
+ * away from the per-instance log file the epoch record names, breaking
+ * D-23's forensic logs while appearing to work. */
 function makeLoggingSpawn(logDir) {
     mkdirSync(logDir, { recursive: true });
     const viceBinForLog = basename(process.env.VICE_BIN ?? "x64sc");
     const logName = `${viceBinForLog}-${Date.now()}.log`;
     const logFd = openSync(join(logDir, logName), "a");
     return {
-        spawn: (cmd, cmdArgs) => nodeSpawn(cmd, cmdArgs, { stdio: ["ignore", logFd, logFd] }),
+        spawn: (cmd, cmdArgs, options) => nodeSpawn(cmd, cmdArgs, { ...options, stdio: ["ignore", logFd, logFd] }),
         logRelPath: `logs/${logName}`,
     };
 }
@@ -684,8 +692,12 @@ function maintainWarmFloorForRealBroker(stateDir, state, backend) {
         spawnFactory: (port) => {
             const supervisorDir = join(stateDir, String(port));
             const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
-            const stashingSpawn = (cmd, args) => {
-                const child = spawn(cmd, args);
+            // I-1 rider (08.2-06-PLAN.md, Task 2): forwards a third options
+            // argument -- this is a SECOND, independent dropper on the
+            // warm-floor arm; fixing only makeLoggingSpawn above would leave
+            // this arm's own scratch XDG_CONFIG_HOME dropped right here.
+            const stashingSpawn = (cmd, args, options) => {
+                const child = spawn(cmd, args, options);
                 // Stash the log path where onLaunched (fired synchronously right
                 // after this returns, still within the SAME maintainWarmFloor()
                 // call -- at most one launch per call, per the serialised-warming

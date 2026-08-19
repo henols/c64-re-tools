@@ -21,7 +21,7 @@
 import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync } from "node:fs";
 import { join, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
 import {
@@ -252,14 +252,22 @@ function writeBrokerRecordFile(stateDir: string, record: BrokerRecord): string {
  * closure and the log's path relative to supervisorDir (the epoch
  * record's own `log` field). Shared by both launch paths -- a cold
  * acquire and warm-floor maintenance -- so there is exactly one place that
- * opens a launch log fd. */
-function makeLoggingSpawn(logDir: string): { spawn: (cmd: string, args: string[]) => ReturnType<typeof nodeSpawn>; logRelPath: string } {
+ * opens a launch log fd.
+ *
+ * I-1 rider (08.2-06-PLAN.md, Task 2): the returned `spawn` now also
+ * forwards a caller options object (audit item I-1), MERGING it into the
+ * object handed to nodeSpawn() -- caller options spread FIRST, `stdio` set
+ * LAST, so the launch log fd always wins over any caller-supplied `stdio`.
+ * Merging in the other order would silently redirect a launch's output
+ * away from the per-instance log file the epoch record names, breaking
+ * D-23's forensic logs while appearing to work. */
+function makeLoggingSpawn(logDir: string): { spawn: (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio) => ReturnType<typeof nodeSpawn>; logRelPath: string } {
   mkdirSync(logDir, { recursive: true });
   const viceBinForLog = basename(process.env.VICE_BIN ?? "x64sc");
   const logName = `${viceBinForLog}-${Date.now()}.log`;
   const logFd = openSync(join(logDir, logName), "a");
   return {
-    spawn: (cmd, cmdArgs) => nodeSpawn(cmd, cmdArgs, { stdio: ["ignore", logFd, logFd] }),
+    spawn: (cmd, cmdArgs, options) => nodeSpawn(cmd, cmdArgs, { ...options, stdio: ["ignore", logFd, logFd] }),
     logRelPath: `logs/${logName}`,
   };
 }
@@ -380,8 +388,11 @@ export interface HandleAcquireDeps {
   kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<KillStage>;
   /** Overrides the cold-launch arm's spawn factory -- defaults to the same
    * makeLoggingSpawn()+withCrashSupervision() composition this function
-   * always used. */
-  buildColdSpawnFactory?: (port: number) => (command: string, args: string[]) => ChildProcess;
+   * always used. Widened (08.2-06-PLAN.md, Task 2) to the same optional
+   * third options argument as that real composition, so a test or caller
+   * that DOES supply an override can also forward options rather than
+   * being typed out of it. */
+  buildColdSpawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   /** Which backend's launch argv to build (D-04, D-12) -- the real broker
    * wiring (run()'s onAcquire callback below) resolves this ONCE at startup
    * via backend-detect.mts's resolvedBackend() and passes the SAME resolved
@@ -827,8 +838,12 @@ function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, ba
     spawnFactory: (port: number) => {
       const supervisorDir = join(stateDir, String(port));
       const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
-      const stashingSpawn = (cmd: string, args: string[]): ChildProcess => {
-        const child = spawn(cmd, args);
+      // I-1 rider (08.2-06-PLAN.md, Task 2): forwards a third options
+      // argument -- this is a SECOND, independent dropper on the
+      // warm-floor arm; fixing only makeLoggingSpawn above would leave
+      // this arm's own scratch XDG_CONFIG_HOME dropped right here.
+      const stashingSpawn = (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
+        const child = spawn(cmd, args, options);
         // Stash the log path where onLaunched (fired synchronously right
         // after this returns, still within the SAME maintainWarmFloor()
         // call -- at most one launch per call, per the serialised-warming
