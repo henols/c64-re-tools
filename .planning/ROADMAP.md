@@ -92,7 +92,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Corrected Ground Truth** - Fix the four verified errors in the normative protocol docs and run the binary-monitor probe against a real stock VICE (completed 2026-08-12)
 - [x] **Phase 2: Stock Backend Connection** - Select a backend by config, launch stock `x64sc` with binary-monitor flags, and hold a correctly correlated, event-demultiplexed conversation with it (completed 2026-08-13)
-- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (18 plans: 13 executed 2026-08-14 + 5 gap-closure 2026-08-16; all four 03-UAT gaps closed and the 2 Critical broker defects fixed and re-confirmed; verified 8/9 + 1 accepted override — disk detach has no stock opcode and is owned by Phase 7) (completed 2026-08-16)
+- [x] **Phase 3: Direct Tools** - Every tool with a 1:1 binary-monitor opcode works on the stock backend (18 plans: 13 executed 2026-08-14 + 5 gap-closure 2026-08-16; all four 03-UAT gaps closed and the 2 Critical broker defects fixed and re-confirmed; verified 8/9 + 1 accepted override — disk detach has no stock opcode and was later cut from v0.2.0 scope entirely) (completed 2026-08-16)
 - [x] **Phase 4: Client-Side Tool Seam and 6510 Disassembler** - Establish the pre-`rewriteArguments()` interception point in sibling modules and land the disassembler through it (completed 2026-08-17)
 - [x] **Phase 5: Skill-Critical Derived Tools** - The eight tools the shipped skills call that stock lacks and that can be built client-side (13 plans: 8 executed 2026-08-17 + 5 gap-closure 2026-08-17 after verification returned gaps_found on criteria 3 and 4 — the hardcoded CPU-view `bank: 0x0000` in all four chip/sprite reads; re-verified 5/5 2026-08-17, both criteria closed and live-confirmed against genuine stock VICE 3.9) (completed 2026-08-17)
 - [~] **Phase 6: CUT** - Stock-only gains moved to backlog 2026-08-17; no skill calls any of them
@@ -200,7 +200,7 @@ Notes:
   1. A user can read and write emulator memory and CPU registers on the stock backend, with reads side-effect-free by default — reading `$D019` does not acknowledge the IRQ — and no read forces a pause/resume round trip it does not need.
   2. A user can set, list, delete, toggle and condition checkpoints and watchpoints; conditions are emitted through a typed builder that parenthesises every comparison, emits `$hex` literals, and uses `RL`/`CY`, so a silently-always-false condition cannot be produced.
   3. A user can pause a freely-running emulator on demand and resume it, step instructions, and execute until return — with pause and resume idempotent, so an agent retry is a no-op rather than a second halt.
-  4. A user can reset the machine, autostart a PRG or disk image, attach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend. *(Disk **detach** is explicitly out of scope for this phase: stock VICE's binary monitor exposes no detach opcode, so it has no 1:1 equivalent and falls outside this phase's goal. Deferred to Phase 7 — see D-13 in `03-CONTEXT.md` and `docs/stock-vice-parity.md`.)*
+  4. A user can reset the machine, autostart a PRG or disk image, attach disks, type text, drive the joystick, save and restore snapshots, and enumerate available banks and registers on the stock backend. *(Disk **detach** is explicitly out of scope for this phase: stock VICE's binary monitor exposes no detach opcode, so it has no 1:1 equivalent and falls outside this phase's goal. It was later cut from v0.2.0 scope entirely — see D-13 in `03-CONTEXT.md` and `docs/stock-vice-parity.md`.)*
 
 **Plans**: 13 plans in 4 waves, plus 5 gap-closure plans in 4 waves (03-UAT.md)
 Plans:
@@ -681,8 +681,9 @@ write those docs **once**, already naming regenerator2000.
 regenerator2000 replaces none of it: stock advertises 26 tools against the fork's
 62, and Phase 5 is that gap (memory search, backtrace, sprites, chip-state
 decode, screenshots, symbols). Phase 4's disassembler has one consumer today and
-gains its second from Phase 5's backtrace. Phase 7 owns disk detach (the deferred
-half of `DIRECT-06`) and wedge triage on stock. The entire overlap analysis found
+gains its second from Phase 5's backtrace. Phase 7 owns wedge triage on stock;
+disk detach (the other half of `DIRECT-06`) was cut from v0.2.0 scope entirely
+and is not outstanding work. The entire overlap analysis found
 exactly one deletable thing in this codebase: a 14-line `toacme` shim. *(As of
 2026-08-19: `tools-manifest.stock.json` ships **38** tools. 26 was the figure at
 the 2026-08-17 cut, before Phases 5 and 7 added twelve tools; the fork's 62 is
