@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "c64-re-tools",
   "displayName": "C64 Reverse-Engineering Tools",
-  "version": "0.1.1",
+  "version": "0.0.0-dev",
   "description": "VICE emulator MCP server (mcp__plugin_c64-re-tools_vice__* tools) plus C64 reverse-engineering and ACME-rebuild skills.",
   "author": {
     "name": "Henrik Olsson",

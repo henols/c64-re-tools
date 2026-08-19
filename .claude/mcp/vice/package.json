@@ -1,6 +1,6 @@
 {
   "name": "@henols/vice-mcp",
-  "version": "0.1.1",
+  "version": "0.0.0-dev",
   "description": "VICE emulator MCP server for C64 reverse-engineering: a stdio MCP server that proxies vice tools to a host VICE MCP server.",
   "type": "module",
   "bin": {
@@ -13,6 +13,7 @@
     "vice-sync.ts",
     "vice-probe.ts",
     "vice-broker-client.ts",
+    "version.ts",
     "stock-protocol.ts",
     "stock-connect.ts",
     "containerpath.ts",

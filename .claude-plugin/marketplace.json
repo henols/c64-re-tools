@@ -5,13 +5,13 @@
     "url": "https://github.com/henols"
   },
   "description": "C64 reverse-engineering tooling: the VICE emulator MCP server plus ACME/RE skills.",
-  "version": "0.1.1",
+  "version": "0.0.0-dev",
   "plugins": [
     {
       "name": "c64-re-tools",
       "source": "./",
       "description": "VICE MCP server (mcp__plugin_c64-re-tools_vice__* tools) plus C64 reverse-engineering and ACME-rebuild skills.",
-      "version": "0.1.1",
+      "version": "0.0.0-dev",
       "author": {
         "name": "Henrik Olsson"
       }

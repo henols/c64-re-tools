@@ -100,6 +100,10 @@ import {
 // reconnect ladder.
 import { probeInstance, type ProbeResult } from "./vice-probe.ts";
 import { repoRoot } from "./repo-root.ts";
+// The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
+// below is the only consumer in this file; see version.ts's own header for
+// why this file must never re-derive any part of the algorithm itself.
+import { runtimeVersion } from "./version.ts";
 import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
 // The INVERSE direction (host -> container), for inverting a broker grant's
 // own host-local coordinates before useInstance() ever adopts them (this
@@ -259,8 +263,19 @@ process.stdout.on("error", (err) => {
 // override that preserves this file's own `{content, isError}` wire
 // contract exactly (see this plan's "Ground truth" section for why
 // MCPServer's OWN tools/call dispatch cannot be used as-is). PROXY_VERSION
-// survives unchanged, reused as MCPServer's own `version` field.
-const PROXY_VERSION = "0.1.0";
+// no longer survives as a hand-edited literal (quick-260819-tsz, D-4/D-5):
+// it used to say "0.1.0" while npm's actual `latest` was twelve patches
+// ahead, because nothing updated it. It is now derived through
+// `runtimeVersion()` (the ONE seam, `./version.ts`), which reads this
+// package's own `package.json` first (the published-tarball path, where
+// `npm version` already stamped a real number) and falls back to the
+// repo-root `VERSION` template -- rendered as `<resolved>-dev` -- only in a
+// git checkout, degrading to `0.0.0-dev` if neither is available. Reused,
+// unchanged, as MCPServer's own `version` field below.
+const PROXY_VERSION = runtimeVersion({
+  pkgJsonPath: join(HERE_DIR, "package.json"),
+  repoRoot: () => repoRoot(),
+});
 
 // --------------------------------------------------------------- tools/list
 //

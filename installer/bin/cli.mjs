@@ -26,6 +26,20 @@ const HERE = dirname(fileURLToPath(import.meta.url)); // installer/bin (packed) 
 const PKG_ROOT = dirname(HERE);
 const SKILLS_SRC = join(PKG_ROOT, "skills");
 
+// The single version-resolution seam this repo maintains is
+// `.claude/mcp/vice/version.ts` (quick-260819-tsz, D-5). This package
+// deliberately does NOT import it: it ships without the seam file (its
+// `files[]` is `bin/`, `skills/`, `README.md`) and targets node >= 18, which
+// cannot type-strip the seam's `.ts` the way the vice-mcp package's own
+// node >= 22.18 runtime can. What follows is exactly the seam's own
+// precedence step 1 -- "read my own package.json's `.version`, trust it
+// when it is a real published number" -- not a second, independent
+// implementation of the resolution algorithm; there is no template/`-`
+// handling here because this package is never resolved from `VERSION`,
+// only ever published with a concrete version already stamped in. That
+// number is PRODUCED elsewhere: `scripts/version.mjs stamp` writes the
+// working-tree placeholder, and CI's `npm version` writes the real one at
+// publish time. Do not reimplement D-2's template-resolution rules here.
 const SELF = readJson(join(PKG_ROOT, "package.json")) ?? {};
 const SELF_VERSION = typeof SELF.version === "string" ? SELF.version : "0.0.0";
 const MCP_PKG = "@henols/vice-mcp";
