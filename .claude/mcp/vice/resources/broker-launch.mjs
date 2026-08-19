@@ -978,8 +978,13 @@ async function handleExit(reason, port, deps) {
  * a second inline listener, is what keeps the "exactly one installation
  * point" invariant a structural gate (broker-launch.test.ts) can hold. */
 export function withCrashSupervision(reason, port, baseSpawn, deps) {
-    return (cmd, args) => {
-        const child = baseSpawn(cmd, args);
+    // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
+    // in the BODY, not just the type -- this is the hop that matters most,
+    // because it wraps every real launch path (cold acquire, warm floor, and
+    // every respawn). A type-only widening would still silently drop a
+    // caller's options at this call site.
+    return (cmd, args, options) => {
+        const child = baseSpawn(cmd, args, options);
         child.once("exit", () => {
             void handleExit(reason, port, deps);
         });
@@ -1026,9 +1031,18 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
     const logFileName = `${basename(viceBin)}-${Date.now()}-e${epoch}.log`;
     const logPath = join(logDir, logFileName);
     const logRelPath = `logs/${logFileName}`;
-    const defaultRealSpawn = (cmd, args) => {
+    // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
+    // and MERGES it with the per-instance log stdio -- caller options
+    // spread FIRST, `stdio` set LAST, so the per-instance log fd always
+    // wins. Never the other order: a caller-supplied `stdio` would silently
+    // redirect a crash-respawn's output away from the log file the epoch
+    // record names, and the forensic per-instance log (D-23) would point at
+    // a file that received nothing. Without this fix, a stock instance that
+    // crashes and respawns comes back reading the operator's real `vicerc`
+    // even though its original launch was isolated.
+    const defaultRealSpawn = (cmd, args, options) => {
         const fd = openSync(logPath, "a");
-        return nodeSpawn(cmd, args, { stdio: ["ignore", fd, fd] });
+        return nodeSpawn(cmd, args, { ...options, stdio: ["ignore", fd, fd] });
     };
     const baseSpawn = deps.spawnFactory ? deps.spawnFactory(port) : (deps.spawn ?? defaultRealSpawn);
     const wrappedSpawn = withCrashSupervision(reason, port, baseSpawn, deps);
