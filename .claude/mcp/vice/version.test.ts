@@ -73,7 +73,22 @@ test("parseTemplate(): throws on every malformed shape", () => {
   // "-.2.3", "0.-.2", "-.-.5" (MED-1): a literal component may never follow
   // a "-" component -- dashes only trail literals, per D-2's "literal
   // prefix" wording and every row of CONTEXT.md's worked-example table.
-  const bad = ["0.2", "0.2.-.-", "0.x.-", "0.2.-x", "", "   ", "-.2.3", "0.-.2", "-.-.5"];
+  // "1.00.0" / "0.007.0" (MED-2): a leading-zero numeric identifier is
+  // invalid SemVer and would otherwise be echoed verbatim into the
+  // resolved version string.
+  const bad = [
+    "0.2",
+    "0.2.-.-",
+    "0.x.-",
+    "0.2.-x",
+    "",
+    "   ",
+    "-.2.3",
+    "0.-.2",
+    "-.-.5",
+    "1.00.0",
+    "0.007.0",
+  ];
   for (const raw of bad) {
     assert.throws(() => parseTemplate(raw), `expected parseTemplate(${JSON.stringify(raw)}) to throw`);
   }

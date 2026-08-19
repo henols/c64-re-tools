@@ -51,7 +51,12 @@ export interface ResolveResult {
   published: string | null;
 }
 
-const TEMPLATE_COMPONENT = /^(\d+|-)$/;
+// Leading zeros are rejected (bare "0" is the only zero-value exception) --
+// SemVer 2.0.0 SS2 forbids leading-zero numeric identifiers, and this
+// component is echoed VERBATIM into the resolved string for literal (non-`-`)
+// slots, so "1.00.0" must be rejected here rather than surfacing later as an
+// npm-publish-time failure (MED-2).
+const TEMPLATE_COMPONENT = /^(0|[1-9]\d*|-)$/;
 
 /**
  * Parse a version TEMPLATE (not a resolved version) into its three
@@ -90,7 +95,7 @@ export function parseTemplate(raw: string): string[] {
     }
     if (!TEMPLATE_COMPONENT.test(part)) {
       throw new Error(
-        `version.ts: malformed template ${JSON.stringify(raw)} -- component ${JSON.stringify(part)} is neither an integer nor "-"`
+        `version.ts: malformed template ${JSON.stringify(raw)} -- component ${JSON.stringify(part)} is neither an integer (no leading zeros) nor "-"`
       );
     }
   }
