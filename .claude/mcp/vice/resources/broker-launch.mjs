@@ -26,8 +26,9 @@
 // deliberately-killed instance, and writes the per-instance boot/crash log
 // D-23 preserves at the exact path shape the retiring bash supervisor used.
 import { spawn as nodeSpawn } from "node:child_process";
-import { mkdirSync, openSync, closeSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
+import { tmpdir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.
@@ -178,7 +179,7 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
  * spawning, so a bad configuration value is visible rather than silently
  * mis-parsed, exactly like the bash launcher's own logging discipline. */
 function spawnAndRecordInstance(reason, port, deps) {
-    const spawnFn = deps.spawn ?? ((cmd, args) => nodeSpawn(cmd, args));
+    const spawnFn = deps.spawn ?? ((cmd, args, opts) => nodeSpawn(cmd, args, opts));
     const now = deps.now ?? (() => Date.now());
     const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
     const backend = deps.backend ?? "fork";
@@ -189,8 +190,49 @@ function spawnAndRecordInstance(reason, port, deps) {
         remoteMonitorPort: deps.remoteMonitorPort,
     });
     const log = deps.log ?? defaultLog;
-    log(`vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`);
-    const child = spawnFn(viceBin, viceArgs);
+    // I-1 rider (audit §4.4, 08.2-02-PLAN.md Task 2): production stock
+    // launches used to set no scratch XDG_CONFIG_HOME and would read whatever
+    // vicerc the operator's own $HOME already carried -- shared with the
+    // operator's own VICE usage and with the fork build. For backend ===
+    // "stock" only, compute a fresh, isolated config dir with mkdtempSync
+    // (atomic creation, random suffix, 0700 permissions -- the primitive that
+    // makes a collision or a symlink-swap into the operator's real config
+    // unreachable) and pass it as a third options argument carrying `env`
+    // only. Never `shell: true`: the existing array-form spawn(viceBin,
+    // viceArgs) call avoids shell interpretation entirely and that property
+    // must survive this widening. For backend === "fork", spawnFn is called
+    // with NO third argument at all, so the fork path's observable behaviour
+    // stays bit-for-bit what it was (BACK-02 is a standing gate and the fork
+    // backend has been the sole production backend across all of v0.1.x).
+    //
+    // Scope boundary (do not remove this note): the production broker daemon
+    // always supplies its own deps.spawn / deps.spawnFactory, so the widened
+    // default wrapper above is dead code on the real launch paths, and this
+    // options argument is dropped again at four further hops --
+    // makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
+    // stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
+    // body and launchSupervised()'s defaultRealSpawn in this file. Plan
+    // 08.2-06 (wave 2) owns threading it through those four hops and owns the
+    // non-bypassable proof; this function only computes the value at the one
+    // seam that should own it.
+    //
+    // Scratch-dir lifetime: this function deliberately does NOT clean the
+    // directory up -- the spawned emulator process outlives this function's
+    // return and needs the directory for its whole lifetime. Per-launch
+    // scratch dirs therefore accumulate under the OS temp dir for the life of
+    // the host; this is a recorded trade-off, not an oversight. If reaping
+    // them is ever worth doing, the broker's own kill/recycle path is the
+    // component that would own it (it already knows when an instance's
+    // process has actually exited).
+    let spawnOptions;
+    let logLine = `vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`;
+    if (backend === "stock") {
+        const scratchConfigDir = mkdtempSync(join(tmpdir(), "vice-broker-vicerc-"));
+        spawnOptions = { env: { ...process.env, XDG_CONFIG_HOME: scratchConfigDir } };
+        logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
+    }
+    log(logLine);
+    const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
     const record = {
         port,
         url: `http://127.0.0.1:${port}/mcp`,
