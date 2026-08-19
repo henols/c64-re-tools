@@ -3,6 +3,7 @@ title: Document that a second binary-monitor client is indistinguishable from a 
 date: 2026-08-17
 priority: medium
 source: /gsd-explore "regenerator2000" — D-R1; folds into v0.2.0 Phase 8 (SKILL-01 / DIST-02)
+resolves_phase: 10
 ---
 
 # A second binmon client looks exactly like a wedged emulator, and nothing tells the user that
