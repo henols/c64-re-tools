@@ -9,6 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import {
   DEV_PLACEHOLDER,
@@ -150,6 +151,26 @@ test("compareVersions(): orders a numeric 3-tuple correctly and reports equality
   assert.equal(compareVersions("0.2.1", "0.10.0"), -1);
   assert.equal(compareVersions("0.2.0", "0.1.12"), 1);
   assert.equal(compareVersions("0.2.1", "0.2.1"), 0);
+});
+
+// ============================================================================
+// scripts/version.mjs CLI -- LOW-4's strictly-greater guard consistency.
+// ============================================================================
+
+test("scripts/version.mjs CLI: an unparseable --published value degrades to no-published and succeeds (LOW-4)", () => {
+  // resolveVersion() itself already treats an unparseable --published value
+  // as no-published (D-2 rule 4). The CLI's strictly-greater guard must key
+  // off result.rule === "no-published", not `published !== null` directly,
+  // so a garbage --published like this doesn't spuriously make
+  // compareVersions() throw and report "could not compare" even though the
+  // resolve itself succeeded fine as no-published.
+  const root = findRepoRoot(HERE);
+  const res = spawnSync(process.execPath, [join(root, "scripts", "version.mjs"), "resolve", "--published", "dev"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 0, `expected exit 0, got ${res.status}; stderr:\n${res.stderr}`);
+  assert.equal(res.stdout.trim(), "0.2.0");
 });
 
 // ============================================================================

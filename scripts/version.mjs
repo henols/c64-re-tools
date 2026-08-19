@@ -135,7 +135,19 @@ function cmdResolve(argv) {
   // published is null, the resolved version must be strictly greater than
   // it. Catches a downward hand edit (e.g. "0.1.-" after 0.2.0 shipped)
   // loudly, here, instead of a 409 inside `npm publish`.
-  if (published !== null) {
+  //
+  // Skip when result.rule === "no-published" rather than checking
+  // `published !== null` directly (LOW-4): resolveVersion() itself already
+  // decided an unparseable --published value degrades to "no-published"
+  // semantics exactly like published === null (D-2 rule 4; see
+  // version.test.ts's "an unparseable published string behaves as
+  // no-published"). Checking the raw `published` variable instead would
+  // diverge from that: a typo'd `--published dev` is non-null, so the old
+  // guard ran compareVersions() anyway, which throws on unparseable input --
+  // "resolve succeeded as no-published" would then incorrectly report as "the
+  // CLI could not compare". Keying off result.rule keeps this guard
+  // consistent with the seam's own null-vs-unparseable handling.
+  if (result.rule !== "no-published") {
     let cmp;
     try {
       cmp = compareVersions(result.version, published);
