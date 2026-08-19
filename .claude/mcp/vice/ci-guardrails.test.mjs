@@ -31,6 +31,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MANUAL_ONLY_TESTS, automatedTestFiles } from "./test-gate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -102,6 +103,27 @@ function blockHasContinueOnError(block) {
   return /continue-on-error/.test(block);
 }
 
+/** Finds step blocks whose `run:` line invokes the bare full-glob command
+ * `npm test` (package.json's `test` script, `node --test '*.test.*'`) -- word
+ * boundary after `test` so this cannot cross-match `npm test:automated` or
+ * a hypothetical `npm testX`. */
+function findRunStepBlocksForNpmTest(blocks) {
+  const re = /run:\s*npm test\b/;
+  return blocks.filter((b) => re.test(b));
+}
+
+/** Finds step blocks whose `run:` line invokes either spelling of the
+ * NARROWED automated gate -- `npm run test:automated` or `node
+ * test-gate.mjs` (package.json's `test:automated` script and its
+ * underlying command are two different strings that must both be treated
+ * as "narrowed" here, since either one reaching CI's Test step would drop
+ * every MANUAL_ONLY_TESTS file, including vice-proxy.test.ts, from the
+ * suite CI actually runs). */
+function findRunStepBlocksForNarrowedGate(blocks) {
+  const re = /run:\s*(npm run test:automated|node test-gate\.mjs)\b/;
+  return blocks.filter((b) => re.test(b));
+}
+
 // ---------------------------------------------------------------------------
 // Synthetic-fixture tests (no dependency on ci.yml's real content): prove the
 // parser itself is correct, both directions, before trusting it against the
@@ -164,6 +186,74 @@ test("ci-guardrails fixture: a deleted step is classified as zero matches, never
 });
 
 // ---------------------------------------------------------------------------
+// GAP-3 (Nyquist audit, 2026-08-19): BACK-05 success criterion 1's only
+// end-to-end wire proof is `vice-proxy.test.ts`'s `ok 116`-`ok 119` (see
+// vice-proxy.test.ts, search "BACK-05"). That file is the SECOND entry of
+// `MANUAL_ONLY_TESTS` in test-gate.mjs, so `node test-gate.mjs` -- the
+// "Full suite command" 08-VALIDATION.md itself names -- never runs it. It
+// reaches CI *only* because ci.yml's Test step happens to run bare `npm
+// test` (the full `*.test.*` glob) rather than the narrowed
+// `npm run test:automated`. Nothing asserted that stays true -- a pending
+// todo (.planning/todos/pending/2026-08-13-reconcile-ci-test-command-with-
+// narrowed-gate.md) already documents an intention to narrow it, and that
+// todo's own acceptance item 3 admits vice-proxy.ts's dispatch seams "would
+// then have none anywhere". The tests below make that dependency mechanical
+// instead of tribal.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_NARROWED_GATE = `
+name: CI
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: npm run test:automated
+      - name: Build
+        run: bash scripts/package.sh
+`;
+
+const FIXTURE_NARROWED_GATE_TESTGATE_MJS = `
+name: CI
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: node test-gate.mjs
+      - name: Build
+        run: bash scripts/package.sh
+`;
+
+test("ci-guardrails fixture: a Test step narrowed to npm run test:automated is rejected by the full-glob classifier (proves the check can fail)", () => {
+  const blocks = splitIntoStepBlocks(FIXTURE_NARROWED_GATE);
+
+  const fullGlobMatches = findRunStepBlocksForNpmTest(blocks);
+  assert.equal(
+    fullGlobMatches.length,
+    0,
+    "a fixture whose Test step runs the narrowed gate must NOT be classified as running the full glob",
+  );
+
+  const narrowedMatches = findRunStepBlocksForNarrowedGate(blocks);
+  assert.equal(
+    narrowedMatches.length,
+    1,
+    "the narrowed-gate classifier must detect the fixture's `npm run test:automated` step",
+  );
+});
+
+test("ci-guardrails fixture: a Test step narrowed to node test-gate.mjs is also rejected by the full-glob classifier (proves the second spelling can fail too)", () => {
+  const blocks = splitIntoStepBlocks(FIXTURE_NARROWED_GATE_TESTGATE_MJS);
+
+  const fullGlobMatches = findRunStepBlocksForNpmTest(blocks);
+  assert.equal(fullGlobMatches.length, 0, "a fixture whose Test step runs `node test-gate.mjs` must not be classified as running the full glob");
+
+  const narrowedMatches = findRunStepBlocksForNarrowedGate(blocks);
+  assert.equal(narrowedMatches.length, 1, "the narrowed-gate classifier must detect the fixture's `node test-gate.mjs` step");
+});
+
+// ---------------------------------------------------------------------------
 // Real-file assertions against the actual .github/workflows/ci.yml.
 // ---------------------------------------------------------------------------
 
@@ -216,3 +306,68 @@ for (const script of GUARD_SCRIPTS) {
     );
   });
 }
+
+test("ci-guardrails: ci.yml's Test step still runs the FULL *.test.* glob (npm test), not the narrowed automated gate -- BACK-05's only end-to-end wire proof (vice-proxy.test.ts, ok 116-ok 119) is a MANUAL_ONLY_TESTS entry and reaches CI only via this bare-glob invocation", () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+
+  const fullGlobMatches = findRunStepBlocksForNpmTest(blocks);
+  assert.equal(
+    fullGlobMatches.length,
+    1,
+    `expected exactly one ci.yml step invoking "npm test" (the full *.test.* glob), found ${fullGlobMatches.length} -- ` +
+      "if this is 0, CI's Test step has been narrowed (e.g. to `npm run test:automated` or `node test-gate.mjs`), " +
+      "which would silently drop vice-proxy.test.ts (a MANUAL_ONLY_TESTS entry, see test-gate.mjs) from every CI run -- " +
+      "and with it, Phase 8's BACK-05 success criterion 1's only end-to-end wire proof (the real stdio-proxy " +
+      "assertions at `ok 116`-`ok 119` in vice-proxy.test.ts, search \"BACK-05\"). See " +
+      ".planning/todos/pending/2026-08-13-reconcile-ci-test-command-with-narrowed-gate.md, whose own acceptance " +
+      'item 3 admits this exact consequence ("would then have none anywhere").',
+  );
+
+  assert.equal(
+    blockHasContinueOnError(fullGlobMatches[0]),
+    false,
+    "ci.yml's \"npm test\" step carries continue-on-error -- this silently evaporates the same BACK-05 " +
+      `wire-proof coverage described above. Offending step block:\n${fullGlobMatches[0]}`,
+  );
+
+  const narrowedMatches = findRunStepBlocksForNarrowedGate(blocks);
+  assert.equal(
+    narrowedMatches.length,
+    0,
+    `expected zero ci.yml steps invoking the narrowed automated gate ("npm run test:automated" or ` +
+      `"node test-gate.mjs"), found ${narrowedMatches.length} -- if the narrowed gate has REPLACED the full-glob ` +
+      "Test step (rather than being added as an unrelated extra step elsewhere), this is exactly the BACK-05 " +
+      "coverage regression this guard exists to catch.",
+  );
+});
+
+test("ci-guardrails: the ci.yml full-glob guard above is not vacuous -- vice-proxy.test.ts really is manual-only today and really is excluded from the narrowed automated gate (non-vacuity control, no second name list)", () => {
+  assert.ok(
+    MANUAL_ONLY_TESTS.includes("vice-proxy.test.ts"),
+    "vice-proxy.test.ts is no longer in test-gate.mjs's MANUAL_ONLY_TESTS -- if it was deliberately moved into the " +
+      "automated gate, the ci.yml full-glob guard immediately above is now REDUNDANT (a plain `node test-gate.mjs` " +
+      "run would cover it too) and MAY be relaxed deliberately. This is a tripwire, not a bug: update this test and " +
+      "the guard above together when that happens, do not silently delete either.",
+  );
+
+  const automated = automatedTestFiles(HERE);
+  assert.ok(
+    !automated.includes("vice-proxy.test.ts"),
+    "vice-proxy.test.ts now appears in automatedTestFiles()'s narrowed set -- same tripwire as above: BACK-05's " +
+      "wire proof would now run under the narrowed gate too, so the bare-`npm test`-in-ci.yml guard is no longer " +
+      "the only thing keeping it alive in CI and may be deliberately relaxed.",
+  );
+});
+
+test("ci-guardrails: package.json's \"test\" script still resolves to the full *.test.* glob (guards the other half of the BACK-05 hole: redefining the npm script instead of editing ci.yml)", () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8"));
+  assert.equal(
+    pkg.scripts?.test,
+    "node --test '*.test.*'",
+    `package.json's "test" script is ${JSON.stringify(pkg.scripts?.test)}, expected the full glob ` +
+      `"node --test '*.test.*'" -- if this was narrowed, ci.yml's bare \`npm test\` step would silently stop ` +
+      "running vice-proxy.test.ts (BACK-05's only wire proof) even though the ci.yml assertion above still sees " +
+      "a bare `npm test` invocation and passes.",
+  );
+});
