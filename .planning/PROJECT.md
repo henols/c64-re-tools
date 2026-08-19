@@ -215,29 +215,79 @@ Items), none of them blocking a tag.
 **Not yet released.** The tree is 386 commits ahead of `origin/main` with the
 newest published tag at `v0.1.10`. Nothing in this milestone has been pushed.
 
+## Current Milestone: v0.3.0 regenerator2000 static-analysis backend
+
+**Goal:** Adopt regenerator2000 as a static-analysis-only backend so recon findings
+become queryable, undoable state instead of Markdown prose — and the symbol round
+trip between static annotation and the live emulator finally closes.
+
+**Target features:**
+- The `R2000-16` assumption probe answered against a real build, as a standalone
+  go/no-go gate before any further plan is written — the pty/HTTP-MCP question
+  decides whether project bootstrap is automatable at all
+- regenerator2000 adopted static-analysis-only, never launched with `--vice`,
+  guarded in code rather than only documented; runs container-side so no path
+  translation applies
+- Project bootstrap from a raw binary automated rather than a documented manual step
+- `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite removed,
+  replaced by a route whose output is verified by reassembly
+- `c64-program-recon` writes labels, comments, block types and scopes into a
+  queryable annotation store; a later session queries instead of re-deriving
+- Cross-reference and search over an analysed program
+- Enums generated from `c64-memory-mapping`'s `memmap.json`, so register writes
+  render with semantic names instead of magic numbers — neither project can do
+  this alone
+- The symbol round trip: annotations export as VICE label files into the symbol
+  store, and names discovered live flow back
+
+**Key context:**
+- **Structurally independent of v0.2.0.** regenerator2000 never touches VICE, so it
+  behaves identically on both backends. Only Phase 11's `DERIV-04`-on-stock
+  dependency reaches back into v0.2.0 at all.
+- **The probe gates the milestone, not just its first phase.** If regenerator2000
+  cannot be driven without a human, the annotation store is unreachable from a
+  skill and the milestone should be *reconsidered* rather than replanned. That is
+  why it is its own phase with an explicit gate rather than a criterion inside a
+  larger one.
+- **Required prerequisite, not an optional accelerator** (D-R2). Optional-with-
+  detection was rejected: it forbids any removal, since every skill would need a
+  working fallback, and it adds a third axis of conditionality on top of
+  stock-vs-fork.
+- **Install story regresses on its own axis.** No release assets exist upstream, so
+  install is `cargo install regenerator2000` — a Rust toolchain. Accepted when D-R2
+  was reaffirmed.
+- Research is **not** owed: `.planning/notes/regenerator2000-integration.md` is the
+  research, source-read at `ricardoquesada/regenerator2000@main`, with three
+  upstream blockers confirmed at file:line and a verified overlap map.
+- 12 of 16 `R2000-*` requirements are in scope; `R2000-04`, `-07`, `-08` and `-12`
+  were folded or cut on 2026-08-17 with rationale recorded in ROADMAP.md.
+
 ## Next Milestone Goals
 
-**v0.3.0 regenerator2000 static-analysis backend** — proposed, not opened.
-Phases 9-10. See `ROADMAP.md` and `.planning/notes/regenerator2000-integration.md`.
+**Beyond v0.3.0** — nothing scoped yet. The standing candidates, in the order
+their cost is currently understood:
 
-Adopt [regenerator2000](https://github.com/ricardoquesada/regenerator2000) as a
-**static-analysis backend only** — never given `--vice`, because our broker keeps
-sole ownership of stock VICE's binary monitor. It brings three things this project
-structurally lacks: a persistent, queryable annotation store; a recursive-descent
-disassembler with an auto-analyzer; and a sandboxed binary unpacker.
+1. **The carried debt, dispositioned rather than inherited again.** 13 items were
+   accepted at v0.2.0's close (`STATE.md` -> Deferred Items) and the round-4 audit
+   assessed the set as `tech_debt`. The three highest-value are the synthetic
+   `VERIF-02` wire fixtures, the unconfirmed `--help` backend discriminator, and
+   the four Phase 3 wire details written spec-driven and never exercised against a
+   real binary. Each is a case of the same lesson: an internal check standing in
+   for an external one.
+2. **The upstream contributions**, already recorded as out of scope here but
+   genuinely worth doing: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor
+   (~60 lines, closes stock's hardest loss for everyone), and regenerator2000's
+   `--mcp-port` / `--mcp-bind` (~5 lines total, unblocks two projects at once and a
+   host-side TUI).
+3. **`QUAL-01..03`** — tests for `acme.mjs` / `driver.mjs` / `derive.mjs`, orphaned
+   planning references in source comments, and the emulator control-plane network
+   exposure.
 
-Two things to settle before planning:
-
-1. **`R2000-16`'s assumption probe gates the milestone** and should have run
-   already — it has no v0.2.0 dependency. The pty/HTTP-MCP question decides
-   whether project bootstrap is automatable at all.
-2. **v0.3.0 is structurally independent of v0.2.0.** regenerator2000 never
-   touches VICE, so it behaves identically on both backends and could have run
-   against the fork with no v0.2.0 work at all.
-
-Also open, and a fair candidate for a smaller intervening release: **publishing
-v0.2.0**. 386 unpushed commits and a `v0.1.10` tag mean none of this milestone's
-work has reached a user yet.
+**Shipped since this section was last written:** v0.2.0 reached users on
+2026-08-19 — npm `0.2.0` for both packages, tag and GitHub Release at `089127a`,
+plugin zip attached. The version number is now resolved from a single `VERSION`
+template rather than hand-maintained in six places; see README's "Publishing
+(maintainers)".
 
 <details>
 <summary>Previous milestone detail — v0.2.0 phase-by-phase narrative (archived 2026-08-19)</summary>

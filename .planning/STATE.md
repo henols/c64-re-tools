@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.2.0
-milestone_name: Switchable stock-VICE backend
-status: Awaiting next milestone
-last_updated: "2026-08-19T21:15:43.912Z"
-last_activity: "2026-08-19 — Completed quick task 260819-vie: extracted stamp/zip/attach into one release-assets seam, wired both CI release paths to it, and attached v0.2.0's missing GitHub Release assets retroactively"
+milestone: v0.3.0
+milestone_name: regenerator2000 static-analysis backend
+status: planning
+last_updated: "2026-08-19T21:23:09.211Z"
+last_activity: 2026-08-19
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 87
-  completed_plans: 87
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -31,12 +31,10 @@ publishing v0.2.0, which is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: Milestone v0.2.0 complete and archived — no phase in flight
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Next: `/gsd-new-milestone` (questioning → research → requirements → roadmap).
-`REQUIREMENTS.md` was removed at close; the next milestone creates a fresh one.
-Last activity: 2026-08-19 — v0.2.0 PUBLISHED (npm 0.2.0, both packages, tag + GitHub Release at 089127a); quick tasks 260819-tsz (VERSION template + resolver seam) and 260819-vie (release-assets seam) complete
+Status: Defining requirements
+Last activity: 2026-08-19 — Milestone v0.3.0 started
 
 ## Performance Metrics
 
