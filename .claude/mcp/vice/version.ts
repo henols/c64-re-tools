@@ -160,6 +160,18 @@ export function resolveVersion(template: string, published: string | null): Reso
     if (c !== "-") return c;
     if (!firstDashSeen) {
       firstDashSeen = true;
+      // Guard (LOW-1): `pub[i] + 1` on a published component at
+      // Number.MAX_SAFE_INTEGER would silently lose precision to float
+      // rounding and could fail to actually increment, violating this
+      // seam's "always publishes something new" invariant. Purely
+      // theoretical for real-world semver (patch counts in the billions are
+      // not realistic) but the arithmetic is load-bearing enough to fail
+      // loud rather than silently miscompute.
+      if (pub[i] >= Number.MAX_SAFE_INTEGER) {
+        throw new Error(
+          `version.ts: published component ${pub[i]} at index ${i} is at or beyond Number.MAX_SAFE_INTEGER -- refusing to increment (would lose precision)`
+        );
+      }
       return String(pub[i] + 1);
     }
     return "0";

@@ -135,6 +135,15 @@ test("resolveVersion(): parsePublished rejects non-plain-decimal components and 
   }
 });
 
+test("resolveVersion(): throws rather than silently losing precision when incrementing a MAX_SAFE_INTEGER published component (LOW-1)", () => {
+  const huge = String(Number.MAX_SAFE_INTEGER);
+  assert.throws(
+    () => resolveVersion("0.2.-", `0.2.${huge}`),
+    /MAX_SAFE_INTEGER/,
+    "expected resolveVersion to refuse to increment a component at Number.MAX_SAFE_INTEGER"
+  );
+});
+
 test("compareVersions(): orders a numeric 3-tuple correctly and reports equality", () => {
   assert.equal(compareVersions("0.1.12", "0.2.0"), -1);
   assert.equal(compareVersions("0.2.0", "0.2.1"), -1);
