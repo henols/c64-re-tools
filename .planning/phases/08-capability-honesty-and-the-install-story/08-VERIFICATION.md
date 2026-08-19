@@ -1,14 +1,17 @@
 ---
 phase: 08-capability-honesty-and-the-install-story
 verified: 2026-08-18T21:50:50Z
-status: human_needed
-score: 4/4 truths hold in the codebase; 1 of 4 has a recorded, human-approved pending human-verification half
+status: passed
+score: 4/4 truths hold in the codebase; the one human-verification half is now resolved (Phase 8.2, plan 08.2-04 — outcome: passed)
+reconciled: 2026-08-19
+reconciled_by: Phase 8.2 execution close-out (audit round 3 gap V-3)
 overrides_applied: 0
 human_verification:
   - test: "Plugin-install + `c64-ram-capture` end-to-end walkthrough on a clean box, driving a live Claude Code session against a real stock VICE"
     expected: "A human installs stock VICE and the plugin using only README.md's prose, sets VICE_BACKEND=stock, and drives c64-ram-capture to a full RAM capture with no step requiring undocumented knowledge."
     why_human: "Requires a live human (or a separate live agentic session) exercising the real MCP tool surface interactively. No script can observe 'did a person understand this sentence' or substitute for a live agent session. Recorded in 08-HUMAN-UAT.md as status: pending; the install-only half was already run live in a fresh debian:trixie container (found and fixed a real README defect: Debian ships vice in contrib, not main). Human previously reviewed this gap at a checkpoint and explicitly approved closing the plan on that basis -- this is a recorded, approved partial, not an unrecorded gap."
     resolved: "Phase 8.1, plan 08.1-04, 2026-08-19 — outcome: failed. driven_by: agent-proxy, tested_artifact_sha: 0e6e913e493216579a8a6a680d5e84b9729fd320 (local-checkout-HEAD, not a published release). A live headless Claude Code session drove c64-ram-capture end to end against genuine /usr/bin/x64sc and hit a real, confirmed defect (stock x64sc launched with Drive8Type=0, no MCP tool to fix it) rather than completing the capture. Full record: .planning/phases/08-capability-honesty-and-the-install-story/08-HUMAN-UAT.md, evidence: .planning/phases/08.1-close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift/08.1-WALKTHROUGH-EVIDENCE.md."
+    resolved_final: "Phase 8.2, plan 08.2-04, 2026-08-19 — outcome: PASSED. The Drive8Type=0 defect that failed the Phase 8.1 attempt above was fixed in this same phase (plan 08.2-02 added `-drive8type 1541` to buildViceArgs()'s stock branch; plan 08.2-06 threaded a per-instance scratch XDG_CONFIG_HOME end to end). The walkthrough was re-run and reached a full, verified 65536-byte RAM capture (sha256 33bf610593c4c1a7605f781e91cbea6313d61b4c532de5f8f0b21b1665967286) on a provably broker-launched genuine stock /usr/bin/x64sc (VICE 3.9). The blocking human-verify gate was presented to the developer, who reviewed the raw `ps -o args=` line, the capture result and both stated limitations, and approved it verbatim — not auto-approved. Both limitations stand and are recorded, not glossed: (a) the artifact was the local checkout at 2d76867, NOT a published release (origin/main was 362 commits behind), and (b) driven_by: agent-proxy, not a human witness — narrowed further in that the passing capture's tool calls came from a Node @modelcontextprotocol/sdk client script rather than an LLM's turn-by-turn decisions, which is weaker evidence than an adaptively driven session. One narrower item remains open and was accepted as non-blocking: FINDING-E2, the vice_keyboard_type LOAD fallback route did not progress within a bounded 20-second poll. Full record: .planning/phases/08-capability-honesty-and-the-install-story/08-HUMAN-UAT.md (status: passed), evidence: .planning/phases/08.2-close-v0-2-0-blockers-drive-config-test-gate-walkthrough/08.2-WALKTHROUGH-EVIDENCE.md (capture_result: pass). The Phase 8.1 `resolved:` record above is deliberately PRESERVED as history rather than overwritten."
 ---
 
 # Phase 8: Capability Honesty and the Install Story — Verification Report
@@ -16,8 +19,8 @@ human_verification:
 **Phase Goal:** A user can install this from a package manager and is never silently given a
 wrong answer by a backend that cannot do the thing.
 **Verified:** 2026-08-18T21:50:50Z
-**Status:** human_needed
-**Re-verification:** No — initial verification.
+**Status:** passed *(reconciled 2026-08-19 — see `reconciled_by` in frontmatter)*
+**Re-verification:** No — initial verification. Frontmatter status reconciled 2026-08-19 at Phase 8.2's close-out: the single outstanding human-verification item was resolved as **passed** by Phase 8.2 plan 08.2-04 and human-approved. No truth's codebase evidence was re-derived or altered by that reconciliation; only the human-verification outcome changed.
 
 ## Goal Achievement
 
