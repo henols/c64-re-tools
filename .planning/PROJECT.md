@@ -185,6 +185,20 @@ existing fork backend keeps working unchanged for the capabilities only it has.
 - Version detection (VICE ≥ 3.10) with graceful degradation
 - Empirical probe against a real build, and a two-process parity harness
 
+**Current state:** v0.2.0's phase work is complete. Phase 8.1 (inserted) closed the
+milestone's last two debts on 2026-08-19: it ran the one unwitnessed claim — the
+install-to-RAM-capture walkthrough — and corrected the seven planning-document drift items
+(D-1..D-7) that would otherwise have started the next audit from a false picture. The
+walkthrough was run for real and **recorded as failed**, which is the honest outcome: it
+surfaced a confirmed product defect rather than a documentation gap. The broker launches stock
+VICE with `Drive8Type=0` (NONE), so no drive answers unit 8, `LOAD"*",8,1` returns
+`?DEVICE NOT PRESENT ERROR`, and the 64K capture is never reached. Confirmed fix, verified live
+via the text monitor: `-drive8type 1541` at launch — deliberately **not applied**, since the
+defect is not install-path-shallow and sizes its own work. It is carried as an open product
+defect in `ROADMAP.md` and `STATE.md`. A second finding: the `acme-build` scaffold cannot build
+on any machine provisioned the documented way, because the Debian `acme` package ships no
+`cbm/c64/*.a` standard library — CI's own environment included (FINDING-A1).
+
 **Previously:** Phase 2 (Stock Backend Connection) complete — 2026-08-13.
 The server can now be pointed at a stock VICE and hold a correlated,
 event-demultiplexed conversation with it: `stock-protocol.ts` (framing, parsing,
@@ -197,7 +211,13 @@ is byte-identical to the phase-start commit. Verified 5/5 success criteria,
 16/16 requirements.
 
 Two things about this phase constrain how much it proved. **No stock VICE binary
-exists in this environment** (user ruling, 2026-08-13): every line is written
+exists in this environment** (user ruling, 2026-08-13) *(Superseded 2026-08-19, during
+Phase 8.1: this ruling is now known wrong. A genuine unpatched stock binary is present at
+`/usr/bin/x64sc` (VICE 3.9) — the fork build at `/usr/local/bin/x64sc` merely shadows it on
+`$PATH`, which is why bare-`x64sc` probes resolve to the fork. Phase 8.1 plan 04 drove
+`c64-ram-capture` against that genuine binary and confirmed its identity from the broker log
+and live `ps` argv. The synthetic-fixture caveat below still stands; the no-binary caveat does
+not.)*: every line is written
 against the normative spec, the three VERIF-02 fixtures are synthetic and stamped
 as such, locked decision D-19 was explicitly overridden
 (`docs/phase2-backend-probe-evidence.md`), and the `--help` backend discriminator
@@ -392,4 +412,4 @@ Next: v0.2.0's phase work is complete — `/gsd-audit-milestone` then
 `/gsd-complete-milestone`.
 
 ---
-*Last updated: 2026-08-18 after Phase 8 completion — the final v0.2.0 phase (one capability registry, four consumers, no second copy; the repo's first generated markdown file with a byte-identity drift guard; an install story proven by running it, which is how the Debian `contrib` defect and two further honesty defects in this phase's own output were found)*
+*Last updated: 2026-08-19 after Phase 8.1 completion — the inserted phase that closed v0.2.0's audit debt (all seven D-1..D-7 drift items green in one run; the never-run install walkthrough finally run, and recorded as a truthful `failed` naming a real `Drive8Type=0` defect rather than manufactured into a pass; two brittle assertions replaced with self-consistency invariants after the project's own tooling legitimately advanced the numbers they pinned)*
