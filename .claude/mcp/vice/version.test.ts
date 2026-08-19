@@ -115,6 +115,26 @@ test("resolveVersion(): a published prerelease suffix is stripped before compari
   assert.equal(result.version, "0.2.1");
 });
 
+test("resolveVersion(): a published build-metadata suffix is stripped before comparison", () => {
+  const result = resolveVersion("0.2.-", "0.2.0+build");
+  assert.equal(result.rule, "prefix-matches");
+  assert.equal(result.version, "0.2.1");
+});
+
+test("resolveVersion(): parsePublished rejects non-plain-decimal components and degrades to no-published (MED-4)", () => {
+  // "0x2" (hex-like), "5e2" (exponential), and a whitespace-padded component
+  // all previously coerced via `Number()` into a plausible-looking integer.
+  // Each must instead fail parsePublished's strict /^\d+$/ check and fall
+  // back to no-published (D-2 rule 4), exactly like any other unparseable
+  // published string.
+  const malformed = ["1.0x2.0", "1.5e2.0", "1. 2.0", "1.2. 0"];
+  for (const published of malformed) {
+    const result = resolveVersion("0.2.-", published);
+    assert.equal(result.rule, "no-published", `published=${JSON.stringify(published)} expected no-published`);
+    assert.equal(result.version, "0.2.0");
+  }
+});
+
 test("compareVersions(): orders a numeric 3-tuple correctly and reports equality", () => {
   assert.equal(compareVersions("0.1.12", "0.2.0"), -1);
   assert.equal(compareVersions("0.2.0", "0.2.1"), -1);

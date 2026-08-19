@@ -114,9 +114,17 @@ function parsePublished(published: string | null): number[] | null {
   const core = published.split(/[-+]/, 1)[0];
   const parts = core.split(".");
   if (parts.length !== 3) return null;
-  const nums = parts.map((p) => Number(p));
-  if (nums.some((n) => !Number.isInteger(n) || n < 0)) return null;
-  return nums;
+  // Strict plain-decimal-digit validation (MED-4) -- deliberately NOT
+  // `Number(p)` + `Number.isInteger`, which also accepts hex-like literals
+  // ("0x2" -> 2), exponential notation ("5e2" -> 500), and whitespace-padded
+  // numbers. Those would silently coerce malformed `--published` input or an
+  // unexpected `npm view` response into a number that doesn't reflect the
+  // original text; this must instead fall back to null (== "no-published",
+  // D-2 rule 4) exactly like any other unparseable input, matching the
+  // strict digit validation `parseTemplate`'s `TEMPLATE_COMPONENT` already
+  // uses for the same kind of input.
+  if (!parts.every((p) => /^\d+$/.test(p))) return null;
+  return parts.map((p) => Number(p));
 }
 
 /**
