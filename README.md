@@ -201,19 +201,65 @@ so the tests travel and run unchanged.
 
 ## Publishing (maintainers)
 
-Releases are **automatic**: every merge to `main` publishes a new **patch**
-version. CI reads the current version from npm, bumps the patch, publishes
-`@henols/vice-mcp` then `@henols/c64-re-tools`, and creates the matching `v<version>`
-tag + GitHub release. Put `[skip release]` in the merge commit **subject** (first
-line) to land a change without releasing.
+The version lives in **one hand-edited file**: `VERSION` at the repo root. It holds
+a *template*, not a number — each dot-component is either a literal integer or `-`,
+which marks an auto-managed slot:
 
-For a **minor or major** bump, trigger a release manually with an explicit version:
-Actions → **CI** → **Run workflow** → enter e.g. `0.2.0` (this is the
-`workflow_dispatch` path). Pushing a `v<version>` tag by hand also works.
+```
+0.2.-
+```
 
-Either way the version is taken from the tag/input/auto-bump, so you do **not**
-pre-bump the source `package.json` files (their versions are placeholders CI
-overwrites at publish time).
+`scripts/version.mjs` resolves that template against whatever is actually published
+on npm, using four rules:
+
+| `VERSION` | published on npm | resolves to | rule |
+|-----------|------------------|-------------|------|
+| `0.2.-`   | `0.1.12`         | `0.2.0`     | literal prefix differs -> auto slots reset to 0 |
+| `0.2.-`   | `0.2.0`          | `0.2.1`     | literal prefix matches -> first `-` increments |
+| `0.3.-`   | `0.2.7`          | `0.3.0`     | you bumped minor by hand -> patch does **not** carry over |
+| `0.-.-`   | `0.2.7`          | `0.3.0`     | first `-` (minor) increments, later `-` reset to 0 |
+| `1.0.0`   | anything         | `1.0.0`     | fully pinned, no auto slot, no bump |
+
+So in practice:
+
+- **Patch release** — merge to `main`. Nothing to edit. CI resolves the next patch,
+  publishes `@henols/vice-mcp` then `@henols/c64-re-tools`, and creates the matching
+  `v<version>` tag + GitHub release.
+- **Minor or major release** — edit `VERSION` (e.g. `0.2.-` -> `0.3.-`) and merge to
+  `main`. The patch resets to `0` rather than continuing the old count, so you get
+  `0.3.0`, never `0.3.13`. No manual workflow trigger, no tag to push.
+- **Land a change without releasing** — put `[skip release]` in the merge commit
+  **subject** (first line).
+
+You never pre-bump a `package.json`. Every publishable version string in the working
+tree carries the self-evident placeholder `0.0.0-dev`, stamped with the resolved
+version inside CI's ephemeral checkout at publish time — the two `package.json`
+files and the installer's `@henols/vice-mcp` dependency pin by `npm version`, the
+three plugin-manifest fields by `scripts/version.mjs stamp`. Because that pin is a
+placeholder in the tree, a local `cd installer && npm install` will not resolve it;
+use the published package, or stamp a version locally first.
+
+`scripts/version.mjs` **refuses to resolve downwards**: if the template would
+produce a version that is not strictly greater than what is published, it exits
+non-zero. That turns a mistaken downward edit of `VERSION` into a loud CI failure
+instead of a registry 409 partway through publishing.
+
+Useful locally (all read-only against npm):
+
+```sh
+node scripts/version.mjs resolve                 # what would ship right now
+node scripts/version.mjs resolve --published X.Y.Z   # resolve against a hypothetical
+node scripts/version.mjs check                   # assert all 6 derived strings are the placeholder
+```
+
+The algorithm has exactly one implementation, `.claude/mcp/vice/version.ts` — the
+CLI, the MCP server's advertised version, and CI all call into it. Do not re-derive
+the rules anywhere else; a test greps for that regression.
+
+The two escape hatches still exist if you need them: pushing a `v<version>` tag by
+hand, or Actions -> **CI** -> **Run workflow** with an explicit version
+(`workflow_dispatch`). Do not combine either with a `main` push for the same
+version — both paths would publish it and the loser gets a 409.
 
 Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
 package has a Trusted Publisher configured on npmjs.com pointing at this repo and
