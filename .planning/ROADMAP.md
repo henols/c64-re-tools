@@ -241,7 +241,17 @@ since the project was created 2025-12-20.
   4. Every answer is recorded in the repo as evidence a later session can re-read, and every failure is recorded as an **accepted limit naming what it breaks** — no assumption is left standing on inference.
   5. A **go/no-go verdict is recorded** naming which of three routes the milestone takes: **proceed** as scoped; **degrade** — bootstrap becomes a documented one-time interactive step, every affected playbook says so, and Phase 10/11 scope is amended accordingly; or **reconsider** the milestone, because a regenerator2000 that cannot be driven without a human puts the annotation store out of a skill's reach and with it this milestone's thesis.
 
-**Plans**: TBD
+**Plans**: 8 plans in 5 waves
+
+Plans:
+- [ ] 09-01-PLAN.md — Evidence scaffold, illegal-opcode `.prg` fixture, third-party install authorization, and the real build's version (criterion 1, first half)
+- [ ] 09-02-PLAN.md — Container-side toolchain cost measured as two numbers: single-stage build cost and multi-stage shipped-image cost (criterion 1(5))
+- [ ] 09-03-PLAN.md — **The gate within the gate.** pty tolerance, MCP served-or-refused, and the keystroke-driven Save-As bootstrap (criterion 2)
+- [ ] 09-04-PLAN.md — Reassembly via regenerator2000's own `--verify` gate against a real `acme`, with the illegal-opcode mode recorded (criterion 3(2))
+- [ ] 09-05-PLAN.md — `--export_lbl` seeded, exported, grammar-matched against `stock-symbols.ts`, and handed unmodified to a live `vice_symbols_load` (criterion 3(3))
+- [ ] 09-06-PLAN.md — A real `.vsf` produced, loaded, and **interrogated** for machine type and start address (criterion 3(4))
+- [ ] 09-07-PLAN.md — `docs/phase9-regenerator2000-probe-findings.md`, the machine-readable verdict, and the research corrections (criteria 4 and 5)
+- [ ] 09-08-PLAN.md — Verdict discoverability: STATE.md decision entry and ROADMAP pointers (criterion 5)
 
 Notes:
 
