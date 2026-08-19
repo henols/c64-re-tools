@@ -2,91 +2,41 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
-status: milestone_complete
-last_updated: 2026-08-19T17:04:16.714Z
-last_activity: 2026-08-19 -- Phase 08.2 complete (6/6 plans, re-verified 7/7, milestone v0.2.0 phases done)
+status: Awaiting next milestone
+last_updated: "2026-08-19T18:14:08.134Z"
+last_activity: 2026-08-19 — Milestone v0.2.0 completed and archived
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 87
   completed_plans: 87
   percent: 90
-stopped_at: Milestone complete (Phase 08.2 was final phase)
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-12)
+See: .planning/PROJECT.md (updated 2026-08-19 after v0.2.0 milestone close)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Milestone complete
+**Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
+plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
+project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
+**Current focus:** Planning next milestone — v0.3.0 regenerator2000
+static-analysis backend (proposed, not opened). Also open and arguably first:
+publishing v0.2.0, which is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: 08.2 (close-v0-2-0-blockers-drive-config-test-gate-walkthrough) — COMPLETE
-Plan: 6 of 6 executed
-Next: v0.2.0 milestone close-out — /gsd-audit-milestone or /gsd-complete-milestone (do NOT re-run /gsd-execute-phase 8.2; it is done)
-Status: Milestone complete — all v0.2.0 phases closed
-Last activity: 2026-08-19 - Completed quick task 260819-rop: fix D4-2 and NEW-1 from v0.2.0-MILESTONE-AUDIT.md
-Phase 08: Complete, UAT 12/12, all 20 code-review findings fixed, verification's
-single human_verification item live-proven. Phase 8.1 closed the audit's one
-unwitnessed claim and its seven stale documents -- and running that claim is what
-falsified it: the walkthrough failed on a real defect. Audit round 2 (2026-08-19)
-therefore returned `gaps_found` and Phase 8.2 was inserted as the actual last phase
-of v0.2.0. **Do not tag v0.2.0 until 8.2 closes**, per
-`.planning/v0.2.0-MILESTONE-AUDIT.md` §9. Its three blockers: the `Drive8Type=0`
-stock-launch defect that leaves DIST-03 unsatisfied (§4.2), the red `npm test` gate
-that would fail CI on the tagging push (§4.3), and the walkthrough re-run that has to
-actually reach a verified 64K capture (plus the E-1..E-5 doc drift the defect created).
-
-**Scope was cut on 2026-08-17.** The filter: does a shipped skill call the tool, or
-does something a skill calls depend on it? The six skills call 29 tools -- 16 already
-work on stock, 10 are buildable (8 in Phase 5, 2 in Phase 7), and 3 are provably
-impossible (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) and
-route to the fork via Phase 8. The fork's other 33 tools are called by no skill. Phase 6
-was cut wholesale; screenshots, backtrace, checkpoint groups, disk detach and the parity
-harness came out. See ROADMAP.md "Cut from scope" and REQUIREMENTS.md for the 17
-CUT-marked requirements and 4 cut halves.
-
-*(The impossible list was two until plan 05-08's skill-vs-manifest sweep found
-`vice_keyboard_restore`, called by `c64-program-recon/references/control-flow.md:86` and
-absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
-item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
-
-Progress: [█████████░] 90%
-
-*(Phase-based, matching frontmatter `percent`: 9 of 10 phases complete.
-
-**Why 90% and not 100%, next to `status: milestone_complete`.** The v0.2.0 phase list holds
-10 entries: 9 complete `[x]`, plus Phase 6, which was **cut** wholesale on 2026-08-17 (`[~]`)
-and will never complete. 90% is therefore the TERMINAL figure for this milestone — the two
-values are consistent, not contradictory. Phases 9 and 10 in ROADMAP.md belong to the NEXT
-milestone (regenerator2000 / `R2000-*`) and are excluded from this denominator.
-
-**Never pin this number.** `phase.complete` and every `state.*` mutation recompute it from
-disk via `buildStateFrontmatter` (disk-ground-truth, phase-fraction-capped). Assert
-body-equals-frontmatter self-consistency instead of a literal. Phase 8.1 learned this twice
-the hard way, once mid-execution.
-
-**Two different ratios exist; do not conflate them.** This line is phase-based. An SDK
-`state.update-progress` call computes a *different*, real-time plan-file ratio (which once
-drifted this line to 99% — 80 or 81 of 81 plans) with no phase-completion cap. Both are
-individually valid measurements of different things; only the phase-based one belongs on
-this line, labelled here so the two are never confused again.
-
-**Historical record, all correct for their moment.** See `08.1-CONSISTENCY-READ.md`
-RESIDUAL-1 and its "Correction" note for the 89%-vs-78% episode inside Phase 8.1: 78% was
-this file's truth at that plan's Task 2 start (7 of 9 phases, 8.1 still in flight), and 89%
-its truth once 8.1's plans were all on disk. Then 8.2 was inserted, making it 80% with 8.2
-in flight — and now 90% with 8.2 complete. Every one of those was accurate when written.
-Do not "restore" any earlier figure.
-
-The standing rule is the point: this line is phase-based, it is whatever the frontmatter
-`percent` says, and it changes whenever the phase count does.)*
+Phase: Milestone v0.2.0 complete and archived — no phase in flight
+Plan: —
+Status: Awaiting next milestone
+Next: `/gsd-new-milestone` (questioning → research → requirements → roadmap).
+`REQUIREMENTS.md` was removed at close; the next milestone creates a fresh one.
+Last activity: 2026-08-19 — Milestone v0.2.0 completed, archived and tagged
 
 ## Performance Metrics
 
@@ -220,7 +170,43 @@ Recent decisions affecting current work:
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
+**13 items acknowledged and deferred at the v0.2.0 milestone close on 2026-08-19.**
+The pre-close artifact audit reported these; the round-4 milestone audit had
+already assessed the same set as `tech_debt` with no blockers. They were accepted
+rather than resolved, and are v0.3.0's inheritance unless dispositioned sooner.
+
+| Category | Item | Priority | Status |
+|----------|------|----------|--------|
+| todo | 2026-08-13-confirm-help-discriminator-against-real-vice-binaries | high | Pending — BACK-01/BACK-04's `--help` backend discriminator unconfirmed against real stock and fork binaries |
+| todo | 2026-08-13-re-record-binmon-fixtures-against-real-stock-vice | high | Pending — VERIF-02's three capturable fixtures are synthetic, honestly marked in every sidecar |
+| todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — four Phase 3 behavioural/spelling details written spec-driven, never exercised against a real binary |
+| todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
+| todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
+| todo | 2026-08-17-document-second-binmon-client-as-a-wedge-lookalike | — | Pending |
+| todo | 2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes | — | Pending — FINDING-A1; Debian `acme` ships no `cbm/c64/*.a` standard library, CI's own environment included |
+| todo | 2026-08-19-drive-type-prerequisite-undocumented-in-readme-and-skill | — | Pending |
+| todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
+| todo | 2026-08-19-project-paths-git-marker-requirement-undocumented | — | Pending |
+| todo | 2026-08-19-releases-json-schema-undocumented | — | Pending |
+| todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
+| uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
+
+Not counted above, because they are complete on disk: the four `.planning/quick/`
+tasks the audit reported as `[missing]` (`260817-n6p`, `260818-nh5`,
+`260818-obc`, `260819-rop`) each carry a PLAN and a SUMMARY; the audit reads
+`missing` because their SUMMARY frontmatter has no `status:` field. Likewise the
+three UAT files reported as gaps that read `resolved` / `passed` / `passed`
+(`03-UAT.md`, `08-HUMAN-UAT.md`, `08.1-HUMAN-UAT.md`).
+
+Also carried, not blocking: roughly fifteen WR-class code-review findings across
+five phases, enumerated per phase in
+`milestones/v0.2.0-MILESTONE-AUDIT.md` → `tech_debt`. The one worth reading
+first is **WR-13** — a second capability-refusal string hardcodes "the fork
+backend provides this tool", false for two `stock-only-gain` names. Verified
+unreachable today (all 38 manifest names have handlers), so it is dead code that
+violates one-source-of-truth rather than a live defect.
+
+### Carried forward from earlier closes
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
@@ -232,6 +218,15 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-19T11:11:44.295Z
-Stopped at: Completed 08.1-02-PLAN.md
+Last session: 2026-08-19 — v0.2.0 milestone close-out
+Stopped at: Milestone v0.2.0 archived, tagged and committed
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with `/gsd-new-milestone` — it creates a fresh
+  `REQUIREMENTS.md`, which was removed at close.
+- Consider publishing first: 386 commits sit unpushed ahead of `origin/main`,
+  newest tag `v0.1.10`. None of v0.2.0 has reached a user.
+- `R2000-16`'s assumption probe gates all of v0.3.0 and has no v0.2.0
+  dependency — it can run before the milestone is opened.

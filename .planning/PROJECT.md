@@ -4,16 +4,19 @@
 
 A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
 Commodore 64 games, reusable across C64 projects. It ships a `vice` MCP server
-(~63 tools driving a host VICE emulator through an on-demand broker) plus six C64
+driving a host VICE emulator through an on-demand broker, plus six C64
 reverse-engineering skills, distributed both as two npm packages
 (`@henols/vice-mcp`, `@henols/c64-re-tools`) and as a Claude Code plugin.
 
-Today the whole tool surface only works against a **custom, non-upstream VICE
-fork** ([barryw/vice-mcp](https://github.com/barryw/vice-mcp), ~17k lines of C
-patched into the emulator, exposing `-mcpserver` and an HTTP `/mcp` endpoint).
-This milestone adds a second backend that drives **stock upstream VICE** through
-its binary monitor, selected per project — so the plugin works on a VICE anyone
-can install, without giving up the fork's capabilities.
+**As of v0.2.0 the plugin runs on a VICE anyone can install.** Two backends are
+selectable per project: the **stock** backend drives unmodified upstream `x64sc`
+through its binary monitor and advertises **38 tools**; the **fork** backend
+drives [barryw/vice-mcp](https://github.com/barryw/vice-mcp)'s `-mcpserver` HTTP
+endpoint and advertises **62**, unchanged from v0.1.x. The stdio surface is
+*trimmed per backend*, not made uniform — a tool on both keeps its name and a
+backward-compatible argument shape, and the three capabilities stock provably
+cannot have (`vice_sid_get_state`, `vice_keyboard_matrix`,
+`vice_keyboard_restore`) refuse by name and say which backend provides them.
 
 ## Core Value
 
@@ -21,99 +24,116 @@ A Claude session can reliably drive a real C64 emulator to reverse-engineer a
 program — read and write memory, set checkpoints, capture RAM, inspect chip
 state — and keep working when the emulator misbehaves.
 
+*Still correct after v0.2.0.* Shipping the second backend did not shift it; the
+milestone widened *which* emulator qualifies as "a real C64 emulator" without
+changing what the session needs to do with it.
+
 ## Requirements
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. Inferred from the codebase map (.planning/codebase/). -->
+<!-- Shipped and confirmed valuable. -->
 
-- ✓ Claude drives a host VICE emulator through a stable `vice_*` stdio MCP surface (~63 tools) — existing, v0.1.x
+- ✓ Claude drives a host VICE emulator through a stable `vice_*` stdio MCP surface — existing, v0.1.x
 - ✓ Emulator instances are pooled on demand with port allocation, warm floor, and crash supervision — existing, v0.1.x
 - ✓ A crashed or wedged emulator is detected and recycled without losing evidence (incident record written before any kill) — existing, v0.1.x
 - ✓ Tool calls work from inside a container against an emulator on the host, with every path translated at the boundary — existing, v0.1.x
 - ✓ Six C64 RE skills usable as playbooks: `acme-build`, `c64-memory-mapping`, `c64-program-recon`, `c64-provenance-diff`, `c64-ram-capture`, `vice-wedge-triage` — existing, v0.1.x
 - ✓ Installable two ways: `npx @henols/c64-re-tools` into any project, or as a Claude Code plugin — existing, v0.1.x
 - ✓ Releases are automated: CI typechecks, tests, validates both npm tarballs, and publishes via OIDC trusted publishing on `v*` tags — existing, v0.1.x
+- ✓ User selects which VICE backend the MCP server drives, project-level, without editing code — v0.2.0 (`VICE_BACKEND`, resolved once per broker process by `backend-detect.mts`)
+- ✓ The tool surface works against an unmodified upstream `x64sc` from apt / Homebrew / official builds — v0.2.0 (proven live against genuine stock VICE 3.9 at `/usr/bin/x64sc`)
+- ✓ The fork backend keeps working exactly as it does today when selected — v0.2.0 (`tools-manifest.json` byte-identical; fork argv byte-identical; standing regression gate at every phase boundary)
+- ✓ A binary-monitor protocol client speaks stock VICE's wire format, correlating replies and demultiplexing unsolicited events — v0.2.0 (request-id-first demux across all five event types, never resolving a pending request with an event)
+- ✓ Tools with a 1:1 binary-monitor equivalent work on the stock backend — v0.2.0 (memory, registers, checkpoints, watchpoints, step, reset, joystick, snapshots, autostart, banks, ping)
+- ✓ Tools the fork implemented in-emulator are reimplemented client-side — v0.2.0 (memory search/compare, symbol store, 6510 disassembler, sprite decode, VIC-II/CIA state decode; **scoped to what the skills call** — see Out of Scope)
+- ✓ The broker launches stock VICE with binary-monitor flags as well as the fork with `-mcpserver` — v0.2.0 (incl. the `-default -drive8type 1541` ordering invariant, regression-pinned)
+- ✓ Every tool declares its support level per backend, so a user is told which backend restores a capability — v0.2.0 (`capability-registry.ts`, 26 entries, four consumers and no copies)
+- ✓ The client detects the connected VICE's version and degrades gracefully when a capability is absent — v0.2.0 (`CPUHISTORY_GET`'s three-way answer settled once per binary)
+- ✓ The binary-monitor assumptions are confirmed empirically against a real VICE build before client design is locked — v0.2.0 (13-check probe run against stock 3.9 and fork 3.10; all five UNVERIFIED items resolved)
+- ✓ Cycle timing and "is the emulator still advancing" work on the stock backend — v0.2.0
+- ✓ A user can install this from a package manager and is never silently given a wrong answer by a backend that cannot do the thing — v0.2.0 (`docs/tool-support.md` generated from both manifests with a byte-identity drift guard)
 
 ### Active
 
-<!-- Current scope: milestone v0.2.0, switchable stock-VICE backend. -->
+<!-- Next scope: milestone v0.3.0, regenerator2000 static-analysis backend. Proposed, not opened. -->
 
-- [ ] User selects which VICE backend the MCP server drives, project-level, without editing code
-- [ ] The tool surface works against an unmodified upstream `x64sc` obtained from apt / Homebrew / official builds
-- [ ] The fork backend keeps working exactly as it does today when selected
-- [ ] A binary-monitor protocol client speaks stock VICE's wire format, correlating replies and demultiplexing unsolicited events
-- [ ] Tools with a 1:1 binary-monitor equivalent work on the stock backend (memory, registers, checkpoints, watchpoints, step, reset, joystick, snapshots, autostart, banks, resources, ping)
-- [ ] Tools the fork implemented in-emulator are reimplemented client-side (memory search/compare/fill, backtrace, checkpoint groups, symbol store, 6502 disassembler, sprite decode, chip-state decode)
-- [ ] Screenshots are produced on the stock backend by encoding the framebuffer client-side
-- [ ] The broker launches stock VICE with binary-monitor flags as well as the fork with `-mcpserver`
-- [ ] Every tool declares its support level per backend, so a user is told which backend restores a capability
-- [ ] Stock-only capability: CPU instruction-history tracing
-- [ ] Stock-only capability: 1541 drive-CPU debugging (drive CPUs as separate memspaces)
-- [ ] Stock-only capability: raster-precise checkpoint conditions, exact emulator palette, and full resource get/set
-- [ ] The client detects the connected VICE's version and degrades gracefully when a capability is absent
-- [ ] Tool output on the stock backend can be compared against the fork backend for a known program
-- [ ] The binary-monitor assumptions are confirmed empirically against a real VICE build before client design is locked
+- [ ] regenerator2000 is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented (`R2000-01`)
+- [ ] It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — and a devcontainer, and two projects open at once, both work without an upstream patch (`R2000-02`)
+- [ ] It is a declared prerequisite named in the install documentation alongside VICE, with its Apache-2.0 notice in `THIRD-PARTY-NOTICES.md` (`R2000-03`)
+- [ ] `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by a regenerator2000 route (`R2000-05`)
+- [ ] A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted (`R2000-06`)
+- [ ] Project bootstrap from a raw binary is automated rather than a documented manual step (`R2000-09`)
+- [ ] `c64-program-recon` writes findings as queryable annotation state, not only Markdown prose, so a later session can query instead of re-deriving (`R2000-10`)
+- [ ] A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program (`R2000-11`)
+- [ ] Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers (`R2000-13`)
+- [ ] Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip (`R2000-14`, `R2000-15`)
+- [ ] Five load-bearing assumptions are checked against a real regenerator2000 build **before any plan is written**, with the pty/HTTP-MCP one gating the rest (`R2000-16`)
 
 ### Out of Scope
 
 <!-- Explicit boundaries, with reasoning to prevent re-adding. -->
 
-- **Client-side SID write-shadowing mitigation** — switchability supersedes it. SID read-back work routes to the fork backend, which retains `vice_sid_get_state`. Shadowing could only ever capture writes the client itself issued, never the running program's, so it was never parity. (Resolves ingest WARNING W1.)
-- **Removing or deprecating the fork backend** — it is the hedge against the stock backend's two hard losses (SID read-back, matrix keyboard) and the reason this migration is not a bet. Its incremental maintenance cost is near zero since it already exists and is tested.
+- **Client-side SID write-shadowing mitigation** — switchability supersedes it. SID read-back routes to the fork backend, which retains `vice_sid_get_state`. Shadowing could only ever capture writes the client itself issued, never the running program's, so it was never parity. (Resolves ingest WARNING W1.)
+- **Removing or deprecating the fork backend** — it is the hedge against stock's three hard losses (SID read-back, matrix keyboard, RESTORE/NMI) and the reason this migration is not a bet. Its incremental maintenance cost is near zero since it already exists and is tested. *Reaffirmed at v0.2.0 close: the fork's 62-tool surface shipped unchanged.*
 - **Upstreaming a `KEYBOARD_MATRIX_SET` opcode to VICE** — genuinely worth doing (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`, and it would close the hardest loss for everyone), but it is an upstream contribution, not a deliverable of this project. Recorded as a follow-up.
-- **Byte-identical output parity with the fork** — explicitly not an acceptance bar. Disassembly formatting and illegal-opcode rendering will differ from VICE's own, per `docs/stock-vice-parity.md` §A.7.
+- **Byte-identical output parity with the fork** — explicitly not an acceptance bar. Disassembly formatting and illegal-opcode rendering differ from VICE's own, per `docs/stock-vice-parity.md` §A.7. *v0.2.0 dropped the two-process parity harness (`VERIF-03`) for exactly this reason: it would have measured something the project does not promise.*
 - **Matrix-keyboard equivalence on the stock backend** — proven not recoverable at source level. `read_ciapb()` recomputes from `keyarr` on every read, and watchpoints fire after the load completes. `JOYPORT_SET` covers most in-game input instead.
 - **Distributed / multi-host broker** — outside the current single-host architecture; no demand established.
-- **Fixing the unauthenticated emulator endpoint exposure** — real (documented in `.planning/codebase/CONCERNS.md`), but a property of the external fork and its `0.0.0.0` bind, not of this milestone's scope.
+- **Fixing the unauthenticated emulator endpoint exposure** — real (documented in `.planning/codebase/CONCERNS.md`), but a property of the external fork and its `0.0.0.0` bind, not of this project's scope.
+- **Tool surplus on either backend, absent a caller** *(added v0.2.0, 2026-08-17)* — 17 requirements were cut against one measured test: *does a shipped skill call it, or does something a skill calls depend on it?* Cut: client-side screenshots and the PNG encoder (`SHOT-01..05`), call backtrace (`DERIV-02`), checkpoint groups and ignore counts (`DERIV-03`), memory fill and every `*_set_state` write half, all nine stock-only gains (`GAIN-01..09`, Phase 6 entire), disk detach, and the parity harness. Each stays in `milestones/v0.2.0-REQUIREMENTS.md` marked `CUT` with rationale, so restoring one is a scope decision rather than archaeology. **The fork's other 33 uncalled tools are surplus, not a gap.**
+- **Uniform tool lists across backends** *(added v0.2.0)* — superseded the original "the MCP surface must not change" constraint and `.planning/intel/decisions.md`'s `DEC-preserve-mcp-surface`. Stock advertises only what it implements. A skill written against the full fork surface therefore *breaks* on stock rather than degrading, which is why the playbooks must name the stock route or the fork requirement.
 
 ## Context
 
-**Why this milestone exists.** The plugin's install instructions never mention
-that it needs a special VICE build, and `README.md` cannot honestly claim to be
-generic while the only working emulator is an out-of-repo fork. The fork *does*
-publish prebuilt releases (Linux x86_64, macOS arm64, Windows headless), so users
-are not fully blocked — but it is a single-maintainer project (4 stars) carrying
-~17k lines of C against an upstream with 36k commits, and it has platform holes
-stock VICE closes for free (no Windows GUI, no macOS x86_64, no Linux ARM).
-Staying on the fork is not the low-risk option; it is the deferred-risk option.
-This milestone builds the exit route while the choice is still voluntary.
+**Where this stands.** v0.2.0 shipped 2026-08-19: 9 phases, 87 plans, 51/51
+in-scope requirements, 8 days. The exit route off the fork is built and proven —
+a user with an apt-installed VICE can run the six shipped skills, and is told
+plainly where they must reach for the fork instead. The final audit (round 4)
+returned `tech_debt`, not `passed`: nothing is broken and the tree is green, but
+the accumulated deferred work is large enough to deserve an explicit decision
+rather than silent inheritance.
 
-**Research already done, and where it lives.** Two source-verified research
-passes ran against `VICE-Team/svn-mirror` master @ `e50d42c`. Their conclusions
-are recorded in `.planning/notes/stock-vice-migration-revised-loss-ledger.md`,
-which **corrects three claims** in `docs/phase0-binmon-findings.md` — a document
-that is normative by ingest resolution W2 and therefore still propagating the
-errors until fixed (tracked in `.planning/todos/pending/`). In short: pause-on-
-demand and the cycle stopwatch both survive on stock (contra the doc), and the
-real new constraint is that `CPUHISTORY_GET` needs VICE ≥ 3.10 while
-Debian/Ubuntu still ship 3.9.
+**Current codebase state.** ~54k lines added outside `.planning/` across 151
+files this milestone. Node ≥ 22.18, TypeScript run directly via native
+type-stripping (no build step for the shipped server). Stock backend: 38 tools,
+9 of them derived client-side. Fork backend: 62 tools, unchanged.
+`docs/tool-support.md` is the repository's first generated markdown file.
 
-**Net capability picture.** Two genuine losses on the stock backend, not four:
-SID state read-back (write-only registers, unrecoverable) and low-level/matrix
-keyboard. Everything else either ports 1:1, reimplements client-side, or turned
-out to be recoverable after all.
+**The lesson this milestone taught, four times, in escalating forms.** A test
+written by the same pass that wrote the code proves less than it looks like it
+does. Phase 2's green suites hid 7 critical defects. Phase 3's fixtures stubbed
+the same bits-vs-bytes assumption the code made. Phase 4's opcode table was pinned
+by an independent bit-pattern derivation and *still* shipped 14 wrong entries —
+caught only by running output through a real ACME. Phase 5's registry could mark
+fields unavailable but could not defend against a wrong *bank address*, so every
+chip read returned plausible values decoded from RAM underneath the I/O area. In
+every case the external check — a real assembler, a real emulator, a real
+container, a real broker launch — found what the internal one could not. Phase 8.1
+is the cleanest instance: running the one unwitnessed claim *falsified* it.
+
+**Known debt carried into v0.3.0.** 13 items acknowledged at close (see
+`STATE.md` → Deferred Items): 12 tracked pending todos and Phase 03's three
+open human-UAT scenarios. The highest-value three are the synthetic VERIF-02 wire
+fixtures, the unconfirmed `--help` backend discriminator, and the four Phase 3
+wire details written spec-driven and never exercised. Separately: `vice-proxy.ts`
+remains large and is the sole tool-surface seam — client-side derivations go in
+sibling modules, never appended to it.
 
 **Existing planning context (do not re-derive).** `.planning/codebase/` holds the
-full codebase map. `.planning/intel/` holds the ingested doc set: 11 decisions,
-14 constraints, 7 `CAND-*` scope items, and a Resolutions section answering all
-three previously-open scope questions. `.planning/INGEST-CONFLICTS.md` records
-two user-resolved precedence warnings (W1, W2).
+codebase map. `.planning/intel/` holds the ingested doc set: decisions,
+constraints, `CAND-*` scope items, and resolutions. `.planning/INGEST-CONFLICTS.md`
+records two user-resolved precedence warnings (W1, W2).
+`.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
-**Known debt this milestone touches.** `vice-proxy.ts` is already 3,093 lines and
-is the sole seam registering the whole tool surface; the concerns audit warns that
-group-B client-side derivations should be extracted into sibling modules rather
-than appended there. Separately, hundreds of source comments cite decision records
-(`D-04`, `01.4-RESEARCH.md`, `.planning/STATE.md`) that never travelled with the
-code into this repo.
-
-**Shipping history.** Tagged through `v0.1.10`; both npm packages published.
-Every merge to `main` auto-publishes a patch version unless the subject contains
+**Shipping history.** Tagged through `v0.1.10`; both npm packages published. The
+planning label `v0.2.0` and the published npm semver are unrelated numbers —
+every merge to `main` auto-publishes a patch version unless the subject contains
 `[skip release]`.
 
 ## Constraints
 
-- **Compatibility**: The stdio MCP surface Claude sees must not change — same tool names and shapes across both backends. The whole point is that skills keep working.
+- **Compatibility**: The stdio MCP surface is **trimmed per backend** — stock advertises only the tools it implements, so the two backends expose different tool lists (Phase 2, D-07). A tool advertised on both keeps the same name and a backward-compatible argument shape — stock may add optional parameters but never removes, retypes, or newly-requires one — and the fork's list is unchanged from v0.1.x. A skill written against the full fork surface therefore *breaks* on stock rather than degrading; the playbooks must name the stock route or the fork requirement (SKILL-01). *(Supersedes the original "the surface must not change" constraint, and is pinned by `manifest-arg-compat.test.ts`.)*
 - **Architecture**: The transport swap happens behind `vice.ts`'s `call()` seam for *direct* tools. **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`** — `rewriteArguments()` runs at `vice-proxy.ts:2889` inside `forwardToVice()` and before `call()`, so a derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container. Second site with the same cause: `gatherWedgeEvidence()` calls `rewriteArguments()` itself, at `vice-proxy.ts:1368`. (Line numbers in this bullet are checked against the source at each phase and drift between phases; treat a mismatch as drift to re-verify, not as evidence the constraint itself changed.)
 - **Protocol (settled, normative)**: 11-byte request header / 12-byte response header, all multi-byte values little-endian. Confirmed opcode set and error codes per `docs/phase0-binmon-findings.md` §5.
 - **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three: `STOPPED` (0x62), `RESUMED` (0x63), `JAM` (0x61), plus `CHECKPOINT_INFO` (0x11) on every checkpoint hit and `REGISTER_INFO` (0x31) on every monitor open. The last two **share a response type with a legitimate command reply**, so demux must key on request-id and never resolve a pending request with an event.
@@ -142,15 +162,17 @@ Every merge to `main` auto-publishes a patch version unless the subject contains
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Add a stock-VICE backend rather than replacing the fork | The fork retains SID read-back and matrix keyboard; keeping it costs almost nothing since it already exists and is tested, and it removes the single-point-of-failure bet | — Pending |
-| Backend selected project-level (one per MCP server process) via config | Simplest to implement and reason about; user chose it over launch-time probing and per-instance selection | — Pending |
-| Parity verification runs two server processes, not one switching in-process | Forced by the project-level choice above — both backends cannot be live at once | — Pending |
-| All three stock-only gain groups in scope, not parity-first | User elected the fuller scope; makes the milestone materially larger than the ADR's 7-phase plan | — Pending |
-| Every tool kept in the manifest with per-backend support annotation | A tool degraded on stock may be fully supported on the fork; a single flag would lose that, and removing tools would change the surface shape between backends | — Pending |
-| No SID write-shadowing mitigation | Switchability routes SID work to the fork; shadowing was never parity | — Pending |
-| Ship a client-side 6502 disassembler | The binary monitor has none, and byte-identical output was explicitly ruled out as an acceptance bar | — Pending |
-| Backend swap confined to the `call()` seam | `vice.ts` was built as the single transport seam for exactly this kind of change | — Pending |
-
+| Add a stock-VICE backend rather than replacing the fork | The fork retains SID read-back and matrix keyboard; keeping it costs almost nothing since it already exists and is tested, and it removes the single-point-of-failure bet | ✓ Good — v0.2.0 shipped both; the fork's 62-tool surface is byte-identical to v0.1.x |
+| Backend selected project-level (one per MCP server process) via config | Simplest to implement and reason about; user chose it over launch-time probing and per-instance selection | ✓ Good — `backend-detect.mts` resolves once per broker process with an on-disk cache |
+| Parity verification runs two server processes, not one switching in-process | Forced by the project-level choice above — both backends cannot be live at once | ⚠️ Revisit — the harness (`VERIF-03`) was **dropped**: `PROJECT.md` already declares byte-identical parity a non-goal, so it would have measured an unpromised property. The generated `docs/tool-support.md` gives the user the same information |
+| All three stock-only gain groups in scope, not parity-first | User elected the fuller scope; makes the milestone materially larger than the ADR's 7-phase plan | ⚠️ Revisit — **reversed 2026-08-17.** `GAIN-01..09` and all of Phase 6 were cut: no shipped skill calls any of them. Capability surplus, not a gap |
+| Every tool kept in the manifest with per-backend support annotation | A tool degraded on stock may be fully supported on the fork; a single flag would lose that, and removing tools would change the surface shape between backends | ⚠️ Revisit — **reversed by D-07.** The stock manifest is genuinely trimmed to 38 tools. Per-backend honesty moved into `capability-registry.ts`'s runtime refusal plus the generated support table, which serve the same goal better than a manifest annotation would have |
+| No SID write-shadowing mitigation | Switchability routes SID work to the fork; shadowing was never parity | ✓ Good — held all milestone; `vice_sid_get_state` refuses on stock by name |
+| Ship a client-side 6510 disassembler | The binary monitor has none, and byte-identical output was explicitly ruled out as an acceptance bar | ✓ Good — 221/256 opcodes assembler-expressible, round-tripped byte-exact through real ACME 0.97; live output byte-identical to VICE's own text-monitor `d` |
+| Backend swap confined to the `call()` seam | `vice.ts` was built as the single transport seam for exactly this kind of change | ⚠️ Revisit — true for *direct* tools only. **Derived tools must be intercepted before `forwardToVice()`**, since `rewriteArguments()` runs inside it and ahead of `call()`; a derived tool behind `call()` receives host-translated paths and acts on them inside the container. Phase 4 built `withDerivedTool()` as the second seam |
+| Cut scope by measured caller, not by judgment (2026-08-17) | Diffing the six skills' actual `vice_*` usage against both manifests answers "is this needed" mechanically | ✓ Good — 29 open requirements → 14, Phase 6 removed whole, and every cut names its requirements so reversal is a scope decision |
+| Trim the stock manifest instead of keeping surface shape uniform (D-07) | Advertising a tool the backend cannot serve is the dishonesty the milestone exists to remove | ✓ Good — and it forced `SKILL-01`: playbooks now name the stock route or the fork requirement at the point of use |
+| Run the walkthrough for real rather than assert it (Phase 8.1) | The one claim in the milestone with no witness was the install-to-capture flow | ✓ Good — and it **failed**, exposing the `Drive8Type=0` defect. Phase 8.2 fixed it and re-ran to a verified 65536-byte capture. The cheapest defect this milestone found came from refusing to assume |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -168,7 +190,59 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.2.0 Switchable stock-VICE backend
+
+## Current State
+
+**Shipped: v0.2.0 Switchable stock-VICE backend** — 2026-08-19.
+9 phases, 87 plans, 218 tasks, 51/51 in-scope requirements, 8 days.
+Full record: [`MILESTONES.md`](MILESTONES.md) ·
+[`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md) ·
+[`milestones/v0.2.0-MILESTONE-AUDIT.md`](milestones/v0.2.0-MILESTONE-AUDIT.md)
+
+The plugin no longer requires a custom VICE build. Stock upstream `x64sc` is a
+first-class, project-selectable backend with 38 tools; the fork keeps its 62 and
+is the documented route for the three capabilities stock provably cannot have.
+The install story, the per-backend support table, and the playbook routes all
+ship. The definition of done was never parity — it was *"a user with an
+apt-installed VICE can run the six shipped skills, and is told plainly where they
+must reach for the fork instead"* — and that is what was verified, end to end,
+against a genuine `/usr/bin/x64sc` (VICE 3.9), through the real broker.
+
+**Audit verdict: `tech_debt`, no blockers.** Nyquist fully compliant across all
+nine phases. 13 items acknowledged as deferred at close (`STATE.md` → Deferred
+Items), none of them blocking a tag.
+
+**Not yet released.** The tree is 386 commits ahead of `origin/main` with the
+newest published tag at `v0.1.10`. Nothing in this milestone has been pushed.
+
+## Next Milestone Goals
+
+**v0.3.0 regenerator2000 static-analysis backend** — proposed, not opened.
+Phases 9-10. See `ROADMAP.md` and `.planning/notes/regenerator2000-integration.md`.
+
+Adopt [regenerator2000](https://github.com/ricardoquesada/regenerator2000) as a
+**static-analysis backend only** — never given `--vice`, because our broker keeps
+sole ownership of stock VICE's binary monitor. It brings three things this project
+structurally lacks: a persistent, queryable annotation store; a recursive-descent
+disassembler with an auto-analyzer; and a sandboxed binary unpacker.
+
+Two things to settle before planning:
+
+1. **`R2000-16`'s assumption probe gates the milestone** and should have run
+   already — it has no v0.2.0 dependency. The pty/HTTP-MCP question decides
+   whether project bootstrap is automatable at all.
+2. **v0.3.0 is structurally independent of v0.2.0.** regenerator2000 never
+   touches VICE, so it behaves identically on both backends and could have run
+   against the fork with no v0.2.0 work at all.
+
+Also open, and a fair candidate for a smaller intervening release: **publishing
+v0.2.0**. 386 unpushed commits and a `v0.1.10` tag mean none of this milestone's
+work has reached a user yet.
+
+<details>
+<summary>Previous milestone detail — v0.2.0 phase-by-phase narrative (archived 2026-08-19)</summary>
+
+**v0.2.0 Switchable stock-VICE backend — as it was tracked during execution:**
 
 **Goal:** Drive stock upstream VICE through its binary monitor as a second,
 selectable backend — so the plugin runs on a VICE anyone can install — while the
@@ -432,7 +506,10 @@ One item stays open by design: `08-HUMAN-UAT.md` records the plugin-install plus
 session. The install half was executed live and is what caught the `contrib` defect.
 
 Next: v0.2.0's phase work is complete — `/gsd-audit-milestone` then
-`/gsd-complete-milestone`.
+`/gsd-complete-milestone`. *(Both were run: audit round 4 returned `tech_debt` with
+no blockers, and the milestone was archived and tagged on 2026-08-19.)*
+
+</details>
 
 ---
-*Last updated: 2026-08-19 after Phase 8.2 completion — the inserted phase that closed v0.2.0's last three blockers and turned Phase 8.1's honest `failed` walkthrough into a real, human-approved pass: the `Drive8Type=0` defect fixed at one site, production config isolation threaded end to end through every spawn path, the red CI gate cleared before the tagging push, and the first live test that launches through the real broker primitive rather than hand-spawning its own argv. The blast radius was measured rather than inferred and proved wider than the audit had assumed. Re-verified 7/7 after closing two stale verification documents; every figure asserted as self-consistency rather than a pinned literal, per Phase 8.1's twice-learned lesson.*
+*Last updated: 2026-08-19 at v0.2.0 milestone close. Full evolution review performed: "What This Is" rewritten to a shipped two-backend description, Core Value re-checked and kept, 12 requirements graduated to Validated, Active replaced with the v0.3.0 `R2000-*` set, two new Out of Scope boundaries recorded (measured-caller scope cuts; non-uniform tool lists), the superseded "surface must not change" constraint replaced with D-07's trimmed-per-backend rule, and all eight original Key Decisions given outcomes — four ✓ Good, four ⚠️ Revisit, three of those four genuinely reversed during the milestone.*
