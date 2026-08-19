@@ -158,6 +158,9 @@ specific piece of live proof the requirement or its verification report calls
 for is recorded as still outstanding (not merely "not yet attempted") in a named
 plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 `Complete` from intent — mark it from the evidence a SUMMARY actually records.
+`Cut 2026-08-17` — the requirement (or, for `DIRECT-06`, the detach half of it)
+was removed from scope on that date per the cut criterion below; it is neither
+`Pending` nor `Complete` and carries no open work.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -182,13 +185,13 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | DIRECT-03 | Phase 3 | Complete |
 | DIRECT-04 | Phase 3 | Complete |
 | DIRECT-05 | Phase 3 | Complete |
-| DIRECT-06 | Phase 3 (attach) / Phase 7 (detach) | Partial — attach complete; detach deferred, no stock opcode |
+| DIRECT-06 | Phase 3 | Complete (attach); detach CUT 2026-08-17 — no stock detach opcode, no skill calls `vice_disk_detach` |
 | DIRECT-07 | Phase 3 | Complete |
 | DIRECT-08 | Phase 3 | Complete |
 | DIRECT-09 | Phase 3 | Complete |
 | DERIV-01 | Phase 5 | Complete |
-| DERIV-02 | Phase 5 | Pending |
-| DERIV-03 | Phase 5 | Pending |
+| DERIV-02 | Phase 5 | Cut 2026-08-17 |
+| DERIV-03 | Phase 5 | Cut 2026-08-17 |
 | DERIV-04 | Phase 5 | Complete (05-11) |
 | DERIV-05 | Phase 5 | Complete (05-09, 05-12) |
 | DERIV-06 | Phase 5 | Complete (05-10) |
@@ -200,20 +203,20 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | DISASM-05 | Phase 4 | Complete |
 | DISASM-06 | Phase 4 | Complete |
 | DISASM-07 | Phase 4 | Complete |
-| SHOT-01 | Phase 5 | Pending |
-| SHOT-02 | Phase 5 | Pending |
-| SHOT-03 | Phase 5 | Pending |
-| SHOT-04 | Phase 5 | Pending |
-| SHOT-05 | Phase 5 | Pending |
-| GAIN-01 | Phase 6 | Pending |
-| GAIN-02 | Phase 6 | Pending |
-| GAIN-03 | Phase 6 | Pending |
-| GAIN-04 | Phase 6 | Pending |
-| GAIN-05 | Phase 6 | Pending |
-| GAIN-06 | Phase 6 | Pending |
-| GAIN-07 | Phase 6 | Pending |
-| GAIN-08 | Phase 6 | Pending |
-| GAIN-09 | Phase 6 | Pending |
+| SHOT-01 | Phase 5 | Cut 2026-08-17 |
+| SHOT-02 | Phase 5 | Cut 2026-08-17 |
+| SHOT-03 | Phase 5 | Cut 2026-08-17 |
+| SHOT-04 | Phase 5 | Cut 2026-08-17 |
+| SHOT-05 | Phase 5 | Cut 2026-08-17 |
+| GAIN-01 | Phase 6 | Cut 2026-08-17 |
+| GAIN-02 | Phase 6 | Cut 2026-08-17 |
+| GAIN-03 | Phase 6 | Cut 2026-08-17 |
+| GAIN-04 | Phase 6 | Cut 2026-08-17 |
+| GAIN-05 | Phase 6 | Cut 2026-08-17 |
+| GAIN-06 | Phase 6 | Cut 2026-08-17 |
+| GAIN-07 | Phase 6 | Cut 2026-08-17 |
+| GAIN-08 | Phase 6 | Cut 2026-08-17 |
+| GAIN-09 | Phase 6 | Cut 2026-08-17 |
 | TIME-01 | Phase 7 | Complete (07-11, 07-12, 07-13) |
 | TIME-02 | Phase 7 | Complete (07-10, 07-14) |
 | TIME-03 | Phase 7 | Complete (07-12, 07-13) |
@@ -227,7 +230,7 @@ plan SUMMARY; the checklist item stays `[ ]` until that proof lands. Do not mark
 | SKILL-01 | Phase 8 | Complete |
 | VERIF-01 | Phase 1 | Complete |
 | VERIF-02 | Phase 2 | Complete |
-| VERIF-03 | Phase 8 | Pending |
+| VERIF-03 | Phase 8 | Cut 2026-08-17 |
 | VERIF-04 | Phase 1 | Complete |
 
 **Coverage (revised 2026-08-17 after the scope cut):**
