@@ -43,11 +43,40 @@ const SKILLS_SRC = join(PKG_ROOT, "skills");
 const SELF = readJson(join(PKG_ROOT, "package.json")) ?? {};
 const SELF_VERSION = typeof SELF.version === "string" ? SELF.version : "0.0.0";
 const MCP_PKG = "@henols/vice-mcp";
-// Wire the project to the exact vice-mcp version this installer was built against.
-const MCP_VERSION =
-  (SELF.dependencies && typeof SELF.dependencies[MCP_PKG] === "string"
+// The dev placeholder every derived, publishable version string carries in
+// the working tree (R-2, quick-260819-tsz). Defined authoritatively as
+// `DEV_PLACEHOLDER` in `.claude/mcp/vice/version.ts` -- repeated here as a
+// literal, NOT imported, because this package deliberately ships without
+// that seam file (see the comment above) and targets node >= 18, which
+// cannot type-strip a `.ts` import the way the vice-mcp package's own
+// node >= 22.18 runtime can. This is the same disclosed divergence as
+// `SELF_VERSION` above: one literal, kept in sync by hand, documented here
+// so a future edit to the seam's placeholder is not missed.
+const MCP_DEV_PLACEHOLDER = "0.0.0-dev";
+// Wire the project to the exact vice-mcp version this installer was built
+// against -- EXCEPT when run from an unstamped dev checkout (MED-3):
+// `installer/package.json`'s dependency pin is the permanent working-tree
+// placeholder outside a CI-stamped publish job, and `@henols/vice-mcp` at
+// that literal version will never exist on the npm registry. Silently
+// writing it into a consumer's .mcp.json would 404 every time Claude Code
+// tries to launch the server, with no error until the user actually tries
+// to use it -- strictly worse than falling back to "latest". Fall back AND
+// warn loudly, so a developer testing the installer locally knows their
+// .mcp.json is unpinned rather than discovering it via a silent 404 later.
+const MCP_VERSION_RAW =
+  SELF.dependencies && typeof SELF.dependencies[MCP_PKG] === "string"
     ? SELF.dependencies[MCP_PKG].replace(/^[\^~]/, "")
-    : SELF_VERSION);
+    : SELF_VERSION;
+if (MCP_VERSION_RAW === MCP_DEV_PLACEHOLDER) {
+  console.error(
+    `c64-re-tools: WARNING -- running from an unstamped dev checkout (installer/package.json pins ` +
+      `${MCP_PKG}@${MCP_DEV_PLACEHOLDER}, the dev placeholder, not a real published version). ` +
+      `Falling back to "${MCP_PKG}@latest" in the generated .mcp.json instead of writing an ` +
+      `unresolvable pin. If you intended to test against a specific version, pass --vendor or fix ` +
+      `installer/package.json's dependency pin before packaging a release.`
+  );
+}
+const MCP_VERSION = MCP_VERSION_RAW === MCP_DEV_PLACEHOLDER ? "latest" : MCP_VERSION_RAW;
 
 function readJson(path) {
   try {
