@@ -189,16 +189,20 @@ Recent decisions affecting current work:
 
 - Phase 08.1 plan 03 Task 2 blocked: acme-build's own template.a cannot assemble on this machine -- the ACME binary at ~/.local/bin/acme has no accompanying cbm/c64/*.a library, apt has a candidate (acme 1:0.97~svn20211115+ds-2) but this session has no passwordless sudo. Needs a human to run 'sudo apt-get install -y acme' (or supply an ACME library at $ACME) before the criterion-1 walkthrough's capture target can be built. See 08.1-WALKTHROUGH-SETUP.md FINDING-A1.
 
-- **Open product defect, confirmed live (FINDING-C1, Phase 8.1 plan 04):** the broker
-  launches stock `x64sc` with `Drive8Type=0` (NONE) by default. No tool on the stock
-  MCP surface (`vice_disk_attach`, `vice_autostart`) sets a drive type, so
-  `LOAD"*",8,1` fails `?DEVICE NOT PRESENT ERROR` and every disk-based
-  `c64-ram-capture` walkthrough against genuine stock VICE fails at the load step.
-  Confirmed sufficient fix, live: launch with `-drive8type 1541`. Unfixed as of this
-  milestone's close -- recorded here as an open defect for the next milestone or a
-  quick task, not silently absorbed into "done". Full diagnosis:
-  `08.1-WALKTHROUGH-EVIDENCE.md` FINDING-C1; recorded outcome:
-  `08-HUMAN-UAT.md` Test 1 (`status: failed`).
+- **Fixed product defect (FINDING-C1, Phase 8.1 plan 04, fixed Phase 8.2):** the
+  broker used to launch stock `x64sc` with `Drive8Type=0` (NONE) by default. No tool
+  on the stock MCP surface (`vice_disk_attach`, `vice_autostart`) set a drive type, so
+  `LOAD"*",8,1` failed `?DEVICE NOT PRESENT ERROR` and every disk-based
+  `c64-ram-capture` walkthrough against genuine stock VICE failed at the load step
+  -- and plan 03's live measurement found the blast radius was **all program loads**
+  (a bare `.prg` autostart hit the identical wall too), not merely disk loads.
+  Phase 8.2 plan 02 landed the fix (`-drive8type 1541` in `buildViceArgs()`'s stock
+  branch); plan 03 proved the fixed argv reaches a real live launch; plan 04 re-ran
+  the same walkthrough end to end and recorded `capture_result: pass`
+  (`08.2-WALKTHROUGH-EVIDENCE.md`), flipping `08-HUMAN-UAT.md` Test 1 to
+  `status: passed` (human-approved, 08.2-04 Task 3). Full original diagnosis:
+  `08.1-WALKTHROUGH-EVIDENCE.md` FINDING-C1; superseded outcome recorded at
+  `08-HUMAN-UAT.md` Test 1.
 
 ## Deferred Items
 
@@ -206,7 +210,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Defect | `Drive8Type=0` default on stock broker launch blocks disk-based `c64-ram-capture` (FINDING-C1); confirmed fix `-drive8type 1541` at launch, not yet applied | Open — **now owned by Phase 8.2**, no longer deferred past v0.2.0 | v0.2.0 Phase 8.1 (2026-08-19), re-scoped into Phase 8.2 (2026-08-19) |
+| Defect | `Drive8Type=0` default on stock broker launch blocked all program loads (`.d64` and bare `.prg` alike) via `c64-ram-capture` (FINDING-C1); fix `-drive8type 1541` at launch | **Fixed** — Phase 8.2 plans 02-04 landed the fix, proved it live, and re-ran the walkthrough to a recorded `pass` | v0.2.0 Phase 8.1 (2026-08-19), fixed in Phase 8.2 (2026-08-19) |
 | Upstream | UP-01/UP-02 — `KEYBOARD_MATRIX_SET` opcode upstream to VICE | Deferred | v0.2.0 scoping |
 | Quality | QUAL-01 — tests for `acme.mjs`, `driver.mjs`, `derive.mjs` | Deferred | v0.2.0 scoping |
 | Quality | QUAL-02 — orphaned planning references in source comments | Deferred | v0.2.0 scoping |

@@ -458,7 +458,7 @@ Notes:
 **Success Criteria** (what must be TRUE):
 
   1. Calling a tool the active backend does not advertise returns an error naming the capability, the reason, and which backend provides it — never a generic unknown-tool error and never a silent wrong answer.
-  2. Every skill whose documented method depends on a fork-only capability either names the stock route or states the fork requirement. The two proven-unrecoverable tools (`vice_sid_get_state`, `vice_keyboard_matrix`) are named explicitly at their point of use.
+  2. Every skill whose documented method depends on a fork-only capability either names the stock route or states the fork requirement. The three proven-unrecoverable tools (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) are named explicitly at their point of use.
   3. A user installs the plugin and a working VICE from a package manager by following the documentation, with the backend choice and its consequences stated.
   4. The documentation states which backend each tool works on, derived from the shipped manifests rather than maintained by hand.
 
@@ -481,7 +481,7 @@ Plans:
 
 Notes:
 
-- **This is the phase the milestone actually exists for.** Phases 5 and 7 close the buildable tool gap; this one makes the two backends honest about the gap that cannot be closed. Two tools the skills call are provably unrecoverable on stock — without criteria 1 and 2, a stock user hits them as failures with no route forward.
+- **This is the phase the milestone actually exists for.** Phases 5 and 7 close the buildable tool gap; this one makes the two backends honest about the gap that cannot be closed. Three tools the skills call are provably unrecoverable on stock — without criteria 1 and 2, a stock user hits them as failures with no route forward.
 - The three halves of one problem land together by design: `BACK-05` is the runtime error, `SKILL-01` is the playbook methodology, `DIST-02` is the install documentation. Splitting them leaves the user carried by whichever half shipped.
 - Criterion 4 must be **derived** from `tools-manifest.json` / `tools-manifest.stock.json`, not hand-written. A hand-maintained support table drifts on the first tool added.
 - **Dropped from this phase:** `VERIF-03`, the two-process cross-backend parity harness. `PROJECT.md` already declares byte-identical parity a non-goal, so the harness would measure something the project does not promise. Criterion 4's manifest-derived table gives the user the same information for far less work.
@@ -601,11 +601,14 @@ calls depend on it?** Nothing below passes.
 
 **Net effect:** 29 open requirements → 14. Phase 6 removed entirely; Phases 5, 7
 and 8 narrowed to the ten buildable skill-called tools plus the capability-honesty
-work that makes the two unbuildable ones survivable.
+work that makes the three unbuildable ones survivable.
 
 **Kept despite being uncalled:** nothing. Every retained requirement is either
 called by a skill, or is `BACK-05`/`SKILL-01`/`DIST-*`, which exist precisely
-because two called tools cannot be built.
+because three called tools cannot be built. *(Corrected 2026-08-19, Phase 8.2:
+this count was two before plan 05-08's skill-vs-manifest sweep found
+`vice_keyboard_restore` alongside `vice_sid_get_state` and `vice_keyboard_matrix`
+— same correction as line ~309 above.)*
 
 **How to reverse a cut:** each row above names its requirements. They remain in
 `REQUIREMENTS.md` marked `CUT` with this rationale, so restoring one is a
