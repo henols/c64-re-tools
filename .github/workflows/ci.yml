@@ -120,6 +120,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Stamp the real version into the plugin manifests
+        # scripts/package.sh builds the zip with `git archive HEAD`, so
+        # without this step the artifact FILENAME would carry the real tag
+        # version while plugin.json inside the zip still said the working
+        # tree's placeholder (0.0.0-dev) -- the filename and the manifest
+        # would disagree. Stamping and committing LOCALLY, in this ephemeral
+        # runner checkout, is what makes `git archive HEAD` pick up the real
+        # number. This commit is never pushed -- it exists only for this
+        # job's own `git archive` to read from, and disappears with the
+        # runner. Closes the D-1 row that no automation used to touch:
+        # plugin.json is now bumped, just not in the working tree in git.
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          node scripts/version.mjs stamp "$VERSION"
+          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
+            commit -am "chore: stamp v${VERSION} into plugin manifests (ephemeral, never pushed)"
       - name: Build installable package
         run: bash scripts/package.sh
       - name: Publish release assets
@@ -234,18 +251,23 @@ jobs:
         if: steps.gate.outputs.release == 'true'
         run: npm install -g npm@latest
 
-      - name: Compute next patch version
+      - name: Resolve version from the VERSION template
         id: ver
         if: steps.gate.outputs.release == 'true'
-        # Base the bump on what's actually on npm, so it never collides with an
-        # already-published version (git tags may lag behind).
+        # The repo-root VERSION template (quick-260819-tsz, D-1/D-2) is the
+        # single source of truth for what gets published -- no more inline
+        # npm-view-plus-patch-increment. scripts/version.mjs reads npm
+        # READ-ONLY (`npm view`, to see what's actually published) and never
+        # publishes, tags, or pushes anything itself; it writes
+        # version=/published=/rule= into $GITHUB_OUTPUT, so
+        # steps.ver.outputs.version keeps working unchanged for the two
+        # publish steps below. It also exits non-zero if the resolved
+        # version would not be strictly greater than published, turning a
+        # downward hand-edit into a loud CI failure instead of a registry
+        # 409 inside npm publish.
         run: |
           set -euo pipefail
-          CURRENT="$(npm view @henols/vice-mcp version 2>/dev/null || echo 0.0.0)"
-          NEXT="$(node -e 'const v=process.argv[1].split(".").map(Number); console.log(`${v[0]}.${v[1]}.${v[2]+1}`)' "$CURRENT")"
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "Auto-release: $CURRENT -> $NEXT"
+          node scripts/version.mjs resolve --github-output
 
       - name: Publish @henols/vice-mcp
         if: steps.gate.outputs.release == 'true'

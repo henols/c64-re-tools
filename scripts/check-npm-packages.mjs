@@ -62,6 +62,15 @@ need(
 );
 need(!vice.files.some((f) => f.startsWith("fixtures/")), "vice-mcp: fixtures/ leaked into tarball");
 
+// --- quick-260819-tsz: the version-resolution script and template must ----
+// never ship. scripts/version.mjs is a repo-maintenance CLI (reads npm
+// read-only, writes local JSON) with no reason to run inside a published
+// tarball, and VERSION is the working-tree-only template (R-1) -- a real
+// release never carries it, only the resolved number `npm version` already
+// wrote into package.json.
+need(!vice.files.some((f) => f.startsWith("scripts/")), "vice-mcp: scripts/ leaked into tarball");
+need(!vice.files.includes("VERSION"), "vice-mcp: VERSION template leaked into tarball");
+
 // --- D-07 / criterion 5: the notices file must actually ship ---------------
 need(
   vice.files.includes("THIRD-PARTY-NOTICES.md"),
@@ -88,6 +97,7 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-cia.ts", "DERIV-05"],
   ["stock-sprites.ts", "DERIV-06"],
   ["capability-registry.ts", "BACK-05"],
+  ["version.ts", "D-5"],
 ];
 for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
