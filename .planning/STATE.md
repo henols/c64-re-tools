@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T09:44:45.077Z"
+last_updated: "2026-08-19T10:45:18.552Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 81
-  completed_plans: 79
+  completed_plans: 80
   percent: 78
 ---
 
@@ -27,7 +27,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 ## Current Position
 
 Phase: 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
 Status: Ready to execute
 Last activity: 2026-08-19
@@ -50,7 +50,7 @@ CUT-marked requirements and 4 cut halves.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [████████░░] 78%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [████████░░] 78%
 | Phase 08.1 P01 | 15min | 3 tasks | 3 files |
 | Phase 08.1 P03 | 25m | 3 tasks | 1 files |
 | Phase 08.1 P02 | 22min | 3 tasks | 3 files |
+| Phase 08.1 P04 | 90min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,7 @@ Recent decisions affecting current work:
 - [Phase 08.1]: 08.1-03: scratch project wired via route A (local installer) + hand-edited .mcp.json, not claude plugin marketplace add/install, to avoid writing into machine-global ~/.claude/plugins/ state shared with the live orchestrating session
 - [Phase 08.1]: STATE.md frontmatter left untouched (already correct: 7/9 phases, 78%); only STATE.md's/ROADMAP.md's bodies were reconciled with it
 - [Phase 08.1]: Criterion 2 verified rather than re-authored: 08-VALIDATION.md already read status: audited / nyquist_compliant: true from prior commit 4306338; evidence recorded, file left unmodified
+- [Phase 08.1]: Recorded criterion-1 UAT walkthrough result honestly as failed — Genuine stock x64sc boots with Drive8Type=0 by default; no MCP tool on the stock surface can set it, so the disk-based capture cannot complete; no workaround was applied to force a pass (FINDING-C1 in 08.1-WALKTHROUGH-EVIDENCE.md).
 
 ### Pending Todos
 
@@ -171,6 +173,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-19T09:44:45.066Z
+Last session: 2026-08-19T10:43:58.072Z
 Stopped at: Completed 08.1-02-PLAN.md
 Resume file: None
