@@ -233,23 +233,30 @@ was removed from scope on that date per the cut criterion below; it is neither
 | VERIF-03 | Phase 8 | Cut 2026-08-17 |
 | VERIF-04 | Phase 1 | Complete |
 
-**Coverage (revised 2026-08-17 after the scope cut):**
+**Coverage (revised 2026-08-19 after Phase 8.1's audit-drift correction):**
 - v0.2.0 requirements defined: 68
-- **Cut**: 21 (`DERIV-02`, `DERIV-03`, `SHOT-01`..`SHOT-05`, `GAIN-01`..`GAIN-09`, `VERIF-03`, plus the `DIRECT-06` detach half and the `fill`/`*_set_state` halves of `DERIV-01`/`05`/`06`)
-- **In scope**: 47 — 39 already complete, **8 open** *(revised 2026-08-18, quick
-  task 260818-obc: Phase 7's contribution to this total moves from 1 open to 0
-  open — `TIME-04` is now genuinely `Complete`, its last two residuals
+- **Cut**: 17 whole requirements — `DERIV-02`, `DERIV-03`, `SHOT-01`..`SHOT-05`,
+  `GAIN-01`..`GAIN-09`, `VERIF-03` — **plus 4 partial halves cut from
+  otherwise-retained requirements** (the `DIRECT-06` detach half, and the
+  `fill`/`*_set_state` halves of `DERIV-01`, `DERIV-05`, `DERIV-06`). Halves are
+  not counted as cut requirements because their parent requirement is still in
+  scope and still complete.
+- **In scope**: 51 — **51 complete, 0 open** *(corrected 2026-08-19 by Phase
+  8.1 per audit §7 D-3 and the audit's own independent §2 recount. The
+  previous "47 in scope — 39 complete, 8 open" line counted the four cut
+  halves above as whole cut requirements (68 − 21 = 47) rather than as halves
+  of requirements that remain in scope (68 − 17 = 51), and predated Phase 8's
+  completion. It carried forward one still-valid piece of history, preserved
+  here: the 2026-08-18 quick task 260818-obc correction that moved `TIME-04`
+  from open to genuinely `Complete` — its last two residuals
   (broker-mediated `monitor_held_elsewhere`, broker-supervised `restarted`)
-  closed in one real broker-mediated live run against genuine stock VICE on
-  both `/usr/bin/x64sc` and `/usr/local/bin/x64sc`. This is a +1 complete / -1
-  open delta on the previous 38/9 split (itself set by plan 07-18, which
-  moved Phase 7 from 4 open to 1 open on `TIME-01`/`TIME-02`/`TIME-03`'s own
-  gap-closure evidence, 07-11..07-14). The per-phase breakdown below is not
-  fully exhaustive across every phase — e.g. `DIRECT-06` (Phase 3, `Partial`)
-  is not itemised in it — so this total should not be read as independently
-  re-derived from a full per-phase audit; only Phase 7's own contribution was
-  corrected by 07-18 and by this task*)
-- Mapped to phases: 47 · Unmapped: 0 ✓
+  were closed in one real broker-mediated live run against genuine stock VICE
+  on both `/usr/bin/x64sc` and `/usr/local/bin/x64sc`, itself following plan
+  07-18's earlier move of Phase 7 from 4 open to 1 open on
+  `TIME-01`/`TIME-02`/`TIME-03`'s gap-closure evidence (07-11..07-14). With
+  Phase 8 now also complete, every in-scope requirement is `Complete`, making
+  51/51/0 independently derivable rather than asserted*)
+- Mapped to phases: 51 · Unmapped: 0 ✓
 
 **Open requirements per phase:** Phase 5: **0** — all four (`DERIV-01`,
 `DERIV-04`, `DERIV-05`, `DERIV-06`) complete; the per-phase line previously
@@ -260,27 +267,40 @@ per quick task 260818-obc's own live broker-mediated evidence, closing the
 last open Phase 7 item; `TIME-01`/`TIME-02`/`TIME-03` were already `Complete`
 per the gap-closure evidence above. This line previously read "1 (`TIME-04`
 only ...)", corrected here to 0 now that TIME-04 itself is closed) · Phase 8:
-5 (`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`, `SKILL-01`)
+**0** — `BACK-05`, `DIST-01`, `DIST-02`, `DIST-03` and `SKILL-01` are all
+Complete (2026-08-18, `08-VERIFICATION.md` 4/4). This line previously read
+"5 (`BACK-05`, `DIST-01`, `DIST-02`, `DIST-03`, `SKILL-01`)", stale since
+Phase 8's completion; corrected 2026-08-19 by Phase 8.1 per audit §7 D-3.
 
 ### The cut criterion
 
 Every cut above was decided by one test: **does a shipped skill call the tool, or
 does something a skill calls depend on it?** Measured by diffing the six skills'
 actual `vice_*` usage against `tools-manifest.json` (62 tools) and
-`tools-manifest.stock.json` (26 tools):
+`tools-manifest.stock.json` (26 tools *as of the 2026-08-17 cut; `tools-manifest.stock.json`
+ships **38** tools as of 2026-08-19, after Phases 5 and 7 added twelve more, and the fork's
+62 is unchanged. The cut arithmetic below is unaffected — scope is set by what the skills
+call, not by manifest size*):
 
-- The skills call **28** tools.
+- The skills call **29** tools.
 - **16** already work on stock — Phase 3 delivered them.
 - **10** are buildable and missing: `vice_memory_search`, `vice_memory_compare`,
   `vice_symbols_load`, `vice_symbols_lookup`, `vice_vicii_get_state`,
   `vice_cia_get_state`, `vice_sprite_get`, `vice_sprite_inspect` (Phase 5);
   `vice_cycles_stopwatch`, `vice_run_until` (Phase 7).
-- **2** are provably impossible on stock — `vice_sid_get_state` (SID registers are
-  write-only in hardware) and `vice_keyboard_matrix` (`read_ciapb()` recomputes
-  from `keyarr` on every read). These need `BACK-05` + `SKILL-01` + `DIST-02`,
-  i.e. honesty, not code. That is Phase 8, and it is why Phase 8 is the phase the
-  milestone exists for.
-- The fork's other **34** tools are called by no skill. They are not a gap.
+- **3** are provably impossible on stock — `vice_sid_get_state` (SID registers are
+  write-only in hardware), `vice_keyboard_matrix` (`read_ciapb()` recomputes
+  from `keyarr` on every read) and `vice_keyboard_restore` (`KEYBOARD_FEED`
+  injects buffer text only and cannot pulse RESTORE/NMI). These need `BACK-05` +
+  `SKILL-01` + `DIST-02`, i.e. honesty, not code. That is Phase 8, and it is why
+  Phase 8 is the phase the milestone exists for. *(Corrected 2026-08-19 by
+  Phase 8.1: this count was two until plan 05-08's skill-vs-manifest sweep
+  found `vice_keyboard_restore`, called by
+  `c64-program-recon/references/control-flow.md:86` and absent from the stock
+  manifest; 16 + 10 + 3 = 29.)*
+- The fork's other **33** tools are called by no skill. They are not a gap.
+  *(62 − 29 = 33; this figure was previously **34**, paired with the stale
+  total of 28 — corrected 2026-08-19 alongside the count above.)*
 
 The finish line is therefore *"a user with an apt-installed VICE can run the six
 shipped skills, and is told plainly where they must reach for the fork"* — not
