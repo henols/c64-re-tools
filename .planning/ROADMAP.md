@@ -509,7 +509,7 @@ Plans:
 
 **Wave 2** *(each blocked on its own track's wave 1)*
 
-- [ ] 08.1-02-PLAN.md — ROADMAP.md's Phase 7 checkbox and stale "NOT complete" text, both files' share of the D-6 arithmetic and D-7 as-of annotations, STATE.md's progress figures, and the criterion-2 verification evidence [wave 2, track A, blocked on 08.1-01]
+- [x] 08.1-02-PLAN.md — ROADMAP.md's Phase 7 checkbox and stale "NOT complete" text, both files' share of the D-6 arithmetic and D-7 as-of annotations, STATE.md's progress figures, and the criterion-2 verification evidence [wave 2, track A, blocked on 08.1-01]
 - [ ] 08.1-04-PLAN.md — drive `c64-ram-capture` end to end against genuine stock VICE and record the outcome in `08-HUMAN-UAT.md` as pass or fail (never pending) with `driven_by: agent-proxy`, the tested sha, and the local-`HEAD` limitation; point `08-VERIFICATION.md` and `08-VALIDATION.md` at it [wave 2, track B, blocked on 08.1-03]
 
 **Wave 3** *(blocked on both tracks)*
@@ -570,7 +570,7 @@ open items before v0.2.0 is tagged; it is the last phase of this milestone.
 | 6. Stock-Only Gains | — | **Cut** 2026-08-17 | - |
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
-| 8.1 Close v0.2.0 audit items (INSERTED) | 2/5 | In Progress|  |
+| 8.1 Close v0.2.0 audit items (INSERTED) | 3/5 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work

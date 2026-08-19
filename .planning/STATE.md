@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T09:16:54.078Z"
+last_updated: "2026-08-19T09:44:45.077Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 81
-  completed_plans: 78
+  completed_plans: 79
   percent: 78
 ---
 
@@ -27,7 +27,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 ## Current Position
 
 Phase: 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
 Status: Ready to execute
 Last activity: 2026-08-19
@@ -82,6 +82,7 @@ Progress: [████████░░] 78%
 | Phase 03-direct-tools P18 | 5m | 1 tasks | 0 files |
 | Phase 08.1 P01 | 15min | 3 tasks | 3 files |
 | Phase 08.1 P03 | 25m | 3 tasks | 1 files |
+| Phase 08.1 P02 | 22min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,8 @@ Recent decisions affecting current work:
 - [Phase 08.1]: 08.1-03: FINDING-A1 corrected/widened -- the acme-build scaffold's missing cbm/c64/* library gap also breaks CI's own apt-provisioned environment, verified via apt-get download + dpkg-deb -x
 - [Phase 08.1]: 08.1-03: capture target built from a new library-free ACME source (hand-rolled hardware constants) per human decision, instead of installing an ACME stdlib or hand-editing acme-build/template.a
 - [Phase 08.1]: 08.1-03: scratch project wired via route A (local installer) + hand-edited .mcp.json, not claude plugin marketplace add/install, to avoid writing into machine-global ~/.claude/plugins/ state shared with the live orchestrating session
+- [Phase 08.1]: STATE.md frontmatter left untouched (already correct: 7/9 phases, 78%); only STATE.md's/ROADMAP.md's bodies were reconciled with it
+- [Phase 08.1]: Criterion 2 verified rather than re-authored: 08-VALIDATION.md already read status: audited / nyquist_compliant: true from prior commit 4306338; evidence recorded, file left unmodified
 
 ### Pending Todos
 
@@ -168,6 +171,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-19T09:16:54.056Z
-Stopped at: Completed 08.1-03-PLAN.md
+Last session: 2026-08-19T09:44:45.066Z
+Stopped at: Completed 08.1-02-PLAN.md
 Resume file: None
