@@ -553,8 +553,8 @@ Plans:
 
 **Wave 1** *(two independent tracks, disjoint file ownership — item 2 and item 1's argv half)*
 
-- [ ] 08.2-01-PLAN.md — I-3: untrack Phase 8.1's throwaway `08.1-d-checklist.sh`, restoring a green `host-scripts.test.ts`, and prove both the narrowed gate and CI's bare `npm test` green [wave 1]
-- [ ] 08.2-02-PLAN.md — I-2 + I-1's first half: `-default -drive8type 1541` first in `buildViceArgs()`'s stock branch, the injected-spawn seam widened with an options parameter and the scratch `XDG_CONFIG_HOME` computed in `spawnAndRecordInstance()`, five new unit tests, and the mandatory `node build.ts` rebuild of `resources/broker-launch.mjs` [wave 1]
+- [x] 08.2-01-PLAN.md — I-3: untrack Phase 8.1's throwaway `08.1-d-checklist.sh`, restoring a green `host-scripts.test.ts`, and prove both the narrowed gate and CI's bare `npm test` green [wave 1]
+- [x] 08.2-02-PLAN.md — I-2 + I-1's first half: `-default -drive8type 1541` first in `buildViceArgs()`'s stock branch, the injected-spawn seam widened with an options parameter and the scratch `XDG_CONFIG_HOME` computed in `spawnAndRecordInstance()`, five new unit tests, and the mandatory `node build.ts` rebuild of `resources/broker-launch.mjs` [wave 1]
 
 **Wave 2** *(blocked on 08.2-02, which co-owns `broker-launch.mts`)*
 
@@ -632,7 +632,7 @@ returned `gaps_found`, and 8.2 is now the last phase of this milestone.
 | 7. Cycle Timing and Wedge Triage | 18/18 | Complete   | 2026-08-18 |
 | 8. Capability Honesty and the Install Story | 6/6 | Complete    | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | 5/5 | Complete    | 2026-08-19 |
-| 8.2 Close v0.2.0 blockers (INSERTED) | 0/6 | Planned     | - |
+| 8.2 Close v0.2.0 blockers (INSERTED) | 2/6 | In Progress|  |
 
 **Remaining scope:** 14 open requirements across 3 phases, covering the 10
 buildable skill-called tools missing on stock plus the capability-honesty work
