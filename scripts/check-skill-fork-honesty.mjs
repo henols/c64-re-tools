@@ -14,6 +14,19 @@
 //      or the regenerator2000 name Phase 8 removed.
 // Both are documentation-honesty checks over first-party prose read as data,
 // and one CI-blocking step is cheaper to keep green than two.
+//   3. docs/stock-vice-parity.md: a Nyquist-gap addition (GAP-2, DIST-01/
+//      SKILL-01) -- 08-06 corrected this doc's stale forward-looking claims
+//      (a "deferred to Phase 7"/"ships in Phase 7" pair for tools that
+//      phase closed without building, a "Phase 8's parity harness" promise
+//      for a harness cut from scope, a "must cover answer-shape drift" claim
+//      overstating SKILL-01's actual text, and an open developer-decision
+//      flag) and pointed the reader at the generated docs/tool-support.md
+//      instead. Before this addition, nothing re-checked that correction --
+//      the same class of stale-prose defect could return to this file with
+//      no lint catching it (this script's own skills walk only covers
+//      .claude/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
+//      corrected are asserted here; the file's many legitimate historical
+//      "(Phase N, REQ-ID)" citations are untouched.
 //
 // WHAT NOT TO DO: do not hand-maintain a second list of fork-only tool names
 // here. The list is derived from capability-registry.ts's CAPABILITY_REGISTRY
@@ -35,6 +48,7 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
 const SKILLS_DIR = join(ROOT, ".claude/skills");
 const README_PATH = join(ROOT, "README.md");
+const PARITY_DOC_PATH = join(ROOT, "docs/stock-vice-parity.md");
 
 const errors = [];
 const need = (cond, msg) => {
@@ -250,6 +264,57 @@ for (const [needle, why] of FORBIDDEN_README_SUBSTRINGS) {
   need(!readmeSource.includes(needle), `README.md must not contain "${needle}" -- ${why}.`);
 }
 
+// --- docs/stock-vice-parity.md regression assertions (GAP-2, DIST-01/SKILL-01) --
+// 08-06-SUMMARY.md corrected exactly four stale forward-looking claims plus
+// one open developer-decision flag in this doc (see that summary's "Before/
+// After Text of the Four Corrected Parity-Doc Claims"). This block asserts
+// only what that summary documents as an actual correction -- read literally
+// from its own before/after quotations -- so a regression back into any of
+// them fails CI, without inventing a claim 08-06 never made. It deliberately
+// does NOT touch the file's many legitimate historical "(Phase N, REQ-ID)"
+// citations (e.g. "(Phase 7, TIME-02)", "(Phase 5, DERIV-05)"), which are
+// correct attributions, not stale forward references.
+const parityDocSource = readFileSync(PARITY_DOC_PATH, "utf8");
+
+const REQUIRED_PARITY_SUBSTRINGS = [
+  [
+    "docs/tool-support.md",
+    "the reader loses the pointer 08-06 added to the generated per-tool support table, and the stock-only-tool bullet reverts to promising a parity harness that was cut from scope",
+  ],
+];
+for (const [needle, whatIsLost] of REQUIRED_PARITY_SUBSTRINGS) {
+  need(
+    parityDocSource.includes(needle),
+    `docs/stock-vice-parity.md is missing the required string "${needle}" -- without it, ${whatIsLost}.`
+  );
+}
+
+const FORBIDDEN_PARITY_SUBSTRINGS = [
+  [
+    "deferred to Phase 7",
+    "08-06 corrected vice_joystick_tap's claim that it is deferred to a phase that closed without building it -- it is simply not built",
+  ],
+  [
+    "ships in Phase 7",
+    "08-06 corrected vice_disk_detach's claim that it ships in a phase that closed without building it -- it was CUT from scope 2026-08-17",
+  ],
+  [
+    "parity harness",
+    "08-06 removed the promise of a Phase 8 parity harness that was cut from scope, replacing it with a pointer to the generated docs/tool-support.md",
+  ],
+  [
+    "must cover answer-shape drift",
+    "08-06 corrected the overstated claim that SKILL-01 must cover answer-shape drift -- SKILL-01's actual text only names the fork requirement at each call site, and answer-shape drift remains an open, mechanically-unchecked concern",
+  ],
+  [
+    "flagged here for Phase 8 planning",
+    "08-06 resolved this open developer-decision flag once ROADMAP.md's Phase 5 criterion 5 was amended to name all three unrecoverable tools -- it must not read as still-open",
+  ],
+];
+for (const [needle, why] of FORBIDDEN_PARITY_SUBSTRINGS) {
+  need(!parityDocSource.includes(needle), `docs/stock-vice-parity.md must not contain "${needle}" -- ${why}.`);
+}
+
 // --- Non-vacuity controls ---------------------------------------------------
 // A lint that finds nothing passes everything -- these are need()s, not
 // comments.
@@ -273,6 +338,10 @@ need(
   FORK_ONLY_NAMES.size >= 20,
   `non-vacuity: expected at least 20 fork-only names derived from CAPABILITY_REGISTRY, got ${FORK_ONLY_NAMES.size} -- the registry import may be broken`
 );
+need(
+  parityDocSource.length > 5000,
+  `non-vacuity: docs/stock-vice-parity.md is suspiciously short (${parityDocSource.length} bytes) -- the file may have been truncated or this script may be reading the wrong path`
+);
 
 // --- Report ------------------------------------------------------------
 if (errors.length) {
@@ -285,5 +354,7 @@ console.log(
   `check-skill-fork-honesty: OK -- ${totalForkMentions} fork-only mentions across ${skillFiles.length} files in ` +
     `${topLevelDirs.length} skill directories, all section-scoped-compliant; ${FORK_ONLY_NAMES.size} fork-only ` +
     `names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all ` +
-    `${REQUIRED_README_SUBSTRINGS.length} required strings and none of the ${FORBIDDEN_README_SUBSTRINGS.length} forbidden ones.`
+    `${REQUIRED_README_SUBSTRINGS.length} required strings and none of the ${FORBIDDEN_README_SUBSTRINGS.length} ` +
+    `forbidden ones; docs/stock-vice-parity.md carries all ${REQUIRED_PARITY_SUBSTRINGS.length} required strings ` +
+    `and none of the ${FORBIDDEN_PARITY_SUBSTRINGS.length} forbidden ones (08-06's regression guard).`
 );
