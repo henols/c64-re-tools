@@ -57,7 +57,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8. Capability Honesty and the Install Story | v0.2.0 | 6/6 | Complete | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
-| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 0/TBD | Not started | - |
+| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 0/8 | Planned | - |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
@@ -242,15 +242,27 @@ since the project was created 2025-12-20.
   5. A **go/no-go verdict is recorded** naming which of three routes the milestone takes: **proceed** as scoped; **degrade** — bootstrap becomes a documented one-time interactive step, every affected playbook says so, and Phase 10/11 scope is amended accordingly; or **reconsider** the milestone, because a regenerator2000 that cannot be driven without a human puts the annotation store out of a skill's reach and with it this milestone's thesis.
 
 **Plans**: 8 plans in 5 waves
+**Wave 1**
 
-Plans:
 - [ ] 09-01-PLAN.md — Evidence scaffold, illegal-opcode `.prg` fixture, third-party install authorization, and the real build's version (criterion 1, first half)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 09-02-PLAN.md — Container-side toolchain cost measured as two numbers: single-stage build cost and multi-stage shipped-image cost (criterion 1(5))
 - [ ] 09-03-PLAN.md — **The gate within the gate.** pty tolerance, MCP served-or-refused, and the keystroke-driven Save-As bootstrap (criterion 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 09-04-PLAN.md — Reassembly via regenerator2000's own `--verify` gate against a real `acme`, with the illegal-opcode mode recorded (criterion 3(2))
 - [ ] 09-05-PLAN.md — `--export_lbl` seeded, exported, grammar-matched against `stock-symbols.ts`, and handed unmodified to a live `vice_symbols_load` (criterion 3(3))
 - [ ] 09-06-PLAN.md — A real `.vsf` produced, loaded, and **interrogated** for machine type and start address (criterion 3(4))
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 09-07-PLAN.md — `docs/phase9-regenerator2000-probe-findings.md`, the machine-readable verdict, and the research corrections (criteria 4 and 5)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 09-08-PLAN.md — Verdict discoverability: STATE.md decision entry and ROADMAP pointers (criterion 5)
 
 Notes:
@@ -347,7 +359,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. The Assumption Probe (Go/No-Go) | 0/TBD | Not started | - |
+| 9. The Assumption Probe (Go/No-Go) | 0/8 | Planned | - |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
 
