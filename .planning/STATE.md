@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: Switchable stock-VICE backend
 status: executing
-last_updated: "2026-08-19T08:24:01.493Z"
-last_activity: 2026-08-19 -- Phase 8.1 planning complete
+last_updated: "2026-08-19T08:44:40.691Z"
+last_activity: 2026-08-19
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 81
-  completed_plans: 76
+  completed_plans: 77
   percent: 78
 ---
 
@@ -22,15 +22,15 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Current focus:** Phase 8.1 — close the v0.2.0 audit's two open items before tagging
+**Current focus:** Phase 08.1 — close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift
 
 ## Current Position
 
-Phase: 08.1
-Plan: Not started
+Phase: 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — EXECUTING
+Plan: 2 of 5
 Next: Phase 08.1 (close-v0-2-0-audit-items-uat-walkthrough-planning-doc-drift) — planned, 0/5 plans executed
 Status: Ready to execute
-Last activity: 2026-08-19 -- Phase 8.1 planning complete
+Last activity: 2026-08-19
 Complete, UAT 12/12, all 20 code-review findings fixed, verification's single
 human_verification item live-proven. Phase 08 is the last phase of v0.2.0.
 
@@ -48,7 +48,7 @@ CUT-marked items.
 absent from the stock manifest. Recorded as a hard loss in `docs/stock-vice-parity.md` §A
 item 2 — `KEYBOARD_FEED` (0x72) injects buffer text only and cannot pulse RESTORE/NMI.)*
 
-Progress: [███████░░░] 71%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [███████░░░] 71%
 *Updated after each plan completion*
 | Phase 03 P17 | N/A | 2 tasks | 0 files |
 | Phase 03-direct-tools P18 | 5m | 1 tasks | 0 files |
+| Phase 08.1 P01 | 15min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Recent decisions affecting current work:
 
 - [Phase ?]: Route authorised: pr-branch — push a branch and open a PR against main; no push/branch/tag/publish performed by 03-17 — milestone v0.2.0 is only 3 of 8 phases done; publishing now would ship a partial stock backend to real users
 - [Phase 03-direct-tools]: CI validated via pr-branch route: PR #9 (ci/phase-03-validation -> main), GitHub Actions build job concluded success against sha f040d79efdfe02fc5a22a77589052c138f5cdc20; no push to main, no tag, no release, no npm publish; PR left open unmerged
+- [Phase 08.1]: Checklist emits one composite PASS/FAIL line per D-item (not per sub-condition) so the RED baseline shows zero PASS lines despite already-true guard conditions
 
 ### Pending Todos
 
@@ -157,6 +159,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-17T05:51:53.006Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-client-side-tool-seam-and-6510-disassembler/04-CONTEXT.md
+Last session: 2026-08-19T08:44:40.663Z
+Stopped at: Completed 08.1-01-PLAN.md
+Resume file: None
