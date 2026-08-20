@@ -1,8 +1,8 @@
 ---
 phase: 11
 slug: annotation-store-enums-and-the-symbol-round-trip
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-20
 ---
@@ -70,41 +70,90 @@ transcript is the only artifact that samples the criterion's actual claim.
 
 ## Per-Task Verification Map
 
-Task IDs are assigned by the planner. Until plans exist, this table is the
-**requirement-level** map the planner must expand into per-task rows; every task
-it writes must trace to one of these rows or add a new one.
+Expanded by the planner on 2026-08-20 into per-task rows: **12 plans, 35 tasks, 7 waves.**
+Every task in the plan set appears here, and every row traces to one of this document's original
+requirement-level rows or adds one with its reason recorded in the owning plan.
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | R2000-10 | — | Curated-subset gate refuses any tool name outside the D-18 set | integration (live r2000 child, gated) | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ❌ W0 — new file | ⬜ pending |
-| TBD | TBD | TBD | R2000-10 | — | N/A | human-witnessed transcript | N/A — recorded artifact | ❌ W0 — new `evidence/` file | ⬜ pending |
-| TBD | TBD | TBD | R2000-11 | — | N/A | integration (live r2000 child, gated) | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | R2000-13 | T-11-ENUM-NAME | Generated enum/variant names cannot inject arbitrary text into exported ACME source | integration (live r2000 child + real `acme`) | `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | R2000-14 | — | Label-file reads keep `stock-symbols.ts`'s byte/line/symbol ceilings | integration (live r2000 child) | `VICE_REQUIRE_R2000=1 node --test r2000-launch.test.ts` (extend existing) | Partial — module + test exist, need new argv builders | ⬜ pending |
-| TBD | TBD | TBD | R2000-15 | — | `--import_lbl` never reported as success without a verified post-save read-back | integration (live r2000 child) | `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | R2000-15 | — | N/A | live stock `x64sc` walkthrough (D-30, D-31) | N/A — human-witnessed, not in CI | ❌ W0 — new `evidence/` file | ⬜ pending |
-| TBD | TBD | TBD | R2000-10 (folded todo 2) | — | D-07's `--vice` deny-by-construction guard is non-vacuous | unit | `node --test r2000-launch.test.ts` | Exists — **WR-02: currently can go vacuous** | ⬜ pending |
-| TBD | TBD | TBD | R2000-10 (folded todo 1) | — | Dynamically-imported r2000 modules cannot silently fall out of `files[]` | unit / packaging | `node scripts/check-npm-packages.mjs` | Exists — static-import-only closure walk at `:129` | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | Status |
+|---------|------|------|-------------|------------|-----------------|-----------|-------------------|--------|
+| 11-01-T1 | 11-01 | 1 | R2000-10 (folded todo 2, WR-02) | T-11-VACUOUS | D-07's `--vice` deny-by-construction guard is non-vacuous | unit + planted violation | `node --test r2000-launch.test.ts` | ⬜ |
+| 11-01-T2 | 11-01 | 1 | R2000-13 (folded todo 2, WR-04) | T-11-FALSESUCCESS-ACME | An ACME transcript containing a failure never reports a pass | unit, pinned fixtures | `node --test r2000-verify.test.ts` | ⬜ |
+| 11-01-T3 | 11-01 | 1 | R2000-10 | T-11-GATE-DRIFT | One D-11 availability gate; its hard-FAIL mode observed failing | unit + env-driven demo | `node --test r2000-verify.test.ts` | ⬜ |
+| 11-02-T1 | 11-02 | 1 | R2000-10 (WR-05/06) | T-11-D64-TRUNC, T-11-D64-NAME | A truncated `.d64` throws; a printed name is a selectable name | unit, synthetic images | `node --test r2000-d64.test.ts` | ⬜ |
+| 11-02-T2 | 11-02 | 1 | R2000-10 (WR-07) | T-11-RAW-GUESS | A wrong-size flat capture is refused, not reinterpreted | unit, real files | `node --test r2000-cli.test.ts` | ⬜ |
+| 11-02-T3 | 11-02 | 1 | R2000-10 (folded todo 1, WR-03) | T-11-HONESTY-BYPASS, T-11-PKG-CLOSURE | Dynamically-imported modules cannot fall out of `files[]`; the honesty exemption is scoped and bounded | CI scripts + planted violations | `node scripts/check-npm-packages.mjs` | ⬜ |
+| 11-03-T1 | 11-03 | 1 | R2000-13 (D-34) | T-11-DOC-DANGLE | No document points at Phase 11 as `.vsf`'s home | doc assertion (grep gate) | `grep -c vsf .planning/ROADMAP.md` cross-checked against the Phase-11 mention count | ⬜ |
+| 11-03-T2 | 11-03 | 1 | R2000-14 (D-35), R2000-13 (D-22) | T-11-DOC-OVERCLAIM | The `--export_lbl` claim is verified and scoped to 0.9.20 + this fixture | doc assertion + existing suite | `cd .claude/mcp/vice && npm run test:automated` | ⬜ |
+| 11-03-T3 | 11-03 | 1 | R2000-10, R2000-14 | T-11-DOC-DRIFT | CLAUDE.md's cited line numbers match the source | unit + planted violation | `node --test docs-linerefs.test.ts` | ⬜ |
+| 11-04-T1 | 11-04 | 2 | R2000-14, R2000-15 (D-28) | T-11-VICE, T-11-PATH-XLATE | `--import_lbl` cannot be built without `--mcp-server-stdio`; no r2000 module imports `hostpath.ts` | unit, exact-argv | `node --test r2000-launch.test.ts hostpath-consumers.test.ts` | ⬜ |
+| 11-04-T2 | 11-04 | 2 | R2000-10 | T-11-HANG, T-11-PHANTOM-DEP | Five named client failure modes measured; no direct SDK import | integration vs stub servers | `node --test r2000-mcp-client.test.ts` | ⬜ |
+| 11-04-T3 | 11-04 | 2 | R2000-10, R2000-14, R2000-15 | T-11-FALSESUCCESS, T-11-DEMUX | A save is never reported without an independent re-read; responses correlate on `id` | stubs + live real child, gated | `VICE_REQUIRE_R2000=1 node --test r2000-mcp-client.test.ts` | ⬜ |
+| 11-05-T1 | 11-05 | 3 | R2000-10, R2000-11 | T-11-BATCH, T-11-UNCURATED, T-11-PATH-ESCAPE, T-11-D32 | The curated gate refuses any name outside the D-18 set, including nested batch names, before any spawn | unit + integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ⬜ |
+| 11-05-T2 | 11-05 | 3 | R2000-10 | T-11-PATH-XLATE | No `r2000_*` runner reaches `forwardToVice()`/`rewriteArguments()`; family in neither manifest | structural + proxy handshake | `node --test stock-dispatch.test.ts vice-proxy.test.ts` | ⬜ |
+| 11-05-T3 | 11-05 | 3 | R2000-10 | T-11-PROSE | An `r2000_*` name in skill prose must exist and be curated | CI script + planted violation | `node scripts/check-skill-tool-coverage.mjs` | ⬜ |
+| 11-06-T1 | 11-06 | 4 | R2000-13 (D-22) | T-11-REGBITS-PROSE, T-11-GEN-DRIFT | Generated identifiers are legal ACME; the table is digest-pinned to `memmap.json` | unit + drift guard | `node --test r2000-regbits.test.ts` | ⬜ |
+| 11-06-T2 | 11-06 | 4 | R2000-13 (D-20, D-23) | T-11-ENUM-NAME, T-11-SILENT-CAP, T-11-MISBIND, T-11-GLOBAL-WRITE | No unsanitized identifier reaches `create_project_enum`; coverage reported, never implied | unit + property + zero-spawn refusal | `node --test r2000-enum-gen.test.ts` | ⬜ |
+| 11-06-T3 | 11-06 | 4 | R2000-13 (criterion 3) | T-11-ENUM-NAME | `lda #$1b`/`sta $d011` renders semantically in the ACME export and reassembles | integration (live r2000 + real ACME), gated | `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts r2000-cli.test.ts` | ⬜ |
+| 11-07-T1 | 11-07 | 4 | R2000-10 | — | The recon subject is reproducible from source | external oracle (real ACME byte-compare) | `acme -f cbm -o /tmp/x.prg recon-subject.a && cmp` | ⬜ |
+| 11-07-T2 | 11-07 | 4 | R2000-10 (criterion 1, session A) | T-11-LEAK | Findings persist and re-read in a fresh session | integration (live r2000) + committed artifact | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ⬜ |
+| 11-07-T3 | 11-07 | 4 | R2000-10 (criterion 1, the question) | T-11-GUESSABLE, T-11-SEAL-DRIFT | The answer key cannot drift from the answer it seals | unit (seal recomputation) | `node --test r2000-answer-key.test.ts` | ⬜ |
+| 11-08-T1 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-PARSER-DUP, T-11-MERGE-DIVERGE | No third `al C:` parser; `vice_symbols_load` stays replace-not-merge | typecheck + source assertions | `npx tsc --noEmit -p tsconfig.json` | ⬜ |
+| 11-08-T2 | 11-08 | 5 | R2000-15 (criterion 4, mechanism) | T-11-IMPORT-DISCARD, T-11-LBL-SIZE | `--import_lbl` is never reported as success without a post-save read-back; the discard trap is pinned | integration (live r2000), gated | `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | ⬜ |
+| 11-08-T3 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-SIZE | The label-file ceilings survive the CLI route | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ⬜ |
+| 11-09-T1 | 11-09 | 5 | R2000-10, R2000-11 (criterion 1, session B) | T-11-CONTEXT-BLEED | A prose-blind session answers from the store alone | human-witnessed transcript (recorded artifact) | `grep -q "canonical answer" SESSION-B-ANSWER.md` | ⬜ |
+| 11-09-T2 | 11-09 | 5 | R2000-10 | T-11-RETROFIT, T-11-VACUOUS-CHECK | A mismatch is reported, never repaired; a missing answer FAILS rather than skips | unit (seal comparison) | `node --test r2000-answer-key.test.ts` | ⬜ |
+| 11-10-T1 | 11-10 | 6 | R2000-10 (D-25) | T-11-GRADE-TYPO, T-11-SECOND-STORE | A typo'd grade prefix fails instead of degrading to ungraded | unit, must-fail-on-typo | `node --test r2000-confidence.test.ts` | ⬜ |
+| 11-10-T2 | 11-10 | 6 | R2000-10 (D-24, D-27) | T-11-GEN-EDIT, T-11-PLACEHOLDER, T-11-SKILLPATH | The memory map is generated; a hand edit or a store change is detected; no placeholder is emitted | golden output + drift guard, gated | `VICE_REQUIRE_R2000=1 node --test r2000-memmap-render.test.ts` | ⬜ |
+| 11-10-T3 | 11-10 | 6 | R2000-10 | T-11-GEN-EDIT | `render-memmap --check` exits non-zero on drift | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ⬜ |
+| 11-11-T1 | 11-11 | 6 | R2000-14 (criterion 4, outbound) | T-11-FLAG-ORDER, T-11-SINGLE-CLIENT | A store label resolves a live address on genuine stock; `-default` precedes `-binarymonitor` | live stock `x64sc` walkthrough | `grep -q "al C:" outbound.lbl` | ⬜ |
+| 11-11-T2 | 11-11 | 6 | R2000-15 (criterion 4, the loop) | T-11-TWO-DUMPS, T-11-NAME-INJECT | The inbound name is proven absent before the live discovery | live walkthrough + human-check | `grep -q "absent before" WALKTHROUGH.md` | ⬜ |
+| 11-11-T3 | 11-11 | 6 | R2000-14, R2000-15 (BACK-02 standing gate) | T-11-OVERCLAIM | The fork is verified unregressed; no gate is claimed without quoted output | regression gate + packaging validation | `npm run test:automated && npm run typecheck && npm run smoke && node scripts/check-npm-packages.mjs` | ⬜ |
+| 11-12-T1 | 11-12 | 7 | R2000-10, R2000-11 | T-11-PROSE-FAKE-TOOL, T-11-TEMPLATE-HANDFILL | Every `r2000_*` name in prose exists and is curated; the template offers nothing to hand-fill | CI prose gates + doc assertions | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-skill-fork-honesty.mjs` | ⬜ |
+| 11-12-T2 | 11-12 | 7 | R2000-13 | T-11-PROSE-OVERCLAIM | The memmap coverage gap is stated, not glossed | CI prose gate | `node scripts/check-skill-fork-honesty.mjs` | ⬜ |
+| 11-12-T3 | 11-12 | 7 | R2000-10 | T-11-PROSE-FAKE-TOOL, T-11-STALE-TARBALL | The reference floor can fail; the installer's generated copy carries the edits | CI script + planted violation + packaging | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-npm-packages.mjs` | ⬜ |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**Sampling continuity:** 35 tasks, 35 `<automated>` verifies — every task in the plan set has one,
+so the "no 3 consecutive tasks without an automated verify" rule holds by construction.
+
+**Two rows are human-witnessed artifacts, as this document requires:** `11-09-T1` (criterion 1's
+two-session transcript, whose only mechanical half is the sealed-hash comparison in `11-09-T2`) and
+`11-11-T2` (criterion 4's real-program walkthrough, which also carries a `<human-check>` for the
+"one loop, not two dumps" judgement). Both produce committed files under the phase's `evidence/`
+directory.
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `.claude/mcp/vice/r2000-tools.test.ts` — stubs for R2000-10, R2000-11
-- [ ] `.claude/mcp/vice/r2000-enum-gen.test.ts` — stubs for R2000-13
-- [ ] `.claude/mcp/vice/r2000-symbol-roundtrip.test.ts` — stubs for R2000-15
-- [ ] `.claude/mcp/vice/r2000-mcp-client.test.ts` — stubs for the MCP-client seam
-      (failure modes: spawn failure, mid-call child exit, unanswered `tools/call`,
-      stderr interleaving, non-zero exit after a successful save)
-- [ ] Extend `.claude/mcp/vice/r2000-launch.test.ts` for the new argv builders
-      (R2000-14) **and** fix WR-02's `stripCommentLines()` first, so the D-07
-      guard assertions are non-vacuous before anything is built on top of them
-- [ ] Phase `evidence/` directory for the two human-witnessed artifacts
-- [ ] No framework install needed — `node --test` is already the runner
+**Reconciliation with the plan set (planner, 2026-08-20).** There is no separate wave-0 plan whose
+only output is empty test stubs — a file full of trivially-passing stubs is the vacuity this
+document's own WR-02 section warns about. Instead, wave 1 lands the *known-vacuous* guard fixes and
+the one shared seam, and each implementation plan creates its own test file as the file it must
+satisfy in the same plan. The original checklist maps as follows:
 
----
+- [x] Fix WR-02's `stripCommentLines()` **first**, so the D-07 guard assertions are non-vacuous
+      before anything is built on top of them — **plan 11-01 (wave 1), before plan 11-04's new argv
+      builders (wave 2)**, which is the ordering constraint this document made a prerequisite.
+- [x] The shared D-11 availability gate, `r2000-test-gate.ts` — **plan 11-01 (wave 1)**; the four new
+      test files import it instead of hand-copying `probeR2000()` a sixth time.
+- [x] `.claude/mcp/vice/r2000-tools.test.ts` (R2000-10, R2000-11) — **plan 11-05, task 1**.
+- [x] `.claude/mcp/vice/r2000-mcp-client.test.ts` (the MCP-client seam, all five named failure modes:
+      spawn failure, mid-call child exit, unanswered `tools/call`, stderr interleaving, non-zero exit
+      after a successful save) — **plan 11-04, task 2**, where it is written before the
+      implementation because its measurements decide which client shape gets built.
+- [x] `.claude/mcp/vice/r2000-enum-gen.test.ts` (R2000-13) — **plan 11-06, tasks 2-3**, plus
+      `r2000-regbits.test.ts` as the generated-artifact drift guard (task 1).
+- [x] `.claude/mcp/vice/r2000-symbol-roundtrip.test.ts` (R2000-15) — **plan 11-08, task 2**.
+- [x] Extend `.claude/mcp/vice/r2000-launch.test.ts` for the new argv builders (R2000-14) — **plan
+      11-04, task 1**, after plan 11-01's WR-02 fix.
+- [x] Phase `evidence/` directory for the two human-witnessed artifacts — created by the plans that
+      write into it: `evidence/criterion1/` (plans 11-07, 11-09) and `evidence/criterion4/`
+      (plan 11-11).
+- [x] No framework install needed — `node --test` is already the runner. New `*.test.ts` files join
+      `test-gate.mjs`'s **derived** automated set automatically (it lists only the manual-only
+      exceptions), so no gate file needs editing and `test-gate.test.ts`'s drift guard stays green.
 
 ## Manual-Only Verifications
 
@@ -139,13 +188,13 @@ protected by a guard whose test can currently go blind.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or a Wave 0 dependency
-- [ ] Sampling continuity: no 3 consecutive tasks without an automated verify
-- [ ] Wave 0 covers all ❌ references above
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30 s for the quick run
-- [ ] WR-02 fixed before any new argv builder lands
-- [ ] Both manual artifacts committed under the phase's `evidence/` directory
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or a Wave 0 dependency — 35/35
+- [x] Sampling continuity: no 3 consecutive tasks without an automated verify
+- [x] Wave 0 covers all ❌ references above (see the reconciliation note)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30 s for the quick run
+- [x] WR-02 fixed before any new argv builder lands — plan 11-01 (wave 1) precedes plan 11-04 (wave 2)
+- [x] Both manual artifacts committed under the phase's `evidence/` directory — plans 11-07/11-09 and 11-11
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** planner sign-off 2026-08-20 (12 plans, 35 tasks, 7 waves)

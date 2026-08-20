@@ -59,7 +59,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/12 | Planned | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -358,7 +358,21 @@ Notes:
   3. Enums generated from `c64-memory-mapping`'s `memmap.json` make a disassembly render per-bit VIC-II/SID/CIA writes with semantic names — `lda #$1b / sta $d011` reads as named bits — and the generation is re-runnable from `memmap.json` rather than a one-off hand edit.
   4. A symbol annotated in regenerator2000 resolves a live address through `vice_symbols_load`, and a name discovered against the running machine flows **back** into the store via `--import_lbl` — demonstrated as one closed loop on one real program, not as two independent one-way dumps.
 
-**Plans**: TBD
+**Plans**: 12 plans in 7 waves
+
+Plans:
+- [ ] 11-01-PLAN.md — Make the guards this phase rests on non-vacuous: WR-02, WR-04, and the one shared D-11 availability gate
+- [ ] 11-02-PLAN.md — Close WR-03/05/06/07 and make the packaging closure walk follow dynamic imports (folded todo 1)
+- [ ] 11-03-PLAN.md — Scope corrections: `.vsf` (D-34), the verified `--export_lbl` note (D-35), `R2000-13`'s wording (D-22), the one-project limit, CLAUDE.md's drifted line citations
+- [ ] 11-04-PLAN.md — The MCP client seam (D-16/D-17) and the three fixed argv builders, including D-28's unbuildable-discard pairing
+- [ ] 11-05-PLAN.md — The 17 curated `r2000_*` tools, the D-33 batch gate, proxy-local registration, and the manifest answer asserted twice
+- [ ] 11-06-PLAN.md — Enums from `memmap.json`: the re-runnable curated bit-name table, the adjacent-pair pass, and criterion 3 against the ACME export
+- [ ] 11-07-PLAN.md — Criterion 1 session A: annotate a real program into the store and seal a store-only question
+- [ ] 11-08-PLAN.md — The symbol round trip: the Rule A20 adapter, `export-lbl`/`import-lbl`, and the closed loop on a committed fixture
+- [ ] 11-09-PLAN.md — Criterion 1 session B: a prose-blind session answers from the store, checked against the sealed key
+- [ ] 11-10-PLAN.md — The confidence convention (D-25) and the generated memory map (D-24/D-27) with a drift-detecting `--check`
+- [ ] 11-11-PLAN.md — Criterion 4 live on genuine stock `x64sc`: one closed loop, plus this phase's BACK-02 gate
+- [ ] 11-12-PLAN.md — The skills become store-first, the template documents the generator, and CI checks every `r2000_*` name in prose
 
 Notes:
 
@@ -418,7 +432,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 |-------|----------------|--------|-----------|
 | 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/9 | Planned | - |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | 0/12 | Planned | - |
 
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
