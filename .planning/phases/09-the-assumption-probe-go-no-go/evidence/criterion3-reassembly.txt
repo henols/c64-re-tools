@@ -1,0 +1,478 @@
+## Criterion 3(2) -- R2000-16(2): does `--export_asm --assembler acme` output
+## reassemble under this project's `!cpu 6510` illegal-opcode expectations?
+
+Quoting plan 09-01's evidence verbatim (evidence/criterion1-install-and-version.txt:186):
+
+    INSTALLED_VERSION: regenerator2000 0.9.20
+
+Every finding below is qualified by that build, and (per 09-01's own
+`## RESEARCH CORRECTIONS` item 4) by the toolchain that actually built it:
+rustc 1.97.1, not the 1.85.1 this phase started on.
+
+PROJECT_FILE (from 09-03-SUMMARY.md / evidence/criterion2-pty-transcript.txt):
+  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+This file exists (09-03's keystroke-driven Save-As bootstrap succeeded), so
+the full (non-reduced) version of this task applies.
+
+## Task 1: determine which illegal-opcode mode --verify will actually exercise
+
+### Route 1 -- explicit CLI flag
+
+$ regenerator2000 --help
+(full text already captured verbatim in evidence/criterion1-install-and-version.txt:191-231;
+reproduced here only as a grep to confirm no illegal-opcode flag exists on the
+literal Options block reproduced from that file)
+
+$ printf '%s\n' \
+  "      --import_lbl <PATH>" "      --export_lbl <PATH>" "      --export_asm <PATH>" \
+  "      --export_html <PATH>" "      --assembler <NAME>" "      --headless" \
+  "      --verify" "      --mcp-server" "      --mcp-server-stdio" \
+  "      --dump-system-config-files <PATH>" "      --dump-theme-files <PATH>" \
+  "      --dump-enum-files <PATH>" "  -h, --help" "  -V, --version" \
+  | grep -iE 'illegal|cpu'
+(the full Options block, including the VICE binary-monitor auto-connect flag
+this plan never uses, is already captured verbatim in plan 09-01's evidence
+file; omitted from this reproduction on purpose, per this plan's own closing
+scope check below)
+(no output -- grep-exit=1, confirmed no line matches)
+
+No `--illegal`, `--illegal-opcodes`, or `--cpu` flag exists anywhere in the
+real, verbatim `--help` surface (already captured in full in plan 09-01's
+evidence file). Route 1 yields nothing. `ILLEGAL_OPCODE_MODE` cannot be set
+via an explicit CLI flag on this build.
+
+### Route 2 -- inspect the project file itself (the settings store)
+
+The `.regen2000proj` file is plain JSON (confirmed: `file` reports "JSON text
+data"), not a binary format -- this changes the original plan's `grep -a`
+instruction to a more precise, equally-literal JSON field read:
+
+$ python3 -c "
+import json
+with open('/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj') as f:
+    j = json.load(f)
+print(json.dumps(j['settings'], indent=2))
+"
+{
+  "all_labels": false,
+  "preserve_long_bytes": true,
+  "brk_single_byte": true,
+  "patch_brk": false,
+  "system": "Commodore 64",
+  "assembler": "Tass64",
+  "max_xref_count": 5,
+  "max_arrow_columns": 6,
+  "use_illegal_opcodes": false,
+  "text_char_limit": 40,
+  "addresses_per_line": 5,
+  "bytes_per_line": 8,
+  "enabled_features": {},
+  "description": "",
+  "auto_analyze": true,
+  "show_system_comments": true,
+  "fill_run_threshold": 8,
+  "exclude_well_known_labels": true
+}
+
+Also reproduced as the plainer literal command the plan asked for first
+(worked despite the file being text, not binary -- `grep -a` degrades
+gracefully to a normal text grep on a text file):
+
+$ grep -a -o 'use_illegal_opcodes[^,}]*' /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+use_illegal_opcodes": false
+
+Both commands agree: the bootstrapped project file's default is
+`use_illegal_opcodes: false`. This closes 09-RESEARCH.md's Open Question 3 /
+Assumption A3 empirically and confirms 09-03's unscored TUI observation
+(auto-analysis rendered the fixture's illegal bytes as
+".byte $xx ; Invalid or partial instruction", not as lax/sax/etc mnemonics):
+**auto-analysis does NOT flip `use_illegal_opcodes` to true**, on this build,
+for this fixture.
+
+ILLEGAL_OPCODE_MODE (as-bootstrapped, before any override attempt below): project-setting false
+
+### Actively trying to get the mode ON, per the inherited findings' explicit instruction
+
+A `use_illegal_opcodes = false` pass on a fixture whose whole point is six
+real illegal opcodes would prove nothing about R2000-16(2) as scoped. Before
+scoring anything, this task tried to force the mode on.
+
+No TUI toggle was attempted (no live `--mcp-server` / pty session was started
+by this plan at all -- this plan's evidence_conventions block explicitly
+flags it as the one wave-3 plan needing neither port 3000 nor a live
+emulator, and 09-03 already proved the TUI route works for the *filename*
+step; re-deriving a *menu-toggle* keystroke sequence here would be
+unnecessary risk for a question the settings-store route answers directly
+and non-interactively). Instead, since the project file is plain JSON and is
+the tool's own documented settings store, a working copy was made and the
+one field flipped:
+
+$ python3 -c "
+import json
+with open('/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj') as f:
+    j = json.load(f)
+j['settings']['use_illegal_opcodes'] = True
+with open('/home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj', 'w') as f:
+    json.dump(j, f, indent=2)
+print('written')
+"
+written
+
+$ python3 -c "
+import json
+with open('/home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj') as f:
+    j = json.load(f)
+print('use_illegal_opcodes =', j['settings']['use_illegal_opcodes'])
+"
+use_illegal_opcodes = True
+
+Sanity-checked that the edited copy still loads under `--headless` (no
+schema validation failure, no crash) by re-exporting from it -- this
+export is the one this plan's `## MAJOR FINDING` section below discusses in
+full; skipping ahead only to confirm the copy loads cleanly:
+
+$ regenerator2000 --headless --export_asm /home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.export.a --assembler acme /home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj"
+Assembler overridden to: ACME
+Assembly exported to "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.export.a"
+EXIT=0
+
+The override copy loads cleanly under `--headless` with no error -- the edit
+is a legitimate, tool-recognized settings change, not a malformed file the
+tool happened to tolerate.
+
+ILLEGAL_OPCODE_MODE: project-setting false (bootstrapped default; auto-analysis
+did not set it) -- overridden to project-setting true via a direct edit of the
+tool's own JSON settings field, on a separate copy, for the scored run below.
+Both states are real, observed, and recorded; Task 2 scores the override run,
+since a run under the unedited default would prove nothing about R2000-16(2)
+as this milestone needs it proven (per Pitfall 3 and the inherited findings).
+
+FIXTURE_ILLEGAL_MNEMONICS: lax, sax, slo, dcp, isc, anc (six illegal 6510
+opcodes, confirmed present in evidence/fixture/probe-illegal.a -- verified by
+reading that file directly: `lax data_table`, `sax scratch1`, `slo
+scratch2`, `dcp scratch3`, `isc scratch4`, `anc #$ff`, all in absolute or
+immediate addressing per the fixture's own comments).
+
+## MAJOR FINDING: `--export_asm`'s disassembly is LIVE-derived from the
+## current `use_illegal_opcodes` setting, not frozen at analysis time
+
+Before running the reassembly gate, this task inspected what the *default*
+(mode false) export actually contains, since 09-03 already flagged that
+auto-analysis rendered the illegal bytes as raw `.byte` fallback:
+
+$ regenerator2000 --headless --export_asm /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.inspect.a --assembler acme /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Assembler overridden to: ACME
+Assembly exported to "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.inspect.a"
+EXIT=0
+
+$ cat /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.inspect.a
+(full file kept at evidence/exports/probe-illegal.mode-false.export.a --
+reproducing the load-bearing body here)
+...
+start               lda #$00
+                    sta $d020            ; Border Color
+                    ldx #$05
+                    lda f_C021,x
+                    !byte $af            ; Invalid or partial instruction
+                    and (zpp_C0,x)
+                    !byte $8f            ; Invalid or partial instruction
+                    brk
+                    cpy zpa_0F
+                    ora (zpp_C4,x)
+                    !byte $cf            ; Invalid or partial instruction
+                    !byte $02            ; Invalid or partial instruction
+                    cpy zpa_EF
+                    !byte $03            ; Invalid or partial instruction
+                    cpy zpa_0B
+                    !byte $ff            ; Invalid or partial instruction
+                    lda #$01
+                    sta $d021            ; Background Color 0
+                    rts
+...
+
+Under the default (mode false) export, **none** of the six illegal opcodes
+appear as mnemonics at all -- the analyzer misaligns the instruction
+boundaries entirely (decoding `and`, `brk`, `cpy`, `ora` at offsets that do
+not match the fixture's intended instructions) and falls back to raw `!byte
+$xx ; Invalid or partial instruction` for the actual illegal-opcode bytes.
+No `!cpu 6510` directive and no illegal mnemonic text appears anywhere. This
+confirms this task's working hypothesis going in (from 09-RESEARCH.md
+Pitfall 3): a pass recorded against this export would prove nothing about
+R2000-16(2) as scoped, since the export never contains an illegal opcode as
+text -- byte-identical reassembly of raw `!byte` literals is trivial and
+does not exercise ACME's `lax`/`sax`/etc keyword parsing at all.
+
+Then, re-exporting from the **override** copy (`use_illegal_opcodes: true`,
+same underlying raw bytes, same block/label data otherwise) with no other
+change:
+
+$ diff /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.inspect.a /home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.export.a
+7c7
+< ;   acme --format cbm -o probe-illegal.inspect.prg probe-illegal.inspect.asm
+---
+> ;   acme --cpu 6510 --format cbm -o probe-illegal-mode-true.export.prg probe-illegal-mode-true.export.asm
+11,12c11
+< ;   zpa_ = Zero Page Absolute Address
+< ;   zpp_ = Zero Page Pointer
+---
+> ;   a_   = Absolute Address
+14,18c13,16
+< zpa_0B = $0b                             ; x-ref: $c018
+< zpa_0F = $0f                             ; x-ref: $c00f
+< zpp_C0 = $c0                             ; x-ref: $c00b
+< zpp_C4 = $c4                             ; x-ref: $c011
+< zpa_EF = $ef                             ; x-ref: $c015
+---
+> a_C400 = $c400                           ; x-ref: $c00d
+> a_C401 = $c401                           ; x-ref: $c010
+> a_C402 = $c402                           ; x-ref: $c013
+> a_C403 = $c403                           ; x-ref: $c016
+25,36c23,28
+<                     !byte $af            ; Invalid or partial instruction
+<                     and (zpp_C0,x)
+<                     !byte $8f            ; Invalid or partial instruction
+<                     brk
+<                     cpy zpa_0F
+<                     ora (zpp_C4,x)
+<                     !byte $cf            ; Invalid or partial instruction
+<                     !byte $02            ; Invalid or partial instruction
+<                     cpy zpa_EF
+<                     !byte $03            ; Invalid or partial instruction
+<                     cpy zpa_0B
+<                     !byte $ff            ; Invalid or partial instruction
+---
+>                     lax f_C021
+>                     sax a_C400
+>                     slo a_C401
+>                     dcp a_C402
+>                     isc a_C403
+>                     anc #$ff
+40c32
+< f_C021              !byte $01            ; x-ref: $c007
+---
+> f_C021              !byte $01            ; x-ref: $c007, $c00a
+
+diff-exit=1 (files differ, as expected)
+
+**This is the actual finding of this task, more favorable than
+09-RESEARCH.md's Pitfall 3 assumed.** Flipping `use_illegal_opcodes` on a
+*copy* of an already-analyzed project file and re-exporting does not merely
+add `--cpu 6510` to the ACME invocation comment -- it makes `--export_asm`
+**re-derive the disassembly live from the raw bytes and the current setting**,
+correctly decoding all six of the fixture's illegal opcodes
+(`lax`/`sax`/`slo`/`dcp`/`isc`/`anc`) at exactly the instruction boundaries
+the fixture's own source intended, with correct operand addressing
+(absolute for all six, matching the fixture comments) and correct
+cross-reference tracking for the labels they touch (`f_C021`'s x-ref list
+gained `$c00a`, the `lax` instruction's address). `--export_asm` is not
+reading a frozen, analysis-time-only decode -- the disassembly itself is
+gated live by `state.settings.use_illegal_opcodes`, not only the ACME
+`--cpu 6510` invocation flag as Pitfall 3's text implied.
+
+## Task 2: Run the tool's own export-assemble-diff gate and record its verdict verbatim
+
+### Assembler on PATH, proven before the gate runs
+
+$ command -v acme
+/home/henrik/.local/bin/acme
+
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+
+`acme` is confirmed on PATH before either `--verify` run below, so
+"byte-identical" cannot be confused with "assembler absent, check skipped".
+
+### Export kept for inspection (both modes)
+
+The override (mode true) export -- the one this REASSEMBLY verdict is scored
+against -- is kept at:
+  evidence/exports/probe-illegal.export.a (42 lines, `wc -l` below)
+
+$ wc -l .planning/phases/09-the-assumption-probe-go-no-go/evidence/exports/probe-illegal.export.a
+42 .planning/phases/09-the-assumption-probe-go-no-go/evidence/exports/probe-illegal.export.a
+
+`head -40` of it (full six illegal mnemonics visible):
+
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+;
+; Auto-generated by Regenerator 2000 v0.9.20
+; https://github.com/ricardoquesada/regenerator2000
+;
+; Assemble with:
+;   acme --cpu 6510 --format cbm -o probe-illegal-mode-true.export.prg probe-illegal-mode-true.export.asm
+;
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+; EXTERNAL LABELS
+;   a_   = Absolute Address
+
+a_C400 = $c400                           ; x-ref: $c00d
+a_C401 = $c401                           ; x-ref: $c010
+a_C402 = $c402                           ; x-ref: $c013
+a_C403 = $c403                           ; x-ref: $c016
+
+* = $c000
+start               lda #$00
+                    sta $d020            ; Border Color
+                    ldx #$05
+                    lda f_C021,x
+                    lax f_C021
+                    sax a_C400
+                    slo a_C401
+                    dcp a_C402
+                    isc a_C403
+                    anc #$ff
+                    lda #$01
+                    sta $d021            ; Background Color 0
+                    rts
+f_C021              !byte $01            ; x-ref: $c007, $c00a
+                    !byte $02
+                    !byte $03
+                    !byte $04
+                    !byte $05
+                    !byte $06
+                    !byte $70
+                    !byte $72
+                    !byte $6f
+
+The unedited default's (mode false) export is also kept, for contrast, at
+evidence/exports/probe-illegal.mode-false.export.a (50 lines) -- the one
+shown inline in the MAJOR FINDING section above.
+
+### The gate itself, run against both project files
+
+$ regenerator2000 --headless --assembler acme --verify /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Assembler overridden to: ACME
+
+Roundtrip Export Verification
+=============================
+  ✗ 64tass — 64tass not found in PATH (skipped)
+  ✓ ACME — byte-identical (44 bytes)
+  ✓ ca65 — byte-identical (44 bytes)
+  ✗ KickAssembler — KickAssembler not found in PATH (skipped)
+
+✓ All roundtrip verifications passed.
+EXIT=0
+
+This run (default project file, `use_illegal_opcodes: false`) passes, but --
+per the MAJOR FINDING above -- proves nothing about R2000-16(2) as scoped:
+the export it verified contains zero illegal-opcode mnemonics; it is a
+byte-identical roundtrip of raw `!byte` fallback literals plus misdecoded
+legal instructions, which is a trivially reassemblable case for any
+assembler and is not the case this milestone needs proven.
+
+$ regenerator2000 --headless --assembler acme --verify /home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal-mode-true.regen2000proj"
+Assembler overridden to: ACME
+
+Roundtrip Export Verification
+=============================
+  ✗ 64tass — 64tass not found in PATH (skipped)
+  ✓ ACME — byte-identical (44 bytes)
+  ✓ ca65 — byte-identical (44 bytes)
+  ✗ KickAssembler — KickAssembler not found in PATH (skipped)
+
+✓ All roundtrip verifications passed.
+EXIT=0
+
+**This is the run that answers the actual assumption.** With
+`use_illegal_opcodes: true`, the exported ACME source contains all six of
+the fixture's real illegal opcodes as their correct mnemonics
+(`lax`/`sax`/`slo`/`dcp`/`isc`/`anc`), `--verify`'s in-process gate exported
+that source, shelled to the real `acme` on PATH (confirmed above) with
+`--cpu 6510 --format cbm` (per the export's own header comment,
+corroborated by ACME succeeding on `lax`/`sax`/etc, which are syntax errors
+under ACME's default 6502-only mode), assembled it, and diff'd the result
+byte-for-byte against the original 44-byte raw data -- **byte-identical**,
+exit 0. No hand-rolled export/assemble/diff script was written anywhere; the
+only construction in this task is the JSON settings-field copy used to pick
+which mode `--verify` exercises, which is an input to the tool's own gate,
+not a second gate.
+
+REASSEMBLY: pass
+
+This is qualified, not unconditional: it is a pass **for the
+`use_illegal_opcodes: true` mode**, which is not the mode a fresh
+keystroke-driven bootstrap (09-03) actually produces by default. Stated
+plainly for Phase 10 to consume:
+
+## ACCEPTED LIMIT (mode default, not a blocker for R2000-16(2) itself)
+
+R2000-16(2) itself -- "does `--export_asm --assembler acme` output
+reassemble under `!cpu 6510`" -- is **answered: yes**, by a real run of the
+tool's own gate against a real fixture containing six real illegal opcodes,
+byte-identical, exit 0. What is **not** earned by this evidence is "this
+happens automatically after the keystroke-driven bootstrap 09-03 proved" --
+it does not; `use_illegal_opcodes` defaults to `false` and auto-analysis
+does not flip it. **Any Phase 10 pipeline that wants illegal-opcode-correct
+disassembly out of regenerator2000 must explicitly set
+`settings.use_illegal_opcodes = true` in the generated `.regen2000proj`
+file (or via whatever TUI/MCP path can set it, not yet located in this
+phase) before exporting or verifying** -- this is an actionable
+implementation requirement for whichever later plan builds that pipeline
+(most directly relevant to Phase 10's `R2000-09` automated-bootstrap work
+and any deletion decision resting on `R2000-16`), not a reason to withhold
+the `pass` on R2000-16(2) itself, which this task answered directly against
+real illegal opcodes, not against a mode that avoided them.
+
+## RESEARCH CORRECTIONS
+
+1. **09-RESEARCH.md's Pitfall 3 undersold what `use_illegal_opcodes`
+   controls.** Its text frames the setting as gating only whether
+   `run_assembler`'s ACME branch adds `--cpu 6510`. This task's diff
+   (`## MAJOR FINDING` above) shows it also gates the **disassembly itself**
+   at `--export_asm` time -- flipping it on a copy of an already-analyzed
+   project file and re-exporting correctly re-decodes six illegal opcodes
+   that the default export rendered as unrelated legal instructions plus
+   raw `!byte` fallback. This is a **more favorable** finding than the
+   pitfall implied: the capability is real and correct, not merely "the
+   right CLI flag gets added"; it was simply never enabled by the
+   keystroke-bootstrap default. Not fixed in 09-RESEARCH.md directly (plan
+   09-07 owns that file per this plan's own instruction); recorded here for
+   09-07 to apply.
+2. **09-RESEARCH.md's Assumption A3 ("analyzing a binary containing illegal
+   opcodes automatically flips `use_illegal_opcodes`") is confirmed FALSE**,
+   independently, by two separate observations: 09-03's TUI capture (bytes
+   rendered as ".byte $xx ; Invalid or partial instruction") and this
+   plan's direct JSON read of the bootstrapped project file
+   (`use_illegal_opcodes": false`). Open Question 3 is now closed with a
+   concrete negative answer, not merely "unanswerable from --help".
+3. No contradiction found regarding the `--verify`/`--verify-roundtrip`
+   flag-name correction already recorded in plan 09-01's evidence file
+   (`RESEARCH CORRECTIONS` item 5 there) -- this plan used the real `--verify`
+   spelling throughout, consistent with that prior correction.
+
+`09-RESEARCH.md` was NOT modified by this plan.
+
+## Teardown / scope check
+
+No live `--mcp-server` process, no pty, no tmux session, and no emulator
+were started by this plan -- every invocation above is a synchronous
+`--headless` CLI call that exits on its own. Confirmed at the time this
+final check ran (after all of this plan's own work above was already
+committed to disk):
+
+$ pgrep -af regenerator2000
+2302508 regenerator2000 --mcp-server /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+LISTEN 0      128        127.0.0.1:3000       0.0.0.0:*
+grep-exit=0
+
+This match is a concurrently-running wave-3 sibling plan's own
+`--mcp-server` process (this plan's `evidence_conventions` block states this
+plan needs neither port 3000 nor a live emulator and explicitly forbids
+adding either -- it never launched `--mcp-server`, and none of the argv
+above contains that flag). The same pattern was already observed and
+correctly attributed in plan 09-03's evidence file (a concurrent
+`cargo install` process, not that plan's own work); this is the equivalent
+case one wave later. Not this plan's process, not this plan's port to free.
+
+The VICE binary-monitor auto-connect flag (documented in plan 09-01's
+evidence file, not reproduced here) was never passed to any invocation in
+this plan -- every command above is `--headless` with `--export_asm` /
+`--verify` / `--assembler acme` only, and this plan started no `--mcp-server`
+process to pass it to in the first place.
