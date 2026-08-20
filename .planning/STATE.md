@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: verifying
-last_updated: "2026-08-20T09:50:15.559Z"
+status: ready_to_plan
+last_updated: 2026-08-20T10:05:39.301Z
 last_activity: 2026-08-20
 progress:
   total_phases: 3
@@ -11,6 +11,7 @@ progress:
   total_plans: 8
   completed_plans: 8
   percent: 33
+stopped_at: Phase 09 complete (8/8) — ready to discuss Phase 10
 ---
 
 # Project State
@@ -25,7 +26,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Phase 09 — the-assumption-probe-go-no-go
+**Current focus:** Phase 10 — adoption boundaries, automated bootstrap, and the removal
 ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
 1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
@@ -36,9 +37,9 @@ is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: 09 (the-assumption-probe-go-no-go) — COMPLETE (8/8 plans executed)
-Plan: 8 of 8
-Status: Phase complete — ready for verification. Verdict `degrade` (rule `R4`)
+Phase: 10
+Plan: Not started
+Status: Ready to plan. Phase 09 closed with verdict `degrade` (rule `R4`),
 recorded at `docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10
 as scoped, with the two named scope amendments (`.vsf` machine-type trust;
 explicit `use_illegal_opcodes` setting) applied at their targets — not a
@@ -51,7 +52,7 @@ Last activity: 2026-08-20
 
 **Velocity:**
 
-- Total plans completed: 87
+- Total plans completed: 95
 - Average duration: —
 - Total execution time: —
 
@@ -68,6 +69,7 @@ Last activity: 2026-08-20
 | 08 | 6 | - | - |
 | 08.1 | 5 | - | - |
 | 08.2 | 6 | - | - |
+| 09 | 8 | - | - |
 
 **Recent Trend:**
 
