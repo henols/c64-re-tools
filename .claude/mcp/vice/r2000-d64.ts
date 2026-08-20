@@ -175,10 +175,10 @@ export function listEntries(image: Uint8Array): D64Entry[] {
  * first_track/first_sector, NOT the fixed directory-chain start) and
  * concatenates each sector's 254 payload bytes, honouring the 1541 DOS
  * end-of-chain convention: when a sector's next-track byte is 0, its
- * next-sector byte instead holds the count of USED bytes in that final
- * sector (so the last sector contributes `usedByte - 1` payload bytes, not
- * 254 -- byte 1 itself is a count, and the payload runs from byte 2 up to,
- * but not including, byte `usedByte`).
+ * next-sector byte instead holds the zero-based offset of the LAST used
+ * byte in that final 256-byte sector (so the last sector contributes
+ * `usedByte - 1` payload bytes, not 254 -- the payload runs from byte 2 up
+ * to and INCLUDING byte `usedByte`).
  *
  * The returned bytes are the file's RAW content INCLUDING its leading 2-byte
  * PRG load address, unmodified -- that is deliberate, since the whole point
@@ -227,10 +227,14 @@ export function extractEntry(image: Uint8Array, entryName: string): Uint8Array {
     const nextSector = sec[1];
 
     if (nextTrack === 0) {
-      // Last sector: byte 1 is the count of used bytes in this sector, not
-      // a next-sector pointer. Payload runs from byte 2 up to (usedByte).
+      // Last sector: byte 1 is the zero-based offset of the last used byte
+      // in this 256-byte sector (not a next-sector pointer). Payload runs
+      // from byte 2 up to and including that offset, so its length is
+      // `usedByte - 1` -- e.g. usedByte === 255 means the whole sector past
+      // the 2-byte header is payload (254 bytes), matching a non-final
+      // sector; a smaller usedByte means fewer payload bytes than that.
       const usedByte = nextSector;
-      chunks.push(sec.subarray(2, Math.max(2, usedByte)));
+      chunks.push(sec.subarray(2, Math.max(2, usedByte + 1)));
       break;
     }
 
