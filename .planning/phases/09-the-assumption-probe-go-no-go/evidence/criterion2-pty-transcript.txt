@@ -197,3 +197,168 @@ it only tells us the harness and MCP surface function correctly enough to
 receive a real, well-formed JSON-RPC error back. (No entry needed under
 `## RESEARCH CORRECTIONS` for this task -- the observed error matches
 09-RESEARCH.md's prediction exactly, verbatim.)
+
+## Task 3: 2b -- drive Save-As with no human, then prove --headless loads the result
+
+Pre-condition met: PTY_TOLERANCE: pass (Task 1), so this task proceeds.
+
+**Import Context Setup modal (research correction from Task 1) had to be
+dismissed first**, since it held focus and would block Alt+S from reaching the
+main view:
+
+$ tmux send-keys -t r2000probe Enter
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(status bar changed to "Context applied"; disassembly view now shows real
+mnemonics -- lda/sta/ldx/rts etc -- with the illegal opcode bytes at $C00A
+(AF/lax), $C00D (8F/sax), $C00F+ (C4 0F cpy is a **legal** zero-page cpy, not
+one of the fixture's intended illegal bytes at that exact offset -- the
+auto-analyzer's byte alignment differs from the source's intended instruction
+boundaries in a couple of spots) rendered as ".byte $xx ; Invalid or partial
+instruction" rather than as lax/sax/dcp/isc/anc mnemonics. This is an
+observation for wave 3's Open Question 3 (use_illegal_opcodes), not scored
+here: auto-analysis did NOT automatically flip use_illegal_opcodes to true for
+this fixture.)
+
+**Escape sent per the plan's instruction, to ensure no residual focus before
+Alt+S** (no-op here since the modal was already dismissed by the Enter above):
+
+$ tmux send-keys -t r2000probe Escape
+sent
+(pane unchanged -- confirmed via capture-pane, status bar still "Context applied")
+
+**Alt+S sent, first attempt, tmux key notation `M-s`:**
+
+$ tmux send-keys -t r2000probe M-s
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(full pane in evidence/criterion2-pane-after-alt-s.txt)
+
+The Save-As dialog opened on the **first attempt** -- no retry with an
+alternative keystroke encoding was needed. `M-s` registered as Alt+S correctly
+under this tmux pty against this crossterm-based TUI. A1 (whether `M-s` would
+be recognised) is answered: yes, first try.
+
+**What the dialog actually shows** (evidence/criterion2-pane-after-alt-s.txt):
+titled "Save Project As (Tab to Switch Focus, Esc to Cancel)", a directory
+browser pane showing "Directory: /home/henrik/.cache/c64-re-tools/phase9" with
+entries ".." and "node_modules/", and a "Filename" field. The status bar reads
+"Enter Project filename".
+
+SAVE_AS_DEFAULT_FILENAME: probe-illegal.regen2000proj -- the field was
+pre-filled exactly as A2 (09-RESEARCH.md's Assumptions Log) predicted:
+"<stem>.regen2000proj" (stem = "probe-illegal", the loaded file's basename
+minus extension). A2 is now confirmed true and 09-RESEARCH.md's Open Question 2
+is closed. Field was accepted as-is (not retyped) since it already matched the
+target filename this plan needed.
+
+**Enter sent to accept the pre-filled filename:**
+
+$ tmux send-keys -t r2000probe Enter
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(full pane in evidence/criterion2-pane-after-enter.txt; status bar now reads
+"Project saved: probe-illegal.regen2000proj")
+
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 28
+drwxrwxr-x 2 henrik henrik 4096 20 aug 09.30 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 2959 20 aug 09.25 mcp-harness.mjs
+lrwxrwxrwx 1 henrik henrik   70 20 aug 09.25 node_modules -> /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+-rw-rw-r-- 1 henrik henrik 1642 20 aug 09.30 probe-illegal.regen2000proj
+
+The file exists at the target path directly -- no separate `find` was needed
+because the dialog's own directory browser already showed PROBE_DIR as the
+current directory (the working directory regenerator2000 was launched from).
+
+PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+**Confirmation 1 -- re-run the harness against the still-live process:**
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+(listTools output identical 28-tool list, omitted here -- unchanged from Task 2)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Project saved to /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+    }
+  ]
+}
+EXIT_CODE=0
+
+SAVE_PROJECT_POST_BOOTSTRAP: succeeded -- "Project saved to
+/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj" (no error,
+no -32603). This closes 09-RESEARCH.md's Open Question 1: `project_path` is
+indeed populated post-bootstrap and `r2000_save_project` now works via the
+still-running MCP server, over the same pty, with no restart.
+
+**Teardown before the headless confirmation:**
+
+$ tmux kill-session -t r2000probe
+kill_exit=0
+
+$ tmux has-session -t r2000probe
+no server running on /tmp/tmux-1000/default
+has-session exit=1
+
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match beyond the pgrep command's own self-match in argv; the launched
+process no longer exists)
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Teardown confirmed clean: session gone, MCP process gone, port :3000 free again.
+
+**Confirmation 2 -- fresh --headless invocation against the project file,
+process fully restarted, no pty involved this time:**
+
+$ regenerator2000 --headless --export_lbl "$HOME/.cache/c64-re-tools/phase9/bootstrap-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/bootstrap-check.lbl"
+EXIT_CODE=0
+
+$ cat "$HOME/.cache/c64-re-tools/phase9/bootstrap-check.lbl"
+al C:c000 .start
+
+A completely fresh, non-pty `--headless` process loaded the `.regen2000proj`
+file with exit 0 and successfully exported a label file -- this is the
+criterion's real observable, not merely that the file exists on disk. The
+bootstrap genuinely unlocks the headless routes wave 3 depends on.
+
+BOOTSTRAP_AUTOMATABLE: pass
+Justification: the entire sequence -- launch under tmux, dismiss the
+unanticipated Import Context Setup modal, send Alt+S, accept the pre-filled
+Save-As filename, send Enter -- completed with **zero human intervention** and
+produced a `.regen2000proj` file. That file was then proven to unlock the
+headless routes by a **separate, freshly-started, non-pty** `--headless`
+invocation that loaded it and exported labels, exit 0. Both the file's
+existence and its post-bootstrap functional effect (project_path populated,
+headless load succeeds) are directly observed, not inferred.
+
+## Final teardown check (whole plan)
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af regenerator2000
+2173137 /bin/sh -c cargo install regenerator2000
+2173163 /usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin/cargo install regenerator2000
+
+These two matches are a `cargo install regenerator2000` build process belonging
+to a different, concurrently-running wave-2 agent (plan 09-02's container-cost
+work) -- not this plan's `--mcp-server` TUI, which is confirmed gone by the
+`regenerator2000 --mcp-server` grep above and by the tmux session no longer
+existing. Nothing this plan launched survives; port :3000 is free.
+
+$ grep -n -- '--vice' evidence/criterion2-pty-transcript.txt evidence/mcp-harness.mjs
+(only this plan's own prohibition text below matches; --vice was never passed
+to any invocation in this plan)
