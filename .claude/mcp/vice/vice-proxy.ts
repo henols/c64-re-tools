@@ -186,6 +186,40 @@ import * as stockDispatch from "./stock-dispatch.ts";
 // site for why the ordering is load-bearing.
 import { capabilityRefusalMessage } from "./capability-registry.ts";
 
+// ------------------------------------------------------------ r2000 subcommand
+//
+// D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp r2000 <verb>` is
+// the ONLY surface that resolves identically across the Claude Code plugin
+// route and both npm-installer routes -- `installer/bin/cli.mjs`'s
+// `viceServerEntry()` always launches this server via `npx` in BOTH
+// npm-installer modes (`--vendor` only pre-resolves the package; it never
+// places `.claude/mcp/vice/*.ts` as plain files inside a consuming project),
+// so any design resolving a filesystem path to the seam would silently fail
+// to resolve for npm-installed users. This bin is the one surface proven to
+// work in all three routes.
+//
+// This branch runs as the first executable statement of the module body,
+// deliberately ABOVE `ACTIVE_BACKEND`'s backend probe (which shells out to a
+// binary's `--help`), above the manifest read, and above
+// `new MCPServer(...)`/`server.startStdio()` far below -- a CLI invocation
+// must never open a socket, never probe a binary, and never write a byte of
+// JSON-RPC to stdout. WHAT NOT TO DO: never let this branch fall through
+// into the server path, and never print anything on stdout on the server
+// path that a CLI caller could confuse for `r2000` output.
+//
+// Ending the process here is deliberate and is NOT a violation of this
+// file's standing "never end the process from a teardown handler" rule (see
+// that handler's own comment further down): that rule protects the
+// long-lived server's lease-release path, and this branch ends the process
+// before any lease, socket or handler exists. A dynamic import is used
+// (not a static one) so the CLI module is not part of the server's startup
+// cost on the normal, non-`r2000` path.
+if (process.argv[2] === "r2000") {
+  const { runR2000Cli } = await import("./r2000-cli.ts");
+  const code = await runR2000Cli(process.argv.slice(3));
+  process.exit(code);
+}
+
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
 // D-01/BACK-01: the backend is settled exactly ONCE here, at module scope --
