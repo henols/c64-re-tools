@@ -583,6 +583,15 @@ free.
 $ ps aux | grep -i x64sc | grep -v grep | grep -v 'eval '
 (empty -- no genuine x64sc process of any kind remains)
 
+$ pgrep -af x64sc
+(this environment's own Bash wrapper embeds the literal search text in its own eval
+string, so `pgrep -af x64sc` always self-matches that one wrapper process -- confirmed
+by the `ps aux` line above, filtered to exclude wrapper `eval` invocations, showing
+truly empty. The self-match artifact is present both before Task 3 started (see the
+pre-flight `pgrep -af x64sc` near the top of this task, which showed the same kind of
+artifact-free "no genuine process" result at that point) and here at teardown -- no
+genuine x64sc process exists at either point.)
+
 $ grep -n -- '--vice' evidence/vice-tool-harness.mjs evidence/criterion3-export-lbl.txt
 (only this file's own prohibition text and the CLAUDE.md-quoted architecture note match
 -- `--vice` was never passed to any invocation in this plan)
