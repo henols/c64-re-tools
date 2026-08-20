@@ -1,0 +1,104 @@
+Phase 10 Plan 05 -- live regenerator2000 --verify evidence (criterion 4 / R2000-06)
+Recorded: 2026-08-20T16:07:04Z
+
+Tool versions on this host:
+  regenerator2000 0.9.20   (`regenerator2000 --version`)
+  ACME 0.97 "Zem", 31 Jan 2021, platform independent   (`acme --version`)
+  ca65 (cc65 toolchain, whatever version apt/the host provides -- present but
+        not the load-bearing assembler for this project; its result is
+        recorded below purely because --verify reports it alongside ACME)
+
+Both project fixtures below were synthesised in-process via
+`synthesizeProject()` (.claude/mcp/vice/r2000-project.ts) against a small
+`lax`-zeropage illegal-opcode payload (.prg-shaped) and a 65536-byte flat
+image with the same illegal-opcode marker planted at offset $1000, then run
+through `regenerator2000 --verify --assembler acme <project>` exactly as
+`verifyProject()` (.claude/mcp/vice/r2000-verify.ts) invokes it via
+`buildVerifyArgs()`/`runR2000()`. Fixture project files themselves were
+written to an ephemeral scratch directory outside this worktree (this
+worktree is force-removed after the executing agent returns, so no path
+under it is a reusable location) -- only the tool's own stdout/stderr and
+exit codes are reproduced below, verbatim and unedited.
+
+===============================================================================
+Run 1 of 2: .prg half of R2000-06 (a small .prg-shaped illegal-opcode payload)
+===============================================================================
+
+Command: regenerator2000 --verify --assembler acme <ephemeral>/prg-fixture.regen2000proj
+
+--- stdout (verbatim) ---
+Loaded: "prg-fixture.regen2000proj"
+Assembler overridden to: ACME
+
+Roundtrip Export Verification
+=============================
+  ✗ 64tass — 64tass not found in PATH (skipped)
+  ✓ ACME — byte-identical (3 bytes)
+  ✓ ca65 — byte-identical (3 bytes)
+  ✗ KickAssembler — KickAssembler not found in PATH (skipped)
+
+✓ All roundtrip verifications passed.
+--- stderr (verbatim) ---
+(empty)
+--- exit code ---
+0
+
+Parsed ACME line: "✓ ACME — byte-identical (3 bytes)" -> outcome "ok".
+`acmeVerdict()` on this transcript: { ok: true, reason: "ACME reported: byte-identical (3 bytes)" }
+
+===============================================================================
+Run 2 of 2: flat-64K half of R2000-06 (a full 65536-byte flat RAM capture)
+===============================================================================
+
+Command: regenerator2000 --verify --assembler acme <ephemeral>/flat64k-fixture.regen2000proj
+
+--- stdout (verbatim) ---
+Loaded: "flat64k-fixture.regen2000proj"
+Assembler overridden to: ACME
+
+Roundtrip Export Verification
+=============================
+  ✗ 64tass — 64tass not found in PATH (skipped)
+  ✓ ACME — byte-identical (65536 bytes)
+  ✗ ca65 — assembler exited with exit status: 1
+stdout:
+stderr: ld65: Warning: /usr/share/cc65/cfg/c64-asm.cfg(10): Segment 'CODE' overflows memory area 'MAIN' by 14337 bytes
+ld65: Error: Cannot generate most of the files due to memory area overflow
+
+  ✗ KickAssembler — KickAssembler not found in PATH (skipped)
+--- stderr (verbatim) ---
+(empty)
+--- exit code ---
+1
+
+Parsed ACME line: "✓ ACME — byte-identical (65536 bytes)" -> outcome "ok".
+`acmeVerdict()` on this transcript: { ok: true, reason: "ACME reported: byte-identical (65536 bytes)" }
+
+NOTE (unplanned, genuinely useful evidence): this run's own process exit code
+is 1 -- because ca65 (a linker cc65 uses, not ACME) genuinely ran out of
+memory-area space trying to place a full 64K image and reported a real
+failure, not a skip. `acmeVerdict()` correctly reports `ok: true` here anyway,
+since it looks only at ACME's own line, never at ca65's outcome and never at
+the process's own exit status. This is D-10 demonstrated in BOTH directions
+on real, unedited output from this host, in the same evidence file:
+  - Run 2 here: exit 1, ca65 genuinely failed, ACME genuinely passed -- the
+    correct verdict is still ok:true, proving a non-zero exit must not
+    produce a false NEGATIVE.
+  - The D-10 trap transcript quoted in RESEARCH.md / pinned in
+    r2000-verify.test.ts (ACME skipped, ca65 present, EXIT=0) is the mirror
+    case: exit 0, ACME never ran -- the correct verdict is ok:false, proving
+    a zero exit must not produce a false POSITIVE.
+
+===============================================================================
+Summary
+===============================================================================
+
+Both the .prg and the flat-64K input shapes named by R2000-06 were exported
+by regenerator2000 and independently reassembled byte-identically by a real,
+unmodified ACME 0.97 on this host -- not asserted, not mocked, run for real
+and recorded above verbatim. `verifyProject()`'s own gated test suite
+(r2000-verify.test.ts, tests 8-9) reproduces both runs against these exact
+fixture shapes and asserts `ok === true` with the ACME line's outcome equal
+to `"ok"`; CI never executes tests 8-9 (D-11: no `VICE_REQUIRE_R2000` in
+.github/workflows/ci.yml), so this file is the durable record criterion 4's
+"proven by running a real assembler, rather than asserted" claim rests on.
