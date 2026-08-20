@@ -32,8 +32,8 @@ ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
 against a real regenerator2000 build, whose recorded verdict decides whether the
 milestone proceeds as scoped, degrades, or is reconsidered. No Phase 10/11 plan is
-written before it closes. Also open and arguably first: publishing v0.2.0, which
-is 386 commits ahead of `origin/main` at tag `v0.1.10`.
+written before it closes. `v0.2.0` is tagged, pushed and published on both npm
+packages, so no release work gates the milestone.
 
 ## Current Position
 
@@ -285,8 +285,8 @@ Resume file: None
 - Start the next milestone with `/gsd-new-milestone` — it creates a fresh
   `REQUIREMENTS.md`, which was removed at close.
 
-- Consider publishing first: 386 commits sit unpushed ahead of `origin/main`,
-  newest tag `v0.1.10`. None of v0.2.0 has reached a user.
+- Nothing to publish: `v0.2.0` is tagged, pushed, and live on npm for both
+  packages, and the tree is in sync with `origin/main`.
 
 - `R2000-16`'s assumption probe gates all of v0.3.0 and has no v0.2.0
   dependency — it can run before the milestone is opened.

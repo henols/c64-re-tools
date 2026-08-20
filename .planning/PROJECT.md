@@ -126,8 +126,8 @@ constraints, `CAND-*` scope items, and resolutions. `.planning/INGEST-CONFLICTS.
 records two user-resolved precedence warnings (W1, W2).
 `.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
-**Shipping history.** Tagged through `v0.1.10`; both npm packages published. The
-planning label `v0.2.0` and the published npm semver are unrelated numbers —
+**Shipping history.** Newest tag `v0.2.0`; both npm packages published at 0.2.0.
+The planning label `v0.2.0` and the published npm semver are unrelated numbers —
 every merge to `main` auto-publishes a patch version unless the subject contains
 `[skip release]`.
 
@@ -212,8 +212,9 @@ against a genuine `/usr/bin/x64sc` (VICE 3.9), through the real broker.
 nine phases. 13 items acknowledged as deferred at close (`STATE.md` → Deferred
 Items), none of them blocking a tag.
 
-**Not yet released.** The tree is 386 commits ahead of `origin/main` with the
-newest published tag at `v0.1.10`. Nothing in this milestone has been pushed.
+**Shipped.** `v0.2.0` is tagged on the remote and is an ancestor of
+`origin/main`; both npm packages are published at 0.2.0; every local tag is
+pushed; the working tree is in sync with `origin/main`.
 
 **Phase 9 complete — the assumption probe returned `degrade`.** 2026-08-20.
 8 plans, 5 waves, no product code: the deliverable is evidence. `regenerator2000
