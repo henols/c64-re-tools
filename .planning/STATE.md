@@ -130,8 +130,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-1 pending — `.planning/todos/pending/2026-08-11-correct-phase0-binmon-findings-three-verified-errors.md`
-(subsumed by Phase 1's DOC-01..03; close it when Phase 1 lands).
+14 pending — see `.planning/todos/pending/` (`/gsd-capture --list`).
+
+Newest: `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10.md` — a live 3.10 probe
+refutes runtime `WarpMode` over `RESOURCE_SET`; corrects the predicted error code in
+GAINS-PROTOCOL.md, records the `InitialWarpMode` silent-success trap, and flags that
+`vice_machine_config_set` still advertises `WarpMode` (SKILL-01 landmine).
 
 ### Quick Tasks Completed
 
