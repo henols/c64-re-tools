@@ -1,0 +1,108 @@
+; recon-subject.a -- purpose-built C64 recon fixture for Phase 11 plan 11-07
+; (criterion 1, D-31's "purpose-made subject" call for this specific plan).
+;
+; WHY THIS EXISTS RATHER THAN REUSING probe-illegal.prg (D-31, recorded in
+; 11-07-PLAN.md's Task 1): probe-illegal.prg is an illegal-opcode probe with
+; no vectors, no IRQ handler and no tables -- any recon question about it is
+; either trivial or guessable, which fails criterion 1's falsifiability rule.
+; This fixture exists purely to give a recon session real structure to name
+; and classify: an init routine, a live IRQ vector, a main loop, two
+; distinct table shapes (byte + address), and one region that is genuinely
+; ambiguous from the bytes alone.
+;
+; No angle-bracket library !source (same posture as probe-illegal.a and
+; template.a): neither documented ACME provisioning route on this host ships
+; the standard hardware-register library (Phase 8.1 FINDING-A1). Every
+; hardware constant below is hand-rolled.
+;
+; Assembled length: 102 bytes (including the 2-byte $0810 load address).
+; .prg sha256: eca741911c38c9d5f9398027aa59d781cd27b7a7018aba02e1c0525e734ca4a5
+; (recorded in 11-07-SUMMARY.md; a regenerated .prg that differs from this
+; hash/length is visible immediately).
+
+!cpu 6510
+* = $0810
+
+zp_counter = $02        ; zero page: incremented once per IRQ, also read by the main loop
+
+!addr VIC_D011 = $d011  ; VIC-II control register 1 (rows/screen-on/text-mode/Y-scroll)
+!addr VIC_D018 = $d018  ; VIC-II memory pointers (screen base / charset base)
+!addr VIC_D020 = $d020  ; VIC-II border colour
+!addr VIC_D012 = $d012  ; VIC-II current raster line
+!addr CIA2_PRA = $dd00  ; CIA2 port A -- VIC bank select bits 0-1, serial bus bits
+!addr IRQ_VEC_LO = $0314
+!addr IRQ_VEC_HI = $0315
+!addr KERNAL_IRQ_CONTINUE = $ea31  ; KERNAL's own IRQ continuation entry point
+
+init
+        lda #$1b
+        sta VIC_D011            ; 25 rows, screen on, text mode, Y-scroll 3
+        lda #$18
+        sta VIC_D018            ; screen at $0400, charset at $1000
+        lda #$c8
+        sta CIA2_PRA            ; VIC bank select (bits 0-1) + serial bus idle bits
+        sei
+        lda #<irq_handler
+        sta IRQ_VEC_LO
+        lda #>irq_handler
+        sta IRQ_VEC_HI
+        cli
+        lda #0
+        sta zp_counter
+
+main_loop
+        ldx zp_counter
+        cpx #8
+        bne +
+        ldx #0
+        stx zp_counter
++       lda byte_table,x
+        cmp #$ff
+        beq take_two
+        jsr sub_one
+        jmp main_loop
+take_two
+        jsr sub_two
+        jmp main_loop
+
+; sub_one / sub_two: cheap, observable side effects (border colour nudge) so
+; a live trace can tell which branch of main_loop ran without needing a
+; display -- not load-bearing for the recon question itself, just realism.
+sub_one
+        inc VIC_D020
+        rts
+
+sub_two
+        dec VIC_D020
+        rts
+
+irq_handler
+        lda VIC_D012             ; read the current raster line (unused beyond the read itself)
+        inc zp_counter
+        jmp KERNAL_IRQ_CONTINUE  ; chain to the KERNAL's own IRQ continuation
+
+; byte_table: r2000_set_data_type target for block type "byte". Read by
+; main_loop above via zp_counter as an index.
+byte_table
+        !byte $01, $02, $03, $04, $05, $06, $07, $ff
+
+; addr_table: r2000_set_data_type target for block type "address" -- a real
+; word-pair jump/vector table, little-endian, pointing at four of this
+; program's own routines. Distinguishable from byte_table by shape alone.
+addr_table
+        !word sub_one
+        !word sub_two
+        !word irq_handler
+        !word init
+
+; ambiguous_region: the genuinely ambiguous region the plan requires. These
+; eight bytes decode as a syntactically valid instruction stream
+; ("lda #0 / sta $d020 / rts / nop / nop"), so a naive byte-level classifier
+; could read this as code purely because the opcodes happen to be legal --
+; but it is never reached by any JSR/JMP/vector in this program and is
+; genuinely data (a constant table, unrelated to its accidental
+; code-shaped byte pattern). Recording its block type as "byte" plus a
+; graded confidence comment is a real judgement call here, not a formality,
+; which is exactly why this fixture includes it.
+ambiguous_region
+        !byte $a9, $00, $8d, $20, $d0, $60, $ea, $ea
