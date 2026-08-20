@@ -5,6 +5,17 @@
 ## criterion, not a formality -- the "Import Context Setup" modal (capture 1) is
 ## the exact surface that shows what regenerator2000 derived from the .vsf,
 ## before any human/automation action changes it.
+##
+## SUPERSEDED NOTICE: this whole first snapshot (`r2000-probe.vsf`) was found,
+## during Task 3, to NOT actually carry the fixture's $c000 bytes -- a
+## cross-connection session finding recorded in full in
+## criterion4-vsf-load.txt's `## CORRECTION` section. Captures 1-3 below are
+## kept as a real, honest record of what regenerator2000 does with a .vsf
+## whose origin/entry-point ARE genuinely carried (both fields below are
+## correct), even though this particular snapshot's memory content was not.
+## The CORRECTED run (session r2000probe06v2, against `r2000-probe-v2.vsf`)
+## is captured separately below as CAPTURES 4-6, and THAT is what Task 3's
+## R2000_DERIVED/COMPARISON is scored against.
 
 === CAPTURE 1: immediately after launch, "Import Context Setup" modal up ===
 
@@ -84,3 +95,94 @@ Full raw capture kept at $HOME/.cache/c64-re-tools/phase9/06-pane-after-enter.tx
 ## No refusal occurred at any step -- the snapshot was accepted, the modal
 ## showed real (if partly coincidental, per the load transcript) values, and
 ## the bootstrap produced a working project file with zero human intervention.
+
+## ===========================================================================
+## CORRECTED RUN -- against r2000-probe-v2.vsf (session r2000probe06v2),
+## the snapshot independently confirmed to carry the fixture bytes at $c000.
+## This is what Task 3's R2000_DERIVED/COMPARISON is scored against.
+## ===========================================================================
+
+=== CAPTURE 4: immediately after launch, "Import Context Setup" modal up ===
+
+ File  Edit  Jump  Search  View  Debugger  Help
+[Disassembly pane showing raw .byte fallback from $E5CF onward; Hex Dump pane
+showing $E360+ screencode-shifted bytes -- same uninitialised-RAM pattern as
+before in this unrelated region, expected since only $c000 was written]
+
+                   ┌ Import Context Setup ─────────────────────────────────┐
+                   │                                                        │
+                   │System: < Commodore 64 >                                │
+                   │                                                        │
+                   │Origin Address: $0000                                   │
+                   │Entry Point Address: $E5D4                              │
+                   │                                                        │
+                   │[X] Disassemble from Entry Point Address                │
+                   │                                                        │
+                   │  < Confirm >        < Cancel >                         │
+                   │                                                        │
+                   └────────────────────────────────────────────────────────┘
+
+**Entry Point Address: $E5D4 -- matches this plan's own direct parse of
+`r2000-probe-v2.vsf`'s MAINCPU module PC exactly ($e5d4, confirmed in
+criterion4-vsf-load.txt's CORRECTION section). Origin Address: $0000, System:
+"Commodore 64" -- same values and same provenance caveat on System as
+before (coincidental default, not a genuine machine_name derivation, per the
+`file_io.rs`/`dialog_import_context.rs` source trace already established).**
+
+Full raw capture kept at $HOME/.cache/c64-re-tools/phase9/06-pane-v2-initial.txt.
+
+=== CAPTURE 5: after Enter (Confirm) then Alt+S, Save-As dialog open ===
+
+[Status bar: "Context applied", then "Commodore 64 | 64tass |
+Code: $E5D4-$E6CC | Cursor: $E5D4 | File: \"r2000-probe-v2.vsf\"" -- flow
+analysis ran from the stated Entry Point Address, same mechanism as before.]
+
+                                       ┌ Filename ──────────────────────────┐
+                                       │r2000-probe-v2        .regen2000proj │
+                                       └─────────────────────────────────────┘
+
+ Enter Project filename
+ Commodore 64 | 64tass | Code: $E5D4-$E6CC | Cursor: $E5D4 | File: "r2000-probe-v2.vsf"
+
+SAVE_AS_DEFAULT_FILENAME (corrected run): r2000-probe-v2.regen2000proj --
+again exactly `<stem>.regen2000proj`. Accepted as-is.
+
+Full raw capture kept at $HOME/.cache/c64-re-tools/phase9/06-pane-v2-after-alt-s.txt.
+
+=== CAPTURE 6: after Enter, project saved ===
+
+ Project saved: r2000-probe-v2.regen2000proj
+ Commodore 64 | 64tass | Code: $E5D4-$E6CC | Cursor: $E5D4 | File: "r2000-probe-v2.vsf"
+
+$ ls -la $HOME/.cache/c64-re-tools/phase9/r2000-probe-v2.regen2000proj
+-rw-rw-r-- 1 henrik henrik 4727 20 aug 11.13 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe-v2.regen2000proj
+
+VSF_PROJECT_FILE (corrected, superseding the earlier one): /home/henrik/.cache/c64-re-tools/phase9/r2000-probe-v2.regen2000proj
+
+**Live MCP queries against the corrected run, same two tools as before:**
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_binary_info '{}'
+CALL_TOOL_RESULT:
+{ "content": [ { "type": "text", "text": "{\n  \"description\": \"\",\n  \"entropy\": 1.255272388458252,\n  \"filename\": \"r2000-probe-v2.vsf\",\n  \"may_contain_undocumented_opcodes\": false,\n  \"origin\": 0,\n  \"size\": 65536,\n  \"system\": \"Commodore 64\"\n}" } ] }
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_disassembly_cursor '{}'
+CALL_TOOL_RESULT:
+{ "content": [ { "type": "text", "text": "$E5D4" } ] }
+
+Both confirm the modal exactly: origin 0, system "Commodore 64", cursor/entry
+point $E5D4. No drift between the modal and the live MCP surface, same as
+the first (superseded) run.
+
+Full raw capture kept at $HOME/.cache/c64-re-tools/phase9/06-pane-v2-after-enter.txt.
+
+**Teardown, proven:**
+
+$ tmux kill-session -t r2000probe06v2
+kill_exit=0
+$ tmux has-session -t r2000probe06v2
+no server running on /tmp/tmux-1000/default
+exit=1
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match -- process gone)
