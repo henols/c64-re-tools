@@ -187,13 +187,17 @@ success criteria.
 - **Prefer `.vsf` over `.raw` for anything leaving the emulator.** VICE snapshots
   are parsed natively and carry memory, machine type and start address;
   `.bin`/`.raw` loads at origin `$0000` (`file_io.rs:125-127`) with no `--origin`
-  flag to override it. **This preference does not apply to Phase 10** (amended
-  post-hoc, D-03): regenerator2000's auto-detected machine-type field is correct
-  only by coincidence for C64 snapshots
+  flag to override it. **This is an emulator-output rule, not a regenerator2000
+  input-set rule** (amended post-hoc, D-03/D-34): it does not extend to
+  regenerator2000's input set. The D-01 synthesis route never hands
+  regenerator2000 a container format at all — it synthesises the
+  `.regen2000proj` directly in Node from `.prg`/`.d64`/flat-64K, so that is the
+  whole supported input set. `.vsf` as a bootstrap input is deferred as backlog
+  (`.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`, D-34) —
+  regenerator2000's auto-detected machine-type field is correct only by
+  coincidence for C64 snapshots
   (`docs/phase9-regenerator2000-probe-findings.md` § Accepted limits, entry 2),
-  and Phase 10's bootstrap route never loads a container format at all — it
-  synthesises the `.regen2000proj` directly in Node. The preference still
-  stands for any phase that hands a file to regenerator2000's own loader.
+  and no `R2000-*` requirement covers this capability.
 
 ## Known upstream limits (not this milestone's work)
 
@@ -288,7 +292,7 @@ Notes:
 
   1. The launch path **refuses** to pass `--vice`, enforced in code and pinned by a test that fails if the flag is reintroduced — the broker keeps sole ownership of the binary-monitor socket.
   2. **No** argument passed to regenerator2000 is host-translated. The absence is asserted in a test so nobody adds translation later, and it is the mirror image of `DERIV-07`, where translation was wrongly applied. A devcontainer run works with no upstream patch.
-  3. A `.prg`, a `.d64` with the file inside it named explicitly, or a flat 64K capture becomes a `.regen2000proj` **without a human**. The state is honest at the surface a user reads. (`.vsf` was dropped from this phase's input set — see the Notes amendment below, D-03: the bootstrap synthesises the project file directly in Node and never hands regenerator2000 a container format, so parsing VICE snapshots ourselves would be new work whose only payoff Phase 9 already found unreliable for the machine-type field; its home is Phase 11's `c64-ram-capture` extension, `R2000-14`/`R2000-15`.)
+  3. A `.prg`, a `.d64` with the file inside it named explicitly, or a flat 64K capture becomes a `.regen2000proj` **without a human**. The state is honest at the surface a user reads. (`.vsf` was dropped from this phase's input set — see the Notes amendment below, D-03: the bootstrap synthesises the project file directly in Node and never hands regenerator2000 a container format, so parsing VICE snapshots ourselves would be new work whose only payoff Phase 9 already found unreliable for the machine-type field. No `R2000-*` requirement covers `.vsf` as a bootstrap input — confirmed by D-34 — so it is filed as backlog rather than pointed at a phase: `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`.)
   4. `acme-build`'s `disasm` verb, its `## Disassembly` caveat section, and its `toacme`-on-PATH prerequisite are gone, replaced by a regenerator2000 route whose output is proven reassemblable **by running a real assembler**, not asserted.
   5. The install documentation names regenerator2000 as a required prerequisite alongside VICE, states the `cargo install` toolchain cost and the one-project-per-namespace limit plainly, and its dual `MIT OR Apache-2.0` notice is in `THIRD-PARTY-NOTICES.md`.
 
@@ -421,7 +425,7 @@ one proposed phase was dissolved into a task.
 | HTML export with clickable xrefs | `R2000-07` | A shareable artifact no skill produces or consumes. Genuinely nice; not why we are here. Available ad-hoc via `--export_html` regardless. |
 | Two-project limit as a reported error | `R2000-04` | Folded into Phase 10's install documentation as a stated limitation. Building detection-and-reporting for an upstream port collision is work in the wrong place. |
 | Static-vs-live tool-selection axis | `R2000-12` | Folded into v0.2.0's `SKILL-01`, which already rewrote the same playbooks for backend routing. One pass over `c64-program-recon`, not two. |
-| `.vsf`/`.raw` bridge as its own requirement | `R2000-08` | Reduced to a note on Phase 10 criterion 3 — it is which file extension you hand over, not a deliverable. Prefer `.vsf`: it carries memory, machine type and start address. |
+| `.vsf`/`.raw` bridge as its own requirement | `R2000-08` | Reduced to a note on Phase 10 criterion 3 — it is which file extension you hand over, not a deliverable. Prefer `.vsf` for anything leaving the emulator, but that preference does not extend to regenerator2000's input set (D-34): the project's own synthesis route only ever hands over `.prg`/`.d64`/flat-64K. |
 
 **Net effect:** 16 requirements → 12, with 4 folded rather than abandoned. The
 original four-phase shape collapsed to two on 2026-08-17, then re-split to three

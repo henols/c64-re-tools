@@ -455,10 +455,15 @@ the web — every claim in D-01/D-04/D-10 was checked against it.
 <deferred>
 ## Deferred Ideas
 
-- **`.vsf` as a bootstrap input** — deferred out of Phase 10 by D-03. Its
-  natural home is Phase 11's `c64-ram-capture` extension (`R2000-14`/`R2000-15`),
-  where the Phase 9 machine-type limit and the single-MCP-connection snapshot
-  constraint both already apply.
+- **`.vsf` as a bootstrap input** — deferred out of Phase 10 by D-03. **Resolved
+  by Phase 11's D-34 (2026-08-20): this was a dangling forward reference, not a
+  deferral to a real destination.** `R2000-14`/`R2000-15` are about the symbol
+  round trip (VICE label files), not about accepting `.vsf` as a project
+  bootstrap input — no `R2000-*` requirement covers that capability. It is now
+  filed as backlog instead:
+  `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`, which
+  records the Phase 9 machine-type limit and the single-MCP-connection snapshot
+  constraint (both still true) alongside the reason no requirement claims it.
 - **`--mcp-server-stdio` instead of the HTTP server for Phase 11.** Found while
   researching this phase: r2000 exposes a **stdio** MCP transport
   (`main.rs:66`, `run_headless_mcp`), not just HTTP on port 3000. That would
