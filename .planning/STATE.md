@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-20T20:23:04.479Z"
-last_activity: 2026-08-20 -- Phase 11 planning complete
+last_updated: "2026-08-20T20:29:30.889Z"
+last_activity: 2026-08-20 -- Phase 11 execution started
 progress:
   total_phases: 3
   completed_phases: 2
@@ -25,7 +25,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Phase 11 — annotation store, enums, and the symbol round trip
+**Current focus:** Phase 11 — annotation-store-enums-and-the-symbol-round-trip
 ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
 1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
@@ -36,9 +36,9 @@ packages, so no release work gates the milestone.
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Status: Ready to execute
+Phase: 11 (annotation-store-enums-and-the-symbol-round-trip) — EXECUTING
+Plan: 1 of 12
+Status: Executing Phase 11
 Phase 10 is complete and verified (9/9 plans, 5/5 success criteria). Its code
 review found two data-loss defects on the documented `export-asm`/`bootstrap`
 route; both are fixed and pinned by regression tests. Remaining review findings
@@ -46,7 +46,7 @@ are filed in `.planning/todos/pending/2026-08-20-r2000-review-residual-findings.
 — WR-02 (the criterion-1 construction test can go vacuous) is the highest-value
 one. Next step: Phase 11 (annotation store, enums, symbol round trip), which
 inherits plan 10-03's package-boundary reasoning as a settled decision.
-Last activity: 2026-08-20 -- Phase 11 planning complete
+Last activity: 2026-08-20 -- Phase 11 execution started
 
 ## Performance Metrics
 
