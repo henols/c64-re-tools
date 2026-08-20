@@ -159,6 +159,30 @@ of the planning label at any time.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
 - **Testing**: `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested — their correctness only means anything against a real emulator's timing. Preserve the documented invariants (exactly one resume per wait; poll on `hit_count`, never on paused state).
 
+## Engineering Governance
+
+All planning and implementation must comply with:
+
+- `.planning/ARCHITECTURE.md` — stable runtime, dependency, backend, broker, protocol, and
+  host/container boundaries.
+- `.planning/ENGINEERING_RULES.md` — verification, testing, dependency, scope, Git, and definition-
+  of-done policy.
+
+The architecture rules are project invariants, not implementation suggestions.
+
+If a plan requires violating an architecture rule, the plan must identify the rule, explain why
+it cannot be preserved, record the architecture decision, and add/update a regression guard where
+practical before implementation proceeds.
+
+A plan is not complete when code is written. It is complete only when the applicable verification
+requirements in `ENGINEERING_RULES.md` have passed, and the wording of the completion claim does not
+exceed the available evidence.
+
+Where correctness depends on external behavior (for example stock/fork VICE, ACME,
+regenerator2000, package installation, or the real broker launch path), an internal mock or
+same-assumption fixture does not replace the relevant external oracle unless the reduced evidence
+ceiling is explicitly recorded.
+
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
