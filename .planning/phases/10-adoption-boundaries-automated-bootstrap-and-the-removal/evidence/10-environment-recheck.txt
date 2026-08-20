@@ -1,0 +1,132 @@
+Phase 10 Plan 02 -- Task 1: environment re-check against RESEARCH.md's 2026-08-20 capture
+Executed: 2026-08-20T15:08:26Z (execution-time re-check, this plan run)
+
+=============================================================================
+1. regenerator2000 --version
+=============================================================================
+$ regenerator2000 --version
+regenerator2000 0.9.20
+
+=============================================================================
+2. regenerator2000 --help
+=============================================================================
+$ regenerator2000 --help
+An interactive disassembler for the MOS 6502, focused on Commodore 8-bit computers
+
+Usage: regenerator2000 [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]  File to load (.prg, .crt, .t64, .d64, .d71, .d81, .vsf, .dis65, .bin, .raw, .regen2000proj)
+
+Options:
+      --import_lbl <PATH>
+          Import VICE labels from the specified file
+      --export_lbl <PATH>
+          Export labels to the specified file (after analysis/import)
+      --export_asm <PATH>
+          Export assembly to the specified file (after analysis/import)
+      --export_html <PATH>
+          Export HTML to the specified file (after analysis/import)
+      --assembler <NAME>
+          Override assembler format (64tass, acme, ca65, kick)
+      --headless
+          Run in headless mode (no TUI, only .regen2000proj files supported)
+      --verify
+          Verify export roundtrip (export -> assemble -> diff). Implies --headless
+      --mcp-server
+          Run MCP server (HTTP port 3000)
+      --mcp-server-stdio
+          Run MCP server (stdio, headless)
+      --vice <HOST:PORT>
+          Auto-connect to VICE binary monitor at HOST:PORT (e.g. localhost:6502)
+      --dump-system-config-files <PATH>
+          Dump embedded system config files (system-*.toml) to the specified directory and exit
+      --dump-theme-files <PATH>
+          Dump built-in theme files (theme-*.toml) to the specified directory and exit
+      --dump-enum-files <PATH>
+          Dump built-in enum files (enum-*.toml) to the specified directory and exit
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+
+Supported file types: .prg, .crt, .t64, .d64, .d71, .d81, .vsf, .dis65, .bin, .raw, .regen2000proj
+
+Config directory: /home/henrik/.config/regenerator2000
+
+=============================================================================
+3. acme --version
+=============================================================================
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+
+=============================================================================
+4. node --version
+=============================================================================
+$ node --version
+v22.22.0
+
+=============================================================================
+5. Per-flag PASS/FAIL against RESEARCH.md's Standard Stack capture
+=============================================================================
+PASS: --headless    (present, same spelling)
+PASS: --verify       (present, same spelling; help text confirms "Implies --headless")
+PASS: --export_asm   (present, same spelling)
+PASS: --assembler    (present, same spelling; NAME values 64tass, acme, ca65, kick unchanged)
+PASS: --import_lbl   (present, same spelling)
+PASS: --export_lbl   (present, same spelling)
+PASS: --vice         (present, same spelling -- "Auto-connect to VICE binary monitor at
+                       HOST:PORT". This flag existing is a live finding, not a hoped-for
+                       absence: plan 10-01's --vice scan-and-throw guard exists precisely
+                       because this flag is real and reachable. It is NOT removed here --
+                       recorded as present, matching RESEARCH.md's own note.)
+
+=============================================================================
+6. DRIFT verdict
+=============================================================================
+DRIFT: none
+
+Installed version (0.9.20) matches RESEARCH.md's verified-live capture exactly. Every
+flag this phase depends on is present with identical spelling. No re-research triggered.
+
+=============================================================================
+7. ProjectState / DocumentSettings / Addr / System -- first-hand crate-source re-verification
+   (re-verifying Assumptions Log A1, which the researcher explicitly flagged as NOT
+   independently confirmed against the crate source)
+=============================================================================
+
+Source read directly from:
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/project.rs
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/settings.rs
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/types.rs
+
+| Ground truth item                                   | Value                                   | Cited file:line                                          |
+|------------------------------------------------------|------------------------------------------|-----------------------------------------------------------|
+| `ProjectState` fields with NO `#[serde(default...)]`  | `origin`, `raw_data` (serde-renamed to `raw_data_base64`), `blocks` | project.rs:45-48 (three fields immediately following the `#[serde(default = "default_project_version")]` `version` field, none of the three themselves carrying any `#[serde(default...)]` attribute) |
+| `origin`'s wire type                                  | `Addr` is `#[serde(transparent)] pub struct Addr(pub u16)` -> serialises as a plain JSON number | types.rs:110-112 |
+| `raw_data_base64`'s wire type                         | Rust field name `raw_data: String`, serde-renamed via `#[serde(rename = "raw_data_base64")]` -> plain JSON string | project.rs:46-47 |
+| `blocks`'s wire type                                  | `Vec<Block>`, no default -> plain JSON array, required | project.rs:48 |
+| `settings.use_illegal_opcodes`                        | plain JSON boolean, `#[serde(default)]`, default `false` | settings.rs:22-23 |
+| `settings.system`                                     | `System` is `#[serde(transparent)] pub struct System(String)` -> plain JSON string; the C64 constant is the exact literal `Commodore 64` | types.rs:12-17 (struct + `pub const C64: &'static str = "Commodore 64";` at line 17) |
+| `settings` field itself                               | `#[serde(default)]` on `ProjectState.settings: DocumentSettings` -- omittable entirely if every sub-field were also acceptable at default, but this synthesiser writes it explicitly to force the two settings below | project.rs:55-56 |
+
+Discrepancy check against what this plan (10-02-PLAN.md) and CONTEXT.md's D-01/D-04/D-05
+predicted: NONE. Every claim matches the crate source exactly:
+  - The three no-default fields are exactly {origin, raw_data_base64, blocks} as predicted.
+  - `origin` is a plain JSON number (Addr transparent over u16) as predicted.
+  - `settings.use_illegal_opcodes` defaults false and is a plain boolean as predicted.
+  - `settings.system` is a plain string, transparent over String, with the C64 literal
+    exactly "Commodore 64" as predicted.
+  - One item not previously flagged, noted for completeness: `settings` itself is nested
+    behind ITS OWN `#[serde(default)]` on `ProjectState` (project.rs:55-56), so an entirely
+    absent `settings` key would still parse -- meaning the two forced fields (D-05) are
+    forced by this project's own choice to write them, not because the schema requires the
+    `settings` object to be present at all. This does not change Task 2's synthesis (D-05
+    already mandates always writing `settings.use_illegal_opcodes` and `settings.system`),
+    it only sharpens why: omitting `settings` entirely would silently default
+    `use_illegal_opcodes` to `false`, reintroducing exactly the defect D-05 forecloses.
+
+Assumption A1 (RESEARCH.md's Assumptions Log) is now independently confirmed against the
+crate source rather than paraphrased from CONTEXT.md's citation. No corrections needed to
+Task 2's planned synthesis shape.
