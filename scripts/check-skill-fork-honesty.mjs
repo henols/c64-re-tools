@@ -9,9 +9,10 @@
 //      backend might not advertise must sit in a markdown section that also
 //      states the fork requirement (and the stock route, when one exists).
 //   2. README.md: it must name the VICE_BACKEND switch, the two named
-//      fork-only tools, the generated support-table link and the version
-//      gate, and it must never re-introduce the ghost guardrail-test claim
-//      or the regenerator2000 name Phase 8 removed.
+//      fork-only tools, the generated support-table link, the version
+//      gate, and (Phase 10, R2000-03) regenerator2000 as a required
+//      prerequisite -- and it must never re-introduce the ghost
+//      guardrail-test claim.
 // Both are documentation-honesty checks over first-party prose read as data,
 // and one CI-blocking step is cheaper to keep green than two.
 //   3. docs/stock-vice-parity.md: a Nyquist-gap addition (GAP-2, DIST-01/
@@ -27,6 +28,18 @@
 //      .claude/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
 //      corrected are asserted here; the file's many legitimate historical
 //      "(Phase N, REQ-ID)" citations are untouched.
+//   4. The R2000-05 deletion pin (Phase 10, plan 10-08): plan 10-06 deleted
+//      cmdDisasm() (the toacme-backed `disasm` verb) from acme.mjs in full,
+//      and every SKILL.md/references/*.md caveat it motivated. This walks
+//      the WHOLE .claude/skills tree already collected into `skillFiles`
+//      above -- not a named file list -- for "toacme"/"cmdDisasm"/the
+//      standalone "disasm" verb token, because a file-by-file version of
+//      this exact assertion is the same structural blindness that let
+//      c64-program-recon/references/tool-selection.md dangle a stale
+//      reference through an earlier --include=SKILL.md-shaped pass. Exactly
+//      one documented exemption: diff-images.test.mjs's provenance-ledger
+//      string `evidence: "disasm"`, exempted by LINE content, not by file,
+//      so a real reintroduction elsewhere in that same file is still caught.
 //
 // WHAT NOT TO DO: do not hand-maintain a second list of fork-only tool names
 // here. The list is derived from capability-registry.ts's CAPABILITY_REGISTRY
@@ -239,6 +252,10 @@ const REQUIRED_README_SUBSTRINGS = [
   ],
   ["docs/tool-support.md", "the reader loses their route to the full per-tool answer"],
   ["3.10", "the reader cannot tell what an `apt install` of VICE gives them relative to the version gate"],
+  [
+    "regenerator2000",
+    "a reader is not told regenerator2000 is a required prerequisite, so they hit the static-disassembly route with no tool installed and no explanation",
+  ],
 ];
 for (const [needle, whatIsLost] of REQUIRED_README_SUBSTRINGS) {
   need(
@@ -250,7 +267,6 @@ for (const [needle, whatIsLost] of REQUIRED_README_SUBSTRINGS) {
 // Inverse assertions: catch a regression back into a false claim, in either
 // direction of drift.
 const FORBIDDEN_README_SUBSTRINGS = [
-  ["regenerator2000", "D-B: this phase's install docs must stay regenerator2000-free"],
   [
     "skill-docs.test.ts",
     "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo",
@@ -314,6 +330,66 @@ const FORBIDDEN_PARITY_SUBSTRINGS = [
 for (const [needle, why] of FORBIDDEN_PARITY_SUBSTRINGS) {
   need(!parityDocSource.includes(needle), `docs/stock-vice-parity.md must not contain "${needle}" -- ${why}.`);
 }
+
+// --- R2000-05 deletion pin (Phase 10, plan 10-08) ---------------------------
+// Plan 10-06 deleted cmdDisasm() (the toacme-backed `disasm` verb) from
+// acme.mjs in full, and every SKILL.md/references/*.md caveat that verb
+// motivated. This walks the WHOLE .claude/skills tree already collected
+// into `skillFiles` above -- every .md and .mjs, not a named-file list --
+// because a file-by-file version of this exact assertion is the same
+// structural blindness that let c64-program-recon/references/tool-selection.md
+// dangle a stale reference through an earlier --include=SKILL.md-shaped
+// pass while that narrower gate reported clean. Do not narrow this back to
+// a fixed file list.
+//
+// Exactly ONE documented exemption: diff-images.test.mjs's provenance-ledger
+// string `evidence: "disasm"`, which shares only the word with the deleted
+// verb. The exemption is scoped to the LINE, not the file, so a real
+// reintroduction of `toacme`/`cmdDisasm`/the standalone `disasm` verb token
+// anywhere else in that same file is still caught.
+const DISASM_LINE_EXEMPTION = 'evidence: "disasm"';
+
+for (const f of skillFiles) {
+  const rel = f.slice(ROOT.length + 1);
+  const raw = readFileSync(f, "utf8");
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes(DISASM_LINE_EXEMPTION)) continue;
+    if (line.includes("toacme")) {
+      need(
+        false,
+        `${rel}:${i + 1}: "toacme" reappeared -- plan 10-06 deleted this tool dependency in full; a playbook or ` +
+          `reference page naming it again sends an agent looking for a binary this project no longer wraps.`
+      );
+    }
+    if (line.includes("cmdDisasm")) {
+      need(
+        false,
+        `${rel}:${i + 1}: "cmdDisasm" reappeared -- this function was deleted from acme.mjs in plan 10-06; a ` +
+          `reference to it again advertises a verb the script no longer has.`
+      );
+    }
+    if (/\bdisasm\b/.test(line)) {
+      need(
+        false,
+        `${rel}:${i + 1}: the standalone "disasm" verb reappeared -- plan 10-06 removed acme.mjs's disasm ` +
+          `dispatch entry; a playbook or reference page advertising it sends an agent into an unknown-verb failure.`
+      );
+    }
+  }
+}
+
+// Positive check: the replacement pointer must still exist (D-12) -- the
+// deletion must not be "fixed" by deleting the pointer to the proven route
+// too.
+const ACME_BUILD_SKILL_PATH = join(SKILLS_DIR, "acme-build", "SKILL.md");
+const acmeBuildSkillSource = readFileSync(ACME_BUILD_SKILL_PATH, "utf8");
+need(
+  acmeBuildSkillSource.includes("r2000 export-asm"),
+  `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "r2000 export-asm" -- ` +
+    `the deletion must not be "fixed" by deleting the pointer to the proven route too.`
+);
 
 // --- Non-vacuity controls ---------------------------------------------------
 // A lint that finds nothing passes everything -- these are need()s, not
