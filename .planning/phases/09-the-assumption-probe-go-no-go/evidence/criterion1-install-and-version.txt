@@ -30,3 +30,24 @@ owns applying it to THIRD-PARTY-NOTICES.md.
 This matches 09-RESEARCH.md's Package Legitimacy Audit and Standard Stack sections
 exactly -- re-verified live in this session, not merely quoted from the research
 document.
+
+### Human authorization reply (Task 2 checkpoint, resume signal)
+
+Timestamp: 2026-08-20T06:46:00Z (approx, orchestrator-relayed)
+
+Verbatim decision: "install: approved, tmux: installed"
+
+- install: approved -- `cargo install regenerator2000` is authorized to run on
+  this host. Proceeding to Task 3.
+- tmux: installed -- the human ran `sudo apt-get install -y tmux` on this host
+  (ho-laptop) themselves; this executor never invoked sudo. Re-verified directly
+  in this session (not merely trusting the orchestrator's relay):
+
+$ command -v tmux
+/usr/bin/tmux
+
+$ tmux -V
+tmux 3.5a
+
+This gives plan 09-03 (criterion 2, the pty + keystroke-driven bootstrap) the
+full tmux route rather than the documented Python pty fallback.

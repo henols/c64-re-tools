@@ -92,3 +92,28 @@ Full-dump byte decode (manually cross-checked against .claude/mcp/vice/disasm-op
 All six illegal opcodes ($af lax, $8f sax, $0f slo, $cf dcp, $ef isc,
 $0b anc) confirmed byte-exact against the illegal:true, acmeExpressible:true
 table entries in .claude/mcp/vice/disasm-opcodes.ts.
+
+## Amendment: tmux provisioned by explicit human action (post Task-2 checkpoint)
+
+The "command -v acme tmux expect script docker python3" transcript above shows
+tmux absent from PATH at the time Task 1 ran. During Task 2's blocking
+human-authorization checkpoint, the human ran `sudo apt-get install -y tmux`
+themselves on this host (ho-laptop) -- not inside any container or devcontainer;
+this repo (c64-re-tools) has no .devcontainer/, no devcontainer.json and no
+tracked Dockerfile, so there is no container image for this probe to run tmux
+inside. The probe runs host-side throughout.
+
+Re-verified directly in this session, after the human's install:
+
+$ command -v tmux
+/usr/bin/tmux
+
+$ tmux -V
+tmux 3.5a
+
+Timestamp of re-verification: 2026-08-20T06:46:26Z
+
+This amends, rather than replaces, the earlier "absent from PATH" finding --
+both facts are true at their respective times and both are preserved here per
+Evidence Integrity Rule 3 (record the version/state that actually applies,
+rather than silently overwriting an earlier true observation).
