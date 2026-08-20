@@ -656,22 +656,28 @@ await callR2000("r2000_save_project", {});
 
 **If this table is empty:** N/A — see entries above; none of them are load-bearing enough to block planning, all are flagged for a cheap follow-up check during execution.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three were dispositioned during planning (2026-08-20); each carries an
+inline `RESOLVED:` line naming the task that settles it. None blocked planning.
 
 1. **Does `MCPClient`'s connection-state machine correctly surface a "never answers" `tools/call` as a timeout, or does it hang indefinitely?**
    - What we know: `@mastra/mcp`'s `MCPClientOptions.timeout` (default 60000ms) is a *global* per-server timeout; `client.d.ts`'s own doc comments reference a real historical bug (issue #19862) around stale transports after a failed connect, worked around internally.
    - What's unclear: whether that same timeout applies per-`tools/call` (protecting against regenerator2000 hanging mid-request) or only to the initial `connect()`.
    - Recommendation: the planner should write one focused integration test that spawns a script (not real regenerator2000) which accepts `initialize` but never answers a subsequent `tools/call`, and confirm `MCPClient` surfaces this as a bounded-time failure rather than hanging the whole plan step. If it does not, this is the strongest argument for the hand-rolled fallback.
+   - **RESOLVED by `11-04` Task 2** — the `MCPClient`-vs-hand-rolled choice is made by a determinate five-property measurement rule against a stub server, with "child exit code reachable" and "stderr reachable" named as the fallback triggers.
 
 2. **Why does this session's minimal `synthesizeProject()`-bootstrapped project never populate `a_D011`-style auto-labels, while CONTEXT.md's own D-19/D-20 evidence block shows `sta a_D011` in its example?**
    - What we know: `get_symbols({kind: "system"})` and `get_symbols({kind: "auto"})` both returned `[]` on a project built purely via `synthesizeProject()` + `r2000_disassemble`; the ACME export rendered `sta $d011 ; VIC Control Register 1` (raw hex, with an auto-attached comment) rather than `sta a_D011`. The `a_` prefix is `LabelType::AbsoluteAddress` (`state/types.rs:387`), populated during analysis (`analyzer.rs:81,116,149,326`).
    - What's unclear: whether CONTEXT.md's original measurement used a project bootstrapped through a different route (e.g. the pty/TUI Save-As path from Phase 9, which may trigger a broader `auto_analyze` pass than the direct-JSON-synthesis route this phase's D-19 lifecycle will actually use in production), or whether it is order-of-operations sensitive (e.g. calling `get_cross_references` before `disassemble` seeds the label differently).
    - Recommendation: this discrepancy is immaterial to criterion 3's literal acceptance target (the LDA/enum half reproduces byte-for-byte), so it should not block planning — but the planner should note it and NOT write a task that asserts `a_D011`-style auto-labels appear in the exported output, since this session's reproduction (using the exact bootstrap route D-19 commits to) shows they do not.
+   - **RESOLVED by `11-08`** — carries an explicit instruction not to assert `a_`-prefixed auto-labels in exported output. The discrepancy itself stays open upstream and is not this phase's to settle.
 
 3. **Does `r2000_batch_execute`'s inner-call error handling stop on first failure or continue?**
    - What we know: `handler.rs:506-...` (partially read) shows a loop over `calls` pushing `{"status": "success", "result": ...}` per successful inner call; the failure-arm was not fully captured in this session's reading.
    - What's unclear: the exact partial-failure semantics (does one bad inner call abort the batch, or does it report per-call status and continue?).
    - Recommendation: read `handler.rs:506-542` fully at plan/implementation time (not deferred to research) since D-33's smuggling-gate task needs to know whether a rejected inner name should short-circuit the WHOLE batch (current CONTEXT.md wording: "A batch is refused whole if any inner name is outside the curated set") — that refusal happens on THIS repo's side, before any call reaches r2000, so r2000's own partial-failure semantics only matter for a batch that mixes a valid new-annotation call with one that fails for an unrelated reason (e.g. an out-of-range address).
+   - **RESOLVED by `11-05` Task 1** — requires reading `handler.rs:506-542` in full at implementation time and recording the observed partial-failure semantics in the module header.
 
 ## Environment Availability
 

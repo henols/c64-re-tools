@@ -334,12 +334,14 @@ Notes:
   passed cleanly, so criterion 3 above proceeds as scoped, a real automated bootstrap,
   not a documented manual step. Two amendments land here instead, each beside the
   criterion they touch, not in place of it:
+
   - **Criterion 3, and the ROADMAP's standing "prefer `.vsf` over `.raw`" constraint
     (§ Standing Constraints, above):** do not trust regenerator2000's auto-detected
     machine-type field from a `.vsf` load — traced to a coincidental default
     (findings doc § Accepted limits, entry 2). Verify or explicitly set the machine
     type instead. RAM content and start address are unaffected and remain reliable
     from a `.vsf`.
+
   - **Criterion 4's deletion decision:** still earned — criterion 3(2) passed
     against real illegal opcodes. But any generated `.regen2000proj` this criterion's
     bootstrap produces must explicitly set `settings.use_illegal_opcodes = true`
@@ -359,19 +361,38 @@ Notes:
   4. A symbol annotated in regenerator2000 resolves a live address through `vice_symbols_load`, and a name discovered against the running machine flows **back** into the store via `--import_lbl` — demonstrated as one closed loop on one real program, not as two independent one-way dumps.
 
 **Plans**: 12 plans in 7 waves
-
 Plans:
+**Wave 1**
+
 - [ ] 11-01-PLAN.md — Make the guards this phase rests on non-vacuous: WR-02, WR-04, and the one shared D-11 availability gate
 - [ ] 11-02-PLAN.md — Close WR-03/05/06/07 and make the packaging closure walk follow dynamic imports (folded todo 1)
 - [ ] 11-03-PLAN.md — Scope corrections: `.vsf` (D-34), the verified `--export_lbl` note (D-35), `R2000-13`'s wording (D-22), the one-project limit, CLAUDE.md's drifted line citations
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 11-04-PLAN.md — The MCP client seam (D-16/D-17) and the three fixed argv builders, including D-28's unbuildable-discard pairing
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 11-05-PLAN.md — The 17 curated `r2000_*` tools, the D-33 batch gate, proxy-local registration, and the manifest answer asserted twice
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 11-06-PLAN.md — Enums from `memmap.json`: the re-runnable curated bit-name table, the adjacent-pair pass, and criterion 3 against the ACME export
 - [ ] 11-07-PLAN.md — Criterion 1 session A: annotate a real program into the store and seal a store-only question
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 11-08-PLAN.md — The symbol round trip: the Rule A20 adapter, `export-lbl`/`import-lbl`, and the closed loop on a committed fixture
 - [ ] 11-09-PLAN.md — Criterion 1 session B: a prose-blind session answers from the store, checked against the sealed key
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 11-10-PLAN.md — The confidence convention (D-25) and the generated memory map (D-24/D-27) with a drift-detecting `--check`
 - [ ] 11-11-PLAN.md — Criterion 4 live on genuine stock `x64sc`: one closed loop, plus this phase's BACK-02 gate
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 11-12-PLAN.md — The skills become store-first, the template documents the generator, and CI checks every `r2000_*` name in prose
 
 Notes:
@@ -431,7 +452,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/9 | Planned | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 9/9 | Complete | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | 0/12 | Planned | - |
 
 ---

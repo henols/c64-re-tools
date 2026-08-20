@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: planning
-last_updated: "2026-08-20T19:02:38.020Z"
-last_activity: 2026-08-20
+status: executing
+last_updated: "2026-08-20T20:23:04.479Z"
+last_activity: 2026-08-20 -- Phase 11 planning complete
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 17
+  total_plans: 29
   completed_plans: 17
-  percent: 67
+  percent: 59
 ---
 
 # Project State
@@ -38,7 +38,7 @@ packages, so no release work gates the milestone.
 
 Phase: 11
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Phase 10 is complete and verified (9/9 plans, 5/5 success criteria). Its code
 review found two data-loss defects on the documented `export-asm`/`bootstrap`
 route; both are fixed and pinned by regression tests. Remaining review findings
@@ -46,7 +46,7 @@ are filed in `.planning/todos/pending/2026-08-20-r2000-review-residual-findings.
 — WR-02 (the criterion-1 construction test can go vacuous) is the highest-value
 one. Next step: Phase 11 (annotation store, enums, symbol round trip), which
 inherits plan 10-03's package-boundary reasoning as a settled decision.
-Last activity: 2026-08-20
+Last activity: 2026-08-20 -- Phase 11 planning complete
 
 ## Performance Metrics
 
