@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: ready_to_plan
-last_updated: 2026-08-20T10:05:39.301Z
+status: planning
+last_updated: "2026-08-20T13:32:32.287Z"
 last_activity: 2026-08-20
 progress:
   total_phases: 3
@@ -11,7 +11,6 @@ progress:
   total_plans: 8
   completed_plans: 8
   percent: 33
-stopped_at: Phase 09 complete (8/8) — ready to discuss Phase 10
 ---
 
 # Project State
@@ -277,9 +276,9 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-20T09:50:15.545Z
-Stopped at: Completed 09-08-PLAN.md: verdict discoverability closed via STATE.md decision entry and ROADMAP Phase 9/10/11 pointers (R2000-16 criterion 5); Phase 9 complete 8/8
-Resume file: None
+Last session: 2026-08-20T13:32:32.263Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-CONTEXT.md
 
 ## Operator Next Steps
 
