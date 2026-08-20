@@ -49,12 +49,30 @@ match to `stock-symbols.ts`'s `VICE_LABEL_LINE_RE` regex. `parser/vice_vsf.rs` p
 real "VICE Snapshot File" magic, a `C64MEM` module (CPU port bytes + 64K RAM) and a
 `MAINCPU` module (PC at offset 12–13) — comments in that file show it was reverse-engineered
 against a real captured `.vsf`, which is exactly what `vice_snapshot_save` produces via
-VICE's own `DUMP` (0x41) monitor command. `--verify-roundtrip` shells out to a **real**
+VICE's own `DUMP` (0x41) monitor command.
+
+**[CORRECTED 2026-08-20 by Phase 9 probe (plan 09-06;
+`evidence/criterion4-vsf-load.txt`) — the `.vsf`/machine-type half of this claim is
+`partial`, not unconditionally favorable:** memory content and start address (PC) are
+genuinely carried and verified end-to-end against a real stock-VICE snapshot. Machine
+type is not: `file_io.rs`'s `suggested_system` match recognises only the four literal
+strings `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"`, while a genuine stock VICE C64
+snapshot's own `machine_name` is `"C64SC"`, which matches none of them — the displayed
+"Commodore 64" is a coincidental fallback default (`dialog_import_context.rs:37`'s
+`unwrap_or(current_system)`), not a genuine read of the snapshot. Not previously
+documented anywhere in this phase; see `docs/phase9-regenerator2000-probe-findings.md`'s
+Accepted limits for what it breaks.]
+
+`--verify-roundtrip` shells out to a **real**
 `acme` binary with `--cpu 6510 --format cbm`, compares assembled bytes to the original,
 and is a much cheaper gate than building one. And `cargo install regenerator2000` is
 **verified published** on crates.io (v0.9.20, 2026-07-11, license `MIT OR Apache-2.0` —
 not solely Apache-2.0 as the grounding notes state; correct `THIRD-PARTY-NOTICES.md`
-accordingly).
+accordingly). **[Note, 2026-08-20: this document already had the dual license right —
+`REQUIREMENTS.md`'s own `R2000-03` phrasing still says "Apache-2.0 notice" only. That
+correction still needs applying to `REQUIREMENTS.md`/`THIRD-PARTY-NOTICES.md`, out of
+scope for this file; flagged in
+`docs/phase9-regenerator2000-probe-findings.md`'s Corrections section for Phase 10.]**
 
 **Primary recommendation:** Run criterion 1 (install + version + container cost) and
 criterion 2 (pty + **keystroke-driven** Save-As bootstrap, using `tmux` since it is not on
@@ -133,6 +151,21 @@ exactly — not a typosquat), `edition: "2024"`, `rust_version: null` (no MSRV p
 satisfies exactly at the floor, not with headroom — worth noting as a real toolchain
 constraint for whatever container image Phase 9(5) builds).
 
+**[CORRECTED 2026-08-20 by Phase 9 probe (plans 09-01, 09-02;
+`evidence/criterion1-install-and-version.txt`, `evidence/criterion1-container-toolchain-cost.txt`):
+the binding constraint was never the edition-2024 floor of 1.85.** Plan 09-01 first
+derived `rustc >= 1.88` from the crate's own committed `Cargo.lock` pins (`ratatui
+0.30.0`, `image 0.25.10`, `vergen 9.1.0`, `icu_properties 2.2.0`), but a real `cargo
+install regenerator2000` on `rustc 1.85.1` failed outright — no invocation, plain or
+`--locked`, could build this crate on 1.85.1. Plan 09-02 then found `>= 1.88` itself
+undercounted the floor: a real cold `docker build` against `rust:1.88-slim` (rustc
+1.88.0) also failed to compile, with `quantette@0.6.0 requires rustc 1.90`,
+`safe_arch@1.2.0 requires rustc 1.89`, `wide@1.6.1 requires rustc 1.89`. **The verified
+floor is `rustc >= 1.90`, single source of truth — both the 1.85 and 1.88 readings above
+are superseded, not merely refined.** The host's toolchain was moved mid-phase, by a
+human-authorized `rustup update stable` (1.85.1 → 1.97.1), after which every remaining
+criterion in this phase is qualified by 1.97.1, not 1.85.1.
+
 **Important caveat for the plan:** the git clone used for *this research's* source
 reading is at commit `df4bc94` (pushed 2026-08-09), which is *after* the crates.io
 publish date of `0.9.20` (2026-07-11) even though `Cargo.toml` still says version
@@ -200,6 +233,15 @@ never actually ran.
                                     │
               ┌─────────────────────┼─────────────────────────┐
               ▼                     ▼                         ▼
+
+[CORRECTED 2026-08-20 by Phase 9 probe (plan 09-03; `evidence/criterion2-pty-transcript.txt`):
+step ⑤ above (`auto_analyze()`) does not run straight into step ⑥ (MCP server start) as
+this diagram implies. An unanticipated "Import Context Setup" confirmation modal is
+presented first and holds focus — it must be dismissed (`Enter` on its Confirm button, or
+`Escape`) before `Alt+S` can reach the Save-As dialog. Not fatal to 2a (the MCP server
+started regardless, per the status bar), but it adds one keystroke to the exact sequence
+2b needs. This is a genuinely new observed behavior the diagram's sequence sketch did not
+anticipate, not a `file:line` drift against a specific citation.]
    --export_asm --assembler   --export_lbl out.lbl      (separately)
    acme out.a                       │                    vice_snapshot_save
    --verify-roundtrip                │                    writes game.vsf
@@ -346,6 +388,19 @@ actually exercised. A pass under `use_illegal_opcodes=false` on a binary with no
 opcodes in it proves nothing about assumption 2 as the milestone actually needs it
 proven.
 
+**[CORRECTED 2026-08-20 by Phase 9 probe (plan 09-04; `evidence/criterion3-reassembly.txt`)
+— a strengthening, not a contradiction:** this pitfall undersold what
+`use_illegal_opcodes` actually controls. It is not only whether ACME's `--cpu 6510` flag
+is added — flipping the setting on a copy of an already-analyzed project file and
+re-exporting makes `--export_asm` **re-derive the disassembly live from the raw bytes and
+the current setting**, correctly decoding illegal opcodes the default export had already
+rendered as unrelated legal instructions plus raw `!byte $xx ; Invalid or partial
+instruction` fallback. This is **more favorable** than the pitfall implied: the
+capability is real and correct on this build, not merely "the right CLI flag gets
+added" — it was simply never enabled by the keystroke-bootstrap default (confirmed:
+`ILLEGAL_OPCODE_MODE: project-setting false`, and auto-analysis does not flip it — see
+Open Question 3 / Assumption A3, now both closed).
+
 ### Pitfall 4: Measuring "container-side toolchain cost" with the wrong image boundary
 
 **What goes wrong:** Reporting one number ("the devcontainer image is now N GB larger")
@@ -361,6 +416,21 @@ into a slim runtime image — e.g. `node:24-slim`, since that already matches th
 project's actual Node MCP server runtime requirement). These are genuinely different
 numbers and the milestone's install-documentation criterion (Phase 10, `R2000-03`) needs
 to know which one a real deployment would actually pay.
+
+**[CORRECTED 2026-08-20 by Phase 9 probe (plan 09-02;
+`evidence/criterion1-container-toolchain-cost.txt`) — both numbers measured, and one
+further pitfall found that this pitfall did not anticipate:** `SINGLE_STAGE_BYTES:
+1256576420` (~1.26 GB), `MULTI_STAGE_BYTES: 250820636` (~251 MB) — measured against
+`rust:1.90-slim` (single-stage) / `rust:1.90-slim-bookworm` (multi-stage builder) and
+`node:22-slim` (runtime), not the `1.85`/`24-slim` tags this document's Code Examples
+sketched (see A4's correction above for why). **New finding, not anticipated by this
+pitfall's own text:** a multi-stage build crossing Debian releases between its builder
+and runtime stages (`rust:1.90-slim` is Debian 13 "trixie"; `node:22-slim` is Debian 12
+"bookworm") ships a binary that fails at runtime with `GLIBC_2.38`/`GLIBC_2.39 not
+found` — confirmed directly via `/etc/os-release` in both base images. Pinning the
+builder to the runtime's Debian release (`rust:1.90-slim-bookworm`) fixes it. This repo
+has no existing devcontainer image, so both numbers are absolute, with no baseline to
+diff against — recorded explicitly rather than silently treated as deltas.
 
 ## Code Examples
 
@@ -525,6 +595,33 @@ clone).
 
 **If this table is empty:** N/A — see above.
 
+**Resolved by Phase 9 probe (2026-08-20):**
+
+- **A1 [CORRECTED — confirmed TRUE, not merely assumed]:** `tmux send-keys -t r2000probe
+  M-s` registered as Alt+S on the **first attempt**, no fallback keystroke encoding
+  needed. Source: `evidence/criterion2-pty-transcript.txt` ("The Save-As dialog opened
+  on the first attempt -- no retry with an alternative keystroke encoding was needed").
+- **A2 [CORRECTED — confirmed TRUE]:** the Save-As dialog's default filename is exactly
+  `<stem>.regen2000proj` (observed: `probe-illegal.regen2000proj` for a loaded
+  `probe-illegal.prg`), pre-filled and accepted with a bare `Enter`, no typing needed.
+  Source: `evidence/criterion2-pty-transcript.txt`
+  (`SAVE_AS_DEFAULT_FILENAME: probe-illegal.regen2000proj`).
+- **A3 [CORRECTED — confirmed FALSE]:** analyzing a binary containing illegal 6510
+  opcodes does **not** automatically flip `state.settings.use_illegal_opcodes` to true.
+  Confirmed two independent ways: the TUI rendered the fixture's illegal bytes as raw
+  `!byte $xx ; Invalid or partial instruction` rather than as `lax`/`sax`/etc mnemonics
+  (`evidence/criterion2-pty-transcript.txt`), and a direct JSON read of the bootstrapped
+  `.regen2000proj` file showed `"use_illegal_opcodes": false`
+  (`evidence/criterion3-reassembly.txt`). The setting is a fixed bootstrap default, not
+  analyzer-derived — see Open Question 3 below, now closed the same way.
+- **A4 [CORRECTED — the base image tag that actually resolved]:** not
+  `rust:1.85-slim-<codename>` as this document's Code Examples sketched (unresolved at
+  research time). `rust:1.90-slim` resolves and (after the rustc-floor correction above)
+  is the tag that actually builds regenerator2000; the multi-stage builder additionally
+  needed `rust:1.90-slim-bookworm` specifically, to match the `node:22-slim` runtime
+  stage's Debian release and avoid a `GLIBC_2.38`/`GLIBC_2.39 not found` runtime failure.
+  Source: `evidence/criterion1-container-toolchain-cost.txt`.
+
 ## Open Questions
 
 1. **Does `save_project_impl`'s error path get hit even from `--headless --mcp-server`
@@ -539,6 +636,11 @@ clone).
      case where it's cleared.
    - Recommendation: the probe's own transcript will show this directly the first time
      `r2000_save_project` is called post-bootstrap; no separate investigation needed.
+   - **[CLOSED 2026-08-20 by Phase 9 probe]:** it is populated, and the error path is not
+     hit again. A fresh `r2000_save_project` call over the still-live MCP connection,
+     issued after the bootstrap completed, succeeded with `"Project saved to
+     .../probe-illegal.regen2000proj"` and no `-32603`. Source:
+     `evidence/criterion2-pty-transcript.txt` (`SAVE_PROJECT_POST_BOOTSTRAP: succeeded`).
 
 2. **What does the Save-As dialog's default filename actually read, and does it need
    typing or just Enter?**
@@ -549,6 +651,11 @@ clone).
      answers this directly and cheaply — the plan does not need to trace
      `DialogType::SaveAs`'s construction site further; running it is cheaper than
      finishing that trace.
+   - **[CLOSED 2026-08-20 by Phase 9 probe]:** the default filename is `<stem>.regen2000proj`
+     (`probe-illegal.regen2000proj`), pre-filled correctly, and a bare `Enter` accepts it
+     — no typing needed. Source: `evidence/criterion2-pty-transcript.txt`
+     (`SAVE_AS_DEFAULT_FILENAME: probe-illegal.regen2000proj -- the field was pre-filled
+     exactly as A2 ... predicted`). Same finding as A2 above.
 
 3. **Is `use_illegal_opcodes` analyzer-derived or a fixed default?**
    - What we know: it's a field read at `run_assembler`'s ACME branch
@@ -559,6 +666,17 @@ clone).
      exists (the CLI has `--assembler acme` but this session did not find a matching
      `--illegal-opcodes` flag — search `main.rs`'s full `Cli` struct at plan time if this
      matters).
+   - **[CLOSED 2026-08-20 by Phase 9 probe]:** it is a **fixed bootstrap default, `false`**
+     — the analyzer does not flip it. No `--illegal-opcodes` CLI flag exists on the real,
+     verbatim `--help` surface either (confirmed against 0.9.20's actual output). The
+     project file's own JSON settings store is a legitimate, tool-recognized way to
+     override it (a direct edit of `use_illegal_opcodes: true` on a copy loads cleanly
+     under `--headless`, per Evidence Integrity Rule 1). Source:
+     `evidence/criterion3-reassembly.txt`
+     (`ILLEGAL_OPCODE_MODE: project-setting false (bootstrapped default; ...)`). This is
+     also a **strengthening of Pitfall 3** below, not merely an answer to this question:
+     the setting gates `--export_asm`'s live disassembly derivation itself, not only
+     whether ACME's `--cpu 6510` flag is added — see Pitfall 3's own correction.
 
 ## Environment Availability
 
@@ -725,6 +843,14 @@ but three real items apply:
   determine by reading source**, and is precisely the reason Phase 9 exists as a
   run-it-and-see gate rather than a source-review gate.
 
+**[CLOSED 2026-08-20 by Phase 9 probe (plan 09-03; `evidence/criterion2-pty-transcript.txt`):**
+it succeeds. `enable_raw_mode()`, the crossterm input thread, the initial draw, and the
+HTTP MCP listener all succeeded under a real `tmux` pty with no controlling terminal —
+the process stayed alive 38+ seconds with a fully-drawn TUI and the literal status-bar
+text `MCP Server active on http://127.0.0.1:3000/mcp`. `PTY_TOLERANCE: pass`. This item
+is no longer LOW confidence or unresolved; it was this phase's entire reason to exist,
+and it is now answered by direct observation, not inference.]
+
 ## Metadata
 
 **Confidence breakdown:**
@@ -737,6 +863,24 @@ but three real items apply:
 - Symbol-format and `.vsf`-format compatibility: HIGH on the grammar/parsing logic
   itself (both sides read directly), MEDIUM on end-to-end behavior since no live run was
   performed this session
+
+**[CORRECTED 2026-08-20 by Phase 9 probe — the LOW/MEDIUM items above are now resolved
+by observation, replacing inference:**
+- Architecture (the pty/bootstrap mechanic): **now HIGH on both halves.** The LOW-rated
+  question ("what actually happens under a pty") is answered directly: `PTY_TOLERANCE:
+  pass`, `BOOTSTRAP_AUTOMATABLE: pass`, both against a real tmux pty with no controlling
+  terminal (`evidence/criterion2-pty-transcript.txt`). This was the phase's single
+  LOW-confidence tertiary source (below) — it is resolved, not merely re-flagged.
+- Symbol-format compatibility (criterion 3(3)): **now HIGH end-to-end.** A real,
+  unmodified `--export_lbl` export was accepted as-is by a live `vice_symbols_load`
+  against genuine stock VICE (`evidence/criterion3-export-lbl.txt`,
+  `EXPORT_LBL: pass`).
+- `.vsf`-format compatibility (criterion 3(4)): **MEDIUM confirmed correct, not
+  upgraded to HIGH.** Memory content and start address are HIGH-confidence (independently
+  byte-verified twice, including after a real cross-connection correction); machine type
+  is a confirmed coincidental default, not a genuine derivation — see the `.vsf`
+  correction above and `docs/phase9-regenerator2000-probe-findings.md`'s criterion 3(4)
+  section and Accepted limits.]**
 
 **Research date:** 2026-08-19
 **Valid until:** ~14 days for the upstream-source-derived claims (regenerator2000 is

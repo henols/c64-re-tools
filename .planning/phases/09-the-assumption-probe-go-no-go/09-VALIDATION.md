@@ -1,9 +1,9 @@
 ---
 phase: 9
 slug: the-assumption-probe-go-no-go
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-20
 ---
 
@@ -76,14 +76,14 @@ the binding part — it is what a later session re-reads.
 
 | Criterion | Req | Wave | Behavior under test | Test Type | Command shape | Evidence artifact | Status |
 |---|---|---|---|---|---|---|---|
-| 1 — build present | R2000-16(5) | 1 | A real build exists here and identifies itself | manual, transcript | `cargo install regenerator2000` → `regenerator2000 --version` | `evidence/criterion1-install-and-toolchain-cost.txt` | ⬜ pending |
-| 1 — toolchain cost | R2000-16(5) | 1 | Build time and image-size delta **measured**, both single-stage and multi-stage | manual, transcript | `docker build` with timing → `docker image inspect --format '{{.Size}}'` | `evidence/criterion1-install-and-toolchain-cost.txt` | ⬜ pending |
-| 2 — pty + bootstrap | R2000-16(1) | 2 | `--mcp-server <raw binary>` survives a pty with no real TTY **and** the Save-As dialog can be driven with no human, producing a `.regen2000proj` a later `--headless` run loads | manual, transcript | `tmux new-session -d` → wait on `capture-pane` → `send-keys` → MCP handshake via vendored `StreamableHTTPClientTransport` | `evidence/criterion2-pty-transcript.txt` | ⬜ pending |
-| 3(2) — reassembly | R2000-16(2) | 3 | `--export_asm --assembler acme` output reassembles under `!cpu 6510` | manual, but **uses regenerator2000's own gate** | `regenerator2000 --headless --assembler acme --verify <proj>` | `evidence/criterion3-reassembly.txt` | ⬜ pending |
-| 3(3) — `--export_lbl` | R2000-16(3) | 3 | An **unmodified** `--export_lbl` file is consumed as-is by `vice_symbols_load` | manual + static grammar diff | export, then run `stock-symbols.ts`'s `VICE_LABEL_LINE_RE` over every line | `evidence/criterion3-export-lbl.txt` | ⬜ pending |
-| 3(4) — `.vsf` load | R2000-16(4) | 3 | A `.vsf` from `vice_snapshot_save` loads carrying machine type and start address | manual, transcript | produce `.vsf` via live VICE → load → **ask what it saw** | `evidence/criterion4-vsf-load.txt` | ⬜ pending |
-| 4 — evidence recorded | R2000-16 | 4 | Every answer, including every failure, is in the repo as an accepted limit naming what it breaks | source assertion | `docs/phase9-regenerator2000-probe-findings.md` exists and covers all five | that file | ⬜ pending |
-| 5 — verdict recorded | R2000-16 | 4 | A machine-readable `proceed \| degrade \| reconsider` verdict Phase 10's planner can read as a gate | source assertion | frontmatter field in the findings doc | that file | ⬜ pending |
+| 1 — build present | R2000-16(5) | 1 | A real build exists here and identifies itself | manual, transcript | `cargo install regenerator2000` → `regenerator2000 --version` | `evidence/criterion1-install-and-version.txt` | ✅ green — `INSTALLED_VERSION: regenerator2000 0.9.20` (plan 09-01, Task 3) |
+| 1 — toolchain cost | R2000-16(5) | 1 | Build time and image-size delta **measured**, both single-stage and multi-stage | manual, transcript | `docker build` with timing → `docker image inspect --format '{{.Size}}'` | `evidence/criterion1-container-toolchain-cost.txt` | ✅ green — `SINGLE_STAGE_BYTES: 1256576420`, `MULTI_STAGE_BYTES: 250820636` (plan 09-02, Task 2); never a verdict gate per the decision rule |
+| 2 — pty + bootstrap | R2000-16(1) | 2 | `--mcp-server <raw binary>` survives a pty with no real TTY **and** the Save-As dialog can be driven with no human, producing a `.regen2000proj` a later `--headless` run loads | manual, transcript | `tmux new-session -d` → wait on `capture-pane` → `send-keys` → MCP handshake via vendored `StreamableHTTPClientTransport` | `evidence/criterion2-pty-transcript.txt` | ✅ green — `PTY_TOLERANCE: pass`, `BOOTSTRAP_AUTOMATABLE: pass` (plan 09-03, Tasks 1 & 3) |
+| 3(2) — reassembly | R2000-16(2) | 3 | `--export_asm --assembler acme` output reassembles under `!cpu 6510` | manual, but **uses regenerator2000's own gate** | `regenerator2000 --headless --assembler acme --verify <proj>` | `evidence/criterion3-reassembly.txt` | ✅ green (qualified) — `REASSEMBLY: pass` under `use_illegal_opcodes: true` override (plan 09-04, Task 2); accepted limit recorded for the bootstrap default |
+| 3(3) — `--export_lbl` | R2000-16(3) | 3 | An **unmodified** `--export_lbl` file is consumed as-is by `vice_symbols_load` | manual + static grammar diff | export, then run `stock-symbols.ts`'s `VICE_LABEL_LINE_RE` over every line | `evidence/criterion3-export-lbl.txt` | ✅ green — `GRAMMAR_MATCH: 2/2`, `SYMBOLS_LOAD: pass`, `EXPORT_LBL: pass` (plan 09-05, Tasks 1-3) |
+| 3(4) — `.vsf` load | R2000-16(4) | 3 | A `.vsf` from `vice_snapshot_save` loads carrying machine type and start address | manual, transcript | produce `.vsf` via live VICE → load → **ask what it saw** | `evidence/criterion4-vsf-load.txt` | ⚠️ flaky→recorded as `partial` — `VSF_LOAD: partial` (plan 09-06, Task 3): memory content and start address genuinely carried; machine type traced to a coincidental default, not a real derivation. Recorded as an accepted limit, not left ambiguous |
+| 4 — evidence recorded | R2000-16 | 4 | Every answer, including every failure, is in the repo as an accepted limit naming what it breaks | source assertion | `docs/phase9-regenerator2000-probe-findings.md` exists and covers all five | that file | ✅ green (plan 09-07, Task 1) — all five criteria have a section, a summary-table row, and an `## Accepted limits` entry where non-pass |
+| 5 — verdict recorded | R2000-16 | 4 | A machine-readable `proceed \| degrade \| reconsider` verdict Phase 10's planner can read as a gate | source assertion | frontmatter field in the findings doc | that file | ✅ green (plan 09-07, Task 2) — `verdict: degrade`, `verdict_rule_applied: R4` |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -132,30 +132,31 @@ These are the actual validation controls for this phase. They replace "the tests
 
 ## Wave 0 Requirements
 
-Nothing needed for this phase exists yet. All of these are prerequisites, not deliverables.
+All prerequisites below were satisfied over waves 1-4; each is marked complete with the
+evidence that closed it.
 
-- [ ] `tmux` installed (`expect` as a verified fallback) — **not on PATH today**;
-      `script -qec` alone cannot inject keystrokes after launch and therefore
-      cannot answer criterion 2
-- [ ] `regenerator2000` installed, `--version` and resolved crate version recorded
-- [ ] A real test fixture chosen or built. **No `.prg` fixture exists in-repo.**
-      Closest candidate is `.claude/skills/acme-build/template.a` assembled via
-      `node .claude/skills/acme-build/scripts/acme.mjs build template.a` — but
-      it uses **no illegal opcodes**, so for the `!cpu 6510` stress case a small
-      hand-written `.a` exercising mnemonics already tabled in
-      `.claude/mcp/vice/disasm-opcodes.ts` (e.g. `lax`, `sax`, `slo`) is the
-      better fixture
-- [ ] Throwaway MCP client harness (`evidence/mcp-harness.mjs`) using the
-      already-vendored `@modelcontextprotocol/sdk`
-      `StreamableHTTPClientTransport` — **do not hand-roll** the
-      Streamable-HTTP session handshake over curl
-- [ ] Two throwaway Dockerfiles (single-stage vs multi-stage) — the shipped-image
-      cost and the build-toolchain cost are **different numbers** and both are asked for
-- [ ] `docs/phase9-regenerator2000-probe-findings.md` created — follows the
-      existing convention set by `docs/phase1-probe-results.md` and
+- [x] `tmux` installed (`expect` as a verified fallback) — installed by the human
+      (`sudo apt-get install -y tmux`) at plan 09-01's checkpoint; `tmux 3.5a` confirmed
+      on PATH (`evidence/criterion1-install-and-version.txt`)
+- [x] `regenerator2000` installed, `--version` and resolved crate version recorded —
+      `regenerator2000 0.9.20` (`evidence/criterion1-install-and-version.txt`)
+- [x] A real test fixture chosen or built — `evidence/fixture/probe-illegal.a`/`.prg`,
+      hand-written, exercising six real illegal 6510 opcodes (`lax`, `sax`, `slo`,
+      `dcp`, `isc`, `anc`), built via `node .claude/skills/acme-build/scripts/acme.mjs
+      build` (`evidence/criterion0-prerequisites.txt`)
+- [x] Throwaway MCP client harness (`evidence/mcp-harness.mjs`) using the vendored
+      `@modelcontextprotocol/sdk` `StreamableHTTPClientTransport` — written and used in
+      plan 09-03, resolved via a `node_modules` symlink into the main checkout with no
+      `npm install`
+- [x] Two throwaway Dockerfiles (single-stage vs multi-stage) —
+      `evidence/Dockerfile.single`, `evidence/Dockerfile.multi`, both committed as
+      measurement apparatus (plan 09-02)
+- [x] `docs/phase9-regenerator2000-probe-findings.md` created — this plan (09-07),
+      following the shape of `docs/phase1-probe-results.md` and
       `docs/phase2-backend-probe-evidence.md`
-- [ ] A free `127.0.0.1:3000` confirmed before starting the MCP server (the port
-      is hardcoded upstream and the server has **no authentication**)
+- [x] A free `127.0.0.1:3000` confirmed before starting the MCP server — checked with
+      `ss -ltn | grep ':3000'` before every launch across plans 09-03/09-04/09-05/09-06,
+      confirmed free each time
 
 ---
 
@@ -175,15 +176,39 @@ Nothing needed for this phase exists yet. All of these are prerequisites, not de
 
 ## Validation Sign-Off
 
-- [ ] Every criterion has an evidence file containing its literal command and real output
-- [ ] The installed `--version` is recorded and every other finding is qualified by it
-- [ ] Every research claim contradicted by observation has been corrected in `09-RESEARCH.md`
-- [ ] Every failure is recorded as an accepted limit **naming what it breaks**
-- [ ] `--export_lbl` was not scored as a pass on an empty file
-- [ ] `.vsf` was interrogated for machine type and start address, not just loaded
-- [ ] `--vice` was never passed
-- [ ] A machine-readable `verdict:` (`proceed` \| `degrade` \| `reconsider`) exists where
-      Phase 10's planner will look for it
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] Every criterion has an evidence file containing its literal command and real
+      output — all six `evidence/criterion*.txt` files, verified by direct read during
+      this plan's own execution
+- [x] The installed `--version` is recorded (`regenerator2000 0.9.20`) and every other
+      finding is qualified by it and by the toolchain that actually built it
+      (`rustc 1.97.1`, after the human-authorized `rustup update stable` mid-phase)
+- [x] Every research claim contradicted by observation has been corrected in
+      `09-RESEARCH.md` — this plan's Task 3 applied all `## RESEARCH CORRECTIONS` blocks
+      from the six evidence files in one pass (Assumptions A1-A4, Open Questions 1-3,
+      Pitfalls 3-4, the Architecture Patterns diagram, the `.vsf` machine-type claim, and
+      the Metadata confidence breakdown)
+- [x] Every failure is recorded as an accepted limit **naming what it breaks** —
+      `docs/phase9-regenerator2000-probe-findings.md`'s `## Accepted limits` section
+      names criterion 3(2)'s `use_illegal_opcodes` bootstrap-default gap (breaks:
+      `R2000-09`/Phase 10 criterion 4 unless the pipeline sets it explicitly) and
+      criterion 3(4)'s machine-type coincidental-default gap (breaks: the ROADMAP's
+      standing "prefer `.vsf` over `.raw`" constraint and Phase 10 criterion 3, for the
+      machine-type field specifically)
+- [x] `--export_lbl` was not scored as a pass on an empty file — the export carried
+      `EXPORT_LBL_LINES: 2` (a real MCP-set user label plus the auto-generated
+      `.start`), never zero
+- [x] `.vsf` was interrogated for machine type and start address, not just loaded —
+      scored `partial`, not `pass`, precisely because "it loaded without crashing" was
+      not treated as sufficient (Evidence Integrity Rule 6)
+- [x] `--vice` was never passed — confirmed by an explicit grep across every evidence
+      transcript and harness script in plans 09-01 through 09-06, and restated in this
+      plan's own findings document
+- [x] A machine-readable `verdict:` (`proceed` \| `degrade` \| `reconsider`) exists where
+      Phase 10's planner will look for it — `docs/phase9-regenerator2000-probe-findings.md`
+      frontmatter, `verdict: degrade`, `verdict_rule_applied: R4`
+- [x] `nyquist_compliant: true` set in frontmatter — every one of the five criteria has a
+      real recorded outcome (four `pass`, one `partial`; none missing or silently
+      skipped), which is this phase's own honesty standard, not universal success
 
-**Approval:** pending
+**Approval:** signed off 2026-08-20 by plan 09-07 (Task 3), against the evidence
+gathered in waves 1-3 and the verdict derived in this plan's Task 2.
