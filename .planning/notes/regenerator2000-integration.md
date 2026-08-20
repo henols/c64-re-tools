@@ -12,7 +12,7 @@ sources:
 # regenerator2000 as a static-analysis backend
 
 [regenerator2000](https://github.com/ricardoquesada/regenerator2000) ("r2000") is
-an interactive 6502 disassembler for Commodore 8-bits: Rust, TUI, Apache-2.0,
+an interactive 6502 disassembler for Commodore 8-bits: Rust, TUI, `MIT OR Apache-2.0`,
 163 stars, created 2025-12-20, last pushed 2026-08-09. It ships a 28-tool MCP
 server, a VICE binary-monitor debugger client, a sandboxed binary unpacker, and
 export to four assemblers (64tass, ACME, Kick, ca65) plus HTML.
@@ -250,7 +250,10 @@ rather than raw byte offsets — gated on the one-project limit above.
   install is `cargo install regenerator2000` — a Rust toolchain. This was raised
   and the required-dependency call was reaffirmed (D-R2). Mitigation: watch for
   prebuilt binaries; the project is young (created 2025-12-20).
-- **Licensing.** Apache-2.0. Add to `THIRD-PARTY-NOTICES.md`.
+- **Licensing.** `MIT OR Apache-2.0` (dual-licensed — corrected from an earlier
+  single-licence reading here; see `docs/phase9-regenerator2000-probe-findings.md`
+  § Corrections, entry 2). Both notices are recorded in
+  `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` (plan 10-08).
 - **Maturity.** Eight months old. Healthier than the fork we are leaving, but not
   a settled dependency. Stdio MCP transport is documented as
   "experimental/testing only".

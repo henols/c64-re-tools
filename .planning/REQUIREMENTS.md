@@ -5,7 +5,7 @@
 **Predecessor:** v0.2.0 shipped 2026-08-19 (archived at `milestones/v0.2.0-REQUIREMENTS.md`)
 
 Adopt [regenerator2000](https://github.com/ricardoquesada/regenerator2000) — Rust,
-Apache-2.0, an interactive 6502 disassembler with a 28-tool MCP server — as a
+`MIT OR Apache-2.0`, an interactive 6502 disassembler with a 28-tool MCP server — as a
 **static-analysis backend only**. It brings three things this project structurally
 lacks: a persistent, queryable annotation store; a recursive-descent disassembler
 with an auto-analyzer; and a sandboxed binary unpacker.
@@ -54,14 +54,20 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 - [ ] **R2000-03**: It is a declared prerequisite named in the install
       documentation alongside VICE, stating the toolchain cost plainly
       (`cargo install regenerator2000` — no upstream release assets exist), with
-      its Apache-2.0 notice in `THIRD-PARTY-NOTICES.md`.
+      its dual `MIT OR Apache-2.0` notice in `THIRD-PARTY-NOTICES.md` (corrected
+      from an earlier single-licence reading in this requirement's own text —
+      see `docs/phase9-regenerator2000-probe-findings.md` § Corrections, entry 2,
+      and plan 10-08's notice).
 
 ### Bootstrap and the removal it earns
 
 - [ ] **R2000-09**: Project bootstrap from a raw binary is automated rather than a
-      documented manual step: a `.prg` or `.vsf` becomes a `.regen2000proj` without
-      a human. If `R2000-16`(1) fails, this degrades to a documented one-time
-      interactive step and every affected playbook says so.
+      documented manual step: a `.prg`, a `.d64` (named entry), or a flat 64K
+      capture becomes a `.regen2000proj` without a human. `.vsf` is dropped from
+      this requirement's input set and deferred to Phase 11's `c64-ram-capture`
+      extension (D-03; see `ROADMAP.md` § Phase 10 criterion 3 for the reason).
+      If `R2000-16`(1) fails, this degrades to a documented one-time interactive
+      step and every affected playbook says so.
 - [ ] **R2000-05**: `acme-build`'s `disasm` verb and its `toacme`-on-PATH
       prerequisite are removed, replaced by a regenerator2000 route. This is the
       one deletion the milestone earns: a 14-line `spawnSync` wrapper
@@ -122,9 +128,13 @@ file:line, verified overlap map, decisions D-R1..D-R4).
   Becomes a stated limitation in `R2000-03`'s install documentation. Building
   detection-and-reporting for an upstream port collision is work in the wrong place.
 - **`R2000-08` — `.vsf`/`.raw` bridge as its own requirement** *(folded
-  2026-08-17)*. Reduced to a note on `R2000-09`: it is which file extension you
-  hand over, not a deliverable. Prefer `.vsf` — it carries memory, machine type and
-  start address, whereas `.raw` loads at origin `$0000` with no CLI override.
+  2026-08-17)*. Originally reduced to a note on `R2000-09` preferring `.vsf` — it
+  carries memory, machine type and start address, whereas `.raw` loads at origin
+  `$0000` with no CLI override. **Superseded by D-03** (plan 10-09): `.vsf` was
+  dropped from Phase 10's bootstrap input set entirely (see `R2000-09`'s corrected
+  text), because the bootstrap never hands regenerator2000 a container format in
+  the first place. Flat 64K (`.raw`) is the surviving non-`.prg`/`.d64` route for
+  this phase; `.vsf` moves to Phase 11's `c64-ram-capture` extension.
 - **`R2000-12` — static-vs-live tool-selection axis** *(folded 2026-08-17)*. Folded
   into v0.2.0's `SKILL-01`, which already rewrites the same playbooks for backend
   routing. One pass over `c64-program-recon`, not two.
