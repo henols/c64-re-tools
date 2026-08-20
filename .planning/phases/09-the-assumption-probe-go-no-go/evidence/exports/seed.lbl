@@ -1,0 +1,2 @@
+al C:c000 .probe_entry
+al C:c010 .probe_illegal_block
