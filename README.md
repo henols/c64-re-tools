@@ -198,11 +198,16 @@ project already removed that fallback (`toacme`'s `disasm` verb).
 Both container figures are absolute sizes with no baseline to diff them
 against.
 
-**The one-project-per-network-namespace limit is stated, not detected.**
-regenerator2000's MCP server binds a hardcoded port, so two projects cannot
-run its server side by side in one network namespace. This project documents
-that limit rather than building detection and reporting for it; separate
-containers sidestep it.
+**The one-project-per-network-namespace limit is stated, not detected — and it
+is narrower than it first appears.** The hardcoded port belongs to
+regenerator2000's `--mcp-server` HTTP route; two projects cannot run that route
+side by side in one network namespace. This project does not use it: it drives
+`--mcp-server-stdio` instead, which binds no port at all and spawns one
+short-lived child process per call. Through this project's route, two projects
+in one network namespace are not in conflict. The limit was sidestepped, not
+fixed — it still applies in full to anyone running regenerator2000's own HTTP
+MCP server directly, and this project documents that limit rather than
+building detection and reporting for it; separate containers sidestep it too.
 
 ## How it locates the project
 

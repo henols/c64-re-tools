@@ -92,8 +92,11 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 - [ ] **R2000-13**: Enum definitions are generated from `c64-memory-mapping`'s
       `memmap.json`, so a disassembly renders per-bit VIC-II/SID/CIA writes with
       semantic names — `lda #$1b / sta $d011` reads as named bits. `memmap.json`
-      holds the bit tables; regenerator2000 holds the enum mechanism and
-      `--dump-enum-files`. **Neither side can produce this alone.**
+      holds the bit tables; regenerator2000 holds the enum mechanism, installed
+      per-project via `r2000_create_project_enum`. (`--dump-enum-files` only
+      writes the three built-in enums to a directory and exits — it is a
+      TOML-shape discovery tool, not an install path.) **Neither side can
+      produce this alone.**
 - [ ] **R2000-14**: Symbols annotated in regenerator2000 export as **VICE label
       files** (`--export_lbl`) into the symbol store and resolve live addresses
       through `vice_symbols_load`. Native format on both sides — no glue format to

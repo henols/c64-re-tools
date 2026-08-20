@@ -26,11 +26,17 @@
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
 // acme-build/scripts/acme.mjs's own parser (curateLabels(),
-// `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). STATED ASSUMPTION, NOT A VERIFIED FACT:
-// regenerator2000's `--export_lbl` is *expected* to emit the same syntax,
-// but R2000-16(c) has never been run -- hence the parser below SKIPS
-// unrecognised lines rather than refusing the whole file, and no comment or
-// doc here may claim "regenerator2000-compatible" as verified.
+// `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). VERIFIED (Phase 9, R2000-16(c)):
+// regenerator2000 0.9.20's `--export_lbl` was run against the
+// probe-illegal.prg-derived fixture and emitted `al C:0810 .init_screen`,
+// which matches this module's own VICE_LABEL_LINE_RE
+// (`/^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/`) exactly. This claim is SCOPED to
+// regenerator2000 0.9.20 and that fixture -- not to all inputs forever (the
+// same scoping caveat ROADMAP.md applies to Phase 9's criterion 3(3) `pass`).
+// The parser below still SKIPS unrecognised lines rather than refusing the
+// whole file: a future regenerator2000 version, a hand-edited label file, or
+// a different exporter entirely can still produce lines this format should
+// tolerate rather than reject outright.
 //
 // WHAT NOT TO DO:
 //   - Never add a second resolver holder or call setSymbolResolver() from
