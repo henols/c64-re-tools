@@ -47,3 +47,16 @@ Either vendor a minimal `cbm/c64/*.a` library alongside `acme-build`'s scaffold 
 hardware constants (as this walkthrough's substitute source did) and update
 `acme-build/SKILL.md`'s "Verified live" claim and CI's `ci.yml:58-61` check to actually
 assemble the scaffold, not merely probe the binary.
+
+---
+
+## Resolved 2026-08-20 (Phase 10, plan 10-07)
+
+Closed by rewriting `template.a` to use five locally-defined hardware constants
+(`vic_cborder`, `vic_cbg`, `viccolor_BLACK`, `viccolor_GREEN`, `k_chrout`) instead of
+`!source`ing the absent `cbm/c64/*.a` library, updating `acme-build/SKILL.md`'s Setup
+section to state the measured, re-checkable truth (citing the new CI step by name
+instead of a one-machine dated claim), and adding a CI step —
+"Assemble the acme-build scaffold (library-free)" — that actually assembles the
+scaffold and checks its `$0801` load address, replacing a banner-grep-only proof.
+Live-verified on this host: a warning-free 55-byte `.prg`, `$0801`-`$0836`.

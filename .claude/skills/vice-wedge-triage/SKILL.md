@@ -160,6 +160,22 @@ fields above** — unit-proven (`stock-run-until.test.ts`, 21/21, 07-14) but not
 re-exercised against a real emulator by this gap-closure batch. **MEDIUM on the fork** — read off
 the tool schema, not reproduced.
 
+**A second binary-monitor client is contention, not a wedge, and it has a cheap tell — stock
+only.** Stock VICE's binary monitor services exactly one client; a second `connect()` sits
+unserviced in the backlog with no reply and no EOF. The discriminator: a socket that *accepts* the
+connection but never answers is contention, not a hung emulator — and the broker itself already
+knows whether it holds a lease on that port, which is the thing a human or agent can actually go
+check instead of guessing. Named causes, so a reader knows where to look: a hand-run `nc` session
+left open against the port, a second Claude Code session driving the same instance, VICE's own
+`-remotemonitor`, and any other 6502 debugger that dials in — including regenerator2000's own
+`--vice` flag. **This plugin's own regenerator2000 route can never be one of them:** the launch
+path refuses `--vice` by construction (no caller-supplied argv passthrough exists to inject it in
+the first place) *and* by a scan that throws if the flag is ever present in the final argv — not by
+documentation alone (`R2000-01`, plan 10-01) — so a user chasing a silent emulator can rule this
+project's own r2000 integration out immediately, rather than suspecting it. The standing advice
+does not change: contention is **never** a reason to recycle — the instance is healthy, merely
+claimed elsewhere.
+
 ## The manual fallback, when `vice_diagnose` cannot answer
 
 `vice_diagnose` needs the host broker running. When it reports that no `broker.json` record

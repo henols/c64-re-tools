@@ -47,3 +47,25 @@ session, VICE's own `-remotemonitor`, or any other 6502 debugger does the same.
 Item 1 and 2 are true today for any stock-backend user, cost almost nothing, and
 land naturally next to `SKILL-01`'s Phase 8 revision of the same playbook. Item
 3 is v0.3.0 scope and should not be pulled forward.
+
+---
+
+## Resolved 2026-08-20 (Phase 10)
+
+Closed across three plans:
+
+1. **Item 1** (the discriminator and named causes in `vice-wedge-triage/SKILL.md`)
+   — resolved here, plan 10-09: the skill now states the cheap tell (a socket that
+   accepts a connection but never answers is contention, not a wedge) and names
+   the concrete causes (a hand-run `nc` session, a second Claude Code session,
+   VICE's own `-remotemonitor`, and any other 6502 debugger — including
+   regenerator2000's own `--vice` flag), plus the fact that this plugin's own
+   regenerator2000 route can never be one of them.
+2. **Item 2** (state the rule positively in the install docs) — resolved in plan
+   10-08: `README.md`'s one-holder statement near `### Verifying a stock install`
+   was extended into the full positive rule with the same named traps.
+3. **Item 3** (the real `--vice` guard mirroring `DENY_LIST`) — resolved in plan
+   10-01: the launch path refuses `--vice`, unreachable by construction (no
+   caller-supplied argv passthrough exists to inject it) *and* denied by a scan
+   that throws if the flag is ever present in the final argv, mirroring
+   `vice.ts`'s `DENY_LIST` / `denyListRefusalMessage()` precedent.
