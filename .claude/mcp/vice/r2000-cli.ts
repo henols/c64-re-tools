@@ -19,6 +19,19 @@
 //     `c64-provenance-diff` exists to prevent elsewhere in this project. Zero
 //     `--entry` means: print the directory listing, tell the user to re-run
 //     with `--entry NAME`, and exit 2. Never guess.
+//   - Never dispatch a flat `.raw`/`.bin` capture by its BYTE LENGTH alone
+//     (WR-07). The incident: a 4096-byte `capture.raw` fell through to the
+//     `bytes.length === 65536` branch's `else`, which is `parsePrg()` --
+//     whose first two bytes become the load address -- so a truncated
+//     capture silently "bootstrapped" with origin `$62c5` (its own first two
+//     payload bytes read backwards) and exit 0, with every downstream
+//     address wrong and no diagnostic. That is exactly the "silently guess"
+//     behaviour D-02 exists to forbid, just for a different input shape.
+//     `.raw`/`.bin` inputs are now dispatched by EXTENSION, before the
+//     length check, so `flatImageOrigin()`'s own named refusal (any length
+//     other than exactly 65536) is always reachable for those two
+//     extensions.
+
 //
 // `runR2000Cli()` returns an exit code and never terminates the process
 // itself, so it is testable in-process as well as from the bin (the bin,
@@ -240,7 +253,22 @@ function bootstrapProject(
       return { code: 1 };
     }
     ({ origin, body } = parsePrg(extracted));
+  } else if (ext === ".raw" || ext === ".bin") {
+    // WR-07: dispatch by extension, not by byte length, so a truncated or
+    // oversized flat capture hits flatImageOrigin()'s own named refusal
+    // instead of falling through to parsePrg() and being silently
+    // reinterpreted as a .prg (see the header comment above).
+    try {
+      origin = flatImageOrigin(bytes);
+    } catch (err) {
+      console.error(`bootstrap: ${errMsg(err)}`);
+      return { code: 1 };
+    }
+    body = bytes;
   } else if (bytes.length === 65536) {
+    // Extension-less flat capture (no `.raw`/`.bin` suffix): the only
+    // remaining route by which a 65536-byte flat image reaches
+    // flatImageOrigin() is this length check, kept for that case alone.
     origin = flatImageOrigin(bytes);
     body = bytes;
   } else {
