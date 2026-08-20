@@ -58,7 +58,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/9 | Planned | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 3/9 | In Progress|  |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
@@ -290,9 +290,9 @@ Notes:
 
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — Adoption boundaries: the `--vice` guard, unreachable by construction and denied by scan, plus the no-translation absence assertion (criteria 1-2, R2000-01/R2000-02)
-- [ ] 10-02-PLAN.md — Automated bootstrap: environment drift re-check and the minimal, forced-settings `.regen2000proj` synthesiser (criterion 3, R2000-09)
-- [ ] 10-03-PLAN.md — `.d64` named-entry extraction, container-side, that refuses to guess (criterion 3, R2000-09, D-02)
+- [x] 10-01-PLAN.md — Adoption boundaries: the `--vice` guard, unreachable by construction and denied by scan, plus the no-translation absence assertion (criteria 1-2, R2000-01/R2000-02)
+- [x] 10-02-PLAN.md — Automated bootstrap: environment drift re-check and the minimal, forced-settings `.regen2000proj` synthesiser (criterion 3, R2000-09)
+- [x] 10-03-PLAN.md — `.d64` named-entry extraction, container-side, that refuses to guess (criterion 3, R2000-09, D-02)
 
 **Wave 2** *(blocked on Wave 1)*
 
