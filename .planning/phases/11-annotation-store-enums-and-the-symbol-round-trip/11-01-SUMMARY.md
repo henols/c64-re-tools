@@ -155,3 +155,14 @@ None - no external service configuration required.
 ---
 *Phase: 11-annotation-store-enums-and-the-symbol-round-trip*
 *Completed: 2026-08-20*
+
+## Self-Check: PASSED
+
+- FOUND: `.claude/mcp/vice/r2000-test-gate.ts`
+- FOUND: `.claude/mcp/vice/r2000-launch.test.ts`
+- FOUND: `.claude/mcp/vice/r2000-verify.ts`
+- FOUND: `.claude/mcp/vice/r2000-verify.test.ts`
+- FOUND: `.planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/deferred-items.md`
+- FOUND commit `8b23784` (Task 1)
+- FOUND commit `1f20a62` (Task 2)
+- FOUND commit `1271e06` (Task 3)
