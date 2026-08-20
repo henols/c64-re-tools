@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-19T22:35:53.365Z"
-last_activity: 2026-08-19 -- Phase 9 planning complete
+last_updated: "2026-08-20T05:09:31.974Z"
+last_activity: 2026-08-20 -- Phase 09 execution started
 progress:
   total_phases: 3
   completed_phases: 0
@@ -25,7 +25,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** v0.3.0 regenerator2000 static-analysis backend is **open**.
+**Current focus:** Phase 09 — the-assumption-probe-go-no-go
 ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
 1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
@@ -36,10 +36,10 @@ is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: 9 — The Assumption Probe (Go/No-Go) — planned, not started
-Plan: 0/8 executed (8 plans, 5 waves)
-Status: Ready to execute
-Last activity: 2026-08-19 -- Phase 9 planning complete
+Phase: 09 (the-assumption-probe-go-no-go) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 09
+Last activity: 2026-08-20 -- Phase 09 execution started
 
 ## Performance Metrics
 
