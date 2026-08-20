@@ -19,7 +19,7 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 
 ### Verification (gates the milestone)
 
-- [ ] **R2000-16**: Five load-bearing assumptions are checked against a real
+- [x] **R2000-16**: Five load-bearing assumptions are checked against a real
       regenerator2000 build **before any further plan is written**, each answered
       in the repo with recorded evidence, and any failure recorded as an accepted
       limit stating what it breaks. Sharpest first, because the first decides
