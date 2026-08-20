@@ -103,6 +103,19 @@ test("the disassembler modules (not yet reachable from stock-dispatch.ts in this
   }
 });
 
+test("the r2000 module family (D-08/R2000-02) is absent from the consumer set -- regenerator2000 runs container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
+  const importers = hostpathImporters();
+  for (const name of [
+    "r2000-launch.ts",
+    "r2000-project.ts",
+    "r2000-d64.ts",
+    "r2000-cli.ts",
+    "r2000-verify.ts",
+  ]) {
+    assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
+  }
+});
+
 // D-05-12: the derived-module guess this test used to make -- stripping the
 // "vice_" prefix off the tool name and prefixing "stock-" -- produced an
 // UNDERSCORE-bearing name for every multi-word tool -- e.g. vice_memory_search
