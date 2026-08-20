@@ -1,0 +1,50 @@
+ File  Edit  Jump  Search  View  Debugger  Help
+▏███████████████████████████████████████████
+┌ Disassembly ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ Hex Dump (Screencode Shifted) ─────────────────────────────────────────────┐
+│                     $C000  A9 00     start               lda   #$00                                                    ││$C000  A9 00 8D 20  D0 A2 05 BD  21 C0 AF 21  C0 8F 00 C4  )@M P"e=!─/!─O@D │
+│                     $C002  8D 20 D0                      sta   $d020          ; Border Color                           ││$C010  0F 01 C4 CF  02 C4 EF 03  C4 0B FF A9  01 8D 21 D0  oaDObD▂cDk▚)aM!P │
+│                     $C005  A2 05                         ldx   #$05                                                    ││$C020  60 01 02 03  04 05 06 70  72 6F 62 65                abcdef┌┬▂▄▏     │
+│                     $C007  BD 21 C0                      lda   f_C021,x                                                ││                                                                            │
+│                     $C00A  AF                            .byte $af            ; Invalid or partial instruction         ││                                                                            │
+│                     $C00B  21 C0                         and   (zpp_C0,x)                                              ││                                                                            │
+│                     $C00D  8F                            .byte $8f            ; Invalid or partial instruction         ││                                                                            │
+│                     $C00E  00                            brk                                                           ││                                                                            │
+│                     $C00F  C4 0F                         cpy   zpa_0F                                                  ││                                                                            │
+│                     $C011  01 C4                         ora   (zpp_C4,x)                                              ││                                                                            │
+│                     $C013  CF                            .byte $cf            ; Invalid or partial instruction         ││                                                                            │
+│                     $C014  02                            .byte $02            ; Invalid or partial instruction         ││                                                                            │
+│                     $C015  C4 EF                         cpy   zpa_EF                                                  ││                                                                            │
+│                     $C017  03                            .byte $03            ; Invalid or partial instruction         ││                                                                            │
+│                     $C018  C4 0B                         cpy   zpa_0B                                                  ││                                                                            │
+│                     $C01A  FF                            .byte $ff            ; Invalid or partial instruction         ││                                                                            │
+│                     $C01B  A9 01                         lda   #$01                                                    ││                                                                            │
+│                     $C01D  8D 21 D0                      sta   $d021          ; Background Color 0                     ││                                                                            │
+│                     $C020  60                            rts                                                           ││                                                                            │
+│                     $C021  01        f_C021              .byte $01            ; x-ref: $c007                           ││                                                                            │
+│                     $C022  02                            .byte $02                                                     ││                                                                            │
+│                     $C023  03                            .byte $03                                                     ││                                                                            │
+│                     $C024  04                            .byte $04                                                     ││                                                                            │
+│                     $C025  05                            .byte $05                                                     ││                                                                            │
+│                     $C026  06                            .byte $06                                                     ││                                                                            │
+│                     $C027  70                            .byte $70                                                     ││                                                                            │
+│                     $C028  72                            .byte $72                                                     ││                                                                            │
+│                     $C029  6F                            .byte $6f                                                     ││                                                                            │
+│                     $C02A  62                            .byte $62                                                     ││                                                                            │
+│                     $C02B  65                            .byte $65                                                     ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+│                                                                                                                        ││                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────┘
+ Project saved: probe-illegal.regen2000proj                                                                        Commodore 64 | 64tass | Code: $C000-$C020 | Cursor: $C000 | File: "probe-illegal.prg"

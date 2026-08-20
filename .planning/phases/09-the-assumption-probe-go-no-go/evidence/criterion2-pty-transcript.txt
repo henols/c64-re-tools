@@ -1,0 +1,364 @@
+## Criterion 2 -- R2000-16(1): pty tolerance (2a) and keystroke-driven Save-As bootstrap (2b)
+## Qualified by regenerator2000 0.9.20, rustc 1.97.1 (per 09-01-SUMMARY.md)
+
+## Task 1: does HTTP MCP mode survive a pty with no real TTY?
+
+$ echo "$HOME/.cache/c64-re-tools/phase9"
+/home/henrik/.cache/c64-re-tools/phase9
+
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 16
+drwxrwxr-x 2 henrik henrik 4096 20 aug 07.14 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+
+Fixture already present from plan 09-01 (byte-verified there); no copy needed.
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Port :3000 confirmed free before launch (grep found nothing, exit 1).
+
+$ command -v tmux && tmux -V
+/usr/bin/tmux
+tmux 3.5a
+
+PTY_ROUTE: tmux
+Reason: tmux 3.5a is on PATH (installed by the human during plan 09-01's blocking
+checkpoint). It is the stronger evidence route because it provides real terminal
+emulation (a genuine pty + VT100 interpretation), unlike the fallback Python
+pty.openpty() route which would only capture a raw, unrendered escape-sequence byte
+stream. Per the inherited findings and this plan's own instruction, the Python
+pty-driver fallback is NOT created in this plan -- it was only to be used if tmux
+were unavailable, and it is available.
+
+$ tmux kill-session -t r2000probe 2>/dev/null; echo done
+done
+
+$ tmux new-session -d -s r2000probe -x 200 -y 50 regenerator2000 --mcp-server "$HOME/.cache/c64-re-tools/phase9/probe-illegal.prg"
+launched, exit=0
+
+Note: the fixture path is passed positionally (the [FILE] argument), not as an
+argument to --mcp-server -- confirmed from plan 09-01's verbatim --help capture:
+"--mcp-server / Run MCP server (HTTP port 3000)" takes no argument itself.
+
+Polled by repeated `tmux has-session` + `tmux capture-pane -t r2000probe -p`
+(single-command captures, run interactively rather than in a shell polling loop --
+this harness's Bash-command classifier rejects multi-statement loop scripts as
+"too complex to verify inside the worktree"; capturing twice a few seconds apart
+and comparing was used instead, well within the 90s bound):
+
+$ tmux has-session -t r2000probe && echo ALIVE || echo DEAD
+ALIVE
+
+$ tmux capture-pane -t r2000probe -p
+(see evidence/criterion2-pane-initial.txt for the full captured pane -- reproduced
+verbatim there, not retyped here)
+
+A second capture taken a few seconds later was byte-identical to the first --
+the pane is stable, non-empty, and the process is alive. Full text is in
+evidence/criterion2-pane-initial.txt.
+
+**What the pane actually shows:** a fully-drawn regenerator2000 TUI -- menu bar
+("File Edit Jump Search View Debugger Help"), a "Disassembly" pane showing the
+probe fixture's bytes at $C000 (currently rendered as raw `.byte` lines, not yet
+disassembled as instructions -- the auto-analyzer has not committed the import
+yet), a "Hex Dump (Screencode Shifted)" pane showing the same 44 bytes, and an
+**"Import Context Setup" modal dialog** sitting on top with System "Commodore 64",
+Origin Address $C000, Entry Point Address $C000, a checked "[X] Disassemble from
+Entry Point Address" box, and "< Confirm >" / "< Cancel >" buttons. The status
+bar bottom-left reads exactly:
+
+    MCP Server active on http://127.0.0.1:3000/mcp
+
+-- so the research's assumed status text WAS observed verbatim, unlike the
+research's own caveat that it might not exist. The status bar right side reads
+"Commodore 64 | 64tass | Undefined: $C000-$C02B | Cursor: $C000 |
+File: "probe-illegal.prg"".
+
+**Research correction:** 09-RESEARCH.md's data-flow diagram (Architecture
+Patterns) shows step ⑤ `auto_analyze()` running unattended straight into step ⑥
+(MCP server start). In fact an "Import Context Setup" confirmation dialog is
+presented and holds focus before analysis proceeds -- this is an additional modal
+the bootstrap sequence must dismiss (via Escape or Enter-on-Confirm) before Alt+S
+can reach the Save-As dialog. Not fatal to 2a (the MCP server started regardless,
+per the status bar), but it changes the exact keystroke sequence 2b needs.
+
+$ ps -o pid,etimes,args -p 2161138
+    PID ELAPSED COMMAND
+2161138      38 regenerator2000 --mcp-server /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.prg
+
+Process alive, 38s elapsed at time of check, exact launch argv confirmed (no
+--vice, no illegal argument to --mcp-server).
+
+PTY_TOLERANCE: pass
+Justification: the process is alive 38+ seconds after launch (`ps` above), the
+tmux pane is non-empty and shows real, stable TUI output (menu bar, two rendered
+data panes, a modal dialog, and a status bar) rather than any terminal error, and
+no "not a terminal" / "Device not configured" / enable_raw_mode failure message
+appears anywhere in the captured pane. The status bar's literal
+"MCP Server active on http://127.0.0.1:3000/mcp" text confirms raw mode, the
+input thread, the initial draw, and the HTTP MCP listener all succeeded under a
+tmux pty with no real TTY.
+
+## Task 2: is an MCP client served or refused over 127.0.0.1:3000 in that state?
+
+evidence/mcp-harness.mjs written: an ESM script importing `Client` from
+`@modelcontextprotocol/sdk/client/index.js` and `StreamableHTTPClientTransport`
+from `@modelcontextprotocol/sdk/client/streamableHttp.js`, connecting to
+`http://127.0.0.1:3000/mcp`, printing `listTools()` and a `callTool()` whose name
+and JSON arguments come from `process.argv` (never string-interpolated). No
+`curl` invocation anywhere in it. Full 30s per-step timeout via `Promise.race`.
+
+Vendored SDK resolution (evidence_conventions rule 7):
+
+$ git rev-parse --path-format=absolute --git-common-dir
+/home/henrik/dev/henrik/git/c64-re-tools/.git
+
+Main checkout root: /home/henrik/dev/henrik/git/c64-re-tools (parent of the
+.git directory above). Confirmed the vendored SDK exists there:
+
+$ ls /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
+/home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
+
+$ ls /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
+/home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
+
+Both subpaths resolve via the SDK's package.json `exports["./*"]` wildcard
+mapping to `./dist/esm/*`. Confirmed no write occurred under `.claude/mcp/vice/`
+(only read/`ls`) and no `npm install` was run (T-09-03-E).
+
+$ cp .../evidence/mcp-harness.mjs "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs"
+copied
+
+$ ln -sfn /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules "$HOME/.cache/c64-re-tools/phase9/node_modules"
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 24
+drwxrwxr-x 2 henrik henrik 4096 20 aug 09.25 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 2959 20 aug 09.25 mcp-harness.mjs
+lrwxrwxrwx 1 henrik henrik   70 20 aug 09.25 node_modules -> /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+
+$ tmux has-session -t r2000probe && echo ALIVE || echo DEAD
+ALIVE
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+LIST_TOOLS_RESULT:
+{ "tools": [ ... 28 tools: r2000_set_label_name, r2000_set_comment,
+  r2000_set_data_type, r2000_toggle_splitter, r2000_undo, r2000_add_scope,
+  r2000_redo, r2000_read_region, r2000_read_selected, r2000_get_binary_info,
+  r2000_get_blocks, r2000_get_address_details, r2000_get_disassembly_cursor,
+  r2000_jump_to_address, r2000_search_memory, r2000_search_disassembly,
+  r2000_get_cross_references, r2000_set_immediate_format, r2000_get_symbols,
+  r2000_get_comments, r2000_save_project, r2000_batch_execute,
+  r2000_create_project_enum, r2000_update_project_enum,
+  r2000_delete_project_enum, r2000_apply_enum_usage, r2000_unpack_binary,
+  r2000_disassemble ] }
+(full JSON with complete inputSchemas captured in this session's real tool
+output; truncated here to the name list plus the exact 28-count re-verified
+separately below -- every name and description was inspected in full when the
+command actually ran, nothing here is reconstructed from memory)
+CALL_TOOL_FAILED:
+{
+  "message": "MCP error -32603: No active project path. Project must be loaded from or saved to a .regen2000proj file before it can be saved.",
+  "code": -32603,
+  "stack": "McpError: MCP error -32603: No active project path. Project must be loaded from or saved to a .regen2000proj file before it can be saved.\n    at McpError.fromError (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js:2048:16)\n    at Client._onresponse (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js:490:36)\n    at _transport.onmessage (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js:234:22)\n    at processStream (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js:211:45)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+}
+EXIT_CODE=0
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" 2>&1 | grep -c '"name": "r2000_'
+28
+
+Tool count independently re-verified by grep against the real output: 28.
+
+MCP_SERVED: pass
+Justification: `client.connect()` completed the Streamable-HTTP initialize
+handshake with no error, and `listTools()` returned a real 28-tool list (all
+`r2000_*` names, full inputSchemas) rather than a connection error or timeout.
+The HTTP MCP surface is genuinely served over 127.0.0.1:3000 while the process
+runs under the tmux pty from Task 1 -- pty tolerance extends to the MCP server,
+not merely to TUI rendering.
+
+SAVE_PROJECT_PRE_BOOTSTRAP: MCP error -32603 "No active project path. Project
+must be loaded from or saved to a .regen2000proj file before it can be saved."
+-- verbatim, matching the exact wording 09-RESEARCH.md predicted from source
+reading (session_tools.rs / dialog_save_as.rs).
+
+PRECONDITION_NOTE: this -32603 "No active project path" result is an unrelated
+precondition failure by design, not a pty answer in either direction. No code
+path sets `app_state.project_path` for a freshly-loaded raw binary except the
+TUI's own Save-As dialog (Alt+S), so calling `r2000_save_project` before that
+dialog completes is expected to fail regardless of whether the pty/MCP surface
+works correctly. It is neither a probe pass nor a probe fail for criterion 2;
+it only tells us the harness and MCP surface function correctly enough to
+receive a real, well-formed JSON-RPC error back. (No entry needed under
+`## RESEARCH CORRECTIONS` for this task -- the observed error matches
+09-RESEARCH.md's prediction exactly, verbatim.)
+
+## Task 3: 2b -- drive Save-As with no human, then prove --headless loads the result
+
+Pre-condition met: PTY_TOLERANCE: pass (Task 1), so this task proceeds.
+
+**Import Context Setup modal (research correction from Task 1) had to be
+dismissed first**, since it held focus and would block Alt+S from reaching the
+main view:
+
+$ tmux send-keys -t r2000probe Enter
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(status bar changed to "Context applied"; disassembly view now shows real
+mnemonics -- lda/sta/ldx/rts etc -- with the illegal opcode bytes at $C00A
+(AF/lax), $C00D (8F/sax), $C00F+ (C4 0F cpy is a **legal** zero-page cpy, not
+one of the fixture's intended illegal bytes at that exact offset -- the
+auto-analyzer's byte alignment differs from the source's intended instruction
+boundaries in a couple of spots) rendered as ".byte $xx ; Invalid or partial
+instruction" rather than as lax/sax/dcp/isc/anc mnemonics. This is an
+observation for wave 3's Open Question 3 (use_illegal_opcodes), not scored
+here: auto-analysis did NOT automatically flip use_illegal_opcodes to true for
+this fixture.)
+
+**Escape sent per the plan's instruction, to ensure no residual focus before
+Alt+S** (no-op here since the modal was already dismissed by the Enter above):
+
+$ tmux send-keys -t r2000probe Escape
+sent
+(pane unchanged -- confirmed via capture-pane, status bar still "Context applied")
+
+**Alt+S sent, first attempt, tmux key notation `M-s`:**
+
+$ tmux send-keys -t r2000probe M-s
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(full pane in evidence/criterion2-pane-after-alt-s.txt)
+
+The Save-As dialog opened on the **first attempt** -- no retry with an
+alternative keystroke encoding was needed. `M-s` registered as Alt+S correctly
+under this tmux pty against this crossterm-based TUI. A1 (whether `M-s` would
+be recognised) is answered: yes, first try.
+
+**What the dialog actually shows** (evidence/criterion2-pane-after-alt-s.txt):
+titled "Save Project As (Tab to Switch Focus, Esc to Cancel)", a directory
+browser pane showing "Directory: /home/henrik/.cache/c64-re-tools/phase9" with
+entries ".." and "node_modules/", and a "Filename" field. The status bar reads
+"Enter Project filename".
+
+SAVE_AS_DEFAULT_FILENAME: probe-illegal.regen2000proj -- the field was
+pre-filled exactly as A2 (09-RESEARCH.md's Assumptions Log) predicted:
+"<stem>.regen2000proj" (stem = "probe-illegal", the loaded file's basename
+minus extension). A2 is now confirmed true and 09-RESEARCH.md's Open Question 2
+is closed. Field was accepted as-is (not retyped) since it already matched the
+target filename this plan needed.
+
+**Enter sent to accept the pre-filled filename:**
+
+$ tmux send-keys -t r2000probe Enter
+sent
+
+$ tmux capture-pane -t r2000probe -p
+(full pane in evidence/criterion2-pane-after-enter.txt; status bar now reads
+"Project saved: probe-illegal.regen2000proj")
+
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 28
+drwxrwxr-x 2 henrik henrik 4096 20 aug 09.30 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 2959 20 aug 09.25 mcp-harness.mjs
+lrwxrwxrwx 1 henrik henrik   70 20 aug 09.25 node_modules -> /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+-rw-rw-r-- 1 henrik henrik 1642 20 aug 09.30 probe-illegal.regen2000proj
+
+The file exists at the target path directly -- no separate `find` was needed
+because the dialog's own directory browser already showed PROBE_DIR as the
+current directory (the working directory regenerator2000 was launched from).
+
+PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+**Confirmation 1 -- re-run the harness against the still-live process:**
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+(listTools output identical 28-tool list, omitted here -- unchanged from Task 2)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Project saved to /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+    }
+  ]
+}
+EXIT_CODE=0
+
+SAVE_PROJECT_POST_BOOTSTRAP: succeeded -- "Project saved to
+/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj" (no error,
+no -32603). This closes 09-RESEARCH.md's Open Question 1: `project_path` is
+indeed populated post-bootstrap and `r2000_save_project` now works via the
+still-running MCP server, over the same pty, with no restart.
+
+**Teardown before the headless confirmation:**
+
+$ tmux kill-session -t r2000probe
+kill_exit=0
+
+$ tmux has-session -t r2000probe
+no server running on /tmp/tmux-1000/default
+has-session exit=1
+
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match beyond the pgrep command's own self-match in argv; the launched
+process no longer exists)
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Teardown confirmed clean: session gone, MCP process gone, port :3000 free again.
+
+**Confirmation 2 -- fresh --headless invocation against the project file,
+process fully restarted, no pty involved this time:**
+
+$ regenerator2000 --headless --export_lbl "$HOME/.cache/c64-re-tools/phase9/bootstrap-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/bootstrap-check.lbl"
+EXIT_CODE=0
+
+$ cat "$HOME/.cache/c64-re-tools/phase9/bootstrap-check.lbl"
+al C:c000 .start
+
+A completely fresh, non-pty `--headless` process loaded the `.regen2000proj`
+file with exit 0 and successfully exported a label file -- this is the
+criterion's real observable, not merely that the file exists on disk. The
+bootstrap genuinely unlocks the headless routes wave 3 depends on.
+
+BOOTSTRAP_AUTOMATABLE: pass
+Justification: the entire sequence -- launch under tmux, dismiss the
+unanticipated Import Context Setup modal, send Alt+S, accept the pre-filled
+Save-As filename, send Enter -- completed with **zero human intervention** and
+produced a `.regen2000proj` file. That file was then proven to unlock the
+headless routes by a **separate, freshly-started, non-pty** `--headless`
+invocation that loaded it and exported labels, exit 0. Both the file's
+existence and its post-bootstrap functional effect (project_path populated,
+headless load succeeds) are directly observed, not inferred.
+
+## Final teardown check (whole plan)
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af regenerator2000
+2173137 /bin/sh -c cargo install regenerator2000
+2173163 /usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin/cargo install regenerator2000
+
+These two matches are a `cargo install regenerator2000` build process belonging
+to a different, concurrently-running wave-2 agent (plan 09-02's container-cost
+work) -- not this plan's `--mcp-server` TUI, which is confirmed gone by the
+`regenerator2000 --mcp-server` grep above and by the tmux session no longer
+existing. Nothing this plan launched survives; port :3000 is free.
+
+$ grep -n -- '--vice' evidence/criterion2-pty-transcript.txt evidence/mcp-harness.mjs
+(only this plan's own prohibition text below matches; --vice was never passed
+to any invocation in this plan)
