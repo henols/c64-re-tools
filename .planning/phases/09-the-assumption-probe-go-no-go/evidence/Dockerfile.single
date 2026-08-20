@@ -1,0 +1,8 @@
+# Single-stage probe: what "just cargo install it in the devcontainer" costs forever.
+# Resolved base tag: rust:1.88-slim (rustc 1.88.0 -- the real, transitively-required
+# floor recorded in plan 09-01's evidence, not the edition-2024 floor of 1.85).
+# Deliberately unoptimised -- no apt-get, no cache mounts -- the point is to measure
+# the naive route's cost, not to minimise it.
+FROM rust:1.88-slim
+RUN cargo install regenerator2000
+ENTRYPOINT ["regenerator2000"]

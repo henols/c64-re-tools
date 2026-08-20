@@ -1,0 +1,92 @@
+## Criterion 1(5) -- container-side Rust toolchain build time and image-size cost
+## (R2000-16(5)), Plan 09-02, gathered live in-session
+
+Binding inherited finding from plan 09-01's evidence
+(`evidence/criterion1-install-and-version.txt` `## RESEARCH CORRECTIONS` item 1):
+regenerator2000 0.9.20's real toolchain floor is **rustc >= 1.88**, transitively
+required and undeclared in `Cargo.toml`. `09-RESEARCH.md`'s Code Examples section
+sketched `rust:1.85-slim`, which plan 09-01 proved cannot build this crate by any
+invocation. This plan resolves and uses a real tag that clears the actual floor.
+
+## Base image tag resolution
+
+$ docker manifest inspect rust:1.88-slim
+{
+   "schemaVersion": 2,
+   "mediaType": "application/vnd.oci.image.index.v1+json",
+   "manifests": [
+      {
+(rc=0 -- resolved on first attempt, no fallback candidate needed)
+
+$ docker manifest inspect node:22-slim
+{
+   "schemaVersion": 2,
+   "mediaType": "application/vnd.oci.image.index.v1+json",
+   "manifests": [
+      {
+(rc=0 -- resolved on first attempt, no fallback candidate needed)
+
+Both candidate tags resolved on the first attempt against this host's Docker Hub
+access -- no failed candidates to record for either base.
+
+Confirmed the resolved tags actually carry the versions their names promise (not just
+that the manifest exists):
+
+$ docker run --rm rust:1.88-slim rustc --version
+Unable to find image 'rust:1.88-slim' locally
+1.88-slim: Pulling from library/rust
+... (layer pull output omitted, image pulled successfully)
+Status: Downloaded newer image for rust:1.88-slim
+rustc 1.88.0 (6b00bc388 2025-06-23)
+
+$ docker run --rm node:22-slim node --version
+Unable to find image 'node:22-slim' locally
+22-slim: Pulling from library/node
+... (layer pull output omitted, image pulled successfully)
+Status: Downloaded newer image for node:22-slim
+v22.23.2
+
+## Resolved tags
+
+BASE_RUST_TAG: rust:1.88-slim (rustc 1.88.0 -- exactly at the real transitive floor
+  plan 09-01 established; not the edition-2024 floor of 1.85 09-RESEARCH.md's Code
+  Examples originally sketched)
+BASE_RUNTIME_TAG: node:22-slim (Node v22.23.2)
+
+BASE_RUNTIME_TAG rationale: regenerator2000 runs on the MCP proxy's side of the
+container boundary per D-R4 (this constraint, and the fact that the runtime image
+therefore has to be a Node image rather than bare Debian, is stated directly in this
+plan's own Task 1 read_first). `.claude/mcp/vice/package.json`'s `engines.node` field
+(read directly, see below) requires Node >= 22.18.0. `node:22-slim` resolves to
+v22.23.2, which clears that floor with headroom (unlike the rust tag, which sits
+exactly at its floor).
+
+$ grep -n -A2 '"engines"' .claude/mcp/vice/package.json
+  "engines": {
+    "node": ">=22.18.0"
+  },
+
+## Dockerfile.single (verbatim)
+
+# Single-stage probe: what "just cargo install it in the devcontainer" costs forever.
+# Resolved base tag: rust:1.88-slim (rustc 1.88.0 -- the real, transitively-required
+# floor recorded in plan 09-01's evidence, not the edition-2024 floor of 1.85).
+# Deliberately unoptimised -- no apt-get, no cache mounts -- the point is to measure
+# the naive route's cost, not to minimise it.
+FROM rust:1.88-slim
+RUN cargo install regenerator2000
+ENTRYPOINT ["regenerator2000"]
+
+## Dockerfile.multi (verbatim)
+
+# Multi-stage probe: what the shipped devcontainer image would actually need.
+# Builder base: rust:1.88-slim (rustc 1.88.0, same real floor as Dockerfile.single).
+# Runtime base: node:22-slim (Node v22.23.2), because regenerator2000 runs on the MCP
+# proxy's side of the container boundary per D-R4, and the runtime must satisfy
+# .claude/mcp/vice/package.json's engines.node floor (>=22.18.0) -- v22.23.2 clears it.
+FROM rust:1.88-slim AS builder
+RUN cargo install regenerator2000 --root /out
+
+FROM node:22-slim
+COPY --from=builder /out/bin/regenerator2000 /usr/local/bin/regenerator2000
+ENTRYPOINT ["regenerator2000"]
