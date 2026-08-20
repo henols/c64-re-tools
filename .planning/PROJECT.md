@@ -53,6 +53,7 @@ changing what the session needs to do with it.
 - ✓ The binary-monitor assumptions are confirmed empirically against a real VICE build before client design is locked — v0.2.0 (13-check probe run against stock 3.9 and fork 3.10; all five UNVERIFIED items resolved)
 - ✓ Cycle timing and "is the emulator still advancing" work on the stock backend — v0.2.0
 - ✓ A user can install this from a package manager and is never silently given a wrong answer by a backend that cannot do the thing — v0.2.0 (`docs/tool-support.md` generated from both manifests with a byte-identity drift guard)
+- ✓ Five load-bearing assumptions checked against a real regenerator2000 build before any plan is written, with the pty/HTTP-MCP one gating the rest — Phase 9 (`R2000-16`; verdict `degrade` via rule `R4`, see [`docs/phase9-regenerator2000-probe-findings.md`](../docs/phase9-regenerator2000-probe-findings.md))
 
 ### Active
 
@@ -68,7 +69,6 @@ changing what the session needs to do with it.
 - [ ] A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program (`R2000-11`)
 - [ ] Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers (`R2000-13`)
 - [ ] Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip (`R2000-14`, `R2000-15`)
-- [ ] Five load-bearing assumptions are checked against a real regenerator2000 build **before any plan is written**, with the pty/HTTP-MCP one gating the rest (`R2000-16`)
 
 ### Out of Scope
 
@@ -214,6 +214,19 @@ Items), none of them blocking a tag.
 
 **Not yet released.** The tree is 386 commits ahead of `origin/main` with the
 newest published tag at `v0.1.10`. Nothing in this milestone has been pushed.
+
+**Phase 9 complete — the assumption probe returned `degrade`.** 2026-08-20.
+8 plans, 5 waves, no product code: the deliverable is evidence. `regenerator2000
+0.9.20` was driven for real, and four of the five assumptions hold — the pty
+tolerates a non-TTY, the Save-As bootstrap completes **with no human**, ACME
+reassembly is byte-identical once `use_illegal_opcodes` is on, and an unmodified
+`--export_lbl` file is consumed by the live `vice_symbols_load`. The fifth is a
+genuine `partial`: a `.vsf` carries its start address, but its machine type reads
+correct only by coincidence — `"C64SC"` matches none of regenerator2000's literal
+arms, so it falls through to that tool's own C64 default, and a non-C64 snapshot
+would be misreported. Rule `R4` therefore fired, not `R3`: **the bootstrap is not
+the degraded element**, so Phase 10 still delivers automation. Verdict and all
+five criteria: [`docs/phase9-regenerator2000-probe-findings.md`](../docs/phase9-regenerator2000-probe-findings.md).
 
 ## Current Milestone: v0.3.0 regenerator2000 static-analysis backend
 
@@ -562,4 +575,4 @@ no blockers, and the milestone was archived and tagged on 2026-08-19.)*
 </details>
 
 ---
-*Last updated: 2026-08-19 at v0.2.0 milestone close. Full evolution review performed: "What This Is" rewritten to a shipped two-backend description, Core Value re-checked and kept, 12 requirements graduated to Validated, Active replaced with the v0.3.0 `R2000-*` set, two new Out of Scope boundaries recorded (measured-caller scope cuts; non-uniform tool lists), the superseded "surface must not change" constraint replaced with D-07's trimmed-per-backend rule, and all eight original Key Decisions given outcomes — four ✓ Good, four ⚠️ Revisit, three of those four genuinely reversed during the milestone.*
+*Last updated: 2026-08-20 after Phase 9 close (`R2000-16` graduated to Validated; assumption-probe verdict `degrade`/`R4` recorded). Previously: 2026-08-19 at v0.2.0 milestone close. Full evolution review performed: "What This Is" rewritten to a shipped two-backend description, Core Value re-checked and kept, 12 requirements graduated to Validated, Active replaced with the v0.3.0 `R2000-*` set, two new Out of Scope boundaries recorded (measured-caller scope cuts; non-uniform tool lists), the superseded "surface must not change" constraint replaced with D-07's trimmed-per-backend rule, and all eight original Key Decisions given outcomes — four ✓ Good, four ⚠️ Revisit, three of those four genuinely reversed during the milestone.*
