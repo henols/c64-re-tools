@@ -59,7 +59,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 5/12 | In Progress|  |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 7/12 | In Progress|  |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -382,8 +382,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 11-06-PLAN.md — Enums from `memmap.json`: the re-runnable curated bit-name table, the adjacent-pair pass, and criterion 3 against the ACME export
-- [ ] 11-07-PLAN.md — Criterion 1 session A: annotate a real program into the store and seal a store-only question
+- [x] 11-06-PLAN.md — Enums from `memmap.json`: the re-runnable curated bit-name table, the adjacent-pair pass, and criterion 3 against the ACME export
+- [x] 11-07-PLAN.md — Criterion 1 session A: annotate a real program into the store and seal a store-only question
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
