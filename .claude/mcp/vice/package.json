@@ -60,6 +60,7 @@
     "r2000-verify.ts",
     "r2000-mcp-client.ts",
     "r2000-tools.ts",
+    "r2000-symbols.ts",
     "r2000-regbits-gen.ts",
     "r2000-regbits.json",
     "r2000-enum-gen.ts",

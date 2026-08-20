@@ -282,6 +282,21 @@ export interface WithR2000SessionOptions {
    * the exact same default `r2000-launch.ts` uses.
    */
   bin?: string;
+  /**
+   * Overrides the argv this session spawns with, in place of
+   * `buildMcpServerStdioArgs({ projectPath })`. Added for 11-08's
+   * `r2000-symbols.ts` `importLabels()` (D-28): its argv is
+   * `buildImportLblArgs({ projectPath, lblPath })` --
+   * `["--import_lbl", lblPath, "--mcp-server-stdio", projectPath]` -- which
+   * this module's own default argv cannot express (it is fixed to plain
+   * `--mcp-server-stdio`). A caller-supplied `argv` MUST come from one of
+   * `r2000-launch.ts`'s fixed builders, never be hand-built at the call site
+   * (D-07) -- still passed through `assertNoViceFlag()` below like every
+   * other argv this module builds, so the guard applies regardless of which
+   * builder produced it. Omitted (the default, every OTHER caller in this
+   * repo) preserves the original plain-session behaviour exactly.
+   */
+  argv?: readonly string[];
 }
 
 interface PendingRequest {
@@ -311,7 +326,7 @@ export async function withR2000Session<T>(
 ): Promise<T> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_R2000_CALL_TIMEOUT_MS;
   const bin = opts.bin ?? process.env.R2000_BIN ?? "regenerator2000";
-  const argv = buildMcpServerStdioArgs({ projectPath });
+  const argv = opts.argv ?? buildMcpServerStdioArgs({ projectPath });
   assertNoViceFlag(argv);
 
   const child = spawn(bin, argv, { stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
