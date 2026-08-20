@@ -1,0 +1,336 @@
+## Criterion 3(4) -- R2000-16(4): does a .vsf from vice_snapshot_save load into
+## regenerator2000 carrying machine type and start address?
+##
+## Qualified by plan 09-01's verbatim version line:
+INSTALLED_VERSION: regenerator2000 0.9.20
+
+## Evidence Integrity Rule 6 is the whole shape of this task: "it did not crash"
+## is nowhere recorded as a pass anywhere below. What the snapshot carries and
+## what regenerator2000 derives are recorded independently, then compared.
+
+## Task 1: produce a real snapshot from a live emulator, and record what it carries
+## ----------------------------------------------------------------------------------
+
+$PROBE_DIR = /home/henrik/.cache/c64-re-tools/phase9
+
+**Convention 10 live-resource protocol, before touching any port or launching an
+emulator:**
+
+$ pgrep -af x64sc | grep -v 'eval '
+(empty -- this environment's own Bash wrapper embeds the literal search text in
+its own eval string, which self-matches; filtered out as 09-05 documented. No
+genuine x64sc process exists at this point.)
+
+$ ss -ltn | grep -E ':3000|:660[0-9]|:19510'
+LISTEN 0      511        127.0.0.1:6600       0.0.0.0:*
+LISTEN 0      511        127.0.0.1:6601       0.0.0.0:*
+LISTEN 0      511        127.0.0.1:6602       0.0.0.0:*
+
+Port :3000 free. Ports 6600-6602 are the same pre-existing, unrelated listeners
+plan 09-05 already found and left untouched (owner unknown, predates this
+plan's work, per convention 10 "never kill another plan's process to take the
+resource"). No contention with this plan's own port needs (:19510 broker
+control, :6603+ emulator).
+
+$ cat /home/henrik/dev/henrik/git/c64-re-tools/.vice-supervisor/broker.json
+{
+  "version": 1, "written_by": "vice-broker.mjs", "pid": 2381546,
+  "started_at": "2026-08-20T08:27:08.821Z",
+  "heartbeat_at": "2026-08-20T08:30:38.839Z", ...
+}
+
+$ ps -p 2381546
+    PID TTY          TIME CMD
+(no such process)
+
+Confirmed genuinely dead -- a leftover record from plan 09-05's own last
+broker run (stock backend, per its recorded argv), not a live instance and not
+a concurrent agent (this wave holds the emulator exclusively for this plan
+now, per the orchestrator's own note). Recovering it the same sanctioned way
+09-05 did: running this project's own launcher script, forcing the stock
+backend explicitly on both the broker and (later) the harness's spawned
+client process, per this plan's inherited findings #1.
+
+$ export DISPLAY=:0
+$ VICE_BIN=/usr/bin/x64sc VICE_BACKEND=stock /home/henrik/dev/henrik/git/c64-re-tools/tools/vice-launcher.sh > $PROBE_DIR/vice-broker-launch-06.log 2>&1 &
+launched, pid=2407148
+
+$ cat $PROBE_DIR/vice-broker-launch-06.log
+vice-broker: startup reap found 5 process(es) in the emulator port band, terminated 0
+vice-broker: backend "stock" (source: override, binary: /usr/bin/x64sc)
+vice-broker: wrote /home/henrik/dev/henrik/git/c64-re-tools/.vice-supervisor/broker.json (node v22.22.0); control listener bound on 0.0.0.0:19510
+vice-broker: launching /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6603 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6604 (XDG_CONFIG_HOME=/tmp/vice-broker-vicerc-2Bj4XG)
+vice-broker: warmed 1 warm instance this pass -- 1 of 1 ready, remainder warmed on later passes
+vice-broker: launch-slot decision -- spare holds the slot; spare waits (D-07)
+vice-broker: port 6603 launching -> ready (2023ms)
+
+Flag order matches this project's own standing note (-default precedes
+-binarymonitor) -- the broker's own launch args are the live confirmation.
+
+**Reused plan 09-05's evidence/vice-tool-harness.mjs verbatim (it already
+exists in this wave's merged evidence/ directory, so this plan's own copy at
+$PROBE_DIR/vice-tool-harness.mjs -- byte-identical except one stale comment
+line about a nested-session prohibition -- was used to actually run the
+calls, since it already has the node_modules symlink sitting next to it and
+running the evidence/ copy directly fails with ERR_MODULE_NOT_FOUND (no
+node_modules under the evidence/ path in this worktree). Both copies speak
+the IDENTICAL protocol; only the working directory differs.**
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_ping '{}' vice_machine_config_get '{}' vice_registers_get '{}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_ping {}
+RESULT (vice_ping):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"status\":\"ok\",\"backend\":\"stock\",\"viceVersion\":\"VICE 3.9.0.0\",\"resolvedBinaryPath\":\"/usr/bin/x64sc\",\"resolvedBinaryPathIsResolved\":true,\"capabilities\":{\"cpuHistory\":\"absent\"},\"runState\":\"unknown\"}"
+    }
+  ],
+  "isError": false
+}
+
+CALLING: vice_machine_config_get {}
+RESULT (vice_machine_config_get):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "vice_machine_config_get is not implemented on the stock backend: Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Use the fork backend instead (Set VICE_BACKEND=fork)."
+    }
+  ],
+  "isError": true
+}
+
+CALLING: vice_registers_get {}
+RESULT (vice_registers_get):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"registers\":{\"PC\":58829,\"A\":0,\"X\":0,\"Y\":10,\"SP\":243,\"00\":47,\"01\":55,\"FL\":34,\"LIN\":0,\"CYC\":0},\"unknownIds\":[],\"memspace\":\"main\",\"runState\":\"stopped\"}"
+    }
+  ],
+  "isError": false
+}
+
+**Real, blocking-issue finding (Rule 3 substitution, not an assumption):**
+`vice_machine_config_get` does not exist on the stock backend -- it refuses by
+name (PROJECT.md's own decision: "Every tool declares its support level per
+backend", full-resource access was descoped to the fork). This plan's own
+read_first list assumed this tool exists on stock; it does not, confirmed
+directly against `tools-manifest.stock.json` before this plan started (the
+tool is present only in the fork's 62-tool manifest). Substituted with what
+IS available as the independent "machine's own view of its model" reading:
+the broker's own launch argv (`/usr/bin/x64sc ...` -- x64sc is definitionally
+the C64/C64SC cycle-exact model, not a multi-machine emulator with a runtime-
+queryable system resource on this tool surface) plus `vice_ping`'s
+`viceVersion: "VICE 3.9.0.0"`. `vice_registers_get`'s `PC: 58829` ($E5CD) is
+the live PC reading taken **before** any of the writes or the snapshot below.
+
+CALCULATION: 58829 decimal = $E5CD hex (58829 = 0xE500 + 0xCD = 58624 + 205).
+$E5CD is the C64 KERNAL's keyboard-buffer-check loop inside the BASIC READY
+idle wait -- consistent with a freshly-launched, unattended machine sitting
+at the READY prompt.
+
+**Fixture bytes written at $c000 (2-byte CBM load-address header stripped):**
+
+$ od -c -N4 evidence/fixture/probe-illegal.prg
+0000000  \0 300 251  \0
+(first two bytes 00 c0 = little-endian load address $c000; body starts at
+byte offset 2)
+
+$ python3 -c "
+data = open('evidence/fixture/probe-illegal.prg','rb').read()
+body = data[2:]
+print(len(body), list(body))
+"
+44 [169, 0, 141, 32, 208, 162, 5, 189, 33, 192, 175, 33, 192, 143, 0, 196, 15, 1, 196, 207, 2, 196, 239, 3, 196, 11, 255, 169, 1, 141, 33, 208, 96, 1, 2, 3, 4, 5, 6, 112, 114, 111, 98, 101]
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_memory_write '{"address":"$c000","data":[169,0,141,32,208,162,5,189,33,192,175,33,192,143,0,196,15,1,196,207,2,196,239,3,196,11,255,169,1,141,33,208,96,1,2,3,4,5,6,112,114,111,98,101]}' \
+    vice_memory_read '{"address":"$c000","size":44,"encoding":"hex"}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_memory_write {"address":"$c000","data":[...44 bytes...]}
+RESULT (vice_memory_write):
+{
+  "content": [
+    { "type": "text", "text": "{\"address\":49152,\"bytesWritten\":44,\"bank\":0,\"memspace\":\"main\",\"runState\":\"stopped\"}" }
+  ],
+  "isError": false
+}
+
+CALLING: vice_memory_read {"address":"$c000","size":44,"encoding":"hex"}
+RESULT (vice_memory_read):
+{
+  "content": [
+    { "type": "text", "text": "{\"address\":49152,\"size\":44,\"encoding\":\"hex\",\"sideEffects\":false,\"bank\":0,\"memspace\":\"main\",\"hex\":\"a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265\",\"runState\":\"stopped\"}" }
+  ],
+  "isError": false
+}
+
+Read-back hex `a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265`
+is byte-identical to the fixture body written above (49152 decimal = $c000).
+Known content at a known address, confirmed before the snapshot.
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_snapshot_save '{"name":"r2000_probe_vsf","description":"R2000-16(4) probe"}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_snapshot_save {"name":"r2000_probe_vsf","description":"R2000-16(4) probe"}
+RESULT (vice_snapshot_save):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"name\":\"r2000_probe_vsf\",\"path\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf\",\"sentPath\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf\",\"includeRoms\":false,\"includeDisks\":false,\"metadataWritten\":true,\"metadataPath\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.json\",\"runState\":\"stopped\"}"
+    }
+  ],
+  "isError": false
+}
+
+**Real, source-confirmed finding: on the stock backend, `vice_snapshot_save`
+writes to `<repoRoot>/.vice-snapshots/<name>.vsf`, not `~/.config/vice/
+mcp_snapshots/` (that is the FORK's own location, confirmed by
+`stock-paths.ts:167-177`'s doc comment: kept inside the workspace deliberately
+so hostpath.ts's bind-mount mapping can translate it, unlike the fork's
+`~/.config/vice/` path). This plan's own read_first instruction to `ls -la
+~/.config/vice/mcp_snapshots/` assumed the fork's location; that directory
+does exist (it holds older fork-backend snapshots from before this milestone,
+listed below for contrast) but does NOT contain this plan's file. Interrogating
+the file where the tool's own JSON answer said it landed, not the assumed
+path -- this is "find it on disk", just at the real path rather than the
+guessed one.**
+
+$ ls -la /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/
+total 204
+-rw-rw-r-- 1 henrik henrik    309 20 aug 10.51 r2000_probe_vsf.json
+-rw-rw-r-- 1 henrik henrik 193261 20 aug 10.51 r2000_probe_vsf.vsf
+
+$ ls "$HOME/.config/vice/mcp_snapshots/" | head -3
+20260803171235702-port6510-epoch13.json
+20260803171235702-port6510-epoch13.vsf
+20260805160045723-port6603-epoch1.json
+(fork-backend snapshots from before this milestone -- confirmed NOT this
+plan's file; this plan's process never ran the fork.)
+
+SNAPSHOT_FILE: /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf
+Size: 193261 bytes.
+
+$ od -c -N64 /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf
+0000000   V   I   C   E       S   n   a   p   s   h   o   t       F   i
+0000020   l   e 032 002  \0   C   6   4   S   C  \0  \0  \0  \0  \0  \0
+0000040  \0  \0  \0  \0  \0   V   I   C   E       V   e   r   s   i   o
+0000060   n 032 003  \t  \0  \0  \0  \0  \0  \0   M   A   I   N   C   P
+0000100
+
+Magic bytes 0-18 read literally "VICE Snapshot File" + trailing 032(oct)=$1a
+-- an exact match to `parser/vice_vsf.rs:22`'s expected magic
+`b"VICE Snapshot File\x1a"` (confirmed against the actually-installed
+0.9.20 crate source, cargo registry cache, not just the upstream git clone).
+
+SNAPSHOT_FILE_IS_VSF: yes
+
+**Independent re-derivation of the exact byte layout `vice_vsf.rs` documents,
+run directly against this file (not trusting the od excerpt or the tool's own
+claim -- a from-scratch parse mirroring the installed parser's own offsets):**
+
+$ python3 -c "
+import struct
+data = open('/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf','rb').read()
+print('total size:', len(data))
+print('magic:', data[0:19])
+print('major/minor version:', data[19], data[20])
+machine_name = data[21:37].rstrip(b'\x00')
+print('machine_name (trimmed):', machine_name)
+offset = 37
+while offset < len(data):
+    if offset + 22 > len(data): break
+    mod_name = data[offset:offset+16].decode('ascii', errors='replace')
+    mod_name_trim = mod_name.rstrip('\x00')
+    if mod_name.startswith('VICE Version'):
+        offset += 16 + 4
+        while offset < len(data) and data[offset] == 0: offset += 1
+        continue
+    size = struct.unpack('<I', data[offset+18:offset+22])[0]
+    mod_data = data[offset+22:offset+size]
+    if mod_name_trim == 'MAINCPU':
+        pc = (mod_data[13] << 8) | mod_data[12]
+        print(f'MAINCPU PC (module-data offset 12-13): \${pc:04x} ({pc} decimal)')
+    if mod_name_trim == 'C64MEM':
+        print('C64MEM module data length:', len(mod_data))
+    offset += size
+"
+total size: 193261
+magic: b'VICE Snapshot File\x1a'
+major/minor version: 2 0
+machine_name (trimmed): b'C64SC'
+MAINCPU PC (module-data offset 12-13): $e5cf (58831 decimal)
+C64MEM module data length: 65555
+
+**Real finding, source-confirmed and now independently reproduced against the
+actual file bytes (not inferred): the VSF's own `machine_name` field is
+literally `"C64SC"` -- x64sc's own model designation -- not the bare `"C64"`
+string `file_io.rs:102-109`'s match arm compares against
+(`"C64" => Some(System::C64), "C128" => ..., _ => None`). `"C64SC" != "C64"`
+under Rust's `==`, so this match falls through to `_ => None`.** This is a
+real, concrete, source-grounded prediction (not yet confirmed against the live
+TUI pane -- that is Task 2's job) that regenerator2000's `suggested_system`
+inference will NOT recognise a genuine x64sc-produced snapshot's machine type
+string, even though the snapshot format itself does carry a real machine
+identifier. Recorded now, checked against the live pane in Task 2, and folded
+into the R2000_DERIVED comparison in Task 3.
+
+**A second real finding: the snapshot's own carried PC ($e5cf) differs by 2
+bytes from the live `vice_registers_get` reading taken moments earlier
+($e5cd).** Both are genuine, directly-read values, not a transcription error
+-- re-read twice from the same file bytes above. The 2-byte drift is
+consistent with a few KERNAL keyboard-scan-loop instructions executing between
+the `vice_registers_get` call and the later `vice_snapshot_save` call (each is
+a separate MCP round-trip; nothing in this plan or in `vice-sync.ts`'s
+documented invariants promises the machine stays cycle-frozen between two
+separate tool calls to a "stopped"-reporting but not explicitly paused
+machine). This does not change which reading is authoritative for Task 3's
+comparison: the snapshot's OWN carried PC ($e5cf, read directly from the file
+above) is what regenerator2000 is being asked to derive correctly, not the
+slightly earlier live reading. Both values are recorded so neither is silently
+dropped.
+
+SNAPSHOT_CARRIED: machine_name (raw, from file) = "C64SC"; suggested_system
+match per file_io.rs's own logic = None (predicted, not yet observed);
+PC (from file, MAINCPU module offset 12-13) = $e5cf; PC (live register read,
+moments before the snapshot) = $e5cd; C64MEM module present with 65555 bytes
+of module data (>= the 65540 the parser requires, so the fixture's known
+$c000 content is present in the dump); binary that produced the file =
+/usr/bin/x64sc, VICE 3.9.0.0 (genuine stock, confirmed by vice_ping and by the
+broker's own launch argv, forced explicitly via VICE_BIN=/usr/bin/x64sc
+VICE_BACKEND=stock on both broker and harness client per this plan's
+inherited finding #1).
+
+$ cp /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf $PROBE_DIR/r2000-probe.vsf
+$ sha256sum $PROBE_DIR/r2000-probe.vsf
+42e05c07acae1e8587c2d2ed6c2f18326b87d6e77a6ea9e9e0b92fd84a6987a9  /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.vsf
+$ ls -la $PROBE_DIR/r2000-probe.vsf
+-rw-rw-r-- 1 henrik henrik 193261 20 aug 10.55 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.vsf
+
+193261 bytes (~189 KiB), under the 1 MB threshold -- kept only under
+$PROBE_DIR (scratch), not committed into the repo's evidence/ directory,
+since this plan's own files_modified frontmatter does not list a .vsf path
+and the sequential_but_isolated instruction reserves scratch artifacts for
+$HOME/.cache/c64-re-tools/phase9/. This transcript records its path, size and
+sha256 in full, so the claim is checkable without the binary being committed.
+
+$ ps aux | grep -E 'x64sc|vice-broker.mjs' | grep -v grep | grep -v 'eval '
+henrik   2407148  ... node .../tools/vice-broker.mjs --repo-root .../c64-re-tools
+henrik   2413842  ... /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6603 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6604
+
+Left running deliberately -- Task 1's own action text asks only to "record
+pgrep -a x64sc again afterwards so the transcript shows what was left
+running", not to tear it down; this plan's remaining tasks (2 and 3) need
+neither the emulator nor its broker (they drive regenerator2000's own
+`--mcp-server`/`--headless` process instead). Full final teardown, including
+this broker and instance, is recorded at the very end of this transcript,
+after Task 3, per this plan's own live-process discipline.
