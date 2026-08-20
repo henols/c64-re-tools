@@ -1,0 +1,8 @@
+al C:0810 .init_screen_and_irq
+al C:082f .poll_table_and_dispatch
+al C:0839 .counter_wrap_reentry
+al C:084c .border_bump_up
+al C:0850 .border_bump_down
+al C:0854 .raster_sample_isr
+al C:085c .dispatch_selector_bytes
+al C:0864 .routine_vector_table

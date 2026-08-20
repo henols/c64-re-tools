@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "origin": 2064,
+  "raw_data_base64": "H4sIAAAAAAAA/wFkAJv/qRuNEdCpGI0Y0KnIjQDdeKlUjRQDqQiNFQNYqQCFAqYC4AjQBKIAhgK9XAjJ//AGIEwITC8IIFAITC8I7iDQYM4g0GCtEtDmAkwx6gECAwQFBgf/TAhQCFQIEAipAI0g0GDq6ve1zVBkAAAA",
+  "blocks": [
+    {
+      "start": 0,
+      "end": 75,
+      "type_": "Code",
+      "collapsed": false
+    },
+    {
+      "start": 76,
+      "end": 83,
+      "type_": "DataByte",
+      "collapsed": false
+    },
+    {
+      "start": 84,
+      "end": 91,
+      "type_": "Address",
+      "collapsed": false
+    },
+    {
+      "start": 92,
+      "end": 99,
+      "type_": "DataByte",
+      "collapsed": false
+    }
+  ],
+  "labels": {
+    "2064": [
+      {
+        "name": "init_screen_and_irq",
+        "label_type": "UserDefined",
+        "kind": "User"
+      }
+    ],
+    "2095": [
+      {
+        "name": "poll_table_and_dispatch",
+        "label_type": "Jump",
+        "kind": "User"
+      }
+    ],
+    "2105": [
+      {
+        "name": "counter_wrap_reentry",
+        "label_type": "Branch",
+        "kind": "User"
+      }
+    ],
+    "2118": [
+      {
+        "name": "selector_ff_handler",
+        "label_type": "UserDefined",
+        "kind": "User"
+      }
+    ],
+    "2124": [
+      {
+        "name": "border_bump_up",
+        "label_type": "Subroutine",
+        "kind": "User"
+      }
+    ],
+    "2128": [
+      {
+        "name": "border_bump_down",
+        "label_type": "Subroutine",
+        "kind": "User"
+      }
+    ],
+    "2132": [
+      {
+        "name": "raster_sample_isr",
+        "label_type": "UserDefined",
+        "kind": "User"
+      }
+    ],
+    "2140": [
+      {
+        "name": "dispatch_selector_bytes",
+        "label_type": "Field",
+        "kind": "User"
+      }
+    ],
+    "2148": [
+      {
+        "name": "routine_vector_table",
+        "label_type": "UserDefined",
+        "kind": "User"
+      }
+    ]
+  },
+  "user_side_comments": {},
+  "user_line_comments": {
+    "2064": "[confirmed-code] entry point after bootstrap load; sets VIC-II/CIA registers and installs the live IRQ vector at $0314/$0315",
+    "2118": "[unknown] branch target reached only when dispatch_selector_bytes' selector equals $FF; not yet confirmed whether this path is exercised by the intended program flow or is dead residue from an earlier main-loop design",
+    "2132": "[confirmed-code] IRQ entry; samples the raster line then chains to the KERNAL's own continuation at $EA31",
+    "2140": "[confirmed-data] dispatch selector consumed by poll_table_and_dispatch as an index; terminator $FF selects the take_two branch",
+    "2148": "[probable-data] word-pair vector table pointing at four of this program's own routines; never itself executed as instructions",
+    "2156": "[probable-data] decodes as a syntactically valid instruction stream (lda #0 / sta $d020 / rts / nop / nop) but is never reached by any JSR/JMP/vector in this program -- classified as data on reachability grounds, not opcode shape"
+  },
+  "settings": {
+    "all_labels": false,
+    "preserve_long_bytes": true,
+    "brk_single_byte": true,
+    "patch_brk": false,
+    "system": "Commodore 64",
+    "assembler": "Tass64",
+    "max_xref_count": 5,
+    "max_arrow_columns": 6,
+    "use_illegal_opcodes": true,
+    "text_char_limit": 40,
+    "addresses_per_line": 5,
+    "bytes_per_line": 8,
+    "enabled_features": {},
+    "description": "",
+    "auto_analyze": true,
+    "show_system_comments": true,
+    "fill_run_threshold": 8,
+    "exclude_well_known_labels": true
+  },
+  "immediate_value_formats": {},
+  "bookmarks": {},
+  "cursor_address": 2064,
+  "hex_dump_cursor_address": 2064,
+  "sprites_cursor_address": 2112,
+  "charset_cursor_address": 2048,
+  "right_pane_visible": "HexDump16",
+  "sprite_multicolor_mode": false,
+  "charset_multicolor_mode": false,
+  "bitmap_cursor_address": 8192,
+  "bitmap_multicolor_mode": false,
+  "hexdump_view_mode": "ScreencodeShifted",
+  "splitters": [],
+  "blocks_view_cursor": null,
+  "scopes": {
+    "2132": 2139
+  },
+  "enums": {},
+  "enum_usages": {},
+  "user_excluded_addresses": []
+}
