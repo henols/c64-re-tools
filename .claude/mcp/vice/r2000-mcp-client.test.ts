@@ -76,12 +76,27 @@
 // ever imports the public `MCPClient` class from the declared dependency.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { MCPClient } from "@mastra/mcp";
 import type { Tool } from "@mastra/core/tools";
+
+import {
+  withR2000Session,
+  callR2000,
+  saveAndVerify,
+  R2000SpawnError,
+  R2000ProtocolError,
+  R2000TimeoutError,
+  R2000ChildExitError,
+  R2000SessionFailedError,
+  R2000SaveNotPersistedError,
+} from "./r2000-mcp-client.ts";
+import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";
+import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 /** `Tool.execute` is declared optional on the type (`execute?: (...) => ...`)
  * even though every tool `MCPClient.listTools()` returns always has one --
@@ -100,12 +115,22 @@ async function callTool(tool: Tool<any, any, any, any>, input: Record<string, un
  * matching `mcp/stdio.rs`'s confirmed real-regenerator2000 framing
  * (RESEARCH.md Code Examples): exactly one JSON message per line, both
  * directions.
+ *
+ * Extended beyond Task 2's five base behaviours with the tool-level shapes
+ * `r2000-mcp-client.ts` (Task 3) itself must translate into named errors:
+ * a JSON-RPC `error` object (`r2000_error_tool`), an in-band
+ * `CallToolResult.isError` (`r2000_isError_tool`), a real (or deliberately
+ * lying) `r2000_save_project`, a response carrying a MISMATCHED `id`
+ * (`wrong-id-response`), and exiting non-zero only at stdin EOF after every
+ * call already succeeded (`nonzero-exit-after-success`).
  */
 const STUB_SOURCE = `
 import { createInterface } from "node:readline";
+import { writeFileSync } from "node:fs";
 const MODE = process.env.STUB_MODE || "happy";
 const rl = createInterface({ input: process.stdin, terminal: false });
 function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+let saveCount = 0;
 rl.on("line", (line) => {
   let msg;
   try { msg = JSON.parse(line); } catch { return; }
@@ -131,12 +156,39 @@ rl.on("line", (line) => {
       process.stderr.write("stub-exit-with-stderr: deliberate failure marker\\n");
       process.exit(3);
     }
+    const name = msg.params && msg.params.name;
+    if (MODE === "wrong-id-response") {
+      // Respond with an id that does not match any pending request --
+      // this repo's own request-id-first demux rule (D-08) requires this
+      // to be REFUSED, never resolved.
+      send({ jsonrpc: "2.0", id: (msg.id || 0) + 999, result: { content: [ { type: "text", text: "wrong id" } ] } });
+      return;
+    }
+    if (name === "r2000_error_tool") {
+      send({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: "Invalid params: deliberate test error" } });
+      return;
+    }
+    if (name === "r2000_isError_tool") {
+      send({ jsonrpc: "2.0", id: msg.id, result: { content: [ { type: "text", text: "boom" } ], isError: true } });
+      return;
+    }
+    if (name === "r2000_save_project") {
+      saveCount++;
+      if (MODE !== "lying-save") {
+        writeFileSync(process.env.STUB_PROJECT_PATH, JSON.stringify({ saveCount, t: Date.now() }));
+      }
+      send({ jsonrpc: "2.0", id: msg.id, result: { content: [ { type: "text", text: "Project saved to " + process.env.STUB_PROJECT_PATH } ] } });
+      return;
+    }
     send({ jsonrpc: "2.0", id: msg.id, result: { content: [ { type: "text", text: "ok" } ] } }); // (a)
     return;
   }
   if (msg.id !== undefined) {
     send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: \`unhandled method \${msg.method}\` } });
   }
+});
+rl.on("close", () => {
+  if (MODE === "nonzero-exit-after-success") process.exit(7);
 });
 `;
 
@@ -148,6 +200,25 @@ function stubPath(): string {
     writeFileSync(join(workDir, "stub.mjs"), STUB_SOURCE);
   }
   return join(workDir, "stub.mjs");
+}
+
+/**
+ * `r2000-mcp-client.ts`'s spawn (unlike `MCPClient`'s server config) takes
+ * exactly one executable and a FIXED argv from `buildMcpServerStdioArgs()`
+ * -- there is no `command`/`args` split to hand it the stub script
+ * directly. This tiny shell wrapper is the executable Task 3's
+ * `WithR2000SessionOptions.bin` points at: it ignores its own argv
+ * entirely (the stub reads `STUB_MODE`/`STUB_PROJECT_PATH` from the
+ * environment, never from argv) and always execs the same stub script
+ * under this test run's own `node`.
+ */
+function wrapperPath(): string {
+  stubPath(); // ensures workDir and stub.mjs exist
+  const dir = workDir!;
+  const wrapper = join(dir, "r2000-wrapper.sh");
+  writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${join(dir, "stub.mjs")}" "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  return wrapper;
 }
 
 after(() => {
@@ -454,3 +525,251 @@ test("Decision rule: MCPClient is used if and only if all five properties are sa
   // r2000-mcp-client.ts's header to learn the outcome:
   assert.equal(MCP_CLIENT_VERDICT.exitCodeReachable.status, "not-satisfied");
 });
+
+// ===========================================================================
+// Task 3: r2000-mcp-client.ts itself -- the hand-rolled client the decision
+// rule above selected. Every failure mode named in the plan's objective is
+// exercised here against the same stub harness (extended with the tool-level
+// shapes this module must translate: a JSON-RPC error object, an in-band
+// isError, a real/lying r2000_save_project, and a mismatched response id),
+// plus one live-gated test against a real regenerator2000 child.
+// ===========================================================================
+
+const HANDROLLED_TIMEOUT_MS = 1_500;
+
+/** Writes a throwaway `.regen2000proj`-shaped file (content is irrelevant to
+ * the stub, which never actually parses it) and returns its path -- every
+ * Task 3 test below needs a `projectPath` argument even though the stub
+ * ignores its contents. */
+function throwawayProjectPath(name: string): string {
+  stubPath(); // ensure workDir exists
+  const path = join(workDir!, `${name}.regen2000proj`);
+  writeFileSync(path, "not a real project file -- the stub never parses this");
+  return path;
+}
+
+test("Task 3 happy path: callR2000() resolves against the happy stub", async () => {
+  const projectPath = throwawayProjectPath("t3-happy");
+  const result = await callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS });
+  assert.ok(result, "expected a resolved result from the happy stub");
+});
+
+test("Task 3 spawn failure: a nonexistent regenerator2000 binary surfaces R2000SpawnError naming cargo install", async () => {
+  const projectPath = throwawayProjectPath("t3-enoent");
+  await assert.rejects(
+    () =>
+      callR2000(projectPath, "echo", {}, { bin: "definitely-not-installed-r2000-mcp-client-xyz", timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000SpawnError, `expected R2000SpawnError, got ${(err as Error)?.constructor?.name}`);
+      assert.match((err as Error).message, /cargo install regenerator2000/);
+      return true;
+    }
+  );
+});
+
+test("Task 3 protocol error: a JSON-RPC error object surfaces as R2000ProtocolError with code and message verbatim", async () => {
+  process.env.STUB_MODE = "happy";
+  const projectPath = throwawayProjectPath("t3-protocol-error");
+  await assert.rejects(
+    () => callR2000(projectPath, "r2000_error_tool", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ProtocolError, `expected R2000ProtocolError, got ${(err as Error)?.constructor?.name}`);
+      assert.equal((err as R2000ProtocolError).code, -32602);
+      assert.match((err as Error).message, /Invalid params: deliberate test error/);
+      return true;
+    }
+  );
+});
+
+test("Task 3 in-band tool error: a CallToolResult with isError: true is never a silent success -- surfaces as R2000ProtocolError", async () => {
+  process.env.STUB_MODE = "happy";
+  const projectPath = throwawayProjectPath("t3-iserror");
+  await assert.rejects(
+    () => callR2000(projectPath, "r2000_isError_tool", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ProtocolError, `expected R2000ProtocolError, got ${(err as Error)?.constructor?.name}`);
+      assert.match((err as Error).message, /boom/);
+      return true;
+    }
+  );
+});
+
+test("Task 3 never-answers-call: bounded R2000TimeoutError, never an indefinite hang, well under 30s", async () => {
+  process.env.STUB_MODE = "never-answers-call";
+  const projectPath = throwawayProjectPath("t3-never-answers");
+  const start = Date.now();
+  await assert.rejects(
+    () => callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000TimeoutError, `expected R2000TimeoutError, got ${(err as Error)?.constructor?.name}`);
+      assert.equal((err as R2000TimeoutError).timeoutMs, HANDROLLED_TIMEOUT_MS);
+      return true;
+    }
+  );
+  const elapsedMs = Date.now() - start;
+  assert.ok(elapsedMs < 25_000, `expected a bounded timeout failure, took ${elapsedMs}ms`);
+});
+
+test("Task 3 mid-call exit: R2000ChildExitError, distinguishable BY CLASS (not just message text) from the timeout error", async () => {
+  process.env.STUB_MODE = "exit-mid-call";
+  const projectPath = throwawayProjectPath("t3-exit-mid-call");
+  const start = Date.now();
+  await assert.rejects(
+    () => callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ChildExitError, `expected R2000ChildExitError, got ${(err as Error)?.constructor?.name}`);
+      assert.ok(!(err instanceof R2000TimeoutError), "R2000ChildExitError must not also be an R2000TimeoutError");
+      assert.equal((err as R2000ChildExitError).exitCode, 0);
+      return true;
+    }
+  );
+  const elapsedMs = Date.now() - start;
+  assert.ok(elapsedMs < HANDROLLED_TIMEOUT_MS / 2, `expected a fast failure, took ${elapsedMs}ms`);
+});
+
+test("Task 3 mid-call exit with stderr: R2000ChildExitError names both the exit code and the captured stderr text", async () => {
+  process.env.STUB_MODE = "exit-with-stderr";
+  const projectPath = throwawayProjectPath("t3-exit-with-stderr");
+  await assert.rejects(
+    () => callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ChildExitError, `expected R2000ChildExitError, got ${(err as Error)?.constructor?.name}`);
+      assert.equal((err as R2000ChildExitError).exitCode, 3);
+      assert.match((err as R2000ChildExitError).stderr, /deliberate failure marker/);
+      assert.match((err as Error).message, /deliberate failure marker/);
+      return true;
+    }
+  );
+});
+
+test("Task 3 correlation refusal (D-08): a response carrying a mismatched id is refused, not resolved -- the real request instead times out", async () => {
+  process.env.STUB_MODE = "wrong-id-response";
+  const projectPath = throwawayProjectPath("t3-wrong-id");
+  await assert.rejects(
+    () => callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(
+        err instanceof R2000TimeoutError,
+        `a mismatched-id response must never resolve the real pending request -- expected R2000TimeoutError, got ${(err as Error)?.constructor?.name}`
+      );
+      return true;
+    }
+  );
+});
+
+test("Task 3 non-zero exit after success (T-11-FALSESUCCESS's mirror image): the whole session fails as R2000SessionFailedError even though every call succeeded", async () => {
+  process.env.STUB_MODE = "nonzero-exit-after-success";
+  const projectPath = throwawayProjectPath("t3-nonzero-after-success");
+  await assert.rejects(
+    () => callR2000(projectPath, "echo", {}, { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }),
+    (err: unknown) => {
+      assert.ok(
+        err instanceof R2000SessionFailedError,
+        `expected R2000SessionFailedError, got ${(err as Error)?.constructor?.name}`
+      );
+      assert.equal((err as R2000SessionFailedError).exitCode, 7);
+      return true;
+    }
+  );
+});
+
+test("Task 3 saveAndVerify() -- the phase's highest-value refusal: a stub that reports success while leaving the file unchanged is REJECTED, naming the project path", async () => {
+  process.env.STUB_MODE = "lying-save";
+  const projectPath = throwawayProjectPath("t3-lying-save");
+  const before = readFileSync(projectPath, "utf8");
+  process.env.STUB_PROJECT_PATH = projectPath;
+  await assert.rejects(
+    () =>
+      withR2000Session(
+        projectPath,
+        async (call) => {
+          await saveAndVerify(projectPath, call);
+        },
+        { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }
+      ),
+    (err: unknown) => {
+      assert.ok(
+        err instanceof R2000SaveNotPersistedError,
+        `expected R2000SaveNotPersistedError, got ${(err as Error)?.constructor?.name}`
+      );
+      assert.ok(
+        (err as Error).message.includes(projectPath),
+        `expected the rejection message to name the project path "${projectPath}"; got: ${(err as Error).message}`
+      );
+      return true;
+    }
+  );
+  const after = readFileSync(projectPath, "utf8");
+  assert.equal(after, before, "the lying-save stub must genuinely leave the file byte-identical");
+});
+
+test("Task 3 saveAndVerify() -- a real save is confirmed by an independent content-hash re-read, never by the child's own text response", async () => {
+  process.env.STUB_MODE = "happy";
+  const projectPath = throwawayProjectPath("t3-real-save");
+  const before = readFileSync(projectPath, "utf8");
+  process.env.STUB_PROJECT_PATH = projectPath;
+  let saveResult: { hash: string } | undefined;
+  await withR2000Session(
+    projectPath,
+    async (call) => {
+      saveResult = await saveAndVerify(projectPath, call);
+    },
+    { bin: wrapperPath(), timeoutMs: HANDROLLED_TIMEOUT_MS }
+  );
+  assert.ok(saveResult, "expected saveAndVerify() to resolve for a real save");
+  assert.equal(typeof saveResult!.hash, "string");
+  const after = readFileSync(projectPath, "utf8");
+  assert.notEqual(after, before, "expected the stub to have actually rewritten the project file");
+});
+
+// -- Structural guards (grep-gated, mirroring r2000-launch.ts's own D-07/D-08 style) --
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+test("r2000-mcp-client.ts imports neither host/container path-boundary module (Rule A16)", () => {
+  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
+  assert.equal(/hostpath|containerpath/.test(src), false, "r2000-mcp-client.ts must not import hostpath.ts/containerpath.ts");
+});
+
+test("r2000-mcp-client.ts never imports the underlying MCP SDK package directly (ENGINEERING_RULES.md §4)", () => {
+  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
+  assert.equal(/@modelcontextprotocol\/sdk/.test(src), false);
+});
+
+test("r2000-mcp-client.ts's module header records the client-shape verdict and its deciding property", () => {
+  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
+  assert.match(src, /CLIENT-SHAPE VERDICT/);
+  assert.match(src, /exit-code reachability/i);
+});
+
+// -- Live-gated: a real regenerator2000 child, the independent oracle -----
+
+const LIVE_SKIP_REASON = skipReasonFor("r2000-mcp-client.test.ts");
+
+test("regenerator2000 availability gate (D-11)", () => {
+  assertR2000RequiredIfEnvSet(assert);
+});
+
+test(
+  "gated: a real regenerator2000 child answers r2000_get_binary_info with size 65536 for a synthesized flat-64K project",
+  { skip: LIVE_SKIP_REASON },
+  async () => {
+    stubPath(); // ensure workDir exists for the temp project file below
+    const bytes = new Uint8Array(65536);
+    const origin = flatImageOrigin(bytes);
+    const projectJson = synthesizeProject(bytes, { origin });
+    const projectPath = join(workDir!, "live-flat.regen2000proj");
+    writeFileSync(projectPath, projectJson);
+
+    const result = (await withR2000Session(
+      projectPath,
+      (call) => call("r2000_get_binary_info", {}),
+      { timeoutMs: 15_000 }
+    )) as { content: Array<{ type: string; text: string }> };
+
+    const text = result.content?.[0]?.text;
+    assert.ok(text, `expected a text content block from r2000_get_binary_info; got: ${JSON.stringify(result)}`);
+    const parsed = JSON.parse(text!) as { size: number };
+    assert.equal(parsed.size, 65536, `expected size 65536 for a flat 64K project (R2000_BIN="${R2000_BIN}")`);
+  }
+);
