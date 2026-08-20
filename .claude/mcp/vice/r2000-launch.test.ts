@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 
 import {
   R2000_BIN,
+  FORBIDDEN_R2000_FLAGS,
   assertNoViceFlag,
   buildExportAsmArgs,
   buildVerifyArgs,
@@ -174,3 +175,52 @@ test("buildExportAsmArgs and buildVerifyArgs each return a string[] with --assem
     );
   }
 });
+
+// -- 8. WR-01: FORBIDDEN_R2000_FLAGS is the actual source of truth ---------
+//       for the scan, not merely a documented-but-unread constant ----------
+
+test("FORBIDDEN_R2000_FLAGS includes --vice, and assertNoViceFlag throws for every member of the array", () => {
+  assert.ok(FORBIDDEN_R2000_FLAGS.includes("--vice"));
+  for (const flag of FORBIDDEN_R2000_FLAGS) {
+    assert.throws(
+      () => assertNoViceFlag([flag]),
+      (err: unknown) => err instanceof R2000ViceFlagError,
+      `assertNoViceFlag did not throw for declared forbidden flag "${flag}" -- the array is not fully enforced`
+    );
+  }
+});
+
+test(
+  "WR-01 non-vacuity: a sentinel flag pushed onto FORBIDDEN_R2000_FLAGS at runtime is rejected by assertNoViceFlag, proving the scan reads the array rather than a hardcoded --vice literal",
+  () => {
+    const sentinel = "--totally-not-vice-but-still-forbidden";
+    const mutable = FORBIDDEN_R2000_FLAGS as string[];
+    assert.equal(mutable.includes(sentinel), false, "test sentinel must not already be in the deny list");
+    mutable.push(sentinel);
+    try {
+      assert.throws(
+        () => assertNoViceFlag([sentinel]),
+        (err: unknown) => {
+          assert.ok(err instanceof R2000ViceFlagError, "must throw R2000ViceFlagError for the sentinel flag");
+          return true;
+        },
+        "assertNoViceFlag must reject a newly-added FORBIDDEN_R2000_FLAGS entry -- if this fails, the scan " +
+          "is still hardcoded to --vice and the array is dead code (WR-01)"
+      );
+      // The single-token `flag=<value>` form must be covered too.
+      assert.throws(() => assertNoViceFlag([`${sentinel}=localhost:1234`]));
+      // A clean argv containing neither the sentinel nor --vice must still
+      // pass, so the sentinel addition does not turn the scan into a
+      // false-positive machine.
+      assert.doesNotThrow(() => assertNoViceFlag(["--headless", "--export_asm", "out.a"]));
+    } finally {
+      const idx = mutable.indexOf(sentinel);
+      if (idx >= 0) mutable.splice(idx, 1);
+    }
+    assert.equal(
+      mutable.includes(sentinel),
+      false,
+      "sentinel must be removed from FORBIDDEN_R2000_FLAGS after the test, leaving the real deny list untouched"
+    );
+  }
+);

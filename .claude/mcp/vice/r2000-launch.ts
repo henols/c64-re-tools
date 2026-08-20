@@ -45,7 +45,10 @@ export const R2000_BIN: string = process.env.R2000_BIN ?? "regenerator2000";
 /** The permanent deny list for regenerator2000 argv, declared once as a
  * named constant -- the same shape `vice.ts` uses for `DENY_LIST`. Today
  * this holds exactly one entry; if a second hazardous flag is ever
- * discovered, it joins this array rather than spawning a parallel check. */
+ * discovered, it joins this array rather than spawning a parallel check.
+ * `assertNoViceFlag()` below actually iterates this array (WR-01) -- it is
+ * the single source of truth for the scan, not merely documentation of
+ * intent, so adding an entry here is sufficient to enforce it. */
 export const FORBIDDEN_R2000_FLAGS: readonly string[] = ["--vice"];
 
 export interface R2000ViceFlagErrorOptions {
@@ -82,17 +85,21 @@ export function viceFlagRefusalMessage(argv: readonly string[]): string {
 }
 
 /**
- * Scans a finished argv array for the forbidden `--vice` flag and throws
- * `R2000ViceFlagError` if found. Exact-token comparison only -- `arg ===
- * "--vice"` or the single-token `--vice=<value>` form via `startsWith`.
- * Deliberately does NOT join argv into a string and substring-match: a
- * filename containing the characters `--vice` (e.g.
+ * Scans a finished argv array against every entry of `FORBIDDEN_R2000_FLAGS`
+ * and throws `R2000ViceFlagError` if any is found (WR-01: the scan reads
+ * the array itself, so a future addition to the deny list is enforced by
+ * construction rather than requiring a parallel hand-edit here). Exact-token
+ * comparison only -- `arg === flag` or the single-token `flag=<value>` form
+ * via `startsWith`. Deliberately does NOT join argv into a string and
+ * substring-match: a filename containing the characters `--vice` (e.g.
  * `/tmp/my--vice-notes.a`) must never false-positive.
  */
 export function assertNoViceFlag(argv: readonly string[]): void {
   for (const arg of argv) {
-    if (arg === "--vice" || arg.startsWith("--vice=")) {
-      throw new R2000ViceFlagError(viceFlagRefusalMessage(argv), { argv });
+    for (const flag of FORBIDDEN_R2000_FLAGS) {
+      if (arg === flag || arg.startsWith(`${flag}=`)) {
+        throw new R2000ViceFlagError(viceFlagRefusalMessage(argv), { argv });
+      }
     }
   }
 }
