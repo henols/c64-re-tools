@@ -58,7 +58,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/9 | Planned | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
@@ -286,7 +286,34 @@ Notes:
   4. `acme-build`'s `disasm` verb, its `## Disassembly` caveat section, and its `toacme`-on-PATH prerequisite are gone, replaced by a regenerator2000 route whose output is proven reassemblable **by running a real assembler**, not asserted.
   5. The install documentation names regenerator2000 as a required prerequisite alongside VICE, states the `cargo install` toolchain cost and the one-project-per-namespace limit plainly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
 
-**Plans**: TBD
+**Plans**: 9 plans in 6 waves
+
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — Adoption boundaries: the `--vice` guard, unreachable by construction and denied by scan, plus the no-translation absence assertion (criteria 1-2, R2000-01/R2000-02)
+- [ ] 10-02-PLAN.md — Automated bootstrap: environment drift re-check and the minimal, forced-settings `.regen2000proj` synthesiser (criterion 3, R2000-09)
+- [ ] 10-03-PLAN.md — `.d64` named-entry extraction, container-side, that refuses to guess (criterion 3, R2000-09, D-02)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 10-04-PLAN.md — The CLI seam: `vice-mcp r2000 …` as an argv subcommand on the published bin, verified end to end (criterion 3, R2000-09/R2000-02, D-06)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 10-05-PLAN.md — The reassembly proof: regenerator2000's own `--verify`, keyed on the parsed ACME line and never the exit code (criterion 4, R2000-06)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 10-06-PLAN.md — The removal: `disasm` verb, the `## Disassembly` caveats, the `toacme` prerequisite, and the replacement pointers (criterion 4, R2000-05)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 10-07-PLAN.md — The scaffold ACME can actually assemble, proven in CI (folded todo 2)
+- [ ] 10-08-PLAN.md — Install story: README prerequisite section, the dual-licence notice, and the inverted honesty guard (criterion 5, R2000-03)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 10-09-PLAN.md — Doc truth-up: criterion-3 wording, the Apache-2.0-only corrections, the wedge-triage contention discriminator, and both folded todos closed (D-03/D-14)
 
 Notes:
 
@@ -384,7 +411,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/TBD | Not started | - |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/9 | Planned | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
 
 ---
