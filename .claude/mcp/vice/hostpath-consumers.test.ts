@@ -111,6 +111,11 @@ test("the r2000 module family (D-08/R2000-02) is absent from the consumer set --
     "r2000-d64.ts",
     "r2000-cli.ts",
     "r2000-verify.ts",
+    "r2000-mcp-client.ts",
+    "r2000-tools.ts",
+    "r2000-enum-gen.ts",
+    "r2000-memmap-render.ts",
+    "r2000-confidence.ts",
   ]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
