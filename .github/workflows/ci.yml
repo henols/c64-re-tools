@@ -52,10 +52,30 @@ jobs:
         # `set -euo pipefail` plus the final grep make a wrong package name
         # or a broken install fail this job loudly, rather than letting the
         # Test step below silently skip the round-trip.
+        #
+        # timeout-minutes plus the retry_apt helper below exist because run
+        # `32303212069` sat ~25 minutes stalled against an unresponsive apt
+        # mirror with zero log output before it had to be cancelled by hand --
+        # `build` gates `release`, `publish-npm` and `release-on-merge`, so an
+        # unbounded stall here silently blocks every publish path. See the
+        # closed todo .planning/todos/completed/2026-08-19-ci-acme-install-has-no-timeout-or-retry.md.
+        timeout-minutes: 5
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y acme
+          retry_apt() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 "$@"; then
+                return 0
+              fi
+              echo "retry_apt: attempt ${attempt}/3 failed for: apt-get $*" >&2
+              sleep 5
+            done
+            echo "retry_apt: all 3 attempts failed for: apt-get $*" >&2
+            return 1
+          }
+          retry_apt update
+          retry_apt install -y acme
           command -v acme
           { acme --version || acme --help; } 2>&1 | head -5 | tee /tmp/acme-banner.txt
           grep -qi acme /tmp/acme-banner.txt
