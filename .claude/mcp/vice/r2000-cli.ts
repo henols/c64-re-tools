@@ -65,11 +65,12 @@ verbs:
       .raw/.bin capture. Writes a .regen2000proj to --out (default: the
       input path with its extension replaced by .regen2000proj).
 
-  export-asm <input-or-project> [--out FILE]
+  export-asm <input-or-project> [--out FILE] [--force]
       If given a .regen2000proj it is used directly; otherwise this bootstraps
       the input to a temporary project first, so a bare .prg becomes ACME
       source in one command with no human interaction. Writes ACME source to
-      --out (default: the input stem plus .a).
+      --out (default: the input stem plus .a). Refuses to overwrite an
+      existing file at that path unless --force is given.
 
   verify <input-or-project> [--entry NAME]
       The criterion-4 (R2000-06) reassembly proof: exports and reassembles
@@ -97,24 +98,42 @@ interface ParsedArgs {
   positional: string[];
   entry?: string;
   out?: string;
+  force?: boolean;
 }
 
-/** Fixed, closed option set -- exactly `--entry` and `--out`. No rest field,
- * no passthrough: an unrecognised flag is treated as a positional token
- * (and will surface as "input file not found" rather than silently reaching
- * regenerator2000, since nothing here ever forwards raw argv to the child
- * process). */
+/** Fixed, closed option set -- exactly `--entry`, `--out` and `--force`. No
+ * rest field, no passthrough: an unrecognised flag is treated as a
+ * positional token (and will surface as "input file not found" rather than
+ * silently reaching regenerator2000, since nothing here ever forwards raw
+ * argv to the child process). */
 function parseArgs(rest: string[]): ParsedArgs {
   const positional: string[] = [];
   let entry: string | undefined;
   let out: string | undefined;
+  let force = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--entry") entry = rest[++i];
     else if (a === "--out") out = rest[++i];
+    else if (a === "--force") force = true;
     else positional.push(a!);
   }
-  return { positional, entry, out };
+  return { positional, entry, out, force };
+}
+
+/**
+ * Refuses to overwrite an existing file at `outPath` unless the caller
+ * passed `--force`. Shared by every verb that writes an output file
+ * (`bootstrap`, `export-asm`) so overwrite safety stays uniform rather than
+ * one verb accreting a check the others lack (CR-01/CR-02).
+ */
+function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel: string, extraHint = ""): boolean {
+  if (force || !existsSync(outPath)) return true;
+  console.error(
+    `${verbLabel}: refusing to overwrite the existing file ${outPath}${extraHint} -- ` +
+      `pass --force to overwrite it deliberately.`,
+  );
+  return false;
 }
 
 interface BootstrapOutcome {
@@ -233,10 +252,10 @@ function cmdBootstrap(rest: string[]): number {
 }
 
 function cmdExportAsm(rest: string[]): number {
-  const { positional, entry, out } = parseArgs(rest);
+  const { positional, entry, out, force } = parseArgs(rest);
   const input = positional[0];
   if (!input) {
-    console.error("export-asm: usage: export-asm <input-or-project> [--out FILE]");
+    console.error("export-asm: usage: export-asm <input-or-project> [--out FILE] [--force]");
     return 1;
   }
   if (!existsSync(input)) {
@@ -262,6 +281,17 @@ function cmdExportAsm(rest: string[]): number {
     }
 
     const outPath = out ?? input.replace(/\.[^./\\]+$/, "") + ".a";
+    if (
+      !refuseOverwrite(
+        outPath,
+        force,
+        "export-asm",
+        " with generated source -- acme-build's own convention pairs <stem>.a with <stem>.prg, so " +
+          "the default target is very often hand-written source",
+      )
+    ) {
+      return 1;
+    }
     const argv = buildExportAsmArgs({ projectPath, outPath });
     const result = runR2000(argv);
     if (result.status !== 0) {

@@ -244,6 +244,47 @@ test("in-process: a .vsf input is refused with a message naming Phase 11, not a 
   });
 });
 
+test("in-process: export-asm refuses to clobber an existing default-named output file (CR-01)", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+    const existingA = join(dir, "game.a");
+    const HAND_WRITTEN = "; MY PRECIOUS HAND-WRITTEN SOURCE\n";
+    writeFileSync(existingA, HAND_WRITTEN);
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", prgPath]),
+    );
+
+    assert.notEqual(code, 0, "export-asm must refuse rather than silently clobber game.a");
+    assert.match(stderr, /refusing to overwrite/);
+    assert.equal(
+      readFileSync(existingA, "utf8"),
+      HAND_WRITTEN,
+      "export-asm must not have touched the pre-existing hand-written source",
+    );
+  });
+});
+
+test("in-process: export-asm --force overwrites an existing default-named output file deliberately (CR-01)", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+    const existingA = join(dir, "game.a");
+    writeFileSync(existingA, "; stale source, --force says overwrite me\n");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", prgPath, "--force"]),
+    );
+
+    // Without a real regenerator2000 this may still fail later (spawn
+    // ENOENT / non-zero exit), but it must get PAST the overwrite guard --
+    // i.e. it must never print the CR-01 refusal message.
+    assert.doesNotMatch(stderr, /refusing to overwrite/);
+    void code;
+  });
+});
+
 test("in-process: bootstrap on a bare .prg writes a .regen2000proj with the forced settings (D-05)", async () => {
   await withTempDir(async (dir) => {
     const prgPath = join(dir, "game.prg");
