@@ -6,12 +6,13 @@
 // Unit half (tests 1-5) always runs, no binary needed -- pure string
 // fixtures against `parseVerifyOutput()`/`acmeVerdict()`.
 //
-// Gated half (tests 6-7) mirrors D-11's shape exactly: `probeR2000()`, a
-// module-scope `SKIP_REASON`, `{ skip: SKIP_REASON }` on each dependent
-// test, and exactly ONE availability-gate test that always runs and asserts
-// only when `VICE_REQUIRE_R2000` is set -- the same convention
-// `r2000-cli.test.ts`'s own gated test already uses, itself mirroring
-// `disasm-roundtrip.test.ts`'s `SKIP_REASON`/`{ skip }` pattern. Never a
+// Gated half (tests 6-7) mirrors D-11's shape exactly, via the single shared
+// `r2000-test-gate.ts` seam (plan 11-01): `probeR2000()`, `R2000_AVAILABLE`,
+// `skipReasonFor()` for the `{ skip }` message, and
+// `assertR2000RequiredIfEnvSet()` for the always-runs hard-FAIL-if-set test.
+// This file no longer keeps its own local copy of that gate -- see
+// `r2000-test-gate.ts`'s header for why one shared seam replaces the
+// six-plus hand-copied bodies Phase 11 would otherwise accumulate. Never a
 // hand-rolled `if (!available) return`, which would report a false PASS
 // rather than a SKIP.
 //
@@ -28,13 +29,16 @@
 // for the actual, unedited stdout of both live runs plus their exit codes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parseVerifyOutput, acmeVerdict, verifyProject } from "./r2000-verify.ts";
 import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";
+import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Fixture transcripts -- both captured verbatim (RESEARCH.md's D-09/D-10
@@ -138,39 +142,56 @@ test("parseVerifyOutput: a real ca65 failure (not skipped) parses as failed, and
   assert.equal(verdict.ok, true, "ACME's own byte-identical result must decide the verdict, independent of ca65's failure or the process's own non-zero exit");
 });
 
+test(
+  "acmeVerdict (WR-04): the reviewer's exact mixed transcript -- a passing ACME line followed by a failing one -- must be ok:false, never the first-line-wins false pass",
+  () => {
+    const transcript = "  ✓ ACME — byte-identical (3 bytes)\n  ✗ ACME — output differs at offset $0010\n";
+    const lines = parseVerifyOutput(transcript);
+    assert.equal(lines.length, 2);
+    const verdict = acmeVerdict(lines);
+    assert.equal(
+      verdict.ok,
+      false,
+      "a mixed transcript containing both a passing and a failing ACME line must never report ok:true"
+    );
+    assert.match(verdict.reason, /output differs at offset \$0010/);
+  }
+);
+
+test(
+  "acmeVerdict (WR-04): two passing ACME lines refuses to guess which one is the verdict",
+  () => {
+    const transcript = "  ✓ ACME — byte-identical (3 bytes)\n  ✓ ACME — byte-identical (65536 bytes)\n";
+    const lines = parseVerifyOutput(transcript);
+    assert.equal(lines.length, 2);
+    const verdict = acmeVerdict(lines);
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /refusing to guess/);
+  }
+);
+
 // ---------------------------------------------------------------------------
-// Gated half -- needs a real regenerator2000. Mirrors D-11's shape exactly.
+// Gated half -- needs a real regenerator2000. Mirrors D-11's shape exactly,
+// entirely through r2000-test-gate.ts's shared seam (plan 11-01) -- no local
+// probeR2000()/R2000_AVAILABLE/SKIP_REASON copy in this file anymore.
 // ---------------------------------------------------------------------------
 
-const R2000_BIN = process.env.R2000_BIN ?? "regenerator2000";
-
-function probeR2000(): boolean {
-  const r = spawnSync(R2000_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
-  if (r.error) return false;
-  const banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  return /regenerator2000/i.test(banner);
-}
-
-const R2000_AVAILABLE = probeR2000();
-
-/** Computed exactly once. Never a hand-rolled early return -- see header
- * comment. */
-const SKIP_REASON: string | false = R2000_AVAILABLE
-  ? false
-  : `r2000-verify.test.ts's regenerator2000-dependent tests are skipped -- no real regenerator2000 was ` +
-    `found at R2000_BIN="${R2000_BIN}". Set R2000_BIN to an absolute path to a real "regenerator2000" ` +
-    `binary, or install one (cargo install regenerator2000 -- verified against 0.9.20 during Phase 9/10 ` +
-    `planning). D-11 deliberately keeps CI from setting VICE_REQUIRE_R2000, so this is an expected SKIP ` +
-    `there -- never a CI failure.`;
+/** Computed exactly once via the shared gate. Never a hand-rolled early
+ * return -- see header comment. */
+const SKIP_REASON: string | false = skipReasonFor("r2000-verify.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
-  if (process.env.VICE_REQUIRE_R2000) {
-    assert.ok(
-      R2000_AVAILABLE,
-      `VICE_REQUIRE_R2000 is set but no real regenerator2000 was found at R2000_BIN="${R2000_BIN}" -- a ` +
-        `maintainer who sets this variable expects a hard FAIL, never a SKIP, when the binary is actually missing.`,
-    );
-  }
+  assertR2000RequiredIfEnvSet(assert);
+});
+
+test("r2000-test-gate.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
+  assert.equal(
+    pkg.files.includes("r2000-test-gate.ts"),
+    false,
+    "r2000-test-gate.ts is test-only and must never ship in the published npm tarball"
+  );
 });
 
 function withTempProject<T>(fn: (dir: string) => T): T {
