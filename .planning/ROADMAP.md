@@ -58,7 +58,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 5/9 | In Progress|  |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 6/9 | In Progress|  |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
@@ -304,7 +304,7 @@ Notes:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 10-06-PLAN.md — The removal: `disasm` verb, the `## Disassembly` caveats, the `toacme` prerequisite, and the replacement pointers (criterion 4, R2000-05)
+- [x] 10-06-PLAN.md — The removal: `disasm` verb, the `## Disassembly` caveats, the `toacme` prerequisite, and the replacement pointers (criterion 4, R2000-05)
 
 **Wave 5** *(blocked on Wave 4)*
 
