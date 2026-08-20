@@ -127,9 +127,10 @@ records two user-resolved precedence warnings (W1, W2).
 `.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
 **Shipping history.** Newest tag `v0.2.0`; both npm packages published at 0.2.0.
-The planning label `v0.2.0` and the published npm semver are unrelated numbers —
-every merge to `main` auto-publishes a patch version unless the subject contains
-`[skip release]`.
+The planning label `v0.2.0` and the published npm semver currently coincide at
+0.2.0 but are determined independently — every merge to `main` auto-publishes a
+patch version unless the subject contains `[skip release]`, so npm can run ahead
+of the planning label at any time.
 
 ## Constraints
 
