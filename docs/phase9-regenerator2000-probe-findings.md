@@ -3,8 +3,8 @@ phase: 09-the-assumption-probe-go-no-go
 requirement: R2000-16
 probe_date: 2026-08-20
 regenerator2000_version: 0.9.20
-verdict: TBD
-verdict_rule_applied: TBD
+verdict: degrade
+verdict_rule_applied: R4
 criteria:
   c1_build: pass
   c1_container_cost: measured
@@ -19,6 +19,111 @@ This document carries YAML frontmatter, unlike `docs/phase1-probe-results.md` an
 `docs/phase2-backend-probe-evidence.md`, both of which have none — the departure is
 deliberate: criterion 5 requires a machine-readable go/no-go verdict Phase 10's planner
 can read as a gate, and a prose sentence buried in the body is not that.
+
+## Verdict
+
+**`degrade` — rule `R4` fired.**
+
+`R4` fired because `c3_4_vsf_load = partial`, which is "not `pass` (including `partial`
+and `could-not-run`)" on one of the three sub-parts `R4` names (`c3_2_reassembly`,
+`c3_3_export_lbl`, `c3_4_vsf_load`). `c3_4_vsf_load` is the only one of the three that is
+not `pass` — `c3_2_reassembly` and `c3_3_export_lbl` are both `pass`. No earlier rule
+fired: `c1_build = pass` (R1 does not fire), `c2a_pty_tolerance = pass` (R2 does not
+fire), `c2b_bootstrap_automatable = pass` (R3 does not fire). `R4` is therefore the first
+rule, in order, whose condition is true.
+
+**The full decision rule, reproduced verbatim from `.planning/phases/09-the-assumption-probe-go-no-go/09-07-PLAN.md`'s `<decision_rule>` block**, so this document is self-contained:
+
+> **Binding. Stated here, before the run, so the verdict is derived and not judged.** Read
+> the seven inputs from the evidence files (never from a summary's paraphrase), then
+> evaluate the rules **in order** and take the first that matches. Record which rule fired.
+>
+> Inputs, each read from the named outcome line:
+>
+> | Input | Source line | Source file |
+> |---|---|---|
+> | `c1_build` | `INSTALLED_VERSION:` present → `pass`; recorded install failure → `could-not-run` | `evidence/criterion1-install-and-version.txt` |
+> | `c1_container_cost` | both `*_BYTES` lines numeric → `measured`; either `could-not-run` → `could-not-run` | `evidence/criterion1-container-toolchain-cost.txt` |
+> | `c2a_pty_tolerance` | `PTY_TOLERANCE:` | `evidence/criterion2-pty-transcript.txt` |
+> | `c2b_bootstrap_automatable` | `BOOTSTRAP_AUTOMATABLE:` | `evidence/criterion2-pty-transcript.txt` |
+> | `c3_2_reassembly` | `REASSEMBLY:` | `evidence/criterion3-reassembly.txt` |
+> | `c3_3_export_lbl` | `EXPORT_LBL:` | `evidence/criterion3-export-lbl.txt` |
+> | `c3_4_vsf_load` | `VSF_LOAD:` | `evidence/criterion4-vsf-load.txt` |
+>
+> Rules, first match wins:
+>
+> - **R1 → `reconsider`.** `c1_build` is not `pass`. D-R2 makes regenerator2000 a *required*
+>   prerequisite, not an optional accelerator; a build that will not install on a host meeting
+>   the documented toolchain floor cannot be a required prerequisite, and no other criterion is
+>   answerable without it.
+> - **R2 → `reconsider`.** `c2a_pty_tolerance` is not `pass`. This is the ROADMAP's own
+>   reconsider condition: a regenerator2000 that cannot run under automation at all puts the
+>   annotation store out of a skill's reach, and with it this milestone's thesis. Note the
+>   asymmetry deliberately: it is **2a**, not 2b, that triggers this.
+> - **R3 → `degrade`.** `c2b_bootstrap_automatable` is not `pass` (2a having passed). This is
+>   exactly the ROADMAP's degrade branch: bootstrap becomes a documented one-time interactive
+>   step, every affected playbook says so at its point of use, and `R2000-09` delivers
+>   documentation rather than automation.
+> - **R4 → `degrade`.** Any of `c3_2_reassembly`, `c3_3_export_lbl`, `c3_4_vsf_load` is not
+>   `pass` (including `partial` and `could-not-run`). The milestone proceeds, with named
+>   amendments: a non-pass on 3(2) means Phase 10 criterion 4's deletion of `acme-build`'s
+>   `disasm` verb is **not earned** and `R2000-06` must establish it first; a non-pass on 3(3)
+>   means Phase 11's symbol round trip carries a conversion step or a documented gap; a non-pass
+>   on 3(4) means the ROADMAP's standing "prefer `.vsf` over `.raw`" constraint is unsupported
+>   as worded and Phase 10 criterion 3 must say so.
+> - **R5 → `proceed`.** Everything above passed.
+>
+> **`c1_container_cost` never changes the verdict.** It is a measurement, not a gate, and the
+> milestone defined no cost threshold — inventing one here would be the planner making a scope
+> decision it has no authority to make. A `could-not-run` on it is recorded as an accepted limit
+> on `R2000-03`'s install documentation ("the toolchain cost is unmeasured and must be
+> documented as unknown rather than estimated") and nothing more. Say this explicitly in the
+> document so a later reader cannot mistake its absence for a failure.
+
+**The ROADMAP's own words for the route taken** (`.planning/ROADMAP.md` § Phase 9,
+criterion 5): *"degrade — bootstrap becomes a documented one-time interactive step, every
+affected playbook says so, and Phase 10/11 scope is amended accordingly"* — except this
+phase's own `R4` (not `R3`) is what fired: the bootstrap itself (criteria 2a/2b) passed
+cleanly, so the "documented one-time interactive step" half of that ROADMAP sentence does
+**not** apply here. What applies is the sentence's other half — Phase 10/11 scope is
+amended — via the three named amendments R4 attaches, of which only the criterion-3(4)
+one is live in this run (see below).
+
+**Where Phase 10's planner looks:** `docs/phase9-regenerator2000-probe-findings.md`,
+frontmatter key `verdict` (currently `degrade`), with the `criteria:` map giving the
+per-item detail. **No Phase 10 or Phase 11 plan may be written before reading this
+document** — `R2000-16`'s own wording is "before any further plan is written".
+
+### Scope amendments
+
+Each amendment below is derived from an `## Accepted limits` entry, one amendment per
+limit, per `R4`'s own text ("a non-pass on 3(4) means the ROADMAP's standing 'prefer
+`.vsf` over `.raw`' constraint is unsupported as worded and Phase 10 criterion 3 must say
+so"):
+
+1. **Target: Phase 10 criterion 3** (`.planning/ROADMAP.md` § Phase 10 — "A `.prg` or a
+   `.vsf` becomes a `.regen2000proj` without a human... Either way the state is honest at
+   the surface a user reads") **and the ROADMAP's own standing "prefer `.vsf` over
+   `.raw`" constraint.** Source: Accepted limits entry 2 above (criterion 3(4),
+   `VSF_LOAD: partial`). Amendment: Phase 10 criterion 3's implementation, and any later
+   plan relying on the ROADMAP's ".vsf` over `.raw`" preference, must not trust
+   regenerator2000's auto-detected machine-type field from a `.vsf` load — it is
+   correct only by coincidence for C64 snapshots and would be wrong for any other stock
+   VICE machine model. The system must be verified or explicitly set (e.g. via a direct
+   `.regen2000proj` settings edit, the same technique used for `use_illegal_opcodes` in
+   criterion 3(2)).
+2. **Target: `R2000-09`'s automated-bootstrap work, and Phase 10 criterion 4 / `R2000-06`'s
+   deletion decision.** Source: Accepted limits entry 1 above (criterion 3(2),
+   `REASSEMBLY: pass` qualified). Amendment: any generated `.regen2000proj` that needs
+   illegal-opcode-correct disassembly must explicitly set `settings.use_illegal_opcodes =
+   true` — the keystroke-driven bootstrap does not do this by default, and auto-analysis
+   does not flip it. This does **not** withhold the deletion `R2000-06` is scoped to earn
+   (criterion 3(2) itself passed, against real illegal opcodes), but the generated
+   project files must carry the setting.
+3. **Target: Phase 11's `c64-ram-capture` extension and `R2000-14`/`R2000-15`.** Source:
+   Accepted limits entry 3 above (criterion 3(3) qualification — not a failure, recorded
+   for completeness). No amendment required; noted so a later reader does not need to
+   re-derive that this entry produced no scope change.
 
 ## Run date, host, and build tested
 
