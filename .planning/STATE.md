@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: executing
-last_updated: "2026-08-20T07:15:55.432Z"
+status: verifying
+last_updated: "2026-08-20T09:50:15.559Z"
 last_activity: 2026-08-20
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 8
-  completed_plans: 1
-  percent: 0
+  completed_plans: 8
+  percent: 33
 ---
 
 # Project State
@@ -38,12 +38,13 @@ is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 Phase: 09 (the-assumption-probe-go-no-go) — COMPLETE (8/8 plans executed)
 Plan: 8 of 8
-Status: Phase 9 closed with verdict `degrade` (rule `R4`) — see
-`docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10 as scoped,
-with the two named scope amendments (`.vsf` machine-type trust; explicit
-`use_illegal_opcodes` setting) applied at their targets — not a documented manual
-bootstrap step, since criteria 2a/2b both passed cleanly. No Phase 10 or Phase 11
-plan is written before that findings document is read, per `R2000-16`'s own wording.
+Status: Phase complete — ready for verification. Verdict `degrade` (rule `R4`)
+recorded at `docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10
+as scoped, with the two named scope amendments (`.vsf` machine-type trust;
+explicit `use_illegal_opcodes` setting) applied at their targets — not a
+documented manual bootstrap step, since criteria 2a/2b both passed cleanly. No
+Phase 10 or Phase 11 plan is written before that findings document is read, per
+`R2000-16`'s own wording.
 Last activity: 2026-08-20
 
 ## Performance Metrics
@@ -82,6 +83,7 @@ Last activity: 2026-08-20
 | Phase 08.1 P04 | 90min | 2 tasks | 5 files |
 | Phase 08.1 P05 | 45min | 2 tasks | 3 files |
 | Phase 09 P01 | 30min | 3 tasks | 5 files |
+| Phase 09 P08 | 10m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -133,6 +135,8 @@ Recent decisions affecting current work:
 - [Phase 09-01]: Human authorized cargo install regenerator2000 and tmux install at a blocking checkpoint; both performed by the human, never by this agent (its own tool-permission classifier denies cargo install outright)
 - [Phase 09-01]: regenerator2000 0.9.20's real toolchain floor is rustc >=1.88 (transitive, undeclared in Cargo.toml), not edition 2024's 1.85; --locked does not work around it; rustup update stable (1.85.1->1.97.1) was a human-authorized host change
 - [Phase 09]: Go/no-go verdict recorded: **`degrade`**, rule **`R4`** fired (triggering input: `c3_4_vsf_load: partial`), against installed **regenerator2000 0.9.20**. Full evidence, all seven criteria and the reproduced decision rule live in one place: `docs/phase9-regenerator2000-probe-findings.md` (frontmatter `verdict`/`verdict_rule_applied`/`criteria`) — read there, not restated here.
+- [Phase 09-08]: Ran sequentially on main with no worktree isolation, per this plan's own worktree: false frontmatter -- its deliverable IS STATE.md/ROADMAP.md content, which worktree mode strips from executor commits
+- [Phase 09-08]: Added a ROADMAP Phase 11 Notes pointer to the findings document even though the verdict produced no scope amendment there, because Phase 11's own pre-existing Notes anticipated a criterion-3(3) format-mismatch contingency that needed an explicit answer (it did not fire)
 
 ### Pending Todos
 
@@ -270,8 +274,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-20T07:15:55.420Z
-Stopped at: Completed 09-01-PLAN.md: regenerator2000 0.9.20 installed and identified, illegal-opcode fixture built, toolchain-floor finding recorded
+Last session: 2026-08-20T09:50:15.545Z
+Stopped at: Completed 09-08-PLAN.md: verdict discoverability closed via STATE.md decision entry and ROADMAP Phase 9/10/11 pointers (R2000-16 criterion 5); Phase 9 complete 8/8
 Resume file: None
 
 ## Operator Next Steps
