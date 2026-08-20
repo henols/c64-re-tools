@@ -57,7 +57,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8. Capability Honesty and the Install Story | v0.2.0 | 6/6 | Complete | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
-| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 0/8 | Planned | - |
+| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 1/8 | In Progress | - |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
@@ -244,7 +244,7 @@ since the project was created 2025-12-20.
 **Plans**: 8 plans in 5 waves
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — Evidence scaffold, illegal-opcode `.prg` fixture, third-party install authorization, and the real build's version (criterion 1, first half)
+- [x] 09-01-PLAN.md — Evidence scaffold, illegal-opcode `.prg` fixture, third-party install authorization, and the real build's version (criterion 1, first half)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

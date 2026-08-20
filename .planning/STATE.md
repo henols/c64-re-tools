@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-20T05:09:31.974Z"
-last_activity: 2026-08-20 -- Phase 09 execution started
+last_updated: "2026-08-20T07:15:55.432Z"
+last_activity: 2026-08-20
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -37,9 +37,9 @@ is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 ## Current Position
 
 Phase: 09 (the-assumption-probe-go-no-go) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 09
-Last activity: 2026-08-20 -- Phase 09 execution started
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-08-20
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Last activity: 2026-08-20 -- Phase 09 execution started
 | Phase 08.1 P02 | 22min | 3 tasks | 3 files |
 | Phase 08.1 P04 | 90min | 2 tasks | 5 files |
 | Phase 08.1 P05 | 45min | 2 tasks | 3 files |
+| Phase 09 P01 | 30min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,8 @@ Recent decisions affecting current work:
 - [Phase 08.1]: Root-caused the recurring STATE.md Progress-line drift to two disagreeing GSD SDK formulas (uncapped plan-file ratio vs phase-fraction-capped computeProgressPercent), then caught its own initial 78% fix going stale mid-execution when a state.* frontmatter auto-resync mechanism correctly advanced ground truth to 8/9 phases (89%); corrected the body line to 89%, synced ROADMAP.md via roadmap.update-plan-progress, and replaced D-5's brittle bare-literal checklist assertion with a body-vs-frontmatter self-consistency invariant.
 - [Phase 08.1]: Carried the confirmed Drive8Type=0 open product defect (plan 08.1-04's live-proven finding, confirmed fix -drive8type 1541 at launch, not yet applied) forward into STATE.md's Deferred Items/Blockers and ROADMAP.md's Phase 8.1 notes as explicit open backlog, rather than leaving it recoverable only from a dated decision-log line.
 - [Phase quick-260819-vie]: One release-assets seam (scripts/release-assets.sh) now owns stamp/zip/attach; both release and release-on-merge CI jobs call it with the version as an explicit argument — v0.2.0 shipped with zero release assets because the merge path's GITHUB_TOKEN-created tag never re-triggers the tag-gated release job
+- [Phase 09-01]: Human authorized cargo install regenerator2000 and tmux install at a blocking checkpoint; both performed by the human, never by this agent (its own tool-permission classifier denies cargo install outright)
+- [Phase 09-01]: regenerator2000 0.9.20's real toolchain floor is rustc >=1.88 (transitive, undeclared in Cargo.toml), not edition 2024's 1.85; --locked does not work around it; rustup update stable (1.85.1->1.97.1) was a human-authorized host change
 
 ### Pending Todos
 
@@ -232,8 +235,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-19T21:15:30.042Z
-Stopped at: Completed quick-260819-vie: release-assets seam wired to both release paths, v0.2.0 assets attached
+Last session: 2026-08-20T07:15:55.420Z
+Stopped at: Completed 09-01-PLAN.md: regenerator2000 0.9.20 installed and identified, illegal-opcode fixture built, toolchain-floor finding recorded
 Resume file: None
 
 ## Operator Next Steps
