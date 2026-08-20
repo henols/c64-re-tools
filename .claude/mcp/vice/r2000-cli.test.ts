@@ -846,3 +846,155 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// render-memmap verb tests (Task 3, 11-10) -- unknown option, missing
+// --provenance, and a missing project file are always-run (no live binary
+// needed); the happy path plus --check drift detection needs a real
+// regenerator2000 (D-11), via the same withWorkspaceTempDir() convention
+// export-lbl/import-lbl's own gated test uses above (resolveStorePath()
+// requires the project path to resolve inside the workspace root).
+// ---------------------------------------------------------------------------
+
+test("render-memmap: --help lists the verb, states the output is generated, and states --check catches a hand edit", () => {
+  const helpResult = spawnCli(["r2000", "--help"]);
+  assert.match(helpResult.stdout, /\brender-memmap\b/);
+  assert.match(helpResult.stdout, /GENERATED|generated/);
+  assert.match(helpResult.stdout, /--check.*hand edit/is);
+});
+
+test("render-memmap: a missing project is refused, not silently accepted", async () => {
+  await withTempDir(async (dir) => {
+    const missing = join(dir, "does-not-exist.regen2000proj");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", missing, "--provenance", join(dir, "sidecar.json")]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /project file not found/i);
+  });
+});
+
+test("render-memmap: a missing --provenance is refused", async () => {
+  await withTempDir(async (dir) => {
+    const projectPath = join(dir, "game.regen2000proj");
+    writeFileSync(projectPath, "{}");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", projectPath]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /--provenance.*required/i);
+  });
+});
+
+test("render-memmap: a nonexistent --provenance file is refused", async () => {
+  await withTempDir(async (dir) => {
+    const projectPath = join(dir, "game.regen2000proj");
+    writeFileSync(projectPath, "{}");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", projectPath, "--provenance", join(dir, "does-not-exist.json")]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /provenance sidecar not found/i);
+  });
+});
+
+test("render-memmap: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance", "x.json", "--not-a-real-flag"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown option/i);
+});
+
+test("render-memmap: --provenance with no value is refused", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--provenance requires a value/i);
+});
+
+test("render-memmap: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance", "x.json", "--out", "--check"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--out requires a value/i);
+});
+
+test(
+  "gated: render-memmap writes a file with row/[unknown] counts and a digest, and --check exits 0 in sync then non-zero naming the differing line after a hand edit (11-10)",
+  { skip: SKIP_REASON },
+  async () => {
+    await withWorkspaceTempDir(async (dir) => {
+      const projectPath = join(dir, "memmap.regen2000proj");
+      // lda #$1b ; sta $d011 -- same tiny, fully hand-predictable program
+      // r2000-memmap-render.test.ts's own golden test uses.
+      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
+      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
+
+      const { runR2000Tool } = await import("./r2000-tools.ts");
+      const { formatConfidenceComment } = await import("./r2000-confidence.ts");
+
+      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
+      assert.equal(disasmResult.isError, false, JSON.stringify(disasmResult));
+      const labelResult = await runR2000Tool("r2000_set_label_name", { project: projectPath, address: 0x0810, name: "init_screen" });
+      assert.equal(labelResult.isError, false, JSON.stringify(labelResult));
+      const commentResult = await runR2000Tool("r2000_set_comment", {
+        project: projectPath,
+        address: 0x0810,
+        comment: formatConfidenceComment("confirmed-code", "observed executing at boot"),
+        type: "line",
+      });
+      assert.equal(commentResult.isError, false, JSON.stringify(commentResult));
+
+      const provenancePath = join(dir, "capture.provenance.json");
+      writeFileSync(
+        provenancePath,
+        JSON.stringify({
+          capturePath: "/tmp/capture.raw",
+          captureSha256: "a".repeat(64),
+          port01: "$35",
+          dd00: "$06",
+          vicBank: "0 ($0000-$3FFF)",
+          screenRam: "$0400",
+          charsetOrBitmap: "$1000 (ROM shadow)",
+          mode: "text, multicolor off",
+          videoStandard: "PAL",
+          liveVectorPair: "$0314/$0315",
+          vectorHandler: "$EA31",
+        }),
+      );
+
+      const outPath = join(dir, "memory-map.md");
+      const { result: renderCode, stdout: renderStdout } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
+      );
+      assert.equal(renderCode, 0, renderStdout);
+      assert.ok(existsSync(outPath));
+      assert.match(renderStdout, /1 row\(s\)/);
+      assert.match(renderStdout, /0 \[unknown\]/);
+      assert.match(renderStdout, /digest [0-9a-f]{64}/);
+
+      const { result: checkCode1, stdout: checkStdout1 } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      );
+      assert.equal(checkCode1, 0, checkStdout1);
+      assert.match(checkStdout1, /in sync/i);
+
+      const original = readFileSync(outPath, "utf8");
+      writeFileSync(outPath, original.replace("init_screen", "init_screeX"));
+      const { result: checkCode2, stderr: checkStderr2 } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      );
+      assert.notEqual(checkCode2, 0);
+      assert.match(checkStderr2, /drifted at line/i);
+      assert.match(checkStderr2, /init_screeX/);
+
+      const missingOut = join(dir, "does-not-exist-yet.md");
+      const { result: checkCode3, stderr: checkStderr3 } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", missingOut, "--check"]),
+      );
+      assert.notEqual(checkCode3, 0);
+      assert.match(checkStderr3, /missing/i);
+    });
+  },
+);
