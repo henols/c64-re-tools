@@ -41,3 +41,27 @@ Phase 4's `disasm-*` family is untouched; `files[]` is complete; and
 
 Full detail with file:line and repro steps:
 `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-REVIEW.md`
+
+## Resolution
+
+All six residual findings are closed:
+
+- **WR-02** — closed by plan `11-01` (Task 1). Three guard predicates extracted to
+  single named functions, shared by the real-source tests and a new committed
+  planted-violation test reproducing the finding verbatim.
+- **WR-04** — closed by plan `11-01` (Task 2). `acmeVerdict()` rewritten for
+  unanimity over all parsed ACME lines instead of `lines.find`'s first-match
+  behaviour; two pinned fixtures added.
+- **WR-03** — closed by plan `11-02` (Task 3). The `evidence: "disasm"` exemption
+  now runs the `toacme`/`cmdDisasm` checks first and is bounded by a
+  non-vacuous `exemptionHits === 1` assertion, so a second reintroduction hiding
+  behind the exemption is caught.
+- **WR-05** — closed by plan `11-02` (Task 1). `sectorSlice()` now bounds every
+  sector read against `image.length`; a truncated `.d64` throws naming the
+  sector and the actual length instead of silently short-reading.
+- **WR-06** — closed by plan `11-02` (Task 1). `petsciiName()` strips `$00` as
+  well as `$A0`, so a NUL-padded directory name is guaranteed selectable via
+  `extractEntry()`'s `--entry` argument.
+- **WR-07** — closed by plan `11-02` (Task 2). Flat captures are now dispatched
+  by extension before the length-based branch, so a wrong-size `.raw`/`.bin` is
+  refused by name instead of being silently reinterpreted as a `.prg`.

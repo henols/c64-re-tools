@@ -26,3 +26,10 @@ widening plan 10-05's scope to cover it was declined deliberately.
 **Fix options:** extend the regex to also match `import\s*\(\s*"\.\/…"\)`, or add an
 explicit "these modules must be in files[]" assertion listing the dynamic-import
 entry points.
+
+## Resolution
+
+Closed by plan `11-02` (Task 3). `check-npm-packages.mjs`'s closure walk now also
+matches `import\s*\(\s*"(\.\/[^"]+)"\s*\)`, and `["r2000-cli.ts", "R2000-09"]` was
+added to `REQUIRED_DERIVED_MODULES` so a future r2000 module omitted from
+`files[]` fails the check by construction rather than passing silently.
