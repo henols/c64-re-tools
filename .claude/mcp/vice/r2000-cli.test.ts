@@ -168,6 +168,12 @@ test("bin: `vice-mcp r2000 no-such-verb` exits non-zero and prints a usage block
   assert.match(combined, /usage \(npm install\)/);
 });
 
+test("bin: `vice-mcp r2000 --help` lists all three verbs: bootstrap, export-asm, verify", () => {
+  assert.match(helpResult.stdout, /\bbootstrap\b/);
+  assert.match(helpResult.stdout, /\bexport-asm\b/);
+  assert.match(helpResult.stdout, /\bverify\b/);
+});
+
 test("bin: both invocations terminate on their own within the timeout, not via spawnSync's timeout kill", () => {
   assert.equal(
     helpResult.signal,
@@ -319,6 +325,25 @@ test(
         "exported ACME source should contain the illegal-opcode mnemonic 'lax', proving " +
           "use_illegal_opcodes: true was actually honoured",
       );
+    });
+  },
+);
+
+test(
+  "gated: verify on a bare .prg returns 0 and prints an ACME line containing byte-identical (D-10, criterion 4)",
+  { skip: SKIP_REASON },
+  async () => {
+    await withTempDir(async (dir) => {
+      const prgPath = join(dir, "game.prg");
+      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+      const { result: code, stdout } = await withCapturedConsole(() =>
+        runR2000Cli(["verify", prgPath]),
+      );
+
+      assert.equal(code, 0, `expected exit 0, stdout: ${stdout}`);
+      assert.match(stdout, /ACME/);
+      assert.match(stdout, /byte-identical/i);
     });
   },
 );

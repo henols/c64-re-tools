@@ -42,10 +42,20 @@ import { extname, join } from "node:path";
 import { buildExportAsmArgs, runR2000, R2000ViceFlagError } from "./r2000-launch.ts";
 import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts";
 import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
+import { verifyProject } from "./r2000-verify.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 <verb>";
 
+// `verify` is the criterion-4 (R2000-06) proof route: it runs
+// regenerator2000's own `--verify` and reports the verdict `r2000-verify.ts`'s
+// `acmeVerdict()` derives from the PARSED ACME result line -- never from the
+// child process's exit code (D-10). A skipped ACME reads as a failure here,
+// not as an absence, even on a transcript whose own exit code and summary
+// line both say "passed" -- see r2000-verify.ts's header comment and
+// r2000-verify.test.ts's pinned trap transcript for the live incident this
+// guards against. A future maintainer reading only this file must not
+// reintroduce a `result.status === 0` shortcut anywhere in `cmdVerify()`.
 const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
@@ -61,10 +71,20 @@ verbs:
       source in one command with no human interaction. Writes ACME source to
       --out (default: the input stem plus .a).
 
+  verify <input-or-project> [--entry NAME]
+      The criterion-4 (R2000-06) reassembly proof: exports and reassembles
+      through regenerator2000's own --verify, and prints each assembler's
+      parsed result line. Exits 0 only when ACME's own line reports success --
+      a skipped ACME is a failure here, never a pass, regardless of the child
+      process's own exit code or its "All roundtrip verifications passed."
+      summary line (D-10). Accepts a .regen2000proj directly, or bootstraps a
+      bare .prg/.d64/flat-64K input to a temporary project first, exactly
+      like export-asm.
+
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
 
-.vsf input is not supported by either verb. Phase 9 found its machine-type
+.vsf input is not supported by any verb. Phase 9 found its machine-type
 field only reads correctly by coincidence; closing that gap for real is
 Phase 11's job, not this CLI's. Convert to .prg, .d64 or a flat 64K capture.
 `;
@@ -257,6 +277,68 @@ function cmdExportAsm(rest: string[]): number {
 }
 
 /**
+ * `verify <input-or-project>` -- the criterion-4 (R2000-06) reassembly
+ * proof. Accepts a `.regen2000proj` directly, or bootstraps a bare input to
+ * a temporary project first, exactly like `cmdExportAsm()` above. Prints
+ * every parsed assembler result line, then the verdict's own reason. The
+ * exit code comes from `verifyProject()`'s `ok` field -- which
+ * `r2000-verify.ts`'s `acmeVerdict()` derives ONLY from the parsed ACME
+ * result line, never from regenerator2000's own process exit code (D-10).
+ * A skipped ACME therefore prints and exits as a failure here, reading as
+ * exactly that -- never as a silent absence -- even though the underlying
+ * `--verify` process may itself have exited 0 with a summary line claiming
+ * success (r2000-verify.test.ts's pinned trap transcript is the live
+ * incident this guards against).
+ */
+function cmdVerify(rest: string[]): number {
+  const { positional, entry } = parseArgs(rest);
+  const input = positional[0];
+  if (!input) {
+    console.error("verify: usage: verify <input-or-project> [--entry NAME]");
+    return 1;
+  }
+  if (!existsSync(input)) {
+    console.error(`verify: input file not found: ${input}`);
+    return 1;
+  }
+
+  const ext = extname(input).toLowerCase();
+  let projectPath: string;
+  let tmpDir: string | undefined;
+
+  try {
+    if (ext === ".regen2000proj") {
+      projectPath = input;
+    } else {
+      // Bootstrap to a temp project first, so a bare .prg (or .d64/.raw)
+      // can be verified in one command with no human interaction.
+      tmpDir = mkdtempSync(join(tmpdir(), "r2000-cli-"));
+      const tmpProjectPath = join(tmpDir, "bootstrap.regen2000proj");
+      const outcome = bootstrapProject(input, { entry, outPath: tmpProjectPath });
+      if (outcome.code !== 0) return outcome.code;
+      projectPath = outcome.path!;
+    }
+
+    const result = verifyProject(projectPath);
+    for (const line of result.lines) {
+      const glyph = line.outcome === "ok" ? "✓" : "✗";
+      console.log(`  ${glyph} ${line.assembler} — ${line.detail}`);
+    }
+
+    if (!result.ok) {
+      // Print the reason verbatim -- especially a "skipped" reason, which
+      // must read as a failure and not as an absence (D-10).
+      console.error(`verify: ${result.reason}`);
+      return 1;
+    }
+    console.log(`verify: ${result.reason}`);
+    return 0;
+  } finally {
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
  * verb per `acme.mjs`'s own dispatch convention (`.claude/skills/acme-build/
@@ -278,6 +360,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return cmdBootstrap(rest);
       case "export-asm":
         return cmdExportAsm(rest);
+      case "verify":
+        return cmdVerify(rest);
       default:
         console.error(`r2000: unknown verb "${verb}"\n`);
         console.log(USAGE);
