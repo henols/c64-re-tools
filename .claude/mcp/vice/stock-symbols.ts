@@ -81,8 +81,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;
 
 /** T-05-02-03: three independent resource ceilings, each refusing with both
- * the observed value and the limit named. */
-const MAX_LABEL_FILE_BYTES = 2 * 1024 * 1024;
+ * the observed value and the limit named. `MAX_LABEL_FILE_BYTES` is exported
+ * (11-08, Rule A20) so `r2000-symbols.ts`'s `exportLabels()`/`importLabels()`
+ * can apply the SAME byte ceiling to a regenerator2000-produced/-consumed
+ * `.lbl` file before ever calling `parseViceLabelFile()` below -- never a
+ * second hand-copied number. */
+export const MAX_LABEL_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_LABEL_FILE_LINES = 50000;
 const MAX_SYMBOLS = 20000;
 
@@ -104,7 +108,11 @@ export class StockSymbolsError extends ViceError {
   }
 }
 
-interface SymbolTable {
+/** Exported alongside `parseViceLabelFile()` (11-08, Rule A20) purely so a
+ * cross-module caller can name this shape in its own type annotations --
+ * this module's own internal state (`loadedTable` below) still never leaves
+ * this file. */
+export interface SymbolTable {
   byName: Map<string, number>;
   byAddress: Map<number, string>;
 }
@@ -192,7 +200,17 @@ function resolveLabelFilePath(pathArg: unknown): string {
 // counted, never a whole-file refusal.
 // ---------------------------------------------------------------------------
 
-function parseViceLabelFile(text: string): {
+/**
+ * Exported (11-08, Rule A20) so `r2000-symbols.ts` can validate a
+ * regenerator2000-produced `.lbl` file (or check a caller-supplied one
+ * BEFORE it is ever handed to a spawned regenerator2000 child) through THIS
+ * parser -- the ONE `al C:xxxx .Name` reader in this repo -- rather than
+ * adding a second copy of `VICE_LABEL_LINE_RE`. Ceiling violations
+ * (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) throw `StockSymbolsError` exactly as
+ * they do for `handleSymbolsLoad` below; a caller across the module boundary
+ * is expected to surface that error verbatim, never re-wrap it.
+ */
+export function parseViceLabelFile(text: string): {
   table: SymbolTable;
   symbolCount: number;
   skippedLines: number;

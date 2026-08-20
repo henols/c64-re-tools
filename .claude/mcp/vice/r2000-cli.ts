@@ -57,6 +57,7 @@ import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts
 import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
 import { verifyProject } from "./r2000-verify.ts";
 import { generateEnums } from "./r2000-enum-gen.ts";
+import { exportLabels, importLabels } from "./r2000-symbols.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 <verb>";
@@ -113,6 +114,31 @@ verbs:
       pass returns exactly its own ceiling (coverage may be incomplete) or
       when generateEnums() itself refuses (an illegal generated identifier,
       or an enum install that failed outright).
+
+  export-lbl <project> [--out FILE]
+      Exports the project's user-defined labels to a VICE label file
+      (R2000-14): "al C:xxxx .Name" lines that stock-symbols.ts's existing
+      parser accepts. The written file is read back and validated through
+      that same parser before this verb reports success -- a regenerator2000
+      exit code has lied before (r2000-verify.ts's D-10 founding incident),
+      so the exit code alone is never trusted. Defaults --out to the project
+      path's stem plus .lbl. Prints the written path and the symbol count
+      parsed back from the file. Requires an EXISTING .regen2000proj (this
+      verb does not bootstrap from a raw input).
+
+  import-lbl <project> <lbl>
+      Imports a VICE label file into the project (R2000-15, the D-28 path):
+      --import_lbl paired with --mcp-server-stdio plus an explicit
+      r2000_save_project -- the only combination that actually persists the
+      import (--import_lbl alone under --headless silently discards it,
+      main.rs:800-806). Prints the names imported, then an explicit line
+      naming the fact that the import was persisted by an explicit save
+      (proven by re-reading the project from disk in a fresh process, never
+      trusted from the child's own success text alone). Exits non-zero,
+      printing the reason, when the result is not disk-verified, or when the
+      given .lbl fails stock-symbols.ts's own size/line/symbol ceilings.
+      Requires an EXISTING .regen2000proj (this verb does not bootstrap from
+      a raw input).
 
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
@@ -528,6 +554,156 @@ async function cmdGenEnums(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface ExportLblParsedArgs {
+  positional: string[];
+  out?: string;
+  outMissingValue?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for export-lbl -- exactly `--out`. Per WR-08's
+ * posture (do not silently accept a flag a verb does not implement, or a
+ * flag missing its value), any OTHER `--flag`-shaped token is refused as
+ * `unknownOption`, and `--out` with no value (or a flag-shaped "value") is
+ * refused as `outMissingValue`, rather than silently treated the way
+ * bootstrap/export-asm's own looser `parseArgs()` does. */
+function parseExportLblArgs(rest: string[]): ExportLblParsedArgs {
+  const positional: string[] = [];
+  let out: string | undefined;
+  let outMissingValue = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        outMissingValue = true;
+      } else {
+        out = value;
+        i++;
+      }
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, out, outMissingValue, unknownOption };
+}
+
+interface ImportLblParsedArgs {
+  positional: string[];
+  unknownOption?: string;
+}
+
+/** import-lbl takes no options at all besides its two positional arguments
+ * -- any `--flag`-shaped token is refused as `unknownOption` (WR-08
+ * posture), never silently treated as a positional. */
+function parseImportLblArgs(rest: string[]): ImportLblParsedArgs {
+  const positional: string[] = [];
+  let unknownOption: string | undefined;
+  for (const a of rest) {
+    if (a.startsWith("--")) unknownOption ??= a;
+    else positional.push(a);
+  }
+  return { positional, unknownOption };
+}
+
+/**
+ * `export-lbl <project> [--out FILE]` -- the R2000-14 export leg, via
+ * `r2000-symbols.ts`'s `exportLabels()`. Prints the written path and the
+ * symbol count parsed back from the file (never the raw regenerator2000
+ * exit code alone -- `exportLabels()` itself already re-reads and validates
+ * the file through stock-symbols.ts's parser before returning).
+ */
+async function cmdExportLbl(rest: string[]): Promise<number> {
+  const { positional, out, outMissingValue, unknownOption } = parseExportLblArgs(rest);
+  if (unknownOption) {
+    console.error(`export-lbl: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("export-lbl: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  const project = positional[0];
+  if (!project) {
+    console.error("export-lbl: usage: export-lbl <project> [--out FILE]");
+    return 1;
+  }
+  if (!existsSync(project)) {
+    console.error(`export-lbl: project file not found: ${project}`);
+    return 1;
+  }
+
+  const outPath = out ?? project.replace(/\.[^./\\]+$/, "") + ".lbl";
+  let result: Awaited<ReturnType<typeof exportLabels>>;
+  try {
+    result = await exportLabels({ projectPath: project, outPath });
+  } catch (err) {
+    console.error(`export-lbl: ${errMsg(err)}`);
+    return 1;
+  }
+
+  console.log(`export-lbl: wrote ${outPath} (${result.symbolCount} symbol(s))`);
+  return 0;
+}
+
+/**
+ * `import-lbl <project> <lbl>` -- the R2000-15/D-28 import leg, via
+ * `r2000-symbols.ts`'s `importLabels()`. Prints the names imported, then an
+ * explicit line naming that persistence was proven by an independent disk
+ * re-read (never left implicit, so the transcript itself shows the D-28
+ * trap was avoided). Exits non-zero -- naming the reason, which includes
+ * stock-symbols.ts's own ceiling messages verbatim when the given `.lbl`
+ * fails them -- whenever the result is not disk-verified.
+ */
+async function cmdImportLbl(rest: string[]): Promise<number> {
+  const { positional, unknownOption } = parseImportLblArgs(rest);
+  if (unknownOption) {
+    console.error(`import-lbl: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+
+  const [project, lbl] = positional;
+  if (!project || !lbl) {
+    console.error("import-lbl: usage: import-lbl <project> <lbl>");
+    return 1;
+  }
+  if (!existsSync(project)) {
+    console.error(`import-lbl: project file not found: ${project}`);
+    return 1;
+  }
+  if (!existsSync(lbl)) {
+    console.error(`import-lbl: label file not found: ${lbl}`);
+    return 1;
+  }
+
+  let result: Awaited<ReturnType<typeof importLabels>>;
+  try {
+    result = await importLabels({ projectPath: project, lblPath: lbl });
+  } catch (err) {
+    console.error(`import-lbl: ${errMsg(err)}`);
+    return 1;
+  }
+
+  console.log(`import-lbl: imported ${result.importedNames.length} name(s): ${result.importedNames.join(", ")}`);
+  if (!result.diskVerified) {
+    console.error(`import-lbl: ${result.reason}`);
+    return 1;
+  }
+  console.log(
+    "import-lbl: persisted by an explicit r2000_save_project call over the same --mcp-server-stdio session " +
+      "(D-28) -- verified by re-reading the project from disk in a fresh process, not merely trusted from the " +
+      "child's own success text.",
+  );
+  return 0;
+}
+
 /**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -554,6 +730,10 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return cmdVerify(rest);
       case "gen-enums":
         return await cmdGenEnums(rest);
+      case "export-lbl":
+        return await cmdExportLbl(rest);
+      case "import-lbl":
+        return await cmdImportLbl(rest);
       default:
         console.error(`r2000: unknown verb "${verb}"\n`);
         console.log(USAGE);
