@@ -144,3 +144,12 @@ None - no external service configuration required.
 ---
 *Phase: 09-the-assumption-probe-go-no-go*
 *Completed: 2026-08-20*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/09-the-assumption-probe-go-no-go/09-08-SUMMARY.md`
+- FOUND: `.planning/STATE.md`
+- FOUND: `.planning/ROADMAP.md`
+- FOUND commit `7da4de3` (Task 1: STATE.md decision entry)
+- FOUND commit `d46bb31` (Task 2: ROADMAP pointers)
+- FOUND commit `88bf3e2` (plan summary)
