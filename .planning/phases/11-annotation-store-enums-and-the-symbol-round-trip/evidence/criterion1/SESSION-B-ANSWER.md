@@ -123,3 +123,27 @@ Nothing the question asked for came back empty or missing. All four parts were
 answered by a single, unambiguous tool-call response each; no truncation applied
 (none of the four calls used `r2000_search_disassembly`, whose only silent-cap
 risk is `max_results`).
+
+## Verdict
+
+**MATCH.** `r2000-answer-key.test.ts`'s new session-B comparison test recomputes
+sha256 over this file's own canonical line and asserts it equals the sealed
+`ANSWER.sha256` — it passes.
+
+- **Session B's canonical line:** `label=border_bump_up confidence=probable-data blocktype=byte xrefcount=2`
+- **Session B's sha256:** `e64463d8cef8fbb7699620a3c207de08a36b1189afd9700452a448d91d8c08cc`
+- **Sealed `ANSWER.sha256`:** `e64463d8cef8fbb7699620a3c207de08a36b1189afd9700452a448d91d8c08cc`
+- **Number of `r2000_*` calls used:** 4 (`r2000_get_symbols`, `r2000_get_comments`, `r2000_get_blocks`, `r2000_get_cross_references`)
+
+Criterion 1's two-session evidence is complete: this session, blind to session
+A's prose (the only session-A artifacts touched were the committed store and
+the question), reconstructed the same four facts session A recorded — a human
+naming decision (the label), a confidence judgement that no byte-level
+classifier can read off the bytes, a reachability-based block classification,
+and a cross-reference count — entirely through the curated `r2000_*` query
+surface. `ANSWER.md` was not read at any point before or during this
+comparison; the match was verified mechanically by the extended test, not by
+eye.
+
+`ANSWER.md`, `ANSWER.sha256` and `QUESTION.md` are unmodified by this session
+(`git diff --exit-code` on all three is clean).
