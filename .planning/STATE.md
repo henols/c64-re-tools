@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-20T20:29:30.889Z"
-last_activity: 2026-08-20 -- Phase 11 execution started
+last_updated: "2026-08-20T21:01:31.874Z"
+last_activity: 2026-08-20 -- Phase 11 plan 03 (scope corrections) complete
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 29
-  completed_plans: 17
-  percent: 59
+  completed_plans: 20
+  percent: 67
 ---
 
 # Project State
@@ -37,16 +37,17 @@ packages, so no release work gates the milestone.
 ## Current Position
 
 Phase: 11 (annotation-store-enums-and-the-symbol-round-trip) — EXECUTING
-Plan: 1 of 12
+Plan: 4 of 12
 Status: Executing Phase 11
-Phase 10 is complete and verified (9/9 plans, 5/5 success criteria). Its code
-review found two data-loss defects on the documented `export-asm`/`bootstrap`
-route; both are fixed and pinned by regression tests. Remaining review findings
-are filed in `.planning/todos/pending/2026-08-20-r2000-review-residual-findings.md`
-— WR-02 (the criterion-1 construction test can go vacuous) is the highest-value
-one. Next step: Phase 11 (annotation store, enums, symbol round trip), which
-inherits plan 10-03's package-boundary reasoning as a settled decision.
-Last activity: 2026-08-20 -- Phase 11 execution started
+Plans 11-01, 11-02 and 11-03 are complete and merged into main. 11-01 fixed
+WR-02/WR-04; 11-02 fixed WR-03/WR-05/WR-06/WR-07 and the dynamic-import
+closure-walk todo; 11-03 (this update) corrected four scope items owed by the
+phase (D-34 `.vsf` dangling reference, D-35 `--export_lbl` verified claim,
+D-22 `R2000-13` wording, D-15/D-19 one-project-limit narrowing) and pinned
+CLAUDE.md's `rewriteArguments()` line citations with a new drift-guard test.
+Both folded Phase 10 review todos are now closed under
+`.planning/todos/completed/`. Next step: plan 11-04.
+Last activity: 2026-08-20 -- Phase 11 plan 03 (scope corrections) complete
 
 ## Performance Metrics
 
@@ -87,6 +88,7 @@ Last activity: 2026-08-20 -- Phase 11 execution started
 | Phase 08.1 P05 | 45min | 2 tasks | 3 files |
 | Phase 09 P01 | 30min | 3 tasks | 5 files |
 | Phase 09 P08 | 10m | 2 tasks | 2 files |
+| Phase 11 P03 | 28min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -140,17 +142,21 @@ Recent decisions affecting current work:
 - [Phase 09]: Go/no-go verdict recorded: **`degrade`**, rule **`R4`** fired (triggering input: `c3_4_vsf_load: partial`), against installed **regenerator2000 0.9.20**. Full evidence, all seven criteria and the reproduced decision rule live in one place: `docs/phase9-regenerator2000-probe-findings.md` (frontmatter `verdict`/`verdict_rule_applied`/`criteria`) — read there, not restated here.
 - [Phase 09-08]: Ran sequentially on main with no worktree isolation, per this plan's own worktree: false frontmatter -- its deliverable IS STATE.md/ROADMAP.md content, which worktree mode strips from executor commits
 - [Phase 09-08]: Added a ROADMAP Phase 11 Notes pointer to the findings document even though the verdict produced no scope amendment there, because Phase 11's own pre-existing Notes anticipated a criterion-3(3) format-mismatch contingency that needed an explicit answer (it did not fire)
+- [Phase 11-03]: Ran sequentially on main with no worktree isolation, per this plan's own worktree: false frontmatter -- its deliverables ARE .planning/ROADMAP.md/REQUIREMENTS.md content plus two todo-file git mv moves, which worktree mode strips from executor commits
+- [Phase 11-03]: Reworded ROADMAP.md's Phase-10-criterion-3 .vsf note from 'Phase 11 confirmed this (D-34)' to 'confirmed by D-34' after the literal string 'Phase 11' on a .vsf-mentioning line tripped the acceptance grep gate that checks no document still names Phase 11 as .vsf's home -- same meaning, mechanically clean
 
 ### Pending Todos
 
-16 pending — see `.planning/todos/pending/` (`/gsd-capture --list`).
+14 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). Net -1 this
+plan: 2 closed (the dynamic-import closure-walk todo, the residual Phase 10
+review findings todo — both fully resolved, see Quick Tasks / decisions below),
+1 added (`2026-08-20-vsf-as-a-bootstrap-input.md`, filed by 11-03/D-34).
 
-Newest: `2026-08-20-fully-remove-the-forked-vice-mcp-backend.md` — retire the fork
-backend entirely (HTTP `/mcp` seam, `VICE_BACKEND` selection, two-manifest split,
-per-backend skill routing), leaving stock as the only backend. Not a pure deletion:
-24 `vice_*` tools are fork-only (SID/VIC-II/CIA state, matrix keyboard, screenshots,
-checkpoint groups), so each needs a drop / reimplement / accept-loss decision, and
-the 62-tool published contract makes it semver-major.
+Newest: `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
+bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
+its machine-type auto-detection unreliable, and the D-01 synthesis route never
+hands regenerator2000 a container format. Reverses if a consumer has only
+`.vsf` captures and cannot re-capture as `.raw`.
 
 ### Quick Tasks Completed
 
@@ -278,9 +284,9 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-20T19:02:38.012Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/11-CONTEXT.md
+Last session: 2026-08-20T21:01:31.866Z
+Stopped at: Completed 11-03-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

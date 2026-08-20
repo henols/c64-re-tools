@@ -59,7 +59,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 2/12 | In Progress|  |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 3/12 | In Progress|  |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -370,7 +370,7 @@ Plans:
 
 - [x] 11-01-PLAN.md — Make the guards this phase rests on non-vacuous: WR-02, WR-04, and the one shared D-11 availability gate
 - [x] 11-02-PLAN.md — Close WR-03/05/06/07 and make the packaging closure walk follow dynamic imports (folded todo 1)
-- [ ] 11-03-PLAN.md — Scope corrections: `.vsf` (D-34), the verified `--export_lbl` note (D-35), `R2000-13`'s wording (D-22), the one-project limit, CLAUDE.md's drifted line citations
+- [x] 11-03-PLAN.md — Scope corrections: `.vsf` (D-34), the verified `--export_lbl` note (D-35), `R2000-13`'s wording (D-22), the one-project limit, CLAUDE.md's drifted line citations
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
