@@ -166,3 +166,8 @@ None - no external service configuration required.
 ---
 *Phase: 11-annotation-store-enums-and-the-symbol-round-trip*
 *Completed: 2026-08-20*
+
+## Self-Check: PASSED
+
+All 6 modified source files and this SUMMARY.md confirmed present on disk.
+All 4 task/docs commits (`91d54a1`, `d1beb37`, `c0861a5`, `b2f1b39`) confirmed in `git log --oneline --all`.
