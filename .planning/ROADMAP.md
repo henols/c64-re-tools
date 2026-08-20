@@ -40,7 +40,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 ### 🚧 v0.3.0 regenerator2000 static-analysis backend (Open)
 
 - [x] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
-- [ ] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim
+- [x] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim (completed 2026-08-20)
 - [ ] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
 
 ## Progress
@@ -58,7 +58,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
-| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 8/9 | In Progress|  |
+| 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete   | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
@@ -319,7 +319,7 @@ Notes:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 10-09-PLAN.md — Doc truth-up: criterion-3 wording, the Apache-2.0-only corrections, the wedge-triage contention discriminator, and both folded todos closed (D-03/D-14)
+- [x] 10-09-PLAN.md — Doc truth-up: criterion-3 wording, the Apache-2.0-only corrections, the wedge-triage contention discriminator, and both folded todos closed (D-03/D-14)
 
 Notes:
 
