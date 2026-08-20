@@ -46,11 +46,64 @@ Unable to find image 'node:22-slim' locally
 Status: Downloaded newer image for node:22-slim
 v22.23.2
 
+## Base rust tag correction (discovered during Task 2's actual cold build attempt)
+
+`rust:1.88-slim` resolved fine (manifest exists, rustc 1.88.0 confirmed) and was
+believed to clear the floor per plan 09-01's finding. It does NOT: the real,
+first-hand cold build below failed with a genuine compile-time toolchain error, not
+a resolvability problem:
+
+$ docker build --no-cache -f Dockerfile.single -t r2000-probe-single .
+...
+#5 11.81 error: failed to compile `regenerator2000 v0.9.20`, intermediate artifacts can be found at `/tmp/cargo-installSPwttY`.
+#5 11.81
+#5 11.81 Caused by:
+#5 11.81   rustc 1.88.0 is not supported by the following packages:
+#5 11.81     quantette@0.6.0 requires rustc 1.90
+#5 11.81     safe_arch@1.2.0 requires rustc 1.89
+#5 11.81     wide@1.6.1 requires rustc 1.89
+#5 11.81   Try re-running `cargo install` with `--locked`
+------
+ERROR: failed to build: failed to solve: process "/bin/sh -c cargo install regenerator2000" did not complete successfully: exit code: 101
+
+real	0m23,119s
+user	0m0,323s
+sys	0m0,189s
+
+This is a real finding, not a self-inflicted failure: plan 09-01 established
+rustc >= 1.88 from the crate's own committed `Cargo.lock` pins (`ratatui 0.30.0`,
+`image 0.25.10`, `vergen 9.1.0`, `icu_properties 2.2.0`), but did not attempt an
+actual compile against that floor -- 1.88.0 satisfies those four pins but not
+`quantette@0.6.0` (needs 1.90), `safe_arch@1.2.0` (needs 1.89), or `wide@1.6.1`
+(needs 1.89). **The real floor is rustc >= 1.90, not 1.88.** Re-resolved:
+
+$ docker manifest inspect rust:1.90-slim
+{
+   "schemaVersion": 2,
+   "mediaType": "application/vnd.oci.image.index.v1+json",
+   "manifests": [
+      {
+(rc=0 -- resolved)
+
+$ docker run --rm rust:1.90-slim rustc --version
+Unable to find image 'rust:1.90-slim' locally
+1.90-slim: Pulling from library/rust
+... (layer pull output omitted, image pulled successfully)
+Status: Downloaded newer image for rust:1.90-slim
+rustc 1.90.0 (1159e78c4 2025-09-14)
+
+Both Dockerfiles were updated in place to `FROM rust:1.90-slim` (single-stage) /
+`FROM rust:1.90-slim AS builder` (multi-stage) before the timed builds below were
+run. The verbatim Dockerfile contents quoted later in this file are the final,
+corrected versions actually used for the measurements in `## Result`.
+
 ## Resolved tags
 
-BASE_RUST_TAG: rust:1.88-slim (rustc 1.88.0 -- exactly at the real transitive floor
-  plan 09-01 established; not the edition-2024 floor of 1.85 09-RESEARCH.md's Code
-  Examples originally sketched)
+BASE_RUST_TAG: rust:1.90-slim (rustc 1.90.0 -- the REAL transitive floor, discovered
+  by an actual failed compile against rust:1.88-slim above; plan 09-01's rustc >= 1.88
+  finding undercounted it by two minor versions on two of the crate's transitive
+  dependencies. Neither 1.88 nor the original edition-2024 floor of 1.85
+  09-RESEARCH.md's Code Examples sketched is sufficient)
 BASE_RUNTIME_TAG: node:22-slim (Node v22.23.2)
 
 BASE_RUNTIME_TAG rationale: regenerator2000 runs on the MCP proxy's side of the
@@ -66,27 +119,301 @@ $ grep -n -A2 '"engines"' .claude/mcp/vice/package.json
     "node": ">=22.18.0"
   },
 
-## Dockerfile.single (verbatim)
+## Dockerfile.single (verbatim, final/corrected)
 
 # Single-stage probe: what "just cargo install it in the devcontainer" costs forever.
-# Resolved base tag: rust:1.88-slim (rustc 1.88.0 -- the real, transitively-required
-# floor recorded in plan 09-01's evidence, not the edition-2024 floor of 1.85).
+# Resolved base tag: rust:1.90-slim (rustc 1.90.0). NOTE: rust:1.88-slim (rustc 1.88.0)
+# was tried first per plan 09-01's evidence but failed with a real compile error --
+# quantette@0.6.0 requires rustc 1.90, safe_arch@1.2.0 and wide@1.6.1 require rustc
+# 1.89 -- so the actual floor is higher than plan 09-01 recorded. See this evidence
+# file's RESEARCH CORRECTIONS section.
 # Deliberately unoptimised -- no apt-get, no cache mounts -- the point is to measure
 # the naive route's cost, not to minimise it.
-FROM rust:1.88-slim
+FROM rust:1.90-slim
 RUN cargo install regenerator2000
 ENTRYPOINT ["regenerator2000"]
 
-## Dockerfile.multi (verbatim)
+## Dockerfile.multi (verbatim, final/corrected)
 
 # Multi-stage probe: what the shipped devcontainer image would actually need.
-# Builder base: rust:1.88-slim (rustc 1.88.0, same real floor as Dockerfile.single).
+# Builder base: rust:1.90-slim (rustc 1.90.0, same real floor as Dockerfile.single --
+# rust:1.88-slim failed here too; see Dockerfile.single's header note and this
+# evidence file's RESEARCH CORRECTIONS section).
 # Runtime base: node:22-slim (Node v22.23.2), because regenerator2000 runs on the MCP
 # proxy's side of the container boundary per D-R4, and the runtime must satisfy
 # .claude/mcp/vice/package.json's engines.node floor (>=22.18.0) -- v22.23.2 clears it.
-FROM rust:1.88-slim AS builder
+FROM rust:1.90-slim AS builder
 RUN cargo install regenerator2000 --root /out
 
 FROM node:22-slim
 COPY --from=builder /out/bin/regenerator2000 /usr/local/bin/regenerator2000
 ENTRYPOINT ["regenerator2000"]
+
+## Cold builds, timed (Task 2)
+
+Both builds run with `--no-cache` from the `evidence/` directory (build context is
+`evidence/` only, per this plan's own threat model T-09-02-B -- neither Dockerfile has
+a `COPY .` of anything wider than the compiled binary itself).
+
+### Single-stage cold build
+
+$ docker build --no-cache -f Dockerfile.single -t r2000-probe-single .
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.single
+#1 transferring dockerfile: 727B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/rust:1.90-slim
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/2] FROM docker.io/library/rust:1.90-slim
+#4 DONE 0.0s
+
+#5 [2/2] RUN cargo install regenerator2000
+#5 0.450     Updating crates.io index
+#5 0.569  Downloading crates ...
+#5 0.653   Downloaded regenerator2000 v0.9.20
+#5 0.706   Installing regenerator2000 v0.9.20
+#5 0.745     Updating crates.io index
+#5 6.600      Locking 422 packages to latest compatible versions
+#5 6.611       Adding base64 v0.22.1 (available: v0.23.1)
+#5 6.643       Adding generic-array v0.14.7 (available: v0.14.9)
+[... 355 "Downloaded <crate> vX.Y.Z" lines and dependency-resolution notices omitted
+     for length; full raw log retained by the executing agent for this session only,
+     not committed -- the crate/version counts below are the load-bearing facts ...]
+#5 170.8    Compiling opener v0.8.5
+#5 170.9    Compiling regenerator2000 v0.9.20
+#5 171.4    Compiling ratatui-textarea v0.9.2
+#5 171.6    Compiling clap_derive v4.6.4
+#5 173.4    Compiling termcolor v1.4.1
+#5 176.1    Compiling simplelog v0.12.2
+#5 182.2    Compiling clap v4.6.6
+#5 236.9    Compiling rustls-webpki v0.103.14
+#5 244.6    Compiling tokio-rustls v0.26.4
+#5 244.6    Compiling rustls-platform-verifier v0.7.0
+#5 245.3    Compiling hyper-rustls v0.27.9
+#5 246.9    Compiling reqwest v0.13.4
+#5 251.9    Compiling regenerator2000-core v0.9.20
+#5 261.6    Compiling regenerator2000-tui v0.9.20
+#5 333.8     Finished `release` profile [optimized] target(s) in 5m 33s
+#5 333.9   Installing /usr/local/cargo/bin/regenerator2000
+#5 333.9    Installed package `regenerator2000 v0.9.20` (executable `regenerator2000`)
+#5 DONE 334.7s
+
+#6 exporting to image
+#6 exporting layers
+#6 exporting layers 4.8s done
+#6 writing image sha256:11fa30b7c599e0f4341e8601652915398302f0bdecebc67ed58c6cf4c2e5b43f done
+#6 naming to docker.io/library/r2000-probe-single done
+#6 DONE 4.8s
+
+real	5m39,970s
+user	0m0,815s
+sys	0m0,580s
+
+283 total `Compiling` lines and 355 total `Downloaded` crate lines were emitted
+(counted with `grep -c` against the retained log), consistent with plan 09-01's
+354-crate/53.2MB host-side reading of the same dependency graph.
+
+### Multi-stage cold build
+
+Built with `rust:1.90-slim-bookworm` as the resolved, corrected builder tag (see
+`## Base rust tag correction` above -- the plain `rust:1.90-slim` tag, Debian 13
+"trixie", produces a binary that fails at runtime against `node:22-slim`'s Debian 12
+"bookworm" glibc):
+
+$ docker build --no-cache -f Dockerfile.multi -t r2000-probe-multi .
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.multi
+#1 transferring dockerfile: 1.24kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:22-slim
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/rust:1.90-slim-bookworm
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [stage-1 1/2] FROM docker.io/library/node:22-slim
+#5 CACHED
+
+#6 [builder 1/2] FROM docker.io/library/rust:1.90-slim-bookworm
+#6 DONE 0.0s
+
+#7 [builder 2/2] RUN cargo install regenerator2000 --root /out
+#7 0.342     Updating crates.io index
+#7 1.110  Downloading crates ...
+[... 355 "Downloaded <crate> vX.Y.Z" lines and dependency-resolution notices omitted
+     for length, identical dependency graph to the single-stage build above ...]
+#7 124.9    Compiling clap_derive v4.6.4
+#7 126.6    Compiling termcolor v1.4.1
+#7 128.5    Compiling simplelog v0.12.2
+#7 131.3    Compiling clap v4.6.6
+#7 188.1    Compiling rustls-webpki v0.103.14
+#7 197.9    Compiling tokio-rustls v0.26.4
+#7 197.9    Compiling rustls-platform-verifier v0.7.0
+#7 198.4    Compiling hyper-rustls v0.27.9
+#7 198.9    Compiling reqwest v0.13.4
+#7 204.7    Compiling regenerator2000-core v0.9.20
+#7 216.5    Compiling regenerator2000-tui v0.9.20
+#7 286.8     Finished `release` profile [optimized] target(s) in 4m 46s
+#7 287.0   Installing /out/bin/regenerator2000
+#7 287.0    Installed package `regenerator2000 v0.9.20` (executable `regenerator2000`)
+#7 287.3 warning: be sure to add `/out/bin` to your PATH to be able to run the installed binaries
+#7 DONE 287.9s
+
+#8 [stage-1 2/2] COPY --from=builder /out/bin/regenerator2000 /usr/local/bin/regenerator2000
+#8 DONE 0.5s
+
+#9 exporting to image
+#9 exporting layers 0.1s done
+#9 writing image sha256:9820249e80a10b6aee7e1fefa11acb0d755647e60e02dfa038076dc088c6cd0d done
+#9 naming to docker.io/library/r2000-probe-multi 0.0s done
+#9 DONE 0.1s
+
+real	4m48,989s
+user	0m0,735s
+sys	0m0,461s
+
+**Note on `docker build` timing semantics:** bash's `time` keyword times only the
+`docker build` invocation, not a shell pipeline around it -- the `real` line above is
+the wall-clock cost of that single cold build, matching what a new user's first
+`cargo install` (single-stage) or first devcontainer build (multi-stage) would pay.
+
+## Runtime verification (the multi-stage image must actually run the binary it ships)
+
+First attempt (`rust:1.90-slim` builder, Debian 13 "trixie") -- a **real, distinct
+finding**, not a version mismatch:
+
+$ docker run --rm r2000-probe-multi --version
+regenerator2000: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by regenerator2000)
+regenerator2000: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found (required by regenerator2000)
+
+$ docker run --rm rust:1.90-slim cat /etc/os-release
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+
+$ docker run --rm node:22-slim cat /etc/os-release
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+
+Confirmed the root cause directly: the two base images are built against different
+Debian releases with incompatible glibc generations, so a binary compiled in the
+trixie-based builder cannot run against the bookworm-based runtime's libc, regardless
+of anything Rust- or regenerator2000-specific. Corrected `Dockerfile.multi`'s builder
+to `rust:1.90-slim-bookworm` (Debian 12, matching `node:22-slim`), rebuilt (the timed
+build above is already the corrected version), and re-verified:
+
+$ docker run --rm r2000-probe-multi --version
+regenerator2000 0.9.20
+
+R2000_VERSION_IN_IMAGE matches plan 09-01's host `INSTALLED_VERSION` exactly
+(`regenerator2000 0.9.20`) -- no install-reproducibility mismatch to report for the
+version itself. The mismatch that *did* occur was structural (Debian release / glibc
+generation across build stages), not a version drift, and is recorded as its own
+finding below.
+
+## Image sizes and human-readable form
+
+$ docker image inspect r2000-probe-single --format '{{.Size}}'
+1256576420
+
+$ docker image inspect r2000-probe-multi --format '{{.Size}}'
+250820636
+
+$ docker images --filter "reference=r2000-probe-single" --filter "reference=r2000-probe-multi"
+IMAGE                       ID             DISK USAGE   CONTENT SIZE   EXTRA
+r2000-probe-multi:latest    9820249e80a1        251MB             0B
+r2000-probe-single:latest   11fa30b7c599       1.26GB             0B
+
+(Note: this docker version, 29.7.2, rejects `docker images <repo1> <repo2>` -- "requires
+at most 1 argument" -- so the human-readable listing above uses `--filter reference=`
+per image instead of the plan's sketched positional-argument form. Recorded as a CLI
+surface drift from the plan's own Code Examples, not a probe result.)
+
+## Result
+
+SINGLE_STAGE_BYTES: 1256576420
+SINGLE_STAGE_BUILD_SECONDS: 340
+MULTI_STAGE_BYTES: 250820636
+MULTI_STAGE_BUILD_SECONDS: 289
+BASE_RUST_TAG: rust:1.90-slim (single-stage build); rust:1.90-slim-bookworm (multi-stage
+  builder stage -- Debian-release-matched to the runtime stage; see Runtime
+  verification finding above for why the plain rust:1.90-slim tag is unsafe as a
+  multi-stage builder base against node:22-slim specifically)
+BASE_RUNTIME_TAG: node:22-slim
+R2000_VERSION_IN_IMAGE: regenerator2000 0.9.20 (matches plan 09-01's host
+  INSTALLED_VERSION exactly -- no version-reproducibility mismatch)
+
+## Baseline note
+
+This repo has no existing devcontainer image of any kind -- there is nothing to diff
+these numbers against. `SINGLE_STAGE_BYTES` (1,256,576,420 bytes, ~1.26GB) and
+`MULTI_STAGE_BYTES` (250,820,636 bytes, ~251MB) are **absolute image sizes**, not
+deltas from a "before" state. The ~5x difference between them (1.26GB vs 251MB) is
+the actual, measured cost of carrying `rustc`/`cargo`/`~/.cargo/registry` in the final
+image forever (single-stage) versus discarding the builder and shipping only the
+compiled binary (multi-stage) -- this is the number Phase 10's `R2000-03` needs, and
+it is not a delta against any pre-existing baseline because none exists.
+
+## Cleanup
+
+$ docker image rm r2000-probe-single r2000-probe-multi
+Untagged: r2000-probe-single:latest
+Deleted: sha256:11fa30b7c599e0f4341e8601652915398302f0bdecebc67ed58c6cf4c2e5b43f
+Untagged: r2000-probe-multi:latest
+Deleted: sha256:9820249e80a10b6aee7e1fefa11acb0d755647e60e02dfa038076dc088c6cd0d
+
+$ docker builder prune -f
+[... reclaimed build-cache entries from this and prior unrelated sessions omitted for
+     length ...]
+Total:	1.371GB
+
+$ docker image inspect r2000-probe-single
+Error response from daemon: No such image: r2000-probe-single
+$ docker image inspect r2000-probe-multi
+Error response from daemon: No such image: r2000-probe-multi
+
+Both probe images are confirmed removed. The Dockerfiles themselves remain committed
+as evidence, per this plan's own instruction ("the images are measurement apparatus,
+not artifacts").
+
+## RESEARCH CORRECTIONS
+
+1. **The real rustc floor for regenerator2000 0.9.20 is >= 1.90, not >= 1.88.** Plan
+   09-01 established rustc >= 1.88 from the crate's own committed `Cargo.lock` pins
+   (`ratatui 0.30.0`, `image 0.25.10`, `vergen 9.1.0`, `icu_properties 2.2.0`) but did
+   not attempt an actual compile against that floor. This plan did: `rust:1.88-slim`
+   (rustc 1.88.0) resolves fine and satisfies those four pins, but fails a real
+   `cargo install regenerator2000` outright with `rustc 1.88.0 is not supported by the
+   following packages: quantette@0.6.0 requires rustc 1.90, safe_arch@1.2.0 requires
+   rustc 1.89, wide@1.6.1 requires rustc 1.89`. `rust:1.90-slim` (rustc 1.90.0) builds
+   cleanly. Phase 10's `R2000-03` should document the floor as **rustc >= 1.90**, not
+   1.88 or 1.85.
+2. **A multi-stage build across `rust:*-slim` and `node:*-slim` needs matching Debian
+   releases, or it ships a broken binary.** `rust:1.90-slim` is built on Debian 13
+   "trixie"; `node:22-slim` is built on Debian 12 "bookworm". A binary compiled in the
+   former and copied into the latter fails immediately with
+   `GLIBC_2.38'/'GLIBC_2.39' not found` -- confirmed directly via `/etc/os-release` in
+   both base images. `rust:1.90-slim-bookworm` (Debian 12, matching `node:22-slim`)
+   fixes it. **This is a new finding 09-RESEARCH.md's Code Examples section did not
+   anticipate** (its skeleton used unqualified `rust:1.85-slim` and `node:24-slim`
+   with no Debian-release pairing note) and Phase 10's `R2000-03`/any real devcontainer
+   Dockerfile must pin matching Debian releases across stages, or statically link
+   (e.g. musl target) to sidestep the glibc coupling entirely.
+3. **`docker images <repo1> <repo2>` (two positional arguments) is rejected by this
+   host's docker (29.7.2): "requires at most 1 argument".** 09-RESEARCH.md's Code
+   Examples section did not show the human-readable listing command at all (only
+   `docker image inspect --format`), so this is a new, minor CLI-surface note rather
+   than a contradiction -- recorded here since plan 09-02's own task text sketched the
+   two-positional-argument form. `docker images --filter reference=<name>` per image
+   is the working equivalent on this docker version.
+

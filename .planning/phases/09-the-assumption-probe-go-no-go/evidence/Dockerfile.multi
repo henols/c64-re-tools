@@ -1,9 +1,17 @@
 # Multi-stage probe: what the shipped devcontainer image would actually need.
-# Builder base: rust:1.88-slim (rustc 1.88.0, same real floor as Dockerfile.single).
-# Runtime base: node:22-slim (Node v22.23.2), because regenerator2000 runs on the MCP
-# proxy's side of the container boundary per D-R4, and the runtime must satisfy
-# .claude/mcp/vice/package.json's engines.node floor (>=22.18.0) -- v22.23.2 clears it.
-FROM rust:1.88-slim AS builder
+# Builder base: rust:1.90-slim-bookworm (rustc 1.90.0, same real floor as
+# Dockerfile.single -- rust:1.88-slim failed here too; see Dockerfile.single's header
+# note and this evidence file's RESEARCH CORRECTIONS section).
+# NOTE: the plain `rust:1.90-slim` tag (Debian 13 "trixie") was tried first and
+# produced a binary that fails at runtime in node:22-slim (Debian 12 "bookworm") with
+# `GLIBC_2.38/2.39 not found` -- a builder/runtime Debian-release mismatch, not a
+# rustc-floor problem. `-bookworm` pins the builder to the SAME glibc generation as
+# the runtime stage below. See RESEARCH CORRECTIONS for the full finding.
+# Runtime base: node:22-slim (Node v22.23.2, Debian 12 "bookworm"), because
+# regenerator2000 runs on the MCP proxy's side of the container boundary per D-R4, and
+# the runtime must satisfy .claude/mcp/vice/package.json's engines.node floor
+# (>=22.18.0) -- v22.23.2 clears it.
+FROM rust:1.90-slim-bookworm AS builder
 RUN cargo install regenerator2000 --root /out
 
 FROM node:22-slim
