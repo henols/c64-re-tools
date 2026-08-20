@@ -231,7 +231,7 @@ addresses.
 | A verified 64K image, or proving two captures equivalent | `c64-ram-capture` |
 | Which address to read next, and what the answer rules out | `c64-program-recon` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
-| Assembling, or a first-pass dead listing | `acme-build` |
+| Assembling | `acme-build` |
 | **Whether a byte is original, cracker-changed, or unknown** | here |
 
 Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you

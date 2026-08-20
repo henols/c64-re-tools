@@ -115,6 +115,26 @@ same IRQ entry that phase-01 live work established independently (chain `$1103 �
 The method reproduces a known-good result from a static image with no emulator running, and the
 `$1116` pair is new — see `references/control-flow.md` § 2. **Confidence: HIGH** for steps 1-2.
 
+## Static disassembly
+
+Turning a `.prg` or a flat 64K image into ACME source, offline, is not part of this
+skill's own method — it is a separate route:
+
+```bash
+npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
+node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
+```
+
+This is **static**, over a file on disk — `vice_disassemble` (the live-RAM route
+this skill's own table above uses) reads a running emulator's RAM at a checkpoint
+instead. The two are complementary: reach for the static route before the emulator
+is even running, and for `vice_disassemble` once you have a live checkpoint to
+decode from.
+
+Extracting from a `.d64` image: name the file inside the image explicitly. The
+tool lists the directory and refuses rather than guess (D-02) — a guess could
+analyse a cracktro or loader stub instead of the game.
+
 ## Before you touch the emulator
 
 Two hazards cost this project real sessions. Both are in `references/observation-hazards.md`; these
@@ -137,7 +157,8 @@ This one is the route between the stations. It does not restate what the others 
 |---|---|
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
-| Assembling, or a first-pass dead listing | `acme-build` |
+| Assembling | `acme-build` |
+| Static disassembly of a `.prg` or flat image | `vice-mcp r2000 export-asm` (see above) |
 | Whether a byte is original or cracker-changed | `c64-provenance-diff` |
 | The emulator stopped moving — wedged, self-trapped, or respawned | `vice-wedge-triage` |
 | **Which address to read next, and what the answer rules out** | here |

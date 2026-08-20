@@ -1,6 +1,6 @@
 ---
 name: acme-build
-description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, list the symbols a program uses, or turn a .prg back into ACME source.
+description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, or list the symbols a program uses.
 ---
 
 # Assembling C64 source with ACME
@@ -13,10 +13,9 @@ A=.claude/skills/acme-build/scripts/acme.mjs   # from the repo root
 node $A new game.asm          # scaffold a C64 program
 node $A build game.asm        # assemble -> .prg .sym .vs .rep
 node $A sym game.asm          # the symbols the program uses
-node $A disasm game.prg       # object code back into ACME source
 ```
 
-The script wraps `acme` and `toacme` and nothing else — **assembling only**. Running
+The script wraps `acme` and nothing else — **assembling only**. Running
 the result on a C64 belongs to the emulator skills (`acme.mjs:3-4` says so, and the
 absent `run` verb is not an omission). It contacts nothing.
 
@@ -133,51 +132,27 @@ you also assemble by hand, so these stay recognised as mnemonics.
 
 ## Disassembly
 
-```bash
-node $A disasm game.prg
-```
-```
-game.dis.a: 28 lines
-Read it as a linear decode: trust the instruction stream, and
-treat strings, tables and the BASIC stub as data. To reassemble,
-define the out-of-range labels it emits (Ld020, Lffd2, ...) and
-indent its illegal-opcode lines to the operand column.
-```
-
-The default output is `<stem>.dis.a` — one more `.a` file the agent's Read tool
-refuses (see Troubleshooting). Pass a second positional ending `.asm` for an
-agent-readable listing instead (same stdout shape, `game.dis.asm: 28 lines` in
-place of the first line):
+This skill does not disassemble. Static disassembly of a `.prg` or flat 64K image
+is a **required prerequisite** of this plugin, not an optional accelerator:
+regenerator2000, reached through
 
 ```bash
-node $A disasm game.prg game.dis.asm
+npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
+node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
 ```
 
-`game.dis.asm` itself then holds:
-
-```
-		*=$0801
-L0801		!by$0b;ANC#      <- BASIC stub, read as data
-L0802		php
-L0805		 SHX L3032, y
-...
-L080d		lda #$00         <- code, decoded correctly
-L080f		sta Ld021
-L0812		lda #$05
-L0814		sta Ld020
-L081e		jsr Lffd2
-L0824		rts
-L0825		pha              <- PETSCII string, read as data
-```
-
-Read it as a linear decode: the instruction stream is accurate, and strings,
-tables and the BASIC stub appear as instructions — interpret those regions as
-data. To reassemble the listing, define the out-of-range labels it emits
-(`Ld020`, `Lffd2`) and indent its illegal-opcode lines to the operand column.
+A recursive-descent disassembler with an auto-analyzer does not render strings,
+tables and the BASIC stub as instructions, so there are no out-of-range labels
+to hand-define and no illegal-opcode lines to re-indent — the caveats this
+section used to carry were structural to a flat linear decoder and do not
+apply here. The exported source is verified reassemblable by a real ACME
+via `vice-mcp r2000 verify` (evidence:
+`.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/evidence/10-verify-transcript.txt`).
+`c64-program-recon` points at this same route; it is not restated there.
 
 ## Setup
 
-Put `acme` and `toacme` on `$PATH`. The wrapper auto-probes `$ACME`,
+Put `acme` on `$PATH`. The wrapper auto-probes `$ACME`,
 `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme` and `~/.acme` itself,
 so `$ACME` only needs setting by hand when calling `acme` directly. Verified live
 in this container on 2026-08-04: the library resolves to `/usr/local/share/acme`
@@ -197,7 +172,8 @@ This one turns source into bytes. It does not restate what the others carry.
 | Where to start on an unknown program, and which address to read next | `c64-program-recon` |
 | What a specific address or bit means, or annotating a listing | `c64-memory-mapping` — `node … lookup '$D018'` |
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
-| **Source in, `.prg` out — and a first-pass dead listing back** | here |
+| Static disassembly of a `.prg` or flat image | `vice-mcp r2000 export-asm` (see Disassembly above) |
+| **Source in, `.prg` out** | here |
 
 ## References
 

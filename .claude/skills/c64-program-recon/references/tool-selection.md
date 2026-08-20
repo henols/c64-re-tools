@@ -30,8 +30,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | What does address X mean? | the `c64-memory-mapping` skill — `node … lookup '$D018'`. **Do not restate its tables.** |
 | Is this byte original or cracker-changed? | the `c64-provenance-diff` skill |
 | A verified 64K image, or comparing two captures | the `c64-ram-capture` skill |
-| Fast first-pass listing | `toacme` — decodes data as instructions; never the deliverable |
-| Traced disassembly with code/data separation | regenerator2000 — still MEDIUM per `STACK.md`; its first real run is its verification |
+| Traced disassembly with code/data separation | regenerator2000, via `vice-mcp r2000 export-asm` — a recursive-descent disassembler with an auto-analyzer; verified live: its `--verify` run reassembled byte-identically through a real ACME for both a `.prg` and a flat 64K image (`.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/evidence/10-verify-transcript.txt`) |
 
 ## Three traps in this table
 

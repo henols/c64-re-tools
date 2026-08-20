@@ -205,22 +205,6 @@ function cmdNew(argv) {
   console.log(`next: node ${selfPath()} build ${path}`);
 }
 
-// `toacme` ships with ACME and turns object code back into ACME source.
-function cmdDisasm(argv) {
-  const src = argv[0];
-  if (!src) die("usage: disasm <file.prg> [out.a]");
-  const out = argv[1] || src.replace(/\.prg$/i, "") + ".dis.a";
-  const r = spawnSync("toacme", ["object", src, out], { encoding: "utf8" });
-  if (r.error) die("install the ACME cross assembler and put `toacme` on PATH");
-  if (r.status !== 0) die(`toacme: ${(r.stderr || r.stdout).trim()}`);
-  const n = readFileSync(out, "utf8").split("\n").filter((l) => /^L[0-9a-f]{4}/.test(l)).length;
-  console.log(`${out}: ${n} lines`);
-  console.log("Read it as a linear decode: trust the instruction stream, and");
-  console.log("treat strings, tables and the BASIC stub as data. To reassemble,");
-  console.log("define the out-of-range labels it emits (Ld020, Lffd2, ...) and");
-  console.log("indent its illegal-opcode lines to the operand column.");
-}
-
 // ------------------------------------------------------------------ options
 
 function parseOpts(argv) {
@@ -247,14 +231,13 @@ function parseOpts(argv) {
 // --------------------------------------------------------------------- main
 
 const [cmd, ...rest] = process.argv.slice(2);
-const VERBS = { new: cmdNew, build: cmdBuild, sym: cmdSym, disasm: cmdDisasm };
+const VERBS = { new: cmdNew, build: cmdBuild, sym: cmdSym };
 if (!cmd || !VERBS[cmd]) {
   console.log(`usage: node ${selfPath()} <command> [options]
 
   new <file.a>              scaffold a C64 program (BASIC stub + libs)
   build <file.a>            assemble -> .prg .sym .vs .rep
   sym <file.a>              list the symbols the program uses
-  disasm <file.prg> [out.a] turn object code back into ACME source
 
 options: -o FILE  --out-dir DIR  -f FORMAT  --setpc ADDR  -DSYM=VAL  -I DIR
          --no-report  --json`);
