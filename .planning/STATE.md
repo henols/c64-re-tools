@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: executing
-last_updated: "2026-08-20T15:03:01.085Z"
+status: ready_to_plan
+last_updated: 2026-08-20T18:04:25.458Z
 last_activity: 2026-08-20 -- Phase 10 execution started
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
-  completed_plans: 8
-  percent: 33
+  completed_plans: 104
+  percent: 67
+stopped_at: Phase 10 complete (9/9) — ready to discuss Phase 11
 ---
 
 # Project State
@@ -25,7 +26,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Phase 10 — adoption-boundaries-automated-bootstrap-and-the-removal
+**Current focus:** Phase 11 — annotation store, enums, and the symbol round trip
 ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
 1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
@@ -36,22 +37,23 @@ packages, so no release work gates the milestone.
 
 ## Current Position
 
-Phase: 10 (adoption-boundaries-automated-bootstrap-and-the-removal) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 10
-recorded at `docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10
-as scoped, with the two named scope amendments (`.vsf` machine-type trust;
-explicit `use_illegal_opcodes` setting) applied at their targets — not a
-documented manual bootstrap step, since criteria 2a/2b both passed cleanly. No
-Phase 10 or Phase 11 plan is written before that findings document is read, per
-`R2000-16`'s own wording.
-Last activity: 2026-08-20 -- Phase 10 execution started
+Phase: 11
+Plan: Not started
+Status: Ready to plan
+Phase 10 is complete and verified (9/9 plans, 5/5 success criteria). Its code
+review found two data-loss defects on the documented `export-asm`/`bootstrap`
+route; both are fixed and pinned by regression tests. Remaining review findings
+are filed in `.planning/todos/pending/2026-08-20-r2000-review-residual-findings.md`
+— WR-02 (the criterion-1 construction test can go vacuous) is the highest-value
+one. Next step: Phase 11 (annotation store, enums, symbol round trip), which
+inherits plan 10-03's package-boundary reasoning as a settled decision.
+Last activity: 2026-08-20
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 95
+- Total plans completed: 104
 - Average duration: —
 - Total execution time: —
 
@@ -69,6 +71,7 @@ Last activity: 2026-08-20 -- Phase 10 execution started
 | 08.1 | 5 | - | - |
 | 08.2 | 6 | - | - |
 | 09 | 8 | - | - |
+| 10 | 9 | - | - |
 
 **Recent Trend:**
 

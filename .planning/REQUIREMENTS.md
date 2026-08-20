@@ -39,19 +39,19 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 
 ### Adoption and boundaries
 
-- [ ] **R2000-01**: regenerator2000 is adopted as a **static-analysis** backend and
+- [x] **R2000-01**: regenerator2000 is adopted as a **static-analysis** backend and
       is never launched with `--vice`, enforced in code and tested rather than only
       documented. Rationale is a standing project constraint: stock VICE's binary
       monitor services exactly one client, and a second `connect()` sits unserviced
       with no reply and no EOF — indistinguishable from a wedge. The broker, pool,
       warm floor, crash supervision, path translation, incident capture and wedge
       triage all depend on owning that socket.
-- [ ] **R2000-02**: It runs on the same side of the container boundary as the MCP
+- [x] **R2000-02**: It runs on the same side of the container boundary as the MCP
       proxy, so **no path translation applies to any argument passed to it** — a
       deliberate *absence*, asserted in a test, and the mirror image of `DERIV-07`
       where translation was wrongly applied. A devcontainer works, and two projects
       open at once work, without any upstream patch.
-- [ ] **R2000-03**: It is a declared prerequisite named in the install
+- [x] **R2000-03**: It is a declared prerequisite named in the install
       documentation alongside VICE, stating the toolchain cost plainly
       (`cargo install regenerator2000` — no upstream release assets exist), with
       its dual `MIT OR Apache-2.0` notice in `THIRD-PARTY-NOTICES.md` (corrected
@@ -61,19 +61,19 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 
 ### Bootstrap and the removal it earns
 
-- [ ] **R2000-09**: Project bootstrap from a raw binary is automated rather than a
+- [x] **R2000-09**: Project bootstrap from a raw binary is automated rather than a
       documented manual step: a `.prg`, a `.d64` (named entry), or a flat 64K
       capture becomes a `.regen2000proj` without a human. `.vsf` is dropped from
       this requirement's input set and deferred to Phase 11's `c64-ram-capture`
       extension (D-03; see `ROADMAP.md` § Phase 10 criterion 3 for the reason).
       If `R2000-16`(1) fails, this degrades to a documented one-time interactive
       step and every affected playbook says so.
-- [ ] **R2000-05**: `acme-build`'s `disasm` verb and its `toacme`-on-PATH
+- [x] **R2000-05**: `acme-build`'s `disasm` verb and its `toacme`-on-PATH
       prerequisite are removed, replaced by a regenerator2000 route. This is the
       one deletion the milestone earns: a 14-line `spawnSync` wrapper
       (`scripts/acme.mjs:208-223`) plus ~50 lines of `SKILL.md` caveats that exist
       **only** because `toacme` does a flat linear decode.
-- [ ] **R2000-06**: A `.prg` or flat 64K capture becomes reassemblable ACME source
+- [x] **R2000-06**: A `.prg` or flat 64K capture becomes reassemblable ACME source
       matching this project's `!cpu 6510` expectations, **verified by running the
       assembler** rather than asserted.
 
