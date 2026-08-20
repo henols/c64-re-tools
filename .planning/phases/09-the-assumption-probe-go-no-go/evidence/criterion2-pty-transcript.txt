@@ -101,3 +101,99 @@ appears anywhere in the captured pane. The status bar's literal
 "MCP Server active on http://127.0.0.1:3000/mcp" text confirms raw mode, the
 input thread, the initial draw, and the HTTP MCP listener all succeeded under a
 tmux pty with no real TTY.
+
+## Task 2: is an MCP client served or refused over 127.0.0.1:3000 in that state?
+
+evidence/mcp-harness.mjs written: an ESM script importing `Client` from
+`@modelcontextprotocol/sdk/client/index.js` and `StreamableHTTPClientTransport`
+from `@modelcontextprotocol/sdk/client/streamableHttp.js`, connecting to
+`http://127.0.0.1:3000/mcp`, printing `listTools()` and a `callTool()` whose name
+and JSON arguments come from `process.argv` (never string-interpolated). No
+`curl` invocation anywhere in it. Full 30s per-step timeout via `Promise.race`.
+
+Vendored SDK resolution (evidence_conventions rule 7):
+
+$ git rev-parse --path-format=absolute --git-common-dir
+/home/henrik/dev/henrik/git/c64-re-tools/.git
+
+Main checkout root: /home/henrik/dev/henrik/git/c64-re-tools (parent of the
+.git directory above). Confirmed the vendored SDK exists there:
+
+$ ls /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
+/home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
+
+$ ls /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
+/home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
+
+Both subpaths resolve via the SDK's package.json `exports["./*"]` wildcard
+mapping to `./dist/esm/*`. Confirmed no write occurred under `.claude/mcp/vice/`
+(only read/`ls`) and no `npm install` was run (T-09-03-E).
+
+$ cp .../evidence/mcp-harness.mjs "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs"
+copied
+
+$ ln -sfn /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules "$HOME/.cache/c64-re-tools/phase9/node_modules"
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 24
+drwxrwxr-x 2 henrik henrik 4096 20 aug 09.25 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 2959 20 aug 09.25 mcp-harness.mjs
+lrwxrwxrwx 1 henrik henrik   70 20 aug 09.25 node_modules -> /home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+
+$ tmux has-session -t r2000probe && echo ALIVE || echo DEAD
+ALIVE
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+LIST_TOOLS_RESULT:
+{ "tools": [ ... 28 tools: r2000_set_label_name, r2000_set_comment,
+  r2000_set_data_type, r2000_toggle_splitter, r2000_undo, r2000_add_scope,
+  r2000_redo, r2000_read_region, r2000_read_selected, r2000_get_binary_info,
+  r2000_get_blocks, r2000_get_address_details, r2000_get_disassembly_cursor,
+  r2000_jump_to_address, r2000_search_memory, r2000_search_disassembly,
+  r2000_get_cross_references, r2000_set_immediate_format, r2000_get_symbols,
+  r2000_get_comments, r2000_save_project, r2000_batch_execute,
+  r2000_create_project_enum, r2000_update_project_enum,
+  r2000_delete_project_enum, r2000_apply_enum_usage, r2000_unpack_binary,
+  r2000_disassemble ] }
+(full JSON with complete inputSchemas captured in this session's real tool
+output; truncated here to the name list plus the exact 28-count re-verified
+separately below -- every name and description was inspected in full when the
+command actually ran, nothing here is reconstructed from memory)
+CALL_TOOL_FAILED:
+{
+  "message": "MCP error -32603: No active project path. Project must be loaded from or saved to a .regen2000proj file before it can be saved.",
+  "code": -32603,
+  "stack": "McpError: MCP error -32603: No active project path. Project must be loaded from or saved to a .regen2000proj file before it can be saved.\n    at McpError.fromError (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js:2048:16)\n    at Client._onresponse (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js:490:36)\n    at _transport.onmessage (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js:234:22)\n    at processStream (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/mcp/vice/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js:211:45)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+}
+EXIT_CODE=0
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" 2>&1 | grep -c '"name": "r2000_'
+28
+
+Tool count independently re-verified by grep against the real output: 28.
+
+MCP_SERVED: pass
+Justification: `client.connect()` completed the Streamable-HTTP initialize
+handshake with no error, and `listTools()` returned a real 28-tool list (all
+`r2000_*` names, full inputSchemas) rather than a connection error or timeout.
+The HTTP MCP surface is genuinely served over 127.0.0.1:3000 while the process
+runs under the tmux pty from Task 1 -- pty tolerance extends to the MCP server,
+not merely to TUI rendering.
+
+SAVE_PROJECT_PRE_BOOTSTRAP: MCP error -32603 "No active project path. Project
+must be loaded from or saved to a .regen2000proj file before it can be saved."
+-- verbatim, matching the exact wording 09-RESEARCH.md predicted from source
+reading (session_tools.rs / dialog_save_as.rs).
+
+PRECONDITION_NOTE: this -32603 "No active project path" result is an unrelated
+precondition failure by design, not a pty answer in either direction. No code
+path sets `app_state.project_path` for a freshly-loaded raw binary except the
+TUI's own Save-As dialog (Alt+S), so calling `r2000_save_project` before that
+dialog completes is expected to fail regardless of whether the pty/MCP surface
+works correctly. It is neither a probe pass nor a probe fail for criterion 2;
+it only tells us the harness and MCP surface function correctly enough to
+receive a real, well-formed JSON-RPC error back. (No entry needed under
+`## RESEARCH CORRECTIONS` for this task -- the observed error matches
+09-RESEARCH.md's prediction exactly, verbatim.)
