@@ -57,7 +57,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8. Capability Honesty and the Install Story | v0.2.0 | 6/6 | Complete | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
-| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 3/8 | In Progress|  |
+| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 3/8 | In Progress | - |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
