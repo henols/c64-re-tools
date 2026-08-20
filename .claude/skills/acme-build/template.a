@@ -2,11 +2,25 @@
 ; Build:  node .claude/skills/acme-build/scripts/acme.mjs build THIS.a
 ; No !to here on purpose - the driver passes -o, and having both makes ACME
 ; warn "Output file already chosen" and silently ignore the !to.
+;
+; No angle-bracket library includes here on purpose. Neither documented ACME
+; provisioning route ships the standard hardware-register library - a bare
+; `~/.local/bin/acme` install and the Debian trixie `apt` candidate were both
+; verified to lack it (Phase 8.1 FINDING-A1) - so a scaffold that depends on
+; it fails to assemble on a fresh install. The five constants below are
+; exactly what this scaffold's body uses, defined locally instead. If you
+; want the full library for your own sources' angle-bracket includes, set
+; $ACME to a directory containing that library (with vic.a inside it);
+; acme.mjs's findAcmeLib() already probes for it and passes it through to
+; the child.
 
 !cpu 6510                       ; C64's CPU: legal 6502 + the illegal opcodes
-!source <cbm/c64/vic.a>         ; vic_*  registers, viccolor_* constants
-!source <cbm/c64/kernal.a>      ; k_*    KERNAL entry points ($ff81-$fff5)
-!source <cbm/c64/cia1.a>        ; cia1_* keyboard / joystick 2
+
+!address vic_cborder = $d020    ; VIC-II border color register
+!address vic_cbg     = $d021    ; VIC-II background color register
+viccolor_BLACK = 0
+viccolor_GREEN = 5
+!address k_chrout    = $ffd2    ; KERNAL: print one PETSCII char
 
 * = $0801                       ; start of BASIC RAM
 
