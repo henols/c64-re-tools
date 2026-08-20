@@ -56,6 +56,7 @@ import { buildExportAsmArgs, runR2000, R2000ViceFlagError } from "./r2000-launch
 import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts";
 import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
 import { verifyProject } from "./r2000-verify.ts";
+import { generateEnums } from "./r2000-enum-gen.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 <verb>";
@@ -97,6 +98,21 @@ verbs:
       summary line (D-10). Accepts a .regen2000proj directly, or bootstraps a
       bare .prg/.d64/flat-64K input to a temporary project first, exactly
       like export-asm.
+
+  gen-enums <project> [--max-results N]
+      Generates program-specific enums from the register writes an existing
+      .regen2000proj's disassembly already contains (D-20/D-22/D-23,
+      R2000-13) -- one variant per DISTINCT value actually written, named
+      from the curated bit-name table (r2000-regbits.json), applied at every
+      matching immediate-load address, and saved. Prints total/paired/
+      unpaired register-store counts and, per created/updated enum, its name
+      and variant count. Requires an EXISTING .regen2000proj (this verb does
+      not bootstrap from a raw input -- run bootstrap first). --max-results
+      overrides the 10000-row ceiling on each of the two search passes this
+      verb runs internally; exits non-zero, printing the reason, when either
+      pass returns exactly its own ceiling (coverage may be incomplete) or
+      when generateEnums() itself refuses (an illegal generated identifier,
+      or an enum install that failed outright).
 
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
@@ -423,6 +439,95 @@ function cmdVerify(rest: string[]): number {
   }
 }
 
+interface GenEnumsParsedArgs {
+  positional: string[];
+  maxResults?: number;
+  maxResultsRaw?: string;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for gen-enums -- exactly `--max-results`. Per
+ * WR-08's posture (do not silently accept a flag a verb does not
+ * implement), any OTHER `--flag`-shaped token is recorded as `unknownOption`
+ * and refused by the caller, rather than silently treated as a positional
+ * argument the way the other verbs' `parseArgs()` does. */
+function parseGenEnumsArgs(rest: string[]): GenEnumsParsedArgs {
+  const positional: string[] = [];
+  let maxResults: number | undefined;
+  let maxResultsRaw: string | undefined;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--max-results") {
+      maxResultsRaw = rest[++i];
+      maxResults = maxResultsRaw !== undefined ? Number.parseInt(maxResultsRaw, 10) : Number.NaN;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, maxResults, maxResultsRaw, unknownOption };
+}
+
+/**
+ * `gen-enums <project> [--max-results N]` -- D-20/D-22/D-23's whole pass,
+ * driven through `generateEnums()` (`r2000-enum-gen.ts`, Task 2). Prints the
+ * coverage report's own summary lines (total/paired/unpaired counts, one
+ * line per created/updated enum) and returns non-zero when: an unknown
+ * option was given (WR-08); no project path was given; the project file
+ * does not exist; `--max-results` did not parse as a positive integer;
+ * either search pass returned exactly its own ceiling (a possible-
+ * truncation signal, D-23's "no silent caps" applied at the CLI's own exit
+ * code); or `generateEnums()` itself threw (an illegal generated
+ * identifier, or an enum install/apply call that failed outright).
+ */
+async function cmdGenEnums(rest: string[]): Promise<number> {
+  const { positional, maxResults, maxResultsRaw, unknownOption } = parseGenEnumsArgs(rest);
+  if (unknownOption) {
+    console.error(`gen-enums: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+
+  const project = positional[0];
+  if (!project) {
+    console.error("gen-enums: usage: gen-enums <project> [--max-results N]");
+    return 1;
+  }
+  if (!existsSync(project)) {
+    console.error(`gen-enums: input file not found: ${project}`);
+    return 1;
+  }
+  if (maxResults !== undefined && (!Number.isInteger(maxResults) || maxResults <= 0)) {
+    console.error(`gen-enums: --max-results must be a positive integer, got "${maxResultsRaw}"`);
+    return 1;
+  }
+
+  let report: Awaited<ReturnType<typeof generateEnums>>;
+  try {
+    report = maxResults !== undefined ? await generateEnums({ projectPath: project, maxResults }) : await generateEnums({ projectPath: project });
+  } catch (err) {
+    console.error(`gen-enums: ${errMsg(err)}`);
+    return 1;
+  }
+
+  for (const line of report.summaryLines) {
+    console.log(`  ${line}`);
+  }
+
+  if (report.pass1Truncated || report.pass2Truncated) {
+    console.error(
+      "gen-enums: a search pass returned exactly its own max_results ceiling -- coverage may be incomplete; " +
+        "re-run with a higher --max-results",
+    );
+    return 1;
+  }
+
+  console.log(`gen-enums: ${report.enums.length} enum(s) created/updated`);
+  return 0;
+}
+
 /**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -447,6 +552,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return cmdExportAsm(rest);
       case "verify":
         return cmdVerify(rest);
+      case "gen-enums":
+        return await cmdGenEnums(rest);
       default:
         console.error(`r2000: unknown verb "${verb}"\n`);
         console.log(USAGE);
