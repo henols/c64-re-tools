@@ -80,6 +80,33 @@ jobs:
           { acme --version || acme --help; } 2>&1 | head -5 | tee /tmp/acme-banner.txt
           grep -qi acme /tmp/acme-banner.txt
 
+      - name: Assemble the acme-build scaffold (library-free)
+        # The banner grep above only ever proved a binary named `acme` exists --
+        # it never proved the scaffold this repo ships can actually be
+        # assembled. `template.a` used to source <cbm/c64/vic.a> and friends,
+        # and neither documented ACME provisioning route (a bare
+        # ~/.local/bin/acme build, or the Debian trixie apt package installed
+        # above) ships that library, so the scaffold could not assemble on
+        # either route and nothing in CI noticed
+        # (.planning/todos/pending/2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes.md).
+        # This step scaffolds and assembles for real with $ACME explicitly
+        # cleared, so a zero-byte or wrong-origin output -- or a regression
+        # back to a library dependency -- fails the build.
+        run: |
+          set -euo pipefail
+          SCAFFOLD="${RUNNER_TEMP}/acme-build-scaffold-check.a"
+          rm -f "${SCAFFOLD}" "${SCAFFOLD%.a}.prg"
+          ACME= node .claude/skills/acme-build/scripts/acme.mjs new "${SCAFFOLD}"
+          ACME= node .claude/skills/acme-build/scripts/acme.mjs build "${SCAFFOLD}"
+          PRG="${SCAFFOLD%.a}.prg"
+          test -s "${PRG}"
+          LOAD_BYTES=$(od -An -tx1 -N2 "${PRG}" | tr -d ' ')
+          if [ "${LOAD_BYTES}" != "0108" ]; then
+            echo "expected load address 01 08 (\$0801), got: ${LOAD_BYTES}" >&2
+            exit 1
+          fi
+          echo "scaffold assembled: ${PRG} loads at \$0801"
+
       - name: Test
         working-directory: .claude/mcp/vice
         env:
