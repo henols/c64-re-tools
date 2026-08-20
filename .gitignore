@@ -7,6 +7,14 @@ node_modules/
 /.vice-supervisor/
 /.vice-supervisor.bak-*/
 
+# Host-side RAM snapshots written by the vice_snapshot_save tool, at the path
+# snapshotPathFor() builds in .claude/mcp/vice/stock-paths.ts
+# (<repoRoot>/.vice-snapshots/<name>.vsf plus its .json sidecar). This is a
+# *product* byproduct, not a project artifact: any consumer of that tool gets
+# these files written into their own repo, which is why it is ignored here
+# rather than something to clean up once.
+/.vice-snapshots/
+
 # tools/ is the generated, gitignored deployment target the MCP installer
 # copies resources/ into on first tool call (see install-resources.ts). Listed
 # per-file (not a blanket /tools/) so host-scripts.test.ts's two-way parity gate
@@ -36,3 +44,12 @@ dist/
 
 # npm pack output
 *.tgz
+
+# Local editor config, machine-specific, never shared.
+/.vscode/
+
+# Local Claude Code permission/allowlist config. Currently holds absolute
+# worktree paths from earlier sessions, so it is machine-specific and must
+# not be committed; the shared plugin config lives in .mcp.json /
+# .claude-plugin/ instead.
+/.claude/settings.json
