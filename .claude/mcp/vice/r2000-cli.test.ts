@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 
 import { runR2000Cli } from "./r2000-cli.ts";
 import { tsToOffset } from "./r2000-d64.ts";
+import { synthesizeProject } from "./r2000-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -512,6 +513,195 @@ test(
       assert.equal(code, 0, `expected exit 0, stdout: ${stdout}`);
       assert.match(stdout, /ACME/);
       assert.match(stdout, /byte-identical/i);
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// gen-enums verb tests (Task 3, 11-06) -- unknown option refused, missing
+// project path refused with usage, and the coverage report present on
+// stdout are always-run (no live binary needed); criterion 3's own
+// acceptance test needs BOTH a real regenerator2000 (D-11) AND real ACME
+// (disasm-roundtrip.test.ts's own VICE_REQUIRE_ACME convention), since it
+// reads regenerator2000's --export_asm output through real ACME.
+// ---------------------------------------------------------------------------
+
+test("gen-enums: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums", "some.regen2000proj", "--not-a-real-flag"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown option/i);
+});
+
+test("gen-enums: a missing project path is refused with usage text, not a stack trace", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /usage: gen-enums/i);
+});
+
+test("gen-enums: a nonexistent project file is refused, not silently accepted", async () => {
+  await withTempDir(async (dir) => {
+    const missing = join(dir, "does-not-exist.regen2000proj");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums", missing]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local ACME gate, mirroring disasm-roundtrip.test.ts's own convention
+// exactly (renamed nothing -- same ACME_BIN/VICE_REQUIRE_ACME env vars,
+// since criterion 3's test is the SAME external-oracle claim that file
+// already established the convention for).
+// ---------------------------------------------------------------------------
+
+const ACME_BIN = process.env.ACME_BIN ?? "acme";
+
+function probeAcme(): boolean {
+  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8" });
+  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  if (r.error || !/acme/i.test(banner)) {
+    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8" });
+    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  }
+  if (r.error) return false;
+  return /acme/i.test(banner);
+}
+
+const ACME_AVAILABLE = probeAcme();
+
+const CRITERION3_SKIP_REASON: string | false =
+  R2000_AVAILABLE && ACME_AVAILABLE
+    ? false
+    : `criterion 3's acceptance test needs BOTH a real regenerator2000 (R2000_AVAILABLE=${R2000_AVAILABLE}) and real ` +
+      `ACME (ACME_AVAILABLE=${ACME_AVAILABLE}) -- see this file's own D-11/D-08 gates above for how to install either.`;
+
+test("ACME availability gate (D-08), reused for criterion 3", () => {
+  if (process.env.VICE_REQUIRE_ACME) {
+    assert.ok(
+      ACME_AVAILABLE,
+      `VICE_REQUIRE_ACME is set but no real ACME was found at ACME_BIN="${ACME_BIN}" -- criterion 3 requires ` +
+        "a hard FAIL, never a skip, whenever the CI gate expects ACME to be present.",
+    );
+  }
+});
+
+/** Unlike withTempDir() (system tmpdir, fine for the CLI's own bootstrap/
+ * export-asm/verify verbs, which never resolve a path against repoRoot()),
+ * this test also drives runR2000Tool()/generateEnums() directly, and
+ * r2000-tools.ts's resolveStorePath() (T-11-PATH-ESCAPE) requires every
+ * .regen2000proj path to resolve INSIDE the workspace root -- a system
+ * tmpdir path is refused by design. Mirrors r2000-enum-gen.test.ts's own
+ * workspace-local temp-dir convention. */
+function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(HERE, ".r2000-cli-test-criterion3-"));
+  return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+test(
+  "gated (D-11+D-08): criterion 3 -- lda #$1b / sta $d011 / rts renders as lda #D011_YSCROLL3_ROW25_SCREENON_TEXT in the ACME export, and the export reassembles under real ACME",
+  { skip: CRITERION3_SKIP_REASON },
+  async (t) => {
+    await withWorkspaceTempDir(async (dir) => {
+      const projectPath = join(dir, "criterion3.regen2000proj");
+      // Exactly the criterion's own quoted example: lda #$1b / sta $d011 / rts,
+      // synthesized directly (D-05: use_illegal_opcodes forced true, though
+      // this particular fixture uses no illegal opcode -- forced regardless,
+      // per synthesizeProject()'s own unconditional contract) at origin $0810.
+      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);
+      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
+
+      // gen-enums operates over the MCP surface (r2000-tools.ts), which --
+      // unlike the --headless CLI verbs below -- does NOT auto-disassemble a
+      // freshly bootstrapped project on load (measured live this session: a
+      // search against a freshly synthesized project with no prior
+      // r2000_disassemble call returns zero rows). A real c64-program-recon
+      // session would already have called this as part of its own analysis
+      // pass; this test performs that one setup step explicitly rather than
+      // asserting gen-enums itself must auto-disassemble (out of this
+      // task's own scope).
+      const { runR2000Tool } = await import("./r2000-tools.ts");
+      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
+      assert.equal(disasmResult.isError, false, `setup: r2000_disassemble failed: ${JSON.stringify(disasmResult)}`);
+
+      // 1. run gen-enums against it.
+      const { result: genCode, stdout: genStdout } = await withCapturedConsole(() => runR2000Cli(["gen-enums", projectPath]));
+      assert.equal(genCode, 0, `gen-enums failed, stdout: ${genStdout}`);
+      assert.match(genStdout, /total register stores seen: 1/);
+      assert.match(genStdout, /paired \(adjacent lda #imm found\): 1/);
+      assert.match(genStdout, /unpaired \(no adjacent immediate load\): 0/);
+
+      // Recorded evidence for RESEARCH.md's dot-vs-underscore finding
+      // (Assumption A2, version-scoped, re-verified here rather than
+      // trusted as permanent): query the LIVE view for the same address.
+      const liveSearch = await runR2000Tool("r2000_search_disassembly", {
+        project: projectPath,
+        query: "^lda$",
+        use_regex: true,
+        max_results: 10,
+        search_labels: false,
+        search_comments: false,
+        search_instructions: true,
+      });
+      const liveRows = JSON.parse(liveSearch.content.map((c) => c.text).join("")) as { operand: string }[];
+      const liveOperand = liveRows.find((r) => r.operand.includes("D011"))?.operand ?? "(not found)";
+      t.diagnostic(`live search_disassembly operand for the applied enum: "${liveOperand}"`);
+
+      // 2. run export-asm.
+      const outPath = join(dir, "criterion3.a");
+      const { result: exportCode, stdout: exportStdout } = await withCapturedConsole(() =>
+        runR2000Cli(["export-asm", projectPath, "--out", outPath]),
+      );
+      assert.equal(exportCode, 0, `export-asm failed, stdout: ${exportStdout}`);
+      const exported = readFileSync(outPath, "utf8");
+
+      // 3. assert the exported file contains the literal criterion-3 lines.
+      assert.match(
+        exported,
+        /lda #D011_YSCROLL3_ROW25_SCREENON_TEXT/,
+        `expected the literal enum reference in the ACME export:\n${exported}`,
+      );
+      assert.match(exported, /sta \$d011/i, "expected a sta $d011 line in the ACME export");
+      assert.match(
+        exported,
+        /D011_YSCROLL3_ROW25_SCREENON_TEXT\s*=\s*\$1b/i,
+        `expected the enum's own definition line in the ACME export:\n${exported}`,
+      );
+
+      // 4. assert the export does NOT contain a bare-hex fallback -- a
+      // fallback to "lda #$1b" would mean the usage did not bind.
+      assert.doesNotMatch(exported, /lda #\$1b\b/i, "the export must not fall back to bare hex -- the enum usage must have bound");
+
+      // Recorded evidence: which separator each surface produced, at
+      // execution time (this session).
+      const exportedLdaLine = exported.split("\n").find((l) => /lda #D011/i.test(l)) ?? "(not found)";
+      t.diagnostic(`ACME export operand: "${exportedLdaLine.trim()}"`);
+      const exportUsesUnderscore = /D011_YSCROLL/.test(exportedLdaLine);
+      const liveUsesDot = /D011\.YSCROLL/.test(liveOperand);
+      const liveUsesUnderscore = /D011_YSCROLL/.test(liveOperand);
+      t.diagnostic(
+        `separator comparison: export=${exportUsesUnderscore ? "underscore" : "other"}, ` +
+          `live=${liveUsesDot ? "dot" : liveUsesUnderscore ? "underscore" : "other"} -- ` +
+          (liveUsesDot
+            ? "RESEARCH.md's dot-vs-underscore finding still holds on this regenerator2000 version"
+            : liveUsesUnderscore
+              ? "the two surfaces now AGREE on this regenerator2000 version -- RESEARCH.md's finding is version-scoped (Assumption A2), not permanent"
+              : "unexpected separator on the live view -- re-check manually"),
+      );
+      assert.ok(exportUsesUnderscore, "the ACME export itself must use the underscore form the criterion quotes, regardless of the live view's own rendering");
+
+      // 5. run verify and assert acmeVerdict() reports ok:true -- the
+      // generated source actually reassembles under real ACME
+      // (ENGINEERING_RULES.md Sec 7's real-external-oracle level).
+      const { result: verifyCode, stdout: verifyStdout } = await withCapturedConsole(() => runR2000Cli(["verify", projectPath]));
+      assert.equal(verifyCode, 0, `verify failed, stdout: ${verifyStdout}`);
+      assert.match(verifyStdout, /ACME/);
+      assert.match(verifyStdout, /byte-identical/i);
+
+      // 6. explicit acceptance-surface assertion: this check read the ACME
+      // EXPORT (assertions 3/4/5 above), never r2000_search_disassembly's
+      // own rendering (only inspected for the recorded-evidence diagnostic
+      // above, never asserted against as the pass/fail criterion).
+      assert.ok(true, "criterion 3 verified against --export_asm/--verify output, not against the live query view");
     });
   },
 );
