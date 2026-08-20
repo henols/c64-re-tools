@@ -78,17 +78,31 @@ const UNAVAILABLE_MARK = "—"; // em dash
  * so it is excluded structurally (by matching the loop-variable pattern),
  * never by hardcoding the name "def".
  *
- * Any OTHER captured identifier that resolves to neither the loop-variable
+ * Any OTHER captured identifier that resolves to neither a loop-variable
  * pattern nor a `const IDENT: ToolDefinition = {...}` declaration throws --
  * a silently dropped identifier is the same incompleteness failure as a
  * hand-curated exclusion, and worse, because it leaves no trace to notice.
+ *
+ * Plan 11-05 added a SECOND loop registration, structurally identical in
+ * shape (`tools[IDENT.name] = ...` inside `for (const IDENT of
+ * R2000_TOOL_DEFINITIONS)`) but semantically different: the r2000_* family
+ * is not a VICE emulator capability at all (D-16/Rule A18 -- regenerator2000
+ * never touches VICE), so it has no fork-vs-stock availability distinction
+ * for this table to render. It is excluded the SAME way the manifest loop's
+ * own `def` is -- structurally, by matching its own loop-variable pattern --
+ * rather than added to the "synthetic, available on both backends" set the
+ * three single-const registrations (vice_result_continue/vice_recycle/
+ * vice_diagnose) belong to.
  */
 export function discoverSyntheticToolNames(proxySource) {
   const REGISTRATION_RE = /tools\[(\w+)\.name\]\s*=/g;
   const LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/;
+  const R2000_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/;
 
   const loopVarMatch = proxySource.match(LOOP_VAR_RE);
   const loopVar = loopVarMatch ? loopVarMatch[1] : null;
+  const r2000LoopVarMatch = proxySource.match(R2000_LOOP_VAR_RE);
+  const r2000LoopVar = r2000LoopVarMatch ? r2000LoopVarMatch[1] : null;
 
   const seenIdents = new Set();
   const names = [];
@@ -99,6 +113,7 @@ export function discoverSyntheticToolNames(proxySource) {
     seenIdents.add(ident);
 
     if (ident === loopVar) continue; // the manifest loop's own registration -- not synthetic
+    if (ident === r2000LoopVar) continue; // the r2000_* family's own loop registration -- not a VICE capability at all
 
     const declRe = new RegExp(
       `const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`,

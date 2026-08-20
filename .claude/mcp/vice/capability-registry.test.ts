@@ -118,13 +118,25 @@ test("mechanical completeness: the registry's name set equals the manifest-deriv
   // because a .ts test importing a repo-root .mjs fails tsc's allowJs: false
   // (the same constraint that made tool-support-table.test.mjs a .mjs file).
   // Keep the two in step.
+  // Plan 11-05: a SECOND loop registration (structurally identical shape,
+  // semantically different -- see generate-tool-support-table.mjs's own
+  // discoverSyntheticToolNames() header, the authoritative implementation
+  // this file mirrors) must be excluded the same structural way the
+  // manifest loop's own `def` already is, rather than resolved as a
+  // single-const synthetic tool (it isn't one -- R2000_TOOL_DEFINITIONS is
+  // an array of 17). The r2000_* family is not a VICE capability at all
+  // (D-16/Rule A18), so it never enters this test's registry-divergence
+  // set either way.
   const proxySource = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
   const loopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/);
   const loopVar = loopVarMatch ? loopVarMatch[1] : null;
+  const r2000LoopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/);
+  const r2000LoopVar = r2000LoopVarMatch ? r2000LoopVarMatch[1] : null;
   const SYNTHETIC = new Set<string>();
   for (const m of proxySource.matchAll(/tools\[(\w+)\.name\]\s*=/g)) {
     const ident = m[1];
     if (ident === loopVar) continue;
+    if (ident === r2000LoopVar) continue;
     const decl = proxySource.match(
       new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`),
     );
