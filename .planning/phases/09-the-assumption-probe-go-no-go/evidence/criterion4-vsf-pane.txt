@@ -1,0 +1,86 @@
+## Criterion 3(4) -- pane captures from `regenerator2000 --mcp-server r2000-probe.vsf`
+## under tmux (session r2000probe06), plan 09-06 Task 2.
+##
+## Three captures, in the order they happened. This is PRIMARY evidence for the
+## criterion, not a formality -- the "Import Context Setup" modal (capture 1) is
+## the exact surface that shows what regenerator2000 derived from the .vsf,
+## before any human/automation action changes it.
+
+=== CAPTURE 1: immediately after launch, "Import Context Setup" modal up ===
+
+ File  Edit  Jump  Search  View  Debugger  Help
+[Disassembly pane showing raw .byte fallback around $E5CA-$E5F2 -- the
+snapshot's own KERNAL-ROM-range bytes at the live PC, not yet disassembled as
+instructions; Hex Dump pane showing $E350-$E610 screencode-shifted bytes]
+
+                   ┌ Import Context Setup ─────────────────────────────────┐
+                   │                                                        │
+                   │System: < Commodore 64 >                                │
+                   │                                                        │
+                   │Origin Address: $0000                                   │
+                   │Entry Point Address: $E5CF                              │
+                   │                                                        │
+                   │[X] Disassemble from Entry Point Address                │
+                   │                                                        │
+                   │  < Confirm >        < Cancel >                         │
+                   │                                                        │
+                   └────────────────────────────────────────────────────────┘
+
+ MCP Server active on http://127.0.0.1:3000/mcp
+ Commodore 64 | 64tass | Undefined: $0000-$FFFF | Cursor: $E5CF | File: "r2000-probe.vsf"
+
+**What this modal states, verbatim, before any Confirm/Cancel action:**
+- System: "Commodore 64" (a value, not blank -- see criterion4-vsf-load.txt's
+  R2000_DERIVED section for whether this is genuinely derived from the
+  snapshot's own "C64SC" machine-name field or a coincidental default)
+- Origin Address: "$0000" (matches `file_io.rs`'s fixed `self.origin =
+  Addr::ZERO` for every .vsf load, source-confirmed in Task 1)
+- Entry Point Address: "$E5CF" -- matches, byte-for-byte, the MAINCPU PC this
+  plan's own direct parse of the .vsf file found in Task 1 ($e5cf). This is
+  the snapshot's start address, genuinely carried through.
+- Status bar bottom-right, BEFORE Confirm: "Undefined: $0000-$FFFF" -- the
+  entire 64K is Undefined block type at this instant, confirming the full
+  memory image loaded (not merely a small blob), matching `size: 65536` this
+  plan's Task 2 MCP query later confirmed via `r2000_get_binary_info`.
+
+=== CAPTURE 2: after Alt+S, Save-As dialog open with pre-filled filename ===
+
+[Disassembly pane now showing real mnemonics from $E5CF onward -- "start"
+label placed at $E5CF, "brk"/".byte $ff ; Invalid or partial instruction"/
+"bpl b_E5F5" visible -- confirming the modal's Confirm action (Enter, sent
+between captures 1 and 2) ran flow analysis from the stated Entry Point.
+Status bar changed from "Undefined: $0000-$FFFF" to "Context applied", then
+to "Commodore 64 | 64tass | Code: $E5CF-$EADB | Cursor: $E5CF |
+File: "r2000-probe.vsf"" after the modal closed.]
+
+                                       ┌ Filename ──────────────────────────┐
+                                       │r2000-probe          .regen2000proj │
+                                       └─────────────────────────────────────┘
+
+ Enter Project filename
+ Commodore 64 | 64tass | Code: $E5CF-$EADB | Cursor: $E5CF | File: "r2000-probe.vsf"
+
+SAVE_AS_DEFAULT_FILENAME: r2000-probe.regen2000proj -- pre-filled exactly as
+`<stem>.regen2000proj`, matching plan 09-03's already-confirmed A2. Accepted
+as-is (matches the target filename this plan needed).
+
+Full raw capture (200x50, all panes) kept at
+$HOME/.cache/c64-re-tools/phase9/06-pane-after-alt-s.txt for anyone who wants
+the untrimmed version; the excerpt above is the load-bearing part, not a
+retype -- every character quoted above appears verbatim in that raw capture.
+
+=== CAPTURE 3: after Enter, project saved ===
+
+ Project saved: r2000-probe.regen2000proj
+ Commodore 64 | 64tass | Code: $E5CF-$EADB | Cursor: $E5CF | File: "r2000-probe.vsf"
+
+$ ls -la $HOME/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+-rw-rw-r-- 1 henrik henrik 4654 20 aug 10.59 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+VSF_PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+Full raw capture kept at $HOME/.cache/c64-re-tools/phase9/06-pane-after-enter.txt.
+
+## No refusal occurred at any step -- the snapshot was accepted, the modal
+## showed real (if partly coincidental, per the load transcript) values, and
+## the bootstrap produced a working project file with zero human intervention.

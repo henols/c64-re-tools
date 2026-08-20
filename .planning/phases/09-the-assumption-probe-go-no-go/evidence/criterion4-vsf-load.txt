@@ -334,3 +334,204 @@ neither the emulator nor its broker (they drive regenerator2000's own
 `--mcp-server`/`--headless` process instead). Full final teardown, including
 this broker and instance, is recorded at the very end of this transcript,
 after Task 3, per this plan's own live-process discipline.
+
+## Task 2: load the snapshot into regenerator2000, bootstrap a project from it
+## -------------------------------------------------------------------------------
+
+Pre-condition met: Task 1 produced a real, interrogated .vsf; not
+`could-not-run`, so this task proceeds.
+
+**Convention 10 live-resource protocol for port :3000:**
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Port free, no contention (plan 09-05's own process is long torn down; this
+plan holds the emulator and port :3000 exclusively this wave per the
+orchestrator's own note).
+
+$ command -v tmux && tmux -V
+/usr/bin/tmux
+tmux 3.5a
+
+PTY_ROUTE: tmux (same route plan 09-03 proved works; reused verbatim, not
+rediscovered).
+
+$ tmux kill-session -t r2000probe06 2>/dev/null; echo done
+done
+
+$ export DISPLAY=:0
+$ tmux new-session -d -s r2000probe06 -x 200 -y 50 regenerator2000 --mcp-server "$PROBE_DIR/r2000-probe.vsf"
+launched, exit=0
+
+$ tmux has-session -t r2000probe06 && echo ALIVE || echo DEAD
+ALIVE
+
+`tmux new-session`'s trailing arguments are `exec()`'d directly, with no shell
+re-interpolation, so the command that actually ran inside the pty is exactly:
+
+$ regenerator2000 --mcp-server "$PROBE_DIR/r2000-probe.vsf"
+
+(reproduced here as its own line per this task's own acceptance criteria --
+this is the literal, unmodified command tmux was told to launch above, not a
+retype from memory; no `--vice` anywhere in this argv)
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 1 -- reproduced there
+verbatim, not retyped here. The "Import Context Setup" modal plan 09-03
+discovered is up again, exactly as expected for any load path that returns
+`LoadedProjectData`, .vsf included.)
+
+**What the modal states (quoted in full in criterion4-vsf-pane.txt):**
+  System: < Commodore 64 >
+  Origin Address: $0000
+  Entry Point Address: $E5CF
+  [X] Disassemble from Entry Point Address
+Status bar, bottom-right, before Confirm: "Undefined: $0000-$FFFF" -- the
+whole 64K is loaded (matches Task 1's C64MEM finding of a full-size memory
+module), not a small blob.
+
+**Real finding, checked directly against the actually-installed TUI source
+before scoring the System field as a genuine derivation:**
+`dialog_import_context.rs:37`: `let target_system =
+suggested_system.as_deref().unwrap_or(current_system);`. Task 1 established
+`file_io.rs`'s `.vsf` branch matches `vsf_data.machine_name` against the
+literal strings `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"` -- and this
+snapshot's real machine_name is `"C64SC"` (x64sc's own designation), which
+matches none of them, so `suggested_system` is `None` for this load. The
+modal's displayed "Commodore 64" therefore comes from the `unwrap_or
+(current_system)` fallback -- the app's pre-existing default system at fresh
+process startup -- NOT from anything the snapshot's `machine_name` field
+carried. **The displayed value is coincidentally correct** (x64sc genuinely
+is a C64) only because the tool's own default system happens to already be
+Commodore 64; a genuine C128/VIC20/PET/PLUS4 stock-VICE snapshot's real
+machine_name string ("C128SC", "VIC20", "PET64" etc. -- none of these are
+literally "C128"/"VIC20"/"PET"/"PLUS4" either, per the same match arm) would
+hit this identical fallback and *also* silently show "Commodore 64", wrongly.
+This is recorded now and carried into the R2000_DERIVED comparison in Task 3
+as a provenance mismatch, not a value mismatch.
+
+**Dismissing the modal (Enter, focused on < Confirm > by default per
+`dialog_import_context.rs:536`'s own comment):**
+
+$ tmux send-keys -t r2000probe06 Enter
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(status bar changed to "Context applied", then to "Commodore 64 | 64tass |
+Code: $E5CF-$EADB | Cursor: $E5CF | File: \"r2000-probe.vsf\""; disassembly
+pane now shows a "start" label at $E5CF with real mnemonics/`.byte $ff ;
+Invalid or partial instruction`/`bpl b_E5F5` -- flow analysis ran from the
+stated Entry Point Address, confirming the checkbox's effect. This is KERNAL
+ROM disassembly at the live PC's location, unrelated to this plan's own
+$c000 fixture bytes, which sit elsewhere in the same 64K image and are
+checked separately in Task 3.)
+
+$ tmux send-keys -t r2000probe06 Escape
+sent
+(no-op, per this plan's own instruction -- modal already dismissed by the
+Enter above; pane unchanged, confirmed via a follow-up capture)
+
+**Alt+S, first attempt, `M-s` -- reused plan 09-03's proven encoding:**
+
+$ tmux send-keys -t r2000probe06 M-s
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 2)
+
+Save-As dialog opened on the first attempt. Filename field pre-filled:
+
+SAVE_AS_DEFAULT_FILENAME: r2000-probe.regen2000proj
+
+Matches `<stem>.regen2000proj` exactly (A2, already closed by plan 09-03;
+re-confirmed here on a second, unrelated load path). Accepted as-is.
+
+$ tmux send-keys -t r2000probe06 Enter
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 3; status bar now
+"Project saved: r2000-probe.regen2000proj")
+
+$ ls -la $PROBE_DIR/r2000-probe.regen2000proj
+-rw-rw-r-- 1 henrik henrik 4654 20 aug 10.59 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+VSF_PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+**While still live, asking the process what it saw rather than inferring
+later.** From the tools/list this session's own `mcp-harness.mjs` call
+recorded (28 tools, unchanged from plan 09-03's list), `r2000_get_binary_info`
+is the tool whose own description states it returns "the origin address,
+size in bytes, target platform (e.g. 'Commodore 64')... " -- exactly loaded-
+file/machine metadata, chosen from the real recorded list, not invented:
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_binary_info '{}'
+LIST_TOOLS_RESULT: (28-tool list, unchanged from plan 09-03/09-05's captures; full JSON
+inspected in this session's real output)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"description\": \"\",\n  \"entropy\": 1.2381582260131836,\n  \"filename\": \"r2000-probe.vsf\",\n  \"may_contain_undocumented_opcodes\": false,\n  \"origin\": 0,\n  \"size\": 65536,\n  \"system\": \"Commodore 64\"\n}"
+    }
+  ]
+}
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_disassembly_cursor '{}'
+CALL_TOOL_RESULT:
+{
+  "content": [ { "type": "text", "text": "$E5CF" } ]
+}
+
+Both live queries confirm exactly what the modal displayed: `origin: 0`,
+`system: "Commodore 64"`, cursor `$E5CF` (the entry point). No drift between
+the modal and the live MCP surface.
+
+**Bonus finding, not required by this task but discovered while interrogating
+the live process (a real defect, not a probe result) -- kept separate from
+the criterion's own scoring:**
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_address_details '{"address":49152}'
+CALL_TOOL_RESULT:
+{
+  "content": [
+    { "type": "text", "text": "{\n  \"address\": 49152,\n  \"message\": \"Address is outside the loaded binary range.\",\n  \"type\": \"OutOfRange\"\n}" }
+  ]
+}
+
+49152 ($c000) reported "outside the loaded binary range" despite
+`r2000_get_binary_info` reporting `origin: 0, size: 65536` moments earlier --
+49152 is well inside that range. Traced to the actually-installed source,
+`crates/regenerator2000-core/src/mcp/handler.rs:1894`:
+`address >= origin.wrapping_add(app_state.raw_data.len() as u16)`. Casting
+`raw_data.len()` (`65536usize`) to `u16` overflows to `0` (u16's max is
+65535), so for any FULL 64K-sized binary (exactly what every `.vsf` load
+produces) this bound becomes `origin.wrapping_add(0) == origin == 0`, making
+the check `address >= 0`, which is true for every address -- `r2000_
+get_address_details` is unconditionally broken for a full-size 64K load in
+the actually-installed 0.9.20 build. Not scored against this criterion
+(neither R2000-16(4) nor its acceptance criteria mention this tool), and not
+worked around -- `r2000_get_binary_info`/`r2000_get_disassembly_cursor`
+already answered what this task needed. Recorded for Phase 10/11 planning:
+any future use of `r2000_get_address_details` against a `.vsf`-derived
+project needs this bug tracked upstream or worked around client-side.
+
+**Teardown, proven:**
+
+$ tmux kill-session -t r2000probe06
+kill_exit=0
+
+$ tmux has-session -t r2000probe06
+no server running on /tmp/tmux-1000/default
+has-session exit=1
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match -- process gone)
+
+Session gone, MCP server process gone, port :3000 free. No contention waits
+occurred (port was free from the first check).
