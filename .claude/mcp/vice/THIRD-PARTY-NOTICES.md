@@ -75,6 +75,29 @@ package**, so ACME's licence does not attach to anything shipped. ACME never
 appears in `.claude/mcp/vice/package.json`'s `files[]`, `dependencies`, or
 `devDependencies` — it is an apt/CI-installed tool, never an npm package.
 
+## Build/CI tools — not incorporated: regenerator2000
+
+regenerator2000 is invoked as an **external CLI subprocess** (Phase 10's
+`R2000-09` bootstrap and `R2000-06` reassembly proof) against a real,
+locally-installed `regenerator2000` binary. **No regenerator2000 source,
+data table, or output is included in this repository or in either
+published package**, so its licence does not attach to anything shipped.
+
+Its licence is **`MIT OR Apache-2.0`** — dual, at the user's option —
+confirmed from the crate's own crates.io licence field, with both
+`LICENSE-MIT` and `LICENSE-APACHE` shipping in the crate. (Do not read this
+as Apache-2.0 alone: that stale, single-licence claim is what `R2000-03`'s
+own requirement text and `.planning/notes/regenerator2000-integration.md`
+still carried before Phase 10 corrected it here.)
+
+Verified version `0.9.20`, published 2026-07-11 by `ricardoquesada`
+(matching the linked GitHub repository owner), checked 2026-08-20 — so this
+provenance claim is re-checkable against a specific release.
+
+regenerator2000 never appears in `.claude/mcp/vice/package.json`'s
+`files[]`, `dependencies`, or `devDependencies` — it is a `cargo
+install`-provided tool, never an npm package.
+
 ## Explicitly NOT a source: VICE
 
 VICE is GPL-2 and this repository is MIT. **No opcode fact, protocol
