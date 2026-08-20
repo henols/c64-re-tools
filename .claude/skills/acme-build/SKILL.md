@@ -152,13 +152,23 @@ via `vice-mcp r2000 verify` (evidence:
 
 ## Setup
 
-Put `acme` on `$PATH`. The wrapper auto-probes `$ACME`,
-`/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme` and `~/.acme` itself,
-so `$ACME` only needs setting by hand when calling `acme` directly. Verified live
-in this container on 2026-08-04: the library resolves to `/usr/local/share/acme`
-(`/usr/share/acme` doesn't exist), ACME release 0.97 "Zem" (31 Jan 2021) at
-`/usr/bin/acme`. **Confidence: HIGH** — read off `acme --version` and the probe
-result, not off a package manifest.
+`acme` on `$PATH` is the **only** requirement. The scaffold `new` writes
+assembles against a bare install with no standard hardware-register library —
+that's deliberate: neither a plain `~/.local/bin/acme` build nor the Debian
+trixie `apt` candidate ships one, so a scaffold that depended on it would fail
+to assemble on a fresh install (Phase 8.1 FINDING-A1).
+
+`$ACME` and the wrapper's auto-probe (`$ACME`, `/usr/local/share/acme`,
+`/usr/share/acme`, `/usr/lib/acme`, `~/.acme`) still exist and still matter —
+but only for **your own** sources that use angle-bracket includes (see
+"Writing source" above), not for the scaffold. If you have that library
+somewhere, point `$ACME` at its directory and angle-bracket includes work as
+before; if you don't, the scaffold doesn't need it.
+
+Re-checked against ACME release 0.97 "Zem" (31 Jan 2021). CI now assembles
+the shipped scaffold on every build with `$ACME` cleared (the "Assemble the
+acme-build scaffold (library-free)" step in `.github/workflows/ci.yml`), so
+this claim is re-checkable rather than a one-machine observation.
 
 Copy `acme.mjs` into any project's `.claude/skills/acme-build/scripts/`, and
 `template.a` into `.claude/skills/acme-build/`, to use this elsewhere.
@@ -180,7 +190,7 @@ This one turns source into bytes. It does not restate what the others carry.
 | File | Covers |
 |---|---|
 | `scripts/acme.mjs` | The driver. Its comments are the contract for every flag above |
-| `template.a` | The scaffold `new` writes: BASIC stub with a computed `SYS`, the three `!source` libraries, no `!to` |
+| `template.a` | The scaffold `new` writes: BASIC stub with a computed `SYS`, five local hardware constants (no library needed), no `!to` |
 
 Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you
 find them**, graded with `Evidence:` and `Confidence:`. Promote by re-logging with
