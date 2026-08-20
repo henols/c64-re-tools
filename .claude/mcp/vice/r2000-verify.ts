@@ -25,6 +25,21 @@
 // are pinned verbatim as fixtures in r2000-verify.test.ts, so a future
 // "simplification" back to an exit-code check fails a unit test immediately.
 //
+// WR-04 (10-REVIEW.md, fixed in plan 11-01): the verdict must also never
+// trust just the FIRST ACME result line. `acmeVerdict()` used to select
+// ACME's line with a bare array .find() over the first matching entry, so
+// a transcript containing both a
+// passing and a failing ACME line (a shape --verify has never printed as of
+// 0.9.20, but one this defensive parser is explicitly meant to survive)
+// reported `ok: true` from the first (passing) line while discarding the
+// later failure -- exactly the "misleading success" this module exists to
+// refuse. The fix requires UNANIMITY: every parsed ACME line must be `ok`,
+// the first non-ok line (if any) drives the verdict, and if more than one
+// ACME line is present after passing that check, the module refuses to
+// guess which one is authoritative rather than picking one arbitrarily.
+// Both the mixed-transcript case and the too-many-ACME-lines case are pinned
+// verbatim as fixtures in r2000-verify.test.ts.
+//
 // Import nothing from `hostpath.ts`/`containerpath.ts` -- plan 10-01's
 // absence assertion in `hostpath-consumers.test.ts` already names this file.
 
@@ -89,17 +104,19 @@ export function parseVerifyOutput(stdout: string): VerifyLine[] {
 
 /**
  * Derives the ACME-specific verdict from a parsed line set. `ok` only when
- * an ACME line exists AND its outcome is `"ok"`. A missing ACME line, an
- * ACME line with outcome `"skipped"`, and an ACME line with outcome
- * `"failed"` each return `ok: false` with a distinct, quotable reason --
- * never conflate "skipped" with "passed", and never fall back to the
- * summary line (which this module never even parses as a VerifyLine, see
+ * at least one ACME line exists, EVERY parsed ACME line has outcome `"ok"`
+ * (unanimity -- WR-04), AND exactly one ACME line is present. A missing
+ * ACME line, any ACME line with outcome `"skipped"` or `"failed"`, and more
+ * than one `"ok"` ACME line each return `ok: false` with a distinct,
+ * quotable reason -- never conflate "skipped" with "passed", never let a
+ * passing line hide a later failing one, and never fall back to the summary
+ * line (which this module never even parses as a VerifyLine, see
  * `parseVerifyOutput`).
  */
 export function acmeVerdict(lines: VerifyLine[]): { ok: boolean; reason: string } {
-  const acmeLine = lines.find((l) => l.assembler.toLowerCase() === "acme");
+  const acmeLines = lines.filter((l) => l.assembler.toLowerCase() === "acme");
 
-  if (!acmeLine) {
+  if (acmeLines.length === 0) {
     return {
       ok: false,
       reason:
@@ -108,22 +125,36 @@ export function acmeVerdict(lines: VerifyLine[]): { ok: boolean; reason: string 
     };
   }
 
-  if (acmeLine.outcome === "skipped") {
+  // First non-ok line wins -- so a passing ACME line earlier in the
+  // transcript can never hide a failing one later in it (WR-04).
+  const bad = acmeLines.find((l) => l.outcome !== "ok");
+
+  if (bad?.outcome === "skipped") {
     return {
       ok: false,
       reason:
-        `ACME was skipped, not run -- "${acmeLine.detail}". A skipped ACME is a failure, never a pass ` +
+        `ACME was skipped, not run -- "${bad.detail}". A skipped ACME is a failure, never a pass ` +
         `(D-10): --verify can print "✓ All roundtrip verifications passed." and exit 0 even when ` +
         `ACME never ran at all -- exactly the false pass observed live on this host with ACME absent ` +
         `and ca65 present.`,
     };
   }
 
-  if (acmeLine.outcome === "failed") {
-    return { ok: false, reason: `ACME reported a failure: "${acmeLine.detail}"` };
+  if (bad?.outcome === "failed") {
+    return { ok: false, reason: `ACME reported a failure: "${bad.detail}"` };
   }
 
-  return { ok: true, reason: `ACME reported: ${acmeLine.detail}` };
+  // Every ACME line is ok at this point. Still refuse to guess which one is
+  // authoritative if more than one was printed (WR-04) -- unanimous is not
+  // the same as unambiguous.
+  if (acmeLines.length > 1) {
+    return {
+      ok: false,
+      reason: `--verify printed ${acmeLines.length} ACME result lines -- refusing to guess which one is the verdict`,
+    };
+  }
+
+  return { ok: true, reason: `ACME reported: ${acmeLines[0]!.detail}` };
 }
 
 export interface VerifyProjectResult {

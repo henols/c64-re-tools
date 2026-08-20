@@ -138,6 +138,34 @@ test("parseVerifyOutput: a real ca65 failure (not skipped) parses as failed, and
   assert.equal(verdict.ok, true, "ACME's own byte-identical result must decide the verdict, independent of ca65's failure or the process's own non-zero exit");
 });
 
+test(
+  "acmeVerdict (WR-04): the reviewer's exact mixed transcript -- a passing ACME line followed by a failing one -- must be ok:false, never the first-line-wins false pass",
+  () => {
+    const transcript = "  ✓ ACME — byte-identical (3 bytes)\n  ✗ ACME — output differs at offset $0010\n";
+    const lines = parseVerifyOutput(transcript);
+    assert.equal(lines.length, 2);
+    const verdict = acmeVerdict(lines);
+    assert.equal(
+      verdict.ok,
+      false,
+      "a mixed transcript containing both a passing and a failing ACME line must never report ok:true"
+    );
+    assert.match(verdict.reason, /output differs at offset \$0010/);
+  }
+);
+
+test(
+  "acmeVerdict (WR-04): two passing ACME lines refuses to guess which one is the verdict",
+  () => {
+    const transcript = "  ✓ ACME — byte-identical (3 bytes)\n  ✓ ACME — byte-identical (65536 bytes)\n";
+    const lines = parseVerifyOutput(transcript);
+    assert.equal(lines.length, 2);
+    const verdict = acmeVerdict(lines);
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /refusing to guess/);
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Gated half -- needs a real regenerator2000. Mirrors D-11's shape exactly.
 // ---------------------------------------------------------------------------
