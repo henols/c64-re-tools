@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: planning
-last_updated: "2026-08-20T13:32:32.287Z"
-last_activity: 2026-08-20
+status: executing
+last_updated: "2026-08-20T14:58:37.835Z"
+last_activity: 2026-08-20 -- Phase 10 planning complete
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 8
+  total_plans: 17
   completed_plans: 8
   percent: 33
 ---
@@ -38,14 +38,14 @@ packages, so no release work gates the milestone.
 
 Phase: 10
 Plan: Not started
-Status: Ready to plan. Phase 09 closed with verdict `degrade` (rule `R4`),
+Status: Ready to execute
 recorded at `docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10
 as scoped, with the two named scope amendments (`.vsf` machine-type trust;
 explicit `use_illegal_opcodes` setting) applied at their targets — not a
 documented manual bootstrap step, since criteria 2a/2b both passed cleanly. No
 Phase 10 or Phase 11 plan is written before that findings document is read, per
 `R2000-16`'s own wording.
-Last activity: 2026-08-20
+Last activity: 2026-08-20 -- Phase 10 planning complete
 
 ## Performance Metrics
 
