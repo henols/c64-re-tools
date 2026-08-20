@@ -1,0 +1,103 @@
+## Criterion 2 -- R2000-16(1): pty tolerance (2a) and keystroke-driven Save-As bootstrap (2b)
+## Qualified by regenerator2000 0.9.20, rustc 1.97.1 (per 09-01-SUMMARY.md)
+
+## Task 1: does HTTP MCP mode survive a pty with no real TTY?
+
+$ echo "$HOME/.cache/c64-re-tools/phase9"
+/home/henrik/.cache/c64-re-tools/phase9
+
+$ ls -la "$HOME/.cache/c64-re-tools/phase9/"
+total 16
+drwxrwxr-x 2 henrik henrik 4096 20 aug 07.14 .
+drwxrwxr-x 3 henrik henrik 4096 20 aug 07.12 ..
+-rw-rw-r-- 1 henrik henrik 1759 20 aug 07.14 probe-illegal.a
+-rw-rw-r-- 1 henrik henrik   46 20 aug 07.14 probe-illegal.prg
+
+Fixture already present from plan 09-01 (byte-verified there); no copy needed.
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Port :3000 confirmed free before launch (grep found nothing, exit 1).
+
+$ command -v tmux && tmux -V
+/usr/bin/tmux
+tmux 3.5a
+
+PTY_ROUTE: tmux
+Reason: tmux 3.5a is on PATH (installed by the human during plan 09-01's blocking
+checkpoint). It is the stronger evidence route because it provides real terminal
+emulation (a genuine pty + VT100 interpretation), unlike the fallback Python
+pty.openpty() route which would only capture a raw, unrendered escape-sequence byte
+stream. Per the inherited findings and this plan's own instruction, the Python
+pty-driver fallback is NOT created in this plan -- it was only to be used if tmux
+were unavailable, and it is available.
+
+$ tmux kill-session -t r2000probe 2>/dev/null; echo done
+done
+
+$ tmux new-session -d -s r2000probe -x 200 -y 50 regenerator2000 --mcp-server "$HOME/.cache/c64-re-tools/phase9/probe-illegal.prg"
+launched, exit=0
+
+Note: the fixture path is passed positionally (the [FILE] argument), not as an
+argument to --mcp-server -- confirmed from plan 09-01's verbatim --help capture:
+"--mcp-server / Run MCP server (HTTP port 3000)" takes no argument itself.
+
+Polled by repeated `tmux has-session` + `tmux capture-pane -t r2000probe -p`
+(single-command captures, run interactively rather than in a shell polling loop --
+this harness's Bash-command classifier rejects multi-statement loop scripts as
+"too complex to verify inside the worktree"; capturing twice a few seconds apart
+and comparing was used instead, well within the 90s bound):
+
+$ tmux has-session -t r2000probe && echo ALIVE || echo DEAD
+ALIVE
+
+$ tmux capture-pane -t r2000probe -p
+(see evidence/criterion2-pane-initial.txt for the full captured pane -- reproduced
+verbatim there, not retyped here)
+
+A second capture taken a few seconds later was byte-identical to the first --
+the pane is stable, non-empty, and the process is alive. Full text is in
+evidence/criterion2-pane-initial.txt.
+
+**What the pane actually shows:** a fully-drawn regenerator2000 TUI -- menu bar
+("File Edit Jump Search View Debugger Help"), a "Disassembly" pane showing the
+probe fixture's bytes at $C000 (currently rendered as raw `.byte` lines, not yet
+disassembled as instructions -- the auto-analyzer has not committed the import
+yet), a "Hex Dump (Screencode Shifted)" pane showing the same 44 bytes, and an
+**"Import Context Setup" modal dialog** sitting on top with System "Commodore 64",
+Origin Address $C000, Entry Point Address $C000, a checked "[X] Disassemble from
+Entry Point Address" box, and "< Confirm >" / "< Cancel >" buttons. The status
+bar bottom-left reads exactly:
+
+    MCP Server active on http://127.0.0.1:3000/mcp
+
+-- so the research's assumed status text WAS observed verbatim, unlike the
+research's own caveat that it might not exist. The status bar right side reads
+"Commodore 64 | 64tass | Undefined: $C000-$C02B | Cursor: $C000 |
+File: "probe-illegal.prg"".
+
+**Research correction:** 09-RESEARCH.md's data-flow diagram (Architecture
+Patterns) shows step ⑤ `auto_analyze()` running unattended straight into step ⑥
+(MCP server start). In fact an "Import Context Setup" confirmation dialog is
+presented and holds focus before analysis proceeds -- this is an additional modal
+the bootstrap sequence must dismiss (via Escape or Enter-on-Confirm) before Alt+S
+can reach the Save-As dialog. Not fatal to 2a (the MCP server started regardless,
+per the status bar), but it changes the exact keystroke sequence 2b needs.
+
+$ ps -o pid,etimes,args -p 2161138
+    PID ELAPSED COMMAND
+2161138      38 regenerator2000 --mcp-server /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.prg
+
+Process alive, 38s elapsed at time of check, exact launch argv confirmed (no
+--vice, no illegal argument to --mcp-server).
+
+PTY_TOLERANCE: pass
+Justification: the process is alive 38+ seconds after launch (`ps` above), the
+tmux pane is non-empty and shows real, stable TUI output (menu bar, two rendered
+data panes, a modal dialog, and a status bar) rather than any terminal error, and
+no "not a terminal" / "Device not configured" / enable_raw_mode failure message
+appears anywhere in the captured pane. The status bar's literal
+"MCP Server active on http://127.0.0.1:3000/mcp" text confirms raw mode, the
+input thread, the initial draw, and the HTTP MCP listener all succeeded under a
+tmux pty with no real TTY.
