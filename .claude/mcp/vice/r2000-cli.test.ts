@@ -244,6 +244,64 @@ test("in-process: a .vsf input is refused with a message naming Phase 11, not a 
   });
 });
 
+test("in-process: bootstrap refuses a .regen2000proj input rather than reparsing it as a .prg (CR-02)", async () => {
+  await withTempDir(async (dir) => {
+    const projPath = join(dir, "game.regen2000proj");
+    const originalContents = JSON.stringify({ some: "project", marker: "ORIGINAL-NOT-REPARSED" });
+    writeFileSync(projPath, originalContents);
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", projPath]),
+    );
+
+    assert.notEqual(code, 0, "bootstrap must refuse a .regen2000proj input, not reparse it as a .prg");
+    assert.match(stderr, /already a \.regen2000proj/);
+    assert.equal(
+      readFileSync(projPath, "utf8"),
+      originalContents,
+      "bootstrap must not have overwritten the .regen2000proj input with a reparsed garbage project",
+    );
+  });
+});
+
+test(
+  "in-process: bootstrap refuses to clobber an existing default-named output file distinct from its input (overwrite guard)",
+  async () => {
+    await withTempDir(async (dir) => {
+      const prgPath = join(dir, "game.prg");
+      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+      const existingProj = join(dir, "game.regen2000proj");
+      const PRE_EXISTING = "PRE-EXISTING PROJECT CONTENT, NOT SYNTHESISED JSON";
+      writeFileSync(existingProj, PRE_EXISTING);
+
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["bootstrap", prgPath]),
+      );
+
+      assert.notEqual(code, 0);
+      assert.match(stderr, /refusing to overwrite/);
+      assert.equal(readFileSync(existingProj, "utf8"), PRE_EXISTING);
+    });
+  },
+);
+
+test("in-process: bootstrap --force overwrites an existing default-named output file deliberately", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+    const existingProj = join(dir, "game.regen2000proj");
+    writeFileSync(existingProj, "STALE CONTENT");
+
+    const { result: code } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", prgPath, "--force"]),
+    );
+
+    assert.equal(code, 0);
+    const written = JSON.parse(readFileSync(existingProj, "utf8")) as { settings: { use_illegal_opcodes: unknown } };
+    assert.equal(written.settings.use_illegal_opcodes, true);
+  });
+});
+
 test("in-process: export-asm refuses to clobber an existing default-named output file (CR-01)", async () => {
   await withTempDir(async (dir) => {
     const prgPath = join(dir, "game.prg");

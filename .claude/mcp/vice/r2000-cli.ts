@@ -60,10 +60,13 @@ const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
 verbs:
-  bootstrap <input> [--entry NAME] [--out PROJECT]
+  bootstrap <input> [--entry NAME] [--out PROJECT] [--force]
       Accepts a .prg, a .d64 (pick an entry with --entry), or a flat 64K
       .raw/.bin capture. Writes a .regen2000proj to --out (default: the
-      input path with its extension replaced by .regen2000proj).
+      input path with its extension replaced by .regen2000proj). Refuses to
+      overwrite an existing file at that path unless --force is given. A
+      .regen2000proj input is refused outright -- bootstrap never re-reads
+      one; use export-asm or verify on it directly.
 
   export-asm <input-or-project> [--out FILE] [--force]
       If given a .regen2000proj it is used directly; otherwise this bootstraps
@@ -149,13 +152,34 @@ interface BootstrapOutcome {
  * already printed to stderr/stdout, so callers never see a stack trace for a
  * missing file, an unknown `.d64` entry, or a `.vsf` input.
  */
-function bootstrapProject(input: string, opts: { entry?: string; outPath?: string }): BootstrapOutcome {
+function bootstrapProject(
+  input: string,
+  opts: { entry?: string; outPath?: string; force?: boolean },
+): BootstrapOutcome {
   if (!existsSync(input)) {
     console.error(`bootstrap: input file not found: ${input}`);
     return { code: 1 };
   }
 
   const ext = extname(input).toLowerCase();
+  if (ext === ".regen2000proj") {
+    // CR-02: without this branch, a .regen2000proj input fell through to
+    // parsePrg(), which happily "parsed" the JSON text as a .prg (its first
+    // two bytes read as a bogus little-endian load address), and the
+    // derived out-path was then byte-identical to the input path --
+    // clobbering the project with garbage synthesised from its own text.
+    // Decision (see commit message): refuse rather than silently pass it
+    // through unchanged -- bootstrap's whole job is synthesising a project
+    // from RAW input, and a caller who names an existing .regen2000proj as
+    // bootstrap's input almost certainly meant export-asm or verify, which
+    // already accept a .regen2000proj directly and do the right thing.
+    console.error(
+      `bootstrap: ${input} is already a .regen2000proj -- bootstrap synthesises project files from raw ` +
+        "input (a .prg, a .d64 entry, or a flat 64K capture), it never re-reads one. Use export-asm or " +
+        "verify on it directly.",
+    );
+    return { code: 1 };
+  }
   if (ext === ".vsf") {
     console.error(
       "bootstrap: .vsf input is not supported -- Phase 9 found its machine-type field only reads " +
@@ -229,6 +253,9 @@ function bootstrapProject(input: string, opts: { entry?: string; outPath?: strin
   }
 
   const outPath = opts.outPath ?? input.replace(/\.[^./\\]+$/, "") + ".regen2000proj";
+  if (!refuseOverwrite(outPath, opts.force, "bootstrap")) {
+    return { code: 1 };
+  }
   let projectJson: string;
   try {
     projectJson = synthesizeProject(body, { origin });
@@ -242,13 +269,13 @@ function bootstrapProject(input: string, opts: { entry?: string; outPath?: strin
 }
 
 function cmdBootstrap(rest: string[]): number {
-  const { positional, entry, out } = parseArgs(rest);
+  const { positional, entry, out, force } = parseArgs(rest);
   const input = positional[0];
   if (!input) {
-    console.error("bootstrap: usage: bootstrap <input> [--entry NAME] [--out PROJECT]");
+    console.error("bootstrap: usage: bootstrap <input> [--entry NAME] [--out PROJECT] [--force]");
     return 1;
   }
-  return bootstrapProject(input, { entry, outPath: out }).code;
+  return bootstrapProject(input, { entry, outPath: out, force }).code;
 }
 
 function cmdExportAsm(rest: string[]): number {
