@@ -65,6 +65,7 @@
     "r2000-regbits.json",
     "r2000-enum-gen.ts",
     "r2000-confidence.ts",
+    "r2000-memmap-render.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
