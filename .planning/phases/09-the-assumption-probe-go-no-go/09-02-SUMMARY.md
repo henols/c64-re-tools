@@ -137,3 +137,9 @@ R2000_VERSION_IN_IMAGE: regenerator2000 0.9.20 (matches plan 09-01's host INSTAL
 ---
 *Phase: 09-the-assumption-probe-go-no-go*
 *Completed: 2026-08-20*
+
+## Self-Check: PASSED
+
+All 4 files verified present on disk (`Dockerfile.single`, `Dockerfile.multi`,
+`criterion1-container-toolchain-cost.txt`, `09-02-SUMMARY.md`); all 3 task/plan
+commits (`e24f7ea`, `b353a49`, `3c06741`) verified present in `git log`.
