@@ -128,3 +128,8 @@ No blockers for wave 2. The one open risk worth carrying forward explicitly: if 
 ---
 *Phase: 09-the-assumption-probe-go-no-go*
 *Completed: 2026-08-20*
+
+## Self-Check: PASSED
+
+All 5 created files verified present on disk; both PROBE_DIR copies verified
+present; all 6 task/checkpoint commits verified present in `git log`.
