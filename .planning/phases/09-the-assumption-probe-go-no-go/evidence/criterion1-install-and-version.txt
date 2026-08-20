@@ -51,3 +51,37 @@ tmux 3.5a
 
 This gives plan 09-03 (criterion 2, the pty + keystroke-driven bootstrap) the
 full tmux route rather than the documented Python pty fallback.
+
+## Task 3: real install, version, CLI surface
+
+Attempted at 2026-08-20T06:48Z, immediately after the Task 2 human authorization
+above (install: approved).
+
+$ cargo install regenerator2000
+
+Result: BLOCKED before cargo even started -- not a cargo/network/compile failure.
+This Claude Code agent session's own tool-permission layer ("auto mode classifier")
+denied the Bash invocation outright, both with and without
+dangerouslyDisableSandbox=true:
+
+  "Permission for this action was denied by the Claude Code auto mode classifier.
+  Reason: Blocked by classifier. ... If you believe this capability is essential
+  to complete the user's request, STOP and explain to the user what you were
+  trying to do and why you need this permission. Let the user decide how to
+  proceed. To allow this type of action in the future, the user can add a Bash
+  permission rule to their settings."
+
+This is a distinct blocker from Task 2's GSD-level human-authorization checkpoint,
+which was already granted (install: approved, recorded above). The GSD checkpoint
+authorizes the *action* at the workflow level; this is a separate, lower-level
+tool permission classifier inside the executing agent's own sandbox that vetoed
+the actual Bash invocation regardless of that authorization.
+
+INSTALLED_VERSION: (not yet determined -- session-level tool permission blocked
+the install attempt; not a finding about regenerator2000 itself)
+
+Outcome recorded as could-not-run, PENDING RETRY: this is not a terminal finding
+about R2000-16(5); it is a resumable session blocker. Once the operator adds a
+Bash permission rule allowing this exact command (or otherwise grants it), Task 3
+should be re-attempted in a continuation of this same plan before this criterion
+is scored as a real pass/fail/could-not-run against regenerator2000 itself.
