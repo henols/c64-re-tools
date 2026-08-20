@@ -58,6 +58,7 @@
     "r2000-d64.ts",
     "r2000-cli.ts",
     "r2000-verify.ts",
+    "r2000-mcp-client.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",

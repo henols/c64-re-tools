@@ -125,6 +125,66 @@ export function buildVerifyArgs({ projectPath }: BuildVerifyArgsOptions): string
   return ["--verify", "--assembler", "acme", projectPath];
 }
 
+export interface BuildMcpServerStdioArgsOptions {
+  projectPath: string;
+}
+
+/** Fixed argv builder for the "run as an MCP server over stdio" verb
+ * (D-16/D-17). `--mcp-server-stdio` takes no value of its own -- the
+ * project path is the positional `[FILE]` argument documented by
+ * `regenerator2000 --help`, confirmed at execution time on this host
+ * (0.9.20): `Usage: regenerator2000 [OPTIONS] [FILE]`. */
+export function buildMcpServerStdioArgs({ projectPath }: BuildMcpServerStdioArgsOptions): string[] {
+  return ["--mcp-server-stdio", projectPath];
+}
+
+export interface BuildExportLblArgsOptions {
+  projectPath: string;
+  outPath: string;
+}
+
+/** Fixed argv builder for the "export VICE labels" verb (R2000-14, the
+ * live-discovered-symbols-flow-back leg). `--export_lbl <PATH>` takes one
+ * value, confirmed at execution time from `--help`; `--headless` is
+ * required because this verb produces no TUI output. */
+export function buildExportLblArgs({ projectPath, outPath }: BuildExportLblArgsOptions): string[] {
+  return ["--headless", "--export_lbl", outPath, projectPath];
+}
+
+export interface BuildImportLblArgsOptions {
+  projectPath: string;
+  lblPath: string;
+}
+
+/**
+ * Fixed argv builder for the "import VICE labels" verb (R2000-15, the
+ * annotate-then-export-to-VICE leg). `--import_lbl <PATH>` takes one value,
+ * confirmed at execution time from `--help`.
+ *
+ * `--mcp-server-stdio` is NOT optional here -- this is the D-28 trap this
+ * builder exists to make unreachable by construction. `main.rs:800-806` is
+ * `if headless && !mcp_server { return Ok(()) }`: an argv of
+ * `--import_lbl <path> --headless <proj>` imports the labels into memory
+ * and then hits that early return WITHOUT ever calling save, so the import
+ * is silently discarded -- measured live on this host: two names imported
+ * that way, and a subsequent `--export_lbl` read back from disk returned
+ * only the pre-existing label. `main.rs:709-711` makes `--mcp-server-stdio`
+ * set both `headless` and `mcp_server`, which is what skips that early
+ * return and leaves the process alive long enough for a caller to issue an
+ * explicit `r2000_save_project` over the resulting stdio session.
+ *
+ * Deliberately does NOT also add `--headless` to this argv: `--mcp-server-
+ * stdio` already implies it (`main.rs:709-711`), and a caller reading this
+ * argv should see the minimum token set that makes persistence possible,
+ * not a redundant flag alongside it. `--import_lbl` only mutates in-memory
+ * state -- the caller is still responsible for issuing `r2000_save_project`
+ * over the resulting session before closing it; this builder only gets the
+ * import to a point where saving is possible.
+ */
+export function buildImportLblArgs({ projectPath, lblPath }: BuildImportLblArgsOptions): string[] {
+  return ["--import_lbl", lblPath, "--mcp-server-stdio", projectPath];
+}
+
 export interface RunR2000Options {
   cwd?: string;
   timeoutMs?: number;

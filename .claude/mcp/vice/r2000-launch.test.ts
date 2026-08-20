@@ -22,6 +22,9 @@ import {
   assertNoViceFlag,
   buildExportAsmArgs,
   buildVerifyArgs,
+  buildMcpServerStdioArgs,
+  buildExportLblArgs,
+  buildImportLblArgs,
   runR2000,
   R2000ViceFlagError,
 } from "./r2000-launch.ts";
@@ -326,6 +329,53 @@ test("buildExportAsmArgs and buildVerifyArgs each return a string[] with --assem
 
 // -- 8. WR-01: FORBIDDEN_R2000_FLAGS is the actual source of truth ---------
 //       for the scan, not merely a documented-but-unread constant ----------
+
+// -- 9. Plan 11-04's three new fixed argv builders ---------------------------
+
+test("buildMcpServerStdioArgs returns the exact two-token argv", () => {
+  assert.deepEqual(
+    buildMcpServerStdioArgs({ projectPath: "p.regen2000proj" }),
+    ["--mcp-server-stdio", "p.regen2000proj"]
+  );
+});
+
+test("buildExportLblArgs returns the exact four-token argv", () => {
+  assert.deepEqual(
+    buildExportLblArgs({ projectPath: "p.regen2000proj", outPath: "o.lbl" }),
+    ["--headless", "--export_lbl", "o.lbl", "p.regen2000proj"]
+  );
+});
+
+test("buildImportLblArgs returns the exact four-token argv", () => {
+  assert.deepEqual(
+    buildImportLblArgs({ projectPath: "p.regen2000proj", lblPath: "l.lbl" }),
+    ["--import_lbl", "l.lbl", "--mcp-server-stdio", "p.regen2000proj"]
+  );
+});
+
+test("D-28 trap: buildImportLblArgs()'s output always contains the literal --mcp-server-stdio token, pinned so a future edit cannot drop it", () => {
+  const argv = buildImportLblArgs({ projectPath: "any.regen2000proj", lblPath: "any.lbl" });
+  assert.ok(
+    argv.includes("--mcp-server-stdio"),
+    "buildImportLblArgs() must always include --mcp-server-stdio -- omitting it hits main.rs:800-806's " +
+      "early return and silently discards the import (D-28)"
+  );
+});
+
+test("the three new builders' output all pass assertNoViceFlag(), while a --vice-bearing projectPath-shaped argument is still refused", () => {
+  assert.doesNotThrow(() => assertNoViceFlag(buildMcpServerStdioArgs({ projectPath: "p.regen2000proj" })));
+  assert.doesNotThrow(() => assertNoViceFlag(buildExportLblArgs({ projectPath: "p.regen2000proj", outPath: "o.lbl" })));
+  assert.doesNotThrow(() => assertNoViceFlag(buildImportLblArgs({ projectPath: "p.regen2000proj", lblPath: "l.lbl" })));
+
+  // A --vice-bearing "project path" is still refused by the scan, even
+  // though none of these three builders would ever construct one
+  // themselves (no rest parameter, no passthrough field) -- this proves
+  // the guard still catches a hostile-shaped argv fed through runR2000().
+  assert.throws(
+    () => assertNoViceFlag(buildMcpServerStdioArgs({ projectPath: "--vice" })),
+    (err: unknown) => err instanceof R2000ViceFlagError
+  );
+});
 
 test("FORBIDDEN_R2000_FLAGS includes --vice, and assertNoViceFlag throws for every member of the array", () => {
   assert.ok(FORBIDDEN_R2000_FLAGS.includes("--vice"));
