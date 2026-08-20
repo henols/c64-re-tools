@@ -86,6 +86,11 @@ export interface R2000ToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  // Structural compatibility with vice.ts's own ToolInfo (vice-proxy.ts's
+  // ToolDefinition alias), which carries this index signature -- lets
+  // vice-proxy.ts's buildViceTool() accept an R2000ToolDefinition directly,
+  // with no per-call cast at the plan 11-05 Task 2 registration site.
+  [key: string]: unknown;
 }
 
 interface ToolCallResult {
