@@ -161,10 +161,48 @@ binary (`/usr/bin/x64sc`, invoked by absolute path since a fork build shadows
 x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502
 ```
 
-Stock VICE's binary monitor serves **exactly one client** — a second
-connection sits unserviced with no reply and no EOF, indistinguishable from a
-hang. Do not leave a hand-run monitor session open while the plugin is also
-driving the same emulator instance.
+On the stock backend, **exactly one process may hold the binary monitor** —
+a second connection sits unserviced with no reply and no EOF,
+indistinguishable from a hang. Do not leave a hand-run monitor session open
+while the plugin is also driving the same emulator instance. Concrete traps
+that cause this, none of them specific to this project: a stray `nc` session
+against the monitor port, a second Claude Code session pointed at the same
+instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger —
+explicitly including regenerator2000's own `--vice <HOST:PORT>` flag (see
+below). This plugin's own regenerator2000 route can never cause it: the
+launch path refuses `--vice` by construction (its argv is built only from
+fixed per-verb builders that never accept a pass-through flag) and by a scan
+that throws if the flag is ever present, not merely by documentation. If an
+emulator has gone silent, see the `vice-wedge-triage` skill before assuming
+it is wedged.
+
+## Installing regenerator2000
+
+`acme-build` and `c64-program-recon`'s static disassembly route requires
+[regenerator2000](https://github.com/ricardoquesada/regenerator2000), a Rust
+CLI that decodes a `.prg`/`.d64`/flat-64K image with a real auto-analyser
+instead of a flat linear decode. It is a **required prerequisite**, not an
+optional accelerator: an optional-with-detection design was rejected because
+it would forbid ever removing the fallback it detects around, and this
+project already removed that fallback (`toacme`'s `disasm` verb).
+
+| Fact | Value |
+|------|-------|
+| Install | `cargo install regenerator2000` — **no upstream release assets exist**, so this is a Rust-toolchain cost, not a binary download |
+| Toolchain floor | rustc **>= 1.90** (measured; earlier `>= 1.85` and `>= 1.88` readings undercounted it — a `rust:1.88-slim` image fails a real install) |
+| Container cost, single-stage | ~1.26 GB image, ~5m39s build |
+| Container cost, multi-stage | ~251 MB image, ~4m48s build |
+| Verified against | `0.9.20`, published 2026-07-11, checked 2026-08-20 |
+| Licence | `MIT OR Apache-2.0` (dual) — see [`THIRD-PARTY-NOTICES.md`](.claude/mcp/vice/THIRD-PARTY-NOTICES.md) |
+
+Both container figures are absolute sizes with no baseline to diff them
+against.
+
+**The one-project-per-network-namespace limit is stated, not detected.**
+regenerator2000's MCP server binds a hardcoded port, so two projects cannot
+run its server side by side in one network namespace. This project documents
+that limit rather than building detection and reporting for it; separate
+containers sidestep it.
 
 ## How it locates the project
 
