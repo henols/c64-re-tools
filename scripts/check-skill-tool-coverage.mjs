@@ -36,6 +36,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
+import { CURATED_R2000_TOOLS } from "../.claude/mcp/vice/r2000-tools.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -92,17 +93,31 @@ for (const f of skillFiles) {
 // "_vice__vice_x" has no non-word character anywhere near the join point).
 const MCP_PREFIX_RE = /mcp__[\w-]+_vice__/g;
 const TOOL_NAME_RE = /\bvice_[a-z0-9_]+/g;
+// Plan 11-05, Phase 11: a second, independent extraction pass for the
+// curated r2000_* surface (D-16/D-18). Kept in its OWN map rather than
+// merged into `extracted` above -- the two families are served through
+// completely different gates (stock/fork manifests vs. CURATED_R2000_TOOLS,
+// a proxy-local allow-list), so conflating them would blur which gate a
+// given name is actually checked against.
+const R2000_TOOL_NAME_RE = /\br2000_[a-z0-9_]+/g;
 
 /** @type {Map<string, Set<string>>} */
 const extracted = new Map();
+/** @type {Map<string, Set<string>>} */
+const extractedR2000 = new Map();
 for (const f of skillFiles) {
   const raw = readFileSync(f, "utf8");
   const cleaned = raw.replace(MCP_PREFIX_RE, "");
   const matches = cleaned.match(TOOL_NAME_RE) || [];
+  const r2000Matches = cleaned.match(R2000_TOOL_NAME_RE) || [];
   const rel = f.slice(ROOT.length + 1);
   for (const name of matches) {
     if (!extracted.has(name)) extracted.set(name, new Set());
     extracted.get(name).add(rel);
+  }
+  for (const name of r2000Matches) {
+    if (!extractedR2000.has(name)) extractedR2000.set(name, new Set());
+    extractedR2000.get(name).add(rel);
   }
 }
 
@@ -393,6 +408,46 @@ need(
   "non-vacuity: positive control vice_vicii_get_state must resolve as advertised on tools-manifest.stock.json -- if this fails, the manifest read is broken"
 );
 
+// --- r2000_* surface (plan 11-05, D-16/D-18) --------------------------------
+// Three assertions, the same shape as the vice_* checks above but against a
+// completely different gate (CURATED_R2000_TOOLS, a proxy-local allow-list --
+// never either manifest).
+//
+// 1. Every extracted r2000_* name must be curated -- the same
+//    unadvertised-name failure shape as the vice_* core check above, with the
+//    same three resolution routes.
+for (const [name, files] of extractedR2000) {
+  need(
+    CURATED_R2000_TOOLS.includes(name),
+    `${name}: referenced by ${[...files].join(", ")} but NOT in CURATED_R2000_TOOLS (r2000-tools.ts). ` +
+      `Resolve by: (1) implementing it and adding it to R2000_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
+  );
+}
+// 2. Every extracted r2000_* name must be absent from BOTH manifests -- the
+//    second committed statement of this plan's manifest decision (D-16's
+//    family is served proxy-locally, in neither manifest, by design), in a
+//    different file from stock-dispatch.test.ts's own structural assertion
+//    of the same fact (the WR-11 lesson: a "present in neither manifest by
+//    design" claim must be checked, not merely asserted once).
+for (const [name, files] of extractedR2000) {
+  need(
+    !forkNames.has(name),
+    `${name}: referenced by ${[...files].join(", ")} but present in the FORK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`
+  );
+  need(
+    !stockNames.has(name),
+    `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`
+  );
+}
+// 3. Non-vacuity control (D-32): r2000_get_address_details must NEVER be
+//    curated. If it is ever re-added upstream-fix-first (issue #42 lands),
+//    this assertion is exactly what forces a deliberate edit here rather
+//    than a silent pass.
+need(
+  !CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
+  "non-vacuity: r2000_get_address_details must be absent from CURATED_R2000_TOOLS (D-32, the 64K OutOfRange defect) -- if this fails, D-32's exclusion has been silently reversed"
+);
+
 // --- Report ------------------------------------------------------------
 if (errors.length) {
   console.error("check-skill-tool-coverage: FAIL");
@@ -415,5 +470,10 @@ console.log(
     `Classified: ${categoryCount(PROXY_LOCAL_TOOLS)} proxy-local (neither manifest), ` +
     `${categoryCount(PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY)} proxy-local-with-stock-manifest-entry, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
     `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${FORK_ONLY_UNRECOVERABLE.length} fork-only-unrecoverable, ` +
-    `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase.`
+    `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase. ` +
+    // No floor asserted yet (no skill file mentions an r2000_* name until
+    // plan 11-09) -- an allowlist/floor that passes vacuously is exactly
+    // what this script's own header warns about. Printed here so plan 11-09
+    // can add a non-vacuity floor once the references actually exist.
+    `r2000_*: ${extractedR2000.size} distinct names extracted, all curated (CURATED_R2000_TOOLS has ${CURATED_R2000_TOOLS.length} entries).`
 );
