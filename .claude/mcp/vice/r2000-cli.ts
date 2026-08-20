@@ -50,7 +50,7 @@
 // (D-08), not merely stated here.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 
 import { buildExportAsmArgs, runR2000, R2000ViceFlagError } from "./r2000-launch.ts";
 import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts";
@@ -58,6 +58,7 @@ import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
 import { verifyProject } from "./r2000-verify.ts";
 import { generateEnums } from "./r2000-enum-gen.ts";
 import { exportLabels, importLabels } from "./r2000-symbols.ts";
+import { renderMemoryMap, checkRenderedMemoryMap } from "./r2000-memmap-render.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 <verb>";
@@ -139,6 +140,21 @@ verbs:
       given .lbl fails stock-symbols.ts's own size/line/symbol ceilings.
       Requires an EXISTING .regen2000proj (this verb does not bootstrap from
       a raw input).
+
+  render-memmap <project> --provenance FILE [--out FILE] [--check]
+      Generates the Markdown memory map from the project's store plus a
+      validated provenance sidecar (D-24: the store is canonical, this
+      output is a GENERATED VIEW -- never hand-edit it). Without --check,
+      writes --out (default: memory-map.md beside the project) and prints
+      the row count, the number of [unknown]-graded rows, and the render
+      digest. With --check, re-renders in memory and compares against the
+      file at --out: prints "in sync" and exits 0 when they match, prints
+      the first differing line and exits non-zero on drift (from either a
+      hand edit OR a store-side change since the file was last rendered),
+      or prints "missing" and exits non-zero when --out does not exist yet.
+      --check is how a hand edit to the generated file is caught. Requires
+      an EXISTING .regen2000proj and an EXISTING --provenance sidecar (this
+      verb does not bootstrap from a raw input).
 
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
@@ -704,6 +720,149 @@ async function cmdImportLbl(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface RenderMemmapParsedArgs {
+  positional: string[];
+  provenance?: string;
+  provenanceMissingValue?: boolean;
+  out?: string;
+  outMissingValue?: boolean;
+  check?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for render-memmap -- exactly `--provenance`,
+ * `--out` and `--check`. Per WR-08's posture (do not silently accept a flag
+ * a verb does not implement, or a flag missing its value), any OTHER
+ * `--flag`-shaped token is refused as `unknownOption`, and `--provenance`/
+ * `--out` with no value (or a flag-shaped "value") is refused via their own
+ * `*MissingValue` fields. */
+function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
+  const positional: string[] = [];
+  let provenance: string | undefined;
+  let provenanceMissingValue = false;
+  let out: string | undefined;
+  let outMissingValue = false;
+  let check = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--provenance") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        provenanceMissingValue = true;
+      } else {
+        provenance = value;
+        i++;
+      }
+    } else if (a === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        outMissingValue = true;
+      } else {
+        out = value;
+        i++;
+      }
+    } else if (a === "--check") {
+      check = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, provenance, provenanceMissingValue, out, outMissingValue, check, unknownOption };
+}
+
+/**
+ * `render-memmap <project> --provenance FILE [--out FILE] [--check]` --
+ * D-24's generated-view verb, via `r2000-memmap-render.ts`'s
+ * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
+ * `--check` is given -- that mode only reads and reports.
+ */
+async function cmdRenderMemmap(rest: string[]): Promise<number> {
+  const {
+    positional,
+    provenance,
+    provenanceMissingValue,
+    out,
+    outMissingValue,
+    check,
+    unknownOption,
+  } = parseRenderMemmapArgs(rest);
+
+  if (unknownOption) {
+    console.error(`render-memmap: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (provenanceMissingValue) {
+    console.error("render-memmap: --provenance requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("render-memmap: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  const project = positional[0];
+  if (!project) {
+    console.error("render-memmap: usage: render-memmap <project> --provenance FILE [--out FILE] [--check]");
+    return 1;
+  }
+  if (!existsSync(project)) {
+    console.error(`render-memmap: project file not found: ${project}`);
+    return 1;
+  }
+  if (!provenance) {
+    console.error("render-memmap: --provenance FILE is required\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!existsSync(provenance)) {
+    console.error(`render-memmap: provenance sidecar not found: ${provenance}`);
+    return 1;
+  }
+
+  const outPath = out ?? join(dirname(project), "memory-map.md");
+
+  if (check) {
+    let result: Awaited<ReturnType<typeof checkRenderedMemoryMap>>;
+    try {
+      result = await checkRenderedMemoryMap({ projectPath: project, provenancePath: provenance, renderedPath: outPath });
+    } catch (err) {
+      console.error(`render-memmap: ${errMsg(err)}`);
+      return 1;
+    }
+    if (result.status === "in-sync") {
+      console.log(`render-memmap: in sync (${outPath})`);
+      return 0;
+    }
+    if (result.status === "missing") {
+      console.error(`render-memmap: missing -- ${outPath} does not exist yet. Run render-memmap without --check first.`);
+      return 1;
+    }
+    console.error(`render-memmap: drifted at line ${result.line}`);
+    console.error(`  expected: ${result.expected}`);
+    console.error(`  actual:   ${result.actual}`);
+    return 1;
+  }
+
+  let rendered: Awaited<ReturnType<typeof renderMemoryMap>>;
+  try {
+    rendered = await renderMemoryMap({ projectPath: project, provenancePath: provenance });
+  } catch (err) {
+    console.error(`render-memmap: ${errMsg(err)}`);
+    return 1;
+  }
+  writeFileSync(outPath, rendered.markdown);
+  console.log(
+    `render-memmap: wrote ${outPath} (${rendered.rowCount} row(s), ${rendered.unknownCount} [unknown], digest ${rendered.renderDigest})`,
+  );
+  return 0;
+}
+
 /**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -734,6 +893,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return await cmdExportLbl(rest);
       case "import-lbl":
         return await cmdImportLbl(rest);
+      case "render-memmap":
+        return await cmdRenderMemmap(rest);
       default:
         console.error(`r2000: unknown verb "${verb}"\n`);
         console.log(USAGE);
