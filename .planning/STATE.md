@@ -36,9 +36,14 @@ is 386 commits ahead of `origin/main` at tag `v0.1.10`.
 
 ## Current Position
 
-Phase: 09 (the-assumption-probe-go-no-go) — EXECUTING
-Plan: 2 of 8
-Status: Ready to execute
+Phase: 09 (the-assumption-probe-go-no-go) — COMPLETE (8/8 plans executed)
+Plan: 8 of 8
+Status: Phase 9 closed with verdict `degrade` (rule `R4`) — see
+`docs/phase9-regenerator2000-probe-findings.md`. Next step: Phase 10 as scoped,
+with the two named scope amendments (`.vsf` machine-type trust; explicit
+`use_illegal_opcodes` setting) applied at their targets — not a documented manual
+bootstrap step, since criteria 2a/2b both passed cleanly. No Phase 10 or Phase 11
+plan is written before that findings document is read, per `R2000-16`'s own wording.
 Last activity: 2026-08-20
 
 ## Performance Metrics
@@ -127,6 +132,7 @@ Recent decisions affecting current work:
 - [Phase quick-260819-vie]: One release-assets seam (scripts/release-assets.sh) now owns stamp/zip/attach; both release and release-on-merge CI jobs call it with the version as an explicit argument — v0.2.0 shipped with zero release assets because the merge path's GITHUB_TOKEN-created tag never re-triggers the tag-gated release job
 - [Phase 09-01]: Human authorized cargo install regenerator2000 and tmux install at a blocking checkpoint; both performed by the human, never by this agent (its own tool-permission classifier denies cargo install outright)
 - [Phase 09-01]: regenerator2000 0.9.20's real toolchain floor is rustc >=1.88 (transitive, undeclared in Cargo.toml), not edition 2024's 1.85; --locked does not work around it; rustup update stable (1.85.1->1.97.1) was a human-authorized host change
+- [Phase 09]: Go/no-go verdict recorded: **`degrade`**, rule **`R4`** fired (triggering input: `c3_4_vsf_load: partial`), against installed **regenerator2000 0.9.20**. Full evidence, all seven criteria and the reproduced decision rule live in one place: `docs/phase9-regenerator2000-probe-findings.md` (frontmatter `verdict`/`verdict_rule_applied`/`criteria`) — read there, not restated here.
 
 ### Pending Todos
 
@@ -190,6 +196,29 @@ the 62-tool published contract makes it semver-major.
   `status: passed` (human-approved, 08.2-04 Task 3). Full original diagnosis:
   `08.1-WALKTHROUGH-EVIDENCE.md` FINDING-C1; superseded outcome recorded at
   `08-HUMAN-UAT.md` Test 1.
+
+- **Phase 9 verdict accepted limit — `.vsf` machine-type auto-detection does not
+  generalise beyond C64.** A `.vsf` produced by `vice_snapshot_save` against genuine
+  stock VICE loads into regenerator2000 with the correct RAM content and start
+  address, but its displayed machine type is a coincidental default, not a genuine
+  read — the snapshot's raw `machine_name` (`"C64SC"`) matches none of
+  `file_io.rs`'s four literal match arms. **What this breaks:** the ROADMAP's standing
+  "prefer `.vsf` over `.raw`" constraint is unsupported as worded for the machine-type
+  field, and Phase 10 criterion 3 (plus any future non-C64 `.vsf` extension of
+  `c64-ram-capture`) must verify or explicitly set the system rather than trust
+  auto-detection. See `docs/phase9-regenerator2000-probe-findings.md` § Accepted
+  limits, entry 2.
+
+- **Phase 9 verdict accepted limit — `use_illegal_opcodes` is not the keystroke-
+  bootstrap default.** regenerator2000's illegal-opcode reassembly passed, but only
+  under a direct-JSON-edit override; the fresh bootstrap (criterion 2b) leaves the
+  project setting `false`, and auto-analysis does not flip it. **What this breaks:**
+  `R2000-09`'s automated-bootstrap work and any pipeline wanting illegal-opcode-correct
+  disassembly must explicitly set `settings.use_illegal_opcodes = true` in the
+  generated `.regen2000proj` before exporting or verifying — it does not withhold the
+  Phase 10 criterion 4 / `R2000-06` deletion decision, which was earned against real
+  illegal opcodes. See `docs/phase9-regenerator2000-probe-findings.md` § Accepted
+  limits, entry 1.
 
 ## Deferred Items
 
