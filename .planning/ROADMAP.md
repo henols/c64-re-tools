@@ -39,7 +39,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 
 ### 🚧 v0.3.0 regenerator2000 static-analysis backend (Open)
 
-- [ ] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds
+- [x] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
 - [ ] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim
 - [ ] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
 
@@ -57,7 +57,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8. Capability Honesty and the Install Story | v0.2.0 | 6/6 | Complete | 2026-08-18 |
 | 8.1 Close v0.2.0 audit items (INSERTED) | v0.2.0 | 5/5 | Complete | 2026-08-19 |
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
-| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 6/8 | In Progress | - |
+| 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 0/TBD | Not started | - |
 
@@ -259,11 +259,11 @@ since the project was created 2025-12-20.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 09-07-PLAN.md — `docs/phase9-regenerator2000-probe-findings.md`, the machine-readable verdict, and the research corrections (criteria 4 and 5)
+- [x] 09-07-PLAN.md — `docs/phase9-regenerator2000-probe-findings.md`, the machine-readable verdict, and the research corrections (criteria 4 and 5)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 09-08-PLAN.md — Verdict discoverability: STATE.md decision entry and ROADMAP pointers (criterion 5)
+- [x] 09-08-PLAN.md — Verdict discoverability: STATE.md decision entry and ROADMAP pointers (criterion 5)
 
 Notes:
 
@@ -271,6 +271,7 @@ Notes:
 - Criterion 2 is the sharpest item and is ordered first among the five for that reason — it decides whether `R2000-09` is automatable at all, and therefore whether Phase 10 delivers a bootstrap or a documented manual step.
 - Do not write Phase 10 or Phase 11 plans before this phase closes. `R2000-16`'s own wording is "before any further plan is written".
 - Nothing here builds product. If the probe wants throwaway scripts, they are evidence, not deliverables.
+- **Verdict recorded: `degrade`, rule `R4` fired** (triggering input: `c3_4_vsf_load: partial`; criteria 1, 2a, 2b, 3(2) and 3(3) all passed). Full evidence, all seven criteria and the reproduced decision rule: `docs/phase9-regenerator2000-probe-findings.md` — Phase 10's planner reads this document's frontmatter `verdict` key as the gate before writing any Phase 10 plan.
 
 ### Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal
 
@@ -294,6 +295,23 @@ Notes:
 - Criterion 4 is the entire deletion this milestone earns — a 14-line `spawnSync` wrapper around `toacme` (`scripts/acme.mjs:208-223`) plus ~50 lines of `SKILL.md` caveats that exist *only* because `toacme` does a flat linear decode: strings and tables rendered as instructions, out-of-range labels needing hand definitions, illegal-opcode lines needing re-indentation, and the `.dis.a` → `.dis.asm` Read-tool workaround. All of them disappear against a recursive-descent disassembler with an auto-analyzer.
 - Criterion 5's install-story work is the one place this milestone re-touches v0.2.0 Phase 8's output. Expect to edit, not to rewrite.
 - The two-project limit is *documented* here (the `R2000-04` fold), not detected and reported. Building detection for an upstream port collision is work in the wrong place.
+- **Phase 9's recorded verdict is `degrade`, rule `R4`** — full evidence at
+  `docs/phase9-regenerator2000-probe-findings.md`. The bootstrap itself is **not**
+  affected: criteria 2a/2b (pty tolerance, keystroke-driven Save-As bootstrap) both
+  passed cleanly, so criterion 3 above proceeds as scoped, a real automated bootstrap,
+  not a documented manual step. Two amendments land here instead, each beside the
+  criterion they touch, not in place of it:
+  - **Criterion 3, and the ROADMAP's standing "prefer `.vsf` over `.raw`" constraint
+    (§ Standing Constraints, above):** do not trust regenerator2000's auto-detected
+    machine-type field from a `.vsf` load — traced to a coincidental default
+    (findings doc § Accepted limits, entry 2). Verify or explicitly set the machine
+    type instead. RAM content and start address are unaffected and remain reliable
+    from a `.vsf`.
+  - **Criterion 4's deletion decision:** still earned — criterion 3(2) passed
+    against real illegal opcodes. But any generated `.regen2000proj` this criterion's
+    bootstrap produces must explicitly set `settings.use_illegal_opcodes = true`
+    before export/verify; the keystroke bootstrap leaves it `false` by default and
+    auto-analysis does not flip it (findings doc § Accepted limits, entry 1).
 
 ### Phase 11: Annotation Store, Enums, and the Symbol Round Trip
 
@@ -317,6 +335,12 @@ Notes:
 - Criterion 3 is the most distinctive thing available here — **neither project can do it alone.** `memmap.json` holds the per-bit tables; regenerator2000 holds the enum mechanism and `--dump-enum-files`.
 - Criterion 4 closes the loop `DERIV-04` opened: it had no producer, because something must *write* those symbols. `--export_lbl` / `--import_lbl` are **VICE label files** on both sides, so there is no glue format to invent. If Phase 9's criterion 3 found a format mismatch, it is resolved here.
 - One project at a time, until `--mcp-port` lands upstream. Plan around it rather than working around it.
+- **Phase 9's criterion 3(3) (`--export_lbl` format match) is `pass`, not a mismatch** —
+  see `docs/phase9-regenerator2000-probe-findings.md` § Accepted limits, entry 3. The
+  "if a format mismatch, it is resolved here" contingency two lines above does not
+  trigger; no amendment lands on this phase from the Phase 9 verdict. The `pass` is
+  scoped to a single fixture and regenerator2000 0.9.20, so criterion 4 above should
+  still treat it as "compatible for the format observed," not "for all inputs forever."
 
 ## Cut from v0.3.0 scope (2026-08-17)
 
@@ -359,7 +383,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. The Assumption Probe (Go/No-Go) | 0/8 | Planned | - |
+| 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 0/TBD | Not started | - |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | 0/TBD | Not started | - |
 
