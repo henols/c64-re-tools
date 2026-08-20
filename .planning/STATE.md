@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: ready_to_plan
-last_updated: 2026-08-20T18:04:25.458Z
-last_activity: 2026-08-20 -- Phase 10 execution started
+status: planning
+last_updated: "2026-08-20T19:02:38.020Z"
+last_activity: 2026-08-20
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 17
-  completed_plans: 104
+  completed_plans: 17
   percent: 67
-stopped_at: Phase 10 complete (9/9) — ready to discuss Phase 11
 ---
 
 # Project State
@@ -279,9 +278,9 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-20T13:32:32.263Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-CONTEXT.md
+Last session: 2026-08-20T19:02:38.012Z
+Stopped at: Phase 11 context gathered
+Resume file: .planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/11-CONTEXT.md
 
 ## Operator Next Steps
 
