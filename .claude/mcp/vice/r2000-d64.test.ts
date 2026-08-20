@@ -196,6 +196,84 @@ test("assertPlainImage: passes for exactly 174848 bytes", () => {
   assert.doesNotThrow(() => assertPlainImage(blankImage()));
 });
 
+// ------------------------------------------------------- WR-05/WR-06 fixtures
+
+test("extractEntry: a valid image truncated into the file's own sector throws naming the sector and the actual image length (WR-05)", () => {
+  const full = blankImage();
+  // Place GAME's chain at tracks 30/31 -- AFTER the directory track (18), so
+  // the directory read itself succeeds and only the entry's OWN sector chain
+  // is short-read. Truncating anywhere before track 18 would instead make
+  // listEntries() itself throw (the directory sector would be missing),
+  // which is not what this fixture is testing.
+  writeDirEntry(full, 18, 1, 0, { typeByte: 0x82, firstTrack: 30, firstSector: 0, name: "GAME", blocks: 2 });
+  const payload = gamePayload();
+  writeChain(full, [[30, 0], [30, 1]], payload);
+
+  // Truncate 100 bytes into GAME's own second sector (30/1) -- the sector
+  // this entry's chain needs is no longer fully present in the buffer.
+  const secondSectorOffset = tsToOffset(30, 1);
+  const truncated = full.subarray(0, secondSectorOffset + 100);
+  assert.ok(truncated.length < full.length, "sanity: fixture is actually shorter than the full image");
+  assert.ok(secondSectorOffset > tsToOffset(18, 1), "sanity: the directory sector must be intact in the truncated buffer");
+
+  assert.throws(
+    () => extractEntry(truncated, "GAME"),
+    (err: Error) => {
+      assert.match(err.message, /30\/1/, "message must name the sector as T/S");
+      assert.match(
+        err.message,
+        new RegExp(String(truncated.length)),
+        "message must name the actual (truncated) image length",
+      );
+      return true;
+    },
+  );
+});
+
+test("listEntries/extractEntry: a $00-padded directory name round-trips through --entry (WR-06)", () => {
+  const buf = blankImage();
+  // writeDirEntry always zero-pads the 16-byte name field via Buffer.alloc(16)
+  // defaulting to 0x00 for bytes past the copied name -- unlike the rest of
+  // this fixture file's helper, which explicitly pads with 0xa0. Build the
+  // $00-padded entry directly so this fixture is not accidentally identical
+  // to the 0xa0 fixtures elsewhere in this file.
+  const off = tsToOffset(18, 1);
+  buf[off + 2] = 0x82; // PRG, closed
+  buf[off + 3] = 9; // first track
+  buf[off + 4] = 0; // first sector
+  const nameBuf = Buffer.alloc(16, 0x00); // $00 padding, not $A0
+  Buffer.from("ZEROPAD", "latin1").copy(nameBuf);
+  nameBuf.copy(buf, off + 5);
+  buf[off + 30] = 1;
+  buf[off + 31] = 0;
+  writeChain(buf, [[9, 0]], Uint8Array.from([0x01, 0x08, 0xde, 0xad]));
+
+  const entries = listEntries(buf);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.name, "ZEROPAD", "the printed name must contain no embedded NUL");
+  assert.ok(!entries[0]!.name.includes("\0"), "name must not embed a NUL byte");
+
+  const extracted = extractEntry(buf, entries[0]!.name);
+  assert.deepEqual(Buffer.from(extracted), Buffer.from([0x01, 0x08, 0xde, 0xad]));
+});
+
+test("extractEntry: a final sector reporting usedByte 0 throws naming the sector rather than yielding a zero-length payload (WR-05)", () => {
+  const buf = blankImage();
+  writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 10, firstSector: 0, name: "ZEROLEN", blocks: 1 });
+  const off = tsToOffset(10, 0);
+  buf[off] = 0; // next track 0 -> this is the final sector
+  buf[off + 1] = 0; // usedByte = 0 -- corrupt: below the minimum valid value of 2
+
+  assert.throws(
+    () => extractEntry(buf, "ZEROLEN"),
+    (err: Error) => {
+      assert.match(err.message, /10\/0/);
+      assert.match(err.message, /usedByte 0/);
+      return true;
+    },
+  );
+});
+
 // ---------------------------------------------------- composition with r2000-project.ts
 //
 // Plan 10-04 hands extractEntry()'s output straight to parsePrg() in

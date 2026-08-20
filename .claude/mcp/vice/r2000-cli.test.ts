@@ -365,6 +365,75 @@ test("in-process: bootstrap on a bare .prg writes a .regen2000proj with the forc
 });
 
 // ---------------------------------------------------------------------------
+// WR-07: a flat capture must be dispatched by EXTENSION, not by byte length,
+// so a truncated/oversized `.raw`/`.bin` hits flatImageOrigin()'s own named
+// refusal instead of silently falling through to parsePrg() (see
+// r2000-cli.ts's header comment for the reproduced incident this pins).
+// ---------------------------------------------------------------------------
+
+test("in-process: bootstrap on a 4096-byte .raw capture fails, naming both the actual length and the required length (WR-07)", async () => {
+  await withTempDir(async (dir) => {
+    const rawPath = join(dir, "capture.raw");
+    // First two bytes deliberately shaped like a plausible-looking load
+    // address so a silent parsePrg() fallback would "succeed" with a wrong
+    // origin instead of erroring -- this is what WR-07's live incident
+    // looked like (origin $62c5 read from the capture's own first two
+    // bytes).
+    const truncated = Buffer.alloc(4096, 0);
+    truncated[0] = 0xc5;
+    truncated[1] = 0x62;
+    writeFileSync(rawPath, truncated);
+    const outPath = join(dir, "capture.regen2000proj");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", rawPath, "--out", outPath]),
+    );
+
+    assert.notEqual(code, 0, "a wrong-size .raw capture must not bootstrap successfully");
+    assert.match(stderr, /4096/, "stderr must name the actual length");
+    assert.match(stderr, /65536/, "stderr must name the required length");
+    assert.ok(!existsSync(outPath), "no project file must be written for a refused capture");
+  });
+});
+
+test("in-process: bootstrap on a genuine 65536-byte .raw capture still bootstraps successfully (WR-07)", async () => {
+  await withTempDir(async (dir) => {
+    const rawPath = join(dir, "capture.raw");
+    const full = Buffer.alloc(65536, 0);
+    full[0x0801] = 0x60; // rts, so the body is non-trivially non-zero at a plausible spot
+    writeFileSync(rawPath, full);
+    const outPath = join(dir, "capture.regen2000proj");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", rawPath, "--out", outPath]),
+    );
+
+    assert.equal(code, 0, `expected success, stderr: ${stderr}`);
+    assert.ok(existsSync(outPath), `expected ${outPath} to exist`);
+  });
+});
+
+test("in-process: bootstrap on a .prg whose length happens to be 4096 still bootstraps as a .prg (WR-07 regression guard)", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    const body = Buffer.alloc(4096, 0);
+    body[0] = 0x01; // load address low byte
+    body[1] = 0x08; // load address high byte ($0801)
+    writeFileSync(prgPath, body);
+    const outPath = join(dir, "game.regen2000proj");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", prgPath, "--out", outPath]),
+    );
+
+    assert.equal(code, 0, `expected a .prg of any length to bootstrap normally, stderr: ${stderr}`);
+    assert.ok(existsSync(outPath), `expected ${outPath} to exist`);
+    const project = JSON.parse(readFileSync(outPath, "utf8")) as { origin?: number };
+    assert.equal(project.origin, 0x0801);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Gated test -- needs a real regenerator2000. Mirrors D-11's SKIP/
 // VICE_REQUIRE_R2000 shape (r2000-project.test.ts's own convention), never a
 // hand-rolled early return.

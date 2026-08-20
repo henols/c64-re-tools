@@ -83,16 +83,49 @@ function isInImage(track: number, sector: number): boolean {
 }
 
 /**
- * Directory/disk-name bytes are PETSCII, padded with $A0. As in
- * `d64-parse.mjs`, every byte this project's disks actually use in a name
- * (A-Z, digits, space, parens) sits at the same code point in PETSCII as in
- * ASCII/Latin-1, so only the $A0 padding needs stripping -- there is no
- * general PETSCII<->ASCII table here, deliberately, since one is not needed
- * for what these disks contain.
+ * WR-05: bounds every sector read against the actual buffer length, not just
+ * disk geometry. `isInImage()` above only validates {track, sector} against
+ * the standard 35-track zone table -- it has no access to the image bytes
+ * and cannot catch a truncated or non-plain image whose geometry is
+ * otherwise valid. Without this bound check, a bare subarray read clamps
+ * silently to whatever bytes exist, and a caller reading past that point
+ * (e.g. `sec[0]`/`sec[1]` for chain pointers, or the payload slice) reads
+ * `undefined` and derived garbage with no diagnostic. Used at BOTH sector
+ * read sites (the directory walk and the file-chain walk) so the bound
+ * check is part of the walk itself, not a separate opt-in the caller can
+ * forget -- see `assertPlainImage()` below, which stays a distinct,
+ * unrelated whole-image-length check for its one existing caller.
+ */
+function sectorSlice(image: Uint8Array, track: number, sector: number, what: string): Uint8Array {
+  const off = tsToOffset(track, sector);
+  if (off + 256 > image.length) {
+    throw new Error(
+      `${what}: sector ${track}/${sector} needs bytes ${off}..${off + 255} but the image is only ` +
+        `${image.length} bytes -- truncated or non-plain image`,
+    );
+  }
+  return image.subarray(off, off + 256);
+}
+
+/**
+ * Directory/disk-name bytes are PETSCII, padded with $A0 OR $00 (WR-06: some
+ * disk-writing tools, and any image where a slot was partially rewritten,
+ * pad with NUL instead). As in `d64-parse.mjs`, every byte this project's
+ * disks actually use in a name (A-Z, digits, space, parens) sits at the same
+ * code point in PETSCII as in ASCII/Latin-1, so only padding needs
+ * stripping -- there is no general PETSCII<->ASCII table here, deliberately,
+ * since one is not needed for what these disks contain.
+ *
+ * This function's padding definition MUST agree with the inline
+ * `isEmptySlot` check in `listEntries()` below, which already treats both
+ * `0xa0` and `0x00` as filler: a name this function prints (via
+ * `listEntries()`) must be a name `extractEntry()`'s `--entry` argument can
+ * select, or the printed listing is a dead end (WR-06's reproduced
+ * incident).
  */
 function petsciiName(bytes: Uint8Array): string {
   let end = bytes.length;
-  while (end > 0 && bytes[end - 1] === 0xa0) end--;
+  while (end > 0 && (bytes[end - 1] === 0xa0 || bytes[end - 1] === 0x00)) end--;
   return Buffer.from(bytes.subarray(0, end)).toString("latin1");
 }
 
@@ -130,8 +163,7 @@ export function listEntries(image: Uint8Array): D64Entry[] {
       throw new Error(`listEntries: directory chain pointer ${key} is outside the image -- stopped`);
     }
 
-    const off = tsToOffset(track, sector);
-    const sec = image.subarray(off, off + 256);
+    const sec = sectorSlice(image, track, sector, "listEntries");
     const nextTrack = sec[0];
     const nextSector = sec[1];
 
@@ -221,8 +253,7 @@ export function extractEntry(image: Uint8Array, entryName: string): Uint8Array {
       throw new Error(`extractEntry: sector chain for "${entryName}" points to ${key}, which is outside the image`);
     }
 
-    const off = tsToOffset(track, sector);
-    const sec = image.subarray(off, off + 256);
+    const sec = sectorSlice(image, track, sector, `extractEntry: "${entryName}"`);
     const nextTrack = sec[0];
     const nextSector = sec[1];
 
@@ -233,8 +264,19 @@ export function extractEntry(image: Uint8Array, entryName: string): Uint8Array {
       // `usedByte - 1` -- e.g. usedByte === 255 means the whole sector past
       // the 2-byte header is payload (254 bytes), matching a non-final
       // sector; a smaller usedByte means fewer payload bytes than that.
+      // WR-05: a corrupt/truncated `usedByte` of 0 or 1 previously silently
+      // clamped to a zero-length payload via a floor-at-2 clamp, which
+      // surfaced downstream only as the confusing
+      // `parsePrg: input is 0 byte(s)`. Throw here instead, naming the
+      // sector and the observed value.
       const usedByte = nextSector;
-      chunks.push(sec.subarray(2, Math.max(2, usedByte + 1)));
+      if (usedByte < 2) {
+        throw new Error(
+          `extractEntry: "${entryName}" final sector ${track}/${sector} reports usedByte ${usedByte}, ` +
+            "which is less than the minimum valid value of 2 -- corrupt or non-plain image",
+        );
+      }
+      chunks.push(sec.subarray(2, usedByte + 1));
       break;
     }
 

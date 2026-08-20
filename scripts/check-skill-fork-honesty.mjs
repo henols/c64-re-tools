@@ -344,10 +344,24 @@ for (const [needle, why] of FORBIDDEN_PARITY_SUBSTRINGS) {
 //
 // Exactly ONE documented exemption: diff-images.test.mjs's provenance-ledger
 // string `evidence: "disasm"`, which shares only the word with the deleted
-// verb. The exemption is scoped to the LINE, not the file, so a real
-// reintroduction of `toacme`/`cmdDisasm`/the standalone `disasm` verb token
-// anywhere else in that same file is still caught.
+// verb. The exemption is scoped to the LINE, not the file -- but ALSO to the
+// `\bdisasm\b` check alone, not to the whole line. Scoping to the line was
+// true per-line (a real reintroduction of `toacme`/`cmdDisasm`/the standalone
+// `disasm` verb token elsewhere in the same file is still caught) but silent
+// about a reintroduction ON THE SAME LINE as the exemption string -- WR-03's
+// finding was that a line reading `// see acme.mjs cmdDisasm / toacme,
+// evidence: "disasm"` short-circuited all three checks the moment the
+// exemption substring appeared anywhere on it, hiding a live "cmdDisasm"/
+// "toacme" reintroduction behind the one line that is supposed to be inert.
+// The `toacme`/`cmdDisasm` checks below therefore run BEFORE the exemption is
+// even consulted; only the `\bdisasm\b` check itself is exempted, and only
+// for the one pinned occurrence. `exemptionHits` counts every line the
+// exemption actually fired on; the non-vacuity assertion after the walk
+// requires exactly one -- a second occurrence would mean the exemption is
+// being reused to hide a second reintroduction rather than covering the one
+// documented provenance-ledger string.
 const DISASM_LINE_EXEMPTION = 'evidence: "disasm"';
+let exemptionHits = 0;
 
 for (const f of skillFiles) {
   const rel = f.slice(ROOT.length + 1);
@@ -355,7 +369,6 @@ for (const f of skillFiles) {
   const lines = raw.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (line.includes(DISASM_LINE_EXEMPTION)) continue;
     if (line.includes("toacme")) {
       need(
         false,
@@ -371,6 +384,10 @@ for (const f of skillFiles) {
       );
     }
     if (/\bdisasm\b/.test(line)) {
+      if (line.includes(DISASM_LINE_EXEMPTION)) {
+        exemptionHits++;
+        continue;
+      }
       need(
         false,
         `${rel}:${i + 1}: the standalone "disasm" verb reappeared -- plan 10-06 removed acme.mjs's disasm ` +
@@ -379,6 +396,13 @@ for (const f of skillFiles) {
     }
   }
 }
+
+need(
+  exemptionHits === 1,
+  `WR-03 non-vacuity: expected the "${DISASM_LINE_EXEMPTION}" exemption to fire exactly once (the one documented ` +
+    `diff-images.test.mjs provenance-ledger string), got ${exemptionHits} -- a second occurrence means the ` +
+    `exemption is being used to hide a reintroduction rather than covering the one pinned, harmless string.`
+);
 
 // Positive check: the replacement pointer must still exist (D-12) -- the
 // deletion must not be "fixed" by deleting the pointer to the proven route

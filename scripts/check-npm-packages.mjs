@@ -98,6 +98,7 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-sprites.ts", "DERIV-06"],
   ["capability-registry.ts", "BACK-05"],
   ["version.ts", "D-5"],
+  ["r2000-cli.ts", "R2000-09"],
 ];
 for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
@@ -110,12 +111,26 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 // mechanical rather than something each future phase has to remember: Phase
 // 3 hit it twice (6801cf5, 897faf6) and an earlier draft of Phase 4's plan
 // set would have hit it again.
+//
+// Folded todo 1 (2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md):
+// the walk was STATIC-IMPORT-ONLY, so `vice-proxy.ts:218`'s
+// `const { runR2000Cli } = await import("./r2000-cli.ts");` was structurally
+// invisible to it -- the whole r2000 family (r2000-cli.ts, r2000-d64.ts,
+// r2000-project.ts, r2000-launch.ts, r2000-verify.ts) was reachable at
+// runtime through that one dynamic import but NONE of it was ever traversed,
+// so `files[]` was correct only by hand. The dynamic-import regex below is
+// ADDED alongside the static one (never a replacement) so a module reachable
+// only through `await import("./x.ts")` and missing from `files[]` now
+// produces the same "is imported by ... but is not in the published
+// tarball" failure a missing static import already did.
 {
   const viceDir = join(ROOT, ".claude/mcp/vice");
   const listed = new Set(vice.files);
   const seen = new Set();
   const stack = ["vice-proxy.ts"];
   let closureError = null;
+  const STATIC_IMPORT_RE = /^\s*import\s[^;]*?from\s+"(\.\/[^"]+)"/gm;
+  const DYNAMIC_IMPORT_RE = /import\s*\(\s*"(\.\/[^"]+)"\s*\)/g;
   while (stack.length && !closureError) {
     const f = stack.pop();
     if (seen.has(f)) continue;
@@ -126,8 +141,12 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
     } catch {
       continue;
     }
-    for (const m of src.matchAll(/^\s*import\s[^;]*?from\s+"(\.\/[^"]+)"/gm)) {
-      const dep = m[1].slice(2);
+    const deps = [
+      ...[...src.matchAll(STATIC_IMPORT_RE)].map((m) => m[1]),
+      ...[...src.matchAll(DYNAMIC_IMPORT_RE)].map((m) => m[1]),
+    ];
+    for (const rawDep of deps) {
+      const dep = rawDep.slice(2);
       const shipped = listed.has(dep) || vice.files.some((e) => dep.startsWith(e + "/"));
       if (!shipped) {
         closureError = `vice-mcp: ${dep} is imported by ${f} but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)`;
