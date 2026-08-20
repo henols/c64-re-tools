@@ -1,0 +1,314 @@
+## Criterion 3(3) -- R2000-16(3): does --export_lbl emit a format vice_symbols_load
+## consumes as-is?
+##
+## Qualified by plan 09-01's verbatim version line:
+INSTALLED_VERSION: regenerator2000 0.9.20
+
+## PROJECT_FILE (from 09-03-SUMMARY.md / criterion2-pty-transcript.txt):
+PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+## Task 1: seed at least one user label, then export the label file
+## ---------------------------------------------------------------
+
+Since PROJECT_FILE is not "none", proceeding with the real project file (not the
+hand-written-reference fallback). GRAMMAR_SOURCE is therefore the real exported
+artifact, not a hand-written reference.
+
+**Pre-flight: state of the project file before any seeding attempt in this plan.**
+
+$ stat --format='%Y %s' "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+1787211090 1642
+
+$ md5sum "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+dda82fee5bc64e067046c0ecca5aedaf  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+### Route A -- headless --import_lbl (attempted first, per plan's preferred ordering)
+
+$ cat -A evidence/exports/seed.lbl
+al C:c000 .probe_entry$
+al C:c010 .probe_illegal_block$
+
+evidence/exports/seed.lbl written in the exact grammar stock-symbols.ts documents
+(al C:xxxx .name, one line per symbol, trailing newline, nothing else).
+
+$ regenerator2000 --headless --import_lbl "<repo>/evidence/exports/seed.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels Imported
+EXIT_CODE=0
+
+Import reported success ("Labels Imported"). Now checking persistence:
+
+$ stat --format='%Y %s' "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+1787211090 1642
+
+$ md5sum "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+dda82fee5bc64e067046c0ecca5aedaf  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+Both mtime and checksum are IDENTICAL to the pre-flight values above -- the import did
+NOT write to disk. Confirmed independently with a completely fresh, separate process:
+
+$ regenerator2000 --headless --export_lbl "$HOME/.cache/c64-re-tools/phase9/persistence-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/persistence-check.lbl"
+EXIT_CODE=0
+
+$ cat "$HOME/.cache/c64-re-tools/phase9/persistence-check.lbl"
+al C:c000 .start
+
+Only the pre-existing ".start" label appears -- the seeded labels from Route A did NOT
+survive to a fresh process. Per `--help` (recorded verbatim in
+evidence/criterion1-install-and-version.txt), there is no save/persist flag alongside
+--import_lbl:
+
+    --import_lbl <PATH>   Import VICE labels from the specified file
+    --export_lbl <PATH>   Export labels to the specified file (after analysis/import)
+
+**FINDING: Route A's --import_lbl does not persist to the .regen2000proj file across
+separate process invocations, and no save flag exists to make it do so.** This matches
+the plan's own anticipated outcome exactly ("if the tool does not save automatically,
+look for a save flag... if there is none, note that as a finding and fall through to
+Route B").
+
+**Bonus same-process check (not a persistence claim, characterises in-memory behaviour
+only):** running --import_lbl and --export_lbl together in ONE invocation shows the
+imported labels ARE held in memory and DO round-trip back out in the same request:
+
+$ regenerator2000 --headless --import_lbl "<repo>/evidence/exports/seed.lbl" --export_lbl "$HOME/.cache/c64-re-tools/phase9/same-process-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels Imported
+Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/same-process-check.lbl"
+EXIT_CODE=0
+
+$ cat "$HOME/.cache/c64-re-tools/phase9/same-process-check.lbl"
+al C:c000 .start
+al C:c000 .probe_entry
+al C:c010 .probe_illegal_block
+
+$ md5sum "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+dda82fee5bc64e067046c0ecca5aedaf  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
+
+(project file checksum still unchanged after this -- --export_lbl writes only to its own
+target path, never back to the project file.) This bonus check is evidence that the
+import/export code paths themselves are format-compatible in memory; it is NOT treated
+as "seeding into the project" (the project file itself is untouched), so Route A alone
+is not used as LABEL_SEED_ROUTE.
+
+### Route B -- HTTP MCP r2000_set_label_name + r2000_save_project
+
+Convention 10 live-resource protocol, checked before touching port 3000 or launching an
+emulator/TUI process:
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af regenerator2000
+(no regenerator2000 process running)
+
+$ pgrep -af x64sc
+(no x64sc process running)
+
+Port free, no contention. Proceeding with Route B.
+
+$ tmux kill-session -t r2000probe5 2>/dev/null; echo done
+done
+
+$ tmux new-session -d -s r2000probe5 -x 200 -y 50 regenerator2000 --mcp-server "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+launched, exit=0
+
+Loaded the PROJECT FILE this time (not the raw .prg), so 09-03's "Import Context Setup"
+modal did not appear -- the pane went straight to the already-analysed disassembly view
+with the MCP server status line active immediately:
+
+$ tmux has-session -t r2000probe5 && echo ALIVE || echo DEAD
+ALIVE
+
+$ tmux capture-pane -t r2000probe5 -p
+(full pane shows: menu bar, Disassembly pane with real mnemonics -- lda #$00 at $C000
+labelled "start", sta $d020, ldx #$05, lda f_C021,x, the illegal-opcode bytes at $C00A/
+$C00D/etc rendered as ".byte $xx ; Invalid or partial instruction" -- matching 09-03's
+observation that use_illegal_opcodes did not auto-flip -- Hex Dump pane, and status bar
+"MCP Server active on http://127.0.0.1:3000/mcp" / "Commodore 64 | 64tass | Code:
+$C000-$C020 | Cursor: $C000 | File: \"probe-illegal.regen2000proj\"". No modal this time.)
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_set_label_name '{"address":49179,"name":"probe_user_label"}'
+LIST_TOOLS_RESULT:
+(28-tool r2000_* list, unchanged from 09-03 -- includes r2000_set_label_name with
+inputSchema { address: integer (decimal), name: string }, both required)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Label set at $C01B"
+    }
+  ]
+}
+
+address=49179 decimal == $C01B, an address inside the fixture (the "lda #$01" instruction
+just before the second border/background-colour store, well within the fixture's 46-byte
+range). This is a real MCP tools/call over the Streamable-HTTP transport against the
+live process -- a genuine LabelKind::User label, set the same way any real user of this
+tool would set one (there is no other production code path that calls
+create_set_user_label_command with a caller-supplied name and address, confirmed below).
+
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+LIST_TOOLS_RESULT:
+(unchanged, omitted)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Project saved to /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+    }
+  ]
+}
+
+LABEL_SEED_ROUTE: B (HTTP MCP r2000_set_label_name + r2000_save_project against the live
+TUI process, loaded from the project file -- Route A's --import_lbl was attempted first
+per the plan's preferred ordering and recorded above, but does not persist across process
+launches and has no save flag, so it did not seed a label INTO the project; Route B did.)
+
+**Teardown before the headless confirmation:**
+
+$ tmux kill-session -t r2000probe5
+kill_exit=0
+
+$ tmux has-session -t r2000probe5
+no server running on /tmp/tmux-1000/default
+has-session exit=1
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match -- process gone)
+
+Teardown confirmed clean before the fresh headless export.
+
+**Fresh, non-pty --headless export against the now-persisted project file:**
+
+$ regenerator2000 --headless --export_lbl "<repo>/evidence/exports/probe-illegal.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+Labels exported to "<repo>/evidence/exports/probe-illegal.lbl"
+EXIT_CODE=0
+
+$ wc -l evidence/exports/probe-illegal.lbl
+2 evidence/exports/probe-illegal.lbl
+
+$ cat -A evidence/exports/probe-illegal.lbl
+al C:c000 .start$
+al C:c01b .probe_user_label$
+
+EXPORT_LBL_LINES: 2
+
+The export is non-empty and carries a real, MCP-set label (.probe_user_label) alongside
+the pre-existing ".start" label. This file is NOT modified anywhere after this point --
+it reaches Task 2 and Task 3 byte-for-byte as regenerator2000 wrote it.
+
+## Is ".start" a genuine LabelKind::User label, or an auto-generated entry-point
+## artifact? (the trap named in the inherited findings)
+## ------------------------------------------------------------------------------
+
+Both, precisely -- established by reading the ACTUALLY-INSTALLED source (not the
+upstream git clone 09-RESEARCH.md read), located via the cargo registry cache:
+
+$ find "$HOME/.cargo/registry/src" -maxdepth 2 -iname "*regenerator2000*"
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-0.9.20
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-tui-0.9.20
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20
+
+This is the exact 0.9.20 source `cargo install` actually fetched and built for THIS
+host's binary -- stronger evidence than the upstream git clone 09-RESEARCH.md read at
+commit df4bc94, since Evidence Integrity Rule 3 asks for what actually ran.
+
+$ grep -n 'fn export_vice_labels' -A 12 regenerator2000-core-0.9.20/src/state/file_io.rs
+    pub fn export_vice_labels(&self, path: PathBuf) -> anyhow::Result<String> {
+        let mut export_list = Vec::new();
+        for (addr, labels) in &self.labels {
+            for label in labels {
+                if label.kind == LabelKind::User {
+                    export_list.push((addr.0, label.name.clone()));
+                }
+            }
+        }
+        let content = crate::parser::vice_lbl::generate_vice_labels(&export_list);
+        std::fs::write(&path, content)?;
+        Ok(format!("Labels exported to {path:?}"))
+    }
+
+Confirms 09-RESEARCH.md's citation of the User-only filter, now against the real
+installed source: `regenerator2000-core-0.9.20/src/state/file_io.rs:692-705`.
+
+$ grep -n '"start"' -r regenerator2000-tui-0.9.20/src/ regenerator2000-core-0.9.20/src/
+regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs:454:  // Label the entry point as "start"
+regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs:456:      .create_set_user_label_command(entry_addr, "start", false)
+regenerator2000-core-0.9.20/src/mcp/handler.rs:867:  app_state.create_set_user_label_command(entry_addr, "start", false)
+(plus unrelated test fixtures/assertions in vice_lbl.rs and file_io.rs)
+
+$ sed -n '440,459p' regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs
+                            // 3. Disassemble entry sequence if requested
+                            if self.disassemble_sequence {
+                                let entry_addr = Addr(new_start);
+                                let ranges = crate::analyzer::flow_analyze(app_state, entry_addr);
+                                for range in ranges {
+                                    for i in range.start..range.end {
+                                        if i < app_state.block_types.len() {
+                                            app_state.block_types[i] =
+                                                crate::state::BlockType::Code;
+                                        }
+                                    }
+                                }
+
+                                // Label the entry point as "start"
+                                if let Ok(cmd) = app_state
+                                    .create_set_user_label_command(entry_addr, "start", false)
+                                {
+                                    cmd.apply(app_state);
+                                    app_state.push_command(cmd);
+                                }
+                            }
+
+VERDICT: ".start" is an AUTO-GENERATED artifact -- no human ever typed the name "start";
+it is produced by the "Import Context Setup" modal's Confirm handler (the exact modal
+09-03 discovered and dismissed with Enter, with the "[X] Disassemble from Entry Point
+Address" checkbox checked, confirmed in 09-03's transcript) -- but it is internally
+classified LabelKind::User, by deliberate tool design: the dialog calls
+`create_set_user_label_command`, the IDENTICAL constructor function a genuine
+`r2000_set_label_name` MCP call uses (compare mcp/handler.rs's r2000_set_label_name
+handler, which calls the same `create_set_user_label_command`, with a caller-supplied
+name/address instead of the hardcoded "start"/entry_addr). There is no separate
+"auto"/"synthetic" label kind involved -- the tool deliberately treats "name the entry
+point" as equivalent to a user action, indistinguishably from a real `r2000_set_label_name`
+call, at the data-model level. This is NOT the empty-export trap the inherited findings
+warned about (that trap is TRUE auto-analysis artifacts like the cross-reference names
+"f_C021"/"zpp_C0"/"zpa_0F" visible in this same fixture's disassembly, none of which
+appear in the exported .lbl file above -- confirming those really are excluded by the
+LabelKind::User filter, unlike "start").
+
+The exported file therefore carries ONE genuinely human-initiated label
+(.probe_user_label, from this task's own r2000_set_label_name MCP call) and ONE
+tool-synthesized-but-User-kind label (.start, from the Import Context dialog). Both
+exercise the identical export code path and format, so both are valid evidence for the
+format question this criterion asks -- but only .probe_user_label answers "did a real
+user annotation survive the round trip", which is why Task 1 did not stop at Route A's
+observation of ".start" alone and went on to Route B.
+
+## Task 2: match every exported line against the exact regex this repo's consumer uses
+## -------------------------------------------------------------------------------------
+
+$ node evidence/grammar-check.mjs evidence/exports/probe-illegal.lbl
+(see full per-line output below)
+
+GRAMMAR_MATCH: 2/2
+
+$ node evidence/grammar-check.mjs evidence/exports/seed.lbl
+(control run -- see below)
+
+## Task 3: hand the unmodified file to the real vice_symbols_load against a live emulator
+## ---------------------------------------------------------------------------------------
+
+(see below)
+
+SYMBOLS_LOAD: (see below)
+EXPORT_LBL: (see below)
