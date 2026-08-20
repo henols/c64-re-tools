@@ -95,7 +95,7 @@ milestone could have run against the fork backend with no v0.2.0 work at all.
 ## Overview
 
 [regenerator2000](https://github.com/ricardoquesada/regenerator2000) is an
-interactive 6502 disassembler for Commodore 8-bits (Rust, TUI, Apache-2.0). It
+interactive 6502 disassembler for Commodore 8-bits (Rust, TUI, `MIT OR Apache-2.0`). It
 brings three things this project structurally lacks: a **persistent, queryable
 annotation store** (labels, comments, enums, block types, scopes, undo/redo), a
 **recursive-descent disassembler with an auto-analyzer** and export to four
@@ -290,7 +290,7 @@ Notes:
   2. **No** argument passed to regenerator2000 is host-translated. The absence is asserted in a test so nobody adds translation later, and it is the mirror image of `DERIV-07`, where translation was wrongly applied. A devcontainer run works with no upstream patch.
   3. A `.prg`, a `.d64` with the file inside it named explicitly, or a flat 64K capture becomes a `.regen2000proj` **without a human**. The state is honest at the surface a user reads. (`.vsf` was dropped from this phase's input set — see the Notes amendment below, D-03: the bootstrap synthesises the project file directly in Node and never hands regenerator2000 a container format, so parsing VICE snapshots ourselves would be new work whose only payoff Phase 9 already found unreliable for the machine-type field; its home is Phase 11's `c64-ram-capture` extension, `R2000-14`/`R2000-15`.)
   4. `acme-build`'s `disasm` verb, its `## Disassembly` caveat section, and its `toacme`-on-PATH prerequisite are gone, replaced by a regenerator2000 route whose output is proven reassemblable **by running a real assembler**, not asserted.
-  5. The install documentation names regenerator2000 as a required prerequisite alongside VICE, states the `cargo install` toolchain cost and the one-project-per-namespace limit plainly, and its Apache-2.0 notice is in `THIRD-PARTY-NOTICES.md`.
+  5. The install documentation names regenerator2000 as a required prerequisite alongside VICE, states the `cargo install` toolchain cost and the one-project-per-namespace limit plainly, and its dual `MIT OR Apache-2.0` notice is in `THIRD-PARTY-NOTICES.md`.
 
 **Plans**: 9 plans in 6 waves
 
