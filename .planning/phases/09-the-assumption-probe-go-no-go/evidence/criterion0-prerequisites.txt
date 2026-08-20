@@ -1,0 +1,94 @@
+## Host facts (Task 1, criterion 0 prerequisites)
+
+$ uname -a
+Linux ho-laptop 6.12.101+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.101-1 (2026-08-05) x86_64 GNU/Linux
+
+$ node --version
+v22.22.0
+
+$ rustc --version
+rustc 1.85.1 (4eb161250 2025-03-15)
+
+$ cargo --version
+cargo 1.85.1 (d73d2caf9 2024-12-31)
+
+$ command -v acme tmux expect script docker python3
+/home/henrik/.local/bin/acme
+/usr/bin/script
+/usr/bin/docker
+/usr/bin/python3
+
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+
+$ docker info --format '{{.ServerVersion}}'
+29.7.2
+
+$ python3 -c 'import pty; print("pty ok")'
+pty ok
+
+$ sudo -n true
+sudo: a password is required
+(exit code: 1)
+
+$ ss -ltn | grep -F ':3000' || echo 'no listener on :3000'
+no listener on :3000
+
+## Fixture build transcript (probe-illegal.a -> probe-illegal.prg)
+
+First attempt used plain numeric constants (VIC_BORDER/VIC_BG/scratch1-4),
+which built successfully (exit 0) but emitted 8 "Wrong type - expected
+address" warnings from ACME's -Wtype-mismatch flag (acme.mjs always passes
+it). Re-declared all six as !addr symbols and rebuilt; the corrected,
+final, clean transcript is below (no warnings, exit 0).
+
+$ node .claude/skills/acme-build/scripts/acme.mjs build .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.a --no-report
+  Saving 44 (0x2c) bytes (0xc000 - 0xc02c exclusive).
+built .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg (46 bytes)  load $c000-$c02c  44 bytes of code
+symbols: .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.sym (7 used / 8 total)
+debug labels: .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.vs (7 addresses)
+exit: 0
+
+## PROBE_DIR artifacts (worktree-independent)
+
+$ cp .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.prg
+$ cp .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.a /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.a
+
+Absolute paths recorded:
+  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.prg
+  /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.a
+
+## Fixture byte dump and size
+
+$ od -An -tx1 -N16 .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg
+ 00 c0 a9 00 8d 20 d0 a2 05 bd 21 c0 af 21 c0 8f
+
+$ wc -c < .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg
+46
+
+$ od -An -tx1 .planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg   # full dump, for reference
+ 00 c0 a9 00 8d 20 d0 a2 05 bd 21 c0 af 21 c0 8f
+ 00 c4 0f 01 c4 cf 02 c4 ef 03 c4 0b ff a9 01 8d
+ 21 d0 60 01 02 03 04 05 06 70 72 6f 62 65
+
+Full-dump byte decode (manually cross-checked against .claude/mcp/vice/disasm-opcodes.ts):
+  c000: a9 00        lda #$00
+  c002: 8d 20 d0     sta $d020        (VIC_BORDER)
+  c005: a2 05        ldx #$05
+  c007: bd 21 c0     lda $c021,x      (data_table,x)
+  c00a: af 21 c0     lax $c021        illegal $af absolute -- LAX
+  c00d: 8f 00 c4     sax $c400        illegal $8f absolute -- SAX
+  c010: 0f 01 c4     slo $c401        illegal $0f absolute -- SLO
+  c013: cf 02 c4     dcp $c402        illegal $cf absolute -- DCP
+  c016: ef 03 c4     isc $c403        illegal $ef absolute -- ISC
+  c019: 0b ff        anc #$ff         illegal $0b immediate -- ANC
+  c01b: a9 01        lda #$01
+  c01d: 8d 21 d0     sta $d021        (VIC_BG)
+  c020: 60           rts
+  c021: 01 02 03 04 05 06   !byte data run
+  c027: 70 72 6f 62 65      !text "probe"
+
+All six illegal opcodes ($af lax, $8f sax, $0f slo, $cf dcp, $ef isc,
+$0b anc) confirmed byte-exact against the illegal:true, acmeExpressible:true
+table entries in .claude/mcp/vice/disasm-opcodes.ts.

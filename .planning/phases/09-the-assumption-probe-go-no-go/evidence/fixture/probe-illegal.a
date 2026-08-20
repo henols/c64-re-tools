@@ -1,0 +1,47 @@
+; probe-illegal.a -- library-free ACME source, illegal-opcode probe fixture.
+;
+; Built for Phase 9 (the-assumption-probe-go-no-go), plan 09-01, Task 1.
+; No !source of any cbm/c64/*.a library -- Debian's acme package ships no
+; standard library on this host or in CI (Phase 8.1 FINDING-A1), so any
+; library reference would make this fixture unbuildable. All hardware
+; constants below are hand-rolled.
+;
+; Exercises at least six real illegal 6510 opcodes in absolute or
+; immediate addressing -- lax, sax, slo, dcp, isc, anc -- drawn from the
+; mnemonic tables in .claude/mcp/vice/disasm-opcodes.ts marked
+; illegal: true, acmeExpressible: true. template.a has none of these,
+; which is why this fixture exists.
+
+!cpu 6510
+* = $c000
+
+; hand-rolled hardware constants (no library !source)
+!addr VIC_BORDER = $d020
+!addr VIC_BG     = $d021
+
+start
+        lda #$00
+        sta VIC_BORDER      ; legal: set border colour black
+        ldx #$05
+        lda data_table,x    ; legal: touch the embedded data run
+
+        lax data_table      ; illegal $af -- load A and X from absolute
+        sax scratch1        ; illegal $8f -- store A AND X to absolute
+        slo scratch2        ; illegal $0f -- ASL then ORA, absolute
+        dcp scratch3        ; illegal $cf -- DEC then CMP, absolute
+        isc scratch4        ; illegal $ef -- INC then SBC, absolute
+        anc #$ff            ; illegal $0b -- AND then copy N into C, immediate
+
+        lda #$01
+        sta VIC_BG          ; legal: set background colour white
+        rts
+
+; embedded data run -- exercises code-vs-data discrimination
+data_table
+        !byte $01, $02, $03, $04, $05, $06
+        !text "probe"
+
+!addr scratch1 = $c400
+!addr scratch2 = $c401
+!addr scratch3 = $c402
+!addr scratch4 = $c403
