@@ -1,0 +1,984 @@
+## Criterion 3(4) -- R2000-16(4): does a .vsf from vice_snapshot_save load into
+## regenerator2000 carrying machine type and start address?
+##
+## Qualified by plan 09-01's verbatim version line:
+INSTALLED_VERSION: regenerator2000 0.9.20
+
+## Evidence Integrity Rule 6 is the whole shape of this task: "it did not crash"
+## is nowhere recorded as a pass anywhere below. What the snapshot carries and
+## what regenerator2000 derives are recorded independently, then compared.
+
+## Task 1: produce a real snapshot from a live emulator, and record what it carries
+## ----------------------------------------------------------------------------------
+
+$PROBE_DIR = /home/henrik/.cache/c64-re-tools/phase9
+
+**Convention 10 live-resource protocol, before touching any port or launching an
+emulator:**
+
+$ pgrep -af x64sc | grep -v 'eval '
+(empty -- this environment's own Bash wrapper embeds the literal search text in
+its own eval string, which self-matches; filtered out as 09-05 documented. No
+genuine x64sc process exists at this point.)
+
+$ ss -ltn | grep -E ':3000|:660[0-9]|:19510'
+LISTEN 0      511        127.0.0.1:6600       0.0.0.0:*
+LISTEN 0      511        127.0.0.1:6601       0.0.0.0:*
+LISTEN 0      511        127.0.0.1:6602       0.0.0.0:*
+
+Port :3000 free. Ports 6600-6602 are the same pre-existing, unrelated listeners
+plan 09-05 already found and left untouched (owner unknown, predates this
+plan's work, per convention 10 "never kill another plan's process to take the
+resource"). No contention with this plan's own port needs (:19510 broker
+control, :6603+ emulator).
+
+$ cat /home/henrik/dev/henrik/git/c64-re-tools/.vice-supervisor/broker.json
+{
+  "version": 1, "written_by": "vice-broker.mjs", "pid": 2381546,
+  "started_at": "2026-08-20T08:27:08.821Z",
+  "heartbeat_at": "2026-08-20T08:30:38.839Z", ...
+}
+
+$ ps -p 2381546
+    PID TTY          TIME CMD
+(no such process)
+
+Confirmed genuinely dead -- a leftover record from plan 09-05's own last
+broker run (stock backend, per its recorded argv), not a live instance and not
+a concurrent agent (this wave holds the emulator exclusively for this plan
+now, per the orchestrator's own note). Recovering it the same sanctioned way
+09-05 did: running this project's own launcher script, forcing the stock
+backend explicitly on both the broker and (later) the harness's spawned
+client process, per this plan's inherited findings #1.
+
+$ export DISPLAY=:0
+$ VICE_BIN=/usr/bin/x64sc VICE_BACKEND=stock /home/henrik/dev/henrik/git/c64-re-tools/tools/vice-launcher.sh > $PROBE_DIR/vice-broker-launch-06.log 2>&1 &
+launched, pid=2407148
+
+$ cat $PROBE_DIR/vice-broker-launch-06.log
+vice-broker: startup reap found 5 process(es) in the emulator port band, terminated 0
+vice-broker: backend "stock" (source: override, binary: /usr/bin/x64sc)
+vice-broker: wrote /home/henrik/dev/henrik/git/c64-re-tools/.vice-supervisor/broker.json (node v22.22.0); control listener bound on 0.0.0.0:19510
+vice-broker: launching /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6603 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6604 (XDG_CONFIG_HOME=/tmp/vice-broker-vicerc-2Bj4XG)
+vice-broker: warmed 1 warm instance this pass -- 1 of 1 ready, remainder warmed on later passes
+vice-broker: launch-slot decision -- spare holds the slot; spare waits (D-07)
+vice-broker: port 6603 launching -> ready (2023ms)
+
+Flag order matches this project's own standing note (-default precedes
+-binarymonitor) -- the broker's own launch args are the live confirmation.
+
+**Reused plan 09-05's evidence/vice-tool-harness.mjs verbatim (it already
+exists in this wave's merged evidence/ directory, so this plan's own copy at
+$PROBE_DIR/vice-tool-harness.mjs -- byte-identical except one stale comment
+line about a nested-session prohibition -- was used to actually run the
+calls, since it already has the node_modules symlink sitting next to it and
+running the evidence/ copy directly fails with ERR_MODULE_NOT_FOUND (no
+node_modules under the evidence/ path in this worktree). Both copies speak
+the IDENTICAL protocol; only the working directory differs.**
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_ping '{}' vice_machine_config_get '{}' vice_registers_get '{}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_ping {}
+RESULT (vice_ping):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"status\":\"ok\",\"backend\":\"stock\",\"viceVersion\":\"VICE 3.9.0.0\",\"resolvedBinaryPath\":\"/usr/bin/x64sc\",\"resolvedBinaryPathIsResolved\":true,\"capabilities\":{\"cpuHistory\":\"absent\"},\"runState\":\"unknown\"}"
+    }
+  ],
+  "isError": false
+}
+
+CALLING: vice_machine_config_get {}
+RESULT (vice_machine_config_get):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "vice_machine_config_get is not implemented on the stock backend: Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Use the fork backend instead (Set VICE_BACKEND=fork)."
+    }
+  ],
+  "isError": true
+}
+
+CALLING: vice_registers_get {}
+RESULT (vice_registers_get):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"registers\":{\"PC\":58829,\"A\":0,\"X\":0,\"Y\":10,\"SP\":243,\"00\":47,\"01\":55,\"FL\":34,\"LIN\":0,\"CYC\":0},\"unknownIds\":[],\"memspace\":\"main\",\"runState\":\"stopped\"}"
+    }
+  ],
+  "isError": false
+}
+
+**Real, blocking-issue finding (Rule 3 substitution, not an assumption):**
+`vice_machine_config_get` does not exist on the stock backend -- it refuses by
+name (PROJECT.md's own decision: "Every tool declares its support level per
+backend", full-resource access was descoped to the fork). This plan's own
+read_first list assumed this tool exists on stock; it does not, confirmed
+directly against `tools-manifest.stock.json` before this plan started (the
+tool is present only in the fork's 62-tool manifest). Substituted with what
+IS available as the independent "machine's own view of its model" reading:
+the broker's own launch argv (`/usr/bin/x64sc ...` -- x64sc is definitionally
+the C64/C64SC cycle-exact model, not a multi-machine emulator with a runtime-
+queryable system resource on this tool surface) plus `vice_ping`'s
+`viceVersion: "VICE 3.9.0.0"`. `vice_registers_get`'s `PC: 58829` ($E5CD) is
+the live PC reading taken **before** any of the writes or the snapshot below.
+
+CALCULATION: 58829 decimal = $E5CD hex (58829 = 0xE500 + 0xCD = 58624 + 205).
+$E5CD is the C64 KERNAL's keyboard-buffer-check loop inside the BASIC READY
+idle wait -- consistent with a freshly-launched, unattended machine sitting
+at the READY prompt.
+
+**Fixture bytes written at $c000 (2-byte CBM load-address header stripped):**
+
+$ od -c -N4 evidence/fixture/probe-illegal.prg
+0000000  \0 300 251  \0
+(first two bytes 00 c0 = little-endian load address $c000; body starts at
+byte offset 2)
+
+$ python3 -c "
+data = open('evidence/fixture/probe-illegal.prg','rb').read()
+body = data[2:]
+print(len(body), list(body))
+"
+44 [169, 0, 141, 32, 208, 162, 5, 189, 33, 192, 175, 33, 192, 143, 0, 196, 15, 1, 196, 207, 2, 196, 239, 3, 196, 11, 255, 169, 1, 141, 33, 208, 96, 1, 2, 3, 4, 5, 6, 112, 114, 111, 98, 101]
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_memory_write '{"address":"$c000","data":[169,0,141,32,208,162,5,189,33,192,175,33,192,143,0,196,15,1,196,207,2,196,239,3,196,11,255,169,1,141,33,208,96,1,2,3,4,5,6,112,114,111,98,101]}' \
+    vice_memory_read '{"address":"$c000","size":44,"encoding":"hex"}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_memory_write {"address":"$c000","data":[...44 bytes...]}
+RESULT (vice_memory_write):
+{
+  "content": [
+    { "type": "text", "text": "{\"address\":49152,\"bytesWritten\":44,\"bank\":0,\"memspace\":\"main\",\"runState\":\"stopped\"}" }
+  ],
+  "isError": false
+}
+
+CALLING: vice_memory_read {"address":"$c000","size":44,"encoding":"hex"}
+RESULT (vice_memory_read):
+{
+  "content": [
+    { "type": "text", "text": "{\"address\":49152,\"size\":44,\"encoding\":\"hex\",\"sideEffects\":false,\"bank\":0,\"memspace\":\"main\",\"hex\":\"a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265\",\"runState\":\"stopped\"}" }
+  ],
+  "isError": false
+}
+
+Read-back hex `a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265`
+is byte-identical to the fixture body written above (49152 decimal = $c000).
+Known content at a known address, confirmed before the snapshot.
+
+$ node $PROBE_DIR/vice-tool-harness.mjs /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_snapshot_save '{"name":"r2000_probe_vsf","description":"R2000-16(4) probe"}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_snapshot_save {"name":"r2000_probe_vsf","description":"R2000-16(4) probe"}
+RESULT (vice_snapshot_save):
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"name\":\"r2000_probe_vsf\",\"path\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf\",\"sentPath\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf\",\"includeRoms\":false,\"includeDisks\":false,\"metadataWritten\":true,\"metadataPath\":\"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.json\",\"runState\":\"stopped\"}"
+    }
+  ],
+  "isError": false
+}
+
+**Real, source-confirmed finding: on the stock backend, `vice_snapshot_save`
+writes to `<repoRoot>/.vice-snapshots/<name>.vsf`, not `~/.config/vice/
+mcp_snapshots/` (that is the FORK's own location, confirmed by
+`stock-paths.ts:167-177`'s doc comment: kept inside the workspace deliberately
+so hostpath.ts's bind-mount mapping can translate it, unlike the fork's
+`~/.config/vice/` path). This plan's own read_first instruction to `ls -la
+~/.config/vice/mcp_snapshots/` assumed the fork's location; that directory
+does exist (it holds older fork-backend snapshots from before this milestone,
+listed below for contrast) but does NOT contain this plan's file. Interrogating
+the file where the tool's own JSON answer said it landed, not the assumed
+path -- this is "find it on disk", just at the real path rather than the
+guessed one.**
+
+$ ls -la /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/
+total 204
+-rw-rw-r-- 1 henrik henrik    309 20 aug 10.51 r2000_probe_vsf.json
+-rw-rw-r-- 1 henrik henrik 193261 20 aug 10.51 r2000_probe_vsf.vsf
+
+$ ls "$HOME/.config/vice/mcp_snapshots/" | head -3
+20260803171235702-port6510-epoch13.json
+20260803171235702-port6510-epoch13.vsf
+20260805160045723-port6603-epoch1.json
+(fork-backend snapshots from before this milestone -- confirmed NOT this
+plan's file; this plan's process never ran the fork.)
+
+SNAPSHOT_FILE: /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf
+Size: 193261 bytes.
+
+$ od -c -N64 /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf
+0000000   V   I   C   E       S   n   a   p   s   h   o   t       F   i
+0000020   l   e 032 002  \0   C   6   4   S   C  \0  \0  \0  \0  \0  \0
+0000040  \0  \0  \0  \0  \0   V   I   C   E       V   e   r   s   i   o
+0000060   n 032 003  \t  \0  \0  \0  \0  \0  \0   M   A   I   N   C   P
+0000100
+
+Magic bytes 0-18 read literally "VICE Snapshot File" + trailing 032(oct)=$1a
+-- an exact match to `parser/vice_vsf.rs:22`'s expected magic
+`b"VICE Snapshot File\x1a"` (confirmed against the actually-installed
+0.9.20 crate source, cargo registry cache, not just the upstream git clone).
+
+SNAPSHOT_FILE_IS_VSF: yes
+
+**Independent re-derivation of the exact byte layout `vice_vsf.rs` documents,
+run directly against this file (not trusting the od excerpt or the tool's own
+claim -- a from-scratch parse mirroring the installed parser's own offsets):**
+
+$ python3 -c "
+import struct
+data = open('/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf','rb').read()
+print('total size:', len(data))
+print('magic:', data[0:19])
+print('major/minor version:', data[19], data[20])
+machine_name = data[21:37].rstrip(b'\x00')
+print('machine_name (trimmed):', machine_name)
+offset = 37
+while offset < len(data):
+    if offset + 22 > len(data): break
+    mod_name = data[offset:offset+16].decode('ascii', errors='replace')
+    mod_name_trim = mod_name.rstrip('\x00')
+    if mod_name.startswith('VICE Version'):
+        offset += 16 + 4
+        while offset < len(data) and data[offset] == 0: offset += 1
+        continue
+    size = struct.unpack('<I', data[offset+18:offset+22])[0]
+    mod_data = data[offset+22:offset+size]
+    if mod_name_trim == 'MAINCPU':
+        pc = (mod_data[13] << 8) | mod_data[12]
+        print(f'MAINCPU PC (module-data offset 12-13): \${pc:04x} ({pc} decimal)')
+    if mod_name_trim == 'C64MEM':
+        print('C64MEM module data length:', len(mod_data))
+    offset += size
+"
+total size: 193261
+magic: b'VICE Snapshot File\x1a'
+major/minor version: 2 0
+machine_name (trimmed): b'C64SC'
+MAINCPU PC (module-data offset 12-13): $e5cf (58831 decimal)
+C64MEM module data length: 65555
+
+**Real finding, source-confirmed and now independently reproduced against the
+actual file bytes (not inferred): the VSF's own `machine_name` field is
+literally `"C64SC"` -- x64sc's own model designation -- not the bare `"C64"`
+string `file_io.rs:102-109`'s match arm compares against
+(`"C64" => Some(System::C64), "C128" => ..., _ => None`). `"C64SC" != "C64"`
+under Rust's `==`, so this match falls through to `_ => None`.** This is a
+real, concrete, source-grounded prediction (not yet confirmed against the live
+TUI pane -- that is Task 2's job) that regenerator2000's `suggested_system`
+inference will NOT recognise a genuine x64sc-produced snapshot's machine type
+string, even though the snapshot format itself does carry a real machine
+identifier. Recorded now, checked against the live pane in Task 2, and folded
+into the R2000_DERIVED comparison in Task 3.
+
+**A second real finding: the snapshot's own carried PC ($e5cf) differs by 2
+bytes from the live `vice_registers_get` reading taken moments earlier
+($e5cd).** Both are genuine, directly-read values, not a transcription error
+-- re-read twice from the same file bytes above. The 2-byte drift is
+consistent with a few KERNAL keyboard-scan-loop instructions executing between
+the `vice_registers_get` call and the later `vice_snapshot_save` call (each is
+a separate MCP round-trip; nothing in this plan or in `vice-sync.ts`'s
+documented invariants promises the machine stays cycle-frozen between two
+separate tool calls to a "stopped"-reporting but not explicitly paused
+machine). This does not change which reading is authoritative for Task 3's
+comparison: the snapshot's OWN carried PC ($e5cf, read directly from the file
+above) is what regenerator2000 is being asked to derive correctly, not the
+slightly earlier live reading. Both values are recorded so neither is silently
+dropped.
+
+SNAPSHOT_CARRIED: machine_name (raw, from file) = "C64SC"; suggested_system
+match per file_io.rs's own logic = None (predicted, not yet observed);
+PC (from file, MAINCPU module offset 12-13) = $e5cf; PC (live register read,
+moments before the snapshot) = $e5cd; C64MEM module present with 65555 bytes
+of module data (>= the 65540 the parser requires, so the fixture's known
+$c000 content is present in the dump); binary that produced the file =
+/usr/bin/x64sc, VICE 3.9.0.0 (genuine stock, confirmed by vice_ping and by the
+broker's own launch argv, forced explicitly via VICE_BIN=/usr/bin/x64sc
+VICE_BACKEND=stock on both broker and harness client per this plan's
+inherited finding #1).
+
+$ cp /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf $PROBE_DIR/r2000-probe.vsf
+$ sha256sum $PROBE_DIR/r2000-probe.vsf
+42e05c07acae1e8587c2d2ed6c2f18326b87d6e77a6ea9e9e0b92fd84a6987a9  /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.vsf
+$ ls -la $PROBE_DIR/r2000-probe.vsf
+-rw-rw-r-- 1 henrik henrik 193261 20 aug 10.55 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.vsf
+
+193261 bytes (~189 KiB), under the 1 MB threshold -- kept only under
+$PROBE_DIR (scratch), not committed into the repo's evidence/ directory,
+since this plan's own files_modified frontmatter does not list a .vsf path
+and the sequential_but_isolated instruction reserves scratch artifacts for
+$HOME/.cache/c64-re-tools/phase9/. This transcript records its path, size and
+sha256 in full, so the claim is checkable without the binary being committed.
+
+$ ps aux | grep -E 'x64sc|vice-broker.mjs' | grep -v grep | grep -v 'eval '
+henrik   2407148  ... node .../tools/vice-broker.mjs --repo-root .../c64-re-tools
+henrik   2413842  ... /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6603 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6604
+
+Left running deliberately -- Task 1's own action text asks only to "record
+pgrep -a x64sc again afterwards so the transcript shows what was left
+running", not to tear it down; this plan's remaining tasks (2 and 3) need
+neither the emulator nor its broker (they drive regenerator2000's own
+`--mcp-server`/`--headless` process instead). Full final teardown, including
+this broker and instance, is recorded at the very end of this transcript,
+after Task 3, per this plan's own live-process discipline.
+
+## Task 2: load the snapshot into regenerator2000, bootstrap a project from it
+## -------------------------------------------------------------------------------
+
+Pre-condition met: Task 1 produced a real, interrogated .vsf; not
+`could-not-run`, so this task proceeds.
+
+**Convention 10 live-resource protocol for port :3000:**
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Port free, no contention (plan 09-05's own process is long torn down; this
+plan holds the emulator and port :3000 exclusively this wave per the
+orchestrator's own note).
+
+$ command -v tmux && tmux -V
+/usr/bin/tmux
+tmux 3.5a
+
+PTY_ROUTE: tmux (same route plan 09-03 proved works; reused verbatim, not
+rediscovered).
+
+$ tmux kill-session -t r2000probe06 2>/dev/null; echo done
+done
+
+$ export DISPLAY=:0
+$ tmux new-session -d -s r2000probe06 -x 200 -y 50 regenerator2000 --mcp-server "$PROBE_DIR/r2000-probe.vsf"
+launched, exit=0
+
+$ tmux has-session -t r2000probe06 && echo ALIVE || echo DEAD
+ALIVE
+
+`tmux new-session`'s trailing arguments are `exec()`'d directly, with no shell
+re-interpolation, so the command that actually ran inside the pty is exactly:
+
+$ regenerator2000 --mcp-server "$PROBE_DIR/r2000-probe.vsf"
+
+(reproduced here as its own line per this task's own acceptance criteria --
+this is the literal, unmodified command tmux was told to launch above, not a
+retype from memory; no VICE binary-monitor auto-connect flag anywhere in
+this argv)
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 1 -- reproduced there
+verbatim, not retyped here. The "Import Context Setup" modal plan 09-03
+discovered is up again, exactly as expected for any load path that returns
+`LoadedProjectData`, .vsf included.)
+
+**What the modal states (quoted in full in criterion4-vsf-pane.txt):**
+  System: < Commodore 64 >
+  Origin Address: $0000
+  Entry Point Address: $E5CF
+  [X] Disassemble from Entry Point Address
+Status bar, bottom-right, before Confirm: "Undefined: $0000-$FFFF" -- the
+whole 64K is loaded (matches Task 1's C64MEM finding of a full-size memory
+module), not a small blob.
+
+**Real finding, checked directly against the actually-installed TUI source
+before scoring the System field as a genuine derivation:**
+`dialog_import_context.rs:37`: `let target_system =
+suggested_system.as_deref().unwrap_or(current_system);`. Task 1 established
+`file_io.rs`'s `.vsf` branch matches `vsf_data.machine_name` against the
+literal strings `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"` -- and this
+snapshot's real machine_name is `"C64SC"` (x64sc's own designation), which
+matches none of them, so `suggested_system` is `None` for this load. The
+modal's displayed "Commodore 64" therefore comes from the `unwrap_or
+(current_system)` fallback -- the app's pre-existing default system at fresh
+process startup -- NOT from anything the snapshot's `machine_name` field
+carried. **The displayed value is coincidentally correct** (x64sc genuinely
+is a C64) only because the tool's own default system happens to already be
+Commodore 64; a genuine C128/VIC20/PET/PLUS4 stock-VICE snapshot's real
+machine_name string ("C128SC", "VIC20", "PET64" etc. -- none of these are
+literally "C128"/"VIC20"/"PET"/"PLUS4" either, per the same match arm) would
+hit this identical fallback and *also* silently show "Commodore 64", wrongly.
+This is recorded now and carried into the R2000_DERIVED comparison in Task 3
+as a provenance mismatch, not a value mismatch.
+
+**Dismissing the modal (Enter, focused on < Confirm > by default per
+`dialog_import_context.rs:536`'s own comment):**
+
+$ tmux send-keys -t r2000probe06 Enter
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(status bar changed to "Context applied", then to "Commodore 64 | 64tass |
+Code: $E5CF-$EADB | Cursor: $E5CF | File: \"r2000-probe.vsf\""; disassembly
+pane now shows a "start" label at $E5CF with real mnemonics/`.byte $ff ;
+Invalid or partial instruction`/`bpl b_E5F5` -- flow analysis ran from the
+stated Entry Point Address, confirming the checkbox's effect. This is KERNAL
+ROM disassembly at the live PC's location, unrelated to this plan's own
+$c000 fixture bytes, which sit elsewhere in the same 64K image and are
+checked separately in Task 3.)
+
+$ tmux send-keys -t r2000probe06 Escape
+sent
+(no-op, per this plan's own instruction -- modal already dismissed by the
+Enter above; pane unchanged, confirmed via a follow-up capture)
+
+**Alt+S, first attempt, `M-s` -- reused plan 09-03's proven encoding:**
+
+$ tmux send-keys -t r2000probe06 M-s
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 2)
+
+Save-As dialog opened on the first attempt. Filename field pre-filled:
+
+SAVE_AS_DEFAULT_FILENAME: r2000-probe.regen2000proj
+
+Matches `<stem>.regen2000proj` exactly (A2, already closed by plan 09-03;
+re-confirmed here on a second, unrelated load path). Accepted as-is.
+
+$ tmux send-keys -t r2000probe06 Enter
+sent
+
+$ tmux capture-pane -t r2000probe06 -p
+(full pane in evidence/criterion4-vsf-pane.txt, CAPTURE 3; status bar now
+"Project saved: r2000-probe.regen2000proj")
+
+$ ls -la $PROBE_DIR/r2000-probe.regen2000proj
+-rw-rw-r-- 1 henrik henrik 4654 20 aug 10.59 /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+VSF_PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/r2000-probe.regen2000proj
+
+**While still live, asking the process what it saw rather than inferring
+later.** From the tools/list this session's own `mcp-harness.mjs` call
+recorded (28 tools, unchanged from plan 09-03's list), `r2000_get_binary_info`
+is the tool whose own description states it returns "the origin address,
+size in bytes, target platform (e.g. 'Commodore 64')... " -- exactly loaded-
+file/machine metadata, chosen from the real recorded list, not invented:
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_binary_info '{}'
+LIST_TOOLS_RESULT: (28-tool list, unchanged from plan 09-03/09-05's captures; full JSON
+inspected in this session's real output)
+CALL_TOOL_RESULT:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"description\": \"\",\n  \"entropy\": 1.2381582260131836,\n  \"filename\": \"r2000-probe.vsf\",\n  \"may_contain_undocumented_opcodes\": false,\n  \"origin\": 0,\n  \"size\": 65536,\n  \"system\": \"Commodore 64\"\n}"
+    }
+  ]
+}
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_disassembly_cursor '{}'
+CALL_TOOL_RESULT:
+{
+  "content": [ { "type": "text", "text": "$E5CF" } ]
+}
+
+Both live queries confirm exactly what the modal displayed: `origin: 0`,
+`system: "Commodore 64"`, cursor `$E5CF` (the entry point). No drift between
+the modal and the live MCP surface.
+
+**Bonus finding, not required by this task but discovered while interrogating
+the live process (a real defect, not a probe result) -- kept separate from
+the criterion's own scoring:**
+
+$ node $PROBE_DIR/mcp-harness.mjs r2000_get_address_details '{"address":49152}'
+CALL_TOOL_RESULT:
+{
+  "content": [
+    { "type": "text", "text": "{\n  \"address\": 49152,\n  \"message\": \"Address is outside the loaded binary range.\",\n  \"type\": \"OutOfRange\"\n}" }
+  ]
+}
+
+49152 ($c000) reported "outside the loaded binary range" despite
+`r2000_get_binary_info` reporting `origin: 0, size: 65536` moments earlier --
+49152 is well inside that range. Traced to the actually-installed source,
+`crates/regenerator2000-core/src/mcp/handler.rs:1894`:
+`address >= origin.wrapping_add(app_state.raw_data.len() as u16)`. Casting
+`raw_data.len()` (`65536usize`) to `u16` overflows to `0` (u16's max is
+65535), so for any FULL 64K-sized binary (exactly what every `.vsf` load
+produces) this bound becomes `origin.wrapping_add(0) == origin == 0`, making
+the check `address >= 0`, which is true for every address -- `r2000_
+get_address_details` is unconditionally broken for a full-size 64K load in
+the actually-installed 0.9.20 build. Not scored against this criterion
+(neither R2000-16(4) nor its acceptance criteria mention this tool), and not
+worked around -- `r2000_get_binary_info`/`r2000_get_disassembly_cursor`
+already answered what this task needed. Recorded for Phase 10/11 planning:
+any future use of `r2000_get_address_details` against a `.vsf`-derived
+project needs this bug tracked upstream or worked around client-side.
+
+**Teardown, proven:**
+
+$ tmux kill-session -t r2000probe06
+kill_exit=0
+
+$ tmux has-session -t r2000probe06
+no server running on /tmp/tmux-1000/default
+has-session exit=1
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+$ pgrep -af 'regenerator2000 --mcp-server'
+(no match -- process gone)
+
+Session gone, MCP server process gone, port :3000 free. No contention waits
+occurred (port was free from the first check).
+
+## CORRECTION (found while starting Task 3's independent interrogation --
+## Evidence Integrity Rule 6 doing exactly its job): the ORIGINAL snapshot
+## did not actually carry the fixture bytes
+## -----------------------------------------------------------------------------
+
+Before trusting `r2000-probe.vsf` (the snapshot Task 1 produced above) as
+the input to Task 3's comparison, its C64MEM module was parsed directly, one
+more time, independent of the tool's or the earlier interrogation's own
+claims -- specifically checking the exact bytes at $c000, not just the
+module's presence/size:
+
+$ python3 -c "
+import struct
+data = open('/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf.vsf','rb').read()
+offset = 37
+while offset < len(data):
+    if offset + 22 > len(data): break
+    mod_name = data[offset:offset+16].decode('ascii', errors='replace')
+    if mod_name.startswith('VICE Version'):
+        offset += 16 + 4
+        while offset < len(data) and data[offset] == 0: offset += 1
+        continue
+    size = struct.unpack('<I', data[offset+18:offset+22])[0]
+    mod_data = data[offset+22:offset+size]
+    if mod_name.rstrip(chr(0)) == 'C64MEM':
+        ram = mod_data[4:4+65536]
+        print('byte at 0xc000:', hex(ram[0xc000]))
+        print('bytes 0xc000-0xc010:', ram[0xc000:0xc010].hex())
+    offset += size
+"
+byte at 0xc000: 0xff
+bytes 0xc000-0xc010: ffff00000000ffffffff00000000ffff
+
+**The original snapshot does NOT carry the fixture bytes at $c000** -- it
+shows VICE's own uninitialised-RAM pattern instead, despite Task 1's
+`vice_memory_read` (issued in the SAME harness invocation as the write)
+confirming a correct read-back moments earlier. Root cause, established by
+elimination and then reproduced under the fix below: `vice_ping`,
+`vice_machine_config_get` and `vice_registers_get` were one harness
+invocation (one MCP stdio connection); `vice_memory_write` and
+`vice_memory_read` were a SECOND, separate invocation; `vice_snapshot_save`
+was a THIRD, separate invocation again. Each invocation is its own
+`StdioClientTransport` connect/close cycle against `vice-proxy.ts`, and per
+this project's own documented broker abstraction ("the connection itself IS
+the lease -- no separate TTL/heartbeat"), closing a connection releases the
+lease. **The write (invocation 2) and the snapshot (invocation 3) were not
+proven to be issued against the same live machine state, and the direct byte
+comparison above shows they were not** -- the memory-write invocation's own
+machine was not what got dumped into the snapshot three invocations later.
+
+**This is a real, load-bearing finding about the broker's session model, not
+a mistake to quietly erase and redo silently.** Recorded here in full because
+it directly bears on how ANY future skill (including a `.vsf`-based
+extension of `c64-ram-capture`) must be written: a capture sequence that
+writes/pokes state and then snapshots it **must** issue every step across a
+single MCP client connection, never split across separate tool invocations
+that each reconnect. `vice-sync.ts`'s own documented invariants (poll on
+`hit_count`, never on paused state; exactly one resume per wait) do not cover
+this cross-connection case at all -- this is a genuinely new observation,
+not a re-statement of an existing one.
+
+**Fix applied (Rule 1/3 -- a real bug in this plan's own evidence-gathering
+sequencing, corrected inline before continuing): reissue the entire
+write-then-snapshot sequence in ONE single harness invocation.**
+
+$ VICE_BIN=/usr/bin/x64sc VICE_BACKEND=stock DISPLAY=:0 node $PROBE_DIR/vice-tool-harness.mjs \
+    /home/henrik/dev/henrik/git/c64-re-tools \
+    vice_ping '{}' vice_registers_get '{}' \
+    vice_memory_write '{"address":"$c000","data":[169,0,141,32,208,162,5,189,33,192,175,33,192,143,0,196,15,1,196,207,2,196,239,3,196,11,255,169,1,141,33,208,96,1,2,3,4,5,6,112,114,111,98,101]}' \
+    vice_memory_read '{"address":"$c000","size":44,"encoding":"hex"}' \
+    vice_snapshot_save '{"name":"r2000_probe_vsf_v2","description":"R2000-16(4) probe (single-session, corrected)"}'
+CONNECT_INITIALIZE: ok
+
+CALLING: vice_ping {}
+RESULT: {"status":"ok","backend":"stock","viceVersion":"VICE 3.9.0.0","resolvedBinaryPath":"/usr/bin/x64sc", ...}
+
+CALLING: vice_registers_get {}
+RESULT: {"registers":{"PC":58836,"A":0,"X":0,"Y":10,"SP":243,"00":47,"01":55,"FL":34,"LIN":0,"CYC":2}, ...}
+(58836 decimal = $e5d4 -- close to, but not identical to, the earlier $e5cd/
+$e5cf readings; this IS the same continuously-running process, PID unchanged
+throughout this whole plan per the `ps aux` checks bracketing every task, so
+the drift across all these readings is ordinary KERNAL-idle-loop cycling
+within one uninterrupted session, not evidence of a machine swap.)
+
+CALLING: vice_memory_write {"address":"$c000","data":[...44 bytes...]}
+RESULT: {"address":49152,"bytesWritten":44,"bank":0,"memspace":"main","runState":"stopped"}
+
+CALLING: vice_memory_read {"address":"$c000","size":44,"encoding":"hex"}
+RESULT: {"address":49152,"size":44,"encoding":"hex","sideEffects":false,"bank":0,"memspace":"main","hex":"a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265","runState":"stopped"}
+
+CALLING: vice_snapshot_save {"name":"r2000_probe_vsf_v2","description":"R2000-16(4) probe (single-session, corrected)"}
+RESULT: {"name":"r2000_probe_vsf_v2","path":"/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf_v2.vsf","sentPath":"...","includeRoms":false,"includeDisks":false,"metadataWritten":true,"metadataPath":"...","runState":"stopped"}
+EXIT_CODE=0
+
+**Independent re-verification of the CORRECTED snapshot, same method as
+before, checking the actual bytes this time rather than just presence/size:**
+
+$ python3 -c "
+import struct
+data = open('/home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf_v2.vsf','rb').read()
+print('magic:', data[0:19]); print('machine_name:', data[21:37].rstrip(b'\x00'))
+offset = 37
+while offset < len(data):
+    if offset + 22 > len(data): break
+    mod_name = data[offset:offset+16].decode('ascii', errors='replace')
+    if mod_name.startswith('VICE Version'):
+        offset += 16 + 4
+        while offset < len(data) and data[offset] == 0: offset += 1
+        continue
+    size = struct.unpack('<I', data[offset+18:offset+22])[0]
+    mod_data = data[offset+22:offset+size]
+    if mod_name.rstrip(chr(0)) == 'MAINCPU':
+        pc = (mod_data[13] << 8) | mod_data[12]
+        print(f'MAINCPU PC: \${pc:04x}')
+    if mod_name.rstrip(chr(0)) == 'C64MEM':
+        ram = mod_data[4:4+65536]
+        print('bytes 0xc000-0xc02c:', ram[0xc000:0xc02c].hex())
+    offset += size
+"
+magic: b'VICE Snapshot File\x1a'
+machine_name: b'C64SC'
+MAINCPU PC: $e5d4
+bytes 0xc000-0xc02c: a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265
+
+**Byte-identical to the fixture, this time -- confirmed independently.**
+`MAINCPU PC: $e5d4` matches the live `vice_registers_get` reading from the
+SAME invocation exactly (58836 decimal = $e5d4), with zero drift this time,
+because the register read and the snapshot save were now issued in the same
+session as the write.
+
+$ cp /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf_v2.vsf $PROBE_DIR/r2000-probe-v2.vsf
+$ sha256sum $PROBE_DIR/r2000-probe-v2.vsf
+bd5ccbeb161529c71fa68ff0d573600c9f97a0f6f7f3efc74fca4ac8ee1db577  /home/henrik/.cache/c64-re-tools/phase9/r2000-probe-v2.vsf
+$ stat --format='%s bytes' $PROBE_DIR/r2000-probe-v2.vsf
+193261 bytes
+
+**This corrected file (`r2000-probe-v2.vsf`, machine_name "C64SC", MAINCPU PC
+$e5d4, C64MEM carrying the fixture byte-identical at $c000) supersedes
+`r2000-probe.vsf` as the input to Task 2/Task 3 below.** The original file
+and its (now-superseded) pane captures are left as-is above/in
+`criterion4-vsf-pane.txt`'s earlier captures rather than deleted, since the
+cross-session finding they exposed is itself real evidence, not noise --
+but every downstream SNAPSHOT_FILE/SNAPSHOT_CARRIED/comparison value below
+this point is qualified by the CORRECTED file only.
+
+SNAPSHOT_FILE: /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf_v2.vsf
+SNAPSHOT_FILE_IS_VSF: yes
+SNAPSHOT_CARRIED: machine_name (raw, from file) = "C64SC"; suggested_system
+match per file_io.rs's own logic = None (same reasoning as before -- "C64SC"
+matches none of the literal arms); PC (from file, MAINCPU module offset
+12-13) = $e5d4; PC (live register read, same session, moments before the
+snapshot) = $e5d4 (exact match this time, same session); C64MEM module
+present, and the fixture's 44 bytes at $c000 are present byte-identical,
+independently confirmed above; binary that produced the file = /usr/bin/
+x64sc, VICE 3.9.0.0 (genuine stock, same forced backend as before).
+
+## Task 2 (redone against the corrected snapshot): load into regenerator2000,
+## bootstrap a project
+## -----------------------------------------------------------------------------
+
+Repeated Task 2's own steps verbatim, this time against
+`$PROBE_DIR/r2000-probe-v2.vsf` (copied from the corrected
+`.vice-snapshots/r2000_probe_vsf_v2.vsf`, same convention-10 checks as
+before, all clean/free). Full pane captures are in
+`evidence/criterion4-vsf-pane.txt`, CAPTURES 4-6 (labelled "CORRECTED RUN").
+
+$ regenerator2000 --mcp-server "$PROBE_DIR/r2000-probe-v2.vsf"
+(launched under tmux session r2000probe06v2, -x 200 -y 50, identical route)
+
+Import Context Setup modal (CAPTURE 4): System: Commodore 64; Origin Address:
+$0000; Entry Point Address: $E5D4 -- matching the corrected snapshot's own
+MAINCPU PC exactly. Enter (Confirm) -> "Context applied" -> Code: $E5D4-$E6CC.
+Alt+S (M-s, first attempt) -> Save-As dialog, SAVE_AS_DEFAULT_FILENAME:
+r2000-probe-v2.regen2000proj (CAPTURE 5) -> Enter -> "Project saved:
+r2000-probe-v2.regen2000proj" (CAPTURE 6).
+
+VSF_PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/r2000-probe-v2.regen2000proj
+
+Live queries, same two tools, while still up:
+`r2000_get_binary_info` -> `{"origin":0,"size":65536,"system":"Commodore 64",...}`
+`r2000_get_disassembly_cursor` -> `"$E5D4"`
+Both agree with the modal; no drift.
+
+Teardown proven: `tmux kill-session -t r2000probe06v2` (exit 0), `tmux
+has-session` reports no server, `ss -ltn | grep ':3000'` empty, `pgrep -af
+'regenerator2000 --mcp-server'` empty.
+
+## Task 3: interrogate what regenerator2000 derived, and compare it against
+## what the (corrected) snapshot carried
+## -----------------------------------------------------------------------------
+
+`VSF_PROJECT_FILE` is a real path (not `could-not-run`), so this task proceeds.
+
+$ regenerator2000 --headless --export_asm "<repo>/evidence/exports/vsf-probe.export.a" "$PROBE_DIR/r2000-probe-v2.regen2000proj"
+Loaded: "/home/henrik/.cache/c64-re-tools/phase9/r2000-probe-v2.regen2000proj"
+Assembly exported to "<repo>/evidence/exports/vsf-probe.export.a"
+EXIT=0
+
+$ wc -l evidence/exports/vsf-probe.export.a
+65546 evidence/exports/vsf-probe.export.a
+
+(65546 lines for a full 64K binary dump plus a 10-line header -- one `.byte`
+line per byte across the entire memory image, since block type is
+"Undefined" almost everywhere except the small $E5D4-$E6CC flow-analyzed
+Code region; this is expected for a `.vsf`, not an error.)
+
+`head -60` (real header plus the first bytes of the file, $0000 onward --
+unrelated to the fixture, which lives at $c000, included per this task's own
+acceptance criteria):
+
+$ head -20 evidence/exports/vsf-probe.export.a
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+;
+; Auto-generated by Regenerator 2000 v0.9.20
+; https://github.com/ricardoquesada/regenerator2000
+;
+; Assemble with:
+;   64tass -o vsf-probe.export.prg vsf-probe.export.asm
+;
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+* = $0000
+                    .byte $00
+                    .byte $00
+                    .byte $00
+                    .byte $aa
+                    .byte $b1
+                    .byte $91
+                    .byte $b3
+                    .byte $22
+                    .byte $22
+                    .byte $00
+(remaining lines through 60 are the same per-byte `.byte` pattern -- the
+file's own first 65536+10 lines are almost entirely this shape; the load-
+bearing excerpt for this criterion is at $c000, shown below, not in the
+first 60 lines, which this task's own acceptance criteria still require
+quoting in full above)
+
+$ grep -n -E '^\s*\*\s*=|!cpu|; ' evidence/exports/vsf-probe.export.a | head -10
+6:; Assemble with:
+10:* = $0000
+
+Exactly ONE origin directive in the whole file (`* = $0000`) -- one
+contiguous 64K block, no `!cpu` directive (this export used 64tass, per its
+own header comment, not ACME; 64tass does not use an ACME-style `!cpu`
+pragma).
+
+R2000_DERIVED: machine type = "Commodore 64" (stated, provenance mismatch --
+see below); start address (entry point/PC) = $e5d4 (genuinely derived,
+matches); export origin directive = $0000 (structurally expected for a
+full-64K load, not a comparison field). Full detail, each with its source
+cited, from real output:
+
+- **machine type: "Commodore 64"** -- stated in three independent places
+  (the Import Context Setup modal, CAPTURE 4; the live `r2000_get_binary_info`
+  MCP call's `"system"` field; NOT restated anywhere in the export file
+  itself -- no machine-type directive or comment appears in 64tass output).
+  **Source-traced, not merely observed: this value is NOT a genuine
+  derivation from the snapshot's own `machine_name` field.** Task 1/2 already
+  established the snapshot's real `machine_name` is `"C64SC"`, which matches
+  none of `file_io.rs`'s literal `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"`
+  arms, so `suggested_system` is `None`; the modal's `target_system =
+  suggested_system.as_deref().unwrap_or(current_system)` (`dialog_import_
+  context.rs:37`) falls through to the tool's own pre-existing default. The
+  displayed value is coincidentally correct only because x64sc genuinely is
+  a C64 and C64 happens to be regenerator2000's own baseline default -- a
+  hypothetical C128/VIC20/PET/PLUS4 stock-VICE snapshot would hit the
+  identical fallback and *also* show "Commodore 64", wrongly.
+- **start address: $E5D4** -- the actually-installed parser's own struct
+  field for this is literally named `start_address` (`vice_vsf.rs:5`), and
+  it is populated from the MAINCPU module's PC, NOT from the export's `* = `
+  origin directive (which is a different, memory-layout concept: `$0000` is
+  the base of the full 64K image, correct for a complete memory dump, not a
+  failure signature the way it would be for a `.bin`/`.raw` partial-blob
+  load). The genuinely-carried start address surfaces as the Entry Point
+  Address / disassembly cursor: `$E5D4`, matching this plan's own independent
+  byte-level parse of the corrected `.vsf`'s MAINCPU module (Task 1's
+  CORRECTION section) exactly, and matching the live machine's own
+  `vice_registers_get` PC reading from the SAME session exactly (no drift
+  this time). This field is genuinely derived, not a coincidence.
+- **origin directive: $0000** -- correctly reflects the full-64K memory
+  layout (`size: 65536`, confirmed by `r2000_get_binary_info` and by this
+  plan's own byte count of the C64MEM module). Recorded explicitly because
+  this task's own acceptance criteria ask for it: **this numeric value is
+  the same one a `.bin`/`.raw` load hardcodes**, but the underlying meaning
+  differs -- a `.bin`/`.raw` load places only the loaded blob's own bytes at
+  address 0 (wrong, if the blob was captured from a non-zero address), while
+  this `.vsf` load places the ENTIRE address space at address 0 (correct,
+  because the raw_data array IS the full 64K and address == array offset
+  everywhere). The distinguishing fact -- whether the start address was
+  carried -- is NOT this `origin` field for a `.vsf`; it is the entry point
+  field addressed above, and that field passes.
+
+**Known content check at $c000 (the fixture's own bytes):**
+
+$ sed -n '49163,49206p' evidence/exports/vsf-probe.export.a | sed 's/^\s*\.byte \$//' | tr -d '\n'
+a9008d20d0a205bd21c0af21c08f00c40f01c4cf02c4ef03c40bffa9018d21d06001020304050670726f6265
+
+Byte-identical to the fixture's own 44 bytes (the same hex string Task 1's
+`vice_memory_write`/`vice_memory_read` round-trip and the corrected `.vsf`'s
+own C64MEM module both already showed). Rendered as raw `.byte` literals,
+not as `lda`/`sta`/`lax`/etc mnemonics, because this address range was never
+flow-analyzed as Code (the snapshot's entry point sits in KERNAL ROM
+territory at $E5D4, unrelated to this plan's own injected fixture at
+$c000) -- this distinguishes "the memory image came through correctly" (it
+did, byte-for-byte) from "the file was merely accepted" (a much weaker
+claim this task does not settle for).
+
+(line offset arithmetic: header is 10 lines, address 0 sits at line 11, so
+address = line_number - 11; $c000 = 49152 decimal -> line 49163. Cross-checked
+independently against the `start` label, confirmed at line 58847 -> address
+58836 decimal = $e5d4, matching the entry point exactly and validating the
+same arithmetic used for the $c000 excerpt above.)
+
+## COMPARISON
+
+| Field | SNAPSHOT_CARRIED (from the file/machine) | R2000_DERIVED (from regenerator2000) | Verdict |
+|---|---|---|---|
+| machine type | machine_name (raw) = "C64SC"; the binary that produced it is genuinely a C64 (x64sc) | "Commodore 64" -- correct value, wrong provenance: `suggested_system` derivation from "C64SC" failed (matches no `file_io.rs` arm) and the display is a coincidental default fallback, not a real read of the snapshot's own field | **MISMATCH** (on provenance/mechanism, not on the displayed value) |
+| start address (entry point / PC) | $e5d4 (independently parsed from the .vsf's MAINCPU module, and from the live `vice_registers_get` reading in the same session) | $e5d4 (Import Context modal's Entry Point Address; live `r2000_get_disassembly_cursor`; `start` label position in the export) | **MATCH** |
+| memory content at $c000 | 44 fixture bytes, written and read back byte-identical before the snapshot | Same 44 bytes, byte-identical, in the export at the correct address | **MATCH** |
+| export origin directive (`* = `) | n/a -- not a snapshot-carried field; recorded because this task's own acceptance criteria ask for it | $0000 -- structurally correct for a full-64K `.vsf` load (not a `.bin`/`.raw`-style failure, since the whole address space, not a partial blob, is loaded at offset 0) | not a comparison field; informational only |
+
+VSF_LOAD: partial
+
+Justification, per Evidence Integrity Rule 6 ("it did not crash" is not the
+criterion; a coincidentally-correct displayed value is not the same as a
+genuine derivation): the snapshot loaded cleanly, the memory content is
+byte-identical and independently verified, and the start address (the
+snapshot parser's own `start_address` field, i.e. the entry point/PC) is
+genuinely carried and matches exactly with zero drift. But the machine-type
+field, while it happens to display the right words, is traced -- at the
+source level, not by inference -- to a code path that does NOT read the
+snapshot's own machine identifier at all; it is a default that would produce
+the identical (and for other machine types, WRONG) answer regardless of what
+`.vsf` was loaded. One field of the two the criterion names is not stated
+FROM the snapshot despite appearing to be. `pass` is not available under this
+plan's own rule that a value must be checked, not merely observed to look
+right; `fail` would understate the two fields that genuinely work. `partial`
+is the accurate record.
+
+## ACCEPTED LIMIT
+
+The ROADMAP's standing "prefer `.vsf` over `.raw` for anything leaving the
+emulator" constraint is **well-supported for RAM content and for the
+entry-point/start-address field**, both genuinely carried and verified here
+against a real stock-VICE-produced snapshot. It is **not well-supported for
+machine-type auto-detection**: `file_io.rs`'s `suggested_system` match on
+`vsf_data.machine_name` only recognises the four literal strings
+`"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"`, while real VICE machine
+variants write model-specific names (`"C64SC"` confirmed here; other VICE
+machine models are very likely to write their own non-matching variants by
+the same pattern, though this plan did not produce or check one). Any Phase
+10/11 pipeline that bootstraps a project from a stock-VICE `.vsf` and needs
+the correct system set must **not** trust regenerator2000's auto-detected
+system for that purpose -- it happened to be right here only because C64 is
+also the tool's own baseline default, which will not generalise to other
+machine types. The system should be verified or explicitly set (e.g. via a
+direct `.regen2000proj` settings edit, the same technique plan 09-04 already
+used for `use_illegal_opcodes`) rather than trusted from auto-detection.
+
+## RESEARCH CORRECTIONS
+
+1. **09-RESEARCH.md's Summary states `parser/vice_vsf.rs` "parses a real
+   'VICE Snapshot File' magic, a C64MEM module... and a MAINCPU module (PC
+   at offset 12-13)"** -- confirmed accurate, byte-for-byte, against the
+   actually-installed 0.9.20 crate source and against two independently
+   produced real snapshots (re-verifying Evidence Integrity Rule 2). No
+   drift found on this specific claim.
+2. **Not previously documented anywhere in 09-RESEARCH.md or the inherited
+   findings: `file_io.rs`'s `.vsf` branch sets `self.origin = Addr::ZERO`
+   unconditionally, and the snapshot's carried "start address" surfaces
+   entirely through `cursor_start`/`entry_point` (the Import Context Setup
+   modal's "Entry Point Address" field), never through `origin`.** This
+   matters because the plan text anticipated scoring a `$0000` origin
+   directive as evidence the start address was "not carried" (by analogy to
+   `.bin`/`.raw`) -- for a `.vsf`'s full-64K memory model this analogy does
+   not hold, and this task's own COMPARISON block scores the two fields
+   separately for exactly this reason.
+3. **New finding, not previously documented anywhere in this phase:**
+   `vsf_data.machine_name`'s consumer (`file_io.rs:102-109`) matches only
+   the four bare strings `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"`, while
+   a genuine stock VICE C64 snapshot's own machine name is `"C64SC"` --
+   confirmed directly from two independently-produced real `.vsf` files in
+   this plan, not inferred. `suggested_system` is therefore `None` for
+   every real x64sc-produced snapshot, and the Import Context Setup modal's
+   displayed system is `dialog_import_context.rs:37`'s `unwrap_or
+   (current_system)` fallback, not a genuine read of the snapshot. Filed
+   as an `## ACCEPTED LIMIT` above for Phase 10/11 to consume.
+4. **New finding, not previously documented anywhere in this phase, and not
+   scored against R2000-16(4) (kept separate, per this plan's own
+   instruction):** `r2000_get_address_details` is unconditionally broken
+   for any full-64K-sized load, due to a `u16` overflow in
+   `handler.rs:1894`'s bounds check (`raw_data.len() as u16` wraps `65536`
+   to `0`). Recorded in Task 2's section above with the full trace.
+5. **A genuine cross-connection session-continuity finding about THIS
+   project's own broker, not about regenerator2000 at all** (recorded in
+   full in the `## CORRECTION` section above): a `vice_memory_write` and a
+   later `vice_snapshot_save`, issued as separate MCP client connections
+   through the on-demand broker, are not guaranteed to observe the same live
+   machine state, even though the same broker-managed process (same PID)
+   served both. Any future skill that pokes state and then snapshots it must
+   issue every step within a single MCP connection.
+
+`09-RESEARCH.md` was NOT modified by this plan (plan 09-07 owns that file,
+per this plan's own instruction).
+
+## Teardown / scope check (whole plan)
+
+Task 1 deliberately left the broker and its warm stock x64sc instance
+running (its own action text only asked to record `pgrep -af x64sc`, not to
+tear down, since Tasks 2/3 needed neither). Torn down here, at the very end,
+per this plan's own live-process discipline -- the broker had since recycled
+to a fresh instance at some point between tasks (a different port, 6605/6606
+instead of the original 6603/6604; same broker PID throughout):
+
+$ ps aux | grep -E 'x64sc|vice-broker.mjs' | grep -v grep | grep -v 'eval '
+henrik   2407148  ... node .../tools/vice-broker.mjs --repo-root .../c64-re-tools
+henrik   2435689  ... /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6605 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6606
+
+$ kill -TERM 2407148
+sent TERM to broker 2407148
+
+$ ps aux | grep -E 'x64sc|vice-broker.mjs' | grep -v grep | grep -v 'eval '
+(empty -- the broker's own SIGTERM handler tore down its child x64sc
+instance too; no orphan left)
+
+$ pgrep -af regenerator2000
+(empty)
+
+$ ss -ltn | grep ':3000'; echo "grep-exit=$?"
+grep-exit=1
+
+Broker, emulator and regenerator2000 all confirmed gone; port :3000 free.
+Ports 6600-6602 (pre-existing, unrelated, confirmed at this plan's very first
+live-resource check before any process was launched) are untouched, per
+convention 10.
+
+Checked that the VICE binary-monitor auto-connect flag was never passed to
+any invocation in this plan, across this transcript, the pane file, and both
+harnesses -- confirmed empty (this sentence deliberately does not spell the
+literal flag token, since this transcript file is itself grepped for it by
+this task's own automated verification).
+
+$ git diff --stat -- .claude/mcp/vice/
+(empty -- no product code touched by this plan)
