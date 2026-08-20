@@ -11,9 +11,17 @@
 //      whole claim ("query the store instead of re-deriving") without
 //      anyone noticing, because the automated suite would still be green.
 //
-// Both checks are pure file-reads against the phase's evidence/ directory --
-// no regenerator2000 child, no D-11 gate needed. This file is TEST-ONLY: it
-// is not (and must not be) listed in package.json's files[].
+// Plan 11-09 (session B) added a third check:
+//
+//   3. T-11-RETROFIT / T-11-VACUOUS-CHECK: SESSION-B-ANSWER.md's own
+//      canonical line, hashed under QUESTION.md's exact canonicalisation
+//      rules, must equal the sealed ANSWER.sha256 -- and this check must FAIL
+//      (never skip) when SESSION-B-ANSWER.md is missing or its fenced block
+//      is empty, so a non-answer can never read as a vacuous pass.
+//
+// Both original checks are pure file-reads against the phase's evidence/
+// directory -- no regenerator2000 child, no D-11 gate needed. This file is
+// TEST-ONLY: it is not (and must not be) listed in package.json's files[].
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -39,6 +47,7 @@ const EVIDENCE_DIR = join(
 const ANSWER_PATH = join(EVIDENCE_DIR, "ANSWER.md");
 const ANSWER_SHA_PATH = join(EVIDENCE_DIR, "ANSWER.sha256");
 const QUESTION_PATH = join(EVIDENCE_DIR, "QUESTION.md");
+const SESSION_B_ANSWER_PATH = join(EVIDENCE_DIR, "SESSION-B-ANSWER.md");
 
 const OPEN_MARKER = "<!-- CANONICAL-ANSWER-LINE -->";
 const CLOSE_MARKER = "<!-- /CANONICAL-ANSWER-LINE -->";
@@ -149,4 +158,45 @@ test("QUESTION.md does not contain the sealed answer's distinctive field values 
         `answer's own ${key} field written in its canonical key=value form.`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 11-09 (session B): the two-session comparison. This is deliberately a
+// plain readFileSync + extractCanonicalLine() call with NO existsSync guard
+// and NO try/catch that could turn a missing file into a skip -- per
+// T-11-VACUOUS-CHECK, a missing SESSION-B-ANSWER.md or an empty fenced block
+// must surface as a FAILING assertion (readFileSync's own ENOENT, or
+// extractCanonicalLine()'s own non-empty assertion), never as a silently
+// green/skipped run. QUESTION.md's canonicalisation rules (lowercase except
+// the label field, single ASCII space, no trailing newline) are rules for
+// HOW the line is constructed, not a second transformation applied at
+// comparison time -- extractCanonicalLine() already trims exactly to the
+// single line with no trailing newline, so no further normalisation is
+// applied here, matching the sha256 recomputation the ANSWER.md tests above
+// perform against the exact same marker convention.
+// ---------------------------------------------------------------------------
+
+test("SESSION-B-ANSWER.md's canonical line hashes to the sealed ANSWER.sha256 (criterion 1, D-26 two-session comparison)", () => {
+  const sessionBMd = readFileSync(SESSION_B_ANSWER_PATH, "utf8");
+  const sessionBLine = extractCanonicalLine(sessionBMd);
+  const recomputed = sha256(sessionBLine);
+  const sealed = readFileSync(ANSWER_SHA_PATH, "utf8").trim();
+  assert.equal(
+    recomputed,
+    sealed,
+    `SESSION-B-ANSWER.md's canonical line ${JSON.stringify(sessionBLine)} hashes to ${recomputed}, ` +
+      `which does not match the sealed ANSWER.sha256 (${sealed}). Per this project's Rule 5/T-11-RETROFIT ` +
+      "policy, a mismatch is a real result to report -- ANSWER.md, ANSWER.sha256 and QUESTION.md must " +
+      "not be edited to force this test green.",
+  );
+});
+
+test("SESSION-B-ANSWER.md's canonical line matches QUESTION.md's own grammar", () => {
+  const sessionBMd = readFileSync(SESSION_B_ANSWER_PATH, "utf8");
+  const sessionBLine = extractCanonicalLine(sessionBMd);
+  assert.match(
+    sessionBLine,
+    /^label=\S+ confidence=[a-z-]+ blocktype=[a-z]+ xrefcount=(0|[1-9][0-9]*)$/,
+    `session B's canonical line does not match the label=... confidence=... blocktype=... xrefcount=... grammar: ${JSON.stringify(sessionBLine)}`,
+  );
 });
