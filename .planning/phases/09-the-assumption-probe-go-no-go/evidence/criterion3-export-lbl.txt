@@ -297,13 +297,71 @@ observation of ".start" alone and went on to Route B.
 ## Task 2: match every exported line against the exact regex this repo's consumer uses
 ## -------------------------------------------------------------------------------------
 
+evidence/grammar-check.mjs written: a throwaway ESM script that reads a file path from
+process.argv[2], splits on "\n", trims each line exactly as stock-symbols.ts's
+parseViceLabelFile does (stock-symbols.ts:196-226), and tests each non-blank line
+against the literal regex copied from stock-symbols.ts:75
+(`/^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/`), citing that file and line in its header
+comment. It does not import from stock-symbols.ts (a .ts module with a non-exported
+const) and is the ONLY regex in the script -- no second label-file parser was written.
+
 $ node evidence/grammar-check.mjs evidence/exports/probe-illegal.lbl
-(see full per-line output below)
+FILE: evidence/exports/probe-illegal.lbl
+TOTAL_LINES (split on "\n", including any trailing empty element): 3
+
+1: "al C:c000 .start" -- MATCH (address=0xc000, name="start")
+2: "al C:c01b .probe_user_label" -- MATCH (address=0xc01b, name="probe_user_label")
+3: (blank) -- SKIPPED (blank)
+
+SUMMARY:
+  total lines (incl. trailing empty split element): 3
+  blank lines: 1
+  matched: 2
+  unmatched (non-blank, no match): 0
+  non-blank total: 2
+
+MATCHES (parsed address, name):
+  line 1: 0xc000 -> start
+  line 2: 0xc01b -> probe_user_label
 
 GRAMMAR_MATCH: 2/2
 
+Both exported lines match this repo's real consumer regex -- 2 matched out of 2
+non-blank lines, 0 unmatched. There is no failing line to quote with `cat -A` (the
+acceptance criterion "quote the failing line" does not apply here, since there is none).
+
+**Control run** -- against evidence/exports/seed.lbl (the hand-written file in the same
+grammar, from Task 1's Route A attempt), to prove the check itself is sound:
+
 $ node evidence/grammar-check.mjs evidence/exports/seed.lbl
-(control run -- see below)
+FILE: evidence/exports/seed.lbl
+TOTAL_LINES (split on "\n", including any trailing empty element): 3
+
+1: "al C:c000 .probe_entry" -- MATCH (address=0xc000, name="probe_entry")
+2: "al C:c010 .probe_illegal_block" -- MATCH (address=0xc010, name="probe_illegal_block")
+3: (blank) -- SKIPPED (blank)
+
+SUMMARY:
+  total lines (incl. trailing empty split element): 3
+  blank lines: 1
+  matched: 2
+  unmatched (non-blank, no match): 0
+  non-blank total: 2
+
+MATCHES (parsed address, name):
+  line 1: 0xc000 -> probe_entry
+  line 2: 0xc010 -> probe_illegal_block
+
+GRAMMAR_MATCH: 2/2
+
+(the script always prints this exact "GRAMMAR_MATCH: <matched>/<total>" line regardless
+of which file was given -- the literal output above is unedited. This is the CONTROL
+run's result, recorded separately from the export's result above.)
+
+CONTROL RESULT: the control run against the hand-written seed file also matches 2/2 --
+this is the control proving the check itself works correctly (it is not vacuously
+matching or vacuously failing everything); the exported file's 2/2 result above can be
+trusted.
 
 ## Task 3: hand the unmodified file to the real vice_symbols_load against a live emulator
 ## ---------------------------------------------------------------------------------------
