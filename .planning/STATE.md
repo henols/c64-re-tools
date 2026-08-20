@@ -130,12 +130,14 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-14 pending — see `.planning/todos/pending/` (`/gsd-capture --list`).
+16 pending — see `.planning/todos/pending/` (`/gsd-capture --list`).
 
-Newest: `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10.md` — a live 3.10 probe
-refutes runtime `WarpMode` over `RESOURCE_SET`; corrects the predicted error code in
-GAINS-PROTOCOL.md, records the `InitialWarpMode` silent-success trap, and flags that
-`vice_machine_config_set` still advertises `WarpMode` (SKILL-01 landmine).
+Newest: `2026-08-20-fully-remove-the-forked-vice-mcp-backend.md` — retire the fork
+backend entirely (HTTP `/mcp` seam, `VICE_BACKEND` selection, two-manifest split,
+per-backend skill routing), leaving stock as the only backend. Not a pure deletion:
+24 `vice_*` tools are fork-only (SID/VIC-II/CIA state, matrix keyboard, screenshots,
+checkpoint groups), so each needs a drop / reimplement / accept-loss decision, and
+the 62-tool published contract makes it semver-major.
 
 ### Quick Tasks Completed
 
