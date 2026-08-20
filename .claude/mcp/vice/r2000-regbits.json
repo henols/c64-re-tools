@@ -1,0 +1,1370 @@
+{
+  "_generated": {
+    "generator": "r2000-regbits-gen.ts",
+    "memmapSha256": "60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
+    "warning": "GENERATED FILE -- do not hand-edit. Regenerate via `node r2000-regbits-gen.ts` from .claude/mcp/vice."
+  },
+  "$0001": {
+    "label": "MOS 6510 Micro-Processor On-Chip I/O Port",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "LORAM_SIGNAL",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "HIRAM_SIGNAL",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "CHAREN_SIGNAL",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "CASSETTE_DATA_OUTPUT_LINE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "CASSETTE_SWITCH_SENSE_1_SWITCH_CLOSED",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "CASSETTE_MOTOR_CONTROL_O_ON_1_OFF",
+        "kind": "numeric"
+      },
+      {
+        "mask": 192,
+        "shift": 6,
+        "name": "UNDEFINED",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D011": {
+    "label": "VIC Control Register",
+    "fields": [
+      {
+        "mask": 7,
+        "shift": 0,
+        "name": "YSCROLL",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "ROWS",
+        "kind": "flag",
+        "tokens": {
+          "0": "ROW24",
+          "1": "ROW25"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SCREENON",
+        "kind": "flag",
+        "tokens": {
+          "0": "SCREENOFF",
+          "1": "SCREENON"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "MODE",
+        "kind": "flag",
+        "tokens": {
+          "0": "TEXT",
+          "1": "BITMAP"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "ECM",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "ECM"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "RST8",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "RST8"
+        }
+      }
+    ]
+  },
+  "$D015": {
+    "label": "Sprite Enable",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SPR0EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR0EN"
+        }
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPR1EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR1EN"
+        }
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPR2EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR2EN"
+        }
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SPR3EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR3EN"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SPR4EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR4EN"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SPR5EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR5EN"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SPR6EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR6EN"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SPR7EN",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR7EN"
+        }
+      }
+    ]
+  },
+  "$D016": {
+    "label": "VIC Control Register",
+    "fields": [
+      {
+        "mask": 7,
+        "shift": 0,
+        "name": "SMOOTH_SCROLL_TO_X_POS",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SELECT_38_40_COLUMN_TEXT_DISPLAY_1_40_COLS",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "MULTI_COLOR_MODE_1_ENABLE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "ALWAYS_SET_THIS_BIT_TO_0",
+        "kind": "numeric"
+      },
+      {
+        "mask": 192,
+        "shift": 6,
+        "name": "UNUSED",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D017": {
+    "label": "Sprite Y-Expand",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SPR0YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR0YEXP"
+        }
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPR1YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR1YEXP"
+        }
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPR2YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR2YEXP"
+        }
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SPR3YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR3YEXP"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SPR4YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR4YEXP"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SPR5YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR5YEXP"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SPR6YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR6YEXP"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SPR7YEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR7YEXP"
+        }
+      }
+    ]
+  },
+  "$D018": {
+    "label": "VIC Memory Control Register",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SELECT_UPPER_LOWER_CHARACTER_SET",
+        "kind": "numeric"
+      },
+      {
+        "mask": 14,
+        "shift": 1,
+        "name": "CHARACTER_DOT_DATA_BASE_ADDRESS",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "VIDEO_MATRIX_BASE_ADDRESS",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D019": {
+    "label": "VIC Interrupt Flag Register (Bit = 1",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "RASTER_COMPARE_IRQ_FLAG",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPRITE_TO_BACKGROUND_COLLISION_IRQ_FLAG",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPRITE_TO_SPRITE_COLLISION_IRQ_FLAG",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "LIGHT_PEN_TRIGGERED_IRQ_FLAG",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SET_ON_ANY_ENABLED_VIC_IRQ_CONDITION",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D01A": {
+    "label": "VIC Interrupt Enable Register",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "RSTIRQEN",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPRBGIRQEN",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPRSPRIRQEN",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "LPIRQEN",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "IRQENUNUSED",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D01B": {
+    "label": "Sprite Data Priority",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SPR0BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR0BG"
+        }
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPR1BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR1BG"
+        }
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPR2BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR2BG"
+        }
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SPR3BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR3BG"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SPR4BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR4BG"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SPR5BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR5BG"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SPR6BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR6BG"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SPR7BG",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR7BG"
+        }
+      }
+    ]
+  },
+  "$D01C": {
+    "label": "Sprite Multicolor",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SPR0MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR0MC"
+        }
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPR1MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR1MC"
+        }
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPR2MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR2MC"
+        }
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SPR3MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR3MC"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SPR4MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR4MC"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SPR5MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR5MC"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SPR6MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR6MC"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SPR7MC",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR7MC"
+        }
+      }
+    ]
+  },
+  "$D01D": {
+    "label": "Sprite X-Expand",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "SPR0XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR0XEXP"
+        }
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SPR1XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR1XEXP"
+        }
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "SPR2XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR2XEXP"
+        }
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SPR3XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR3XEXP"
+        }
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SPR4XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR4XEXP"
+        }
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SPR5XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR5XEXP"
+        }
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SPR6XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR6XEXP"
+        }
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SPR7XEXP",
+        "kind": "flag",
+        "tokens": {
+          "0": "",
+          "1": "SPR7XEXP"
+        }
+      }
+    ]
+  },
+  "$D403": {
+    "label": "7-4 Unused",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "VOICE_1_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D404": {
+    "label": "Voice 1",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "GATE_BIT_1_START_ATT_DEC_SUS_0_START_RELEASE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SYNCHRONIZE_OSC_1_WITH_OSC_3_FREQUENCY_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "RING_MODULATE_OSC_1_WITH_OSC_3_OUTPUT_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "TEST_BIT_1_DISABLE_OSCILLATOR_1",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SELECT_TRIANGLE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SELECT_SAWTOOTH_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SELECT_PULSE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SELECT_RANDOM_NOISE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D405": {
+    "label": "Envelope Generator 1",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_DECAY_CYCLE_DURATION_0_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_ATTACK_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D406": {
+    "label": "Envelope Generator 1",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_RELEASE_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_SUSTAIN_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D40A": {
+    "label": "7-4 Unused",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "VOICE_2_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D40B": {
+    "label": "Voice 2",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "GATE_BIT_1_START_ATT_DEC_SUS_0_START_RELEASE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SYNCHRONIZE_OSC_2_WITH_OSC_1_FREQUENCY_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "RING_MODULATE_OSC_2_WITH_OSC_1_OUTPUT_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "TEST_BIT_1_DISABLE_OSCILLATOR_1",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SELECT_TRIANGLE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SELECT_SAWTOOTH_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SELECT_PULSE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SELECT_RANDOM_NOISE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D40C": {
+    "label": "Envelope Generator 2",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_DECAY_CYCLE_DURATION_0_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_ATTACK_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D40D": {
+    "label": "Envelope Generator 2",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_RELEASE_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_SUSTAIN_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D411": {
+    "label": "7-4 Unused",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "VOICE_3_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D412": {
+    "label": "Voice 3",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "GATE_BIT_1_START_ATT_DEC_SUS_0_START_RELEASE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "SYNCHRONIZE_OSC_3_WITH_OSC_2_FREQUENCY_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "RING_MODULATE_OSC_3_WITH_OSC_2_OUTPUT_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "TEST_BIT_1_DISABLE_OSCILLATOR_1",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SELECT_TRIANGLE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SELECT_SAWTOOTH_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SELECT_PULSE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SELECT_RANDOM_NOISE_WAVEFORM_1_ON",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D413": {
+    "label": "Envelope Generator 3",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_DECAY_CYCLE_DURATION_0_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_ATTACK_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D414": {
+    "label": "Envelope Generator 3",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_RELEASE_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_SUSTAIN_CYCLE_DURATION_O_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D417": {
+    "label": "Filter Resonance Control / Voice Input Control",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "FILTER_VOICE_1_OUTPUT_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "FILTER_VOICE_3_OUTPUT_1_YES_0_NO_FILTER_VOICE_2_OUTPUT_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "FILTER_EXTERNAL_INPUT_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "SELECT_FILTER_RESONANCE_0_15",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$D418": {
+    "label": "Select Filter Mode and Volume",
+    "fields": [
+      {
+        "mask": 15,
+        "shift": 0,
+        "name": "SELECT_OUTPUT_VOLUME_0_15",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SELECT_FILTER_LOW_PASS_MODE_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SELECT_FILTER_BAND_PASS_MODE_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SELECT_FILTER_HIGH_PASS_MODE_1_ON",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "CUT_OFF_VOICE_3_OUTPUT_1_OFF_O_ON",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DC00": {
+    "label": "Data Port A (Keyboard, Joystick, Paddles, Light-Pen)",
+    "fields": [
+      {
+        "mask": 255,
+        "shift": 0,
+        "name": "WRITE_KEYBOARD_COLUMN_VALUES_FOR_KEYBOARD_SCAN",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DC01": {
+    "label": "Data Port B (Keyboard, Joystick, Paddles)",
+    "fields": [
+      {
+        "mask": 255,
+        "shift": 0,
+        "name": "READ_KEYBOARD_ROW_VALUES_FOR_KEYBOARD_SCAN",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DC0D": {
+    "label": "CIA Interrupt Control Register (Read IRQs/Write Mask)",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "TIMER_A_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "TIMER_B_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "TIME_OF_DAY_CLOCK_ALARM_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SERIAL_PORT_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "FLAG1_IRQ",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "IRQ_FLAG_SET_CLEAR_FLAG",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DC0E": {
+    "label": "CIA Control Register A",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "START_STOP_TIMER_A_1_START_0_STOP",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "TIMER_A_OUTPUT_ON_PB6_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "TIMER_A_OUTPUT_MODE_TO_PB6_1_TOGGLE_0_PULSE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "TIMER_A_RUN_MODE_1_ONE_SHOT_0_CONTINUOUS",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "FORCE_LOAD_TIMER_A_1_YES",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "TIMER_A_COUNTS_1_CNT_SIGNALS_0_SYSTEM_02_CLOCK",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SERIAL_PORT_I_O_MODE_OUTPUT_0_INPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "TIME_OF_DAY_CLOCK_FREQUENCY_1_50_HZ_0_60_HZ",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DC0F": {
+    "label": "CIA Control Register B",
+    "fields": [
+      {
+        "mask": 31,
+        "shift": 0,
+        "name": "SAME_AS_CIA_CONTROL_REG_A_FOR_TIMER_B",
+        "kind": "numeric"
+      },
+      {
+        "mask": 96,
+        "shift": 5,
+        "name": "TIMER_B_MODE_SELECT_00_COUNT_SYSTEM_02_CLOCK_PULSES_01_COUNT_POSITIVE_CNT_TRANSITIONS_10_COUNT_TIMER_A_UNDERFLOW_PULSES_11_COUNT_TIMER_A_UNDERFLOWS_WHILE_CNT_POSITIVE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SET_ALARM_TOD_CLOCK_1_ALARM_0_CLOCK",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DD00": {
+    "label": "Data Port A (Serial Bus, RS-232, VIC Memory Control)",
+    "fields": [
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "RS_232_DATA_OUTPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SERIAL_BUS_ATN_SIGNAL_OUTPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "SERIAL_BUS_CLOCK_PULSE_OUTPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "SERIAL_BUS_DATA_OUTPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SERIAL_BUS_CLOCK_PULSE_INPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SERIAL_BUS_DATA_INPUT",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DD01": {
+    "label": "Data Port B (User Port, RS-232)",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "USER_RS_232_RECEIVED_DATA",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "USER_RS_232_REQUEST_TO_SEND",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "USER_RS_232_DATA_TERMINAL_READY",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "USER_RS_232_RING_INDICATOR",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "USER_RS_232_CARRIER_DETECT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "USER",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "USER_RS_232_CLEAR_TO_SEND",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "USER_RS_232_DATA_SET_READY",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DD0D": {
+    "label": "CIA Interrupt Control Register (Read NMIs/Write Mask)",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "TIMER_A_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "TIMER_B_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "SERIAL_PORT_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "FLAG1_NMI",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "NMI_FLAG_SET_CLEAR_FLAG",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DD0E": {
+    "label": "CIA Control Register A",
+    "fields": [
+      {
+        "mask": 1,
+        "shift": 0,
+        "name": "START_STOP_TIMER_A_1_START_0_STOP",
+        "kind": "numeric"
+      },
+      {
+        "mask": 2,
+        "shift": 1,
+        "name": "TIMER_A_OUTPUT_ON_PB6_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
+        "mask": 4,
+        "shift": 2,
+        "name": "TIMER_A_OUTPUT_MODE_TO_PB6_1_TOGGLE_0_PULSE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 8,
+        "shift": 3,
+        "name": "TIMER_A_RUN_MODE_1_ONE_SHOT_0_CONTINUOUS",
+        "kind": "numeric"
+      },
+      {
+        "mask": 16,
+        "shift": 4,
+        "name": "FORCE_LOAD_TIMER_A_1_YES",
+        "kind": "numeric"
+      },
+      {
+        "mask": 32,
+        "shift": 5,
+        "name": "TIMER_A_COUNTS_1_CNT_SIGNALS_0_SYSTEM_02_CLOCK",
+        "kind": "numeric"
+      },
+      {
+        "mask": 64,
+        "shift": 6,
+        "name": "SERIAL_PORT_I_O_MODE_OUTPUT_0_INPUT",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "TIME_OF_DAY_CLOCK_FREQUENCY_1_50_HZ_0_60_HZ",
+        "kind": "numeric"
+      }
+    ]
+  },
+  "$DD0F": {
+    "label": "CIA Control Register B",
+    "fields": [
+      {
+        "mask": 31,
+        "shift": 0,
+        "name": "SAME_AS_CIA_CONTROL_REG_A_FOR_TIMER_B",
+        "kind": "numeric"
+      },
+      {
+        "mask": 96,
+        "shift": 5,
+        "name": "TIMER_B_MODE_SELECT_00_COUNT_SYSTEM_02_CLOCK_PULSES_01_COUNT_POSITIVE_CNT_TRANSITIONS_10_COUNT_TIMER_A_UNDERFLOW_PULSES_11_COUNT_TIMER_A_UNDERFLOWS_WHILE_CNT_POSITIVE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 128,
+        "shift": 7,
+        "name": "SET_ALARM_TOD_CLOCK_1_ALARM_0_CLOCK",
+        "kind": "numeric"
+      }
+    ]
+  }
+}
