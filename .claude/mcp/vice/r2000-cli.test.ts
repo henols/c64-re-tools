@@ -175,6 +175,11 @@ test("bin: `vice-mcp r2000 --help` lists all three verbs: bootstrap, export-asm,
   assert.match(helpResult.stdout, /\bverify\b/);
 });
 
+test("bin: `vice-mcp r2000 --help` lists both symbol round-trip verbs: export-lbl, import-lbl (11-08)", () => {
+  assert.match(helpResult.stdout, /\bexport-lbl\b/);
+  assert.match(helpResult.stdout, /\bimport-lbl\b/);
+});
+
 test("bin: both invocations terminate on their own within the timeout, not via spawnSync's timeout kill", () => {
   assert.equal(
     helpResult.signal,
@@ -546,6 +551,142 @@ test("gen-enums: a nonexistent project file is refused, not silently accepted", 
     assert.match(stderr, /not found/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// export-lbl / import-lbl verb tests (Task 3, 11-08) -- unknown option and
+// missing-value refusals, and a missing project/label file, are always-run
+// (no live binary needed); the happy-path round trip against a bootstrapped
+// project needs a real regenerator2000 (D-11) AND runR2000Tool()'s own
+// workspace-containment requirement (T-11-PATH-ESCAPE), so it uses
+// withWorkspaceTempDir() (defined below) rather than withTempDir()'s system
+// tmpdir.
+// ---------------------------------------------------------------------------
+
+test("export-lbl: a missing project is refused, not silently accepted", async () => {
+  await withTempDir(async (dir) => {
+    const missing = join(dir, "does-not-exist.regen2000proj");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-lbl", missing]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /not found/i);
+  });
+});
+
+test("export-lbl: --out with no value is refused", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-lbl", "some.regen2000proj", "--out"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--out requires a value/i);
+});
+
+test("export-lbl: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["export-lbl", "some.regen2000proj", "--out", "--force"]),
+  );
+  // Refused either way -- whether reported as "--out requires a value" or as
+  // an unrecognised second flag ("--force" is reprocessed on its own once
+  // it is not consumed as --out's value) -- the load-bearing property is
+  // that "--force" is never silently accepted AS --out's value.
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--out requires a value|unknown option/i);
+});
+
+test("export-lbl: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["export-lbl", "some.regen2000proj", "--not-a-real-flag"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown option/i);
+});
+
+test("import-lbl: usage is printed and exit is non-zero when arguments are missing", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", "only-one.regen2000proj"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /usage: import-lbl/i);
+});
+
+test("import-lbl: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["import-lbl", "some.regen2000proj", "some.lbl", "--not-a-real-flag"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown option/i);
+});
+
+test("import-lbl: a missing project file is refused", async () => {
+  await withTempDir(async (dir) => {
+    const missingProject = join(dir, "does-not-exist.regen2000proj");
+    const lblPath = join(dir, "some.lbl");
+    writeFileSync(lblPath, "al C:0801 .main\n");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", missingProject, lblPath]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /project file not found/i);
+  });
+});
+
+test("import-lbl: a missing label file is refused", async () => {
+  await withTempDir(async (dir) => {
+    const projectPath = join(dir, "game.regen2000proj");
+    writeFileSync(projectPath, "{}");
+    const missingLbl = join(dir, "does-not-exist.lbl");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", projectPath, missingLbl]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /label file not found/i);
+  });
+});
+
+// import-lbl's ceiling refusal needs no live regenerator2000 at all --
+// r2000-symbols.ts's importLabels() checks the caller-supplied .lbl's own
+// ceilings BEFORE ever spawning a child (T-11-LBL-SIZE), so the project file
+// content is never even read.
+test("import-lbl: a .lbl exceeding the line-count ceiling is refused with stock-symbols.ts's own ceiling message", async () => {
+  await withTempDir(async (dir) => {
+    const projectPath = join(dir, "game.regen2000proj");
+    writeFileSync(projectPath, "{}"); // never read -- the ceiling check runs first
+    const lblPath = join(dir, "huge.lbl");
+    writeFileSync(lblPath, Array.from({ length: 50001 }, () => "; filler").join("\n"));
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", projectPath, lblPath]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /50000-line ceiling/);
+  });
+});
+
+test(
+  "gated: export-lbl writes a .lbl with the symbol count parsed back, and import-lbl reports names imported plus a disk-verified persistence confirmation (R2000-14/R2000-15)",
+  { skip: SKIP_REASON },
+  async () => {
+    await withWorkspaceTempDir(async (dir) => {
+      const prgPath = join(dir, "game.prg");
+      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+      const projectPath = join(dir, "game.regen2000proj");
+      const { result: bootCode } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out", projectPath]));
+      assert.equal(bootCode, 0);
+
+      const { runR2000Tool } = await import("./r2000-tools.ts");
+      const setResult = await runR2000Tool("r2000_set_label_name", { project: projectPath, address: 0x0801, name: "entry" });
+      assert.equal(setResult.isError, false, JSON.stringify(setResult));
+
+      const lblOut = join(dir, "game.lbl");
+      const { result: exportCode, stdout: exportStdout } = await withCapturedConsole(() =>
+        runR2000Cli(["export-lbl", projectPath, "--out", lblOut]),
+      );
+      assert.equal(exportCode, 0, exportStdout);
+      assert.ok(existsSync(lblOut));
+      assert.match(exportStdout, /wrote .*game\.lbl.*\(1 symbol\(s\)\)/);
+
+      const importText = readFileSync(lblOut, "utf8") + "\nal C:0802 .discovered\n";
+      const importPath = join(dir, "discovered.lbl");
+      writeFileSync(importPath, importText);
+
+      const { result: importCode, stdout: importStdout } = await withCapturedConsole(() =>
+        runR2000Cli(["import-lbl", projectPath, importPath]),
+      );
+      assert.equal(importCode, 0, importStdout);
+      assert.match(importStdout, /entry/);
+      assert.match(importStdout, /discovered/);
+      assert.match(importStdout, /persisted by an explicit/i);
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Local ACME gate, mirroring disasm-roundtrip.test.ts's own convention
