@@ -35,7 +35,7 @@
 // measured while writing this file, not merely assumed. Driving the CLI
 // instead also exercises the exact contract both a human operator and the
 // future `--hook` mode use.
-import { test } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -348,4 +348,274 @@ test("the milestone-audit walk descends neither a symlinked directory nor a dot-
   } finally {
     cleanup();
   }
+});
+
+// ============================================================================
+// HOOK MODE (plan 12-02, D-12-03) -- pins scripts/audit-gate.mjs's `--hook`
+// contract: scope determination, gating, downgrade safety, Bash-heredoc
+// coverage, unrecognised-payload-shape refusal, fail-closed-in-scope, and
+// exit-2-as-the-sole-blocking-mechanism.
+//
+// CRITICAL HAZARD (read before adding another payload here): once plan
+// 12-03 wires `--hook` live via `.claude/settings.json`, ANY Bash command
+// string that carries BOTH a write-indicator adjacent to a
+// `*MILESTONE-AUDIT*.md` token AND a gated `status:` line is itself
+// blockable by that live hook. An executor typing one of these payloads as
+// an inline shell command (e.g. `printf '...' | node scripts/audit-gate.mjs
+// --hook`) would be blocking its OWN tool call. Every payload below is
+// built as a JS string/object inside this file and handed to the child
+// process via `spawnSync`'s `input` option -- never assembled or piped
+// through an actual Bash command line. Do not move these proofs back to
+// the shell.
+// ============================================================================
+
+interface HookRunResult {
+  status: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Drives `scripts/audit-gate.mjs --hook --root <rootDir>` as a subprocess,
+ * writing `payload` to the child's stdin. `payload` is JSON-encoded when it
+ * is not already a string, so callers proving the malformed-JSON path can
+ * hand a raw (intentionally-broken) string straight through. This is the
+ * ONE place this describe block spawns the gate in hook mode. */
+function runHook(payload: unknown, rootDir: string): HookRunResult {
+  const input = typeof payload === "string" ? payload : JSON.stringify(payload);
+  const result = spawnSync(process.execPath, [GATE, "--hook", "--root", rootDir], {
+    input,
+    encoding: "utf8",
+  });
+  if (result.error) {
+    throw new Error(`failed to spawn audit-gate.mjs --hook: ${result.error.message}`);
+  }
+  return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** The one guard basename every red-tree hook test can rely on being red:
+ * `buildSyntheticTree`'s default `redGuardIndex: 0` always reds
+ * `EXPECTED_GUARD_NAMES_FOR_ASSERTION[0]`. */
+const RED_GUARD_NAME = EXPECTED_GUARD_NAMES_FOR_ASSERTION[0];
+
+const MILESTONE_AUDIT_REL_PATH = ".planning/v9.9.9-MILESTONE-AUDIT.md";
+
+describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () => {
+  test("hook mode: an out-of-matcher tool exits 0 without spawning the guards", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const { status, stdout, stderr } = runHook(
+        { tool_name: "Read", tool_input: { file_path: `/x/${MILESTONE_AUDIT_REL_PATH}` } },
+        root,
+      );
+      // Red tree, in-name only "MILESTONE-AUDIT" target, but tool_name
+      // "Read" is not in the matcher set -- if this returned anything but
+      // exit 0, the guard subprocess would have had to run to find that
+      // out, which is exactly the pre-spawn short-circuit this test proves.
+      assert.equal(status, 0, `expected exit 0; stderr: ${stderr}`);
+      assert.equal(stdout, "");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a gated status written to a non-audit path exits 0", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const { status, stderr } = runHook(
+        { tool_name: "Write", tool_input: { file_path: "/x/notes.md", content: "status: passed\n" } },
+        root,
+      );
+      assert.equal(status, 0, `expected exit 0; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: planted false-negative — a gated status into a milestone audit with all guards green is allowed", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const { status, stderr } = runHook(
+        {
+          tool_name: "Write",
+          tool_input: {
+            file_path: `/workspace/${MILESTONE_AUDIT_REL_PATH}`,
+            content: "---\nstatus: passed\n---\n",
+          },
+        },
+        root,
+      );
+      assert.equal(status, 0, `expected exit 0 (all guards green); stderr: ${stderr}`);
+      assert.equal(stderr, "");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: planted violation — a gated status into a milestone audit with a red guard exits 2, with the guard name, its assertion text and both legitimate routes on stderr (D-12-15)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const { status, stdout, stderr } = runHook(
+        {
+          tool_name: "Write",
+          tool_input: {
+            file_path: `/workspace/${MILESTONE_AUDIT_REL_PATH}`,
+            content: "---\nstatus: passed\n---\n",
+          },
+        },
+        root,
+      );
+      assert.equal(status, 2, `expected exit 2; stdout: ${stdout}\nstderr: ${stderr}`);
+      assert.equal(stdout, "", "hook mode must never print to stdout");
+      assert.ok(stderr.length > 0, "expected a non-empty stderr refusal");
+      assert.ok(
+        EXPECTED_GUARD_NAMES_FOR_ASSERTION.some((n) => stderr.includes(n)),
+        `expected stderr to name a red guard's basename; stderr: ${stderr}`,
+      );
+      assert.ok(
+        stderr.includes(`PLANTED-ASSERTION-${RED_GUARD_NAME}`),
+        `expected stderr to quote the planted assertion's own failure text; stderr: ${stderr}`,
+      );
+      assert.ok(
+        /change or retire the guard/i.test(stderr),
+        `expected stderr to name the change-or-retire-in-a-commit route; stderr: ${stderr}`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: an Edit downgrading passed to gaps_found is never blocked (D-12-13)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const { status, stderr } = runHook(
+        {
+          tool_name: "Edit",
+          tool_input: {
+            file_path: `/workspace/${MILESTONE_AUDIT_REL_PATH}`,
+            old_string: "status: passed",
+            new_string: "status: gaps_found",
+            replace_all: false,
+          },
+        },
+        root,
+      );
+      assert.equal(status, 0, `an honest downgrade must never be blocked, even over a red guard; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a Bash heredoc writing a gated status into a milestone audit is blocked (D-12-04)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      // Built as a JS string, never typed as an actual shell command -- see
+      // the CRITICAL HAZARD note above this describe block.
+      const command = [
+        `cat > ${MILESTONE_AUDIT_REL_PATH} <<'EOF'`,
+        "---",
+        "status: passed",
+        "---",
+        "EOF",
+      ].join("\n");
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 2, `expected the heredoc write to be blocked; stderr: ${stderr}`);
+      assert.ok(stderr.length > 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a Bash grep whose redirect target is not the audit file is not blocked", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `grep 'status: passed' ${MILESTONE_AUDIT_REL_PATH} > /tmp/out`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `the redirect target (/tmp/out) is not the audit file; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: malformed stdin JSON in scope fails closed (exit 2), out of scope fails open (exit 0)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      // In scope: names a milestone-audit path and a gated status line, but
+      // the JSON wrapper itself is truncated (missing closing braces).
+      const inScopeRaw =
+        `{"tool_name":"Write","tool_input":{"file_path":"/workspace/${MILESTONE_AUDIT_REL_PATH}",` +
+        `"content":"---\\nstatus: passed\\n---\\n"`;
+      const inScope = runHook(inScopeRaw, root);
+      assert.equal(inScope.status, 2, `expected fail-closed on an in-scope malformed payload; stderr: ${inScope.stderr}`);
+      assert.ok(inScope.stderr.length > 0);
+
+      // Out of scope: equally malformed, but names no milestone-audit token.
+      const outOfScopeRaw = `{"tool_name":"Write","tool_input":{"file_path":"/x/notes.md","content":"hello`;
+      const outOfScope = runHook(outOfScopeRaw, root);
+      assert.equal(outOfScope.status, 0, `expected fail-open on an out-of-scope malformed payload; stderr: ${outOfScope.stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: an unrecognized tool_input shape in scope refuses loudly rather than silently passing (T-12-08)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const payload = {
+        tool_name: "Write",
+        tool_input: {
+          destination: `/workspace/${MILESTONE_AUDIT_REL_PATH}`,
+          body: "---\nstatus: passed\n---\n",
+        },
+      };
+
+      const red = runHook(payload, redTree.root);
+      assert.equal(red.status, 2, `expected the unrecognised shape to still refuse over a red guard; stderr: ${red.stderr}`);
+      assert.ok(
+        /unrecognised.shape|unrecognized.shape/i.test(red.stderr) || /T-12-08/.test(red.stderr),
+        `expected stderr to name the unrecognised-shape fallback; stderr: ${red.stderr}`,
+      );
+      assert.ok(red.stderr.includes("destination"), `expected stderr to list "destination" as a key seen; stderr: ${red.stderr}`);
+      assert.ok(red.stderr.includes("body"), `expected stderr to list "body" as a key seen; stderr: ${red.stderr}`);
+      assert.ok(
+        EXPECTED_GUARD_NAMES_FOR_ASSERTION.some((n) => red.stderr.includes(n)),
+        `expected stderr to still carry the red guard's basename; stderr: ${red.stderr}`,
+      );
+
+      const green = runHook(payload, greenTree.root);
+      assert.equal(
+        green.status,
+        0,
+        `expected the SAME unrecognised-shape payload to be allowed once every guard is green -- proves the ` +
+          `fallback gates on guard state rather than refusing unconditionally; stderr: ${green.stderr}`,
+      );
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
+
+  test("hook mode: exit 2 is the only blocking mechanism — stdout carries no permissionDecision JSON", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const { status, stdout, stderr } = runHook(
+        {
+          tool_name: "Write",
+          tool_input: {
+            file_path: `/workspace/${MILESTONE_AUDIT_REL_PATH}`,
+            content: "---\nstatus: passed\n---\n",
+          },
+        },
+        root,
+      );
+      assert.equal(status, 2);
+      assert.equal(stdout, "", "hook mode must never print JSON (or anything else) to stdout on a refusal");
+      assert.ok(
+        !stderr.includes("permissionDecision"),
+        `stderr must not carry a hookSpecificOutput.permissionDecision blob; stderr: ${stderr}`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
 });
