@@ -97,7 +97,7 @@ anyone to notice).
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
 
-**Plans**: 4 plans (4 waves, sequential — each wave builds on the previous)
+**Plans**: 7 plans (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
 
 **Wave 1**
 
@@ -114,6 +114,18 @@ anyone to notice).
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 12-04-PLAN.md — the one-time real-tree plant-and-revert transcript (`12-GATE-PROOF.md`) satisfying criteria 1 and 2
+
+**Wave 5** *(gap closure, blocked on Wave 4; sole owner of `scripts/audit-gate.mjs`'s detection internals and of `audit-integrity.test.ts`)*
+
+- [ ] 12-05-PLAN.md — CR-01 + CR-03 + WR-04: a bounded, non-backtracking milestone-audit token locator replacing both super-linear regexes, an unanchored gated-status scan for Bash command text derived from the one `GATED_STATUSES` set, the dead `pathish` push removed, and every falsified comment reconciled (D-12-04, D-12-12, D-12-14) [wave 5]
+
+**Wave 6** *(gap closure, blocked on 12-05 — same two files)*
+
+- [ ] 12-06-PLAN.md — CR-02 + WR-01/WR-02/WR-03: an iterative depth-capped leaf walk whose truncation is a signal rather than a `RangeError`, matcher-first dispatch, symmetric try/catch in both modes, a 15 s bound on the guard subprocess, and a fast structural-failure path (D-12-03, D-12-10, D-12-14) [wave 6]
+
+**Wave 7** *(gap closure, blocked on 12-06; human-gated — `autonomous: false`)*
+
+- [ ] 12-07-PLAN.md — the two `human_verification:` items: the live in-session `PreToolUse` block `12-04-PLAN.md` deferred and never performed, recorded in `12-GATE-PROOF.md`, plus a dated terminal state for RESEARCH assumptions A2 and A3 (D-12-03, D-12-19, D-12-20) [wave 7]
 
 ### Phase 13: External Verification
 
