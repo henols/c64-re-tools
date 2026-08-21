@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: executing
-last_updated: "2026-08-21T10:22:21.298Z"
+status: verifying
+last_updated: "2026-08-21T11:10:28.325Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 36
-  completed_plans: 35
-  percent: 75
+  completed_plans: 36
+  percent: 100
 ---
 
 # Project State
@@ -38,7 +38,7 @@ packages, so no release work gates the milestone.
 
 Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 
 All 12 plans executed across 7 waves and merged into main; verification
 `passed` (4/4 roadmap success criteria, 5/5 requirement IDs). Post-merge gate
@@ -115,6 +115,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 11.1 P04 | 95min | 3 tasks | 5 files |
 | Phase 11.1 P05 | ~2h | 3 tasks | 9 files |
 | Phase 11.1 P06 | 70min | 3 tasks | 3 files |
+| Phase 11.1 P07 | ~3.5h | 4 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -184,6 +185,8 @@ Recent decisions affecting current work:
 - [Phase 11.1]: IN-06 map is built from ground-truth code behaviour, not USAGE text; export-asm's USAGE was corrected to document its real --entry forwarding
 - [Phase 11.1]: verify refuses both --out and --force (the identical accepted-but-ignored shape), not just the --out case IN-06 named
 - [Phase 11.1]: WR-12's tautology only reproduces when writeChain's write formula and extractEntry's read formula are mutated together in a self-consistent way; a single-sided mutation breaks the round-trip test too
+- [Phase 11.1-07]: AUDIT-01/04/05 closed: every Phase 10/11 review finding now has a cited disposition (11 fixed, 1 deferred); STATE.md's Deferred Items is derived from .planning/todos/pending/ and guarded both directions; Operator Next Steps names the two remaining Phase 10 coverage commands then /gsd-complete-milestone v0.3.0
+- [Phase 11.1-07]: Task 4's ledger-completeness guard (docs-review-disposition.test.ts), scanning every phase not just 10/11, found 27 undispositioned findings before this plan (7 in Phase 10/11, 20 outside it: Phase 01 six, Phase 02 one, Phase 08 nine, Phase 09 one, Phase 11 one) versus the plan's own pre-measured 8 -- confirming the process risk was real and larger than predicted; closed to zero by fixing (Phase 01, quick task 260821-a86) or filing (Phase 08) each
 
 ### Pending Todos
 
@@ -368,8 +371,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T10:22:21.289Z
-Stopped at: Completed 11.1-06-PLAN.md
+Last session: 2026-08-21T11:10:28.293Z
+Stopped at: Completed 11.1-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -386,6 +389,7 @@ they write phase-10 artifacts, which an 11.1 commit should not carry):
   `10-VERIFICATION.md` ran the full suite green plus all four CI guard
   scripts at exit 0 and source-level mutation-kill testing — so this command
   closes the paperwork retroactively rather than re-running anything.
+
 - `/gsd-secure-phase 10` — no `10-SECURITY.md` exists, despite Phase 10 being
   the phase that introduced untrusted-input byte parsers (`r2000-d64.ts`'s
   sector walker, `r2000-project.ts`'s `parsePrg`). Two of the phase's own

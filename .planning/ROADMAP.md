@@ -42,7 +42,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 - [x] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
 - [x] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim (completed 2026-08-20)
 - [x] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator (completed 2026-08-21)
-- [ ] **Phase 11.1: Close v0.3.0 Audit Items (INSERTED)** - Fix or formally disposition every milestone-audit finding, each behind a mechanical guard (see `v0.3.0-MILESTONE-AUDIT.md`)
+- [x] **Phase 11.1: Close v0.3.0 Audit Items (INSERTED)** - Fix or formally disposition every milestone-audit finding, each behind a mechanical guard (see `v0.3.0-MILESTONE-AUDIT.md`) (completed 2026-08-21)
 
 ## Progress
 
@@ -61,7 +61,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
-| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 6/7 | In Progress|  |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -442,7 +442,7 @@ Plans:
 - [x] 11.1-04-PLAN.md — WR-10 + IN-04 + INT-02 + Phase 11 IN-02: bound the blocking spawn with named errors, correct the spawn-seam header and check the `assertNoViceFlag`-first invariant, and mark `regenerateAndReload()` library-only (wave 1)
 - [x] 11.1-05-PLAN.md — WR-11 + IN-05 + IN-03 + IN-01: honest `acme.mjs --help` pinned in both directions, a deletion pin that stops false-positiving on `disasm-*.ts`, and a bounded drained exit on the `r2000` CLI path (wave 1)
 - [x] 11.1-06-PLAN.md — WR-09 + IN-06 + WR-12: restore `bootstrapProject()`'s never-throw contract and pin it structurally, refuse options a verb does not implement, and pin the `.d64` used-byte convention against a hand-written sector (wave 2)
-- [ ] 11.1-07-PLAN.md — AUDIT-01 + AUDIT-04/-05: the disposition ledger for every undispositioned finding, then STATE.md's Deferred Items and Operator Next Steps refreshed behind a derivation guard (wave 3, must land last)
+- [x] 11.1-07-PLAN.md — AUDIT-01 + AUDIT-04/-05: the disposition ledger for every undispositioned finding, then STATE.md's Deferred Items and Operator Next Steps refreshed behind a derivation guard (wave 3, must land last)
 
 Notes:
 
