@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
-status: planning
-last_updated: "2026-08-21T13:22:51.378Z"
-last_activity: 2026-08-21
+status: Roadmapped — awaiting `/gsd-plan-phase 12`
+last_updated: "2026-08-21T13:49:02.028Z"
+last_activity: 2026-08-21 — ROADMAP.md created for v0.4.0 (Phases 12-17), 16/16
 progress:
   total_phases: 6
   completed_phases: 0
@@ -377,9 +377,9 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T11:10:28.293Z
-Stopped at: Completed 11.1-07-PLAN.md
-Resume file: None
+Last session: 2026-08-21T13:49:02.019Z
+Stopped at: Phase 12 context gathered
+Resume file: .planning/phases/12-audit-integrity-instrument/12-CONTEXT.md
 
 ## Operator Next Steps
 
