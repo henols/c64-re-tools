@@ -191,26 +191,62 @@ interface ParsedArgs {
   entry?: string;
   out?: string;
   force?: boolean;
+  entryMissingValue?: boolean;
+  outMissingValue?: boolean;
 }
 
 /** Fixed, closed option set -- exactly `--entry`, `--out` and `--force`. No
  * rest field, no passthrough: an unrecognised flag is treated as a
  * positional token (and will surface as "input file not found" rather than
  * silently reaching regenerator2000, since nothing here ever forwards raw
- * argv to the child process). */
+ * argv to the child process).
+ *
+ * WR-08: a value that is absent or itself `--`-shaped is a refusal
+ * (`entryMissingValue`/`outMissingValue`), never silently taken as the
+ * option's value -- the same posture `parseExportLblArgs()` below already
+ * has for `--out`. Before this fix, `entry = rest[++i]` and `out =
+ * rest[++i]` took the NEXT token unconditionally, so `bootstrap x.prg --out
+ * --entry FOO` parsed as `{ out: "--entry", entry: undefined }` and
+ * `bootstrapProject()` went on to `writeFileSync()` a project literally
+ * named `--entry` -- a dash-prefixed filename that is a shell-glob hazard
+ * for whatever later reads that directory. Callers check the two
+ * `*MissingValue` flags and refuse with a one-line message naming the
+ * option that was actually short a value (WR-09's lesson: `--out --entry
+ * FOO` must say `--out` is missing a value, never that `--entry` is a bad
+ * path) -- never throw, so `bootstrapProject()`'s never-throw contract
+ * holds for every caller of this parser too. */
 function parseArgs(rest: string[]): ParsedArgs {
   const positional: string[] = [];
   let entry: string | undefined;
   let out: string | undefined;
   let force = false;
+  let entryMissingValue = false;
+  let outMissingValue = false;
   for (let i = 0; i < rest.length; i++) {
-    const a = rest[i];
-    if (a === "--entry") entry = rest[++i];
-    else if (a === "--out") out = rest[++i];
-    else if (a === "--force") force = true;
-    else positional.push(a!);
+    const a = rest[i]!;
+    if (a === "--entry") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        entryMissingValue = true;
+      } else {
+        entry = value;
+        i++;
+      }
+    } else if (a === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        outMissingValue = true;
+      } else {
+        out = value;
+        i++;
+      }
+    } else if (a === "--force") {
+      force = true;
+    } else {
+      positional.push(a);
+    }
   }
-  return { positional, entry, out, force };
+  return { positional, entry, out, force, entryMissingValue, outMissingValue };
 }
 
 /**
@@ -453,7 +489,20 @@ function bootstrapProject(
 }
 
 function cmdBootstrap(rest: string[]): number {
-  const { positional, entry, out, force } = parseArgs(rest);
+  const { positional, entry, out, force, entryMissingValue, outMissingValue } = parseArgs(rest);
+  // WR-08: refused before any file is touched -- a flag-shaped or missing
+  // value for either option must never reach bootstrapProject() as if it
+  // were a real value.
+  if (entryMissingValue) {
+    console.error("bootstrap: --entry requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("bootstrap: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
   const input = positional[0];
   if (!input) {
     console.error("bootstrap: usage: bootstrap <input> [--entry NAME] [--out PROJECT] [--force]");
@@ -463,7 +512,19 @@ function cmdBootstrap(rest: string[]): number {
 }
 
 function cmdExportAsm(rest: string[]): number {
-  const { positional, entry, out, force } = parseArgs(rest);
+  const { positional, entry, out, force, entryMissingValue, outMissingValue } = parseArgs(rest);
+  // WR-08, same posture as cmdBootstrap() above: refuse before any temp
+  // directory or file is created.
+  if (entryMissingValue) {
+    console.error("export-asm: --entry requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("export-asm: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
   const input = positional[0];
   if (!input) {
     console.error("export-asm: usage: export-asm <input-or-project> [--out FILE] [--force]");
@@ -532,7 +593,15 @@ function cmdExportAsm(rest: string[]): number {
  * incident this guards against).
  */
 function cmdVerify(rest: string[]): number {
-  const { positional, entry } = parseArgs(rest);
+  const { positional, entry, entryMissingValue } = parseArgs(rest);
+  // WR-08: `--out` is not in verify's own accepted set (VERB_OPTIONS above),
+  // so `checkAcceptedOptions()` already refuses it before this function ever
+  // runs -- only `--entry`'s missing-value case is reachable here.
+  if (entryMissingValue) {
+    console.error("verify: --entry requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
   const input = positional[0];
   if (!input) {
     console.error("verify: usage: verify <input-or-project> [--entry NAME]");
