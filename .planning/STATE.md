@@ -55,13 +55,19 @@ store entries rather than prose (11-12). Criterion 1's two-session
 falsifiability proof is closed: session B answered a question sealed before it
 existed and the sha256 matched (11-07, 11-09).
 
-Open, recorded, non-blocking: T-11-NAME-INJECT (label names unvalidated on
-entry) -- code review WR-04 widened its blast radius to the generated memory
-map's unescaped Markdown table cells; the enum double-run no-op (11-06); and
-5 warning-level code review findings in `11-REVIEW.md`. No SECURITY.md yet
-while `workflow.security_enforcement` is true.
+Security closed: `11-SECURITY.md` is `status: verified` / `threats_open: 0`
+(69 threats, 66 closed at audit, the remaining 3 closed by quick task
+260821-a86 -- WR-01's parent-realpath containment in `resolveStorePath()`,
+T-11-NAME-INJECT's REJECT policy on both label-name entry routes, and WR-04's
+Markdown-cell escaping in `renderMemoryMap()`).
 
-Last activity: 2026-08-21
+Open, recorded, non-blocking: the enum double-run no-op (11-06); and the three
+unregistered flags WR-02 (refusal shape), WR-03 (unbounded batch recursion) and
+WR-05 (missing post-spawn `"error"` listener), which 260821-a86 deliberately
+left out of scope.
+
+Last activity: 2026-08-21 - Completed quick task 260821-a86: closed Phase 11's
+three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 
 ## Performance Metrics
 
@@ -184,6 +190,7 @@ hands regenerator2000 a container format. Reverses if a consumer has only
 | 260819-tsz | Replace six hand-maintained version strings with one `VERSION` template (`0.2.-`, `-` = auto-managed slot) plus a resolver seam, wired into CI; a hand minor/major bump now publishes X.Y.0 instead of continuing the old patch count | 2026-08-19 | 38a56ac..811746b (16 commits) | passed (verifier returned `partial` on a stale-README gap; gap closed in 7665025, and 8/8 code-review findings fixed) | [260819-tsz-single-version-template-plus-resolver-sc](./quick/260819-tsz-single-version-template-plus-resolver-sc/) |
 | 260819-vie | Fix the release-asset gap: extract stamp+zip+upload into one seam (`scripts/release-assets.sh`) called by both release paths, since `release-on-merge`'s GITHUB_TOKEN tag cannot re-trigger the tag-gated `release` job; v0.2.0's missing plugin zip attached retroactively | 2026-08-19 | 4867535..ee296c0 (4 commits, all `[skip release]`) | passed (asset verified by download: zip + sha256, `plugin.json`/`marketplace.json` all `0.2.0`) | [260819-vie-extract-release-stamp-zip-upload-into-on](./quick/260819-vie-extract-release-stamp-zip-upload-into-on/) |
 | 260820-jwb | Post-Phase-9 repo hygiene: bound CI's ACME install with a 5-minute timeout and 3-attempt apt retry (todo closed), gitignore `.vice-snapshots/`/`.vscode/`/`.claude/settings.json` with tarball-drift verification, and correct four stale ahead-of-`origin/main`-at-a-superseded-tag release claims to the true v0.2.0-shipped position | 2026-08-20 | 393ddf7, 5fbf66b, b86e596, 828bea4, 823943c | passed (npm tarballs unaffected, `test:automated` 1699/1704 unchanged) | [260820-jwb-post-phase-9-repo-hygiene-ci-acme-timeou](./quick/260820-jwb-post-phase-9-repo-hygiene-ci-acme-timeou/) |
+| 260821-a86 | Close Phase 11's three open SECURITY.md findings: WR-01's parent-realpath containment in `resolveStorePath()` (deepest-existing-ancestor walk + dangling-symlink-component refusal), T-11-NAME-INJECT's REJECT policy on both label-name entry routes (`r2000_set_label_name` outer *and* batch-inner, `importLabels()` naming the offending `.lbl` line) via a new dependency-free `r2000-acme-ident.ts` seam, and WR-04's Markdown-cell escaping in `renderMemoryMap()`; `11-SECURITY.md` flipped to `threats_open: 0` / `status: verified` | 2026-08-21 | de788b9, bb08c46, 2c287cb | passed (orchestrator re-ran the gates independently: `tsc --noEmit` clean, `test:automated` 1947 tests / 1942 pass / 0 fail / 5 pre-existing todo, `check-npm-packages.mjs` green, all three controls confirmed present in source) | [260821-a86-fix-phase-11-security-md-open-findings-w](./quick/260821-a86-fix-phase-11-security-md-open-findings-w/) |
 
 ### Blockers/Concerns
 
