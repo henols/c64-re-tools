@@ -41,7 +41,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 
 - [x] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
 - [x] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim (completed 2026-08-20)
-- [ ] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator
+- [x] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator (completed 2026-08-21)
 
 ## Progress
 
@@ -59,7 +59,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 8.2 Close v0.2.0 blockers (INSERTED) | v0.2.0 | 6/6 | Complete | 2026-08-19 |
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 11/12 | In Progress|  |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete   | 2026-08-21 |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -397,7 +397,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 11-12-PLAN.md — The skills become store-first, the template documents the generator, and CI checks every `r2000_*` name in prose
+- [x] 11-12-PLAN.md — The skills become store-first, the template documents the generator, and CI checks every `r2000_*` name in prose
 
 Notes:
 
