@@ -54,6 +54,10 @@ changing what the session needs to do with it.
 - ✓ Cycle timing and "is the emulator still advancing" work on the stock backend — v0.2.0
 - ✓ A user can install this from a package manager and is never silently given a wrong answer by a backend that cannot do the thing — v0.2.0 (`docs/tool-support.md` generated from both manifests with a byte-identity drift guard)
 - ✓ Five load-bearing assumptions checked against a real regenerator2000 build before any plan is written, with the pty/HTTP-MCP one gating the rest — Phase 9 (`R2000-16`; verdict `degrade` via rule `R4`, see [`docs/phase9-regenerator2000-probe-findings.md`](../docs/phase9-regenerator2000-probe-findings.md))
+- ✓ `c64-program-recon` writes findings as queryable annotation state, not only Markdown prose, so a later session can query instead of re-deriving — Phase 11 (`R2000-10`; proven by the two-session falsifiability test — session B answered a question sealed before it existed, from store queries alone)
+- ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`R2000-11`; the 17 curated `r2000_*` tools)
+- ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`R2000-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
+- ✓ Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`R2000-14`, `R2000-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
 
 ### Active
 
@@ -65,10 +69,6 @@ changing what the session needs to do with it.
 - [ ] `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by a regenerator2000 route (`R2000-05`)
 - [ ] A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted (`R2000-06`)
 - [ ] Project bootstrap from a raw binary is automated rather than a documented manual step (`R2000-09`)
-- [ ] `c64-program-recon` writes findings as queryable annotation state, not only Markdown prose, so a later session can query instead of re-deriving (`R2000-10`)
-- [ ] A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program (`R2000-11`)
-- [ ] Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers (`R2000-13`)
-- [ ] Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip (`R2000-14`, `R2000-15`)
 
 ### Out of Scope
 
@@ -598,7 +598,38 @@ Next: v0.2.0's phase work is complete — `/gsd-audit-milestone` then
 `/gsd-complete-milestone`. *(Both were run: audit round 4 returned `tech_debt` with
 no blockers, and the milestone was archived and tagged on 2026-08-19.)*
 
+**Phase 11 complete — the annotation store is on the tool surface, and the symbol
+loop is closed.** 2026-08-21. 12 plans, 7 waves, verification `passed` (4/4 roadmap
+criteria, 5/5 requirement IDs). This project became an MCP *client* for the first
+time (`r2000-mcp-client.ts`, a hand-rolled JSON-RPC client chosen after measuring
+that `@mastra/mcp`'s `MCPClient` cannot retrieve a spawned child's exit code), and
+exposes 17 curated `r2000_*` tools registered proxy-locally — so they never reach
+`forwardToVice()` and the derived-tool path constraint holds by construction.
+
+Two claims rest on evidence rather than tests, and both were verified independently:
+criterion 1's **two-session falsifiability proof** (session B answered a question
+whose sha256 answer session A sealed before B existed — the answer's label appears
+nowhere in session A's transcript, and a near-miss decoy is visible there instead),
+and criterion 4's **live loop** against genuine unpatched stock `x64sc` (VICE 3.9),
+with the inbound name's absence proven at two independent points before discovery
+and `vice_symbols_load` called exactly once on the fully regenerated file.
+
+The Markdown memory map is now a generated view of the store rather than a
+hand-maintained document, and the recon / memory-mapping / ram-capture playbooks
+emit store entries instead of prose.
+
+**Open and recorded, non-blocking:** `T-11-NAME-INJECT` — label names are not
+validated on entry via `r2000_set_label_name` or `--import_lbl`. Code review
+finding WR-04 widened its blast radius: the generated memory map writes label and
+comment text unescaped into Markdown table cells, and comments may be multi-line.
+Five warning-level review findings total in `11-REVIEW.md`; none critical.
+
+**Bookkeeping note:** Phase 10's requirements (`R2000-01`, `-02`, `-03`, `-05`,
+`-06`, `-09`) remain in Active below. Phase 10 closed without graduating them and
+Phase 11 did not touch them, so they are left as-is rather than closed by a phase
+that did not deliver them.
+
 </details>
 
 ---
-*Last updated: 2026-08-20 after Phase 9 close (`R2000-16` graduated to Validated; assumption-probe verdict `degrade`/`R4` recorded). Previously: 2026-08-19 at v0.2.0 milestone close. Full evolution review performed: "What This Is" rewritten to a shipped two-backend description, Core Value re-checked and kept, 12 requirements graduated to Validated, Active replaced with the v0.3.0 `R2000-*` set, two new Out of Scope boundaries recorded (measured-caller scope cuts; non-uniform tool lists), the superseded "surface must not change" constraint replaced with D-07's trimmed-per-backend rule, and all eight original Key Decisions given outcomes — four ✓ Good, four ⚠️ Revisit, three of those four genuinely reversed during the milestone.*
+*Last updated: 2026-08-21 after Phase 11 close (`R2000-10`, `-11`, `-13`, `-14`, `-15` graduated to Validated; annotation store, generated enums and the closed symbol round trip recorded). Previously: 2026-08-20 after Phase 9 close; 2026-08-19 at v0.2.0 milestone close.*
