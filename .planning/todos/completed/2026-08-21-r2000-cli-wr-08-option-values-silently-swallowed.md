@@ -72,3 +72,37 @@ last-resort net -- see WR-09's fix in this same file for the established shape).
 error instead of silently writing `game.regen2000proj`; `node vice-proxy.ts r2000
 bootstrap game.prg --out --entry FOO` refuses instead of creating a file named
 `--entry`; `node --test r2000-cli.test.ts` stays green plus new coverage for both cases.
+
+## Resolution
+
+Closed by quick task `260821-jd8` (see
+`.planning/quick/260821-jd8-close-wr-08-flag-shaped-option-values/260821-jd8-SUMMARY.md`).
+
+`parseArgs()` (`.claude/mcp/vice/r2000-cli.ts`) was rewritten exactly along this todo's
+suggested lines, reusing the guard shape `parseExportLblArgs()` already had in the same
+file rather than the standalone `takeValue()` sketched above: a value that is `undefined`
+or itself starts with `--` now sets `entryMissingValue`/`outMissingValue` on the parsed
+result instead of being taken as the option's value (commit `3541886`). `cmdBootstrap()`,
+`cmdExportAsm()` and `cmdVerify()` each check the relevant flag(s) before touching the
+filesystem and refuse with a one-line, never-thrown `<verb>: --{entry,out} requires a
+value` message naming the actually-short option — `bootstrapProject()`'s never-throw
+contract holds.
+
+Pinned by ten new tests in `r2000-cli.test.ts` (commit `e0fd305`), including this todo's
+own two named verification cases (`bootstrap game.prg --out` and `bootstrap game.prg
+--out --entry FOO`) plus the matrix across both options, both failure modes, and all
+three verbs that route through `parseArgs()`. Each of the two literal-reproduction cases
+(for `bootstrap` and `export-asm`) asserts the actual harm — no file literally named
+`--entry` is created — at its real landing spot, `process.cwd()` (a directory-less
+relative `outPath` is resolved by `writeFileSync()` against the CLI process's current
+working directory, not the input file's directory).
+
+Non-vacuity was proven directly, not merely asserted: all ten new tests were confirmed to
+FAIL against a scratch revert of `parseArgs()` to the pre-fix `rest[++i]` form — the
+revert visibly reproduced the hazard, writing a real `--entry` file into this repo's own
+`.claude/mcp/vice/` working directory during the test run — then confirmed to PASS again
+after restoring the fix, with `git diff` showing byte-identity against the committed fix
+afterwards.
+
+`10-SECURITY.md` (Phase 10's retroactive security audit) assigned this finding threat ID
+**T-10-19**, status **CLOSED**, and flipped to `status: verified` / `threats_open: 0`.

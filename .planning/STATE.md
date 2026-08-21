@@ -65,8 +65,15 @@ unregistered flags WR-02 (refusal shape), WR-03 (unbounded batch recursion) and
 WR-05 (missing post-spawn `"error"` listener), which 260821-a86 deliberately
 left out of scope.
 
-Last activity: 2026-08-21
-three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
+Phase 10's retroactive security audit (`10-SECURITY.md`) is also now closed:
+`status: verified` / `threats_open: 0` (25 threats, 24 closed at audit, the
+remaining one -- WR-08, unregistered until this closure, assigned T-10-19 --
+closed by quick task 260821-jd8: `parseArgs()`'s `--entry`/`--out` now refuse
+a missing or flag-shaped value instead of silently swallowing it).
+
+Last activity: 2026-08-21 - Completed quick task 260821-a86: closed Phase 11's
+three open security findings (WR-01, T-11-NAME-INJECT, WR-04); then quick task
+260821-jd8: closed Phase 10's last open security finding (WR-08 / T-10-19)
 
 ## Performance Metrics
 
@@ -213,6 +220,7 @@ hands regenerator2000 a container format. Reverses if a consumer has only
 | 260819-vie | Fix the release-asset gap: extract stamp+zip+upload into one seam (`scripts/release-assets.sh`) called by both release paths, since `release-on-merge`'s GITHUB_TOKEN tag cannot re-trigger the tag-gated `release` job; v0.2.0's missing plugin zip attached retroactively | 2026-08-19 | 4867535..ee296c0 (4 commits, all `[skip release]`) | passed (asset verified by download: zip + sha256, `plugin.json`/`marketplace.json` all `0.2.0`) | [260819-vie-extract-release-stamp-zip-upload-into-on](./quick/260819-vie-extract-release-stamp-zip-upload-into-on/) |
 | 260820-jwb | Post-Phase-9 repo hygiene: bound CI's ACME install with a 5-minute timeout and 3-attempt apt retry (todo closed), gitignore `.vice-snapshots/`/`.vscode/`/`.claude/settings.json` with tarball-drift verification, and correct four stale ahead-of-`origin/main`-at-a-superseded-tag release claims to the true v0.2.0-shipped position | 2026-08-20 | 393ddf7, 5fbf66b, b86e596, 828bea4, 823943c | passed (npm tarballs unaffected, `test:automated` 1699/1704 unchanged) | [260820-jwb-post-phase-9-repo-hygiene-ci-acme-timeou](./quick/260820-jwb-post-phase-9-repo-hygiene-ci-acme-timeou/) |
 | 260821-a86 | Close Phase 11's three open SECURITY.md findings: WR-01's parent-realpath containment in `resolveStorePath()` (deepest-existing-ancestor walk + dangling-symlink-component refusal), T-11-NAME-INJECT's REJECT policy on both label-name entry routes (`r2000_set_label_name` outer *and* batch-inner, `importLabels()` naming the offending `.lbl` line) via a new dependency-free `r2000-acme-ident.ts` seam, and WR-04's Markdown-cell escaping in `renderMemoryMap()`; `11-SECURITY.md` flipped to `threats_open: 0` / `status: verified` | 2026-08-21 | de788b9, bb08c46, 2c287cb | passed (orchestrator re-ran the gates independently: `tsc --noEmit` clean, `test:automated` 1947 tests / 1942 pass / 0 fail / 5 pre-existing todo, `check-npm-packages.mjs` green, all three controls confirmed present in source) | [260821-a86-fix-phase-11-security-md-open-findings-w](./quick/260821-a86-fix-phase-11-security-md-open-findings-w/) |
+| 260821-jd8 | Close 10-REVIEW.md's WR-08, Phase 10's last open security finding: `parseArgs()`'s `--entry`/`--out` refused a missing or flag-shaped value (`bootstrap x.prg --out --entry FOO` wrote a project literally named `--entry`); reused `parseExportLblArgs()`'s existing guard shape across all three verbs that route through `parseArgs()` (`bootstrap`, `export-asm`, `verify`); pinned by 10 new tests proven non-vacuous against a scratch pre-fix revert; assigned T-10-19, `10-SECURITY.md` flipped to `threats_open: 0` / `status: verified`; pending todo moved to `completed/` with a Resolution section | 2026-08-21 | 3541886, e0fd305 | — | [260821-jd8-close-wr-08-flag-shaped-option-values](./quick/260821-jd8-close-wr-08-flag-shaped-option-values/) |
 
 ### Blockers/Concerns
 
@@ -287,26 +295,27 @@ milestone audit had already assessed the same set as `tech_debt` with no
 blockers. They were accepted rather than resolved, and were v0.3.0's
 inheritance unless dispositioned sooner.
 
-**Current, as of Phase 11.1's close (2026-08-21): 18 items, derived from
+**Current, as of quick task 260821-jd8 (2026-08-21): 17 items, derived from
 `.planning/todos/pending/` and guarded by `docs-deferred-ledger.test.ts`
-(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 18 were opened
+(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 17 were opened
 during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
 `2026-08-20-vsf-as-a-bootstrap-input`,
-`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 4 more were opened
+`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
 by Phase 11.1 itself while dispositioning Phase 10/11's review findings and
 building Task 4's completeness guard, which caught undispositioned findings
 outside Phase 10/11 too
 (`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
-`2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed`,
 `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
 `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`).
-**Two rows from the 2026-08-19 count above are removed here because their
-todos now live in `.planning/todos/completed/`, not because the items were
-dropped:** the second-binmon-client wedge-lookalike documentation todo
-(2026-08-17) and the acme-build scaffold-library todo (2026-08-19) are both
-resolved and closed — see `.planning/todos/completed/` for the filed
-resolutions.
+**Three rows from the 2026-08-19/18-items counts above are removed here
+because their todos now live in `.planning/todos/completed/`, not because the
+items were dropped:** the second-binmon-client wedge-lookalike documentation
+todo (2026-08-17), the acme-build scaffold-library todo (2026-08-19), and
+WR-08's flag-shaped/missing option-value todo (2026-08-21, closed by quick
+task 260821-jd8 — assigned T-10-19 in `10-SECURITY.md`, now `status:
+verified` / `threats_open: 0`) are all resolved and closed — see
+`.planning/todos/completed/` for the filed resolutions.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -325,7 +334,6 @@ resolutions.
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
 | todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
 | todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
-| todo | 2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed | — | Pending — WR-08 (10-REVIEW.md), found while writing plan 11.1-07's disposition ledger; confirmed still live |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
