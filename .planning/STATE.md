@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-21T08:49:33.183Z"
+last_updated: "2026-08-21T09:15:03.003Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 36
-  completed_plans: 32
+  completed_plans: 33
   percent: 75
 ---
 
@@ -37,7 +37,7 @@ packages, so no release work gates the milestone.
 ## Current Position
 
 Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 
 All 12 plans executed across 7 waves and merged into main; verification
@@ -112,6 +112,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 11.1 P01 | 45min | 2 tasks | 4 files |
 | Phase 11.1 P02 | 55min | 2 tasks | 7 files |
 | Phase 11.1 P03 | 45m | 2 tasks | 1 files |
+| Phase 11.1 P04 | 95min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -174,6 +175,9 @@ Recent decisions affecting current work:
 - [Phase 11.1-02]: check-skill-tool-coverage.mjs's r2000 CLI verb list is parsed from r2000-cli.ts's dispatch switch (scripts/lib/r2000-cli-verbs.mjs), never hand-typed -- proven non-vacuous by a committed planted-violation test
 - [Phase 11.1-03]: INT-01/D-11.1-03 -- hostpath-consumers.test.ts's r2000 absence list is now readdirSync-derived with a floor (>= 14) rather than a hard-coded 10-name array; the four previously-uncovered modules (r2000-acme-ident.ts, r2000-regbits-gen.ts, r2000-symbols.ts, r2000-test-gate.ts) are now covered and confirmed clean
 - [Phase 11.1-03]: Phase 10 IN-02 -- the hostpath.ts import detector now matches the whole comment-stripped source with the m flag (catching multi-line named imports) plus a dedicated dynamic-import pattern (catching await import(...)), each proven by a committed planted-violation test
+- [Phase 11.1]: D-11.1-04 (WR-10): default runR2000() timeout 120s, maxBuffer 32 MiB, proven live against real regenerator2000 0.9.20 (38/38 pass) and the timeout proven real via a separate child process.
+- [Phase 11.1]: D-11.1-05 (INT-02): r2000-launch.ts's header corrected to name r2000-mcp-client.ts as a second, necessary async spawn site; R2000-01's guard-before-spawn invariant is now checked by r2000-spawn-seam.test.ts over the shipped module set (package.json files[]), not a raw directory listing, to exclude r2000-test-gate.ts's legitimate --version probe.
+- [Phase 11.1]: D-11.1-06 (Phase 11 IN-02): regenerateAndReload() marked library-only rather than given an invented caller; a biconditional guard in r2000-symbol-roundtrip.test.ts ties the LIBRARY-ONLY marker to the real production-caller count in both directions.
 
 ### Pending Todos
 
@@ -315,8 +319,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-21T08:49:33.173Z
-Stopped at: Completed 11.1-03-PLAN.md
+Last session: 2026-08-21T09:15:02.990Z
+Stopped at: Completed 11.1-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
