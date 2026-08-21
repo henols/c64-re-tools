@@ -200,3 +200,83 @@ test("SESSION-B-ANSWER.md's canonical line matches QUESTION.md's own grammar", (
     `session B's canonical line does not match the label=... confidence=... blocktype=... xrefcount=... grammar: ${JSON.stringify(sessionBLine)}`,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Criterion 1's FIXTURE reproducibility (validation audit, 2026-08-21).
+//
+// WHY THIS EXISTS: 11-VALIDATION.md's row 11-07-T1 declares an external
+// oracle -- "the recon subject is reproducible from source" -- verified by
+// `acme -f cbm -o /tmp/x.prg recon-subject.a && cmp`. That is a real check
+// and it does pass, but nothing MECHANIZED it: it was a shell command typed
+// once. Every other piece of criterion 1's committed evidence is guarded by
+// this file; the fixture the whole two-session proof was derived FROM was
+// not. An edit to `recon-subject.a` (or a re-export of the `.prg` from a
+// different source) would drift silently, and the two-session answer key
+// above would go on sealing an answer about a program that no longer
+// matches its own source.
+//
+// CI DOES run this: `.github/workflows/ci.yml`'s Test step installs ACME
+// and sets `VICE_REQUIRE_ACME=1`, so a missing ACME hard-FAILS there rather
+// than skipping. The gate below is imported from `r2000-test-gate.ts` (the
+// sanctioned seam) rather than hand-copied a third time.
+// ---------------------------------------------------------------------------
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import {
+  ACME_BIN,
+  acmeSkipReasonFor,
+  assertAcmeRequiredIfEnvSet,
+} from "./r2000-test-gate.ts";
+
+const FIXTURE_DIR = join(EVIDENCE_DIR, "fixture");
+const FIXTURE_SOURCE = join(FIXTURE_DIR, "recon-subject.a");
+const FIXTURE_PRG = join(FIXTURE_DIR, "recon-subject.prg");
+
+const ACME_SKIP_REASON = acmeSkipReasonFor("r2000-answer-key.test.ts");
+
+test("ACME availability gate (D-08), reused for criterion 1's fixture reproducibility", () => {
+  assertAcmeRequiredIfEnvSet(assert);
+});
+
+test("criterion 1's committed fixture source and .prg both exist (non-vacuity for the byte-compare below)", () => {
+  // Without this, deleting either file would turn the gated test below into
+  // a thrown ENOENT rather than a clear "the evidence is incomplete", and a
+  // skipped run would report nothing at all.
+  assert.doesNotThrow(() => readFileSync(FIXTURE_SOURCE), `criterion 1's fixture source is missing: ${FIXTURE_SOURCE}`);
+  const prg = readFileSync(FIXTURE_PRG);
+  assert.ok(prg.length > 2, `criterion 1's fixture .prg is missing or too short to carry a load address: ${FIXTURE_PRG}`);
+});
+
+test(
+  "gated: assembling criterion 1's fixture source under real ACME reproduces the committed .prg byte-for-byte (11-07-T1)",
+  { skip: ACME_SKIP_REASON },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "recon-subject-repro-"));
+    try {
+      const rebuilt = join(dir, "recon-subject.prg");
+      const r = spawnSync(ACME_BIN, ["-f", "cbm", "-o", rebuilt, FIXTURE_SOURCE], { encoding: "utf8", timeout: 60_000 });
+      assert.equal(
+        r.status,
+        0,
+        `ACME failed to assemble criterion 1's fixture source. stdout: ${r.stdout ?? ""} stderr: ${r.stderr ?? ""}`,
+      );
+      const produced = readFileSync(rebuilt);
+      const committed = readFileSync(FIXTURE_PRG);
+      assert.equal(
+        produced.length,
+        committed.length,
+        `rebuilt .prg is ${produced.length} bytes, committed is ${committed.length} -- criterion 1's fixture is no longer reproducible from its own source`,
+      );
+      assert.ok(
+        produced.equals(committed),
+        "rebuilt .prg differs from the committed one byte-for-byte -- criterion 1's fixture is no longer reproducible from its own source. " +
+          "Per this project's T-11-RETROFIT policy this is a real result to report, NOT to be fixed by re-exporting the .prg: " +
+          "the two-session answer key sealed above describes the committed program, so a genuine divergence invalidates that evidence.",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

@@ -93,3 +93,82 @@ export function assertR2000RequiredIfEnvSet(assertLib: typeof import("node:asser
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// The ACME half of the same gate (D-08).
+//
+// WHY IT LIVES HERE TOO: `disasm-roundtrip.test.ts` established the
+// `ACME_BIN`/`VICE_REQUIRE_ACME` convention in an earlier phase, and
+// `r2000-cli.test.ts` hand-copied it for criterion 3. The Phase 11
+// validation audit needed a THIRD copy for criterion 1's fixture
+// reproducibility check -- which is precisely the divergence this module's
+// own header exists to stop. So the probe lives here instead, and every NEW
+// ACME-gated test file imports it from here rather than copying it again.
+//
+// HONEST SCOPE: the two PRE-EXISTING copies (`disasm-roundtrip.test.ts`,
+// which established the convention, and `r2000-cli.test.ts`, which
+// hand-copied it plus its own `probeR2000()`) were NOT migrated by the
+// validation audit -- `r2000-cli.test.ts`'s gate semantics are load-bearing
+// for criterion 3's already-verified evidence, and rewriting them was
+// outside an audit's remit. So this is the seam for new consumers, not yet
+// the only implementation. Migration is filed as backlog:
+// `.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md`.
+//
+// The env var names are deliberately UNCHANGED (`ACME_BIN`,
+// `VICE_REQUIRE_ACME`) -- it is the same external-oracle claim, and CI
+// already installs ACME and sets the latter.
+// ---------------------------------------------------------------------------
+
+/** Overridable ACME binary name, matching disasm-roundtrip.test.ts's own
+ * original convention exactly. */
+export const ACME_BIN: string = process.env.ACME_BIN ?? "acme";
+
+/** Spawns `${ACME_BIN} --version`, falling back to `--help` (ACME 0.97
+ * prints its banner to either depending on build), and checks the combined
+ * output for the literal (case-insensitive) substring "acme". Never throws:
+ * a spawn error is "not available", not a test failure. */
+export function probeAcme(): boolean {
+  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
+  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  if (r.error || !/acme/i.test(banner)) {
+    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8", timeout: 10_000 });
+    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  }
+  if (r.error) return false;
+  return /acme/i.test(banner);
+}
+
+/** Probed once at module load, shared by every importing test file. */
+export const ACME_AVAILABLE: boolean = probeAcme();
+
+/**
+ * The ACME counterpart of `skipReasonFor()`: a `{ skip }`-ready reason
+ * naming the caller's file, or `false` when real ACME is available.
+ * Unlike the regenerator2000 gate, CI DOES install ACME and DOES set
+ * `VICE_REQUIRE_ACME=1` (`.github/workflows/ci.yml`), so a skip here means
+ * a local run without ACME on PATH -- never a CI state.
+ */
+export function acmeSkipReasonFor(testFileName: string): string | false {
+  if (ACME_AVAILABLE) return false;
+  return (
+    `${testFileName}'s ACME-dependent tests are skipped -- no real ACME was found at ` +
+    `ACME_BIN="${ACME_BIN}". Install ACME (verified against release 0.97 "Zem") or set ACME_BIN to an ` +
+    `absolute path. CI installs ACME and sets VICE_REQUIRE_ACME=1, so this SKIP is a local-only state.`
+  );
+}
+
+/**
+ * The ACME counterpart of `assertR2000RequiredIfEnvSet()`. Registered as
+ * exactly one never-skipped test per importing file, so a maintainer (or CI)
+ * who sets `VICE_REQUIRE_ACME` gets a hard FAIL rather than a silent SKIP
+ * when ACME is actually missing.
+ */
+export function assertAcmeRequiredIfEnvSet(assertLib: typeof import("node:assert/strict")): void {
+  if (process.env.VICE_REQUIRE_ACME) {
+    assertLib.ok(
+      ACME_AVAILABLE,
+      `VICE_REQUIRE_ACME is set but no real ACME was found at ACME_BIN="${ACME_BIN}" -- a maintainer (and ` +
+        `CI, which sets this) expects a hard FAIL, never a SKIP, when the binary is actually missing.`
+    );
+  }
+}
