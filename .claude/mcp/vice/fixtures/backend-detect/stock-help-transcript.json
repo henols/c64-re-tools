@@ -1,0 +1,10 @@
+{
+  "capturedFrom": "real hardware",
+  "binaryPath": "/usr/bin/x64sc",
+  "viceVersion": "x64sc (VICE 3.9)",
+  "capturedAt": "2026-08-21T23:23:35Z",
+  "command": "/usr/bin/x64sc --help",
+  "exitCode": 0,
+  "backendExpected": "stock",
+  "note": "Real capture from the genuine, unpatched upstream stock build (verified via which -a x64sc plus readlink -f: /bin/x64sc is a usr-merge symlink resolving to this same file, so there are exactly two distinct real binaries on this host, not three). --help exits 0 with non-empty combined stdout+stderr output (all on stdout here), so probeBackend()'s -help/-? fallback ladder is never reached against this binary. The transcript contains -binarymonitor/-binarymonitoraddress but no -mcpserver* token at all, so classifyHelpOutput() takes the stock branch cleanly, never the fork-wins-when-both-present branch. VICE's own startup diagnostics (a keyboard-mapping banner and a randomized 'VSP Bug: safe channels are: <permutation>' line) are NOT byte-reproducible across repeated invocations of the identical command -- confirmed by re-running the recorded command four times in a row and diffing; see 13-HELP-DISCRIMINATOR-EVIDENCE.md. The discriminator substring this file exists to pin is unaffected by that noise and is stable across every repeated capture."
+}
