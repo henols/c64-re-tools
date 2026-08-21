@@ -290,6 +290,49 @@ messages but in no disposition document until this line. This is the same AUDIT-
 pattern recurring one phase earlier than the audit's own scope -- closed by silence, not
 by absence of a fix.
 
+**6. Task 4's own guard, run for the first time, found undispositioned findings in
+Phases 01 and 08 too -- outside Phase 10/11's scope, and outside the six v0.2.0
+stragglers this plan's planning stage predicted.**
+
+The plan's own instruction (Task 4's "Interaction with Task 1") anticipated exactly this:
+"If it fails, Task 1's ledger is incomplete... the ledger gets the missing entries before
+this task closes." Running `docs-review-disposition.test.ts`'s completeness scan across
+**every** phase (not just 10/11, per the guard's own design) surfaced two more gaps this
+ledger did not originally cover:
+
+- **`01-REVIEW.md`'s WR-02, WR-03, WR-04, IN-01, IN-02, IN-03 (6 findings).**
+  **Disposition: fixed, all six.** Confirmed by direct git-history read: commit `bfee49b`
+  ("fix(01): resolve all eight code-review findings in probe-binmon.mjs") names and fixes
+  all eight of `01-REVIEW.md`'s findings in one commit -- CR-01 and WR-01 are already
+  cited by ID in `01-VERIFICATION.md` (which is why the guard did not flag them), but
+  WR-02, WR-03, WR-04, IN-01, IN-02 and IN-03 are named only in that commit's own message
+  and in `01-REVIEW.md`'s own `resolved_in: bfee49b` frontmatter field plus its inline
+  "All eight findings fixed in `bfee49b`" closure note -- neither of which
+  `docs-review-disposition.test.ts`'s five disposition sources scan (a REVIEW.md's own
+  self-closure note is not one of them, by design -- see that file's header). Recorded
+  here, in a `todos/completed/` document naming `01-REVIEW.md` and all six IDs, so the
+  guard's todo-scan source picks them up without adding a sixth, REVIEW.md-self-referential
+  disposition source that would risk becoming vacuous (a review could self-declare
+  anything "resolved" with no independent check).
+- **`08-REVIEW.md`'s WR-04 through WR-12 (9 findings), a v0.2.0 Phase 8 finding set with
+  no disposition trail at all.** **Disposition: deferred**, filed as
+  `.planning/todos/pending/2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned.md`.
+  Unlike Phase 01's, these are confirmed (three spot-checked directly against current
+  source: WR-04, WR-08, WR-12) still genuinely unfixed -- not merely undocumented. Out of
+  this plan's scope (a v0.2.0 phase, not the r2000/regenerator2000 family), so filed
+  rather than fixed.
+
+Also fixed during this same pass: `v0.3.0-MILESTONE-AUDIT.md`'s `09-the-assumption-probe-go-no-go`
+tech_debt entry used range notation ("IN-01..IN-03") that never literally spells out
+"IN-02", which the guard's word-bounded id matching cannot expand -- reworded to "IN-01,
+IN-02, IN-03" (meaning unchanged, now mechanically readable). And a second, unrelated
+guard bug the same run surfaced: `docs-review-disposition.test.ts`'s first
+`phaseScopedTechDebtText()` draft used a regex end-of-block lookahead anchored on bare
+`$`, which under the `/m` flag matches at the end of *every* line -- truncating the whole
+`tech_debt:` block to its first `- phase:` line and hiding every phase's items from the
+guard. Fixed to a column-zero line scan; see that file's own header comment for the full
+account.
+
 ## Resolution
 
 All twelve enumerated findings (WR-09, WR-10, WR-11, WR-12, IN-01 through IN-07 from

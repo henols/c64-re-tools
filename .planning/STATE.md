@@ -284,17 +284,20 @@ milestone audit had already assessed the same set as `tech_debt` with no
 blockers. They were accepted rather than resolved, and were v0.3.0's
 inheritance unless dispositioned sooner.
 
-**Current, as of Phase 11.1's close (2026-08-21): 17 items, derived from
+**Current, as of Phase 11.1's close (2026-08-21): 18 items, derived from
 `.planning/todos/pending/` and guarded by `docs-deferred-ledger.test.ts`
-(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 17 were opened
+(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 18 were opened
 during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
 `2026-08-20-vsf-as-a-bootstrap-input`,
-`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
-by Phase 11.1 itself while dispositioning Phase 10/11's review findings
+`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 4 more were opened
+by Phase 11.1 itself while dispositioning Phase 10/11's review findings and
+building Task 4's completeness guard, which caught undispositioned findings
+outside Phase 10/11 too
 (`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
 `2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed`,
-`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`).
+`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
+`2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`).
 **Two rows from the 2026-08-19 count above are removed here because their
 todos now live in `.planning/todos/completed/`, not because the items were
 dropped:** the second-binmon-client wedge-lookalike documentation todo
@@ -320,6 +323,7 @@ resolutions.
 | todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
 | todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
 | todo | 2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed | — | Pending — WR-08 (10-REVIEW.md), found while writing plan 11.1-07's disposition ledger; confirmed still live |
+| todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
