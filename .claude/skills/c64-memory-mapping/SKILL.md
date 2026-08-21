@@ -204,6 +204,23 @@ override table (`OVERRIDES` in `r2000-regbits-gen.ts`), not from this file. Wide
 the digit `0`) so those registers get a real structured entry here is separate work belonging to this
 skill, not the generator.
 
+**Installing those bit names into a project's own disassembly:** the table above only builds
+`r2000-regbits.json` — turning a specific project's register *writes* into named enum variants is a
+separate, later step, once a `.regen2000proj` already exists (`r2000 bootstrap`, see
+`c64-program-recon`):
+
+```bash
+npx -y @henols/vice-mcp r2000 gen-enums game.regen2000proj                            # npm install
+node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 gen-enums game.regen2000proj  # in-repo/plugin
+```
+
+`r2000 gen-enums` requires an EXISTING `.regen2000proj` — it does not bootstrap one from a raw
+input. It reads the project's own disassembly, creates one enum variant per DISTINCT value actually
+written at each matching immediate-load address (named from the curated table above), and prints
+total/paired/unpaired register-store counts plus a per-enum variant count. It exits non-zero, naming
+the reason, when either of its two internal search passes hits its own 10000-row ceiling — pass
+`--max-results` to raise that ceiling for a program whose store exceeds it.
+
 ## Troubleshooting
 
 | Symptom | Fix |

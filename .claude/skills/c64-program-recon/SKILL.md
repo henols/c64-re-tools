@@ -165,6 +165,48 @@ this whole workflow exists to make cheap:
 (The composite address-details lookup is deliberately not on this surface — D-32, a 64K-project
 defect filed upstream — its answer is reachable as a combination of the tools above.)
 
+### Take names to the running machine, and bring live findings back
+
+The store and the running emulator are not two independent destinations for a name — writing one
+into the store and discovering one live are two legs of **one loop**, in this order, matching how
+`R2000-14`/`R2000-15` were actually proven (see Phase 11's live walkthrough,
+`evidence/criterion4/WALKTHROUGH.md`):
+
+1. **Export what the store already knows.** `r2000 export-lbl <project>` writes `al C:xxxx .Name`
+   lines that `stock-symbols.ts`'s own parser accepts — the verb reads the written file back
+   through that same parser before it reports success, never trusting a regenerator2000 exit code
+   alone.
+
+   ```bash
+   npx -y @henols/vice-mcp r2000 export-lbl game.regen2000proj                            # npm install
+   node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-lbl game.regen2000proj  # in-repo/plugin
+   ```
+
+2. **Load it into the running machine — `vice_symbols_load`, exactly once.** Load that `.lbl` file
+   into the live emulator with `vice_symbols_load`. Call it **exactly once** per regenerated file:
+   it REPLACES the machine's symbol table rather than merging into it, so loading an older export a
+   second time after the store has moved on would silently discard the newer names.
+3. **Discover something live the static pass could not, then write it to the store first.**
+   Disassembling or reading the running machine (`vice_disassemble`, a checkpoint hit, …) can turn
+   up a name the static store never had. Write it with `r2000_set_label_name` *before* regenerating
+   anything — the store is the merge point (D-29), not your own notes.
+4. **Regenerate the whole `.lbl` and bring it back with `import-lbl`, never an incremental patch.**
+   `r2000 import-lbl <project> <lbl>` imports an externally-produced `.lbl` file into the project,
+   and reports whether the import was **disk-verified** — re-read from disk in a fresh process,
+   never trusted from the child's own success text alone.
+
+   ```bash
+   npx -y @henols/vice-mcp r2000 import-lbl game.regen2000proj discovered.lbl                            # npm install
+   node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 import-lbl game.regen2000proj discovered.lbl  # in-repo/plugin
+   ```
+
+Two traps: `export-lbl` exports **USER** labels only — the auto-generated `a_D011`/`e_FFD2`
+externals never appear in the written file. And both verbs require an EXISTING `.regen2000proj`;
+neither one bootstraps a project from a raw input.
+
+`r2000 gen-enums` — turning register writes into named enum variants — is documented in
+`c64-memory-mapping`, alongside the `memmap.json` bit table it consumes.
+
 **Generate the memory map; do not hand-author it.** Fill in the provenance sidecar (schema and a
 filled example live in `templates/memory-map.template.md`), then:
 
