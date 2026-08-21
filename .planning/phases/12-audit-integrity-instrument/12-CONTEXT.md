@@ -189,9 +189,9 @@ above is therefore Claude's call, made under the reasoning stated inline, and
 the planner may revise any of them **if it can state a better reason** — with two
 exceptions that are correctness constraints rather than preferences:
 
-- **D-12-09** (gate test named outside the `docs-*` glob) — violating it makes
+- `D-12-09` (gate test named outside the `docs-*` glob) — violating it makes
   the gate recurse into itself.
-- **D-12-04** (hook matcher covers `Bash`) — violating it leaves a heredoc
+- `D-12-04` (hook matcher covers `Bash`) — violating it leaves a heredoc
   bypass wide open.
 
 Further latitude explicitly granted to research and planning: the exact
