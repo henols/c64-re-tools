@@ -88,12 +88,18 @@ program, and what it learns outlives the session.*
 
 ### Active
 
-<!-- Empty by design: v0.3.0 shipped 2026-08-21 and the next milestone is not yet
-     scoped. Run `/gsd-new-milestone` — it defines a fresh REQUIREMENTS.md, which
-     is what repopulates this section. Standing candidates (not requirements
-     until scoped) are listed under "Next Milestone Goals" below. -->
+<!-- v0.4.0 scope, opened 2026-08-21. These are the milestone's target features,
+     not yet requirement-level: `/gsd-new-milestone` step 9 writes the REQ-IDs
+     into a fresh `.planning/REQUIREMENTS.md` and this list is restated against
+     them. Hypotheses until shipped. -->
 
-*(none — awaiting `/gsd-new-milestone`)*
+- [ ] The three highest-value carried items are verified against real binaries instead of internal proxies — `VERIF-02`'s synthetic binmon fixtures re-recorded, `BACK-01`/`BACK-04`'s `--help` discriminator confirmed against stock *and* fork, the four spec-driven Phase 3 wire details exercised
+- [ ] A milestone audit cannot record `status: passed` while any of the four `docs-*.test.ts` guards is red
+- [ ] The fork-backend question is a dated decision with named reversal criteria, not a default carried a third time
+- [ ] Every pending todo is fixed, dispositioned `wont-fix` with rationale, or explicitly promoted — nothing carried silently into v0.5.0
+- [ ] Phase 03's three pending UAT scenarios are executed against real fixtures and a running program
+- [ ] Core Value is restated or explicitly confirmed on two milestones of evidence, resolving the flag left at the v0.3.0 close
+- [ ] The plugin payload lives under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed
 
 ### Out of Scope
 
@@ -329,59 +335,88 @@ provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 (VICE 3.9) through the real broker. Archived at
 [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
 
-## Current Milestone: none — awaiting `/gsd-new-milestone`
+## Current Milestone: v0.4.0 Debt discharged, decisions settled
 
-v0.3.0 closed 2026-08-21. `.planning/REQUIREMENTS.md` was removed at close;
-`/gsd-new-milestone` runs questioning → research → requirements → roadmap and
-creates a fresh one. **Phase numbering continues from 11.1 — the next phase is
-12.** Numbers are never reused, including the dissolved ones.
+**Opened:** 2026-08-21, immediately after the v0.3.0 close.
+
+**Goal:** Stop inheriting the same ledger a third time — every carried item
+becomes a fix or a dated decision, and the two questions this project has
+answered *by default* each milestone get answered deliberately.
+
+**Target features:**
+
+- **External verification replaces the internal proxies.** The three
+  highest-value carried items are one failure mode this project has now been
+  taught five times — an internal check standing in for an external one. Re-record
+  `VERIF-02`'s three synthetic binmon fixtures against real stock VICE; confirm
+  `BACK-01`/`BACK-04`'s `--help` backend discriminator against real stock *and*
+  fork binaries; exercise the four Phase 3 behavioural/spelling wire details
+  written spec-driven and never run. All three are live-testable in this
+  environment: genuine unpatched stock VICE is at `/usr/bin/x64sc`, with the fork
+  shadowing it earlier on `PATH`.
+- **An audit cannot record `passed` over a red guard.** Require a green run of the
+  four `docs-*.test.ts` guards as a precondition of `status: passed`. The
+  instrument already exists and nothing forces anyone to read it — which is how
+  Phase 08's `WR-04`..`WR-12` and Phase 09's `IN-01`..`IN-03` stayed invisible
+  until the completeness guard was built, and how `4f048bb` closed with that
+  guard already red.
+- **The fork-backend decision, actually made.** Remove it, or record a dated
+  decision naming the criteria that would reverse it. It is the largest single
+  simplification available and has been retained by default across two closes.
+  The criteria are coupled to the upstream work below, not independent of it.
+- **Every remaining pending todo dispositioned.** Each of the other ~14 becomes
+  fixed, filed `wont-fix` with rationale, or explicitly promoted into scope.
+- **Phase 03's UAT gap closed** — `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load`
+  against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a
+  running program; the hot non-stopping-checkpoint auto-disable guard under
+  sustained 20+/sec hit pressure.
+- **Core Value restated or confirmed** on two milestones of evidence, resolving
+  the flag deliberately left under Core Value at the v0.3.0 close.
+- **Packaging and repo shape** — relocate the plugin payload under `src/`, merge
+  `.mcp.json`, and close `QUAL-01..03` (tests for `acme.mjs`/`driver.mjs`/`derive.mjs`,
+  orphaned planning references in source comments, the control-plane exposure).
+
+**Phase numbering continues from 11.1 — this milestone starts at Phase 12.**
+Numbers are never reused, including the dissolved ones.
+
+**Explicitly not in this milestone:** the two upstream contributions
+(`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
+`--mcp-port`/`--mcp-bind`). Both are pull requests against third-party projects,
+already recorded under Out of Scope, and neither is a deliverable of this repo.
+The coupling is real and must be named rather than ignored: if
+`KEYBOARD_MATRIX_SET` ever lands upstream, one of the three standing reasons to
+keep the fork backend disappears — so the fork decision above should cite that as
+a reversal criterion instead of treating the two as independent.
 
 ## Next Milestone Goals
 
-Nothing scoped yet. Standing candidates, in the order their cost is currently
-understood:
+**Four of the five standing candidates were scoped into v0.4.0 on 2026-08-21** —
+the carried debt (1), the fork-backend decision (2), the Core Value restatement
+(4), and packaging and repo shape (5). See "Current Milestone" above for what each
+became. This section now records only what v0.4.0 deliberately did *not* take.
 
-1. **The carried debt, dispositioned rather than inherited a third time.** 19
-   items were accepted at v0.3.0's close, up from 13 at v0.2.0's — but the ledger
-   is now *derived and guarded* rather than hand-counted, so this is the first
-   number that can be trusted. The three highest-value are unchanged across two
-   milestones, which is itself the argument for scoping them: the synthetic
-   `VERIF-02` wire fixtures, the unconfirmed `--help` backend discriminator, and
-   the four Phase 3 wire details written spec-driven and never exercised. All
-   three are the same failure mode — an internal check standing in for an
-   external one — and this project has now been taught that lesson five times.
-   Newly surfaced and concrete: Phase 08's `WR-04`..`WR-12`, 9 v0.2.0 review
-   findings that only became visible when the completeness guard was built, and
-   Phase 09's `IN-01`..`IN-03`, found at the v0.3.0 close with the guard already
-   red at `4f048bb`. **Both of those argue for one small process change over any
-   code fix:** require a green run of the four `docs-*.test.ts` guards before a
-   milestone audit may record `status: passed`. The instrument exists; nothing
-   yet forces anyone to read it.
-2. **Remove the forked VICE backend, or decide not to.** Filed as
-   `.planning/todos/pending/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`.
-   v0.2.0's close reaffirmed keeping it as the hedge for SID read-back, matrix
-   keyboard and RESTORE/NMI. That reasoning still holds *today*, and the entry in
-   Out of Scope stands — but it is now the largest single simplification
-   available, and the decision deserves to be made deliberately rather than by
-   default each milestone.
-3. **The upstream contributions**, recorded as out of scope here but genuinely
-   worth doing: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60
-   lines, closes stock's hardest loss for everyone), and regenerator2000's
-   `--mcp-port` / `--mcp-bind` (~5 lines, unblocks two projects at once and a
-   host-side TUI — currently a *stated* limit in this project's install docs
-   precisely because it cannot be fixed downstream).
-4. **Restate the Core Value, or confirm it.** v0.3.0 delivered persistent
-   cross-session knowledge, which the current one-sentence Core Value does not
-   describe at all (see the flag under Core Value above). One milestone is thin
-   evidence; two would not be.
-5. **Packaging and repo shape** — `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json.md`,
-   plus `QUAL-01..03` (tests for `acme.mjs` / `driver.mjs` / `derive.mjs`,
-   orphaned planning references in source comments, and the emulator
-   control-plane network exposure).
+**Standing, not scoped:**
 
-**Shipped since this section was last written:** v0.3.0, 2026-08-21. Every
-release-plumbing gap v0.2.0 exposed is closed — one `VERSION` template with a
-resolver seam replaced six hand-maintained strings, and one
+1. **The upstream contributions.** Recorded under Out of Scope here and left there
+   by v0.4.0, because both are pull requests against projects this repo does not
+   own: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60 lines in
+   `monitor_binary.c` calling `keyboard_set_keyarr_any`, closing stock's hardest
+   loss for everyone, not just this plugin), and regenerator2000's
+   `--mcp-port` / `--mcp-bind` (~5 lines, unblocking two projects at once and a
+   host-side TUI — currently a *stated* limit in this project's install
+   documentation precisely because it cannot be fixed downstream). Neither is a
+   deliverable of this repo; both would change what this repo can promise.
+   **The first one is coupled to v0.4.0's fork decision** — if it lands upstream,
+   one of the three reasons to keep the fork backend disappears.
+
+2. **Whatever v0.4.0's disposition pass promotes rather than closes.** The
+   milestone's own scope is to make every carried item a fix or a dated decision;
+   any item it promotes instead of closing lands here by construction, with its
+   rationale already written.
+
+**Shipped since this section was last written:** v0.3.0, 2026-08-21 (see Current
+State). Every release-plumbing gap v0.2.0 exposed is closed — one `VERSION`
+template with a resolver seam replaced six hand-maintained strings, and one
 `scripts/release-assets.sh` seam is called by both CI release paths, since
 `release-on-merge`'s `GITHUB_TOKEN` tag cannot re-trigger the tag-gated job.
 v0.2.0's missing plugin zip was attached retroactively.
@@ -763,8 +798,16 @@ written).
 </details>
 
 ---
-*Last updated: 2026-08-21 at the **v0.3.0 milestone close** — full evolution
-review: "What This Is" gained the static-analysis axis; Core Value flagged for
+*Last updated: 2026-08-21 at the **v0.4.0 milestone open** (`/gsd-new-milestone`)
+— "Current Milestone" opened as v0.4.0 *Debt discharged, decisions settled* with
+seven target features and the two upstream contributions explicitly excluded (with
+their coupling to the fork decision named); the Active requirements section
+repopulated with those seven as hypotheses, replacing the "awaiting
+`/gsd-new-milestone`" placeholder; "Next Milestone Goals" reduced to what v0.4.0
+deliberately did not take. Core Value's v0.3.0 flag is left standing on purpose —
+resolving it is a v0.4.0 deliverable, not a bookkeeping edit made while opening
+the milestone. Previously: 2026-08-21 at the **v0.3.0 milestone close** — full
+evolution review: "What This Is" gained the static-analysis axis; Core Value flagged for
 restatement rather than silently amended; the six `R2000-01/-02/-03/-05/-06/-09`
 Active items graduated to Validated (two with scope-honesty caveats recorded);
 three v0.3.0 entries added to Out of Scope; five capability/dependency

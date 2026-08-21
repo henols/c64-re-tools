@@ -1,31 +1,31 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.3.0
-milestone_name: regenerator2000 static-analysis backend
-status: Awaiting next milestone
-last_updated: "2026-08-21T12:58:31.373Z"
-last_activity: 2026-08-21 — Milestone v0.3.0 completed and archived
+milestone: v0.4.0
+milestone_name: Debt discharged, decisions settled
+status: planning
+last_updated: "2026-08-21T13:22:51.378Z"
+last_activity: 2026-08-21
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 36
-  completed_plans: 36
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-21 at the v0.3.0 milestone close —
-full evolution review)
+See: .planning/PROJECT.md (updated 2026-08-21 at the v0.4.0 milestone open)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-*Flagged at the v0.3.0 close, deliberately not rewritten: this says nothing about
-findings that outlive the session, which is what v0.3.0 delivered. See PROJECT.md
-→ Core Value; it is the first question `/gsd-new-milestone` should ask.*
+*Flag still standing, now with an owner: this says nothing about findings that
+outlive the session, which is what v0.3.0 delivered. Restating or explicitly
+confirming it is a **v0.4.0 target feature**, not a bookkeeping edit — see
+PROJECT.md → Core Value for the candidate shape.*
 
 **Shipped:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
 phases, 36 plans, 101 tasks, 12/12 in-scope requirements, audit round 2
@@ -38,31 +38,23 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** No open milestone. `.planning/REQUIREMENTS.md` was removed at
-the v0.3.0 close; `/gsd-new-milestone` creates a fresh one (questioning →
-research → requirements → roadmap). ROADMAP.md now carries both shipped
-milestones collapsed, with full detail in `milestones/v0.2.0-ROADMAP.md` and
-`milestones/v0.3.0-ROADMAP.md`. **Phase numbering continues from 11.1 — the next
-phase is 12**, and numbers are never reused, including the dissolved ones.
+**Current focus:** **v0.4.0 Debt discharged, decisions settled** — opened
+2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
+becomes a fix or a dated decision, and the fork-backend and Core Value questions
+get answered deliberately rather than by default. Requirements are being defined
+(`.planning/REQUIREMENTS.md` was removed at the v0.3.0 close and is recreated by
+`/gsd-new-milestone`). ROADMAP.md carries both shipped milestones collapsed, with
+full detail in `milestones/v0.2.0-ROADMAP.md` and `milestones/v0.3.0-ROADMAP.md`.
+**Phase numbering continues from 11.1 — this milestone starts at Phase 12**, and
+numbers are never reused, including the dissolved ones. The 19 items in Deferred
+Items below are no longer inherited context: discharging them *is* the milestone.
 
 ## Current Position
 
-Phase: Milestone v0.3.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-21 — Milestone v0.3.0 completed and archived
-
-All four v0.3.0 phases (9, 10, 11, inserted 11.1) closed, 36/36 plans, 101 tasks.
-Final audit round 2: **`passed`** — 12/12 requirements, 4/4 phases, 12/12
-integration, 4/4 flows, zero open gaps. Both `SECURITY.md` ledgers
-`threats_open: 0` / `status: verified`; Nyquist compliant across all four phases.
-Archived to `milestones/v0.3.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`;
-ROADMAP.md collapsed 513 → 111 lines; `REQUIREMENTS.md` removed via `git rm`
-(history preserved).
-
-Phase directories were **kept in place** under `.planning/phases/` as raw
-execution history rather than moved into `milestones/v0.3.0-phases/` — use
-`/gsd-cleanup` to archive them retroactively if the directory gets noisy.
+Status: Defining requirements
+Last activity: 2026-08-21 — Milestone v0.4.0 started
 
 ## Performance Metrics
 
