@@ -92,27 +92,27 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXTV-01 | — | Pending |
-| EXTV-02 | — | Pending |
-| EXTV-03 | — | Pending |
-| GATE-01 | — | Pending |
-| GATE-02 | — | Pending |
-| FORK-01 | — | Pending |
-| FORK-02 | — | Pending |
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
-| DEBT-03 | — | Pending |
-| DEBT-04 | — | Pending |
-| CORE-01 | — | Pending |
-| PKG-01 | — | Pending |
-| PKG-02 | — | Pending |
-| PKG-03 | — | Pending |
-| PKG-04 | — | Pending |
+| EXTV-01 | 13 | Pending |
+| EXTV-02 | 13 | Pending |
+| EXTV-03 | 13 | Pending |
+| GATE-01 | 12 | Pending |
+| GATE-02 | 15 | Pending |
+| FORK-01 | 14 | Pending |
+| FORK-02 | 14 | Pending |
+| DEBT-01 | 15 | Pending |
+| DEBT-02 | 15 | Pending |
+| DEBT-03 | 15 | Pending |
+| DEBT-04 | 17 | Pending |
+| CORE-01 | 17 | Pending |
+| PKG-01 | 16 | Pending |
+| PKG-02 | 16 | Pending |
+| PKG-03 | 16 | Pending |
+| PKG-04 | 16 | Pending |
 
 **Coverage:**
 - v0.4.0 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️ (roadmap not yet created)
+- Mapped to phases: 16
+- Unmapped: 0 ✓ (roadmap created 2026-08-21, Phases 12-17)
 
 ---
 *Requirements defined: 2026-08-21 at the v0.4.0 milestone open*

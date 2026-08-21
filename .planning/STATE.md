@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-08-21T13:22:51.378Z"
 last_activity: 2026-08-21
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -51,10 +51,11 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-08-21 — Milestone v0.4.0 started
+Phase: 12 (Audit Integrity Instrument) — first phase of v0.4.0
+Plan: — (not yet planned)
+Status: Roadmapped — awaiting `/gsd-plan-phase 12`
+Last activity: 2026-08-21 — ROADMAP.md created for v0.4.0 (Phases 12-17), 16/16
+requirements mapped
 
 ## Performance Metrics
 
