@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 13
 current_phase_name: External Verification
 status: executing
-stopped_at: Phase 13 context gathered
-last_updated: "2026-08-21T22:55:02.959Z"
-last_activity: 2026-08-21
-last_activity_desc: Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
-state_head: a32e27e8f2c5852ff8f9fa2fd460327e05f49508
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-08-21T23:19:14.696Z"
+last_activity: 2026-08-22
+last_activity_desc: Phase 13 execution started
+state_head: e97ab78840eefc391af465bcf457e49903aa8c25
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -43,7 +43,7 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 12 — Audit Integrity Instrument
+**Current focus:** Phase 13 — External Verification
 2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
 becomes a fix or a dated decision, and the fork-backend and Core Value questions
 get answered deliberately rather than by default. Requirements are being defined
@@ -56,8 +56,8 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 13 (External Verification) — READY TO EXECUTE
-Plan: 6 of 7 executed
+Phase: 13 (External Verification) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
 Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
 (CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
@@ -67,7 +67,7 @@ unbounded recursion (now an iterative, depth-capped walk), plus WR-01
 WR-03 (check mode's missing error handling) -- the `--hook` exit surface is
 now exactly {0, 2}. Phase is NOT complete until 12-07 lands (human-gated,
 `autonomous: false`).
-Last activity: 2026-08-21 — Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
+Last activity: 2026-08-22 — Phase 13 execution started
 requirements mapped
 
 ## Performance Metrics
@@ -128,6 +128,7 @@ requirements mapped
 |------|----------|-------|-------|
 | Phase 12 P05 | 22min | 3 tasks | 3 files |
 | Phase 12 P06 | 55min | 3 tasks | 2 files |
+| Phase 13 P01 | 40min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,9 @@ Recent decisions affecting current work:
 - [Phase 12]: GATE-01's Bash-mode write-target scan is a content-adjacency heuristic, evadable by a base64/python -c runtime-assembled payload (T-12-02, accepted). — Layer 1 (audit-integrity.test.ts driving checkAuditGate(), which re-reads the actual committed file content regardless of how the shell wrote it) is the unevadable enforcement point; the hook is a deterrent, not the boundary.
 - [Phase 12]: [Phase 12-05]: CR-01/CR-03 closed via a bounded, non-backtracking token locator (auditTokenOffsets/textNamesMilestoneAudit, indexOf-based) plus small fixed-length windows (256/512/4096 chars), replacing the two super-linear Bash regexes and the unbounded whole-text token regex; a new unanchored gated-status scan (declaresGatedStatusUnanchored, derived from the single GATED_STATUSES set) replaces the line-anchored scan specifically in the Bash branch, closing the single-line echo/printf/tee-a/sed-i append bypass while leaving the structured Write/Edit document-content branch's line-anchored scan untouched (preserves the T-12-04 false-positive defence). WR-04's dead pathish push removed. New accepted limitation T-12-20: an in-place edit whose script argument exceeds the 4096-char window is not detected (Layer 1 still catches the landed write).
 - [Phase 12]: [Phase 12-06]: CR-02/WR-01/WR-02/WR-03 closed -- collectStringLeaves() converted to an iterative, depth-capped walk (MAX_LEAF_DEPTH=200, MAX_LEAF_NODES=50000) returning a truncation signal; hookMain() hoists the HOOK_MATCHER_TOOLS check above extraction and wraps scope determination in a try/catch; main()'s check-mode block is wrapped in one try/catch so a bad --root fails cleanly in both output modes; runGuardsLive() bounds its spawnSync to 15s (WR-01, gated at source level only, no behavioral timeout test); checkAuditGate() short-circuits before the guard spawn on a structural failure (WR-02). The --hook exit surface is now exactly {0, 2}.
+- [Phase 13]: Captured against the fork build (command -v x64sc resolves to /usr/local/bin/x64sc on this host) rather than forcing genuine stock, recording the truthful fork: kind per D-13-01/D-13-02
+- [Phase 13]: checkpoint-list terminator-frame reading CONFIRMED against real bytes; stock-protocol.ts left untouched
+- [Phase 13]: Corrected checkpoint-list correlat: test's events.length (2 -> 8) against real capture bytes rather than loosening the assertion
 
 ### Pending Todos
 
@@ -409,9 +413,9 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T22:02:11.938Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-external-verification/13-CONTEXT.md
+Last session: 2026-08-21T23:19:14.626Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
