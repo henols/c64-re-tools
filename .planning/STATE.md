@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 13
 current_phase_name: External Verification
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-08-21T23:19:14.696Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-08-21T23:33:04.936Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 13 execution started
-state_head: e97ab78840eefc391af465bcf457e49903aa8c25
+state_head: 8f508c8afe0d8bb37a573440cf861ac8118fa235
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 13 (External Verification) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
 (CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
@@ -129,6 +129,7 @@ requirements mapped
 | Phase 12 P05 | 22min | 3 tasks | 3 files |
 | Phase 12 P06 | 55min | 3 tasks | 2 files |
 | Phase 13 P01 | 40min | 3 tasks | 11 files |
+| Phase 13 P02 | 27min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,8 @@ Recent decisions affecting current work:
 - [Phase 13]: Captured against the fork build (command -v x64sc resolves to /usr/local/bin/x64sc on this host) rather than forcing genuine stock, recording the truthful fork: kind per D-13-01/D-13-02
 - [Phase 13]: checkpoint-list terminator-frame reading CONFIRMED against real bytes; stock-protocol.ts left untouched
 - [Phase 13]: Corrected checkpoint-list correlat: test's events.length (2 -> 8) against real capture bytes rather than loosening the assertion
+- [Phase 13]: EXTV-02 shared with sibling 13-05; requirements.ready-ids correctly held 0/1 ready, not marked complete yet
+- [Phase 13]: x64sc --help's own startup diagnostics are not byte-reproducible across runs (randomized VSP-bug channel line); discriminator substrings themselves are stable -- documented in 13-HELP-DISCRIMINATOR-EVIDENCE.md and fixtures README rather than silently worked around
 
 ### Pending Todos
 
@@ -413,8 +416,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T23:19:14.626Z
-Stopped at: Completed 13-01-PLAN.md
+Last session: 2026-08-21T23:33:04.861Z
+Stopped at: Completed 13-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
