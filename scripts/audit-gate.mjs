@@ -106,9 +106,28 @@ function truncate(text, max) {
  * assertion text itself, which inherited stdio does not hand back to the
  * caller at all. */
 export function runGuardsLive(viceDir, files) {
+  // Strip NODE_TEST_* from the child's environment before spawning. When
+  // this gate itself runs from inside a `node --test` process (exactly
+  // what audit-integrity.test.ts does, and exactly what a future CI step
+  // running the whole suite under `--test` would do), Node sets
+  // `NODE_TEST_CONTEXT` in the parent's own process.env; inherited
+  // unmodified, the NESTED `node --test` below silently switches its
+  // reporter to the parent-child IPC/v8-serialization protocol instead of
+  // TAP on stdout, so a genuinely failing guard is reported here as if it
+  // had produced no output at all -- exit code 0, empty parsed output --
+  // which is precisely the "green when it should be red" failure GATE-01
+  // exists to make impossible. Measured directly while building this file,
+  // not assumed: see audit-integrity.test.ts's planted-violation test,
+  // which reproduces this exact failure mode when the strip below is
+  // removed.
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) delete env[key];
+  }
   const result = spawnSync(process.execPath, ["--test", ...files], {
     cwd: viceDir,
     encoding: "utf8",
+    env,
   });
   if (result.error) {
     const stderr = `${result.stderr ?? ""}\n${result.error.message ?? String(result.error)}`.trim();
