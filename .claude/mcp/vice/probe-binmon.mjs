@@ -60,9 +60,11 @@
  * No dependencies; pure Node (net).
  */
 import net from "node:net";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const STX = 0x02;
 const API = 0x02;
@@ -1128,6 +1130,510 @@ function connectSocket(host, port) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// --probe-assumptions mode (Phase 13 plan 03): one live check per Phase 3
+// wire assumption -- A1 (-remotemonitoraddress binding), A2
+// (ADVANCE_INSTRUCTIONS step-over semantics), A3 (JOYPORT_SET bit mapping),
+// A5 (AUTOSTART fileIndex with the run flag clear). Each probe returns a
+// three-valued verdict (CONFIRMED/CONTRADICTED/INCONCLUSIVE) with the raw
+// observation it rests on, and cleans up whatever it changed in a `finally`.
+//
+// A4 is OUT OF SCOPE, deliberately, in every probe in this file. A4 needs a
+// non-stopping checkpoint armed on a hot, frequently-executed address, and
+// CLAUDE.md's own Protocol constraint records that a non-stopping
+// checkpoint's CHECKPOINT_INFO hit frame is emitted SYNCHRONOUSLY, over the
+// blocking socket, from inside the emulator's CPU loop
+// (mon_breakpoint.c:557-562) -- on a hot address this can stall the emulator
+// thread. No function below sends CHECKPOINT_SET at all.
+// ---------------------------------------------------------------------------
+
+export const PROBE_ASSUMPTION_CASES = ["A1", "A2", "A3", "A5"];
+
+// Wire-shape gate, applied by every probe below before its behavioural half:
+// these three error codes mean the assumed BODY LAYOUT itself is wrong --
+// CONTRADICTED before the semantic question is even reachable. An ACCEPTED
+// body is necessary but never sufficient for a runtime-behaviour claim (A2,
+// A3) -- each of those two carries a separate recorded behavioural
+// observation the verdict actually rests on.
+const WIRE_SHAPE_REJECT_CODES = new Set([0x80, 0x81, 0x83]);
+
+function errName(code) {
+  return ERR_NAME[code] || `0x${code.toString(16)}`;
+}
+
+function wireShapeAccepted(errCode) {
+  return !WIRE_SHAPE_REJECT_CODES.has(errCode);
+}
+
+function printProbeRecord(rec) {
+  console.log(`\n--- ${rec.id} ---`);
+  for (const r of rec.requests) {
+    console.log(`  request: ${r.label} -> ${r.errName}`);
+  }
+  console.log(`  observation:\n    ${rec.observation.split("\n").join("\n    ")}`);
+  console.log(`  verdict: ${rec.verdict}`);
+}
+
+// ---- A1: -remotemonitoraddress binding -------------------------------------
+
+async function probeA1RemoteMonitorPort({ host = "127.0.0.1", port = 6510, windowMs = 500 } = {}) {
+  const requests = [{ label: `plain TCP connect ${host}:${port}`, errName: "N/A (plain TCP, not a binmon frame)" }];
+  let socket = null;
+  try {
+    socket = await connectSocket(host, port);
+    let bannerBytes = Buffer.alloc(0);
+    const onData = (chunk) => {
+      bannerBytes = Buffer.concat([bannerBytes, chunk]);
+    };
+    socket.on("data", onData);
+    await sleep(windowMs);
+    socket.removeListener("data", onData);
+    const hasBanner = bannerBytes.length > 0;
+    const observation =
+      `connection to ${host}:${port} was ACCEPTED. ` +
+      (hasBanner
+        ? `${bannerBytes.length} banner byte(s) arrived within ${windowMs}ms: ${bannerBytes.toString("hex")}`
+        : `no banner bytes arrived within ${windowMs}ms -- still a bound, accepting listener (an accepted connection with no banner is not downgraded from CONFIRMED)`);
+    return { id: "A1", requests, observation, verdict: "CONFIRMED" };
+  } catch (e) {
+    return {
+      id: "A1",
+      requests,
+      observation: `connection attempt to ${host}:${port} FAILED: ${e.message} -- the port did not accept a connection`,
+      verdict: "CONTRADICTED",
+    };
+  } finally {
+    if (socket) {
+      try {
+        socket.end();
+        socket.destroy();
+      } catch {
+        /* ignore -- probe result is already recorded */
+      }
+    }
+  }
+}
+
+// ---- A2: ADVANCE_INSTRUCTIONS step-over semantics --------------------------
+
+const A2_JSR_ADDR = 0xc000; // free RAM under the default C64 memory map
+const A2_SUB_ADDR = 0xc010;
+const A2_FILLER_BYTE = 0xea; // NOP -- distinguishable filler after the JSR
+
+async function probeA2StepOver(mon) {
+  const requests = [];
+  let originalJsrBytes = null;
+  let originalSubByte = null;
+  let originalPc = null;
+  let pcRegId = null;
+
+  try {
+    // Halt the machine on demand -- per docs/phase0-binmon-findings.md §4,
+    // "any inbound byte halts the machine" (monitor_check_binary() calls
+    // monitor_startup_trap() every vsync). A bare PING is enough; no
+    // checkpoint of any kind is armed. Register writes only stick with the
+    // machine stopped, so this probe must observe a real halt before
+    // touching PC -- if it cannot, it records INCONCLUSIVE rather than
+    // working around it with a checkpoint.
+    const beforePing = mon.events.length;
+    const pingR = await mon.send(CMD.PING);
+    requests.push({ label: "PING (halt-on-demand)", errName: errName(pingR.errCode) });
+    await sleep(300);
+    const sinceHalt = mon.events.slice(beforePing).map((e) => e.name);
+    const haltedReliably =
+      sinceHalt.includes("STOPPED") && sinceHalt.lastIndexOf("STOPPED") > sinceHalt.lastIndexOf("RESUMED");
+    if (!haltedReliably) {
+      return {
+        id: "A2",
+        requests,
+        observation: `PING did not produce an observed halt within 300ms (events since PING: [${sinceHalt.join(", ") || "none"}]) -- register writes are not confirmed to stick without a reliable halt, and this probe will not arm a checkpoint to force one`,
+        verdict: "INCONCLUSIVE",
+      };
+    }
+
+    // Discover the PC register id -- never hardcoded.
+    const availR = await mon.send(CMD.REGISTERS_AVAILABLE, Buffer.from([0x00]));
+    requests.push({ label: "REGISTERS_AVAILABLE memspace=0x00", errName: errName(availR.errCode) });
+    if (!wireShapeAccepted(availR.errCode)) {
+      return {
+        id: "A2",
+        requests,
+        observation: `REGISTERS_AVAILABLE was rejected (${errName(availR.errCode)}) -- cannot discover the PC register id`,
+        verdict: "CONTRADICTED",
+      };
+    }
+    const availableRegs = parseRegistersAvailable(availR.body);
+    const pcReg = availableRegs.find((r) => r.name.toUpperCase() === "PC");
+    if (!pcReg) {
+      return {
+        id: "A2",
+        requests,
+        observation: `REGISTERS_AVAILABLE returned no register named "PC" (names seen: ${availableRegs.map((r) => r.name).join(", ")})`,
+        verdict: "INCONCLUSIVE",
+      };
+    }
+    pcRegId = pcReg.id;
+
+    // Snapshot original PC and the scratch memory bytes for restoration.
+    const pcBeforeR = await mon.send(CMD.REGISTERS_GET, registersGetBody(0x00));
+    requests.push({ label: "REGISTERS_GET memspace=0x00 (baseline PC)", errName: errName(pcBeforeR.errCode) });
+    const pcBeforeEntry = parseRegisterInfo(pcBeforeR.body).find((r) => r.id === pcRegId);
+    originalPc = pcBeforeEntry ? pcBeforeEntry.value : null;
+
+    const jsrBeforeR = await mon.send(CMD.MEM_GET, memGetBody({ start: A2_JSR_ADDR, end: A2_JSR_ADDR + 3, memspace: 0x00 }));
+    const jsrLen = jsrBeforeR.body.readUInt16LE(0);
+    originalJsrBytes = Buffer.from(jsrBeforeR.body.subarray(2, 2 + jsrLen));
+    const subBeforeR = await mon.send(CMD.MEM_GET, memGetBody({ start: A2_SUB_ADDR, end: A2_SUB_ADDR, memspace: 0x00 }));
+    const subLen = subBeforeR.body.readUInt16LE(0);
+    originalSubByte = Buffer.from(subBeforeR.body.subarray(2, 2 + subLen));
+
+    // Write the deterministic subject: JSR $C010 + filler at $C000, RTS at
+    // $C010. JSR is a three-byte instruction, so JSR_ADDR+3 is the address
+    // immediately following it.
+    const jsrBytes = Buffer.from([0x20, A2_SUB_ADDR & 0xff, (A2_SUB_ADDR >> 8) & 0xff, A2_FILLER_BYTE]);
+    const setJsrR = await mon.send(CMD.MEM_SET, memSetBody({ start: A2_JSR_ADDR, end: A2_JSR_ADDR + 3, memspace: 0x00, data: jsrBytes }));
+    requests.push({
+      label: `MEM_SET $${A2_JSR_ADDR.toString(16)} (JSR $${A2_SUB_ADDR.toString(16)} + filler)`,
+      errName: errName(setJsrR.errCode),
+    });
+    const setSubR = await mon.send(CMD.MEM_SET, memSetBody({ start: A2_SUB_ADDR, end: A2_SUB_ADDR, memspace: 0x00, data: Buffer.from([0x60]) }));
+    requests.push({ label: `MEM_SET $${A2_SUB_ADDR.toString(16)} (RTS)`, errName: errName(setSubR.errCode) });
+    if (!wireShapeAccepted(setJsrR.errCode) || !wireShapeAccepted(setSubR.errCode)) {
+      return {
+        id: "A2",
+        requests,
+        observation: "one of the scratch MEM_SET writes was rejected on wire-shape grounds",
+        verdict: "CONTRADICTED",
+      };
+    }
+
+    // Point PC at the JSR and step over it.
+    const setPcR = await mon.send(CMD.REGISTERS_SET, registersSetBody({ memspace: 0x00, items: [{ id: pcRegId, value: A2_JSR_ADDR }] }));
+    requests.push({ label: `REGISTERS_SET PC=$${A2_JSR_ADDR.toString(16)}`, errName: errName(setPcR.errCode) });
+    if (!wireShapeAccepted(setPcR.errCode)) {
+      return {
+        id: "A2",
+        requests,
+        observation: `REGISTERS_SET was rejected (${errName(setPcR.errCode)}) -- cannot position PC at the JSR`,
+        verdict: "CONTRADICTED",
+      };
+    }
+
+    const stepR = await mon.send(CMD.ADVANCE_INSTRUCTIONS, advanceInstructionsBody({ stepOver: true, count: 1 }));
+    requests.push({ label: "ADVANCE_INSTRUCTIONS stepOver=true count=1", errName: errName(stepR.errCode) });
+    if (!wireShapeAccepted(stepR.errCode)) {
+      return {
+        id: "A2",
+        requests,
+        observation: `ADVANCE_INSTRUCTIONS was rejected (${errName(stepR.errCode)}) -- the stepOver body shape itself is wrong`,
+        verdict: "CONTRADICTED",
+      };
+    }
+    await sleep(300);
+
+    const pcAfterR = await mon.send(CMD.REGISTERS_GET, registersGetBody(0x00));
+    requests.push({ label: "REGISTERS_GET memspace=0x00 (post-step PC)", errName: errName(pcAfterR.errCode) });
+    const pcAfterEntry = parseRegisterInfo(pcAfterR.body).find((r) => r.id === pcRegId);
+    const postPc = pcAfterEntry ? pcAfterEntry.value : null;
+    const expectedAfterJsr = A2_JSR_ADDR + 3;
+    const postPcHex = postPc != null ? `$${postPc.toString(16)}` : "?";
+    const preface =
+      "an accepted REGISTERS_SET/ADVANCE_INSTRUCTIONS body was necessary but not sufficient by itself -- " +
+      "the verdict rests on the post-step PC observation: " +
+      `discovered PC register id=${pcRegId} ("${pcReg.name}"), JSR at $${A2_JSR_ADDR.toString(16)}, ` +
+      `expected post-step PC = JSR+3 = $${expectedAfterJsr.toString(16)}, observed post-step PC = ${postPcHex}`;
+
+    let verdict;
+    let observation;
+    if (postPc === expectedAfterJsr) {
+      verdict = "CONFIRMED";
+      observation = `${preface} -- MATCH: stepOver=true skipped the subroutine as one step`;
+    } else if (postPc === A2_SUB_ADDR) {
+      verdict = "CONTRADICTED";
+      observation = `${preface} (the subroutine's OWN address) -- stepOver=true behaved like a plain single step, NOT a step-over`;
+    } else {
+      verdict = "INCONCLUSIVE";
+      observation = `${preface} -- neither the step-over nor the plain-step landing address; the observation does not resolve the assumption`;
+    }
+    return { id: "A2", requests, observation, verdict };
+  } catch (e) {
+    return { id: "A2", requests, observation: `probe threw: ${e.message}`, verdict: "INCONCLUSIVE" };
+  } finally {
+    // Restore the scratch bytes and PC, then resume the machine -- this
+    // probe halted it via PING above and nothing else in this file resumes
+    // it on A2's behalf.
+    try {
+      if (originalJsrBytes) {
+        await mon.send(
+          CMD.MEM_SET,
+          memSetBody({ start: A2_JSR_ADDR, end: A2_JSR_ADDR + originalJsrBytes.length - 1, memspace: 0x00, data: originalJsrBytes }),
+        );
+      }
+      if (originalSubByte) {
+        await mon.send(
+          CMD.MEM_SET,
+          memSetBody({ start: A2_SUB_ADDR, end: A2_SUB_ADDR + originalSubByte.length - 1, memspace: 0x00, data: originalSubByte }),
+        );
+      }
+      if (pcRegId !== null && originalPc !== null) {
+        await mon.send(CMD.REGISTERS_SET, registersSetBody({ memspace: 0x00, items: [{ id: pcRegId, value: originalPc }] }));
+      }
+    } catch {
+      console.log("    (A2 cleanup: could not fully restore scratch bytes/PC -- relaunch the emulator before trusting later probes)");
+    }
+    try {
+      await mon.send(CMD.EXIT);
+    } catch {
+      /* ignore -- may already be running, or the connection may be unresponsive */
+    }
+  }
+}
+
+// ---- A3: JOYPORT_SET bit mapping --------------------------------------------
+
+const ASSUMED_JOYPORT_BITS = { up: 0x01, down: 0x02, left: 0x04, right: 0x08, fire: 0x10 };
+const A3_ORDER = ["up", "down", "left", "right", "fire"];
+// Fixed for every round -- the assumption does not state which PHYSICAL port
+// this wire value maps to; reading both $DC00 (joystick 2 on real hardware)
+// and $DC01 (joystick 1) every round is what answers that question too.
+const A3_PORT = 1;
+
+async function readCia1Ports(mon) {
+  const r = await mon.send(CMD.MEM_GET, memGetBody({ sidefx: 0, start: 0xdc00, end: 0xdc01, memspace: 0x00 }));
+  const len = r.body.readUInt16LE(0);
+  const data = r.body.subarray(2, 2 + len);
+  return { dc00: data[0], dc01: data.length > 1 ? data[1] : null };
+}
+
+async function probeA3JoyportBits(mon) {
+  const requests = [];
+  const rounds = [];
+  let wireShapeContradicted = false;
+  try {
+    for (const name of A3_ORDER) {
+      const bit = ASSUMED_JOYPORT_BITS[name];
+      const before = await readCia1Ports(mon);
+      const setR = await mon.send(CMD.JOYPORT_SET, joyportSetBody({ port: A3_PORT, value: bit }));
+      requests.push({
+        label: `JOYPORT_SET port=${A3_PORT} value=0x${bit.toString(16).padStart(2, "0")} (${name})`,
+        errName: errName(setR.errCode),
+      });
+      if (!wireShapeAccepted(setR.errCode)) wireShapeContradicted = true;
+      const after = await readCia1Ports(mon);
+      await mon.send(CMD.JOYPORT_SET, joyportSetBody({ port: A3_PORT, value: 0x00 })); // release before the next round
+      rounds.push({ name, bit, dc00Before: before.dc00, dc00After: after.dc00, dc01Before: before.dc01, dc01After: after.dc01 });
+    }
+  } catch (e) {
+    return { id: "A3", requests, observation: `probe threw: ${e.message}`, verdict: "INCONCLUSIVE" };
+  } finally {
+    try {
+      await mon.send(CMD.JOYPORT_SET, joyportSetBody({ port: A3_PORT, value: 0x00 }));
+    } catch {
+      /* ignore -- best-effort release */
+    }
+  }
+
+  const fmtByte = (v) => (v != null ? v.toString(16).padStart(2, "0") : "?");
+  const observationLines = rounds.map(
+    (r) =>
+      `${r.name} (bit 0x${r.bit.toString(16).padStart(2, "0")}): $DC00 ${fmtByte(r.dc00Before)} -> ${fmtByte(r.dc00After)}; ` +
+      `$DC01 ${fmtByte(r.dc01Before)} -> ${fmtByte(r.dc01After)}`,
+  );
+  let observation = `port=${A3_PORT} fixed across all five rounds; per-round CIA1 port bytes:\n${observationLines.join("\n")}`;
+
+  if (wireShapeContradicted) {
+    return { id: "A3", requests, observation, verdict: "CONTRADICTED" };
+  }
+
+  const anyDelta = rounds.some((r) => r.dc00Before !== r.dc00After || r.dc01Before !== r.dc01After);
+  if (!anyDelta) {
+    observation += "\nno single-bit write produced any observable delta in either port byte -- INCONCLUSIVE (keyboard-matrix multiplexing on CIA1 port B can cause this)";
+    return { id: "A3", requests, observation, verdict: "INCONCLUSIVE" };
+  }
+
+  // Real joystick lines are active-LOW: a driven direction is expected to
+  // CLEAR the corresponding bit, not set one. Compare the assumed mapping's
+  // bit position against whichever port byte actually changed, checking for
+  // a clear transition rather than assuming polarity.
+  let allMatchAssumedClearing = true;
+  const polarityNotes = [];
+  for (const r of rounds) {
+    const clearedInDc00 = (r.dc00Before & r.bit) !== 0 && (r.dc00After & r.bit) === 0;
+    const clearedInDc01 = r.dc01Before != null && (r.dc01Before & r.bit) !== 0 && (r.dc01After & r.bit) === 0;
+    const setInDc00 = (r.dc00Before & r.bit) === 0 && (r.dc00After & r.bit) !== 0;
+    const setInDc01 = r.dc01Before != null && (r.dc01Before & r.bit) === 0 && (r.dc01After & r.bit) !== 0;
+    if (clearedInDc00 || clearedInDc01) {
+      polarityNotes.push(`${r.name}: bit cleared in ${clearedInDc00 ? "$DC00" : "$DC01"} -- matches active-LOW expectation and the assumed bit position`);
+    } else if (setInDc00 || setInDc01) {
+      polarityNotes.push(`${r.name}: bit SET (not cleared) in ${setInDc00 ? "$DC00" : "$DC01"} -- polarity does not match the active-LOW expectation`);
+      allMatchAssumedClearing = false;
+    } else {
+      polarityNotes.push(`${r.name}: assumed bit 0x${r.bit.toString(16)} shows no clean set/clear transition in either port byte at this position`);
+      allMatchAssumedClearing = false;
+    }
+  }
+  observation += `\n${polarityNotes.join("\n")}`;
+  const verdict = allMatchAssumedClearing ? "CONFIRMED" : "CONTRADICTED";
+  return { id: "A3", requests, observation, verdict };
+}
+
+// ---- A5: AUTOSTART fileIndex with the run flag clear ------------------------
+
+const A5_SENTINEL_ADDR = 0x0801; // start of the default unexpanded BASIC program area
+const A5_SENTINEL_BYTES = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+const A5_ZP_PTR_ADDR = 0x002b; // BASIC TXTTAB pointer (start of BASIC text), 2 bytes LE
+
+function checkCommandAvailable(cmd) {
+  const r = spawnSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
+  return r.status === 0 && r.stdout.trim().length > 0;
+}
+
+// Builds a scratch multi-file disk image via c1541 in a process-owned
+// temporary directory. Two distinct programs so fileIndex 0 and 1 are
+// distinguishable, per the acceptance criterion this probe answers.
+function buildA5ScratchImage() {
+  const dir = mkdtempSync(join(tmpdir(), "probe-a5-"));
+  const imagePath = join(dir, "probe.d64");
+  const prg1Path = join(dir, "prog1.prg");
+  const prg2Path = join(dir, "prog2.prg");
+  writeFileSync(prg1Path, Buffer.from([0x01, 0x08, 0x11, 0x11, 0x11, 0x11]));
+  writeFileSync(prg2Path, Buffer.from([0x01, 0x08, 0x22, 0x22, 0x22, 0x22]));
+  const fmt = spawnSync("c1541", ["-format", "PROBE,00", "d64", imagePath], { encoding: "utf8" });
+  if (fmt.status !== 0) throw new Error(`c1541 -format failed: ${fmt.stderr || fmt.stdout}`);
+  const w1 = spawnSync("c1541", [imagePath, "-write", prg1Path, "PROG1"], { encoding: "utf8" });
+  if (w1.status !== 0) throw new Error(`c1541 -write PROG1 failed: ${w1.stderr || w1.stdout}`);
+  const w2 = spawnSync("c1541", [imagePath, "-write", prg2Path, "PROG2"], { encoding: "utf8" });
+  if (w2.status !== 0) throw new Error(`c1541 -write PROG2 failed: ${w2.stderr || w2.stdout}`);
+  return { dir, imagePath };
+}
+
+async function probeA5AutostartFileIndex(mon) {
+  const requests = [];
+  if (!checkCommandAvailable("c1541")) {
+    return {
+      id: "A5",
+      requests,
+      observation:
+        "c1541 is not available on PATH -- cannot build the scratch multi-file disk image this probe needs; recorded INCONCLUSIVE rather than silently skipped",
+      verdict: "INCONCLUSIVE",
+    };
+  }
+
+  let scratch = null;
+  const trials = [];
+  let wireShapeContradicted = false;
+  try {
+    scratch = buildA5ScratchImage();
+
+    // Discover the PC register id once, reused for both trials -- used only
+    // for a reset-side-effect HEURISTIC below, not a definitive detector.
+    const availR = await mon.send(CMD.REGISTERS_AVAILABLE, Buffer.from([0x00]));
+    const availableRegs = parseRegistersAvailable(availR.body);
+    const pcReg = availableRegs.find((r) => r.name.toUpperCase() === "PC");
+
+    for (const fileIndex of [0, 1]) {
+      await mon.send(
+        CMD.MEM_SET,
+        memSetBody({ start: A5_SENTINEL_ADDR, end: A5_SENTINEL_ADDR + A5_SENTINEL_BYTES.length - 1, memspace: 0x00, data: A5_SENTINEL_BYTES }),
+      );
+      const zpBeforeR = await mon.send(CMD.MEM_GET, memGetBody({ start: A5_ZP_PTR_ADDR, end: A5_ZP_PTR_ADDR + 1, memspace: 0x00 }));
+      const zpBeforeLen = zpBeforeR.body.readUInt16LE(0);
+      const zpBefore = Buffer.from(zpBeforeR.body.subarray(2, 2 + zpBeforeLen));
+      let pcBefore = null;
+      if (pcReg) {
+        const pcBeforeR = await mon.send(CMD.REGISTERS_GET, registersGetBody(0x00));
+        const entry = parseRegisterInfo(pcBeforeR.body).find((r) => r.id === pcReg.id);
+        pcBefore = entry ? entry.value : null;
+      }
+
+      const autostartR = await mon.send(CMD.AUTOSTART, autostartBody({ runAfter: false, fileIndex, filename: scratch.imagePath }));
+      requests.push({
+        label: `AUTOSTART runAfter=false fileIndex=${fileIndex} filename=${scratch.imagePath}`,
+        errName: errName(autostartR.errCode),
+      });
+      if (!wireShapeAccepted(autostartR.errCode)) wireShapeContradicted = true;
+      await sleep(700);
+
+      const sentinelR = await mon.send(
+        CMD.MEM_GET,
+        memGetBody({ start: A5_SENTINEL_ADDR, end: A5_SENTINEL_ADDR + A5_SENTINEL_BYTES.length - 1, memspace: 0x00 }),
+      );
+      const sentinelLen = sentinelR.body.readUInt16LE(0);
+      const sentinelAfter = Buffer.from(sentinelR.body.subarray(2, 2 + sentinelLen));
+      const zpAfterR = await mon.send(CMD.MEM_GET, memGetBody({ start: A5_ZP_PTR_ADDR, end: A5_ZP_PTR_ADDR + 1, memspace: 0x00 }));
+      const zpAfterLen = zpAfterR.body.readUInt16LE(0);
+      const zpAfter = Buffer.from(zpAfterR.body.subarray(2, 2 + zpAfterLen));
+      let pcAfter = null;
+      if (pcReg) {
+        const pcAfterR = await mon.send(CMD.REGISTERS_GET, registersGetBody(0x00));
+        const entry = parseRegisterInfo(pcAfterR.body).find((r) => r.id === pcReg.id);
+        pcAfter = entry ? entry.value : null;
+      }
+
+      const sentinelSurvived = sentinelAfter.equals(A5_SENTINEL_BYTES);
+      const pointersMoved = !zpAfter.equals(zpBefore);
+      // Heuristic only, reported as an observation and never as a certainty:
+      // a post-call PC landing at the hardware RESET vector target ($FCE2)
+      // or in the very low page is treated as "the machine appears to have
+      // reset".
+      const looksReset = pcAfter != null && pcBefore != null && pcAfter !== pcBefore && (pcAfter === 0xfce2 || pcAfter < 0x0100);
+
+      trials.push({ fileIndex, sentinelSurvived, pointersMoved, zpBefore, zpAfter, pcBefore, pcAfter, looksReset });
+    }
+  } catch (e) {
+    return { id: "A5", requests, observation: `probe threw: ${e.message}`, verdict: "INCONCLUSIVE" };
+  } finally {
+    if (scratch) {
+      try {
+        rmSync(scratch.dir, { recursive: true, force: true });
+      } catch {
+        /* ignore -- scratch dir is process-owned temp; leaking it is inert */
+      }
+    }
+  }
+
+  const observationLines = trials.map(
+    (t) =>
+      `fileIndex=${t.fileIndex}: sentinel ${t.sentinelSurvived ? "SURVIVED unchanged" : "CHANGED"}; ` +
+      `zero-page pointer $${A5_ZP_PTR_ADDR.toString(16)} before=${t.zpBefore.toString("hex")} after=${t.zpAfter.toString("hex")} (${t.pointersMoved ? "MOVED" : "unchanged"}); ` +
+      `PC before=$${t.pcBefore != null ? t.pcBefore.toString(16) : "?"} after=$${t.pcAfter != null ? t.pcAfter.toString(16) : "?"} (reset-looking heuristic: ${t.looksReset})`,
+  );
+  const observation =
+    "an accepted AUTOSTART body was necessary but not sufficient -- the verdict rests on whether the program area and zero-page pointers stayed untouched:\n" +
+    observationLines.join("\n");
+
+  let verdict;
+  if (wireShapeContradicted) {
+    verdict = "CONTRADICTED";
+  } else {
+    const anyLoaded = trials.some((t) => !t.sentinelSurvived || t.pointersMoved);
+    verdict = anyLoaded ? "CONTRADICTED" : "CONFIRMED";
+  }
+  return { id: "A5", requests, observation, verdict };
+}
+
+// ---- dispatcher --------------------------------------------------------------
+
+async function runAssumptionProbes(mon, { host = "127.0.0.1", remoteMonitorHost, remoteMonitorPort = 6510, cases = null } = {}) {
+  const toRun = cases && cases.length ? cases.filter((c) => PROBE_ASSUMPTION_CASES.includes(c)) : PROBE_ASSUMPTION_CASES;
+  const records = [];
+  for (const c of toRun) {
+    let record;
+    if (c === "A1") record = await probeA1RemoteMonitorPort({ host: remoteMonitorHost || host, port: remoteMonitorPort });
+    else if (c === "A2") record = await probeA2StepOver(mon);
+    else if (c === "A3") record = await probeA3JoyportBits(mon);
+    else if (c === "A5") record = await probeA5AutostartFileIndex(mon);
+    else continue;
+    printProbeRecord(record);
+    records.push(record);
+  }
+  console.log("\n=== Probe-assumptions summary ===");
+  for (const r of records) {
+    console.log(`${r.id}: ${r.verdict}`);
+  }
+  return records;
+}
+
 async function main() {
   const { host, port } = parseTarget();
   console.log(`Connecting to VICE binary monitor at ${host}:${port} ...`);
@@ -1871,6 +2377,34 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error(e.message);
       process.exit(1);
     }
+  } else if (process.argv.some((a) => a === "--probe-assumptions" || a.startsWith("--probe-assumptions="))) {
+    const flag = process.argv.find((a) => a === "--probe-assumptions" || a.startsWith("--probe-assumptions="));
+    const casesArg = flag.includes("=") ? flag.slice(flag.indexOf("=") + 1) : null;
+    const cases = casesArg ? casesArg.split(",").map((s) => s.trim()).filter(Boolean) : null;
+    const { host, port } = parseTarget();
+    (async () => {
+      console.log(`Connecting to VICE binary monitor at ${host}:${port} for --probe-assumptions ...`);
+      const socket = await connectSocket(host, port);
+      console.log("Connected.\n");
+      const mon = new BinMon(socket);
+      try {
+        await runAssumptionProbes(mon, { host, cases });
+      } finally {
+        try {
+          await mon.send(CMD.EXIT);
+        } catch {
+          /* ignore */
+        }
+        try {
+          socket.end();
+        } catch {
+          /* ignore */
+        }
+      }
+    })().catch((e) => {
+      console.error("probe-assumptions error:", e.message);
+      process.exit(1);
+    });
   } else if (process.argv.includes("--capture")) {
     const parsed = parseCaptureArgs(process.argv);
     const caseName = parsed && parsed.caseName;
