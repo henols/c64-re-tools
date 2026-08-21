@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
 status: executing
-last_updated: "2026-08-21T14:37:07.662Z"
-last_activity: 2026-08-21 -- Phase 12 planning complete
+last_updated: "2026-08-21T14:57:46.534Z"
+last_activity: 2026-08-21
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 4
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -38,7 +38,7 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** **v0.4.0 Debt discharged, decisions settled** — opened
+**Current focus:** Phase 12 — audit-integrity-instrument
 2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
 becomes a fix or a dated decision, and the fork-backend and Core Value questions
 get answered deliberately rather than by default. Requirements are being defined
@@ -51,10 +51,10 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 12 (Audit Integrity Instrument) — first phase of v0.4.0
-Plan: — (not yet planned)
+Phase: 12 (audit-integrity-instrument) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-08-21 -- Phase 12 planning complete
+Last activity: 2026-08-21
 requirements mapped
 
 ## Performance Metrics
@@ -105,6 +105,7 @@ requirements mapped
 | Phase 11.1 P05 | ~2h | 3 tasks | 9 files |
 | Phase 11.1 P06 | 70min | 3 tasks | 3 files |
 | Phase 11.1 P07 | ~3.5h | 4 tasks | 8 files |
+| Phase 12 P01 | 90min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,7 @@ Recent decisions affecting current work:
 - [Phase 11.1]: WR-12's tautology only reproduces when writeChain's write formula and extractEntry's read formula are mutated together in a self-consistent way; a single-sided mutation breaks the round-trip test too
 - [Phase 11.1-07]: AUDIT-01/04/05 closed: every Phase 10/11 review finding now has a cited disposition (11 fixed, 1 deferred); STATE.md's Deferred Items is derived from .planning/todos/pending/ and guarded both directions; Operator Next Steps names the two remaining Phase 10 coverage commands then /gsd-complete-milestone v0.3.0
 - [Phase 11.1-07]: Task 4's ledger-completeness guard (docs-review-disposition.test.ts), scanning every phase not just 10/11, found 27 undispositioned findings before this plan (7 in Phase 10/11, 20 outside it: Phase 01 six, Phase 02 one, Phase 08 nine, Phase 09 one, Phase 11 one) versus the plan's own pre-measured 8 -- confirming the process risk was real and larger than predicted; closed to zero by fixing (Phase 01, quick task 260821-a86) or filing (Phase 08) each
+- [Phase 12]: audit-gate.mjs built as the single check point; the planted-violation test in audit-integrity.test.ts caught runGuardsLive() silently reporting green under a red guard when nested under an outer node --test (NODE_TEST_CONTEXT inheritance), fixed by stripping NODE_TEST_* from the guard subprocess env
 
 ### Pending Todos
 
@@ -377,9 +379,9 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T13:49:02.019Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-audit-integrity-instrument/12-CONTEXT.md
+Last session: 2026-08-21T14:57:46.521Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

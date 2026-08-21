@@ -101,7 +101,7 @@ anyone to notice).
 
 **Wave 1**
 
-- [ ] 12-01-PLAN.md — `scripts/audit-gate.mjs` (the single check point) + Layer 1 `audit-integrity.test.ts` with the committed planted pair
+- [x] 12-01-PLAN.md — `scripts/audit-gate.mjs` (the single check point) + Layer 1 `audit-integrity.test.ts` with the committed planted pair
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -239,7 +239,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 0/TBD | Not started | - |
+| 12. Audit Integrity Instrument | v0.4.0 | 1/4 | In Progress|  |
 | 13. External Verification | v0.4.0 | 0/TBD | Not started | - |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
