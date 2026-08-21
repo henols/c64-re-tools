@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: executing
-last_updated: "2026-08-20T21:01:31.874Z"
-last_activity: 2026-08-20 -- Phase 11 plan 03 (scope corrections) complete
+status: milestone_complete
+last_updated: 2026-08-21T00:15:25.957Z
+last_activity: 2026-08-21 -- Phase 11 complete (12/12 plans), verification passed
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 29
-  completed_plans: 20
-  percent: 67
+  completed_plans: 29
+  percent: 100
+stopped_at: Milestone complete (Phase 11 was final phase)
 ---
 
 # Project State
@@ -25,7 +26,7 @@ inspect chip state — and keep working when the emulator misbehaves.
 **Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Phase 11 — annotation-store-enums-and-the-symbol-round-trip
+**Current focus:** Milestone complete
 ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
 1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
 Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
@@ -36,24 +37,37 @@ packages, so no release work gates the milestone.
 
 ## Current Position
 
-Phase: 11 (annotation-store-enums-and-the-symbol-round-trip) — EXECUTING
-Plan: 4 of 12
-Status: Executing Phase 11
-Plans 11-01, 11-02 and 11-03 are complete and merged into main. 11-01 fixed
-WR-02/WR-04; 11-02 fixed WR-03/WR-05/WR-06/WR-07 and the dynamic-import
-closure-walk todo; 11-03 (this update) corrected four scope items owed by the
-phase (D-34 `.vsf` dangling reference, D-35 `--export_lbl` verified claim,
-D-22 `R2000-13` wording, D-15/D-19 one-project-limit narrowing) and pinned
-CLAUDE.md's `rewriteArguments()` line citations with a new drift-guard test.
-Both folded Phase 10 review todos are now closed under
-`.planning/todos/completed/`. Next step: plan 11-04.
-Last activity: 2026-08-20 -- Phase 11 plan 03 (scope corrections) complete
+Phase: 11 -- complete
+Plan: 12/12 complete
+Status: Milestone complete (v0.3.0 -- Phase 11 was the final phase)
+
+All 12 plans executed across 7 waves and merged into main; verification
+`passed` (4/4 roadmap success criteria, 5/5 requirement IDs). Post-merge gate
+green at every wave; full suite 2066 pass / 0 fail, no cross-phase regressions.
+
+What the phase delivered: the r2000 MCP client seam (11-04) and the 17 curated
+`r2000_*` tools (11-05); register-bit enums generated from the memory map, with
+criterion 3 byte-verified against real ACME (11-06); the symbol round trip in
+code (11-08) and demonstrated live against genuine unpatched stock x64sc
+(11-11); the store made canonical with the Markdown memory map a generated view
+(11-10); and the recon/memory-mapping/ram-capture playbooks rewritten to emit
+store entries rather than prose (11-12). Criterion 1's two-session
+falsifiability proof is closed: session B answered a question sealed before it
+existed and the sha256 matched (11-07, 11-09).
+
+Open, recorded, non-blocking: T-11-NAME-INJECT (label names unvalidated on
+entry) -- code review WR-04 widened its blast radius to the generated memory
+map's unescaped Markdown table cells; the enum double-run no-op (11-06); and
+5 warning-level code review findings in `11-REVIEW.md`. No SECURITY.md yet
+while `workflow.security_enforcement` is true.
+
+Last activity: 2026-08-21
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 104
+- Total plans completed: 116
 - Average duration: —
 - Total execution time: —
 
@@ -72,6 +86,7 @@ Last activity: 2026-08-20 -- Phase 11 plan 03 (scope corrections) complete
 | 08.2 | 6 | - | - |
 | 09 | 8 | - | - |
 | 10 | 9 | - | - |
+| 11 | 12 | - | - |
 
 **Recent Trend:**
 
