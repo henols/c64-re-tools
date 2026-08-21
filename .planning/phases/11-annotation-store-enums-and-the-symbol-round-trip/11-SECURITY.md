@@ -266,8 +266,80 @@ each fix.*
 |------------|----------------|--------|------|--------|
 | 2026-08-21 | 69 | 66 | 3 (T-11-PATH-ESCAPE ×1, T-11-NAME-INJECT ×2 duplicate rows, same root cause) | gsd-security-auditor |
 | 2026-08-21 | 69 | 69 | 0 | quick 260821-a86 remediation (WR-01 / T-11-NAME-INJECT / WR-04) |
+| 2026-08-21 | 69 (3 targeted) | 69 | 0 | gsd-security-auditor, narrow re-audit — independently confirmed the three 260821-a86 closures against `de788b9`/`bb08c46`/`2c287cb`, adversarially, without trusting the self-declared close. See "Independent Re-Audit" below. |
 
 ---
+
+## Independent Re-Audit (2026-08-21, narrow scope — 3 rows only)
+
+A second `gsd-security-auditor` invocation (this one) independently re-verified the three rows
+260821-a86 claimed to close, per the standing instruction not to accept a self-declared closure
+from the same agent that wrote the fix. Scope was deliberately narrow: only T-11-PATH-ESCAPE and
+the two T-11-NAME-INJECT rows (plus WR-04). The other 66 rows were NOT re-verified in this pass.
+
+Method: read `de788b9`/`bb08c46`/`2c287cb` diffs directly (not SUMMARY.md prose), read the
+resulting implementation in full, ran every cited regression test live, and additionally built and
+ran independent adversarial PoC scripts exercising shapes neither the plan's `must_haves` nor the
+committed regression tests explicitly named.
+
+**T-11-PATH-ESCAPE (WR-01) — CLOSED, confirmed.** Read `resolveViaDeepestExistingAncestor()` and
+`resolveStorePath()` (`r2000-tools.ts:698-823`) in full. Ran `r2000-tools.test.ts` live (27/27
+pass, including the two planted-symlink cases and the create-path case). Beyond the committed
+tests, ran an independent PoC (`resolveStorePath` imported directly, temp workspace swapped via
+`CLAUDE_PROJECT_DIR`) covering seven adversarial shapes the audit brief specifically asked about:
+(A) directory symlink at depth 1 with absent leaf — refused; (B) same, with two additional absent
+path segments under the link — refused; (C) the LEAF itself a dangling symlink pointing outside —
+refused (a shape neither committed test covers); (D) the leaf itself a symlink to an *existing*
+outside file — refused; (E) a *dangling* intermediate directory symlink (target does not exist at
+all, not just not-yet-existing) — refused, citing the unresolved-symlink-component branch; (F) the
+legitimate create path with two absent nested real directories — succeeds, correctly contained;
+(G) a symlink three segments above an absent leaf — refused. All seven matched the expected
+disposition; no bypass found. `resolveStorePath` also passed `../../etc/passwd` and the
+`.regen2000proj`-extension checks unchanged. Working tree left clean; all PoC artifacts lived under
+`mkdtemp()`-created scratch directories, removed in `finally` blocks — no symlink or stray file was
+ever planted inside this repo's working tree.
+
+**T-11-NAME-INJECT (11-08 / 11-11) — CLOSED, confirmed, both entry routes plus batch recursion.**
+Read `r2000-acme-ident.ts` in full (confirmed it imports nothing from this repo, avoiding the
+`r2000-enum-gen.ts` ⇄ `r2000-tools.ts` cycle the commit message describes) and confirmed
+`r2000-enum-gen.ts` re-exports rather than duplicates it. Confirmed `assertLegalLabelArg()` is
+called from both `assertCuratedTool()` (outer dispatch, `r2000-tools.ts:667-669`) and
+`assertCuratedBatch()` (batch-inner, `:634-636`), and that `assertCuratedBatch()` recurses into a
+nested `r2000_batch_execute` (`:637-639`). Confirmed `importLabels()` (`r2000-symbols.ts:262-280`)
+validates every parsed name before `buildImportLblArgs()` is called. Searched for a third entry
+route: walked every one of the 17 `CURATED_R2000_TOOLS` schemas for a free-text identifier field —
+only `r2000_set_label_name`'s `name` qualifies; `r2000_add_scope` takes no name; `r2000_create_project_enum`/
+`r2000_update_project_enum`'s `name`/`new_name`/variant keys are already covered by the pre-existing,
+separately-closed T-11-ENUM-NAME check. Confirmed `r2000-cli.ts`'s `import-lbl` subcommand calls the
+same `importLabels()` (no hand-rolled CLI-side import path). Ran `r2000-tools.test.ts` (27/27) and
+`r2000-symbol-roundtrip.test.ts` (8/8) live. Beyond the committed tests, ran an independent PoC
+against `assertCuratedTool()` directly covering: a direct illegal name (`LDA`, digit-leading `1abc`,
+pipe-bearing `a|b`, whitespace-padded `" loop "`, empty string, lowercase mnemonic `lda`, a Unicode
+digit-lookalike `ⅬDA`) — all refused; a single-level batch smuggle — refused, naming `calls[0]`; a
+**three-level nested batch smuggle** (`r2000_batch_execute` → `r2000_batch_execute` →
+`r2000_batch_execute` → `r2000_set_label_name` with an illegal name) — refused, no depth limit
+defeated the check; and a legal name (`init_screen`) both direct and inside a batch — accepted, no
+false positive. No bypass found.
+
+**WR-04 (Markdown-cell escaping) — CLOSED, confirmed.** Because `r2000-memmap-render.ts` contains
+literal NUL bytes (confirmed via `file`; plain `grep` without `-a` reports "binary file matches"
+and a `grep -I` variant matches nothing — the exact vacuous-pass trap the audit brief warned about),
+re-ran every search with `grep -a`. Found and read all four store-derived Markdown interpolations in
+the file (`match.evidence` ×2, `sym.name` ×1, `u.evidence` ×1) — every one is wrapped in
+`escapeMarkdownCell()`; no unwrapped store-derived interpolation exists anywhere else in the file
+(the provenance-sidecar fields interpolated elsewhere — `capturePath`, `vicBank`, `dd00`, etc. — are
+a different trust boundary than WR-04's declared scope of "comment evidence, symbol names", and were
+not the finding). Ran `r2000-memmap-render.test.ts` live (18/18 pass, including the gated
+pipe-and-newline golden-row case). Beyond the committed tests, called `escapeMarkdownCell()`
+directly with a string containing both a `|` and three different newline styles (`\n`, `\r\n`,
+bare `\r`) — output had zero unescaped `|` characters and every newline variant collapsed to `<br>`.
+`RENDERER_VERSION` confirmed bumped to `"2"`.
+
+**Verdict: all three rows independently reconfirmed CLOSED.** `npx tsc --noEmit` (typecheck-only,
+this repo's build gate) passes clean against the merged state. `r2000-acme-ident.ts` is present in
+`package.json`'s `files[]`. No narrower-than-claimed gap was found in any of the three; the incoming
+`threats_open: 0` / `status: verified` set by 260821-a86 is retained, now on independent (not
+self-declared) evidence.
 
 ## Sign-Off
 
