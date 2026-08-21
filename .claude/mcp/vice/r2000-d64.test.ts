@@ -274,6 +274,76 @@ test("extractEntry: a final sector reporting usedByte 0 throws naming the sector
   );
 });
 
+// ------------------------------------------------------------------- WR-12
+//
+// Every round-trip test above (and `writeChain()` itself) writes
+// `usedByte = payloadLen + 1`, and `extractEntry()` reads
+// `payloadLen = usedByte - 1` -- the SAME equation in both directions. A
+// systematic off-by-one in both `writeChain()` and `extractEntry()` (e.g.
+// both using `payloadLen` instead of `payloadLen + 1`/`usedByte - 1`, or
+// both using `payloadLen + 2`/`usedByte - 2`) would cancel out and this
+// suite would still pass, even though every OTHER, non-test `.d64` image in
+// the world (one written by real DOS, or read by any other tool) uses the
+// convention as it actually is, not as this codebase's own two ends of the
+// equation happen to agree with each other. That is a test-strength gap,
+// not a behaviour bug -- plan 10-03 recorded finding and fixing exactly
+// this bug class while ORIGINALLY writing this test, which is precisely why
+// the test must not be able to miss a recurrence.
+//
+// The two tests below pin the DOS convention directly: they write the
+// final sector's three governing bytes (next-track, usedByte, and the
+// payload itself) as LITERAL numbers, derived from the convention's own
+// definition (usedByte is the zero-based offset of the LAST used byte in
+// the 256-byte sector; the payload occupies bytes 2..usedByte inclusive, so
+// its length is `usedByte - 1`) -- never from `payload.length` or from
+// `writeChain()`. Neither test calls `writeChain()` at all. If
+// `extractEntry()`'s `usedByte - 1` read were inverted to `usedByte + 1` or
+// to plain `usedByte`, these two literal fixtures would still expect the
+// SAME bytes they expect today (because those bytes were never derived from
+// the implementation to begin with) and would therefore FAIL -- exactly the
+// contrast that proves the tautology in the round-trip test above. See
+// 11.1-06-SUMMARY.md for the recorded mutation-kill transcript.
+//
+// `writeChain()` and the round-trip test above are NOT modified here -- WR-12
+// is a test-strength finding about their independence from the convention,
+// not a defect in what they cover (the multi-sector chain path), so they
+// stay exactly as they are.
+
+test("extractEntry: a hand-written final sector (usedByte 0x04, no fixture helper) returns exactly the three literal payload bytes it names (WR-12)", () => {
+  const buf = blankImage();
+  writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 20, firstSector: 0, name: "LITERAL4", blocks: 1 });
+  const off = tsToOffset(20, 0);
+  buf[off] = 0x00; // next-track 0 -> this is the last sector in the chain
+  // usedByte = 0x04: the DOS convention's own definition says this is the
+  // zero-based offset of the LAST used byte in the sector, so the payload
+  // is bytes [2, 3, 4] -- three bytes, i.e. usedByte - 1. This number (4)
+  // is chosen directly from that definition, not computed from a payload
+  // length anywhere in this test.
+  buf[off + 1] = 0x04;
+  buf[off + 2] = 0x01;
+  buf[off + 3] = 0x08;
+  buf[off + 4] = 0x60;
+
+  const extracted = extractEntry(buf, "LITERAL4");
+  assert.deepEqual(Buffer.from(extracted), Buffer.from([0x01, 0x08, 0x60]));
+});
+
+test("extractEntry: a hand-written final sector at the one-payload-byte boundary (usedByte 0x02, no fixture helper) returns exactly that one byte (WR-12)", () => {
+  const buf = blankImage();
+  writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 21, firstSector: 0, name: "LITERAL1", blocks: 1 });
+  const off = tsToOffset(21, 0);
+  buf[off] = 0x00; // last sector
+  // usedByte = 0x02 is the smallest value WR-05's own bounds check accepts
+  // (below 2 is refused as corrupt) -- the boundary the convention makes
+  // easiest to get wrong in either direction. By the same definition as
+  // above, this names exactly one payload byte (index 2 only).
+  buf[off + 1] = 0x02;
+  buf[off + 2] = 0xaa;
+
+  const extracted = extractEntry(buf, "LITERAL1");
+  assert.deepEqual(Buffer.from(extracted), Buffer.from([0xaa]));
+});
+
 // ---------------------------------------------------- composition with r2000-project.ts
 //
 // Plan 10-04 hands extractEntry()'s output straight to parsePrg() in
