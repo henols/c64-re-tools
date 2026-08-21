@@ -1,30 +1,39 @@
 // backend-detect.test.ts
 //
-// ENVIRONMENT CONSTRAINT (2026-08-13, explicit user scope override): "we
-// can't do tests with deciding what vice is". No test in this file spawns,
-// launches, or interrogates a real VICE binary -- every scenario below
-// drives ONE of three tested surfaces: (1) the explicit VICE_BACKEND
-// override path, (2) the on-disk cache's read/write/invalidate/staleness
-// lifecycle, and (3) classifyHelpOutput()'s pure STRING-PARSING logic
-// against fixture strings authored here as test inputs. `probeBackend()`'s
-// own spawn seam (`spawnHelp`) is ALWAYS injected with a stub in every test
-// that reaches it -- nothing here ever calls node:child_process's real
-// spawnSync.
+// This file drives ONE of FOUR tested surfaces: (1) the explicit
+// VICE_BACKEND override path, (2) the on-disk cache's
+// read/write/invalidate/staleness lifecycle, (3) classifyHelpOutput()'s pure
+// STRING-PARSING logic against ASSUMED, author-constructed fixture strings,
+// and (4) a REAL HARDWARE block, added by EXTV-02, that drives the same
+// classifyHelpOutput()/probeBackend() surface against two verbatim `--help`
+// transcripts actually captured from real x64sc builds. No test in this
+// file spawns, launches, or interrogates a real VICE binary itself --
+// `probeBackend()`'s own spawn seam (`spawnHelp`) is ALWAYS injected with a
+// stub in every test that reaches it, including the real-hardware block
+// below, which feeds a committed transcript through the stub rather than
+// spawning anything.
 //
-// Every fixture string fed to classifyHelpOutput() below is labelled
-// ASSUMED: it is an author-constructed guess at what a real build's --help
-// output might contain (per D-02's discriminator tokens), NOT a captured
-// transcript from any real binary. docs/phase2-backend-probe-evidence.md
-// section 2 records this discriminator as an explicit OPEN question --
-// neither confirmed nor refuted against real hardware -- and nothing in
-// this file upgrades that verdict. See
-// .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md
-// for what a real-hardware run must still confirm.
+// Fixture class 1 -- ASSUMED (below, unchanged by EXTV-02): every fixture
+// string fed to classifyHelpOutput() in the sections immediately following
+// this header is labelled ASSUMED -- an author-constructed guess at what a
+// real build's --help output might contain (per D-02's discriminator
+// tokens), NOT a captured transcript from any real binary.
+//
+// Fixture class 2 -- REAL HARDWARE (own section, own banner, far below):
+// verbatim `--help` transcripts of two real x64sc builds, read from disk
+// under fixtures/backend-detect/. See fixtures/backend-detect/README.md for
+// the provenance table and
+// .planning/phases/13-external-verification/13-HELP-DISCRIMINATOR-EVIDENCE.md
+// for the full live probeBackend()/resolvedBackend() run these transcripts
+// are the fixture-driven regression pin for. D-13-03 requires the two
+// classes stay visibly separate: no shared array, no shared helper, no test
+// name that omits which class a fixture belongs to.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   classifyHelpOutput,
@@ -588,3 +597,81 @@ test("readCapabilityRecord: returns null when nothing has been recorded for this
     assert.equal(record, null);
   });
 });
+
+// ===========================================================================
+// REAL HARDWARE (EXTV-02) -- every fixture string in this section is a
+// VERBATIM `--help` transcript actually captured from a real x64sc binary,
+// read from disk under fixtures/backend-detect/ -- see
+// fixtures/backend-detect/README.md for the provenance table and
+// .planning/phases/13-external-verification/13-HELP-DISCRIMINATOR-EVIDENCE.md
+// for the full live probeBackend()/resolvedBackend() run this block pins as
+// a regression test. This section is kept DELIBERATELY SEPARATE from the
+// ASSUMED, author-constructed fixtures above: no array, object, or helper
+// function below is shared with them, and no test name in this section
+// omits that its fixture is a captured transcript. Reading the fixtures
+// from disk (rather than inlining their text) is deliberate too -- an
+// inlined copy would be an author-typed string again, exactly the class of
+// evidence this section must not be.
+// ===========================================================================
+
+const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "backend-detect");
+
+interface RealHardwareSidecar {
+  capturedFrom: string;
+  binaryPath: string;
+  viceVersion: string;
+  capturedAt: string;
+  command: string;
+  exitCode: number;
+  backendExpected: "stock" | "fork";
+}
+
+function readRealHardwareTranscript(kind: "stock" | "fork"): string {
+  return readFileSync(join(FIXTURES_DIR, `${kind}-help-transcript.txt`), "utf8");
+}
+
+function readRealHardwareSidecar(kind: "stock" | "fork"): RealHardwareSidecar {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, `${kind}-help-transcript.json`), "utf8")) as RealHardwareSidecar;
+}
+
+for (const kind of ["stock", "fork"] as const) {
+  test(`EXTV-02: the committed ${kind} real-hardware --help transcript file exists and is non-empty (a deleted fixture must fail this test, not shrink silently)`, () => {
+    const text = readRealHardwareTranscript(kind);
+    assert.ok(text.length > 0, `${kind}-help-transcript.txt must be non-empty`);
+  });
+
+  test(`EXTV-02: classifyHelpOutput() fed the committed real-hardware ${kind} transcript returns "${kind}"`, () => {
+    const text = readRealHardwareTranscript(kind);
+    assert.equal(classifyHelpOutput(text), kind);
+  });
+
+  test(`EXTV-02: the committed ${kind} transcript's sidecar backendExpected matches what its OWN transcript classifies to (so a re-captured transcript from a different build cannot silently keep a stale expectation)`, () => {
+    const text = readRealHardwareTranscript(kind);
+    const sidecar = readRealHardwareSidecar(kind);
+    assert.equal(
+      classifyHelpOutput(text),
+      sidecar.backendExpected,
+      `sidecar backendExpected ("${sidecar.backendExpected}") must equal what the transcript beside it actually classifies to`,
+    );
+  });
+
+  test(`EXTV-02: the committed ${kind} sidecar carries capturedFrom "real hardware" and non-empty binaryPath/viceVersion (so a hand-written stand-in cannot pass as a real capture)`, () => {
+    const sidecar = readRealHardwareSidecar(kind);
+    assert.equal(sidecar.capturedFrom, "real hardware", "capturedFrom must be the literal real-hardware label");
+    assert.ok(sidecar.binaryPath.length > 0, "binaryPath must be non-empty");
+    assert.ok(sidecar.viceVersion.length > 0, "viceVersion must be non-empty");
+  });
+
+  test(`EXTV-02: probeBackend() driven through an injected spawnHelp returning the committed real-hardware ${kind} transcript for --help returns "${kind}" from exactly one spawn`, () => {
+    const text = readRealHardwareTranscript(kind);
+    const calls: string[] = [];
+    const result = probeBackend("/fake/x64sc", {
+      spawnHelp: (bin, flag): SpawnHelpResult => {
+        calls.push(flag);
+        return { text, exitedZero: true };
+      },
+    });
+    assert.equal(result, kind);
+    assert.deepEqual(calls, ["--help"], "the ladder must stop at --help, matching what both real builds actually do (exit 0, non-empty output)");
+  });
+}
