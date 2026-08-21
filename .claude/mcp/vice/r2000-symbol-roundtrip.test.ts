@@ -29,12 +29,21 @@
 // created below is removed in a `finally`, never left behind.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
-import { exportLabels, importLabels, R2000SymbolsError } from "./r2000-symbols.ts";
+import { exportLabels, importLabels, R2000SymbolsError, regenerateAndReload } from "./r2000-symbols.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { runR2000 } from "./r2000-launch.ts";
 import { parsePrg, synthesizeProject } from "./r2000-project.ts";
@@ -359,4 +368,250 @@ test("R2000SymbolsError carries the class's own name", () => {
   assert.equal(err.name, "R2000SymbolsError");
   assert.equal(err.message, "test message");
   assert.ok(err instanceof Error);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 11 IN-02 (D-11.1-06): regenerateAndReload() has zero production
+// callers today (confirmed by grep across .claude/mcp/vice/,
+// .claude/skills/ and scripts/ during the 11.1 audit). Rather than leave
+// that ambiguous for a future phase to misread as "already wired", it is
+// marked LIBRARY-ONLY in its own doc comment (r2000-symbols.ts), and this
+// guard ties that marker to the real caller count in BOTH directions:
+// zero callers requires the marker present; one or more callers requires
+// the marker ABSENT (adopted, header now stale). Purely structural, no
+// binary needed -- runs ungated, unlike the rest of this file.
+// ---------------------------------------------------------------------------
+
+/** Exactly the token this guard greps for -- defined once so the assertion
+ * messages and the scan itself can never drift apart. Deliberately does
+ * NOT read as a bare `Phase <N>` INSIDE A STRING LITERAL in a shipped
+ * module: it lives here as a string constant in a `*.test.ts` file (not a
+ * shipped module -- absent from package.json's `files[]`), and in
+ * r2000-symbols.ts as prose inside a `/** ... *\/` doc comment (comments
+ * are not scanned for phase-literal dangling refs). `docs-dangling-refs
+ * .test.ts` is run after this file specifically to confirm neither
+ * exemption was accidentally violated. */
+const LIBRARY_ONLY_MARKER = "LIBRARY-ONLY (Phase 11 IN-02, D-11.1-06)";
+
+const R2000_SYMBOLS_SOURCE_PATH = join(HERE, "r2000-symbols.ts");
+
+/** Strips `//` and `/* ... *\/` comments, reusing `r2000-launch.test.ts`'s
+ * WR-02-fixed close-token-by-position algorithm verbatim rather than
+ * reinventing it -- needed here because r2000-symbols.ts's own header and
+ * this guard's marker comment both discuss `regenerateAndReload(` in
+ * prose, which an unfiltered scan would count as a call. */
+function stripCommentLines(src: string): string {
+  const out: string[] = [];
+  let inBlock = false;
+
+  function processSegment(text: string): void {
+    if (inBlock) {
+      const closeIdx = text.indexOf("*/");
+      if (closeIdx === -1) return;
+      inBlock = false;
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    const trimmed = text.trim();
+    if (trimmed.startsWith("/*")) {
+      const openIdx = text.indexOf("/*");
+      const closeIdx = text.indexOf("*/", openIdx + 2);
+      if (closeIdx === -1) {
+        inBlock = true;
+        return;
+      }
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    if (/^\s*\/\//.test(text)) return;
+    out.push(text);
+  }
+
+  for (const line of src.split("\n")) {
+    processSegment(line);
+  }
+  return out.join("\n");
+}
+
+/** True iff the comment-stripped source contains an actual CALL to
+ * `regenerateAndReload` -- `regenerateAndReload(` immediately followed by
+ * an open paren, which a plain `import { regenerateAndReload }` (no paren
+ * right after the identifier) never matches, and which its own `function
+ * regenerateAndReload(` declaration line is explicitly excluded from
+ * below. */
+function callsRegenerateAndReload(strippedSrc: string, { excludeDeclaration }: { excludeDeclaration: boolean }): boolean {
+  const withoutDecl = excludeDeclaration
+    ? strippedSrc.replace(/\bexport\s+async\s+function\s+regenerateAndReload\s*\(/g, "")
+    : strippedSrc;
+  return /\bregenerateAndReload\s*\(/.test(withoutDecl);
+}
+
+/** Recursively lists every file under `dir`, skipping `node_modules` --
+ * used to walk `.claude/skills/` and `scripts/` (which have no top-level
+ * `readdirSync`-only equivalent of `.claude/mcp/vice`'s flat layout). */
+function walkFiles(dir: string): string[] {
+  const results: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === ".git") continue;
+    const full = join(dir, entry);
+    const st = statSync(full);
+    if (st.isDirectory()) {
+      results.push(...walkFiles(full));
+    } else {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+// `.claude/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+const REPO_ROOT = join(HERE, "..", "..", "..");
+const SKILLS_DIR = join(REPO_ROOT, ".claude", "skills");
+const SCRIPTS_DIR = join(REPO_ROOT, "scripts");
+
+/** Every production module this guard searches for a REAL call to
+ * `regenerateAndReload`: every top-level non-test `.ts`/`.mts` file under
+ * `.claude/mcp/vice` (excluding r2000-symbols.ts's own definition site,
+ * per this plan's explicit instruction), plus every file under
+ * `.claude/skills/` and `scripts/` -- the same three trees the Phase 11
+ * IN-02 audit itself grepped. */
+function productionCallerSearchDomain(): string[] {
+  const viceModules = readdirSync(HERE)
+    .filter((name) => /\.(ts|mts|mjs)$/.test(name))
+    .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
+    .map((name) => join(HERE, name));
+  return [...viceModules, ...walkFiles(SKILLS_DIR), ...walkFiles(SCRIPTS_DIR)];
+}
+
+/** Counts production callers of `regenerateAndReload` across the derived
+ * search domain. r2000-symbols.ts is scanned too (it is in the domain via
+ * `viceModules` above) but with its own declaration line excluded, per the
+ * plan's explicit "excluding its own definition site" instruction --
+ * every other file is scanned without that exclusion, since none of them
+ * could possibly contain the declaration. */
+function countProductionCallers(): { file: string; count: number }[] {
+  const hits: { file: string; count: number }[] = [];
+  for (const file of productionCallerSearchDomain()) {
+    let raw: string;
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch {
+      continue; // a symlink or other unreadable entry -- not a caller either way
+    }
+    const stripped = stripCommentLines(raw);
+    const isSelf = file === R2000_SYMBOLS_SOURCE_PATH;
+    if (!callsRegenerateAndReload(stripped, { excludeDeclaration: isSelf })) continue;
+    const withoutDecl = isSelf
+      ? stripped.replace(/\bexport\s+async\s+function\s+regenerateAndReload\s*\(/g, "")
+      : stripped;
+    const matches = withoutDecl.match(/\bregenerateAndReload\s*\(/g) ?? [];
+    hits.push({ file, count: matches.length });
+  }
+  return hits;
+}
+
+test("non-vacuity: the scanner reaches regenerateAndReload's own definition site and at least one test reference", () => {
+  // (a) the definition site itself, found directly (not via the caller
+  // scanner, which deliberately excludes it) -- proves this test file's
+  // path resolution to r2000-symbols.ts is correct.
+  const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
+  assert.match(
+    stripCommentLines(symbolsSrc),
+    /\bexport\s+async\s+function\s+regenerateAndReload\s*\(/,
+    "the scanner's own path to r2000-symbols.ts did not find regenerateAndReload's declaration -- the search " +
+      "domain is broken, not merely 'zero callers'",
+  );
+
+  // (b) at least one test reference to the bare identifier, proving grep
+  // across test files is reaching real content. `regenerateAndReload` is
+  // imported into THIS file (above) and referenced by the typeof check
+  // below -- neither is a CALL, so this does not inflate the caller count,
+  // but both are genuine occurrences of the identifier in a *.test.ts
+  // file, which is exactly what this control needs to prove reachable.
+  const ownSource = readFileSync(join(HERE, "r2000-symbol-roundtrip.test.ts"), "utf8");
+  const importCount = (ownSource.match(/\bregenerateAndReload\b/g) ?? []).length;
+  assert.ok(
+    importCount >= 2,
+    "expected at least two textual references to regenerateAndReload in this test file (the import and the " +
+      `typeof check below), got ${importCount} -- the identifier-reachability control is not exercising anything`,
+  );
+});
+
+test("regenerateAndReload is exported as a function (referenced, never invoked, by this structural guard)", () => {
+  assert.equal(typeof regenerateAndReload, "function");
+});
+
+/** The ONE definition of the Phase 11 IN-02 biconditional (D-11.1-06): both
+ * the real-source test below AND the planted-violation tests call this
+ * exact function, fed either the real scan result or a synthetic one --
+ * there is exactly one place this rule is written down (the 11-01
+ * discipline: a structural test and its own proof must share the checked
+ * logic, not each carry a copy). Throws (via `assert`) if the caller count
+ * and the marker's presence disagree; returns normally if they agree. */
+function assertLibraryOnlyBiconditional(callers: { file: string; count: number }[], markerPresent: boolean): void {
+  if (callers.length === 0) {
+    assert.ok(
+      markerPresent,
+      "regenerateAndReload has zero production callers but r2000-symbols.ts is missing the LIBRARY-ONLY " +
+        `marker (${JSON.stringify(LIBRARY_ONLY_MARKER)}) -- the header must record this status`,
+    );
+  } else {
+    assert.equal(
+      markerPresent,
+      false,
+      "regenerateAndReload now has a production caller (" +
+        callers.map((c) => `${c.file} x${c.count}`).join(", ") +
+        ") but r2000-symbols.ts still carries the LIBRARY-ONLY marker -- the function has been adopted and " +
+        "its header is now stale. Remove the marker in the same commit that adds the caller.",
+    );
+  }
+}
+
+test("Phase 11 IN-02 biconditional: zero production callers of regenerateAndReload <=> the LIBRARY-ONLY marker is present in r2000-symbols.ts", () => {
+  const callers = countProductionCallers();
+  const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
+  const markerPresent = symbolsSrc.includes(LIBRARY_ONLY_MARKER);
+  assertLibraryOnlyBiconditional(callers, markerPresent);
+});
+
+test("current state, asserted explicitly (not only the rule): today's caller count is 0 and the marker is present", () => {
+  const callers = countProductionCallers();
+  assert.deepEqual(
+    callers,
+    [],
+    `expected zero production callers of regenerateAndReload, found: ${JSON.stringify(callers)}`,
+  );
+  const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
+  assert.ok(
+    symbolsSrc.includes(LIBRARY_ONLY_MARKER),
+    `r2000-symbols.ts must contain the literal marker ${JSON.stringify(LIBRARY_ONLY_MARKER)} today`,
+  );
+});
+
+// -- Planted violation (committed), exercising the SAME assertLibraryOnly ---
+//    Biconditional() function the real test above calls, fed synthetic
+//    scan results -- proving both failure branches are reachable and
+//    correctly worded, without needing to mutate real files in CI. The
+//    equivalent demonstration against REAL files (a scratch caller module;
+//    a temporarily deleted marker) was run manually and is recorded in this
+//    plan's SUMMARY, then reverted -- not committed, since a committed
+//    scratch caller would itself flip the real guard's caller count.
+
+test("planted violation: a production caller makes assertLibraryOnlyBiconditional demand the marker's removal", () => {
+  assert.throws(
+    () => assertLibraryOnlyBiconditional([{ file: "scratch-caller.ts", count: 1 }], /* markerPresent */ true),
+    /now has a production caller.*still carries the LIBRARY-ONLY marker/s,
+  );
+});
+
+test("planted violation: zero callers with the marker absent also fails assertLibraryOnlyBiconditional", () => {
+  assert.throws(
+    () => assertLibraryOnlyBiconditional([], /* markerPresent */ false),
+    /zero production callers but r2000-symbols\.ts is missing the LIBRARY-ONLY/,
+  );
+});
+
+test("control: zero callers with the marker present, and one caller with the marker absent, both pass assertLibraryOnlyBiconditional", () => {
+  assert.doesNotThrow(() => assertLibraryOnlyBiconditional([], true));
+  assert.doesNotThrow(() => assertLibraryOnlyBiconditional([{ file: "adopter.ts", count: 1 }], false));
 });

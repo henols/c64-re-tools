@@ -341,9 +341,33 @@ export interface RegenerateAndReloadResult {
  * `assertLegalLabelArg()` gate (`r2000-tools.ts`) fires inside
  * `runR2000Tool()`'s `assertCuratedTool()` call, before `runR2000Tool()`'s
  * own `try` block, rather than surfacing as `setResult.isError` the way a
- * regenerator2000-side failure would. This function has no production
- * caller today, so no existing behaviour depended on the old
- * `isError`-shaped outcome.
+ * regenerator2000-side failure would. This function had no production
+ * caller when that note was written, so no existing behaviour depended on
+ * the old `isError`-shaped outcome -- superseded in place by the formal
+ * status below rather than left as an aside.
+ *
+ * LIBRARY-ONLY (Phase 11 IN-02, D-11.1-06): as of this phase,
+ * `regenerateAndReload()` is a library-only export -- available for
+ * programmatic use, with NO PRODUCTION CALLER anywhere in this repo
+ * (`.claude/mcp/vice/`, `.claude/skills/`, `scripts/`). A future phase must
+ * not assume it is wired into any real workflow just because it is the
+ * named D-29 live-discovery merge point.
+ *
+ * The proven live path for the symbol round trip is NOT this function --
+ * it is `r2000 export-lbl` -> `vice_symbols_load` -> live discovery ->
+ * `r2000_set_label_name` -> `r2000 import-lbl`, documented as one closed
+ * loop in `c64-program-recon/SKILL.md`. `R2000-15` is satisfied through
+ * that sequence, not through this convenience wrapper. Giving this
+ * function a caller would mean inventing a new CLI verb or skill entry
+ * point it was never actually proven through -- out of this phase's scope
+ * fence (11.1-CONTEXT.md).
+ *
+ * ADOPTION CONDITION: if `regenerateAndReload()` ever acquires a real
+ * production caller, the `LIBRARY-ONLY` marker above must be deleted in
+ * the SAME commit that adds the caller. `r2000-symbol-roundtrip.test.ts`
+ * enforces this as a biconditional, in both directions: zero callers
+ * requires the marker present; one or more callers requires the marker
+ * absent. The two can never legally disagree.
  */
 export async function regenerateAndReload({
   projectPath,
