@@ -946,8 +946,45 @@ function hookMain(rootArg) {
     const toolName = parsed && typeof parsed.tool_name === "string" ? parsed.tool_name : "";
     const toolInput = parsed && typeof parsed === "object" ? parsed.tool_input : undefined;
 
-    const extraction = extractHookTarget(toolName, toolInput);
-    const inScope = isHookInScope(toolName, toolInput, extraction);
+    // Matcher-first dispatch (T-12-25): exit 0 before ANY payload extraction
+    // is attempted, for every tool_name outside the five write-capable ones.
+    // Today's alternative -- running extractHookTarget for every tool name
+    // and relying only on isHookInScope's own matcher check further down --
+    // means a payload aimed at a tool this gate is not responsible for still
+    // goes through the extractor. Hoisting the check here narrows the blast
+    // radius of any extraction bug to exactly Write/Edit/MultiEdit/
+    // NotebookEdit/Bash, which is what D-12-14's scoped promise actually
+    // claims. isHookInScope()'s own matcher check is kept below as defence
+    // in depth, not deleted.
+    if (!HOOK_MATCHER_TOOLS.has(toolName)) {
+      process.exitCode = 0;
+      return;
+    }
+
+    let extraction;
+    let inScope;
+    try {
+      extraction = extractHookTarget(toolName, toolInput);
+      inScope = isHookInScope(toolName, toolInput, extraction);
+    } catch (err) {
+      // Mirrors the hookGuardVerdict() catch below verbatim in shape. This
+      // looks like it contradicts the fail-open rule a few lines above, but
+      // it does not: at this point the payload has already passed the
+      // matcher, so it is a write-capable tool call whose scope could not be
+      // determined -- D-12-14's premise is that uncertainty about a
+      // write-capable call resolves toward refusal, never toward
+      // permission. Out-of-matcher and out-of-scope calls have already
+      // exited 0 above; this catch can only ever fire for the five
+      // write-capable tools.
+      process.stderr.write(
+        "audit-gate --hook: REFUSED (internal error during scope determination)\n" +
+          `${err?.stack ?? String(err)}\n` +
+          "There is no waiver file and no environment variable that relaxes this gate. Fix the " +
+          "underlying error, or change or retire the affected guard, in a commit.\n"
+      );
+      process.exitCode = 2;
+      return;
+    }
 
     if (!inScope) {
       process.exitCode = 0;
@@ -1027,15 +1064,46 @@ function main() {
   const viceDir = join(root, ".claude", "mcp", "vice");
   const planningDir = join(root, ".planning");
 
-  const result = checkAuditGate({ viceDir, planningDir });
-
-  const guardFiles = docsGuardFiles(viceDir);
-  const auditFiles = milestoneAuditFiles(planningDir);
-  const statusCounts = {};
-  for (const file of auditFiles) {
-    const status = frontmatterStatus(readFileSync(file, "utf8"));
-    const key = status ?? "null";
-    statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+  // WR-03 (12-REVIEW.md): pre-fix, a mistyped --root threw an uncaught
+  // ENOENT from readdirSync here -- the same exit code (1) a legitimate
+  // refusal uses, with no JSON at all on stdout under --json, so a --json
+  // consumer could not tell a typo from a refusal. This wraps every call
+  // below that can throw on a bad root (checkAuditGate() itself calls
+  // docsGuardFiles(); this function calls it a second time for its own
+  // reporting, plus milestoneAuditFiles() and a readFileSync loop) in one
+  // try/catch, so both output modes fail cleanly and diagnosably, and
+  // --json keeps emitting parseable JSON on this path too.
+  let result, guardFiles, auditFiles, statusCounts;
+  try {
+    result = checkAuditGate({ viceDir, planningDir });
+    guardFiles = docsGuardFiles(viceDir);
+    auditFiles = milestoneAuditFiles(planningDir);
+    statusCounts = {};
+    for (const file of auditFiles) {
+      const status = frontmatterStatus(readFileSync(file, "utf8"));
+      const key = status ?? "null";
+      statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+    }
+  } catch (err) {
+    const message = `${err?.message ?? String(err)}`;
+    if (json) {
+      const payload = {
+        allowed: false,
+        redGuards: [],
+        gatedAudits: [],
+        guardFiles: [],
+        auditFiles: [],
+        statusCounts: {},
+        structuralErrors: [message],
+        reason: message,
+      };
+      console.log(JSON.stringify(payload));
+    } else {
+      console.error("audit-gate: FAIL");
+      console.error(`  - ${message}`);
+    }
+    process.exit(1);
+    return;
   }
 
   if (json) {

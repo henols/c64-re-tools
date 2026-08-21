@@ -350,6 +350,35 @@ test("the milestone-audit walk descends neither a symlinked directory nor a dot-
   }
 });
 
+// WR-03 (12-REVIEW.md): check mode's missing error handling. Pre-fix, a
+// mistyped --root threw an uncaught ENOENT from readdirSync -- a seven-frame
+// stack trace on exit 1 under text mode, and NO json at all on stdout under
+// --json (runGate() itself throws when it cannot parse stdout as JSON, which
+// is exactly what made this bug testable through the existing helper). Both
+// modes must now fail cleanly and diagnosably, and --json must still emit a
+// single parseable JSON object even on this failure path.
+test("check mode: a bad --root fails cleanly under --json, with structuralErrors and no stack frames (WR-03)", () => {
+  const badRoot = join(mkdtempSync(join(tmpdir(), "audit-gate-wr03-")), "does-not-exist");
+  const { status, json, stderr } = runGate(badRoot);
+  assert.equal(status, 1, `expected exit 1 on a bad --root; stderr: ${stderr}`);
+  assert.equal(json.allowed, false);
+  assert.ok(json.structuralErrors.length >= 1, `expected a non-empty structuralErrors array; got: ${JSON.stringify(json.structuralErrors)}`);
+  assert.ok(json.reason.length > 0, "expected a non-empty reason");
+});
+
+test("check mode: a bad --root fails cleanly under text mode, with an `audit-gate: FAIL` prefix and no stack frames (WR-03)", () => {
+  const badRoot = join(mkdtempSync(join(tmpdir(), "audit-gate-wr03-")), "does-not-exist");
+  const result = spawnSync(process.execPath, [GATE, "--root", badRoot], { encoding: "utf8" });
+  assert.equal(result.status, 1, `expected exit 1 on a bad --root; stderr: ${result.stderr}`);
+  const stderrLines = (result.stderr ?? "").split("\n");
+  assert.equal(stderrLines[0], "audit-gate: FAIL", `expected the first stderr line to be "audit-gate: FAIL"; got: ${JSON.stringify(stderrLines[0])}`);
+  assert.equal(
+    (result.stderr ?? "").match(/    at /g)?.length ?? 0,
+    0,
+    `expected no stack-frame lines in stderr; stderr: ${result.stderr}`,
+  );
+});
+
 // ============================================================================
 // HOOK MODE (plan 12-02, D-12-03) -- pins scripts/audit-gate.mjs's `--hook`
 // contract: scope determination, gating, downgrade safety, Bash-heredoc
@@ -834,6 +863,25 @@ describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () =>
     } finally {
       redTree.cleanup();
       greenTree.cleanup();
+    }
+  });
+
+  // CR-02's exit-code contract, Task 2: matcher-first dispatch. Reuses the
+  // deep payload above with an out-of-matcher tool_name -- proving both that
+  // the matcher check runs BEFORE extractHookTarget is ever called, and that
+  // it runs before anything that could crash or spend time on this payload.
+  test("hook mode: an out-of-matcher tool name given the CR-02 crash payload exits 0 before extraction runs", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const payload = deepNestedHookPayload("Read");
+      const start = process.hrtime.bigint();
+      const { status, stderr } = runHook(payload, root);
+      const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+      assert.equal(status, 0, `expected exit 0 (Read is not a matcher tool); stderr: ${stderr}`);
+      assert.equal(stderr, "", "expected empty stderr -- extraction must never have run");
+      assert.ok(elapsedMs < 2000, `expected the matcher check to short-circuit fast; got ${elapsedMs}ms`);
+    } finally {
+      cleanup();
     }
   });
 });
