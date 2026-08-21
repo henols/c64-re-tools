@@ -37,6 +37,19 @@
 //    spawns receives an argv array built exclusively from a directory
 //    listing filtered by a fixed pattern -- never a shell string, and never
 //    anything derived from scanned document content, CLI argv, or stdin.
+//  - Do not reintroduce a single regex that bridges a writer/edit token to
+//    a `MILESTONE-AUDIT...md` target across an UNBOUNDED run of intervening
+//    text, and do not "fix" a slow scan by adding one global input cap
+//    (e.g. `command.slice(0, N)`) before matching -- a cap is a bypass,
+//    since the write just moves past character N and the gate never sees
+//    it. CR-01 (12-REVIEW.md) was exactly this: `BASH_INPLACE_EDIT_RE`'s
+//    `[\s\S]*?` bridge measured 7,050 ms on a 100,000-char `sed -i `
+//    command and did not complete in 120 s at 2,000,000 chars, against a
+//    hook wired to every Write/Edit/Bash call in this repo. The fix is
+//    `auditTokenOffsets()`: locate the literal token with `indexOf` (linear,
+//    non-backtracking), then apply only small FIXED-length-window regexes
+//    around each hit -- full-length coverage, bounded regex cost. See the
+//    comment above `bashTargetsMilestoneAudit()`.
 //
 // SCOPE FENCE: this gates only the milestone audit's frontmatter `status:`
 // line. It does not gate phase `VERIFICATION.md` files, it is not invoked
@@ -60,7 +73,12 @@
 // construction (Route C in `12-RESEARCH.md`'s Assumptions Log): it is not
 // betting on any single `tool_input` field name staying stable, and a
 // payload shape this file does not recognise still refuses loudly, naming
-// the unrecognised keys, rather than silently passing (T-12-08).
+// the unrecognised keys, rather than silently passing (T-12-08). Locating a
+// `*MILESTONE-AUDIT*.md` target -- in Bash command text or in the
+// unrecognised-shape/malformed-JSON fallback text -- goes through
+// `auditTokenOffsets()`'s bounded, non-backtracking token locator (CR-01,
+// 12-REVIEW.md): no input length or shape makes this hook's target
+// detection super-linear.
 //
 // Exported surface (all directory-parameterised; no globals, no env reads):
 // `docsGuardFiles`, `DOCS_GUARD_FLOOR`, `EXPECTED_DOCS_GUARD_NAMES`,
@@ -387,9 +405,14 @@ export function checkAuditGate({ viceDir, planningDir }) {
 const HOOK_MATCHER_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]);
 
 /** `tool_input` keys that plausibly carry a *path* this call is aimed at.
- * `command` is added for `Bash` specifically inside `extractHookTarget` --
- * the command string is itself the "path-ish" thing a heredoc/redirect
- * targets a file through. */
+ * A `Bash` command's target does NOT flow through this list (WR-04,
+ * 12-REVIEW.md): `isHookInScope()` special-cases `toolName === "Bash"` and
+ * returns from `bashTargetsMilestoneAudit(toolInput.command)` directly,
+ * before the generic `pathish.some(isMilestoneAuditPath)` check below ever
+ * runs, so a `command` entry pushed into `pathish` here would be dead --
+ * never read by the only caller that matters. Scope determination for Bash
+ * reaches `toolInput.command` through `isHookInScope()`'s own Bash branch
+ * instead. */
 const HOOK_PATH_KEYS = ["file_path", "path", "notebook_path"];
 
 /** `tool_input` keys that plausibly carry *written* text. Deliberately
@@ -419,8 +442,13 @@ function isOldKey(key) {
  * fallback path too). Used only when `tool_input`'s shape is NOT recognised
  * (T-12-08) -- joins with a real newline, never `JSON.stringify`, because
  * `JSON.stringify` escapes newlines to a literal two-character `\n`, which
- * would defeat `writtenDeclaresGatedStatus()`'s line-anchored scan and turn
- * this fallback into the silent no-op it exists to prevent. */
+ * would defeat `writtenDeclaresGatedStatus()`'s line-anchored scan (still
+ * tried first on this fallback's joined text) and turn that half of the
+ * fallback into the silent no-op it exists to prevent. The fallback also
+ * tries `declaresGatedStatusUnanchored()` on the same joined text (CR-03),
+ * which does not depend on line structure at all -- the newline join is
+ * preserved here for the line-anchored half, not because it is the only
+ * scan this fallback runs. */
 function collectStringLeaves(value, out) {
   if (value == null) return;
   if (typeof value === "string") {
@@ -469,9 +497,6 @@ export function extractHookTarget(toolName, toolInput) {
 
   for (const key of HOOK_PATH_KEYS) {
     if (typeof toolInput[key] === "string") pathish.push(toolInput[key]);
-  }
-  if (toolName === "Bash" && typeof toolInput.command === "string") {
-    pathish.push(toolInput.command);
   }
 
   for (const key of HOOK_WRITTEN_KEYS) {
@@ -701,7 +726,10 @@ export function isHookInScope(toolName, toolInput, extraction) {
  * two-character escape sequence `\n`, never an actual line-break byte, so
  * `writtenDeclaresGatedStatus()`'s line-anchored scan would never find a
  * `status:` line embedded in e.g. a broken `content` value without first
- * decoding that escape (and `\r`) back into real line breaks. */
+ * decoding that escape (and `\r`) back into real line breaks. The decoded
+ * text is also checked with `declaresGatedStatusUnanchored()` (CR-03), which
+ * does not depend on that decode at all -- both scans are tried, either one
+ * finding a gated status is enough. */
 function rawTextIndicatesScope(rawText) {
   if (!textNamesMilestoneAudit(rawText)) return false;
   const decoded = rawText.replace(/\\r/g, "\r").replace(/\\n/g, "\n");

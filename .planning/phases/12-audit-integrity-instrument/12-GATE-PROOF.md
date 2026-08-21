@@ -387,3 +387,66 @@ separately by the end-of-phase human check recorded in `12-04-PLAN.md`'s
 configuration is loaded) to plant the same digit, attempt the three write
 routes, observe all three refused, then revert and observe the same write
 succeed.
+
+## Detection contract amended by gap closure
+
+**Dated: 2026-08-21, plan 12-05.** The paragraph above headed "The Bash-mode
+scan is a heuristic, not a parser, and is evadable" describes the Bash
+detection contract as it stood after plan 12-02: a writer token (`>`, `tee`,
+`sed -i`, etc.) matched IMMEDIATELY or EVENTUALLY preceding a
+`MILESTONE-AUDIT...md` token, via `BASH_ADJACENT_WRITE_RE` and
+`BASH_INPLACE_EDIT_RE`, bridged by an unbounded `[\s\S]*?`. `12-VERIFICATION.md`
+and `12-REVIEW.md` (CR-01) independently reproduced that this unbounded bridge
+is a live denial-of-service: an ordinary large `sed -i`/`perl -i` Bash call
+unrelated to any milestone audit measured 7,050 ms to evaluate, against a hook
+wired to every Write/Edit/Bash call in this repo via the committed
+`.claude/settings.json` (matcher `Write|Edit|Bash`, timeout 30). `12-REVIEW.md`
+(CR-03) separately found that the single-line Bash append shapes (`echo`,
+`printf`, `tee -a`, one-line `sed -i`) bypassed detection entirely, because
+`writtenDeclaresGatedStatus()`'s line-anchored scan never finds `status:` at
+the start of a line inside a one-line command string.
+
+**What replaced it.** CR-01: the unbounded bridging regexes are gone.
+`auditTokenOffsets()` locates the literal `MILESTONE-AUDIT` token with
+`String.prototype.indexOf` (linear, cannot backtrack, up to 64 occurrences per
+text), then `bashTargetsMilestoneAudit()` examines only a fixed-length window
+around each hit: 512 characters preceding the token for the redirect/writer
+adjacency shapes (`>`, `>>`, `tee`, `dd of=`), and 4096 characters preceding it
+for `sed -i`/`perl -i` in-place-edit presence. Measured post-fix: the same
+100,000-character `sed -i ` command now evaluates in ~44 ms through the real
+`--hook` CLI end to end (down from 7,050 ms for the regex alone, pre-fix).
+CR-03: a new unanchored scan, `declaresGatedStatusUnanchored()`, built from
+the same `GATED_STATUSES` set `isGatedStatus()` uses, replaces the
+line-anchored scan specifically in the Bash branch of `isHookInScope()`
+(the structured `Write`/`Edit` document-content branch keeps the
+line-anchored scan unchanged, to preserve the T-12-04 false-positive
+defence). All four single-line append shapes are now blocked; both fixes are
+pinned by committed tests seen red against the pre-fix source and green
+against the fix.
+
+**Why bounded windows rather than one global input cap.** A global cap (e.g.
+slicing the command to its first 4096 characters before matching) is a
+bypass: place the write past the cut point and the gate never sees it. The
+windowed approach instead locates the token first across the FULL input, then
+bounds only the regex work done around each hit -- full-length coverage is
+preserved while every regex evaluation stays constant-cost.
+
+**T-12-20 (new, accepted).** The 4096-character in-place-edit window means a
+`sed -i`/`perl -i` script argument longer than that, before its target
+filename, is no longer detected. This is accepted as strictly better than the
+alternative it replaces (the unbounded bridge was the denial of service): a
+3,000-character `sed -i` script is still detected (measured); realistic
+in-place edits are far below the window; and Layer 1 (`checkAuditGate()`
+re-reading the actual committed file content) still catches the landed write
+regardless of how the shell wrote it.
+
+**Carried forward unchanged.** T-12-02's base64/`python -c` limitation --
+this function matches literal command TEXT, never shell semantics, and a
+runtime-assembled write target or status string evades it by design -- is
+unaffected by this amendment. Layer 1 remains the unevadable enforcement
+point; the hook is a fast, in-session deterrent, not the enforcement
+boundary.
+
+This section is additive. The paragraph above it is left as originally
+written -- a historical transcript of the contract as it stood after plan
+12-02 -- not rewritten to match the current code.
