@@ -330,7 +330,25 @@ function bootstrapProject(
       console.error(`bootstrap: ${errMsg(err)}`);
       return { code: 1 };
     }
-    ({ origin, body } = parsePrg(extracted));
+    try {
+      ({ origin, body } = parsePrg(extracted));
+    } catch {
+      // WR-09 (D-11.1-04): parsePrg() throws only when its input is under 3
+      // bytes (a .prg needs a 2-byte load address plus at least 1 payload
+      // byte). Every sibling branch below already wraps its own parsePrg()
+      // call -- this was the one gap, and its unwrapped throw escaped to
+      // runR2000Cli()'s last-resort net, surfacing as `r2000: parsePrg:
+      // input is N byte(s)` -- a message naming an internal function to a
+      // user who only ever supplied a disk image. Reworded entirely in the
+      // caller's own vocabulary (the entry name, never `parsePrg`) so the
+      // never-throw contract holds on this branch too.
+      console.error(
+        `bootstrap: entry "${opts.entry}" holds ${extracted.length} byte(s) -- not a loadable program ` +
+          "(a .prg needs at least 3 bytes: a 2-byte load address plus at least 1 payload byte). Choose a " +
+          "different --entry, or use a different input.",
+      );
+      return { code: 1 };
+    }
   } else if (ext === ".raw" || ext === ".bin") {
     // WR-07: dispatch by extension, not by byte length, so a truncated or
     // oversized flat capture hits flatImageOrigin()'s own named refusal
@@ -369,7 +387,16 @@ function bootstrapProject(
     console.error(`bootstrap: ${errMsg(err)}`);
     return { code: 1 };
   }
-  writeFileSync(outPath, projectJson);
+  try {
+    writeFileSync(outPath, projectJson);
+  } catch (err) {
+    // WR-09 (D-11.1-04): an ENOENT (missing parent directory), EACCES or
+    // ENOSPC here is an ordinary, expected failure -- refuseOverwrite()
+    // above only handles the exists-case; this is the everything-else case,
+    // and it must not throw past this function's own never-throw contract.
+    console.error(`bootstrap: could not write ${outPath}: ${errMsg(err)}`);
+    return { code: 1 };
+  }
   console.log(`bootstrap: wrote ${outPath} (origin $${origin.toString(16).padStart(4, "0")})`);
   return { code: 0, path: outPath };
 }
@@ -876,7 +903,16 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     console.error(`render-memmap: ${errMsg(err)}`);
     return 1;
   }
-  writeFileSync(outPath, rendered.markdown);
+  try {
+    writeFileSync(outPath, rendered.markdown);
+  } catch (err) {
+    // WR-09 (D-11.1-04): the same shape as bootstrapProject()'s write above,
+    // one verb over -- an ordinary write failure (missing parent directory,
+    // permissions, full disk) must not throw past this verb's own
+    // never-throw contract.
+    console.error(`render-memmap: could not write ${outPath}: ${errMsg(err)}`);
+    return 1;
+  }
   console.log(
     `render-memmap: wrote ${outPath} (${rendered.rowCount} row(s), ${rendered.unknownCount} [unknown], digest ${rendered.renderDigest})`,
   );

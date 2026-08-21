@@ -999,3 +999,370 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// WR-09 (D-11.1-04) -- restoring bootstrapProject()'s and cmdRenderMemmap()'s
+// never-throw contract on the two branches that broke it (the unwrapped
+// `.d64` `parsePrg()` call, and the two unguarded `writeFileSync()` calls),
+// plus a structural guard pinning it so a THIRD unguarded write cannot be
+// added silently.
+//
+// The structural guard reads r2000-cli.ts's own source, strips comments and
+// string/template-literal bodies (so neither can produce a false brace/paren
+// match), then for every `writeFileSync(` occurrence walks BACKWARD through
+// the stripped text one character at a time, tracking brace depth, until it
+// reaches the nearest unmatched `{` (skipping any it can already prove is
+// matched by a `}` seen along the way). That unmatched `{` is classified by
+// the token immediately preceding it: `try` means the call is guarded;
+// `else`/`finally`/`do`, or a `(...)`-headed block whose header keyword is
+// `if`/`for`/`while`/`switch`/`catch`, is a same-function block the scan
+// keeps climbing past; anything else (a `function`/method header, an arrow
+// `=>`, or reaching column 0 with nothing left to climb) is a function
+// boundary or module scope, and the call is reported unguarded. This is a
+// brace-depth scan "from each match backwards to the nearest enclosing
+// `try {` in the same function" exactly as specified, not a "the file
+// contains the word try" substring check -- proven below by a planted
+// violation (a bare call at function top level, which the scan must reach
+// module scope for and report unguarded) alongside a wrapped control (which
+// it must stop climbing at on the very first brace and report guarded).
+// ---------------------------------------------------------------------------
+
+const R2000_CLI_SOURCE_PATH = join(HERE, "r2000-cli.ts");
+
+/**
+ * Blanks every line comment, block comment, quoted string and template
+ * literal body to a same-length run of spaces (newlines preserved), so a
+ * brace or paren living only inside a comment or a message string can never
+ * be mistaken for real control-flow structure. Deliberately does not track
+ * `${...}` interpolation specially inside a template literal -- the whole
+ * span between backticks is blanked regardless of nesting, which is correct
+ * for this file (no `writeFileSync(` call lives inside a template
+ * interpolation anywhere in it) and simpler than a fully general JS
+ * tokenizer would need to be.
+ */
+function stripCommentsAndLiterals(source: string): string {
+  const out = source.split("");
+  const n = source.length;
+  let i = 0;
+  while (i < n) {
+    const c = source[i];
+    const c2 = source[i + 1];
+    if (c === "/" && c2 === "/") {
+      while (i < n && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && c2 === "*") {
+      out[i] = " ";
+      out[i + 1] = " ";
+      i += 2;
+      while (i < n && !(source[i] === "*" && source[i + 1] === "/")) {
+        if (source[i] !== "\n") out[i] = " ";
+        i++;
+      }
+      if (i < n) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const quote = c;
+      out[i] = " ";
+      i++;
+      while (i < n && source[i] !== quote) {
+        if (source[i] === "\\") {
+          out[i] = " ";
+          i++;
+          if (i < n) {
+            out[i] = " ";
+            i++;
+          }
+          continue;
+        }
+        if (source[i] !== "\n") out[i] = " ";
+        i++;
+      }
+      if (i < n) {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (c === "`") {
+      out[i] = " ";
+      i++;
+      while (i < n && source[i] !== "`") {
+        if (source[i] === "\\") {
+          out[i] = " ";
+          i++;
+          if (i < n) {
+            out[i] = " ";
+            i++;
+          }
+          continue;
+        }
+        if (source[i] !== "\n") out[i] = " ";
+        i++;
+      }
+      if (i < n) {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+
+/** The word (identifier characters only) ending at, and including, index
+ * `endIdxInclusive` in `stripped`. */
+function wordEndingAt(stripped: string, endIdxInclusive: number): string {
+  let start = endIdxInclusive;
+  while (start >= 0 && /[A-Za-z0-9_$]/.test(stripped[start]!)) start--;
+  start++;
+  return stripped.slice(start, endIdxInclusive + 1);
+}
+
+type BraceKind = "try" | "block" | "function" | "module";
+
+/** Classifies an open brace at `braceIdx` in `stripped` by the token
+ * immediately preceding it (skipping whitespace). See this section's header
+ * comment for the full classification rule. */
+function classifyBrace(stripped: string, braceIdx: number): BraceKind {
+  let j = braceIdx - 1;
+  while (j >= 0 && /\s/.test(stripped[j]!)) j--;
+  if (j < 0) return "module";
+  if (stripped[j] === ">" && stripped[j - 1] === "=") return "function"; // arrow `=> {`
+  if (stripped[j] === ")") {
+    // Walk back to this `)`'s matching `(`, then classify by the keyword (if
+    // any) immediately before THAT -- distinguishes `if (...) {` / `for
+    // (...) {` / `catch (...) {` (same-function block) from a function or
+    // method definition's own `(...) {` (a function boundary).
+    let depth = 1;
+    let k = j - 1;
+    while (k >= 0 && depth > 0) {
+      if (stripped[k] === ")") depth++;
+      else if (stripped[k] === "(") depth--;
+      k--;
+    }
+    let m = k;
+    while (m >= 0 && /\s/.test(stripped[m]!)) m--;
+    if (m < 0) return "function";
+    const word = wordEndingAt(stripped, m);
+    if (word === "if" || word === "for" || word === "while" || word === "switch" || word === "catch") {
+      return "block";
+    }
+    return "function";
+  }
+  const word = wordEndingAt(stripped, j);
+  if (word === "try") return "try";
+  if (word === "else" || word === "finally" || word === "do") return "block";
+  return "function";
+}
+
+/**
+ * Walks backward from `callIdx` (the index of a `writeFileSync(` match) in
+ * `stripped`, one enclosing brace at a time, until it either finds a `try`
+ * (guarded, returns true) or hits a function boundary / module scope
+ * (unguarded, returns false). Braces already matched by a `}` encountered
+ * during the walk are skipped via a simple depth counter, exactly as if
+ * scanning a balanced-bracket stack from the top down.
+ */
+function isWriteGuarded(stripped: string, callIdx: number): boolean {
+  let i = callIdx - 1;
+  let depth = 0;
+  while (i >= 0) {
+    const c = stripped[i];
+    if (c === "}") {
+      depth++;
+      i--;
+      continue;
+    }
+    if (c === "{") {
+      if (depth === 0) {
+        const kind = classifyBrace(stripped, i);
+        if (kind === "try") return true;
+        if (kind === "function" || kind === "module") return false;
+        // "block" (if/for/while/switch/catch/else/finally/do) -- this brace
+        // is consumed; keep climbing toward the next enclosing brace.
+        i--;
+        continue;
+      }
+      depth--;
+      i--;
+      continue;
+    }
+    i--;
+  }
+  return false;
+}
+
+/** Every `writeFileSync(` call-site index in `source`, found against the
+ * comment/literal-stripped text so neither can produce a false match. */
+function findWriteFileSyncCalls(source: string): { stripped: string; indices: number[] } {
+  const stripped = stripCommentsAndLiterals(source);
+  const re = /\bwriteFileSync\s*\(/g;
+  const indices: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(stripped))) indices.push(m.index);
+  return { stripped, indices };
+}
+
+test("structural (WR-09): every writeFileSync( in r2000-cli.ts is inside a try block, with a non-vacuous floor and named positive-control sites", () => {
+  const source = readFileSync(R2000_CLI_SOURCE_PATH, "utf8");
+  const { stripped, indices } = findWriteFileSyncCalls(source);
+
+  // Non-vacuity floor -- a scanner that silently found zero call sites would
+  // trivially "pass" a guard that asserts nothing. Two named sites are
+  // known to exist right now (bootstrapProject()'s project-file write and
+  // cmdRenderMemmap()'s Markdown write); the floor is exactly that measured
+  // count, so a THIRD write added later raises it rather than silently
+  // slipping through unguarded.
+  assert.ok(indices.length >= 2, `expected at least 2 writeFileSync( call sites, found ${indices.length}`);
+
+  // Positive control: the scanner must actually be looking at the real
+  // content at each site, not merely returning a fixed answer. Assert each
+  // known call site's own arguments are visible in the matched text.
+  const contexts = indices.map((idx) => source.slice(idx, idx + 60));
+  assert.ok(
+    contexts.some((c) => c.includes("outPath, projectJson")),
+    `expected to see bootstrapProject()'s own write site among: ${JSON.stringify(contexts)}`,
+  );
+  assert.ok(
+    contexts.some((c) => c.includes("outPath, rendered.markdown")),
+    `expected to see cmdRenderMemmap()'s own write site among: ${JSON.stringify(contexts)}`,
+  );
+
+  for (const idx of indices) {
+    assert.ok(
+      isWriteGuarded(stripped, idx),
+      `writeFileSync( at source offset ${idx} (${JSON.stringify(source.slice(idx, idx + 60))}) is not inside a try block`,
+    );
+  }
+});
+
+test("structural (WR-09): the guard's planted violation is reported and its wrapped control is not (non-vacuity)", () => {
+  const wrapped = `
+function foo() {
+  try {
+    writeFileSync(p, s);
+  } catch (err) {
+    console.error(err);
+  }
+}
+`;
+  const bare = `
+function foo() {
+  writeFileSync(p, s);
+}
+`;
+
+  const { stripped: wrappedStripped, indices: wrappedIndices } = findWriteFileSyncCalls(wrapped);
+  assert.equal(wrappedIndices.length, 1);
+  assert.ok(isWriteGuarded(wrappedStripped, wrappedIndices[0]!), "a try/catch-wrapped writeFileSync must be reported as guarded");
+
+  const { stripped: bareStripped, indices: bareIndices } = findWriteFileSyncCalls(bare);
+  assert.equal(bareIndices.length, 1);
+  assert.ok(
+    !isWriteGuarded(bareStripped, bareIndices[0]!),
+    "a bare, function-top-level writeFileSync must be reported as NOT guarded -- the planted violation this guard exists to catch",
+  );
+});
+
+test("in-process (WR-09): a .d64 entry whose payload parsePrg() rejects fails with a bootstrap:-prefixed, entry-naming message that never mentions parsePrg", async () => {
+  await withTempDir(async (dir) => {
+    const d64Path = join(dir, "game.d64");
+    const buf = blankImage();
+    writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 5, firstSector: 0, name: "EMPTY", blocks: 1 });
+    // Final sector's last-used-byte offset = 2 -- WR-05's assertPlainImage()/
+    // extractEntry() bounds check (usedByte >= 2) is the floor this repo
+    // already enforces, so the smallest reachable extracted payload is 1
+    // byte (usedByte - 1), one byte short of parsePrg()'s own 3-byte
+    // minimum (a 2-byte load address plus at least 1 payload byte). This is
+    // the current live reproduction of the review's finding -- the
+    // original review's exact "0 byte(s)" repro predates WR-05's bounds
+    // check (added by plan 11-02) and is no longer reachable at all, since
+    // extractEntry() itself now refuses any usedByte below 2 as corrupt
+    // before parsePrg() is ever called.
+    const off = tsToOffset(5, 0);
+    buf[off] = 0; // end of chain
+    buf[off + 1] = 2; // last-used-byte offset = 2 -> 1 payload byte
+    writeFileSync(d64Path, buf);
+    const outPath = join(dir, "game.regen2000proj");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", d64Path, "--entry", "EMPTY", "--out", outPath]),
+    );
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^bootstrap:/);
+    assert.match(stderr, /EMPTY/);
+    assert.doesNotMatch(stderr, /parsePrg/);
+    assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
+    assert.equal(existsSync(outPath), false, "no project file must be written for a rejected .d64 entry");
+  });
+});
+
+test("in-process (WR-09): bootstrap with --out inside a non-existent directory fails with a bootstrap:-prefixed message naming the path, never a stack trace", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+    const outPath = join(dir, "no-such-subdir", "game.regen2000proj");
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out", outPath]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^bootstrap:/);
+    assert.match(stderr, new RegExp(outPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
+  });
+});
+
+test(
+  "gated (WR-09): render-memmap with --out inside a non-existent directory fails with a render-memmap:-prefixed message naming the path, never a stack trace",
+  { skip: SKIP_REASON },
+  async () => {
+    await withWorkspaceTempDir(async (dir) => {
+      const projectPath = join(dir, "wr09.regen2000proj");
+      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);
+      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
+
+      const { runR2000Tool } = await import("./r2000-tools.ts");
+      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
+      assert.equal(disasmResult.isError, false, JSON.stringify(disasmResult));
+
+      const provenancePath = join(dir, "prov.json");
+      writeFileSync(
+        provenancePath,
+        JSON.stringify({
+          capturePath: "/tmp/capture.raw",
+          captureSha256: "a".repeat(64),
+          port01: "$35",
+          dd00: "$06",
+          vicBank: "0 ($0000-$3FFF)",
+          screenRam: "$0400",
+          charsetOrBitmap: "$1000 (ROM shadow)",
+          mode: "text, multicolor off",
+          videoStandard: "PAL",
+          liveVectorPair: "$0314/$0315",
+          vectorHandler: "$EA31",
+        }),
+      );
+
+      const outPath = join(dir, "no-such-subdir", "memory-map.md");
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
+      );
+
+      assert.notEqual(code, 0);
+      assert.match(stderr, /^render-memmap:/);
+      assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
+    });
+  },
+);
+
