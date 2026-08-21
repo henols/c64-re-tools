@@ -8,51 +8,58 @@ byte-at-a-time delivery) need no emulator at all and are synthesized
 directly by `../../binmon-fixtures.ts`'s `synthetic*` builders instead of
 living here.
 
-**MIXED PROVENANCE -- read each fixture's own sidecar, never this paragraph
-alone.** There is no blanket answer for this directory, and there used to be:
-this README claimed all three fixtures were synthetic, which stopped being true
-when plan 07-12 added three real captures (07-REVIEW.md WR-09). Every sidecar
-now **states** `synthetic` explicitly, and
+**ALL REAL CAPTURES -- read each fixture's own sidecar, never this paragraph
+alone.** There is a single blanket answer for this directory now, and there
+did not used to be: this README once claimed three fixtures were synthetic,
+which stopped being true when the external-verification phase re-recorded
+them (see `.planning/phases/13-external-verification/13-CAPTURE-TRANSCRIPT.md`).
+Every sidecar **states** `synthetic` explicitly, and
 `../../binmon-fixtures.ts`'s `loadCapturedFixture()` **requires** the key, so
 provenance can never again be established by omission.
 
-**Synthetic (3): `display-get`, `event-interleaved`, `checkpoint-list`.**
-2026-08-13 override of D-19. No stock VICE binary was reachable in the
-environment plan 02-02 executed in, so these three were generated from the
-normative protocol spec (`docs/phase0-binmon-findings.md` §5,
+**Re-recorded (3): `display-get`, `event-interleaved`, `checkpoint-list`.**
+2026-08-13 override of D-19: no stock VICE binary was reachable in the
+environment plan 02-02 executed in, so these three were originally generated
+from the normative protocol spec (`docs/phase0-binmon-findings.md` §5,
 `../../probe-binmon.mjs`'s own body layouts) rather than captured from a live
-`x64sc -binarymonitor` session. This is a recorded, non-silent downgrade of
-D-19 -- see `docs/phase2-backend-probe-evidence.md` for the full override record
-and
-`.planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md`
-for the re-capture follow-up. Each carries `"synthetic": true` and a
-`specSections` array naming exactly which spec section each field came from --
-do not treat `capturedFrom: "synthesized-fallback"` as hardware evidence
-anywhere downstream.
+`x64sc -binarymonitor` session. That override is now resolved: the
+external-verification phase re-recorded all three against a real, running
+`x64sc` (the patched, non-upstream fork build at `/usr/local/bin/x64sc` --
+see `CLAUDE.md`'s framing of that binary -- shadowing genuine stock VICE
+earlier on `$PATH` on the host that ran the capture). See
+`docs/phase2-backend-probe-evidence.md` for the original override record and
+`13-CAPTURE-TRANSCRIPT.md` for the re-capture evidence: frame-by-frame
+decoding, the `display-get` geometry match, the `event-interleaved` order
+verdict, and the `checkpoint-list` terminator verdict. Each now carries
+`"synthetic": false` and a `capturedFrom` naming the real binary's kind and
+absolute path -- the retired `specSections`/`note` sidecar keys and the
+`"synthesized-fallback"` placeholder no longer apply to any fixture in this
+directory.
 
 **Real captures (3): `cpuhistory-get`, `cpuhistory-get-multi`,
-`cpuhistory-get-unsupported`.** Added 2026-08-18 by plan 07-12, off genuine
-builds (`/usr/local/bin/x64sc` VICE 3.10 for the first two,
-`/usr/bin/x64sc` VICE 3.9 for the third). Each carries `"synthetic": false`.
-These **are** hardware evidence: `cpuhistory-get` was hand-decoded byte by byte
-to re-derive the `CPUHISTORY_GET` entry layout, and `cpuhistory-get-multi` (four
-entries, strictly ascending cycles) is what proved `entries[]` arrives
-oldest-first. `cpuhistory-get-unsupported` can only be re-recorded against a
-**3.9-class** build -- see "Bounded by design" below.
+`cpuhistory-get-unsupported`.** Added 2026-08-18 by plan 07-12, off the
+**patched, non-upstream fork build** (`/usr/local/bin/x64sc`, VICE 3.10, for
+the first two -- not a "genuine" build in the upstream sense; see CLAUDE.md)
+and genuine unpatched stock VICE (`/usr/bin/x64sc`, VICE 3.9, for the third).
+Each carries `"synthetic": false`. These **are** hardware evidence:
+`cpuhistory-get` was hand-decoded byte by byte to re-derive the
+`CPUHISTORY_GET` entry layout, and `cpuhistory-get-multi` (four entries,
+strictly ascending cycles) is what proved `entries[]` arrives oldest-first.
+`cpuhistory-get-unsupported` can only be re-recorded against a **3.9-class**
+build -- see "Bounded by design" below.
 
 ## Source paths
 
 | Fixture | Case | Captured from | VICE version | Captured at | Asserted by |
 |---|---|---|---|---|---|
-| `display-get.bin` / `.json` | `display-get` | **synthesized-fallback** (spec-derived, see sidecar `specSections`) | N/A -- synthetic | 2026-08-13 | `binmon-fixtures.test.ts` (this plan), `stock-protocol.test.ts` (plan 02-04) |
-| `event-interleaved.bin` / `.json` | `event-interleaved` | **synthesized-fallback** (spec-derived, see sidecar `specSections`) | N/A -- synthetic | 2026-08-13 | `binmon-fixtures.test.ts` (this plan), `stock-protocol.test.ts` (plan 02-04) |
-| `checkpoint-list.bin` / `.json` | `checkpoint-list` | **synthesized-fallback** (spec-derived, see sidecar `specSections`) | N/A -- synthetic | 2026-08-13 | `binmon-fixtures.test.ts` (this plan), `stock-protocol.test.ts` (plan 02-04) |
-| `cpuhistory-get.bin` / `.json` | `cpuhistory-get` | **real capture** -- `stock:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
-| `cpuhistory-get-multi.bin` / `.json` | `cpuhistory-get-multi` | **real capture** -- `stock:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
-| `cpuhistory-get-unsupported.bin` / `.json` | `cpuhistory-get-unsupported` | **real capture** -- `stock:/usr/bin/x64sc` (INVALID_TYPE error frame; **needs a 3.9-class build to re-record**) | 3.9.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+| `display-get.bin` / `.json` | `display-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
+| `event-interleaved.bin` / `.json` | `event-interleaved` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
+| `checkpoint-list.bin` / `.json` | `checkpoint-list` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
+| `cpuhistory-get.bin` / `.json` | `cpuhistory-get` | **real capture** -- `stock:/usr/local/bin/x64sc` (sidecar's literal value; that binary is actually the fork build, not upstream stock -- known mislabel, see CLAUDE.md and the paragraph above; tracked outside this plan's scope) | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+| `cpuhistory-get-multi.bin` / `.json` | `cpuhistory-get-multi` | **real capture** -- `stock:/usr/local/bin/x64sc` (sidecar's literal value; same known mislabel as above) | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+| `cpuhistory-get-unsupported.bin` / `.json` | `cpuhistory-get-unsupported` | **real capture** -- `stock:/usr/bin/x64sc` (INVALID_TYPE error frame; genuine unpatched stock; **needs a 3.9-class build to re-record**) | 3.9.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
 
-Each `.bin` is the raw, concatenated wire bytes in arrival order (real
-capture order, when re-recorded; synthesized-but-plausible order for now);
+Each `.bin` is the raw, concatenated wire bytes in real capture arrival order;
 each `.json` sidecar carries exactly `capturedFrom`, `viceVersion`,
 `capturedAt`, `command`, and `synthetic` (`binmon-fixtures.ts`'s
 `loadCapturedFixture()` throws a named `MissingFixtureError` if either file is
@@ -87,10 +94,9 @@ can no longer overwrite a fixture with bytes from the wrong VICE version while
 leaving its sidecar's `command` string describing the other (07-REVIEW.md
 WR-10).
 
-For the three still-synthetic fixtures, until the re-capture described above
-happens, hand-editing the `.bin` bytes is still never the right move -- a
-fixture edited to make a test pass silently stops being evidence of anything,
-synthetic or real.
+Hand-editing any `.bin` here is never the right move -- a fixture edited to
+make a test pass silently stops being evidence of anything. Regenerate it
+against a real binary instead.
 
 ## Bounded by design
 

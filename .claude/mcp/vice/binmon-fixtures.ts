@@ -16,28 +16,25 @@
 // through loadCapturedFixture() below, which probe-binmon.mjs's --capture mode
 // is what normally writes.
 //
-// PROVENANCE -- MIXED, per fixture. Read the sidecar, never this comment, for
-// any individual fixture's status. There is no blanket answer, and there used
-// to be: this header asserted "the three fixtures under fixtures/binmon/ are
-// NOT currently real captures" and "nothing downstream may treat these bytes as
-// hardware evidence", which became FALSE for exactly the three fixtures 07-12's
-// entire CPUHISTORY_GET layout proof rests on (07-REVIEW.md WR-09).
+// PROVENANCE -- all six fixtures under fixtures/binmon/ are now real, hardware-recorded captures (`"synthetic": false`).
+// Read the sidecar, never this comment, for any individual fixture's status -- but there is now a
+// single blanket answer, and there did not used to be:
 //
-//   SYNTHETIC (spec-derived, `"synthetic": true`, carry a `specSections` array):
-//     display-get, event-interleaved, checkpoint-list. Generated from the
-//     normative protocol spec (docs/phase0-binmon-findings.md §3/§5) under the
-//     2026-08-13 override of D-19 -- no stock VICE binary was reachable in the
-//     environment plan 02-02 ran in. Recorded in
-//     fixtures/binmon/README.md and docs/phase2-backend-probe-evidence.md; the
-//     re-capture follow-up is tracked at
-//     .planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md.
-//     Nothing downstream may treat THESE bytes as hardware evidence.
+//   display-get, event-interleaved, checkpoint-list -- re-recorded by this
+//     phase (see the external-verification phase's
+//     13-CAPTURE-TRANSCRIPT.md), replacing three fixtures spec-synthesized on
+//     2026-08-13 under a since-resolved override of D-19 (no stock VICE binary
+//     was reachable in the environment plan 02-02 ran in). The historical
+//     synthetic sidecars carried `"synthetic": true`, `"capturedFrom":
+//     "synthesized-fallback"`, and a `specSections` array naming exactly which
+//     spec section each field came from -- none of that applies to the
+//     re-recorded bytes.
 //
-//   REAL CAPTURES (`"synthetic": false`), 2026-08-18, plan 07-12:
-//     cpuhistory-get and cpuhistory-get-multi off a genuine VICE 3.10 build,
-//     cpuhistory-get-unsupported off a genuine VICE 3.9 build. These ARE
-//     hardware evidence -- cpuhistory-get was hand-decoded byte by byte and
-//     cpuhistory-get-multi is what proved entries[] arrives oldest-first.
+//   cpuhistory-get, cpuhistory-get-multi, cpuhistory-get-unsupported --
+//     real captures added 2026-08-18 by plan 07-12: the first two off a
+//     genuine VICE 3.10 build, the third off a genuine VICE 3.9 build.
+//     cpuhistory-get was hand-decoded byte by byte and cpuhistory-get-multi
+//     is what proved entries[] arrives oldest-first.
 //
 // In a codebase whose review standard is "provenance that lies is the thing not
 // to produce", the module that LOADS the fixtures is the worst possible place

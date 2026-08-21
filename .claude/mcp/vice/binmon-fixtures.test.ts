@@ -300,12 +300,12 @@ test("WR-10: the two CPUHISTORY_GET version gates are mutually exclusive, so one
   assert.ok(!supported.pattern.test("unknown") && !unsupported.pattern.test("unknown"));
 });
 
-test("WR-09: every committed sidecar under fixtures/binmon/ STATES its provenance, and the three CPUHISTORY_GET captures state it as real", () => {
+test("WR-09/EXTV-01: every committed sidecar under fixtures/binmon/ STATES its provenance, and all six fixtures -- not only the three CPUHISTORY_GET captures -- state it as real", () => {
   const dir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "binmon");
   const cases = [
-    { name: "display-get", synthetic: true },
-    { name: "event-interleaved", synthetic: true },
-    { name: "checkpoint-list", synthetic: true },
+    { name: "display-get", synthetic: false },
+    { name: "event-interleaved", synthetic: false },
+    { name: "checkpoint-list", synthetic: false },
     { name: "cpuhistory-get", synthetic: false },
     { name: "cpuhistory-get-multi", synthetic: false },
     { name: "cpuhistory-get-unsupported", synthetic: false },
@@ -323,25 +323,34 @@ test("WR-09: every committed sidecar under fixtures/binmon/ STATES its provenanc
   }
 });
 
-test("WR-10: the three committed fixtures report synthetic: true, matching the recorded 2026-08-13 D-19 override", () => {
+test("EXTV-01: the three re-recorded fixtures report synthetic: false, with a capturedFrom naming the kind and path of the binary that actually answered", () => {
   for (const caseName of ["display-get", "event-interleaved", "checkpoint-list"] as const) {
     const loaded = loadCapturedFixture(caseName);
-    assert.equal(loaded.synthetic, true, `${caseName} is spec-synthesized, not hardware-recorded -- it must say so`);
-    assert.equal(loaded.provenance.capturedFrom, "synthesized-fallback");
+    assert.equal(loaded.synthetic, false, `${caseName} is now a real, hardware-recorded capture -- it must say so`);
+    assert.match(
+      String(loaded.provenance.capturedFrom),
+      /^(fork|stock):\//,
+      `${caseName}.json's capturedFrom must name a real binary's kind and absolute path, not the retired "synthesized-fallback" placeholder`,
+    );
   }
 });
 
-test("WR-10: binmon-fixtures.ts's own header does not claim the three fixtures are real captures", () => {
+test("EXTV-01: binmon-fixtures.ts's own header states all six fixtures under fixtures/binmon/ are real captures", () => {
   const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "binmon-fixtures.ts"), "utf8");
   const header = source.slice(0, source.indexOf("import "));
-  // Matches the CLAIM ("... are captured for real by ...") rather than the
-  // phrase, so the correction below is free to quote what it replaced.
-  assert.ok(
-    !/are captured for real/.test(header),
-    "the module that LOADS the fixtures is the worst place for a stale claim of hardware provenance",
+  assert.match(
+    header,
+    /all six fixtures under fixtures\/binmon\/ are now real, hardware-recorded captures/,
+    "the header must state the fixtures' actual, current provenance",
   );
-  assert.match(header, /NOT currently real captures/, "the header must state the fixtures' actual provenance");
-  assert.match(header, /re-record-binmon-fixtures-against-real-stock-vice/, "and point at the re-capture follow-up");
+  // The retired header asserted the opposite (a blanket "not real captures"
+  // claim, naming the re-record todo) -- deliberately not re-asserted here by
+  // literal substring, since a test file containing the retired wording would
+  // itself defeat the point of retiring it.
+  assert.ok(
+    !/re-record-binmon-fixtures-against-real-stock-vice/.test(header),
+    "the header must no longer point at the (now-closed) re-capture follow-up as an open item",
+  );
 });
 
 // ---------------------------------------------------------------------------
