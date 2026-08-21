@@ -234,7 +234,7 @@ test(
   },
 );
 
-test("in-process: a .vsf input is refused with a message naming Phase 11, not a crash (D-03)", async () => {
+test("in-process: a .vsf input is refused with a message naming the backlog file, not a phase (D-03, FLOW-02)", async () => {
   await withTempDir(async (dir) => {
     const vsfPath = join(dir, "snapshot.vsf");
     writeFileSync(vsfPath, Buffer.from("VICE Snapshot File\x1a", "latin1"));
@@ -245,7 +245,8 @@ test("in-process: a .vsf input is refused with a message naming Phase 11, not a 
     );
 
     assert.notEqual(code, 0);
-    assert.match(stderr, /Phase 11/);
+    assert.match(stderr, /2026-08-20-vsf-as-a-bootstrap-input/);
+    assert.doesNotMatch(stderr, /Phase\s+\d/);
     assert.equal(existsSync(outPath), false, "no project file must be written for a refused .vsf input");
   });
 });

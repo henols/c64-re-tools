@@ -53,9 +53,18 @@
 // `.vsf` is deliberately NOT an input to this module (D-03). Phase 9 found
 // `.vsf`'s machine-type field only reads correctly by coincidence --
 // `"C64SC"` matches none of regenerator2000's literal `System` arms and
-// falls through to that tool's own C64 default. Closing that gap for real
-// (rather than continuing to rely on the coincidence) is Phase 11's job, not
-// this one's.
+// falls through to that tool's own C64 default.
+//
+// FLOW-02 (D-11.1-01): this comment used to end by naming a specific
+// numbered phase as the eventual owner of closing that gap. That phase
+// shipped and never touched `.vsf` bootstrap, so the pointer was false the
+// moment that phase closed -- a phase number is a planning artifact, not a
+// durable remediation path. The idea is recorded as backlog, not assigned
+// to any phase: see
+// `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`. (This is
+// a comment, not a user-facing string literal, so it is fixed here by hand
+// rather than by `docs-dangling-refs.test.ts`'s guard -- see that guard's
+// header for why it is deliberately scoped to string literals only.)
 
 import { gzipSync, gunzipSync } from "node:zlib";
 

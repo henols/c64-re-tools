@@ -72,6 +72,16 @@ const PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r20
 // r2000-verify.test.ts's pinned trap transcript for the live incident this
 // guards against. A future maintainer reading only this file must not
 // reintroduce a `result.status === 0` shortcut anywhere in `cmdVerify()`.
+//
+// FLOW-02 (D-11.1-01): the `.vsf` paragraph below used to end by naming a
+// specific numbered phase as the eventual owner of closing that gap. That
+// phase shipped and never touched `.vsf` bootstrap, so the sentence told a
+// user to wait on a remediation that would never arrive. A phase number is
+// a planning artifact -- it has no place in a shipped diagnostic. Corrected
+// to name the backlog file instead; see the matching fix in
+// `bootstrapProject()` below and `docs-dangling-refs.test.ts`'s guard
+// against this defect class recurring anywhere in this file's string
+// literals.
 const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
@@ -159,9 +169,12 @@ verbs:
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
 
-.vsf input is not supported by any verb. Phase 9 found its machine-type
-field only reads correctly by coincidence; closing that gap for real is
-Phase 11's job, not this CLI's. Convert to .prg, .d64 or a flat 64K capture.
+.vsf input is not supported by any verb -- regenerator2000's auto-detected
+machine-type field is correct only by coincidence for C64 snapshots, and no
+R2000-* requirement covers .vsf as a bootstrap input (D-34). The idea is
+recorded as backlog at
+.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to
+.prg, .d64 or a flat 64K capture.
 `;
 
 function errMsg(err: unknown): string {
@@ -252,11 +265,18 @@ function bootstrapProject(
     return { code: 1 };
   }
   if (ext === ".vsf") {
+    // FLOW-02 (D-11.1-01): this refusal used to end by naming a specific
+    // numbered phase as the eventual owner of closing that gap. That phase
+    // shipped and never touched `.vsf` bootstrap -- the sentence pointed a
+    // user at a remediation path that would never exist. Name the backlog
+    // file instead; the WHY (the machine-type coincidence) stays, since
+    // that is the reason a user actually needs.
     console.error(
-      "bootstrap: .vsf input is not supported -- Phase 9 found its machine-type field only reads " +
-        'correctly by coincidence ("C64SC" falls through to regenerator2000\'s own default, matching ' +
-        "none of its literal System arms). Closing that gap for real is Phase 11's job, not this CLI's. " +
-        "Convert to .prg, .d64 or a flat 64K capture instead.",
+      "bootstrap: .vsf input is not supported -- regenerator2000's auto-detected machine-type field only " +
+        'reads correctly by coincidence ("C64SC" falls through to its own default, matching none of its ' +
+        "literal System arms). Filed as backlog, not covered by any R2000-* requirement (D-34): see " +
+        ".planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to .prg, .d64 or a flat " +
+        "64K capture instead.",
     );
     return { code: 1 };
   }
