@@ -97,7 +97,7 @@ anyone to notice).
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
 
-**Plans**: 7 plans (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
+**Plans**: 5/7 plans executed (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
 
 **Wave 1**
 
@@ -117,7 +117,7 @@ anyone to notice).
 
 **Wave 5** *(gap closure, blocked on Wave 4; sole owner of `scripts/audit-gate.mjs`'s detection internals and of `audit-integrity.test.ts`)*
 
-- [ ] 12-05-PLAN.md — CR-01 + CR-03 + WR-04: a bounded, non-backtracking milestone-audit token locator replacing both super-linear regexes, an unanchored gated-status scan for Bash command text derived from the one `GATED_STATUSES` set, the dead `pathish` push removed, and every falsified comment reconciled (D-12-04, D-12-12, D-12-14) [wave 5]
+- [x] 12-05-PLAN.md — CR-01 + CR-03 + WR-04: a bounded, non-backtracking milestone-audit token locator replacing both super-linear regexes, an unanchored gated-status scan for Bash command text derived from the one `GATED_STATUSES` set, the dead `pathish` push removed, and every falsified comment reconciled (D-12-04, D-12-12, D-12-14) [wave 5]
 
 **Wave 6** *(gap closure, blocked on 12-05 — same two files)*
 
@@ -251,7 +251,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 4/4 | Complete   | 2026-08-21 |
+| 12. Audit Integrity Instrument | v0.4.0 | 5/7 | In Progress|  |
 | 13. External Verification | v0.4.0 | 0/TBD | Not started | - |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |

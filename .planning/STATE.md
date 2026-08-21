@@ -4,17 +4,17 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 12
 current_phase_name: Audit Integrity Instrument
-status: gaps_found
-stopped_at: Completed 12-04-PLAN.md
-last_updated: "2026-08-21T17:41:53.272Z"
+status: executing
+stopped_at: Completed 12-05-PLAN.md
+last_updated: "2026-08-21T18:07:21.701Z"
 last_activity: 2026-08-21
-last_activity_desc: Phase 12 planning complete
-state_head: 065eba94210bca6a51b78430d54226829d92e2ba
+last_activity_desc: Phase 12 plan 05 executed (CR-01/CR-03/WR-04 closed)
+state_head: 857e4a04b10dd7b0ff367eb130428a8a54d3c8fa
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -43,7 +43,7 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 12 — audit-integrity-instrument
+**Current focus:** Phase 12 — Audit Integrity Instrument
 2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
 becomes a fix or a dated decision, and the fork-backend and Core Value questions
 get answered deliberately rather than by default. Requirements are being defined
@@ -56,13 +56,15 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 12 (Audit Integrity Instrument) — READY TO EXECUTE
-Plan: 4 of 4 executed
-Status: Verified 2026-08-21 — gaps_found, 6/11 must-haves. Layer 1
-(`checkAuditGate()`) holds; Layer 2 `--hook` has 3 blocker defects
-(echo-append bypass, unbounded recursion, regex backtracking). Phase is NOT
-complete. Next: /gsd-plan-phase 12 --gaps
-Last activity: 2026-08-21 — Phase 12 planning complete
+Phase: 12 (Audit Integrity Instrument) — EXECUTING
+Plan: 5 of 7 executed
+Status: Executing Phase 12 gap-closure plans (12-05/06/07)
+Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
+(CR-01) and the single-line Bash echo-append bypass (CR-03) are fixed by this
+plan, plus the dead pathish push (WR-04). CR-02's unbounded recursion in the
+unrecognised-shape fallback is still open -- next: plan 12-06. Phase is NOT
+complete until 12-06/12-07 land.
+Last activity: 2026-08-21 — Phase 12 plan 05 executed (CR-01/CR-03/WR-04 closed)
 requirements mapped
 
 ## Performance Metrics
@@ -117,6 +119,11 @@ requirements mapped
 | Phase 12 P02 | 150min | 3 tasks | 3 files |
 | Phase 12 P03 | 40min | 2 tasks | 4 files |
 | Phase 12 P04 | 35min | 1 tasks | 1 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 12 P05 | 22min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -195,6 +202,7 @@ Recent decisions affecting current work:
 - [Phase 12-03]: Layer 1 (audit-integrity.test.ts) now asserts the settings.json hook block itself (5 new tests), proven non-vacuous by two live break-and-restore probes against the real committed file (missing file -> exit 1; matcher narrowed to Write|Edit -> exit 1 naming the heredoc-bypass risk), closing T-12-09's silent-deletion gap
 - [Phase 12]: GATE-01's real-tree proof confirms status: tech_debt is gated alongside status: passed (D-12-12); gaps_found is never gated (D-12-13). — Both tech_debt and passed route to /gsd-complete-milestone, so both must be blocked while a docs guard is red; a milestone honestly reporting open gaps must never be blocked from saying so.
 - [Phase 12]: GATE-01's Bash-mode write-target scan is a content-adjacency heuristic, evadable by a base64/python -c runtime-assembled payload (T-12-02, accepted). — Layer 1 (audit-integrity.test.ts driving checkAuditGate(), which re-reads the actual committed file content regardless of how the shell wrote it) is the unevadable enforcement point; the hook is a deterrent, not the boundary.
+- [Phase 12]: [Phase 12-05]: CR-01/CR-03 closed via a bounded, non-backtracking token locator (auditTokenOffsets/textNamesMilestoneAudit, indexOf-based) plus small fixed-length windows (256/512/4096 chars), replacing the two super-linear Bash regexes and the unbounded whole-text token regex; a new unanchored gated-status scan (declaresGatedStatusUnanchored, derived from the single GATED_STATUSES set) replaces the line-anchored scan specifically in the Bash branch, closing the single-line echo/printf/tee-a/sed-i append bypass while leaving the structured Write/Edit document-content branch's line-anchored scan untouched (preserves the T-12-04 false-positive defence). WR-04's dead pathish push removed. New accepted limitation T-12-20: an in-place edit whose script argument exceeds the 4096-char window is not detected (Layer 1 still catches the landed write).
 
 ### Pending Todos
 
@@ -396,8 +404,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T16:11:23.354Z
-Stopped at: Completed 12-04-PLAN.md
+Last session: 2026-08-21T18:07:10.041Z
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
