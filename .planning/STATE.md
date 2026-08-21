@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-21T08:32:13.846Z"
+last_updated: "2026-08-21T08:49:33.183Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 36
-  completed_plans: 31
+  completed_plans: 32
   percent: 75
 ---
 
@@ -37,7 +37,7 @@ packages, so no release work gates the milestone.
 ## Current Position
 
 Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 
 All 12 plans executed across 7 waves and merged into main; verification
@@ -111,6 +111,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 11 P03 | 28min | 3 tasks | 10 files |
 | Phase 11.1 P01 | 45min | 2 tasks | 4 files |
 | Phase 11.1 P02 | 55min | 2 tasks | 7 files |
+| Phase 11.1 P03 | 45m | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,8 @@ Recent decisions affecting current work:
 - [Phase 11.1]: D-11.1-01: both r2000-cli.ts .vsf surfaces reworded to name .planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md instead of a phase; a committed character-state-machine guard (docs-dangling-refs.test.ts) now fails if any shipped string literal names a phase number
 - [Phase 11.1-02]: D-11.1-02: gen-enums, export-lbl, import-lbl documented in c64-memory-mapping/c64-program-recon; the symbol round trip documented as one closed loop matching Phase 11's live walkthrough, not two one-way dumps
 - [Phase 11.1-02]: check-skill-tool-coverage.mjs's r2000 CLI verb list is parsed from r2000-cli.ts's dispatch switch (scripts/lib/r2000-cli-verbs.mjs), never hand-typed -- proven non-vacuous by a committed planted-violation test
+- [Phase 11.1-03]: INT-01/D-11.1-03 -- hostpath-consumers.test.ts's r2000 absence list is now readdirSync-derived with a floor (>= 14) rather than a hard-coded 10-name array; the four previously-uncovered modules (r2000-acme-ident.ts, r2000-regbits-gen.ts, r2000-symbols.ts, r2000-test-gate.ts) are now covered and confirmed clean
+- [Phase 11.1-03]: Phase 10 IN-02 -- the hostpath.ts import detector now matches the whole comment-stripped source with the m flag (catching multi-line named imports) plus a dedicated dynamic-import pattern (catching await import(...)), each proven by a committed planted-violation test
 
 ### Pending Todos
 
@@ -312,8 +315,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-21T08:32:13.827Z
-Stopped at: Completed 11.1-02-PLAN.md
+Last session: 2026-08-21T08:49:33.173Z
+Stopped at: Completed 11.1-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
