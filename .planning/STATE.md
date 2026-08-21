@@ -5,11 +5,11 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 12
 current_phase_name: Audit Integrity Instrument
 status: executing
-stopped_at: Completed 12-06-PLAN.md
-last_updated: "2026-08-21T18:23:35.566Z"
+stopped_at: Phase 13 context gathered
+last_updated: "2026-08-21T22:02:12.248Z"
 last_activity: 2026-08-21
 last_activity_desc: Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
-state_head: 37768107fa8250fef0975b8f3836df6938229f3e
+state_head: a4d8898ad749f035aa328ab02ef00762baf9f250
 progress:
   total_phases: 6
   completed_phases: 0
@@ -409,9 +409,9 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T18:23:35.549Z
-Stopped at: Completed 12-06-PLAN.md
-Resume file: None
+Last session: 2026-08-21T22:02:11.938Z
+Stopped at: Phase 13 context gathered
+Resume file: .planning/phases/13-external-verification/13-CONTEXT.md
 
 ## Operator Next Steps
 
