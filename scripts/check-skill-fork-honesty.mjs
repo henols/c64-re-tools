@@ -56,7 +56,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
-import { fileClaimViolations } from "./lib/skill-honesty-checks.mjs";
+import { fileClaimViolations, isStandaloneDisasmToken } from "./lib/skill-honesty-checks.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -379,21 +379,30 @@ for (const claim of SKILL_FILE_CLAIMS) {
 // Exactly ONE documented exemption: diff-images.test.mjs's provenance-ledger
 // string `evidence: "disasm"`, which shares only the word with the deleted
 // verb. The exemption is scoped to the LINE, not the file -- but ALSO to the
-// `\bdisasm\b` check alone, not to the whole line. Scoping to the line was
-// true per-line (a real reintroduction of `toacme`/`cmdDisasm`/the standalone
-// `disasm` verb token elsewhere in the same file is still caught) but silent
-// about a reintroduction ON THE SAME LINE as the exemption string -- WR-03's
-// finding was that a line reading `// see acme.mjs cmdDisasm / toacme,
-// evidence: "disasm"` short-circuited all three checks the moment the
+// standalone-disasm-token check alone, not to the whole line. Scoping to the
+// line was true per-line (a real reintroduction of `toacme`/`cmdDisasm`/the
+// standalone `disasm` verb token elsewhere in the same file is still caught)
+// but silent about a reintroduction ON THE SAME LINE as the exemption string
+// -- WR-03's finding was that a line reading `// see acme.mjs cmdDisasm /
+// toacme, evidence: "disasm"` short-circuited all three checks the moment the
 // exemption substring appeared anywhere on it, hiding a live "cmdDisasm"/
 // "toacme" reintroduction behind the one line that is supposed to be inert.
 // The `toacme`/`cmdDisasm` checks below therefore run BEFORE the exemption is
-// even consulted; only the `\bdisasm\b` check itself is exempted, and only
-// for the one pinned occurrence. `exemptionHits` counts every line the
-// exemption actually fired on; the non-vacuity assertion after the walk
+// even consulted; only the standalone-disasm-token check itself is exempted,
+// and only for the one pinned occurrence. `exemptionHits` counts every line
+// the exemption actually fired on; the non-vacuity assertion after the walk
 // requires exactly one -- a second occurrence would mean the exemption is
 // being reused to hide a second reintroduction rather than covering the one
 // documented provenance-ledger string.
+//
+// IN-03: the standalone-disasm-token test used to be a plain word-boundary
+// regex tested directly against the line, which false-positived on Phase 4's
+// protected `disasm-*.ts` module names -- a hyphen is a non-word character,
+// so that boundary was satisfied on both sides of "disasm-decoder.ts" too.
+// It is now `isStandaloneDisasmToken()`, imported from scripts/lib/skill-
+// honesty-checks.mjs, which excludes any hyphen-adjacent-letter shape on
+// either side. See that module's own header for the excluded/still-caught
+// examples. Do not reintroduce a bare word-boundary regex here.
 const DISASM_LINE_EXEMPTION = 'evidence: "disasm"';
 let exemptionHits = 0;
 
@@ -417,15 +426,17 @@ for (const f of skillFiles) {
           `reference to it again advertises a verb the script no longer has.`
       );
     }
-    if (/\bdisasm\b/.test(line)) {
+    if (isStandaloneDisasmToken(line)) {
       if (line.includes(DISASM_LINE_EXEMPTION)) {
         exemptionHits++;
         continue;
       }
       need(
         false,
-        `${rel}:${i + 1}: the standalone "disasm" verb reappeared -- plan 10-06 removed acme.mjs's disasm ` +
-          `dispatch entry; a playbook or reference page advertising it sends an agent into an unknown-verb failure.`
+        `${rel}:${i + 1}: a bare "disasm" verb token reappeared -- plan 10-06 removed acme.mjs's disasm dispatch ` +
+          `entry; a playbook or reference page advertising it sends an agent into an unknown-verb failure. ` +
+          `(IN-03: naming Phase 4's protected disasm-*.ts modules -- e.g. disasm-decoder.ts -- is deliberately ` +
+          `permitted and does not trip this check; only the standalone verb token does.)`
       );
     }
   }
