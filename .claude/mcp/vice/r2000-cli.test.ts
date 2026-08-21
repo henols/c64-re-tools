@@ -1469,3 +1469,208 @@ test("an unaccepted option is refused for every verb it does not belong to, not 
     assert.match(stderr, /--totally-not-a-real-flag/);
   }
 });
+
+// ---------------------------------------------------------------------------
+// WR-08 -- `parseArgs()`'s `--entry`/`--out` used to take the NEXT token
+// unconditionally (`entry = rest[++i]`), so a missing or flag-shaped value
+// was silently accepted as the value itself. `bootstrap`, `export-asm` and
+// `verify` all route through the shared `parseArgs()` (`cmdVerify()` only
+// ever reads its `entry` field back out -- `--out` is not in verify's own
+// accepted set at all, so `checkAcceptedOptions()` above already refuses it
+// before `cmdVerify()` runs; the "verify: --out is refused" test above pins
+// that path, so it is not repeated here). Every case below is a `{missing
+// value, flag-shaped value}` x `{--entry, --out}` cell for the two verbs
+// that actually read `--out` back out, plus the two `--entry` cells for
+// verify. The review's own literal reproduction (`--out --entry FOO`) is
+// pinned by name for both bootstrap and export-asm, each asserting the
+// actual harm -- no file literally named `--entry` is ever created --
+// rather than only the parsed shape.
+//
+// Non-vacuity (recorded verbatim in the SUMMARY): every test in this section
+// was confirmed to FAIL against a scratch revert of `parseArgs()` to the
+// pre-fix `entry = rest[++i]` / `out = rest[++i]` form, then confirmed to
+// PASS again once the fix was restored, with `git diff` showing byte-
+// identity against the committed fix afterwards.
+// ---------------------------------------------------------------------------
+
+test("bootstrap: the review's literal reproduction (--out --entry FOO) refuses naming --out, and creates no file named --entry", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    // The real hazard's location is `process.cwd()`, not the input's own
+    // directory: the pre-fix parser hands `bootstrapProject()` the bare
+    // string "--entry" as `outPath` (no directory component at all, since
+    // it came from `rest[++i]` unconditionally), and `writeFileSync()`
+    // resolves a directory-less relative path against the CURRENT WORKING
+    // DIRECTORY of the CLI process -- confirmed live while proving this
+    // suite's non-vacuity (see the SUMMARY's transcript): running the
+    // reverted parser wrote a real "--entry" file into this repo's own
+    // `.claude/mcp/vice/` directory, not into any temp dir. Guard against
+    // exactly that landing spot, and clean it up defensively in case a
+    // regression ever reintroduces the write.
+    const cwdHazardPath = join(process.cwd(), "--entry");
+    try {
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["bootstrap", prgPath, "--out", "--entry", "FOO"]),
+      );
+
+      assert.notEqual(code, 0);
+      assert.match(stderr, /^bootstrap:/);
+      assert.match(stderr, /--out/, "the refusal must name --out, not --entry (WR-09's lesson)");
+      assert.match(stderr, /requires a value/);
+      assert.equal(existsSync(cwdHazardPath), false, "no file literally named --entry must be created in the CLI's cwd");
+      assert.equal(existsSync(join(dir, "game.regen2000proj")), false, "bootstrap must not have written its default output either");
+    } finally {
+      if (existsSync(cwdHazardPath)) rmSync(cwdHazardPath);
+    }
+  });
+});
+
+test("bootstrap: --entry with no following token is refused, not treated as a value of undefined", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--entry"]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^bootstrap:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("bootstrap: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["bootstrap", prgPath, "--entry", "--force"]),
+    );
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^bootstrap:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("bootstrap: --out with no following token is refused, not treated as a value of undefined", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out"]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^bootstrap:/);
+    assert.match(stderr, /--out/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("export-asm: the review's finding, one verb over (--out --entry FOO) refuses naming --out, and creates no file named --entry", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    // Same cwd-relative hazard location as bootstrap's own case above --
+    // see that test's comment for why `process.cwd()` is the real landing
+    // spot, not the input file's directory.
+    const cwdHazardPath = join(process.cwd(), "--entry");
+    try {
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["export-asm", prgPath, "--out", "--entry", "FOO"]),
+      );
+
+      assert.notEqual(code, 0);
+      assert.match(stderr, /^export-asm:/);
+      assert.match(stderr, /--out/);
+      assert.match(stderr, /requires a value/);
+      assert.equal(existsSync(cwdHazardPath), false, "no file literally named --entry must be created in the CLI's cwd");
+      assert.equal(existsSync(join(dir, "game.a")), false, "export-asm must not have written its default output either");
+    } finally {
+      if (existsSync(cwdHazardPath)) rmSync(cwdHazardPath);
+    }
+  });
+});
+
+test("export-asm: --entry with no following token is refused", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-asm", prgPath, "--entry"]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^export-asm:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("export-asm: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", prgPath, "--entry", "--force"]),
+    );
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^export-asm:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("export-asm: --out with no following token is refused", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-asm", prgPath, "--out"]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^export-asm:/);
+    assert.match(stderr, /--out/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("verify: --entry with no following token is refused", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["verify", prgPath, "--entry"]));
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^verify:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
+
+test("verify: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
+  await withTempDir(async (dir) => {
+    const prgPath = join(dir, "game.prg");
+    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
+
+    // The only flag-shaped token guaranteed not to trip
+    // checkAcceptedOptions() ahead of parseArgs() is one already in verify's
+    // own accepted set -- --entry itself, used here as a (nonsensical)
+    // value for the first --entry.
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["verify", prgPath, "--entry", "--entry"]),
+    );
+
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^verify:/);
+    assert.match(stderr, /--entry/);
+    assert.match(stderr, /requires a value/);
+  });
+});
