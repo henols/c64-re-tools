@@ -661,6 +661,128 @@ describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () =>
       cleanup();
     }
   });
+
+  // CR-03 (12-REVIEW.md): the single-line Bash append bypass. Pre-fix, the
+  // Bash branch of isHookInScope() paired bashTargetsMilestoneAudit()
+  // (adjacency) with the LINE-ANCHORED writtenDeclaresGatedStatus(), which
+  // never finds "status:" at the start of a line inside a single-line
+  // command string -- only the multi-line heredoc form (tested above) was
+  // ever caught. All four shapes below are the ordinary, single-line ways
+  // an operator or an LLM would append a status line from a shell command.
+  test("hook mode: a one-line Bash echo append of a gated status into a milestone audit is blocked (CR-03, D-12-04)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const command = `echo "status: passed" >> ${MILESTONE_AUDIT_REL_PATH}`;
+      const red = runHook({ tool_name: "Bash", tool_input: { command } }, redTree.root);
+      assert.equal(red.status, 2, `expected the echo append to be blocked over a red guard; stderr: ${red.stderr}`);
+      const green = runHook({ tool_name: "Bash", tool_input: { command } }, greenTree.root);
+      assert.equal(green.status, 0, `expected the same echo append to be allowed once every guard is green; stderr: ${green.stderr}`);
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash printf append of a gated status into a milestone audit is blocked (CR-03, D-12-04)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const command = `printf 'status: passed\\n' >> ${MILESTONE_AUDIT_REL_PATH}`;
+      const red = runHook({ tool_name: "Bash", tool_input: { command } }, redTree.root);
+      assert.equal(red.status, 2, `expected the printf append to be blocked over a red guard; stderr: ${red.stderr}`);
+      const green = runHook({ tool_name: "Bash", tool_input: { command } }, greenTree.root);
+      assert.equal(green.status, 0, `expected the same printf append to be allowed once every guard is green; stderr: ${green.stderr}`);
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash `tee -a` append of a gated status into a milestone audit is blocked (CR-03, D-12-04)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const command = `echo "status: passed" | tee -a ${MILESTONE_AUDIT_REL_PATH}`;
+      const red = runHook({ tool_name: "Bash", tool_input: { command } }, redTree.root);
+      assert.equal(red.status, 2, `expected the tee -a append to be blocked over a red guard; stderr: ${red.stderr}`);
+      const green = runHook({ tool_name: "Bash", tool_input: { command } }, greenTree.root);
+      assert.equal(green.status, 0, `expected the same tee -a append to be allowed once every guard is green; stderr: ${green.stderr}`);
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash `sed -i` substitution writing a gated status into a milestone audit is blocked (CR-03, D-12-04)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const command = `sed -i 's/status: unknown/status: passed/' ${MILESTONE_AUDIT_REL_PATH}`;
+      const red = runHook({ tool_name: "Bash", tool_input: { command } }, redTree.root);
+      assert.equal(red.status, 2, `expected the one-line sed -i substitution to be blocked over a red guard; stderr: ${red.stderr}`);
+      const green = runHook({ tool_name: "Bash", tool_input: { command } }, greenTree.root);
+      assert.equal(green.status, 0, `expected the same substitution to be allowed once every guard is green; stderr: ${green.stderr}`);
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash echo append of status: gaps_found is never blocked (D-12-13)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `echo "status: gaps_found" >> ${MILESTONE_AUDIT_REL_PATH}`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `honest bad news must never be obstructed, even as a one-line echo append; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash printf append of status: gaps_found is never blocked (D-12-13)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `printf 'status: gaps_found\\n' >> ${MILESTONE_AUDIT_REL_PATH}`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `honest bad news must never be obstructed, even as a one-line printf append; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash `tee -a` append of status: gaps_found is never blocked (D-12-13)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `echo "status: gaps_found" | tee -a ${MILESTONE_AUDIT_REL_PATH}`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `honest bad news must never be obstructed, even as a one-line tee -a append; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash `sed -i` substitution writing status: gaps_found is never blocked (D-12-13)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `sed -i 's/status: unknown/status: gaps_found/' ${MILESTONE_AUDIT_REL_PATH}`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `honest bad news must never be obstructed, even as a one-line sed -i substitution; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a one-line Bash append of a gated status to a path that is not a milestone audit exits 0", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const command = `echo "status: passed" >> .planning/some-other-notes.md`;
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      assert.equal(status, 0, `a gated status appended to a non-audit path is out of scope; stderr: ${stderr}`);
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 // SETTINGS WIRING (plan 12-03, T-12-09): the committed `.claude/settings.json`

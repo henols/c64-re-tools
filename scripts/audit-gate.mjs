@@ -173,6 +173,26 @@ export function isGatedStatus(value) {
   return GATED_STATUSES.has(value.trim().toLowerCase());
 }
 
+/** Case-insensitive, UNANCHORED scan for a gated status declared ANYWHERE in
+ * `text`, built from the same `GATED_STATUSES` set `isGatedStatus()` uses at
+ * module load -- never a second, competing hardcoded word list (D-12-12).
+ * Requires `status:`, optional whitespace, an optional quote, then one of
+ * the gated values with a trailing word boundary (so `passedx` does not
+ * match), and requires start-of-string or a non-identifier character
+ * immediately before `status:` (so `mystatus: passed` does not match). Used
+ * for Bash command text and the unrecognised-shape fallback -- see
+ * `writtenDeclaresGatedStatus()`'s comment below for why THAT scan stays
+ * line-anchored instead (CR-03, 12-REVIEW.md). */
+const BASH_GATED_STATUS_RE = new RegExp(
+  `(?:^|[^A-Za-z0-9_])status:\\s*["']?(?:${[...GATED_STATUSES].join("|")})\\b`,
+  "i",
+);
+
+function declaresGatedStatusUnanchored(text) {
+  if (typeof text !== "string" || text.length === 0) return false;
+  return BASH_GATED_STATUS_RE.test(text);
+}
+
 /** Column-zero, frontmatter-only extraction of a `status:` key. Strips a
  * leading BOM and all `\r` first. The first line must be exactly `---`; the
  * scan then looks only between that line and the NEXT exact `---` line for
@@ -546,12 +566,29 @@ function textNamesMilestoneAudit(text) {
   return false;
 }
 
-/** Finds any line declaring a gated `status:` value, tolerating leading
- * whitespace (unlike `frontmatterStatus()`'s column-zero rule) because a
- * heredoc body inside a shell command, or an unrecognised-shape fallback's
- * joined text, is not column-anchored. Reuses `isGatedStatus()` for the
- * passed/tech_debt check itself -- D-12-12/D-12-13's gated-status set is
- * defined in exactly one place. */
+/** LINE-ANCHORED scan: finds a gated `status:` value at the start of some
+ * line (tolerating leading whitespace, unlike `frontmatterStatus()`'s
+ * column-zero rule), for text that genuinely has line structure -- a
+ * multi-line heredoc body embedded in a Bash `command` string (a real `\n`
+ * separates each line), or structured `Write`/`Edit` document content.
+ * Reuses `isGatedStatus()` for the passed/tech_debt check itself --
+ * D-12-12/D-12-13's gated-status set is defined in exactly one place.
+ *
+ * Deliberately NOT used for a single-line Bash command's own gated-status
+ * check (CR-03, 12-REVIEW.md): a one-line `echo`/`printf`/`tee -a`/`sed -i`
+ * shell command has no line boundary before `status:` the way a heredoc
+ * body does, so this scan never finds it there. Also deliberately kept for
+ * structured `Write`/`Edit` document content specifically because a
+ * milestone-audit document's own PROSE legitimately contains the words
+ * `status: passed` while its frontmatter declares something else --
+ * `12-VERIFICATION.md` in this very phase directory is a real example --
+ * and an unanchored scan over multi-line document content would reopen
+ * exactly the measured false-positive trap (T-12-04) this line-anchored
+ * scan exists to keep closed. `declaresGatedStatusUnanchored()` above is the
+ * scan used for Bash command text and the unrecognised-shape fallback
+ * instead; a Bash command line is not multi-line frontmatter and must not
+ * be scanned as if it were -- that mismatched assumption between two checks
+ * evaluated on the same string was the whole of CR-03. */
 export function writtenDeclaresGatedStatus(text) {
   if (typeof text !== "string" || text.length === 0) return false;
   const lines = text.replace(/\r/g, "").split("\n");
@@ -633,12 +670,20 @@ export function isHookInScope(toolName, toolInput, extraction) {
 
   if (!extraction.shapeKnown) {
     const joined = extraction.written[0] ?? "";
-    return textNamesMilestoneAudit(joined) && writtenDeclaresGatedStatus(joined);
+    // Accept EITHER scan here: a renamed tool_input field (T-12-08) is
+    // exactly the scenario where the only signal available may be a
+    // one-line command-shaped string rather than multi-line document
+    // content, so the unrecognised-shape fallback cannot assume line
+    // structure the way the known Write/Edit path can.
+    return (
+      textNamesMilestoneAudit(joined) &&
+      (writtenDeclaresGatedStatus(joined) || declaresGatedStatusUnanchored(joined))
+    );
   }
 
   if (toolName === "Bash") {
     const command = typeof toolInput?.command === "string" ? toolInput.command : "";
-    return bashTargetsMilestoneAudit(command) && writtenDeclaresGatedStatus(command);
+    return bashTargetsMilestoneAudit(command) && declaresGatedStatusUnanchored(command);
   }
 
   const hasAuditPath = extraction.pathish.some(isMilestoneAuditPath);
@@ -660,7 +705,7 @@ export function isHookInScope(toolName, toolInput, extraction) {
 function rawTextIndicatesScope(rawText) {
   if (!textNamesMilestoneAudit(rawText)) return false;
   const decoded = rawText.replace(/\\r/g, "\r").replace(/\\n/g, "\n");
-  return writtenDeclaresGatedStatus(decoded);
+  return writtenDeclaresGatedStatus(decoded) || declaresGatedStatusUnanchored(decoded);
 }
 
 /** Re-runs the derived guard set live and reports pass/fail, reusing
