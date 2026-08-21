@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-21T09:15:03.003Z"
+last_updated: "2026-08-21T09:55:46.461Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 36
-  completed_plans: 33
+  completed_plans: 34
   percent: 75
 ---
 
@@ -37,7 +37,7 @@ packages, so no release work gates the milestone.
 ## Current Position
 
 Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 
 All 12 plans executed across 7 waves and merged into main; verification
@@ -113,6 +113,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 11.1 P02 | 55min | 2 tasks | 7 files |
 | Phase 11.1 P03 | 45m | 2 tasks | 1 files |
 | Phase 11.1 P04 | 95min | 3 tasks | 5 files |
+| Phase 11.1 P05 | ~2h | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,7 @@ Recent decisions affecting current work:
 - [Phase 11.1]: D-11.1-04 (WR-10): default runR2000() timeout 120s, maxBuffer 32 MiB, proven live against real regenerator2000 0.9.20 (38/38 pass) and the timeout proven real via a separate child process.
 - [Phase 11.1]: D-11.1-05 (INT-02): r2000-launch.ts's header corrected to name r2000-mcp-client.ts as a second, necessary async spawn site; R2000-01's guard-before-spawn invariant is now checked by r2000-spawn-seam.test.ts over the shipped module set (package.json files[]), not a raw directory listing, to exclude r2000-test-gate.ts's legitimate --version probe.
 - [Phase 11.1]: D-11.1-06 (Phase 11 IN-02): regenerateAndReload() marked library-only rather than given an invented caller; a biconditional guard in r2000-symbol-roundtrip.test.ts ties the LIBRARY-ONLY marker to the real production-caller count in both directions.
+- [Phase 11.1]: 11.1-05: WR-11 pinned bidirectionally via fileClaimViolations(); IN-03's isStandaloneDisasmToken() excludes hyphen-adjacent-letter shapes to stop false-positiving on Phase 4's disasm-*.ts; IN-01's drained/bounded process.exit() also fixed a self-inflicted EPIPE-crash regression, using a test-only env-var hatch since neither plan-named payload route scales past ~220 bytes on this host's regenerator2000
 
 ### Pending Todos
 
@@ -319,8 +321,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-21T09:15:02.990Z
-Stopped at: Completed 11.1-04-PLAN.md
+Last session: 2026-08-21T09:55:46.452Z
+Stopped at: Completed 11.1-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
