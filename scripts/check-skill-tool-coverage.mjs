@@ -31,12 +31,23 @@
 // build step and no flag). That one new import does not weaken this script's
 // standing rule: it still never import()s, require()s, eval()s or spawns anything from .claude/skills/ --
 // skill content remains untrusted input that is matched, never executed.
+//
+// FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks `r2000_*`
+// MCP TOOL names in skill prose, but nothing checked `r2000` CLI VERBS at
+// all -- so `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's
+// own delivery path) reached `main` documented in zero skill files, with
+// nothing here catching it. The verb-coverage section near the bottom of
+// this file closes that gap the same way the rest of this file already
+// works: the verb list is PARSED from `r2000-cli.ts`'s own dispatch switch
+// (`scripts/lib/r2000-cli-verbs.mjs`), never a hand-typed array -- a
+// hard-coded list is exactly how this class of finding arrives.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
 import { CURATED_R2000_TOOLS } from "../.claude/mcp/vice/r2000-tools.ts";
+import { parseR2000CliVerbs, verbsMissingFromSkills, R2000_CLI_VERB_FLOOR } from "./lib/r2000-cli-verbs.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -471,6 +482,41 @@ need(
   "non-vacuity: expected at least one skill file to mention render-memmap (the memory map is a GENERATED VIEW, D-24) -- if this fails, the generated-artifact pointer has been lost from skill prose"
 );
 
+// --- r2000 CLI verb coverage (FLOW-01, plan 11.1-02) ------------------------
+// A fourth, independent section: the two r2000_* checks above are about MCP
+// TOOL names; this one is about `r2000 <verb>` CLI invocations, a
+// completely separate surface with its own source of truth
+// (r2000-cli.ts's dispatch switch, not either manifest and not
+// CURATED_R2000_TOOLS).
+const r2000CliSrc = readFileSync(join(VICE_DIR, "r2000-cli.ts"), "utf8");
+const r2000CliVerbs = parseR2000CliVerbs(r2000CliSrc);
+
+need(
+  r2000CliVerbs.length >= R2000_CLI_VERB_FLOOR,
+  `non-vacuity: expected at least ${R2000_CLI_VERB_FLOOR} r2000 CLI verbs parsed from r2000-cli.ts's dispatch switch, got ${r2000CliVerbs.length} -- the parser or the switch statement itself may be broken`
+);
+
+// The requirement each verb was built to deliver, where the audit named
+// one (FLOW-01's own table) -- surfaced in the failure message so a future
+// maintainer sees what closing the finding actually unblocks, not merely
+// which file to edit.
+const VERB_REQUIREMENT = {
+  "gen-enums": "R2000-13",
+  "export-lbl": "R2000-14",
+  "import-lbl": "R2000-15",
+};
+
+const skillTexts = skillFiles.map((f) => readFileSync(f, "utf8"));
+const missingCliVerbs = verbsMissingFromSkills(r2000CliVerbs, skillTexts);
+for (const verb of missingCliVerbs) {
+  const req = VERB_REQUIREMENT[verb] ? ` (${VERB_REQUIREMENT[verb]}'s delivery path)` : "";
+  need(
+    false,
+    `r2000 ${verb}: parsed from r2000-cli.ts's dispatch switch but named by NO skill file${req}. ` +
+      `Resolve by: (1) documenting it in a playbook, (2) removing the verb, or (3) recording it as a scope decision.`
+  );
+}
+
 // --- Report ------------------------------------------------------------
 if (errors.length) {
   console.error("check-skill-tool-coverage: FAIL");
@@ -497,5 +543,6 @@ console.log(
     // Floor asserted above (plan 11-12, need() #4): a count of 0 here is now
     // a FAILURE, not a silent pass -- see that assertion's comment for the
     // floor's provenance.
-    `r2000_*: ${extractedR2000.size} distinct names extracted, all curated (CURATED_R2000_TOOLS has ${CURATED_R2000_TOOLS.length} entries).`
+    `r2000_*: ${extractedR2000.size} distinct names extracted, all curated (CURATED_R2000_TOOLS has ${CURATED_R2000_TOOLS.length} entries). ` +
+    `r2000 CLI verbs: ${r2000CliVerbs.length} parsed from r2000-cli.ts, ${r2000CliVerbs.length - missingCliVerbs.length}/${r2000CliVerbs.length} resolved (named by at least one skill file).`
 );
