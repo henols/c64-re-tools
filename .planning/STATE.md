@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 12
-current_phase_name: Audit Integrity Instrument
+current_phase: 13
+current_phase_name: External Verification
 status: executing
 stopped_at: Phase 13 context gathered
-last_updated: "2026-08-21T22:02:12.248Z"
+last_updated: "2026-08-21T22:55:02.959Z"
 last_activity: 2026-08-21
 last_activity_desc: Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
-state_head: a4d8898ad749f035aa328ab02ef00762baf9f250
+state_head: a32e27e8f2c5852ff8f9fa2fd460327e05f49508
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 7
+  total_plans: 12
   completed_plans: 6
   percent: 0
 ---
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 12 (Audit Integrity Instrument) — EXECUTING
+Phase: 13 (External Verification) — READY TO EXECUTE
 Plan: 6 of 7 executed
-Status: Executing Phase 12 gap-closure plans (last: 12-06; next: 12-07)
+Status: Ready to execute
 Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
 (CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
 pathish push (WR-04) were fixed by plan 12-05. Plan 12-06 closed CR-02's
