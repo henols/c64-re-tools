@@ -235,7 +235,7 @@ const VERBS = { new: cmdNew, build: cmdBuild, sym: cmdSym };
 if (!cmd || !VERBS[cmd]) {
   console.log(`usage: node ${selfPath()} <command> [options]
 
-  new <file.a>              scaffold a C64 program (BASIC stub + libs)
+  new <file.a>              scaffold a C64 program (BASIC stub, no libraries needed)
   build <file.a>            assemble -> .prg .sym .vs .rep
   sym <file.a>              list the symbols the program uses
 

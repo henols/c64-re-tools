@@ -52,10 +52,11 @@
 // .claude/skills/ or README.md -- both are untrusted/first-party prose that
 // is matched, never executed. The only import is the first-party
 // capability-registry.ts.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
+import { fileClaimViolations } from "./lib/skill-honesty-checks.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -329,6 +330,39 @@ const FORBIDDEN_PARITY_SUBSTRINGS = [
 ];
 for (const [needle, why] of FORBIDDEN_PARITY_SUBSTRINGS) {
   need(!parityDocSource.includes(needle), `docs/stock-vice-parity.md must not contain "${needle}" -- ${why}.`);
+}
+
+// --- Per-file claim pins (WR-11, 10-REVIEW.md / 11.1-CONTEXT.md D-11.1-04) --
+// A frozen array of { file, forbidden, required, why } entries, each checked
+// in BOTH directions by the shared `fileClaimViolations()` predicate
+// (scripts/lib/skill-honesty-checks.mjs): the file must not contain any
+// `forbidden` string, and must contain every `required` string. A one-
+// directional pin (only "forbidden absent") is how WR-11 survived in the
+// first place -- `acme.mjs:238`'s stale "+ libs" claim sat unpinned for a
+// whole phase. Each `file` is asserted to exist BEFORE it is read, so a
+// rename fails loudly instead of silently skipping the check -- the same
+// reason `NORMATIVE_DOCS` in docs-dangling-refs.test.ts asserts existence.
+// An array, not a fourth hand-rolled `need()` idiom in this file, so the
+// next honesty pin extends a list instead of adding new machinery.
+const SKILL_FILE_CLAIMS = [
+  {
+    file: join(SKILLS_DIR, "acme-build", "scripts", "acme.mjs"),
+    forbidden: ["+ libs"],
+    required: ["no libraries needed"],
+    why:
+      "WR-11: acme.mjs's own --help claimed the `new` scaffold needs libraries, but plan 10-07 " +
+      "deliberately made the scaffold library-free (local !address/= constants, no !source " +
+      "<cbm/c64/...>) -- the first surface a reader sees about the scaffold must match what it is.",
+  },
+];
+for (const claim of SKILL_FILE_CLAIMS) {
+  const relClaim = claim.file.slice(ROOT.length + 1);
+  need(existsSync(claim.file), `${relClaim} does not exist -- SKILL_FILE_CLAIMS references a renamed or deleted file (${claim.why})`);
+  if (!existsSync(claim.file)) continue;
+  const claimSource = readFileSync(claim.file, "utf8");
+  for (const violation of fileClaimViolations(claimSource, claim)) {
+    need(false, `${relClaim}: ${violation} -- ${claim.why}`);
+  }
 }
 
 // --- R2000-05 deletion pin (Phase 10, plan 10-08) ---------------------------

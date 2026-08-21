@@ -152,7 +152,7 @@ via `vice-mcp r2000 verify` (evidence:
 
 ## Setup
 
-`acme` on `$PATH` is the **only** requirement. The scaffold `new` writes
+`acme` on `$PATH` is the **only** requirement. The scaffold that `new` writes
 assembles against a bare install with no standard hardware-register library —
 that's deliberate: neither a plain `~/.local/bin/acme` build nor the Debian
 trixie `apt` candidate ships one, so a scaffold that depended on it would fail
