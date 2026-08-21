@@ -9,6 +9,11 @@ audited: 2026-08-21
 audit_gaps_found: 2
 audit_gaps_resolved: 2
 audit_gaps_escalated: 0
+revalidated: 2026-08-21
+revalidation_trigger: phase-11.1-drift
+revalidation_gaps_found: 0
+revalidation_gaps_resolved: 0
+revalidation_gaps_escalated: 0
 ---
 
 # Phase 11 — Validation Strategy
@@ -304,7 +309,11 @@ backend-aware seam by design, and every curated `r2000_*` name being absent from
 manifests. Only the live wire-`tools/list` handshake half is manual, which is correct for it.
 Combined run measured: 242 pass, 0 fail, 4 skipped.
 
-### Measured per-command results
+### Measured per-command results (pre-Phase-11.1 — superseded)
+
+> These counts were accurate on the pre-11.1 tree and are kept as the record of *that* audit.
+> Phase 11.1 changed nine of these files; see **Re-validation Audit 2026-08-21 (post-Phase-11.1)**
+> below for the current numbers. Do not check the tree against this table.
 
 | Command | Result |
 |---------|--------|
@@ -335,6 +344,138 @@ Combined run measured: 242 pass, 0 fail, 4 skipped.
 | `grep -q "al C:" evidence/criterion4/outbound.lbl` | found — 8 label lines |
 | `grep -q "absent before" evidence/criterion4/WALKTHROUGH.md` | found |
 | `acme -f cbm` + `cmp` on `evidence/criterion1/fixture/recon-subject.a` | byte-identical (now mechanized — see Gap 2) |
+
+---
+
+## Re-validation Audit 2026-08-21 (post-Phase-11.1)
+
+**Why this section exists.** Phase 11.1 (`close-v0-3-0-audit-items...`, commits `2277885..a2e6128`)
+landed *after* the audit above and touched 30 non-planning files, including three of Phase 11's own
+production modules (`r2000-cli.ts`, `r2000-launch.ts`, `r2000-symbols.ts`, `r2000-project.ts`) and
+**nine of the test files this ledger names as its automated commands**. Every measured count in the
+section above was therefore stale the moment 11.1 merged. A ledger whose numbers no longer match
+reality cannot tell drift from regression — which is the exact defect class `docs-linerefs.test.ts`
+exists to prevent for CLAUDE.md. All 35 rows were re-executed against the post-11.1 tree.
+
+| Metric | Count |
+|--------|-------|
+| Rows re-audited | 35 |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Rows green as declared | 35 |
+
+**Full suite:** `VICE_REQUIRE_ACME=1 VICE_REQUIRE_R2000=1 npm run test:automated` → **2021 tests,
+2016 pass, 0 fail, 0 skipped, 5 todo** (was 1954 / 1949 pre-11.1). The 5 todos are the same
+pre-existing `vice-sync.ts` entries CLAUDE.md's Testing constraint deliberately exempts — not Phase
+11 gaps. Real `regenerator2000 0.9.20` (`~/.cargo/bin`) and real ACME 0.97 "Zem" (`~/.local/bin`)
+were both present, so **no gated leg skipped silently**; the live halves genuinely ran.
+
+### The three 11.1 changes to Phase 11's production modules are comment-only
+
+Checked rather than assumed, because a behavioural change here would have invalidated rows without
+failing them:
+
+- `r2000-symbols.ts` — a `LIBRARY-ONLY` marker on `regenerateAndReload()` recording that it has no
+  production caller, plus the statement that R2000-15 is satisfied through the
+  `export-lbl → vice_symbols_load → r2000_set_label_name → import-lbl` sequence, **not** through
+  that wrapper. Newly guarded as a **biconditional** in `r2000-symbol-roundtrip.test.ts` (8 → 15
+  tests): zero callers requires the marker present, one or more requires it absent.
+- `r2000-project.ts` — the FLOW-02 comment fix; a phase pointer replaced by the backlog path.
+- `r2000-cli.ts` / `r2000-launch.ts` — 11.1's own WR-09/WR-10/IN-06 fixes, carried by 11.1's rows.
+
+No Phase 11 requirement lost coverage, and no new Phase 11 surface went unguarded.
+
+### Non-vacuity re-proven by mutation, not re-asserted
+
+The audit above proved its two repaired guards non-vacuous. Since 11.1 rewrote the infrastructure
+around both, each was **mutation-tested again** against the current tree. The working tree was
+verified clean (`git status --porcelain` empty) after every mutation was reverted.
+
+| Mutation | Expected | Observed |
+|----------|----------|----------|
+| Byte 10 of the sealed `evidence/criterion1/fixture/recon-subject.prg` flipped | `r2000-answer-key.test.ts` FAILS | 9 pass, **1 fail** ✅ |
+| Pre-fix `.vsf` wording re-appended to `.planning/REQUIREMENTS.md` | `docs-dangling-refs.test.ts` test 1 FAILS | 7 pass, **1 fail** ✅ |
+| `VICE_REQUIRE_ACME=1 ACME_BIN=/nonexistent-acme` | hard-FAIL, never skip | 8 pass, **1 fail**, 1 skipped ✅ |
+| `ACME_BIN=/nonexistent-acme`, env unset | named SKIP, never false pass | 9 pass, 0 fail, **1 skipped** ✅ |
+| `VICE_REQUIRE_R2000=1 R2000_BIN=/nonexistent-r2000` | hard-FAIL, never skip | 25 pass, **1 fail**, 1 skipped ✅ |
+| `R2000_BIN=/nonexistent-r2000`, env unset | named SKIP, never false pass | 26 pass, 0 fail, **1 skipped** ✅ |
+
+`docs-dangling-refs.test.ts` grew 4 → 8 tests under 11.1's FLOW-02 generalisation: it now also
+polices shipped `.claude/mcp/vice/` **string literals** for phase-number pointers, and carries a
+second planted-violation test using the verbatim pre-fix wording. Both planted-violation tests
+still fail-on-plant, so neither half has gone vacuous.
+
+### Measured per-command results (supersedes the table above)
+
+Counts that changed under 11.1 are marked; every one is a **growth**, none a loss.
+
+| Command | Result | vs. pre-11.1 |
+|---------|--------|--------------|
+| `node --test r2000-launch.test.ts` | 26 pass | 21 → 26 |
+| `node --test r2000-verify.test.ts` | 12 pass | unchanged |
+| `node --test r2000-d64.test.ts` | 16 pass | 14 → 16 |
+| `node --test r2000-cli.test.ts` | 54 pass | 43 → 54 |
+| `node --test docs-linerefs.test.ts` | 3 pass | unchanged |
+| `node --test docs-dangling-refs.test.ts` | 8 pass | 4 → 8 |
+| `node --test r2000-launch.test.ts hostpath-consumers.test.ts` | 37 pass | 28 → 37 |
+| `node --test r2000-mcp-client.test.ts` | 23 pass | unchanged |
+| `node --test r2000-regbits.test.ts` | 13 pass | unchanged |
+| `node --test r2000-enum-gen.test.ts` | 23 pass | unchanged |
+| `node --test r2000-answer-key.test.ts` | 10 pass | unchanged |
+| `node --test r2000-confidence.test.ts` | 15 pass | unchanged |
+| `node --test r2000-memmap-render.test.ts` | 18 pass | unchanged |
+| `node --test stock-dispatch.test.ts vice-proxy.test.ts` | 246 pass, 4 skipped | 242 → 246 |
+| `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | 27 pass | unchanged |
+| `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | 15 pass | 8 → 15 |
+| `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts r2000-cli.test.ts` | 77 pass | 66 → 77 |
+| `VICE_REQUIRE_R2000=1 node --test r2000-memmap-render.test.ts` | 18 pass | unchanged |
+| `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | 54 pass | 43 → 54 |
+| `VICE_REQUIRE_ACME=1 node --test r2000-answer-key.test.ts` | 10 pass | unchanged |
+| `npx tsc --noEmit -p tsconfig.json` | clean | unchanged |
+| `npm run smoke` | OK — 78 tools advertised | unchanged |
+| `node scripts/check-npm-packages.mjs` | OK — 73 / 35 files, 6 skills | unchanged |
+| `node scripts/check-skill-tool-coverage.mjs` | OK — 37 `vice_*`, 10 `r2000_*` all curated, **7/7 CLI verbs resolved** | verb check added by 11.1-02 |
+| `node scripts/check-skill-fork-honesty.mjs` | OK — 11 fork-only mentions, all section-scoped | unchanged |
+| **Evidence assertions** | | |
+| `grep -q "canonical answer" evidence/criterion1/SESSION-B-ANSWER.md` | found | unchanged |
+| `grep -q "al C:" evidence/criterion4/outbound.lbl` | found — 8 label lines | unchanged |
+| `grep -q "absent before" evidence/criterion4/WALKTHROUGH.md` | found | unchanged |
+
+All 17 files under `evidence/` are present and unmodified.
+
+### The prior audit's one scope limit still stands, and is still filed
+
+The 2026-08-21 audit deliberately left `disasm-roundtrip.test.ts` and `r2000-cli.test.ts` on their
+hand-copied ACME gates rather than re-cutting the ground under evidence it was auditing. Re-checked:
+both still hand-roll their gate, `r2000-answer-key.test.ts` still imports the
+`r2000-test-gate.ts` seam, and
+`.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md` still
+exists. 11.1 did not close it and did not claim to. Unchanged deliberate limit, not a new gap.
+
+### Observation outside this phase's scope
+
+**Phase 11.1 has no `VALIDATION.md`.** It has 7 plans, 7 summaries, a CONTEXT and a VERIFICATION
+(`11/11`, every guard mutation-tested), but no Nyquist ledger — and it is the phase that added
+`docs-deferred-ledger.test.ts`, `docs-review-disposition.test.ts`, `r2000-spawn-seam.test.ts`,
+`r2000-verb-coverage.test.ts` and `skill-honesty-checks.test.ts`. Those guards are all green in the
+full-suite run above, so nothing is unguarded in fact; what is missing is the ledger that would say
+so. Recorded here because 11.1's drift is what triggered this re-audit. Route:
+`/gsd-validate-phase 11.1`.
+
+### Re-validation sign-off (2026-08-21, post-11.1)
+
+- [x] All 35 rows' declared automated commands re-executed against the post-11.1 tree, not read
+- [x] No gated leg skipped silently — real `regenerator2000 0.9.20` and real ACME 0.97 both present
+- [x] 0 gaps found; every row still green as declared
+- [x] Both previously-repaired guards re-proven non-vacuous by fresh planted mutations
+- [x] All four availability-gate modes (2 hard-FAIL, 2 SKIP) observed behaving correctly
+- [x] 11.1's edits to Phase 11 production modules confirmed comment-only, with a new biconditional guard
+- [x] Working tree verified clean after every mutation was reverted
+- [x] Full suite + typecheck + smoke + all three CI scripts green
+- [x] `nyquist_compliant: true` still holds post-11.1
+
+**Approval:** re-validation audit 2026-08-21 (35/35 rows re-measured after Phase 11.1; 0 gaps)
 
 ---
 
