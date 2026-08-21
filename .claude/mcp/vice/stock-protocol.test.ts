@@ -854,6 +854,11 @@ test("correlat: the captured checkpoint-list fixture resolves exactly once, with
   await withStubNetServer(
     (socket) => socket.on("data", () => socket.write(bytes)),
     async (port) => {
+      // initialRequestId 4 is read from the committed bytes, not guessed: the
+      // real checkpoint-list.bin's terminal CHECKPOINT_LIST reply (and the
+      // two CHECKPOINT_INFO entries preceding it under the same request)
+      // carry request id 4. See 13-CAPTURE-TRANSCRIPT.md's checkpoint-list
+      // frame table for the byte-level source of this number.
       const client = new ViceMonitorClient({ initialRequestId: 4 });
       const events: unknown[] = [];
       client.on("event", (e) => events.push(e));
@@ -866,8 +871,18 @@ test("correlat: the captured checkpoint-list fixture resolves exactly once, with
       // The captured stream's two earlier CHECKPOINT_INFO replies (request
       // ids 2 and 3, from the CHECKPOINT_SET calls the fixture models) were
       // never pending under this client -- emitted as events, not folded
-      // into related[].
-      assert.equal(events.length, 2);
+      // into related[]. That is 2 of the 8.
+      //
+      // The other 6 are a real-capture difference from the retired synthetic
+      // model (13-CAPTURE-TRANSCRIPT.md): each real CHECKPOINT_SET call is
+      // followed by a RESUMED/REGISTER_INFO/STOPPED broadcast sequence (the
+      // real x64sc briefly resumes and re-stops around each checkpoint
+      // change), which the synthetic fixture never modeled. All three are
+      // unsolicited (request id VICE_BROADCAST_REQUEST_ID), so #dispatch()
+      // emits every one of them as an "event" per its own request-id-first
+      // demux, same as the two stray CHECKPOINT_INFO replies above. 2 stray
+      // CHECKPOINT_INFO + 2 * 3 broadcast frames = 8.
+      assert.equal(events.length, 8);
       await client.disconnect();
     },
   );
@@ -878,6 +893,11 @@ test("correlat: the captured event-interleaved fixture resolves the command it c
   await withStubNetServer(
     (socket) => socket.on("data", () => socket.write(bytes)),
     async (port) => {
+      // initialRequestId 2 (and the requestId assertion below) are read from
+      // the committed bytes, not guessed: the real event-interleaved.bin's
+      // correlated ADVANCE_INSTRUCTIONS reply carries request id 2. See
+      // 13-CAPTURE-TRANSCRIPT.md's event-interleaved frame table for the
+      // byte-level source of this number.
       const client = new ViceMonitorClient({ initialRequestId: 2 });
       const order: string[] = [];
       client.on("event", () => order.push("event"));

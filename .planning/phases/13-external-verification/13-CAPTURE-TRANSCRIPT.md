@@ -235,6 +235,33 @@ This is a genuine confirmation, not a coincidence to be suspicious of: the
 rule was derived from `runCapture()`'s own call order, which is unchanged
 between the synthetic authoring pass and this real capture.
 
+## A real assertion that DID need changing: `checkpoint-list`'s `events.length`
+
+The `correlat:` checkpoint-list test's `assert.equal(events.length, 2)`
+failed against the real bytes (`8 !== 2`). This is a genuine real-vs-synthetic
+difference, not a request-id issue: the real capture's two `CHECKPOINT_SET`
+calls (frames at request ids 2 and 3, above) are each followed by a real
+`RESUMED`/`REGISTER_INFO`/`STOPPED` broadcast sequence (6 frames total) that
+the retired synthetic `checkpoint-list.bin` never modeled — the synthetic
+fixture only ever included the 2 stray `CHECKPOINT_INFO` replies as
+non-correlated frames, with no interleaved broadcast events around the
+`CHECKPOINT_SET` calls.
+
+`ViceMonitorClient#dispatch()`'s request-id-first demux emits every frame
+whose request id is `VICE_BROADCAST_REQUEST_ID`, or is non-broadcast but not
+pending under the client's single outstanding request (id 4), as an `"event"`
+— which is exactly what the two stray `CHECKPOINT_INFO` replies (ids 2, 3)
+and the six broadcast frames were. `2 + 6 = 8`, matching the real capture
+exactly.
+
+Per this plan's own rule (do not loosen a failing assertion silently), the
+assertion was corrected from `2` to `8`, with a comment at the site
+explaining the breakdown and citing this transcript. No other assertion in
+either `correlat:` test needed changing — `list.related.length === 2`, the
+resolved `requestId === 2`/`4` matches, and the `order[order.length-1] ===
+"resolved"` ordering assertion (order-agnostic per this plan's own analysis
+of Promise microtask ordering) all held against the real bytes unchanged.
+
 ## Consequence for `binmon-fixtures.ts` / `binmon-fixtures.test.ts` / README.md
 
 All three fixtures are now real captures (`synthetic: false`), matching the
