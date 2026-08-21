@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
-status: executing
-last_updated: "2026-08-21T15:49:08.066Z"
+status: verifying
+last_updated: "2026-08-21T16:11:23.362Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 0
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State
@@ -53,7 +53,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 Phase: 12 (audit-integrity-instrument) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-21
 requirements mapped
 
@@ -108,6 +108,7 @@ requirements mapped
 | Phase 12 P01 | 90min | 2 tasks | 2 files |
 | Phase 12 P02 | 150min | 3 tasks | 3 files |
 | Phase 12 P03 | 40min | 2 tasks | 4 files |
+| Phase 12 P04 | 35min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -184,6 +185,8 @@ Recent decisions affecting current work:
 - [Phase 12-02]: audit-gate.mjs's hook mode is fail-open outside the Write/Edit/MultiEdit/NotebookEdit/Bash + MILESTONE-AUDIT-token scope, fail-closed on every internal error once in scope; exit 2 plus stderr is the sole blocking mechanism, never exit-2-plus-permissionDecision JSON (anthropics/claude-code#43407)
 - [Phase 12-03]: settings.json split into a committed hooks-only file (Write|Edit|Bash PreToolUse -> audit-gate.mjs --hook) and .claude/settings.local.json (merged machine-specific permissions, still ignored); MultiEdit/NotebookEdit deliberately left out of the matcher since neither was verified against the live hook runtime
 - [Phase 12-03]: Layer 1 (audit-integrity.test.ts) now asserts the settings.json hook block itself (5 new tests), proven non-vacuous by two live break-and-restore probes against the real committed file (missing file -> exit 1; matcher narrowed to Write|Edit -> exit 1 naming the heredoc-bypass risk), closing T-12-09's silent-deletion gap
+- [Phase 12]: GATE-01's real-tree proof confirms status: tech_debt is gated alongside status: passed (D-12-12); gaps_found is never gated (D-12-13). — Both tech_debt and passed route to /gsd-complete-milestone, so both must be blocked while a docs guard is red; a milestone honestly reporting open gaps must never be blocked from saying so.
+- [Phase 12]: GATE-01's Bash-mode write-target scan is a content-adjacency heuristic, evadable by a base64/python -c runtime-assembled payload (T-12-02, accepted). — Layer 1 (audit-integrity.test.ts driving checkAuditGate(), which re-reads the actual committed file content regardless of how the shell wrote it) is the unevadable enforcement point; the hook is a deterrent, not the boundary.
 
 ### Pending Todos
 
@@ -385,8 +388,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T15:49:08.057Z
-Stopped at: Completed 12-03-PLAN.md
+Last session: 2026-08-21T16:11:23.354Z
+Stopped at: Completed 12-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

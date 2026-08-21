@@ -71,7 +71,7 @@ becomes a fix or a dated decision, and the two questions this project has
 answered *by default* each milestone (the fork backend, the Core Value
 statement) get answered deliberately.
 
-- [ ] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical
+- [x] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (completed 2026-08-21)
 - [ ] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies
 - [ ] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route
 - [ ] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed
@@ -113,7 +113,7 @@ anyone to notice).
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 12-04-PLAN.md — the one-time real-tree plant-and-revert transcript (`12-GATE-PROOF.md`) satisfying criteria 1 and 2
+- [x] 12-04-PLAN.md — the one-time real-tree plant-and-revert transcript (`12-GATE-PROOF.md`) satisfying criteria 1 and 2
 
 ### Phase 13: External Verification
 
@@ -239,7 +239,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 3/4 | In Progress|  |
+| 12. Audit Integrity Instrument | v0.4.0 | 4/4 | Complete   | 2026-08-21 |
 | 13. External Verification | v0.4.0 | 0/TBD | Not started | - |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
