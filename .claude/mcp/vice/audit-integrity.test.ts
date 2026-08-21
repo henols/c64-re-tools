@@ -619,3 +619,93 @@ describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () =>
     }
   });
 });
+
+// SETTINGS WIRING (plan 12-03, T-12-09): the committed `.claude/settings.json`
+// hook block is a plain JSON file any future commit could delete or narrow
+// without a single test going red -- exactly the silent-omission failure
+// mode D-12-14 says must instead be a visible commit. These five assertions
+// guard the wiring itself, not the gate script `--hook` mode already covers
+// above. Each was proven non-vacuous during 12-03's execution by a temporary
+// break-and-restore against the real committed file (see 12-03-SUMMARY.md).
+describe("settings wiring: .claude/settings.json (plan 12-03, D-12-05)", () => {
+  const SETTINGS_PATH = join(ROOT, ".claude", "settings.json");
+  const GITIGNORE_PATH = join(ROOT, ".gitignore");
+
+  test("the committed settings file exists and is hooks-only (D-12-05)", () => {
+    assert.ok(existsSync(SETTINGS_PATH), `expected ${SETTINGS_PATH} to exist -- it must be committed, not just locally present`);
+    const raw = readFileSync(SETTINGS_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    assert.deepEqual(
+      Object.keys(parsed),
+      ["hooks"],
+      "the committed settings.json must carry exactly one top-level key, `hooks` -- any other key is machine-specific content that must live in settings.local.json instead",
+    );
+    assert.ok(!raw.includes("/home/"), "the committed settings.json must contain no absolute home-directory path (Pitfall 4 redline)");
+    assert.ok(!/permissions/i.test(raw), "the committed settings.json must not carry a `permissions` key");
+    assert.ok(!/additionalDirectories/i.test(raw), "the committed settings.json must not carry an `additionalDirectories` key");
+  });
+
+  test("a PreToolUse entry wires the audit gate over Write, Edit and Bash (D-12-03 / D-12-04)", () => {
+    const parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+    const preToolUse: Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }> =
+      parsed.hooks?.PreToolUse ?? [];
+    const entry = preToolUse.find((e) => e.hooks.some((h) => h.command.includes("audit-gate.mjs")));
+    assert.ok(entry, "expected a PreToolUse entry whose command names audit-gate.mjs -- none found");
+
+    const matcherTools = entry!.matcher.split("|");
+    for (const tool of ["Write", "Edit"]) {
+      assert.ok(matcherTools.includes(tool), `expected the PreToolUse matcher to cover "${tool}"; got "${entry!.matcher}"`);
+    }
+    assert.ok(
+      matcherTools.includes("Bash"),
+      `expected the PreToolUse matcher to cover "Bash" -- omitting it would let a heredoc/shell write bypass the ` +
+        `audit gate entirely (T-12-02's Bash-write route), even though the gate's own regex scan of Bash commands ` +
+        `is an accepted partial backstop; got "${entry!.matcher}"`,
+    );
+
+    const hook = entry!.hooks.find((h) => h.command.includes("audit-gate.mjs"))!;
+    assert.ok(hook.command.includes("--hook"), `expected the wired command to pass --hook; got "${hook.command}"`);
+    assert.equal(typeof hook.timeout, "number", "expected a numeric timeout bounding the hook's wall clock (T-12-12)");
+  });
+
+  test("the wired script path resolves to the real single check point (D-12-01)", () => {
+    const parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+    const preToolUse: Array<{ hooks: Array<{ command: string }> }> = parsed.hooks?.PreToolUse ?? [];
+    const hook = preToolUse.flatMap((e) => e.hooks).find((h) => h.command.includes("audit-gate.mjs"));
+    assert.ok(hook, "expected a hooks[] entry naming audit-gate.mjs");
+
+    const substituted = hook!.command.replace("${CLAUDE_PROJECT_DIR}", ROOT);
+    const match = substituted.match(/"([^"]+\.mjs)"/);
+    assert.ok(match, `expected a quoted .mjs path inside the command; got "${substituted}"`);
+    const resolvedPath = match![1];
+    assert.ok(
+      resolvedPath.endsWith("scripts/audit-gate.mjs"),
+      `expected the resolved path to end with scripts/audit-gate.mjs; got "${resolvedPath}"`,
+    );
+    assert.ok(existsSync(resolvedPath), `expected ${resolvedPath} to exist on disk -- a rename would leave the hook pointing at nothing`);
+  });
+
+  test("the ignore rules match the committed split (D-12-05)", () => {
+    const rules = readFileSync(GITIGNORE_PATH, "utf8")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("#"));
+    const joined = rules.join("\n");
+    assert.ok(
+      joined.includes("/.claude/settings.local.json"),
+      ".gitignore's non-comment rules must include /.claude/settings.local.json",
+    );
+    assert.ok(
+      !rules.some((line) => line.trim() === "/.claude/settings.json"),
+      ".gitignore's non-comment rules must NOT contain a bare /.claude/settings.json rule -- that file is now committed",
+    );
+  });
+
+  test("no second enforcement route was introduced (D-12-06)", () => {
+    const githooksDir = join(ROOT, "scripts", "githooks");
+    assert.ok(
+      !existsSync(githooksDir),
+      `expected ${githooksDir} to not exist -- a committed git hook / core.hooksPath route was rejected by D-12-06 ` +
+        "because per-clone git config is not committed and would reintroduce the clean-checkout hole Layer 1 exists to close",
+    );
+  });
+});
