@@ -79,17 +79,17 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 
 ### The annotation store — why this milestone exists
 
-- [ ] **R2000-10**: `c64-program-recon` writes labels, comments, block types and
+- [x] **R2000-10**: `c64-program-recon` writes labels, comments, block types and
       scopes into queryable annotation state, not only Markdown prose, so a later
       session queries the store instead of re-deriving the findings. Today
       `templates/memory-map.template.md` produces prose that nothing can query,
       diff, or undo.
-- [ ] **R2000-11**: A user can ask which addresses reference a given address, and
+- [x] **R2000-11**: A user can ask which addresses reference a given address, and
       search labels, comments and instructions across an analysed program.
 
 ### The two things neither project can do alone
 
-- [ ] **R2000-13**: Enum definitions are generated from `c64-memory-mapping`'s
+- [x] **R2000-13**: Enum definitions are generated from `c64-memory-mapping`'s
       `memmap.json`, so a disassembly renders per-bit VIC-II/SID/CIA writes with
       semantic names — `lda #$1b / sta $d011` reads as named bits. `memmap.json`
       holds the bit tables; regenerator2000 holds the enum mechanism, installed
@@ -97,11 +97,11 @@ file:line, verified overlap map, decisions D-R1..D-R4).
       writes the three built-in enums to a directory and exits — it is a
       TOML-shape discovery tool, not an install path.) **Neither side can
       produce this alone.**
-- [ ] **R2000-14**: Symbols annotated in regenerator2000 export as **VICE label
+- [x] **R2000-14**: Symbols annotated in regenerator2000 export as **VICE label
       files** (`--export_lbl`) into the symbol store and resolve live addresses
       through `vice_symbols_load`. Native format on both sides — no glue format to
       invent.
-- [ ] **R2000-15**: Names discovered against the running machine flow **back** into
+- [x] **R2000-15**: Names discovered against the running machine flow **back** into
       the store (`--import_lbl`) — a round trip, not a one-way dump. This closes
       the loop `DERIV-04` opened: it had no producer, because something must
       *write* those symbols.
