@@ -144,3 +144,267 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
   const falsePositives = sentences(corrected).filter((s) => /\bvsf\b/i.test(s) && isPhaseAssignment(s));
   assert.deepEqual(falsePositives, [], "the corrected wording must not be flagged -- a guard that cannot be satisfied gets switched off");
 });
+
+// ---------------------------------------------------------------------------
+// Second, independent section: the SAME defect class (a dangling phase
+// pointer) one layer down, in SHIPPED SOURCE STRINGS rather than the
+// normative documents above. FLOW-02 (D-11.1-01) is the founding instance:
+// `r2000-cli.ts` told a user that closing the `.vsf` gap "is Phase 11's
+// job" in both its USAGE text and its live `bootstrap` refusal, and the
+// test that pinned the claim (`assert.match(stderr, /Phase 11/)`) never
+// caught it -- it certified the falsehood green. This section generalises
+// that instance into a mechanical, repo-wide guard over every shipped
+// `.claude/mcp/vice/` module's string literals.
+//
+// SCOPE: string/template literals only, NEVER comments. A comment-scoped
+// guard would be self-invalidating -- the commit that fixes a dangling
+// phase pointer legitimately wants to name the old wording in a "what NOT
+// to do" comment (this repo's established register; see r2000-cli.ts's and
+// r2000-project.ts's FLOW-02 comments), and a guard that scanned comments
+// would fail on the very commit that satisfies it. CLAUDE.md's grep-gate
+// hygiene rule names exactly this hazard. KNOWN, ACCEPTED GAP:
+// `r2000-project.ts`'s `.vsf` header comment carried this repo's third
+// FLOW-02 site and was corrected by hand in plan 11.1-01's Task 1; this
+// guard does not, and by design will not, hold that comment. A future
+// regression there would only be caught by re-reading the file.
+//
+// EXTRACTOR: a hand-written character state machine, not a regex. Measured
+// during planning: a regex-alternation extractor silently failed to see
+// r2000-cli.ts's `USAGE` template literal -- the exact site FLOW-02 lived
+// at -- and reported only 2 of the 3 literal fragments the pre-fix source
+// actually carried. A guard blind at the one site that mattered is worse
+// than no guard, so `extractStringLiterals()` below carries its own
+// positive-control test proving it sees that template.
+
+/**
+ * Extracts the CONTENT of every string and template literal in `src`, via a
+ * single-pass character state machine (never a regex -- see this section's
+ * header for the measured blindness that ruled a regex out). Tracks line
+ * comments, block comments, single- and double-quoted strings, and template
+ * literals, including nested `${ ... }` interpolation (itself scanned for
+ * further comments/strings/nested templates) and backslash escapes in every
+ * quoted form.
+ *
+ * Escape sequences are returned verbatim (not decoded) in the literal's
+ * content -- irrelevant to this guard's `/\bPhase\s+\d/i` predicate, and
+ * decoding is surface this guard does not need. Regex-literal bodies are
+ * not specially recognised (this guard has no reason to enter one; none of
+ * this repo's shipped modules put phase-pointer prose inside a regex).
+ */
+function extractStringLiterals(src: string): string[] {
+  const literals: string[] = [];
+  const n = src.length;
+  let i = 0;
+
+  // One entry per currently-open template literal (innermost last), so a
+  // template nested inside another's `${ ... }` interpolation is tracked
+  // independently of its parent.
+  interface TemplateFrame {
+    buf: string;
+    /** True while scanning inside this frame's `${ ... }` interpolation
+     * rather than its literal text. */
+    inInterp: boolean;
+    /** Brace nesting depth within the current interpolation -- needed
+     * because the interpolation's own code can contain object literals,
+     * blocks, etc. with unrelated `{`/`}` pairs. Reaching 0 closes the
+     * interpolation and returns to accumulating literal text. */
+    interpBraceDepth: number;
+  }
+  const templateStack: TemplateFrame[] = [];
+
+  while (i < n) {
+    const c = src[i];
+    const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
+
+    if (top && !top.inInterp) {
+      // Accumulating this template literal's own text (not inside `${ }`).
+      if (c === "\\") {
+        top.buf += c + (src[i + 1] ?? "");
+        i += 2;
+        continue;
+      }
+      if (c === "`") {
+        literals.push(top.buf);
+        templateStack.pop();
+        i++;
+        continue;
+      }
+      if (c === "$" && src[i + 1] === "{") {
+        top.inInterp = true;
+        top.interpBraceDepth = 1;
+        i += 2;
+        continue;
+      }
+      top.buf += c;
+      i++;
+      continue;
+    }
+
+    // Top-level code, OR inside a template literal's `${ ... }`
+    // interpolation (both scan for comments/strings/nested templates the
+    // same way; only the brace-depth tracking below differs).
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < n && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const quote = c;
+      let buf = "";
+      i++;
+      while (i < n && src[i] !== quote) {
+        if (src[i] === "\\") {
+          buf += src[i] + (src[i + 1] ?? "");
+          i += 2;
+          continue;
+        }
+        buf += src[i];
+        i++;
+      }
+      i++; // skip closing quote
+      literals.push(buf);
+      continue;
+    }
+    if (c === "`") {
+      templateStack.push({ buf: "", inInterp: false, interpBraceDepth: 0 });
+      i++;
+      continue;
+    }
+    if (top && top.inInterp) {
+      if (c === "{") {
+        top.interpBraceDepth++;
+        i++;
+        continue;
+      }
+      if (c === "}") {
+        top.interpBraceDepth--;
+        i++;
+        if (top.interpBraceDepth === 0) top.inInterp = false;
+        continue;
+      }
+    }
+    i++;
+  }
+  return literals;
+}
+
+/** The shipped module set this guard scans: every `package.json` `files[]`
+ * entry ending `.ts`/`.mts`. Derived, not enumerated -- the guard-first
+ * principle this phase's CONTEXT.md organises around -- so a module added
+ * to `files[]` by a later phase is scanned automatically, with no edit
+ * here. A `files[]` entry that does not exist on disk FAILS this function
+ * rather than silently shrinking the scanned set (the INT-01 lesson applied
+ * preemptively). */
+function shippedTsModules(): string[] {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files?: string[] };
+  const entries = (pkg.files ?? []).filter((f) => /\.(ts|mts)$/.test(f));
+  for (const entry of entries) {
+    assert.ok(
+      existsSync(join(HERE, entry)),
+      `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`,
+    );
+  }
+  return entries;
+}
+
+/** Every literal, from every shipped module, whose content names a phase
+ * number. Blanket inside literals -- no exemption list, no verb heuristics
+ * (a phase number is a planning artifact; a string literal is, or may
+ * become, user-facing). */
+function danglingPhaseLiterals(): { file: string; literal: string }[] {
+  const hits: { file: string; literal: string }[] = [];
+  for (const file of shippedTsModules()) {
+    const src = readFileSync(join(HERE, file), "utf8");
+    for (const literal of extractStringLiterals(src)) {
+      if (/\bPhase\s+\d/i.test(literal)) hits.push({ file, literal });
+    }
+  }
+  return hits;
+}
+
+test("no shipped .claude/mcp/vice/ string literal names a phase number (FLOW-02)", () => {
+  const hits = danglingPhaseLiterals();
+  assert.deepEqual(
+    hits,
+    [],
+    "shipped string literal(s) name a phase number -- a phase is a planning artifact, never a " +
+      "durable user-facing remediation path (D-11.1-01). Reword to name a backlog file or drop the " +
+      "phase reference entirely:\n" +
+      hits.map((h) => `  ${h.file}: ${h.literal.slice(0, 160)}`).join("\n"),
+  );
+});
+
+test("positive control: the scanner captures the literals this guard exists to police", () => {
+  // The anti-blindness control: without this, the test above can pass by
+  // seeing nothing, exactly like the measured regex-alternation failure
+  // this section's header describes.
+  const literals = extractStringLiterals(readFileSync(join(HERE, "r2000-cli.ts"), "utf8"));
+  assert.ok(
+    literals.some((l) => /usage \(npm install\)/.test(l)),
+    "the scanner did not capture r2000-cli.ts's USAGE template literal -- exactly the blindness a regex-alternation extractor was measured to have",
+  );
+  assert.ok(
+    literals.some((l) => /\.vsf input is not supported/.test(l)),
+    "the scanner did not capture the .vsf bootstrap refusal literal",
+  );
+});
+
+test("non-vacuity: the scanned set and the extracted literal volume are real", () => {
+  // Floors set below the numbers actually measured on 2026-08-21 (58
+  // modules, 4928 literals) -- never a floor equal to a number that was
+  // never measured (ENGINEERING_RULES.md §6).
+  const modules = shippedTsModules();
+  assert.ok(modules.length >= 40, `expected at least 40 shipped .ts/.mts modules, got ${modules.length}`);
+
+  let total = 0;
+  for (const file of modules) {
+    total += extractStringLiterals(readFileSync(join(HERE, file), "utf8")).length;
+  }
+  assert.ok(total >= 500, `expected at least 500 string/template literals across the shipped set, got ${total}`);
+});
+
+test("planted-violation: the verbatim pre-fix wording is flagged, and the corrected wording is not", () => {
+  // (a) the pre-fix USAGE paragraph, verbatim, inside a template literal
+  // with a `${x}` interpolation before it -- the exact construct the regex
+  // extractor was measured to miss.
+  const preFixUsage =
+    'const x = "ctx";\n' +
+    "const USAGE = `header ${x} more\n" +
+    ".vsf input is not supported by any verb. Phase 9 found its machine-type\n" +
+    "field only reads correctly by coincidence; closing that gap for real is\n" +
+    "Phase 11's job, not this CLI's. Convert to .prg, .d64 or a flat 64K capture.\n" +
+    "`;\n";
+
+  // (b) the pre-fix bootstrap refusal, verbatim, as the three-part `"…" +
+  // "…" + "…"` concatenation it actually was.
+  const preFixRefusal = `if (ext === ".vsf") {
+    console.error(
+      "bootstrap: .vsf input is not supported -- Phase 9 found its machine-type field only reads " +
+        'correctly by coincidence ("C64SC" falls through to regenerator2000\\'s own default, matching ' +
+        "none of its literal System arms). Closing that gap for real is Phase 11's job, not this CLI's. " +
+        "Convert to .prg, .d64 or a flat 64K capture instead.",
+    );
+    return { code: 1 };
+  }
+`;
+
+  const preFixHits = extractStringLiterals(preFixUsage + preFixRefusal).filter((l) => /\bPhase\s+\d/i.test(l));
+  assert.equal(
+    preFixHits.length,
+    3,
+    `expected exactly 3 flagged literal fragments (the USAGE template plus two of the refusal's three concatenated parts), got ${preFixHits.length}: ${JSON.stringify(preFixHits)}`,
+  );
+
+  // The corrected wording (this repo's actual, current r2000-cli.ts) must
+  // NOT be flagged -- a guard that cannot be satisfied gets switched off
+  // (this file's other planted-violation test makes the same point).
+  const correctedHits = extractStringLiterals(readFileSync(join(HERE, "r2000-cli.ts"), "utf8")).filter((l) =>
+    /\bPhase\s+\d/i.test(l),
+  );
+  assert.deepEqual(correctedHits, [], "the corrected r2000-cli.ts must not be flagged -- the fix would be self-invalidating otherwise");
+});
