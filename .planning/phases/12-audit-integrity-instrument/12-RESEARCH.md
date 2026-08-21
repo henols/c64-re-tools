@@ -592,7 +592,28 @@ resolved for free by D-12-17's real-tree plant-and-revert transcript, which
 should explicitly note which session context (main vs. subagent) performed the
 write.
 
-## Open Questions
+## Open Questions (RESOLVED during planning, 2026-08-21)
+
+All three were settled by the Phase 12 plan set (`23b8fb8`, revised `354761e`).
+Resolutions are recorded inline below; the recommendations that follow each
+question are preserved as the reasoning that led there.
+
+- **Q1 → RESOLVED: fail-closed, narrowly scoped.** Settled in `12-02-PLAN.md`
+  Task 2. Out-of-scope tool calls exit 0 before any subprocess is spawned; once
+  a call carries a milestone-audit token, every internal failure exits 2.
+  Bounded stdin (5 s timeout, 10 MiB cap) mitigates the hook-DoS class (T-12-01).
+- **Q2 → RESOLVED two ways: made non-load-bearing, and resolved empirically.**
+  `12-02-PLAN.md` Task 2 specifies field-name-agnostic extraction with a
+  `shapeKnown: false` loud-refusal fallback, so neither source needs to be
+  authoritative; Task 1 additionally resolves the field names by observation and
+  records them in `12-HOOK-STDIN-EVIDENCE.md`. Task 3 test 10 pins the unknown-shape
+  fallback (T-12-08). Note the revision's finding: the fallback must join
+  string-valued leaves with a real newline, **not** `JSON.stringify(tool_input)`,
+  whose `\n` escaping would defeat the line-anchored regex and silently no-op
+  the gate.
+- **Q3 → RESOLVED: single script, `--hook` argv flag, no wrapper.** Settled in
+  `12-02-PLAN.md` Task 2 and wired in `12-03-PLAN.md` Task 1. A wrapper would be
+  a second file that can drift from D-12-01's single seam.
 
 1. **Fail-open vs. fail-closed on the hook's own internal errors (Pitfall 5).**
    - What we know: every existing advisory hook on this host fails open; D-12-14

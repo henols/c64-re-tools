@@ -81,6 +81,7 @@ statement) get answered deliberately.
 ## Phase Details
 
 ### Phase 12: Audit Integrity Instrument
+
 **Goal**: A milestone audit cannot record `status: passed` while any of the four
 `docs-*.test.ts` guards (`docs-linerefs.test.ts`, `docs-dangling-refs.test.ts`,
 `docs-deferred-ledger.test.ts`, `docs-review-disposition.test.ts`) is red — the
@@ -91,16 +92,31 @@ anyone to notice).
 **Depends on**: Nothing (first phase of v0.4.0)
 **Requirements**: GATE-01
 **Success Criteria** (what must be TRUE):
+
   1. A guard deliberately turned red is proven to block the audit-`passed` path — a committed transcript shows the mechanism refusing to record `status: passed` while it is red
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
+
 **Plans**: 4 plans (4 waves, sequential — each wave builds on the previous)
+
+**Wave 1**
+
 - [ ] 12-01-PLAN.md — `scripts/audit-gate.mjs` (the single check point) + Layer 1 `audit-integrity.test.ts` with the committed planted pair
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 12-02-PLAN.md — resolve the PreToolUse payload shape empirically, then add `--hook` mode and pin its contract with committed tests
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 12-03-PLAN.md — commit a hooks-only `.claude/settings.json`, relocate machine-specific permissions, amend `.gitignore`, and make Layer 1 guard the wiring
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 12-04-PLAN.md — the one-time real-tree plant-and-revert transcript (`12-GATE-PROOF.md`) satisfying criteria 1 and 2
 
 ### Phase 13: External Verification
+
 **Goal**: The three highest-value carried items are re-proven against real
 binaries in place of the internal proxies that stood in for them. All three are
 live-testable here: genuine unpatched stock VICE is at `/usr/bin/x64sc`, with the
@@ -109,12 +125,15 @@ fork shadowing it earlier on `PATH`.
 independent of each other and may execute in parallel)
 **Requirements**: EXTV-01, EXTV-02, EXTV-03
 **Success Criteria** (what must be TRUE):
+
   1. The three capturable `VERIF-02` binmon wire fixtures are re-recorded from a real stock VICE binary, and no sidecar in the fixture set still declares itself synthetic while being relied on as ground truth — evidenced by the committed fixtures plus a capture transcript
   2. The `--help` backend discriminator (`BACK-01`/`BACK-04`) is run against a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
   3. Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised is run against a real binary, with a committed transcript naming a pass or fail per detail, and any contradicted detail corrected at its source
+
 **Plans**: TBD
 
 ### Phase 14: Backend Decision
+
 **Goal**: The fork-backend question is answered by a dated decision rather than
 retained by default for a third close, and whichever way it goes, a user hitting
 one of the three hard losses (SID read-back, matrix keyboard, RESTORE/NMI) has an
@@ -126,12 +145,15 @@ disposition/relocation work does not touch fork-backend code or fork-coupled
 claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
 **Requirements**: FORK-01, FORK-02
 **Success Criteria** (what must be TRUE):
+
   1. PROJECT.md → Key Decisions carries a dated `FORK-01` entry naming the criteria that would reverse it, explicitly including the upstream `KEYBOARD_MATRIX_SET` coupling
   2. A user who hits SID read-back, matrix keyboard, or RESTORE/NMI is told, at the point of use, a route they can actually follow — evidenced by the live doc/skill text, not merely asserted in this roadmap
   3. The decision is reflected in the code's actual state, checked live: if "remove", no code path still advertises or spawns the fork transport; if "retain", the retained path is exercised once more against a real fork binary and still passes
+
 **Plans**: TBD
 
 ### Phase 15: Debt and Review Disposition
+
 **Goal**: Every open code-review finding across all phases is dispositioned, and
 every pending todo not already claimed by Phase 13/14/17 becomes fixed,
 dispositioned `wont-fix` with recorded rationale, or explicitly promoted —
@@ -142,13 +164,16 @@ fork-coupled todos, e.g. `warp-over-resource_set`, which the fork-removal todo
 itself notes "would make moot")
 **Requirements**: GATE-02, DEBT-01, DEBT-02, DEBT-03
 **Success Criteria** (what must be TRUE):
+
   1. `docs-review-disposition.test.ts` runs green from a clean checkout, with Phase 08's `WR-04`..`WR-12`, Phase 09's `IN-01`..`IN-03`, `WR-13`'s second hardcoded capability-refusal string, and `02-REVIEW.md`'s `IN-05` each carrying a cited disposition
   2. Every file remaining in `.planning/todos/pending/` after this phase is either fixed with a commit reference, moved to `completed/` with a `wont-fix` rationale, or promoted into `REQUIREMENTS.md` → Future Requirements with a named owner
   3. The five DEBT-02 undocumented behaviours (`Drive8Type` prerequisite, project-paths git-marker requirement, `releases.json` schema, `vice_ping`'s `resolvedBinaryPath` under the broker pool, the refuted warp-over-`resource_set` claim) are each documented at the location a user would actually look, cited by file
   4. Phase 03's three pending UAT scenarios in `03-HUMAN-UAT.md` are executed against real fixtures and a running program, and each is recorded `pass` or `fail` with evidence — none left `pending`
+
 **Plans**: TBD
 
 ### Phase 16: Packaging and Repo Shape
+
 **Goal**: The plugin payload lives under `src/` with `.mcp.json` merged into any
 consumer's existing config, and `QUAL-01..03` (tests for the three CLI scripts,
 orphaned planning references, control-plane exposure) are closed. Sequenced after
@@ -161,14 +186,17 @@ line-reference citations a single time instead of re-sweeping them per phase.
 and all disposition work have landed, so the move sweeps a final file set once)
 **Requirements**: PKG-01, PKG-02, PKG-03, PKG-04
 **Success Criteria** (what must be TRUE):
+
   1. Both published tarballs (`@henols/vice-mcp`, `@henols/c64-re-tools`) contain exactly the right files after the move — `scripts/check-npm-packages.mjs` green, no `node_modules/`, no test files, no fixtures leaked, all six skills present
   2. `acme.mjs`, `driver.mjs` and `derive.mjs` each have a committed test file that runs and passes as part of the test suite
   3. A whole-tree grep gate proves zero orphaned planning references remain in source comments, demonstrated by biting on a planted violation before acceptance
   4. The emulator control-plane network exposure is either narrowed (evidenced by a live bind-address check showing it is no longer `0.0.0.0`) or recorded in PROJECT.md as an accepted risk with rationale
   5. `resources-sync.test.ts` and the byte-pinned per-backend tool manifests still pass after the relocation — evidenced by a green test run against the moved tree
+
 **Plans**: TBD
 
 ### Phase 17: Project Identity and Ledger Close
+
 **Goal**: PROJECT.md's Core Value is either restated to reflect what v0.3.0
 proved (that what a session learns outlives it) or carries a dated confirmation
 that it should not be, with the evidence weighed either way. The deferred-items
@@ -186,9 +214,11 @@ are `STATE.md` and `PROJECT.md` content, and worktree mode strips those files
 from commits — a plan of this shape silently cannot deliver.
 **Requirements**: CORE-01, DEBT-04
 **Success Criteria** (what must be TRUE):
+
   1. PROJECT.md → Core Value either states the outlives-the-session axis v0.3.0 proved, or has a dated entry recording that the evidence was weighed and the statement deliberately kept — not a bookkeeping edit made in passing
   2. `STATE.md` → Deferred Items, still derived from `.planning/todos/pending/` and guarded in both directions by `docs-deferred-ledger.test.ts`, reports a count strictly lower than 19
   3. The count is taken with no phase of this milestone left to run — nothing remaining that could remove another item from the pending set after the measurement
+
 **Plans**: TBD
 
 ## Progress

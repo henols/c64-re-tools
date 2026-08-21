@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
-status: Roadmapped — awaiting `/gsd-plan-phase 12`
-last_updated: "2026-08-21T13:49:02.028Z"
-last_activity: 2026-08-21 — ROADMAP.md created for v0.4.0 (Phases 12-17), 16/16
+status: executing
+last_updated: "2026-08-21T14:37:07.662Z"
+last_activity: 2026-08-21 -- Phase 12 planning complete
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
   percent: 0
 ---
@@ -53,8 +53,8 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 Phase: 12 (Audit Integrity Instrument) — first phase of v0.4.0
 Plan: — (not yet planned)
-Status: Roadmapped — awaiting `/gsd-plan-phase 12`
-Last activity: 2026-08-21 — ROADMAP.md created for v0.4.0 (Phases 12-17), 16/16
+Status: Ready to execute
+Last activity: 2026-08-21 -- Phase 12 planning complete
 requirements mapped
 
 ## Performance Metrics

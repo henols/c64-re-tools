@@ -1,8 +1,8 @@
 ---
 phase: 12
 slug: audit-integrity-instrument
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-21
 ---
@@ -40,22 +40,26 @@ created: 2026-08-21
 
 ## Per-Task Verification Map
 
-Task IDs are assigned by the planner; rows below are keyed to the deliverable
-each task must produce. Every row's requirement is `GATE-01`.
+Task IDs are `{plan}-{task}` as assigned in the four PLAN.md files. Every row's
+requirement is `GATE-01`. Threat ids are the `T-12-NN` entries in each plan's
+`<threat_model>` block.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD (gate script) | TBD | 1 | GATE-01 (criterion 3) | T-12-01 | Parses hook stdin JSON and scanned Markdown/Bash text defensively; never `eval`/`import()`/`exec`s scanned content | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 — `scripts/audit-gate.mjs` does not exist | ⬜ pending |
-| TBD (planted violation) | TBD | 1 | GATE-01 (criterion 1) | — | Synthetic tree: failing guard + gated-status audit → gate refuses | unit (planted-violation) | `cd .claude/mcp/vice && node --test audit-integrity.test.ts -t "planted violation"` | ❌ W0 | ⬜ pending |
-| TBD (planted false-negative) | TBD | 1 | GATE-01 (criterion 2) | — | Synthetic tree: passing guards + gated-status audit → gate allows | unit (planted false-negative) | `cd .claude/mcp/vice && node --test audit-integrity.test.ts -t "planted false-negative"` | ❌ W0 | ⬜ pending |
-| TBD (derived-set floor) | TBD | 1 | GATE-01 | — | `docs-*.test.ts` glob is non-vacuous: `>= 4` plus the four named members present | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
-| TBD (gaps_found never gated) | TBD | 1 | GATE-01 (D-12-13) | — | `status: gaps_found` is allowed even with a red guard — honest bad news is never obstructed | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
-| TBD (frontmatter-only scan) | TBD | 1 | GATE-01 | T-12-02 | Column-zero frontmatter-only line scan; prose occurrences of `status:` (9 in v0.2.0, 4 in v0.3.0) do not false-positive | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
-| TBD (hook wiring) | TBD | 2 | GATE-01 (D-12-03/04) | T-12-01 | `PreToolUse` matcher covers `Write`, `Edit`, **and** `Bash`; `exit 2` with reason on stderr (not JSON `permissionDecision`) | manual | in-session tool call against a red tree, observe block | ❌ W0 — `.claude/settings.json` hooks block does not exist | ⬜ pending |
-| TBD (real-tree red/green transcript) | TBD | 2 | GATE-01 (criteria 1 & 2) | — | Plant-and-revert on the real repo, revert shown as explicitly as the plant | manual, evidenced by committed transcript | `node scripts/audit-gate.mjs` run red then reverted-green, output captured | N/A — one-time recorded evidence | ⬜ pending |
-| TBD (packaging unchanged) | TBD | 2 | GATE-01 | — | New files do not leak into either npm tarball | unit | `node scripts/check-npm-packages.mjs` | ✅ exists | ⬜ pending |
+| 12-01-01 | 01 | 1 | GATE-01 (criterion 3) | T-12-01, T-12-05, T-12-06 | Single check point `scripts/audit-gate.mjs`; parses scanned Markdown defensively; never `eval`/`import()`/`exec`s scanned content; guard-file list always from `readdirSync` over a code-controlled dir; `milestoneAuditFiles()` skips dot-dirs and refuses symlinked dirs | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 — does not exist | ⬜ pending |
+| 12-01-02 | 01 | 1 | GATE-01 (criteria 1, 2, 3) | T-12-06 | Layer 1: planted-violation + planted-false-negative pair on `mkdtempSync` trees outside the repo, so no synthetic guard can join the real `docs-*` glob (D-12-09); `>= 4` floor plus named-member presence (D-12-08); `gaps_found` allowance asserted (D-12-13); column-zero frontmatter-only scan defeats the prose false-positive | unit (planted pair) | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 — does not exist | ⬜ pending |
+| 12-02-01 | 02 | 2 | GATE-01 (RESEARCH A1) | T-12-08 | Empirically resolves this build's `tool_input` field names before any hook code depends on them; recorded in `12-HOOK-STDIN-EVIDENCE.md` | manual, evidenced by committed artifact | restart-free stdin probe; observation recorded | ❌ W0 — artifact does not exist | ⬜ pending |
+| 12-02-02 | 02 | 2 | GATE-01 (D-12-03) | T-12-01, T-12-08 | `--hook` mode on the same single script (no wrapper); `exit 2` + reason on stderr, never `exit 2` + JSON `permissionDecision` (anthropics/claude-code#43407); bounded stdin (5 s timeout, 10 MiB cap); field-name-agnostic extraction with a `shapeKnown: false` loud refusal; fail-closed once in scope, exit 0 before any spawn when out of scope | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
+| 12-02-03 | 02 | 2 | GATE-01 (D-12-04) | T-12-07, T-12-08 | Hook contract pinned: `Bash` heredoc / append / tee shapes detected alongside `Write` and `Edit`; unknown-payload-shape case refuses loudly. Payloads built via `spawnSync(..., { input })` inside Node — never literal Bash strings — so the tests cannot self-block once the hook is live | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
+| 12-03-01 | 03 | 3 | GATE-01 (D-12-05) | — | Committed `.claude/settings.json` holds `hooks` and nothing else — no permissions, no absolute machine paths; existing `.claude/settings.local.json` content (`disabledMcpjsonServers`, 4 `permissions.allow` entries) merged and preserved, not overwritten; `.gitignore` comment records the split rationale | unit + inspection | `cd .claude/mcp/vice && node --test audit-integrity.test.ts`; `git diff --stat .gitignore` | ❌ W0 — hooks block does not exist | ⬜ pending |
+| 12-03-02 | 03 | 3 | GATE-01 (D-12-02, D-12-14) | T-12-07 | Layer 1 asserts the wiring itself: matcher is `Write\|Edit\|Bash`; deleting or narrowing the hook block reds the suite and is visible in a commit. Proven non-vacuous by break-and-restore | unit | `cd .claude/mcp/vice && node --test audit-integrity.test.ts` | ❌ W0 | ⬜ pending |
+| 12-04-01 | 04 | 4 | GATE-01 (criteria 1 & 2) | — | Real-tree plant-and-revert: `docs-linerefs.test.ts` reddened by a one-digit `vice-proxy.ts:<N>` change in CLAUDE.md (D-12-18); revert recorded as explicitly as the plant with the guard's own green output (D-12-20); `passed` and `tech_debt` both refused, `gaps_found` shown passing; artifact written with the Write tool, never a heredoc, to avoid self-blocking the live hook | manual, evidenced by committed transcript | `node scripts/audit-gate.mjs` run red then reverted-green, output captured verbatim | ❌ W0 — `12-GATE-PROOF.md` does not exist | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**Sampling continuity:** no 3 consecutive tasks lack an automated verify — the
+two manual-evidence tasks (12-02-01, 12-04-01) are each adjacent to
+automated-verify tasks. No watch-mode flags anywhere.
 
 ---
 
@@ -82,11 +86,11 @@ each task must produce. Every row's requirement is `GATE-01`.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 5s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 5s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-08-21 (plan-checker: 0 blockers; Nyquist 8a-8d re-checked against the four PLAN.md files)
