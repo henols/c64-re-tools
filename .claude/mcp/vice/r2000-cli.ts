@@ -94,10 +94,15 @@ verbs:
       .regen2000proj input is refused outright -- bootstrap never re-reads
       one; use export-asm or verify on it directly.
 
-  export-asm <input-or-project> [--out FILE] [--force]
+  export-asm <input-or-project> [--entry NAME] [--out FILE] [--force]
       If given a .regen2000proj it is used directly; otherwise this bootstraps
       the input to a temporary project first, so a bare .prg becomes ACME
-      source in one command with no human interaction. Writes ACME source to
+      source in one command with no human interaction (--entry is forwarded
+      to that bootstrap step, and is required the same way it is for
+      bootstrap itself when the input is a .d64 -- IN-06/D-11.1-04: this line
+      used to omit --entry even though the verb already accepted and used
+      it, which is corrected here alongside closing the sibling defect of
+      accepting-but-silently-dropping an option). Writes ACME source to
       --out (default: the input stem plus .a). Refuses to overwrite an
       existing file at that path unless --force is given.
 
@@ -206,6 +211,52 @@ function parseArgs(rest: string[]): ParsedArgs {
     else positional.push(a!);
   }
   return { positional, entry, out, force };
+}
+
+/**
+ * IN-06 (D-11.1-04): the ONE declared verb-to-accepted-options fact in this
+ * file. Every option every verb's own code actually reads is listed here --
+ * ground truth, not merely what USAGE happens to say (see the export-asm
+ * comment above: USAGE previously under-documented a real, working
+ * `--entry` forward, which this map's own test caught and which USAGE was
+ * corrected to match). `verify`'s entry is the fix for IN-06 itself:
+ * `parseArgs()` parses `--out` for every verb because it is a single shared
+ * parser, but `cmdVerify()` never reads the resulting `out` field -- so a
+ * caller who passed `--out` to `verify` got no error and no effect. Listing
+ * only `--entry` here means `checkAcceptedOptions()` below refuses `--out`
+ * (and `--force`) before `cmdVerify()` ever runs.
+ */
+export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  bootstrap: ["--entry", "--out", "--force"],
+  "export-asm": ["--entry", "--out", "--force"],
+  verify: ["--entry"],
+  "gen-enums": ["--max-results"],
+  "export-lbl": ["--out"],
+  "import-lbl": [],
+  "render-memmap": ["--provenance", "--out", "--check"],
+});
+
+/**
+ * The one shared refusal check IN-06 generalises to every verb (WR-08's
+ * closed-option-set posture, applied uniformly rather than verb by verb).
+ * Scans `rest` for any `--flag`-shaped token not in `verb`'s accepted set
+ * from `VERB_OPTIONS` and returns a one-line refusal naming the flag and the
+ * accepted set; returns `undefined` when every flag-shaped token is
+ * accepted (or when `verb` is not a key in the map at all, so an unknown
+ * verb still falls through to `runR2000Cli()`'s own "unknown verb"
+ * message). Never throws -- this file's never-throw posture applies here
+ * too.
+ */
+export function checkAcceptedOptions(verb: string, rest: string[]): string | undefined {
+  const accepted = VERB_OPTIONS[verb];
+  if (!accepted) return undefined;
+  for (const token of rest) {
+    if (token.startsWith("--") && !accepted.includes(token)) {
+      const acceptedList = accepted.length > 0 ? accepted.join(", ") : "none";
+      return `${verb}: unknown option "${token}" -- not accepted by this verb (accepted: ${acceptedList})`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -933,6 +984,18 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
   if (!verb || verb === "--help" || verb === "-h") {
     console.log(USAGE);
     return 0;
+  }
+
+  // IN-06 (D-11.1-04): the single call site for the shared verb-options
+  // check, run BEFORE dispatch so a refused option never reaches any cmd*
+  // function -- one place enforces the closed option set for every verb,
+  // rather than seven places each doing (or, as `verify` proved, NOT doing)
+  // it themselves.
+  const optionError = checkAcceptedOptions(verb, rest);
+  if (optionError) {
+    console.error(optionError);
+    console.log(USAGE);
+    return 1;
   }
 
   try {

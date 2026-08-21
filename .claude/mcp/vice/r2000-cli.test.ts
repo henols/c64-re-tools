@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { runR2000Cli } from "./r2000-cli.ts";
+import { runR2000Cli, VERB_OPTIONS } from "./r2000-cli.ts";
 import { tsToOffset } from "./r2000-d64.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 
@@ -1366,3 +1366,106 @@ test(
   },
 );
 
+// ---------------------------------------------------------------------------
+// IN-06 -- a verb refuses an option it does not implement instead of
+// silently dropping it. `verify` accepted (and discarded) `--out` because
+// `parseArgs()` is a single shared parser returning `out` for every verb,
+// while `cmdVerify()` never reads the field back out. `VERB_OPTIONS` (one
+// frozen map, `r2000-cli.ts`) plus `checkAcceptedOptions()`'s single
+// pre-dispatch call site now refuses any `--flag`-shaped token a verb does
+// not accept, for all seven verbs uniformly.
+// ---------------------------------------------------------------------------
+
+test("verify: --out is refused, naming the flag and the accepted option set (IN-06)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["verify", "some.regen2000proj", "--out", "x"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /^verify:/);
+  assert.match(stderr, /--out/);
+  assert.match(stderr, /--entry/, "the refusal must list the accepted option set");
+  assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
+});
+
+test("verify: --force is refused the same way --out is (both were silently parsed and discarded before IN-06)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["verify", "some.regen2000proj", "--force"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /^verify:/);
+  assert.match(stderr, /--force/);
+});
+
+test("verify: --entry is still accepted and reaches the .d64 entry lookup, not refused as an unknown option (IN-06 regression guard)", async () => {
+  await withTempDir(async (dir) => {
+    const d64Path = join(dir, "game.d64");
+    writeFileSync(d64Path, oneEntryImage());
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["verify", d64Path, "--entry", "NOPE"]),
+    );
+
+    assert.notEqual(code, 0);
+    // Must fail with extractEntry()'s own "unknown entry" shape (naming the
+    // requested and available entries), never the options checker's
+    // refusal -- proving --entry was accepted and actually used.
+    assert.doesNotMatch(stderr, /is not accepted by this verb/);
+    assert.match(stderr, /NOPE/);
+    assert.match(stderr, /GAME/);
+  });
+});
+
+test("the verb-options map agrees with USAGE's own per-verb option lists, for all seven verbs (IN-06)", () => {
+  const usage = helpResult.stdout;
+  const verbs = Object.keys(VERB_OPTIONS);
+  assert.equal(verbs.length, 7, `expected exactly 7 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+
+  for (const verb of verbs) {
+    const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
+    assert.ok(lineMatch, `expected a USAGE line for verb "${verb}"`);
+    const documented = new Set(lineMatch![0].match(/--[a-zA-Z-]+/g) ?? []);
+    const mapped = new Set(VERB_OPTIONS[verb]);
+    assert.deepEqual(
+      documented,
+      mapped,
+      `verb "${verb}": USAGE documents ${JSON.stringify([...documented])} but VERB_OPTIONS accepts ${JSON.stringify([...mapped])}`,
+    );
+  }
+});
+
+test("every verb's own documented options are still accepted, one assertion per verb (IN-06 regression guard)", async () => {
+  // Built directly from VERB_OPTIONS (the map's own ground truth) rather
+  // than hand-typed per verb, so this test cannot silently drift from the
+  // map it is proving.
+  const placeholderValue: Record<string, string> = {
+    "--entry": "SOME-ENTRY",
+    "--out": "some-out-path",
+    "--force": "",
+    "--max-results": "10",
+    "--provenance": "some-provenance.json",
+    "--check": "",
+  };
+  for (const [verb, options] of Object.entries(VERB_OPTIONS)) {
+    const argv: string[] = [verb, "some.regen2000proj"];
+    if (verb === "import-lbl") argv.push("some.lbl");
+    for (const opt of options) {
+      argv.push(opt);
+      const value = placeholderValue[opt];
+      if (value) argv.push(value);
+    }
+    const { stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    assert.doesNotMatch(
+      stderr,
+      /is not accepted by this verb/,
+      `verb "${verb}" with its own documented options ${JSON.stringify(options)} must not be refused by checkAcceptedOptions(); argv=${JSON.stringify(argv)}, stderr=${stderr}`,
+    );
+  }
+});
+
+test("an unaccepted option is refused for every verb it does not belong to, not merely for verify (IN-06 generalisation)", async () => {
+  for (const verb of Object.keys(VERB_OPTIONS)) {
+    const argv = [verb, "some.regen2000proj", "--totally-not-a-real-flag"];
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    assert.notEqual(code, 0, `verb "${verb}" must refuse an unaccepted flag`);
+    assert.match(stderr, new RegExp(`^${verb}:`), `verb "${verb}"'s refusal must be prefixed with its own name`);
+    assert.match(stderr, /--totally-not-a-real-flag/);
+  }
+});
