@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
-status: verifying
+status: gaps_found
 last_updated: "2026-08-21T16:11:23.362Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 4
   completed_plans: 4
   percent: 17
@@ -51,9 +51,12 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 12 (audit-integrity-instrument) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 12 (audit-integrity-instrument) — GAPS FOUND
+Plan: 4 of 4 executed
+Status: Verified 2026-08-21 — gaps_found, 6/11 must-haves. Layer 1
+(`checkAuditGate()`) holds; Layer 2 `--hook` has 3 blocker defects
+(echo-append bypass, unbounded recursion, regex backtracking). Phase is NOT
+complete. Next: /gsd-plan-phase 12 --gaps
 Last activity: 2026-08-21
 requirements mapped
 

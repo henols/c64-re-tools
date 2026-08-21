@@ -71,7 +71,7 @@ becomes a fix or a dated decision, and the two questions this project has
 answered *by default* each milestone (the fork backend, the Core Value
 statement) get answered deliberately.
 
-- [x] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (completed 2026-08-21)
+- [ ] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (verification 2026-08-21: gaps_found, 6/11 — Layer 1 holds, Layer 2 `--hook` has 3 blocker defects)
 - [ ] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies
 - [ ] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route
 - [ ] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed
