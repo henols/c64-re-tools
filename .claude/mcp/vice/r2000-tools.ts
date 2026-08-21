@@ -69,6 +69,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
+import { assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
 
 // ---------------------------------------------------------------------------
 // The wire shapes this module produces/consumes. Deliberately NOT imported
@@ -178,7 +179,10 @@ export const R2000_TOOL_DEFINITIONS: readonly R2000ToolDefinition[] = [
         },
         name: {
           type: "string",
-          description: "The label name (e.g. 'init_screen', 'loop_start').",
+          description:
+            "The label name (e.g. 'init_screen', 'loop_start'). Must be a legal ACME identifier: starts " +
+            "with a letter or underscore, followed by letters/digits/underscores only, and must not be a " +
+            "6502/6510 mnemonic (e.g. 'LDA'). An illegal name is REJECTED, never sanitized or quoted.",
         },
       },
       required: ["project", "address", "name"],
@@ -533,6 +537,61 @@ export class R2000UncuratedToolError extends Error {
   }
 }
 
+export interface R2000LabelNameErrorOptions {
+  labelName: string;
+  batchIndex?: number;
+}
+
+/** Thrown by `assertLegalLabelArg()` (called from `assertCuratedTool()` and
+ * `assertCuratedBatch()`) when an `r2000_set_label_name` call's `name`
+ * argument is not a legal ACME identifier -- T-11-NAME-INJECT, closed. The
+ * policy is REJECT, never sanitize or quote: a malformed name is a bug to
+ * surface, so the store's printed name can never diverge from what actually
+ * gets exported into ACME source. `labelName` names the offending value
+ * (never this class's own `.name`, which stays the class name per this
+ * module's `R2000UncuratedToolError` convention); `batchIndex` is set only
+ * for a refusal discovered while walking a batch's `calls` array. */
+export class R2000LabelNameError extends Error {
+  labelName: string;
+  batchIndex?: number;
+
+  constructor(message: string, { labelName, batchIndex }: R2000LabelNameErrorOptions) {
+    super(message);
+    this.name = "R2000LabelNameError";
+    this.labelName = labelName;
+    this.batchIndex = batchIndex;
+  }
+}
+
+/** Validates an `r2000_set_label_name` call's `name` argument against the
+ * one ACME identifier seam (`r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`),
+ * re-throwing as `R2000LabelNameError` on failure. A no-op when `args` is
+ * not a plain object carrying a string `name` -- that shape is a different
+ * concern (a missing/malformed required argument), not this function's.
+ * Called from BOTH `assertCuratedTool()` (the outer dispatch) and
+ * `assertCuratedBatch()` (the batch-inner call), so the refusal fires
+ * identically whether `r2000_set_label_name` is called directly or smuggled
+ * inside an `r2000_batch_execute` payload -- before `runR2000Tool()`'s own
+ * `try` block either way, which means a refusal REJECTS the returned
+ * promise rather than resolving `{isError:true}`. That asymmetry is WR-02
+ * (out of scope for this plan, 260821-a86) -- the same posture the existing
+ * uncurated-name refusal above already takes, not a new oversight. */
+function assertLegalLabelArg(args: unknown, batchIndex?: number): void {
+  if (!isPlainObject(args) || typeof args.name !== "string") return;
+  const name = args.name;
+  try {
+    assertLegalAcmeIdentifier(name, "r2000_set_label_name name");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new R2000LabelNameError(
+      `r2000_set_label_name refused${batchIndex !== undefined ? ` (calls[${batchIndex}])` : ""}: "${name}" is not ` +
+        `a legal ACME identifier (${reason}) -- REJECTED, never sanitized or quoted: the store's printed name must ` +
+        "never diverge from the exported symbol.",
+      { labelName: name, batchIndex },
+    );
+  }
+}
+
 /** Walks a `r2000_batch_execute` payload's `calls` array and refuses the
  * WHOLE batch if any inner call's name is outside `CURATED_R2000_TOOLS`, or
  * if a `calls` entry is malformed (not an object, or missing a string
@@ -540,7 +599,8 @@ export class R2000UncuratedToolError extends Error {
  * batch that passes through. Recurses into a nested `r2000_batch_execute`
  * (upstream permits arbitrary tool names inside a batch, including another
  * batch call) so a two-level smuggling attempt is caught the same way a
- * one-level one is. */
+ * one-level one is. Also refuses WHOLE on an illegal `r2000_set_label_name`
+ * name (T-11-NAME-INJECT), naming the offending `calls[i]`. */
 function assertCuratedBatch(args: unknown): void {
   if (!isPlainObject(args) || !Array.isArray(args.calls)) {
     throw new R2000UncuratedToolError(
@@ -571,6 +631,9 @@ function assertCuratedBatch(args: unknown): void {
         { toolName: call.name, batchIndex: i },
       );
     }
+    if (call.name === "r2000_set_label_name") {
+      assertLegalLabelArg(call.arguments, i);
+    }
     if (call.name === "r2000_batch_execute") {
       assertCuratedBatch(call.arguments);
     }
@@ -584,9 +647,11 @@ function assertCuratedBatch(args: unknown): void {
  * when it is not in `CURATED_R2000_TOOLS`, with a dedicated message for
  * `r2000_get_address_details` naming the 64K defect and the upstream issue
  * (D-32) rather than a generic "unknown tool" refusal. When `name` is
+ * `r2000_set_label_name`, additionally validates `args.name` via
+ * `assertLegalLabelArg()` (T-11-NAME-INJECT, closed). When `name` is
  * `r2000_batch_execute`, additionally walks `args.calls` via
  * `assertCuratedBatch()` -- refusing the WHOLE batch if any inner name is
- * outside the set, per D-33.
+ * outside the set, per D-33, or carries an illegal label name.
  */
 export function assertCuratedTool(name: string, args?: unknown): void {
   if (name === "r2000_get_address_details") {
@@ -598,6 +663,9 @@ export function assertCuratedTool(name: string, args?: unknown): void {
         "add it to R2000_TOOL_DEFINITIONS with a named criterion, or remove the caller reference.",
       { toolName: name },
     );
+  }
+  if (name === "r2000_set_label_name") {
+    assertLegalLabelArg(args);
   }
   if (name === "r2000_batch_execute") {
     assertCuratedBatch(args);

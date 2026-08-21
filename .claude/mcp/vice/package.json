@@ -64,6 +64,7 @@
     "r2000-regbits-gen.ts",
     "r2000-regbits.json",
     "r2000-enum-gen.ts",
+    "r2000-acme-ident.ts",
     "r2000-confidence.ts",
     "r2000-memmap-render.ts",
     "resources",

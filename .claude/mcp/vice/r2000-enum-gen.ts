@@ -61,10 +61,11 @@
 //   - Never omit `max_results` on a `r2000_search_disassembly` call in this
 //     module. Every call site below passes it explicitly.
 //   - Never call `r2000_create_project_enum` (or `_update_`) with an
-//     unsanitized identifier. `assertLegalAcmeIdentifier()` runs on the enum
-//     name AND every variant name inside `sanitizeVariantMap()`, which is
-//     called BEFORE `createOrUpdateEnum()` ever reaches `runR2000Tool()` --
-//     proven zero-spawn in `r2000-enum-gen.test.ts` via a spy binary.
+//     unsanitized identifier. `assertLegalAcmeIdentifier()` (now defined in
+//     `r2000-acme-ident.ts`, re-exported here) runs on the enum name AND
+//     every variant name inside `sanitizeVariantMap()`, which is called
+//     BEFORE `createOrUpdateEnum()` ever reaches `runR2000Tool()` -- proven
+//     zero-spawn in `r2000-enum-gen.test.ts` via a spy binary.
 //   - Never write a machine-global enum. Every call in this module goes
 //     through `runR2000Tool()` (`r2000-tools.ts`, plan 11-05), which only
 //     knows `r2000_create_project_enum`/`r2000_update_project_enum` -- the
@@ -82,6 +83,7 @@ import { fileURLToPath } from "node:url";
 
 import { runR2000Tool } from "./r2000-tools.ts";
 import type { RegBitsField, RegBitsTable } from "./r2000-regbits-gen.ts";
+import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REGBITS_PATH = join(HERE, "r2000-regbits.json");
@@ -92,71 +94,16 @@ const REGBITS_PATH = join(HERE, "r2000-regbits.json");
  * the child's own default. */
 export const DEFAULT_MAX_RESULTS = 10_000;
 
-/** The upper bound on any generated ACME identifier's length -- long enough
- * for every legitimately long identifier this module can mechanically
- * produce (the worst observed case, joining several long numeric-field
- * names for a register with no clean bit semantics, is well under 150
- * characters), short enough to catch a genuinely pathological input before
- * it reaches a spawned child. */
-export const MAX_ACME_IDENTIFIER_LENGTH = 200;
-
-const ACME_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/**
- * The 6502/6510 instruction mnemonics -- the ONLY category of reserved word
- * actually measured to collide with a bare identifier in real ACME 0.97.
- * Verified live on this host: `LDA = $05` is REJECTED ("No value given." /
- * "Garbage data at end of statement" -- ACME parses `LDA` positionally as
- * the opcode, not as an assignable symbol), while `A = $05` is ACCEPTED
- * (register-letter shorthand is not reserved as a bare symbol name). This
- * list is therefore a measured, not a guessed, reservation.
- */
-const ACME_RESERVED_MNEMONICS: ReadonlySet<string> = new Set([
-  "ADC", "AND", "ASL", "BCC", "BCS", "BEQ", "BIT", "BMI", "BNE", "BPL", "BRK", "BVC",
-  "BVS", "CLC", "CLD", "CLI", "CLV", "CMP", "CPX", "CPY", "DEC", "DEX", "DEY", "EOR",
-  "INC", "INX", "INY", "JMP", "JSR", "LDA", "LDX", "LDY", "LSR", "NOP", "ORA", "PHA",
-  "PHP", "PLA", "PLP", "ROL", "ROR", "RTI", "RTS", "SBC", "SEC", "SED", "SEI", "STA",
-  "STX", "STY", "TAX", "TAY", "TSX", "TXA", "TXS", "TYA",
-]);
-
-/**
- * Refuses `id` (naming it as `what` in the thrown message) unless it is a
- * legal ACME identifier: matches `^[A-Za-z_][A-Za-z0-9_]*$`, is no longer
- * than `MAX_ACME_IDENTIFIER_LENGTH`, and does not collide (case-
- * insensitively) with a reserved 6502/6510 mnemonic (see
- * `ACME_RESERVED_MNEMONICS`'s own header comment for how that specific list
- * was measured, not assumed).
- *
- * T-11-ENUM-NAME (the highest-value threat in this phase): regenerator2000
- * validates only the ENUM name server-side
- * (`app_state.rs:443`, `validate_new_enum_name`) and performs ZERO
- * validation on variant names -- they flow straight into
- * `format!("{}_{}", enum_name, variant)` at export time
- * (`formatter_acme.rs:367-369`). This function is called on BOTH the enum
- * name and every variant name, and is called BEFORE any
- * `r2000_create_project_enum`/`r2000_update_project_enum` call reaches
- * `runR2000Tool()` -- proven zero-spawn in `r2000-enum-gen.test.ts`.
- */
-export function assertLegalAcmeIdentifier(id: string, what: string): void {
-  if (id.length === 0) {
-    throw new Error(`${what}: identifier must not be empty`);
-  }
-  if (id.length > MAX_ACME_IDENTIFIER_LENGTH) {
-    throw new Error(
-      `${what}: identifier "${id.slice(0, 40)}..." is ${id.length} characters, exceeding the ` +
-        `${MAX_ACME_IDENTIFIER_LENGTH}-character ceiling`,
-    );
-  }
-  if (!ACME_IDENT_RE.test(id)) {
-    throw new Error(`${what}: "${JSON.stringify(id)}" is not a legal ACME identifier -- must match ${ACME_IDENT_RE}`);
-  }
-  if (ACME_RESERVED_MNEMONICS.has(id.toUpperCase())) {
-    throw new Error(
-      `${what}: "${id}" collides with the reserved 6502/6510 mnemonic ${id.toUpperCase()} (verified rejected ` +
-        `by real ACME 0.97 -- see this module's ACME_RESERVED_MNEMONICS header comment)`,
-    );
-  }
-}
+// MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() now live in
+// r2000-acme-ident.ts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
+// the ONE authoritative place for the ACME identifier policy, consumed by
+// THIS file's createOrUpdateEnum()/sanitizeVariantMap() below plus two more
+// entry routes (r2000-tools.ts's r2000_set_label_name, r2000-symbols.ts's
+// importLabels()) that could not import it from here without forming a
+// cycle (this file statically imports runR2000Tool FROM r2000-tools.ts).
+// Re-exported here (imported above) so this file's own existing
+// consumers/tests keep their current import path.
+export { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier };
 
 // ---------------------------------------------------------------------------
 // The bit-name table (Task 1) -- loaded once, from the committed generated

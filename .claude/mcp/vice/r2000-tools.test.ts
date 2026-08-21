@@ -28,6 +28,7 @@ import {
   runR2000Tool,
   R2000UncuratedToolError,
   R2000StorePathError,
+  R2000LabelNameError,
 } from "./r2000-tools.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
@@ -215,6 +216,54 @@ test("assertCuratedTool recurses into a nested r2000_batch_execute", () => {
         ],
       }),
     R2000UncuratedToolError,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T-11-NAME-INJECT (route A): the label-name REJECT policy on
+// r2000_set_label_name, both the outer dispatch and the batch-inner call --
+// refused BEFORE any regenerator2000 child is spawned, proven here by
+// calling assertCuratedTool() directly (the pre-spawn seam), the same shape
+// the D-33 batch-refusal cases above already take.
+// ---------------------------------------------------------------------------
+
+const ILLEGAL_LABEL_NAMES = ["bad-name", "has space", "1BAD", "a|b", "LDA", "BAD\nNAME"];
+
+test("assertCuratedTool refuses every illegal ACME identifier as an r2000_set_label_name name, pre-spawn", () => {
+  for (const bad of ILLEGAL_LABEL_NAMES) {
+    assert.throws(
+      () => assertCuratedTool("r2000_set_label_name", { project: "x.regen2000proj", address: 4096, name: bad }),
+      (err: unknown) => {
+        assert.ok(err instanceof R2000LabelNameError, `expected R2000LabelNameError for ${JSON.stringify(bad)}`);
+        assert.equal((err as R2000LabelNameError).labelName, bad);
+        assert.match((err as Error).message, /not a legal ACME identifier|reserved 6502/);
+        return true;
+      },
+    );
+  }
+});
+
+test("assertCuratedTool does NOT refuse a legal r2000_set_label_name name", () => {
+  assert.doesNotThrow(() =>
+    assertCuratedTool("r2000_set_label_name", { project: "x.regen2000proj", address: 4096, name: "init_screen" }),
+  );
+});
+
+test("assertCuratedTool refuses a batch smuggling an illegal r2000_set_label_name name, refusing the WHOLE batch and naming calls[1]", () => {
+  assert.throws(
+    () =>
+      assertCuratedTool("r2000_batch_execute", {
+        calls: [
+          { name: "r2000_get_symbols", arguments: {} },
+          { name: "r2000_set_label_name", arguments: { address: 4096, name: "bad-name" } },
+        ],
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000LabelNameError);
+      assert.equal((err as R2000LabelNameError).batchIndex, 1);
+      assert.match((err as Error).message, /bad-name/);
+      return true;
+    },
   );
 });
 

@@ -313,6 +313,33 @@ test("importLabels refuses a .lbl exceeding MAX_SYMBOLS, by name, without spawni
 });
 
 // ---------------------------------------------------------------------------
+// T-11-NAME-INJECT (route B): importLabels() refuses a .lbl carrying an
+// illegal label name BEFORE any child is spawned, naming the offending line
+// number and its own text -- same shape as the two ceiling tests above (no
+// binary needed, ungated).
+// ---------------------------------------------------------------------------
+
+test("importLabels refuses a .lbl carrying an illegal label name, naming the offending line number and its text, without spawning a child", async () => {
+  await withWorkspaceTempDir(".r2000-symbol-roundtrip-test-illegal-name-", async (dir) => {
+    const lblPath = join(dir, "illegal.lbl");
+    const lines = ["al C:0800 .main", "al C:0810 .bad-name", "al C:0820 .entry"];
+    writeFileSync(lblPath, lines.join("\n"));
+    const projectPath = join(dir, "unused.regen2000proj");
+
+    await assert.rejects(
+      () => importLabels({ projectPath, lblPath }),
+      (err: unknown) => {
+        assert.ok(err instanceof R2000SymbolsError);
+        assert.match((err as Error).message, /line 2\b/);
+        assert.match((err as Error).message, /bad-name/);
+        assert.match((err as Error).message, /al C:0810 \.bad-name/);
+        return true;
+      },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // R2000SymbolsError's own shape (unit-level). exportLabels()'s non-zero-exit
 // and missing-output-file branches are exercised live by the gated tests
 // above against a real regenerator2000 project path -- NOT re-tested here

@@ -60,6 +60,11 @@
 //     (`diskVerified: true | false`) specifically so a caller cannot
 //     mistake "the import call returned no error" for "the names are
 //     actually on disk".
+//   - Never let an illegal label name from a `.lbl` file reach a spawned
+//     child (T-11-NAME-INJECT, closed). `importLabels()` validates every
+//     name against `r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`
+//     BEFORE `buildImportLblArgs()` is ever called -- REJECT, never
+//     sanitize, matching `r2000-tools.ts`'s `r2000_set_label_name` posture.
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,6 +73,7 @@ import { buildExportLblArgs, buildImportLblArgs, runR2000 } from "./r2000-launch
 import { withR2000Session, saveAndVerify } from "./r2000-mcp-client.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { parseViceLabelFile, MAX_LABEL_FILE_BYTES } from "./stock-symbols.ts";
+import { assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
 
 /** This module's own error class, following `r2000-tools.ts`'s
  * `R2000StorePathError` / `r2000-launch.ts`'s `R2000ViceFlagError` minimal
@@ -76,8 +82,10 @@ import { parseViceLabelFile, MAX_LABEL_FILE_BYTES } from "./stock-symbols.ts";
  * `stock-symbols.ts`'s `StockSymbolsError`, surfaced verbatim, never
  * re-wrapped as this class. Reserved for this module's OWN failure modes:
  * a nonzero regenerator2000 exit, a missing output file despite a zero
- * exit, or an oversized file caught before `parseViceLabelFile()` is ever
- * called. */
+ * exit, an oversized file caught before `parseViceLabelFile()` is ever
+ * called, or (T-11-NAME-INJECT, closed) an illegal label name caught in
+ * `importLabels()` before any child is spawned -- naming the offending
+ * name, its 1-based line number, and that line's own text. */
 export class R2000SymbolsError extends Error {
   constructor(message: string) {
     super(message);
@@ -219,6 +227,13 @@ export type ImportLabelsResult = ImportLabelsVerified | ImportLabelsUnverified;
  * `parseViceLabelFile()` pass, whose `StockSymbolsError` ceiling violations
  * (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) propagate verbatim -- an oversized
  * or over-populated `.lbl` never reaches regenerator2000 at all.
+ *
+ * Every discovered name is then validated against `r2000-acme-ident.ts`'s
+ * `assertLegalAcmeIdentifier()`, also BEFORE any spawn (T-11-NAME-INJECT,
+ * closed): an illegal name throws `R2000SymbolsError` naming the offending
+ * name, its 1-based line number, and that line's own text -- REJECT, never
+ * sanitize, the same posture `r2000-tools.ts`'s `r2000_set_label_name`
+ * takes on the tool-surface entry route.
  */
 export async function importLabels({ projectPath, lblPath }: ImportLabelsOptions): Promise<ImportLabelsResult> {
   let size: number;
@@ -240,6 +255,29 @@ export async function importLabels({ projectPath, lblPath }: ImportLabelsOptions
   // here (StockSymbolsError) propagates unmodified, before any spawn.
   const inputParsed = parseViceLabelFile(inputText);
   const importedNames = Array.from(inputParsed.table.byName.keys());
+
+  // T-11-NAME-INJECT (route B, closed): every discovered label name is
+  // validated against the one ACME identifier seam (r2000-acme-ident.ts)
+  // BEFORE any child is spawned -- REJECT, never sanitize, matching
+  // r2000-tools.ts's r2000_set_label_name posture. The offending line is
+  // located by a substring search over the already-read inputText, never a
+  // second `al C:` regex (this module's own header forbids a third parser
+  // for that format, T-11-LBL-PARSER-DUP).
+  for (const name of importedNames) {
+    try {
+      assertLegalAcmeIdentifier(name, "importLabels label name");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const inputLines = inputText.split(/\r?\n/);
+      const lineIndex = inputLines.findIndex((line) => line.includes(name));
+      const lineNumber = lineIndex === -1 ? 0 : lineIndex + 1;
+      const lineText = lineIndex === -1 ? "(line not found)" : inputLines[lineIndex];
+      throw new R2000SymbolsError(
+        `importLabels: "${lblPath}" line ${lineNumber} carries an illegal label name "${name}" (${reason}) -- ` +
+          `line text: ${JSON.stringify(lineText)}. REJECTED, never sanitized or quoted, before any child is spawned.`,
+      );
+    }
+  }
 
   // buildImportLblArgs() is the ONLY producer of this argv -- there is no
   // literal "--import_lbl" string anywhere in this file.
@@ -297,6 +335,15 @@ export interface RegenerateAndReloadResult {
  * This function deliberately does NOT call `vice_symbols_load` itself --
  * see this module's header for why an incremental/repeated load would
  * violate `vice_symbols_load`'s replace-not-merge semantics (T-05-02-05).
+ *
+ * Note (T-11-NAME-INJECT, closed): an illegal `name` now REJECTS this
+ * function's returned promise -- `r2000_set_label_name`'s own pre-spawn
+ * `assertLegalLabelArg()` gate (`r2000-tools.ts`) fires inside
+ * `runR2000Tool()`'s `assertCuratedTool()` call, before `runR2000Tool()`'s
+ * own `try` block, rather than surfacing as `setResult.isError` the way a
+ * regenerator2000-side failure would. This function has no production
+ * caller today, so no existing behaviour depended on the old
+ * `isError`-shaped outcome.
  */
 export async function regenerateAndReload({
   projectPath,
