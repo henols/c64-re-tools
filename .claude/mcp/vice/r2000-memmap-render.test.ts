@@ -8,7 +8,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseProvenanceHeader, R2000ProvenanceHeaderError, renderMemoryMap, checkRenderedMemoryMap } from "./r2000-memmap-render.ts";
+import {
+  parseProvenanceHeader,
+  R2000ProvenanceHeaderError,
+  renderMemoryMap,
+  checkRenderedMemoryMap,
+  escapeMarkdownCell,
+  RENDERER_VERSION,
+} from "./r2000-memmap-render.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { formatConfidenceComment, CONFIDENCE_GRADES } from "./r2000-confidence.ts";
@@ -129,6 +136,32 @@ test("the renderer's layout is embedded in TypeScript, never read from the recon
   const source = readFileSync(join(HERE, "r2000-memmap-render.ts"), "utf8");
   const templateFilenameMentions = (source.match(/memory-map\.template\.md/g) ?? []).length;
   assert.equal(templateFilenameMentions, 0, "r2000-memmap-render.ts must never name the recon skill's template file");
+});
+
+// ---------------------------------------------------------------------------
+// escapeMarkdownCell (WR-04) -- no binary needed.
+// ---------------------------------------------------------------------------
+
+test("escapeMarkdownCell escapes a pipe character", () => {
+  assert.equal(escapeMarkdownCell("a|b"), "a\\|b");
+});
+
+test("escapeMarkdownCell collapses \\n, \\r\\n and a bare \\r into <br>", () => {
+  assert.equal(escapeMarkdownCell("one\ntwo"), "one<br>two");
+  assert.equal(escapeMarkdownCell("one\r\ntwo"), "one<br>two");
+  assert.equal(escapeMarkdownCell("one\rtwo"), "one<br>two");
+});
+
+test("escapeMarkdownCell returns a plain string unchanged", () => {
+  assert.equal(escapeMarkdownCell("plain evidence text"), "plain evidence text");
+});
+
+test("escapeMarkdownCell returns an empty string unchanged", () => {
+  assert.equal(escapeMarkdownCell(""), "");
+});
+
+test("RENDERER_VERSION is bumped to \"2\" for the Markdown-cell-escaping output-shape change", () => {
+  assert.equal(RENDERER_VERSION, "2");
 });
 
 // ---------------------------------------------------------------------------
@@ -357,6 +390,73 @@ test(
       const withUnknown = await renderMemoryMap({ projectPath, provenancePath });
       assert.equal(withUnknown.unknownCount, 1);
       assert.match(withUnknown.markdown, /## Open questions\n\n- \$0810: no reliable interpretation yet/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+async function renderSingleCommentedBlock(
+  dir: string,
+  projectName: string,
+  grade: string,
+  evidence: string,
+): Promise<string> {
+  const bytes = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
+  const origin = 0x0810;
+  const projectPath = join(dir, `${projectName}.regen2000proj`);
+  writeFileSync(projectPath, synthesizeProject(bytes, { origin }));
+  await runR2000Tool("r2000_disassemble", { project: projectPath, address: origin });
+  await runR2000Tool("r2000_set_comment", {
+    project: projectPath,
+    address: origin,
+    comment: formatConfidenceComment(grade, evidence),
+    type: "line",
+  });
+  const provenancePath = join(dir, `${projectName}.provenance.json`);
+  writeFileSync(provenancePath, JSON.stringify({ ...VALID_HEADER }, null, 2));
+  const result = await renderMemoryMap({ projectPath, provenancePath });
+  return result.markdown;
+}
+
+test(
+  "gated: comment evidence containing BOTH a pipe and an embedded newline renders as ONE well-formed table row, table structure intact, escaped content preserved",
+  { skip: SKIP_REASON },
+  async () => {
+    const dir = mkdtempSync(join(HERE, ".r2000-memmap-render-test3-"));
+    try {
+      const plainEvidence = "observed executing at boot";
+      const trickyEvidence = "table | pipe\nsecond line";
+
+      const plainMarkdown = await renderSingleCommentedBlock(dir, "plain", "confirmed-code", plainEvidence);
+      const trickyMarkdown = await renderSingleCommentedBlock(dir, "tricky", "probable-data", trickyEvidence);
+
+      const rangeRowPrefix = "| `$0810-$0814`";
+      const plainRow = plainMarkdown.split("\n").find((l) => l.startsWith(rangeRowPrefix));
+      const trickyRows = trickyMarkdown.split("\n").filter((l) => l.startsWith(rangeRowPrefix));
+
+      assert.ok(plainRow, "expected to find the plain-evidence block row");
+      // (a) exactly one row for the tricky-evidence block, never split
+      // across lines by the embedded newline.
+      assert.equal(trickyRows.length, 1, "the tricky-evidence block must render as exactly ONE line");
+      const trickyRow = trickyRows[0]!;
+      assert.ok(!trickyRow.includes("\n"), "a rendered line can never itself contain a literal newline");
+
+      // (b) the row's STRUCTURAL pipe count (delimiters, not escaped data
+      // pipes) is unchanged from a row with plain evidence -- i.e. the
+      // table survives as well-formed Markdown. Splitting on an unescaped
+      // "|" (not preceded by a backslash) recovers the structural cells.
+      const structuralCells = (line: string) => line.split(/(?<!\\)\|/).length;
+      assert.equal(
+        structuralCells(trickyRow),
+        structuralCells(plainRow!),
+        "the tricky row must have the same number of structural (unescaped) pipe delimiters as a plain row",
+      );
+
+      // (c) escaping did not drop content -- the escaped evidence string is
+      // present verbatim, pipe escaped and newline collapsed to <br>.
+      assert.ok(trickyRow.includes(escapeMarkdownCell(trickyEvidence)));
+      assert.ok(trickyRow.includes("table \\| pipe<br>second line"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

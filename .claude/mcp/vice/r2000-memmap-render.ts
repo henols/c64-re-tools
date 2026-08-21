@@ -40,7 +40,11 @@
 //     assemble the Range/Contents/Confidence/Evidence table or the banner;
 //   - drift detection (`checkRenderedMemoryMap()`) -- the one place a
 //     rendered file on disk is compared against what the store (plus the
-//     sidecar) would produce right now.
+//     sidecar) would produce right now;
+//   - Markdown-cell escaping (`escapeMarkdownCell()`, WR-04, closed) --
+//     every store-derived text interpolation in the generated document
+//     (comment evidence, symbol names) is escaped through this one
+//     function, never a second ad hoc `.replace()` at a call site.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never hand-edit the rendered output. The banner exists precisely so a
@@ -257,8 +261,26 @@ export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
 
 /** Bumped whenever this renderer's OUTPUT SHAPE changes, so a re-render
  * under a new renderer version is distinguishable from drift under the same
- * one. */
-export const RENDERER_VERSION = "1";
+ * one. Version 2 (this plan, 260821-a86) escapes Markdown table cells via
+ * `escapeMarkdownCell()` -- WR-04. */
+export const RENDERER_VERSION = "2";
+
+/**
+ * Escapes `text` for safe interpolation into a Markdown table cell or list
+ * item: every `|` becomes `\|`, and every `\r\n`/`\n`/bare `\r` collapses to
+ * `<br>` (a single-line-safe line break inside a table cell). This control
+ * ESCAPES and never REJECTS -- unlike the label-name policy
+ * (`r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`, T-11-NAME-INJECT's
+ * other leg), because comment `evidence` legitimately contains `|` and
+ * embedded newlines (`r2000_set_comment`'s own schema documents multi-line
+ * support) -- refusing here would refuse valid data, not an attack. Closes
+ * WR-04 / T-11-NAME-INJECT's render leg: an unescaped `|` or newline in
+ * store text used to be able to inject an extra table cell or split a row
+ * across lines in the generated Markdown. A plain string or an empty string
+ * is returned unchanged. */
+export function escapeMarkdownCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\r\n|\r|\n/g, "<br>");
+}
 
 function computeRenderDigest(
   blocks: readonly R2000Block[],
@@ -385,7 +407,7 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
     const match = findGradeInRange(block.start_address, block.end_address);
     const range = `\`${hex4(block.start_address)}-${hex4(block.end_address)}\``;
     const grade = match?.grade ? match.grade.phrase.toUpperCase() : "";
-    const evidence = match ? match.evidence : "";
+    const evidence = match ? escapeMarkdownCell(match.evidence) : "";
     lines.push(`| ${range} | ${block.type} | ${grade} | ${evidence} |`);
   }
   lines.push("");
@@ -427,8 +449,8 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
     if (!inCode) continue;
     const match = gradedComments.find((c) => c.address === sym.address);
     const grade = match?.grade ? match.grade.phrase.toUpperCase() : "";
-    const confirmedBy = match ? match.evidence : "";
-    lines.push(`| ${hex4(sym.address)} | ${sym.name} | ${confirmedBy} | ${grade} |`);
+    const confirmedBy = match ? escapeMarkdownCell(match.evidence) : "";
+    lines.push(`| ${hex4(sym.address)} | ${escapeMarkdownCell(sym.name)} | ${confirmedBy} | ${grade} |`);
   }
   lines.push("");
   lines.push("## Open questions");
@@ -438,7 +460,7 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
     lines.push("- (none)");
   } else {
     for (const u of unknowns) {
-      lines.push(`- ${hex4(u.address)}: ${u.evidence}`);
+      lines.push(`- ${hex4(u.address)}: ${escapeMarkdownCell(u.evidence)}`);
     }
   }
   lines.push("");
