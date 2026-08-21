@@ -312,6 +312,38 @@ test("a synthetic tree below the guard floor is a structural failure, not a sile
   }
 });
 
+// WR-02 (12-REVIEW.md): with ZERO guard files planted (guardCount: 0),
+// checkAuditGate() derives an empty guard set, which pre-fix flowed
+// unconditionally into runGuardsLive(viceDir, []) -- a zero-positional
+// `node --test`, which Node reads as "auto-discover every test file in the
+// tree" rather than "run nothing". The reviewer measured that auto-discovery
+// not finishing within 15 seconds in this directory. The verdict here was
+// already correct before the fix (a structural failure); only the TIME was
+// wrong, so the wall-clock bound is the actual regression gate.
+test("a synthetic tree with zero guard files fails fast instead of auto-discovering the whole suite (WR-02)", () => {
+  const { root, cleanup } = buildSyntheticTree({ guardCount: 0, redGuardIndex: null, auditStatus: "passed" });
+  try {
+    const start = process.hrtime.bigint();
+    const { status, json } = runGate(root);
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.equal(status, 1, `expected structural failure exit 1; got json: ${JSON.stringify(json)}`);
+    assert.equal(json.allowed, false);
+    assert.ok(json.structuralErrors.length >= 1, "expected at least one structural error naming the floor");
+    assert.ok(
+      json.structuralErrors.some((e) => /floor|>=/.test(e)),
+      `expected a structural error mentioning the floor; got: ${JSON.stringify(json.structuralErrors)}`,
+    );
+    assert.deepEqual(json.guardFiles, [], `expected an empty guardFiles array; got: ${JSON.stringify(json.guardFiles)}`);
+    assert.ok(
+      elapsedMs < 5000,
+      `expected the whole runGate round trip under 5000ms; got ${elapsedMs}ms (a zero-argument ` +
+        `node --test in this directory was measured as not finishing within 15000ms pre-fix)`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("the milestone-audit walk descends neither a symlinked directory nor a dot-directory (T-12-06)", (t) => {
   const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0, auditStatus: "gaps_found" });
   try {

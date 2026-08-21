@@ -143,6 +143,15 @@ function truncate(text, max) {
  * `stdio: "inherit"` shape: D-12-15's refusal message needs the captured
  * assertion text itself, which inherited stdio does not hand back to the
  * caller at all. */
+/** WR-01 (12-REVIEW.md): bounds the guard subprocess below. Chosen well
+ * under the hook's own 30-second budget (`.claude/settings.json`'s
+ * PreToolUse `timeout`) and far above the ~215ms the four real guards
+ * actually cost, measured while building this fix. `spawnSync` already
+ * reports a timeout through `result.error` (`ETIMEDOUT`), and the existing
+ * `result.error` branch below already maps that to `status: 1`, which every
+ * caller already reads as red -- fail-closed behaviour comes for free. */
+const GUARD_RUN_TIMEOUT_MS = 15000;
+
 export function runGuardsLive(viceDir, files) {
   // Strip NODE_TEST_* from the child's environment before spawning. When
   // this gate itself runs from inside a `node --test` process (exactly
@@ -166,9 +175,17 @@ export function runGuardsLive(viceDir, files) {
     cwd: viceDir,
     encoding: "utf8",
     env,
+    timeout: GUARD_RUN_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
   if (result.error) {
-    const stderr = `${result.stderr ?? ""}\n${result.error.message ?? String(result.error)}`.trim();
+    let stderr = `${result.stderr ?? ""}\n${result.error.message ?? String(result.error)}`.trim();
+    if (result.error.code === "ETIMEDOUT") {
+      stderr = (
+        `${stderr}\nguard run was killed after exceeding the ${GUARD_RUN_TIMEOUT_MS}ms timeout ` +
+        "(GUARD_RUN_TIMEOUT_MS) -- treated as red rather than hanging the caller."
+      ).trim();
+    }
     return { status: 1, stdout: result.stdout ?? "", stderr };
   }
   return {
@@ -361,10 +378,25 @@ export function checkAuditGate({ viceDir, planningDir }) {
     }
   }
 
-  // Re-run live on every call, unconditionally -- D-12-10. This is what lets
-  // `--json` report the true guard state even when there is nothing gated
-  // discovered yet, and keeps this the one place that ever spawns a guard.
-  const guardResult = runGuardsLive(viceDir, guardFiles);
+  // Re-run live on every call where a guard set exists at all -- D-12-10 is
+  // still intact for every non-degenerate tree. WR-02 (12-REVIEW.md): the
+  // one exception is a structurally-invalid guard set, short-circuited here
+  // BEFORE the spawn, mirroring hookGuardVerdict()'s early return below. With
+  // an empty derived guard set, runGuardsLive(viceDir, []) becomes a
+  // zero-positional `node --test`, which Node reads as "auto-discover every
+  // test file in the tree" -- measured: this does not finish within 15
+  // seconds in this repo's real .claude/mcp/vice directory -- so the one
+  // path meant to fail fast and loudly would instead run the whole suite
+  // first. The verdict here was already correct before this fix (a
+  // structural failure); only the TIME was wrong.
+  const guardResult =
+    structuralErrors.length > 0
+      ? {
+          status: 1,
+          stdout: "",
+          stderr: "guard run skipped because the guard set is structurally invalid (see structuralErrors).",
+        }
+      : runGuardsLive(viceDir, guardFiles);
   const guardsRed = guardResult.status !== 0;
   const redGuards = guardsRed ? parseRedGuardNames(guardResult, guardFiles) : [];
 
