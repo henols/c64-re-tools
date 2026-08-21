@@ -297,9 +297,10 @@ by Phase 11.1 itself while dispositioning Phase 10/11's review findings
 `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`).
 **Two rows from the 2026-08-19 count above are removed here because their
 todos now live in `.planning/todos/completed/`, not because the items were
-dropped:** `2026-08-17-document-second-binmon-client-as-a-wedge-lookalike` and
-`2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes`
-are both resolved and closed.
+dropped:** the second-binmon-client wedge-lookalike documentation todo
+(2026-08-17) and the acme-build scaffold-library todo (2026-08-19) are both
+resolved and closed — see `.planning/todos/completed/` for the filed
+resolutions.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -337,8 +338,8 @@ backend provides this tool", false for two `stock-only-gain` names. Verified
 unreachable today (all 38 manifest names have handlers), so it is dead code that
 violates one-source-of-truth rather than a live defect.
 
-Also carried, not blocking, from Phase 11.1's own disposition ledger
-(`2026-08-21-phase-10-and-11-review-residual-dispositions.md`): the test-only
+Also carried, not blocking, from Phase 11.1's own disposition ledger (filed
+under `.planning/todos/completed/`, dated 2026-08-21): the test-only
 env hatch `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES` in `vice-proxy.ts` (narrow,
 inert unless explicitly set, no user-facing surface); the comment-scope gap in
 plan 11.1-01's phase-pointer guard (`r2000-project.ts`'s one comment-only
