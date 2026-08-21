@@ -618,6 +618,49 @@ describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () =>
       cleanup();
     }
   });
+
+  // CR-01 (12-REVIEW.md): the two tests below prove the bounded, non-
+  // backtracking token locator replacing the pre-fix regexes. Pre-fix,
+  // importing the committed script and calling its own exported
+  // `extractHookTarget`/`isHookInScope` directly measured 7,050 ms for the
+  // `sed -i ` case and 5,353 ms for the unrecognised-shape case (see this
+  // plan's `<measured_starting_state>`); both are asserted here well under
+  // 2000 ms through the real `--hook` CLI end to end.
+  test("hook mode: a large benign `sed -i` command is evaluated in bounded time (CR-01, regex backtracking)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const filler = "x".repeat(100000);
+      const command = `sed -i ${filler}`;
+      const start = process.hrtime.bigint();
+      const { status, stderr } = runHook({ tool_name: "Bash", tool_input: { command } }, root);
+      const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+      assert.equal(status, 0, `expected exit 0 (no milestone-audit token present); stderr: ${stderr}`);
+      assert.ok(
+        elapsedMs < 2000,
+        `expected the whole runHook round trip under 2000ms; got ${elapsedMs}ms (pre-fix measured ~7,050ms for the regex alone)`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("hook mode: a large unrecognised-shape payload is evaluated in bounded time (CR-01)", () => {
+    const { root, cleanup } = buildSyntheticTree({ redGuardIndex: 0 });
+    try {
+      const filler = "x".repeat(100000);
+      const payload = { tool_name: "Write", tool_input: { unknown_field: filler } };
+      const start = process.hrtime.bigint();
+      const { status, stderr } = runHook(payload, root);
+      const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+      assert.equal(status, 0, `expected exit 0 (no milestone-audit token present); stderr: ${stderr}`);
+      assert.ok(
+        elapsedMs < 2000,
+        `expected the whole runHook round trip under 2000ms; got ${elapsedMs}ms (pre-fix measured ~5,353ms for the regex alone)`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 // SETTINGS WIRING (plan 12-03, T-12-09): the committed `.claude/settings.json`

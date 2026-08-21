@@ -480,11 +480,71 @@ function isMilestoneAuditPath(p) {
   return base.includes("MILESTONE-AUDIT") && base.endsWith(".md");
 }
 
-/** A bare `*MILESTONE-AUDIT*.md`-shaped token anywhere in unstructured text
- * (the shapeKnown:false fallback, and a malformed-JSON raw-text scan). Not
- * a path parser -- just "does this text contain a token that looks like a
- * milestone-audit filename". */
-const MILESTONE_AUDIT_TOKEN_RE = /[^\s'"<>]*MILESTONE-AUDIT[^\s'"<>]*\.md/;
+// CR-01 (12-REVIEW.md): the token locator below replaces two regexes that
+// bridged a writer/edit token to a `MILESTONE-AUDIT...md` target across an
+// UNBOUNDED run of intervening text (`[\s\S]*?` / an unbounded whole-text
+// scan). On a large non-matching command or payload that evaluation is
+// polynomial-to-quadratic: measured pre-fix at 7,050 ms for a 100,000-char
+// `sed -i ` Bash command and 5,353 ms (worse, ~19.5 s at 200 KB, quadratic
+// beyond) for a 100,000-char unrecognised-shape payload, against a hook wired
+// live to every Write/Edit/Bash call in this repo. The fix below locates the
+// literal `MILESTONE-AUDIT` token with `String.prototype.indexOf` -- linear,
+// cannot backtrack -- and then applies only small, FIXED-length-window
+// regexes around each hit. Full-length coverage of the input is preserved
+// (every occurrence up to `MAX_AUDIT_TOKEN_SCANS` is examined) while every
+// regex evaluation is bounded to a constant number of characters regardless
+// of the input's total length. Measured post-fix: <=1 ms on the same two
+// inputs, 4.7 ms at 10 MiB.
+
+/** The literal audit-filename token, matched with `indexOf` rather than a
+ * regex specifically so locating it can never backtrack. */
+const AUDIT_TOKEN = "MILESTONE-AUDIT";
+
+/** Caps how many occurrences of `AUDIT_TOKEN` a single text is examined at,
+ * bounding the worst case to a constant number of bounded-window regex
+ * evaluations regardless of how many times the token repeats in adversarial
+ * input. */
+const MAX_AUDIT_TOKEN_SCANS = 64;
+
+/** Window examined immediately AFTER an `AUDIT_TOKEN` hit to confirm it is
+ * shaped like the tail of a `*MILESTONE-AUDIT*.md` filename. Bounded so the
+ * regex below never sees more than a fixed number of characters. */
+const AUDIT_TOKEN_TAIL_WINDOW = 256;
+
+/** Start-anchored: a run of characters that are not whitespace, a quote, or
+ * an angle bracket, ending in a literal `.md`. Applied ONLY to the bounded
+ * tail window above -- its input length is bounded by construction, so this
+ * pattern cannot itself become a backtracking hazard no matter its shape. */
+const AUDIT_TOKEN_TAIL_RE = /^[^\s'"<>]*\.md/;
+
+/** Every offset of `AUDIT_TOKEN` in `text`, in order, up to
+ * `MAX_AUDIT_TOKEN_SCANS` occurrences. No regex, no recursion -- a plain loop
+ * over `String.prototype.indexOf`, which is linear in the searched text and
+ * cannot backtrack. */
+function auditTokenOffsets(text) {
+  const offsets = [];
+  let idx = text.indexOf(AUDIT_TOKEN);
+  while (idx !== -1 && offsets.length < MAX_AUDIT_TOKEN_SCANS) {
+    offsets.push(idx);
+    idx = text.indexOf(AUDIT_TOKEN, idx + AUDIT_TOKEN.length);
+  }
+  return offsets;
+}
+
+/** True when `text` contains an `AUDIT_TOKEN` occurrence whose bounded tail
+ * window is shaped like a `*MILESTONE-AUDIT*.md` filename. Replaces the
+ * former unbounded whole-text token regex entirely -- used by the
+ * shapeKnown:false fallback in `isHookInScope()` and by
+ * `rawTextIndicatesScope()`'s malformed-JSON path, both of which may see
+ * arbitrarily large text (up to the 10 MiB stdin cap). */
+function textNamesMilestoneAudit(text) {
+  if (typeof text !== "string") return false;
+  for (const offset of auditTokenOffsets(text)) {
+    const tail = text.slice(offset + AUDIT_TOKEN.length, offset + AUDIT_TOKEN.length + AUDIT_TOKEN_TAIL_WINDOW);
+    if (AUDIT_TOKEN_TAIL_RE.test(tail)) return true;
+  }
+  return false;
+}
 
 /** Finds any line declaring a gated `status:` value, tolerating leading
  * whitespace (unlike `frontmatterStatus()`'s column-zero rule) because a
@@ -513,14 +573,27 @@ export function writtenDeclaresGatedStatus(text) {
 // D-12-04/T-12-02: a CONTENT-adjacency scan, deliberately not a shell-syntax
 // parser -- see the accepted-limitation comment on `bashTargetsMilestoneAudit`
 // below. Covers the redirect/writer shapes D-12-04 names: `>`, `>>`, `tee`
-// (with optional `-a`), and `dd of=` want the target IMMEDIATELY after the
-// writer token; `sed -i`/`perl -i` edit their target in place, which can
-// appear anywhere later in the same command (the script argument comes
-// between the flag and the filename in real usage).
-const BASH_ADJACENT_WRITE_RE =
-  /(?:>>?|tee(?:\s+-a)?|dd\s+of=)\s*['"]?[^\s'"]*MILESTONE-AUDIT[^\s'"]*\.md/;
-const BASH_INPLACE_EDIT_RE =
-  /(?:sed\s+-i[^\s]*|perl\s+-i[^\s]*)[\s\S]*?['"]?[^\s'"]*MILESTONE-AUDIT[^\s'"]*\.md/;
+// (with optional `-a`), and `dd of=` want the target IMMEDIATELY before the
+// writer token, in the fixed-length window just preceding it; `sed -i`/
+// `perl -i` edit their target in place, so its mere PRESENCE anywhere in the
+// (also fixed-length) preceding window is enough -- the script argument
+// comes between the flag and the filename in real usage, at unpredictable
+// distance, which is exactly what made the pre-fix bridging pattern
+// unbounded (CR-01).
+//
+// Why bounded WINDOWS rather than a single global input cap (e.g.
+// `command.slice(0, 4096)` before matching): a global cap is a bypass --
+// place the write past character 4096 and the gate never sees it at all.
+// Locating the literal token first with `indexOf` (unbounded input, but
+// linear and non-backtracking) and then examining only a small window
+// around EACH hit keeps full-length coverage of the command while still
+// bounding every regex evaluation to a constant number of characters. Do
+// not "simplify" this back into one pattern bridging writer to target
+// across unbounded text -- that is the CR-01 regression.
+const BASH_WRITER_WINDOW = 512;
+const BASH_WRITER_TAIL_RE = /(?:>>?|tee(?:\s+-a)?|dd\s+of=)\s*['"]?[^\s'"]*$/;
+const BASH_INPLACE_WINDOW = 4096;
+const BASH_INPLACE_PRESENCE_RE = /(?:^|\s)(?:sed|perl)\s+-i/;
 
 /** T-12-02 (accepted limitation, recorded here and in the phase SUMMARY): a
  * base64-encoded payload, or a `python -c` one-liner that assembles the
@@ -530,10 +603,26 @@ const BASH_INPLACE_EDIT_RE =
  * (`audit-integrity.test.ts` / `checkAuditGate()`) re-reads the actual
  * committed file content regardless of how the shell wrote it, and is the
  * unevadable enforcement point this function is only a partial backstop
- * for. */
+ * for.
+ *
+ * T-12-20 (accepted limitation, new in this fix): an in-place edit whose
+ * script argument exceeds `BASH_INPLACE_WINDOW` (4096) characters before its
+ * target filename is no longer detected -- the pre-fix regex bridged that
+ * distance without bound, which is exactly what made it super-linear
+ * (CR-01). Measured: a 3,000-character `sed -i` script is still detected;
+ * realistic in-place edits are far below the window, and Layer 1 still
+ * catches the landed write regardless. */
 function bashTargetsMilestoneAudit(command) {
   if (typeof command !== "string") return false;
-  return BASH_ADJACENT_WRITE_RE.test(command) || BASH_INPLACE_EDIT_RE.test(command);
+  for (const offset of auditTokenOffsets(command)) {
+    const tail = command.slice(offset + AUDIT_TOKEN.length, offset + AUDIT_TOKEN.length + AUDIT_TOKEN_TAIL_WINDOW);
+    if (!AUDIT_TOKEN_TAIL_RE.test(tail)) continue;
+    const writerWindow = command.slice(Math.max(0, offset - BASH_WRITER_WINDOW), offset);
+    if (BASH_WRITER_TAIL_RE.test(writerWindow)) return true;
+    const inplaceWindow = command.slice(Math.max(0, offset - BASH_INPLACE_WINDOW), offset);
+    if (BASH_INPLACE_PRESENCE_RE.test(inplaceWindow)) return true;
+  }
+  return false;
 }
 
 /** The fail-open/fail-closed boundary itself (D-12-14, scoped). Returns
@@ -544,7 +633,7 @@ export function isHookInScope(toolName, toolInput, extraction) {
 
   if (!extraction.shapeKnown) {
     const joined = extraction.written[0] ?? "";
-    return MILESTONE_AUDIT_TOKEN_RE.test(joined) && writtenDeclaresGatedStatus(joined);
+    return textNamesMilestoneAudit(joined) && writtenDeclaresGatedStatus(joined);
   }
 
   if (toolName === "Bash") {
@@ -569,7 +658,7 @@ export function isHookInScope(toolName, toolInput, extraction) {
  * `status:` line embedded in e.g. a broken `content` value without first
  * decoding that escape (and `\r`) back into real line breaks. */
 function rawTextIndicatesScope(rawText) {
-  if (!MILESTONE_AUDIT_TOKEN_RE.test(rawText)) return false;
+  if (!textNamesMilestoneAudit(rawText)) return false;
   const decoded = rawText.replace(/\\r/g, "\r").replace(/\\n/g, "\n");
   return writtenDeclaresGatedStatus(decoded);
 }
