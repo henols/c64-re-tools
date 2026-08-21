@@ -48,8 +48,14 @@ dist/
 # Local editor config, machine-specific, never shared.
 /.vscode/
 
-# Local Claude Code permission/allowlist config. Currently holds absolute
-# worktree paths from earlier sessions, so it is machine-specific and must
-# not be committed; the shared plugin config lives in .mcp.json /
-# .claude-plugin/ instead.
-/.claude/settings.json
+# .claude/settings.json is now COMMITTED (phase 12, GATE-01): it carries only
+# the audit-gate PreToolUse hook wiring (scripts/audit-gate.mjs --hook), no
+# machine-specific content. The permission allowlist and additionalDirectories
+# that used to live in this file -- absolute worktree paths from earlier
+# sessions -- moved to .claude/settings.local.json below, which Claude Code
+# merges over the committed file at runtime, so behaviour is unchanged. This
+# split honours the original rationale (machine-specific permission content
+# must not be committed) rather than overriding it; settings.local.json is
+# also covered by many users' global gitignore, but this repo-level rule
+# makes the guarantee local and explicit rather than relying on that.
+/.claude/settings.local.json

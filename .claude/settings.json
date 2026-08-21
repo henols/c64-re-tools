@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/audit-gate.mjs\" --hook",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
