@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: in_progress
-last_updated: "2026-08-21T07:11:53.065Z"
-last_activity: "2026-08-21 - Completed quick task 260821-a86: closed Phase 11's"
+status: executing
+last_updated: "2026-08-21T08:14:18.643Z"
+last_activity: 2026-08-21
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 29
-  completed_plans: 29
+  total_plans: 36
+  completed_plans: 30
   percent: 75
 ---
 
@@ -36,9 +36,9 @@ packages, so no release work gates the milestone.
 
 ## Current Position
 
-Phase: 11.1 -- inserted, not planned
-Plan: 0/0 -- not planned
-Status: Closing v0.3.0 audit items before milestone close
+Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
+Plan: 2 of 7
+Status: Ready to execute
 
 All 12 plans executed across 7 waves and merged into main; verification
 `passed` (4/4 roadmap success criteria, 5/5 requirement IDs). Post-merge gate
@@ -65,7 +65,7 @@ unregistered flags WR-02 (refusal shape), WR-03 (unbounded batch recursion) and
 WR-05 (missing post-spawn `"error"` listener), which 260821-a86 deliberately
 left out of scope.
 
-Last activity: 2026-08-21 - Completed quick task 260821-a86: closed Phase 11's
+Last activity: 2026-08-21
 three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 
 ## Performance Metrics
@@ -109,6 +109,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 09 P01 | 30min | 3 tasks | 5 files |
 | Phase 09 P08 | 10m | 2 tasks | 2 files |
 | Phase 11 P03 | 28min | 3 tasks | 10 files |
+| Phase 11.1 P01 | 45min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,7 @@ Recent decisions affecting current work:
 - [Phase 09-08]: Added a ROADMAP Phase 11 Notes pointer to the findings document even though the verdict produced no scope amendment there, because Phase 11's own pre-existing Notes anticipated a criterion-3(3) format-mismatch contingency that needed an explicit answer (it did not fire)
 - [Phase 11-03]: Ran sequentially on main with no worktree isolation, per this plan's own worktree: false frontmatter -- its deliverables ARE .planning/ROADMAP.md/REQUIREMENTS.md content plus two todo-file git mv moves, which worktree mode strips from executor commits
 - [Phase 11-03]: Reworded ROADMAP.md's Phase-10-criterion-3 .vsf note from 'Phase 11 confirmed this (D-34)' to 'confirmed by D-34' after the literal string 'Phase 11' on a .vsf-mentioning line tripped the acceptance grep gate that checks no document still names Phase 11 as .vsf's home -- same meaning, mechanically clean
+- [Phase 11.1]: D-11.1-01: both r2000-cli.ts .vsf surfaces reworded to name .planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md instead of a phase; a committed character-state-machine guard (docs-dangling-refs.test.ts) now fails if any shipped string literal names a phase number
 
 ### Pending Todos
 
@@ -307,8 +309,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-20T21:01:31.866Z
-Stopped at: Completed 11-03-PLAN.md
+Last session: 2026-08-21T08:14:18.610Z
+Stopped at: Completed 11.1-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
