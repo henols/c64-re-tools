@@ -38,6 +38,25 @@
  * in docs/phase1-probe-results.md). binmon-fixtures.ts's loadCapturedFixture()
  * is the consumer of what this writes.
  *
+ * Phase-3 assumption probes (needs a real x64sc; live, no fixtures written):
+ *   node .claude/mcp/vice/probe-binmon.mjs --probe-assumptions [host] [port]
+ *   node .claude/mcp/vice/probe-binmon.mjs --probe-assumptions=A1,A3 [host] [port]
+ * Runs one live check per Phase 3 wire assumption -- A1 (-remotemonitoraddress
+ * binding), A2 (ADVANCE_INSTRUCTIONS step-over semantics), A3 (JOYPORT_SET bit
+ * mapping), A5 (AUTOSTART fileIndex with the run flag clear) -- against the
+ * given (or default 127.0.0.1:6502) binary-monitor target, printing a
+ * three-valued verdict (CONFIRMED/CONTRADICTED/INCONCLUSIVE) per assumption
+ * with the raw observation it rests on. Bare `--probe-assumptions` runs all
+ * four; `--probe-assumptions=<comma-list>` runs only the named subset. A4 is
+ * deliberately OUT OF SCOPE and no probe here arms any checkpoint: A4 needs a
+ * non-stopping checkpoint on a hot, frequently-executed address, and a
+ * non-stopping checkpoint's CHECKPOINT_INFO hit frame is emitted
+ * SYNCHRONOUSLY, over the blocking socket, from inside the emulator's CPU
+ * loop (mon_breakpoint.c:557-562) -- on a hot address this can stall the
+ * emulator thread. See docs/phase1-probe-results.md and
+ * .planning/phases/13-external-verification/13-PROBE-RESULTS.md for recorded
+ * runs.
+ *
  * No dependencies; pure Node (net).
  */
 import net from "node:net";
@@ -57,6 +76,8 @@ const CMD = {
   CHECKPOINT_DELETE: 0x13,
   CHECKPOINT_LIST: 0x14,
   CONDITION_SET: 0x22,
+  REGISTERS_GET: 0x31,
+  REGISTERS_SET: 0x32,
   RESOURCE_GET: 0x51,
   ADVANCE_INSTRUCTIONS: 0x71,
   PING: 0x81,
@@ -65,7 +86,9 @@ const CMD = {
   VICE_INFO: 0x85,
   CPUHISTORY_GET: 0x86,
   PALETTE_GET: 0x91,
+  JOYPORT_SET: 0xa2,
   EXIT: 0xaa,
+  AUTOSTART: 0xdd,
 };
 const RESP_NAME = {
   0x11: "CHECKPOINT_INFO", // add — shares response type with CHECKPOINT_GET/SET replies;
@@ -445,6 +468,147 @@ function parsePalette(body) {
   return { count, entries };
 }
 
+// ---------------------------------------------------------------------------
+// Plan 13-03: body builders and reply parsers the four assumption probes
+// (A1, A2, A3, A5) need. Deliberately independent of stock-protocol.ts --
+// this script imports nothing from the package's runtime modules and must
+// stay that way -- but each mirrors that module's exact wire layout so a
+// live probe result here means the same thing the production encoder would
+// produce.
+// ---------------------------------------------------------------------------
+
+// ADVANCE_INSTRUCTIONS (0x71) request body -- 3 bytes: stepOver(1)=0x01/0x00,
+// count(u16LE). main()'s async-events check (above) has built this inline
+// with stepOver always false; this named builder is what probeA2StepOver
+// needs to set stepOver=true.
+function advanceInstructionsBody({ stepOver = false, count = 1 } = {}) {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffff) {
+    throw new Error(`advanceInstructionsBody: count must be an integer in 1..0xffff, got ${count}`);
+  }
+  const body = Buffer.alloc(3);
+  body[0] = stepOver ? 0x01 : 0x00;
+  body.writeUInt16LE(count, 1);
+  return body;
+}
+
+// REGISTERS_GET (0x31) request body -- 1 byte, the wire memspace byte (0x00
+// main, 0x01-0x04 units 8-11 -- NOT the internal enum; 0x08 is rejected).
+function registersGetBody(memspace = 0x00) {
+  if (!Number.isInteger(memspace) || memspace < 0x00 || memspace > 0xff) {
+    throw new Error(`registersGetBody: memspace must be an integer in 0x00..0xff, got ${memspace}`);
+  }
+  return Buffer.from([memspace]);
+}
+
+// REGISTERS_SET (0x32) request body -- memspace(1) count(u16LE), then per
+// item itemSize(1)=3 regId(1) value(u16LE). itemSize is ALWAYS 3 (regId +
+// value) on the wire this project targets -- see stock-protocol.ts's
+// registersSetBody() JSDoc, which this mirrors independently.
+function registersSetBody({ memspace = 0x00, items } = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("registersSetBody: items must be a non-empty array");
+  }
+  if (!Number.isInteger(memspace) || memspace < 0x00 || memspace > 0xff) {
+    throw new Error(`registersSetBody: memspace must be an integer in 0x00..0xff, got ${memspace}`);
+  }
+  const itemBuffers = [];
+  for (const item of items) {
+    if (!Number.isInteger(item.id) || item.id < 0x00 || item.id > 0xff) {
+      throw new Error(`registersSetBody: id must be an integer in 0x00..0xff, got ${item.id}`);
+    }
+    if (!Number.isInteger(item.value) || item.value < 0x0000 || item.value > 0xffff) {
+      throw new Error(`registersSetBody: value must be an integer in 0x0000..0xffff, got ${item.value}`);
+    }
+    const itemBuf = Buffer.alloc(4);
+    itemBuf[0] = 3; // itemSize -- always 3 (regId + value)
+    itemBuf[1] = item.id;
+    itemBuf.writeUInt16LE(item.value, 2);
+    itemBuffers.push(itemBuf);
+  }
+  const header = Buffer.alloc(3);
+  header[0] = memspace;
+  header.writeUInt16LE(items.length, 1);
+  return Buffer.concat([header, ...itemBuffers]);
+}
+
+// JOYPORT_SET (0xa2) request body -- 4 bytes, port(u16LE) value(u16LE). The
+// body SHAPE is what this builder encodes; the BIT MEANING of `value` (which
+// bit is up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log
+// row A3 -- and is exactly what probeA3JoyportBits() below exists to check.
+function joyportSetBody({ port, value } = {}) {
+  if (!Number.isInteger(port) || port < 0x0000 || port > 0xffff) {
+    throw new Error(`joyportSetBody: port must be an integer in 0x0000..0xffff, got ${port}`);
+  }
+  if (!Number.isInteger(value) || value < 0x0000 || value > 0xffff) {
+    throw new Error(`joyportSetBody: value must be an integer in 0x0000..0xffff, got ${value}`);
+  }
+  const body = Buffer.alloc(4);
+  body.writeUInt16LE(port, 0);
+  body.writeUInt16LE(value, 2);
+  return body;
+}
+
+// AUTOSTART (0xdd) request body -- runAfter(1) fileIndex(u16LE)
+// filenameLen(1) filename(ASCII). `fileIndex`'s behaviour when `runAfter` is
+// false is [ASSUMED] -- RESEARCH.md Assumptions Log row A5 -- and is exactly
+// what probeA5AutostartFileIndex() below exists to check.
+function autostartBody({ runAfter, fileIndex = 0, filename } = {}) {
+  if (!Number.isInteger(fileIndex) || fileIndex < 0x0000 || fileIndex > 0xffff) {
+    throw new Error(`autostartBody: fileIndex must be an integer in 0x0000..0xffff, got ${fileIndex}`);
+  }
+  const filenameBuf = Buffer.from(String(filename), "ascii");
+  if (filenameBuf.toString("ascii") !== filename) {
+    throw new Error("autostartBody: filename is not ASCII-representable");
+  }
+  if (filenameBuf.length > 255) {
+    throw new Error(`autostartBody: filename exceeds 255 bytes (${filenameBuf.length})`);
+  }
+  const body = Buffer.alloc(1 + 2 + 1 + filenameBuf.length);
+  body[0] = runAfter ? 0x01 : 0x00;
+  body.writeUInt16LE(fileIndex, 1);
+  body[3] = filenameBuf.length;
+  filenameBuf.copy(body, 4);
+  return body;
+}
+
+// REGISTER_INFO (0x31) response body -- count(u16LE) at offset 0, then per
+// item itemSize(1) regId(1) value(u16LE), advancing by itemSize+1. The
+// stride comes from the wire's OWN itemSize byte, never a fixed 4 -- a
+// fixed-stride REGISTER_INFO parser is a recorded defect in this project's
+// history (WR-09, stock-protocol.ts) and must not be reintroduced here.
+function parseRegisterInfo(body) {
+  const count = body.readUInt16LE(0);
+  let offset = 2;
+  const registers = [];
+  for (let index = 0; index < count; index += 1) {
+    const itemSize = body[offset];
+    const id = body[offset + 1];
+    const value = body.readUInt16LE(offset + 2);
+    registers.push({ id, value });
+    offset += itemSize + 1;
+  }
+  return registers;
+}
+
+// REGISTERS_AVAILABLE (0x83) response body -- count(u16LE) at offset 0, then
+// per item itemSize(1) regId(1) size(1) nameLength(1) name(ASCII), advancing
+// by itemSize+1. Same wire-stride discipline as parseRegisterInfo above.
+function parseRegistersAvailable(body) {
+  const count = body.readUInt16LE(0);
+  let offset = 2;
+  const registers = [];
+  for (let index = 0; index < count; index += 1) {
+    const itemSize = body[offset];
+    const id = body[offset + 1];
+    const size = body[offset + 2];
+    const nameLength = body[offset + 3];
+    const name = body.subarray(offset + 4, offset + 4 + nameLength).toString("ascii");
+    registers.push({ id, size, name });
+    offset += itemSize + 1;
+  }
+  return registers;
+}
+
 // CHECKPOINT_INFO (0x11) response body, fixed 23 bytes.
 function parseCheckpointInfo(body) {
   return {
@@ -635,6 +799,169 @@ function selftest() {
   );
   assertTrue(disp.buflen === pixelData.length, "parseDisplayGet: buflen derived from infoLen");
   assertTrue(disp.buffer.equals(pixelData), "parseDisplayGet: pixel buffer located correctly");
+
+  // --- Plan 13-03: --probe-assumptions builders/parsers (no socket) -------
+
+  // advanceInstructionsBody: layout, stepOver flag, and the count-range throw guard.
+  const adv1 = advanceInstructionsBody({ stepOver: true, count: 1 });
+  assertTrue(adv1.length === 3, "advanceInstructionsBody: exactly 3 bytes");
+  assertTrue(adv1[0] === 0x01, "advanceInstructionsBody: stepOver=true encodes as 0x01");
+  assertTrue(adv1.readUInt16LE(1) === 1, "advanceInstructionsBody: count u16LE at offset 1");
+  const adv0 = advanceInstructionsBody({ stepOver: false, count: 4 });
+  assertTrue(adv0[0] === 0x00, "advanceInstructionsBody: stepOver=false encodes as 0x00");
+  assertTrue(adv0.readUInt16LE(1) === 4, "advanceInstructionsBody: a count of 4 round-trips");
+  let advThrew = false;
+  try {
+    advanceInstructionsBody({ count: 0 });
+  } catch {
+    advThrew = true;
+  }
+  assertTrue(advThrew, "advanceInstructionsBody: throws on count=0 (out of 1..0xffff)");
+
+  // registersGetBody: single wire-memspace byte.
+  const rgb0 = registersGetBody(0x00);
+  assertTrue(rgb0.length === 1 && rgb0[0] === 0x00, "registersGetBody: single 0x00 byte for main memspace");
+  const rgb1 = registersGetBody(0x01);
+  assertTrue(rgb1[0] === 0x01, "registersGetBody: memspace byte round-trips for unit 8 (0x01)");
+
+  // registersSetBody: header + per-item layout, itemSize always 3, and the
+  // empty-items / out-of-range throw guards.
+  const rsb = registersSetBody({ memspace: 0x00, items: [{ id: 0x21, value: 0x1234 }, { id: 0x22, value: 0x5678 }] });
+  assertTrue(rsb[0] === 0x00, "registersSetBody: memspace byte at offset 0");
+  assertTrue(rsb.readUInt16LE(1) === 2, "registersSetBody: item count u16LE at offset 1");
+  assertTrue(rsb[3] === 3, "registersSetBody: first item's itemSize byte is always 3");
+  assertTrue(rsb[4] === 0x21, "registersSetBody: first item's regId");
+  assertTrue(rsb.readUInt16LE(5) === 0x1234, "registersSetBody: first item's value u16LE");
+  assertTrue(rsb[7] === 3, "registersSetBody: second item's itemSize byte is always 3");
+  assertTrue(rsb[8] === 0x22, "registersSetBody: second item's regId");
+  assertTrue(rsb.readUInt16LE(9) === 0x5678, "registersSetBody: second item's value u16LE");
+  let rsbEmptyThrew = false;
+  try {
+    registersSetBody({ items: [] });
+  } catch {
+    rsbEmptyThrew = true;
+  }
+  assertTrue(rsbEmptyThrew, "registersSetBody: throws on an empty items array");
+  let rsbIdThrew = false;
+  try {
+    registersSetBody({ items: [{ id: 0x100, value: 0 }] });
+  } catch {
+    rsbIdThrew = true;
+  }
+  assertTrue(rsbIdThrew, "registersSetBody: throws on an out-of-range id");
+  let rsbValueThrew = false;
+  try {
+    registersSetBody({ items: [{ id: 0, value: 0x10000 }] });
+  } catch {
+    rsbValueThrew = true;
+  }
+  assertTrue(rsbValueThrew, "registersSetBody: throws on an out-of-range value");
+
+  // joyportSetBody: 4-byte layout and the port/value range throw guards.
+  const jpb = joyportSetBody({ port: 1, value: 0x01 });
+  assertTrue(jpb.length === 4, "joyportSetBody: exactly 4 bytes");
+  assertTrue(jpb.readUInt16LE(0) === 1, "joyportSetBody: port u16LE at offset 0");
+  assertTrue(jpb.readUInt16LE(2) === 0x01, "joyportSetBody: value u16LE at offset 2");
+  let jpbThrew = false;
+  try {
+    joyportSetBody({ port: -1, value: 0 });
+  } catch {
+    jpbThrew = true;
+  }
+  assertTrue(jpbThrew, "joyportSetBody: throws on an out-of-range port");
+
+  // autostartBody: layout, and the fileIndex/filename validation guards.
+  const asb = autostartBody({ runAfter: false, fileIndex: 1, filename: "PROBE.D64" });
+  assertTrue(asb[0] === 0x00, "autostartBody: runAfter=false encodes as 0x00");
+  assertTrue(asb.readUInt16LE(1) === 1, "autostartBody: fileIndex u16LE at offset 1");
+  assertTrue(asb[3] === "PROBE.D64".length, "autostartBody: filenameLen byte at offset 3");
+  assertTrue(asb.subarray(4).toString("ascii") === "PROBE.D64", "autostartBody: ascii filename from offset 4");
+  const asbRun = autostartBody({ runAfter: true, filename: "X" });
+  assertTrue(asbRun[0] === 0x01, "autostartBody: runAfter=true encodes as 0x01");
+  assertTrue(asbRun.readUInt16LE(1) === 0, "autostartBody: fileIndex defaults to 0");
+  let asbAsciiThrew = false;
+  try {
+    autostartBody({ runAfter: false, filename: "café.d64" });
+  } catch {
+    asbAsciiThrew = true;
+  }
+  assertTrue(asbAsciiThrew, "autostartBody: throws on a non-ASCII-representable filename");
+  let asbLenThrew = false;
+  try {
+    autostartBody({ runAfter: false, filename: "x".repeat(256) });
+  } catch {
+    asbLenThrew = true;
+  }
+  assertTrue(asbLenThrew, "autostartBody: throws on a filename exceeding 255 bytes");
+
+  // parseRegisterInfo: two items, the SECOND with a declared itemSize larger
+  // than the 3-byte minimum (2 padding bytes) -- proving the stride comes
+  // from the wire's own itemSize byte, not a fixed 4.
+  {
+    const b = Buffer.alloc(2 + 4 + 6);
+    b.writeUInt16LE(2, 0); // count
+    b[2] = 3; // item1 itemSize (minimum: regId+value)
+    b[3] = 0x21; // item1 regId
+    b.writeUInt16LE(0x1234, 4); // item1 value
+    b[6] = 5; // item2 itemSize (padded: regId+value+2 unused bytes)
+    b[7] = 0x22; // item2 regId
+    b.writeUInt16LE(0x5678, 8); // item2 value
+    b[10] = 0xff; // padding byte 1 (must be skipped, not misread as a third item)
+    b[11] = 0xff; // padding byte 2
+    const regs = parseRegisterInfo(b);
+    assertTrue(regs.length === 2, "parseRegisterInfo: two items parsed despite a padded second itemSize");
+    assertTrue(regs[0].id === 0x21 && regs[0].value === 0x1234, "parseRegisterInfo: first item fields");
+    assertTrue(regs[1].id === 0x22 && regs[1].value === 0x5678, "parseRegisterInfo: second item fields, located past the padded first item via its own itemSize");
+  }
+
+  // parseRegistersAvailable: two items, the SECOND with a declared itemSize
+  // larger than its own name-implied minimum (2 padding bytes) -- same
+  // wire-stride proof as above, for the four-field item shape.
+  {
+    const b = Buffer.alloc(2 + 5 + 8);
+    b.writeUInt16LE(2, 0); // count
+    b[2] = 4; // item1 itemSize (id+size+nameLength+1-byte name = 4)
+    b[3] = 0x10; // item1 id
+    b[4] = 1; // item1 size
+    b[5] = 1; // item1 nameLength
+    b[6] = "A".charCodeAt(0); // item1 name
+    b[7] = 7; // item2 itemSize (id+size+nameLength+2-byte name=5, +2 padding=7)
+    b[8] = 0x11; // item2 id
+    b[9] = 2; // item2 size
+    b[10] = 2; // item2 nameLength
+    b[11] = "X".charCodeAt(0);
+    b[12] = "Y".charCodeAt(0);
+    b[13] = 0xff; // padding byte 1
+    b[14] = 0xff; // padding byte 2
+    const regs = parseRegistersAvailable(b);
+    assertTrue(regs.length === 2, "parseRegistersAvailable: two items parsed despite a padded second itemSize");
+    assertTrue(regs[0].id === 0x10 && regs[0].size === 1 && regs[0].name === "A", "parseRegistersAvailable: first item fields");
+    assertTrue(
+      regs[1].id === 0x11 && regs[1].size === 2 && regs[1].name === "XY",
+      "parseRegistersAvailable: second item fields, located past the padded first item via its own itemSize, name unaffected by trailing padding",
+    );
+  }
+
+  // parseTarget(): still resolves host/port correctly with --probe-assumptions
+  // present, bare or with an inline comma-separated case list -- proving the
+  // new flag needed NO change to the existing --capture/--capture-out
+  // consumed-index tracking, because it never takes a SEPARATE positional
+  // argument (any case list is embedded via `=` in the same argv token,
+  // which the existing `!a.startsWith("--")` filter already excludes).
+  {
+    const savedArgv = process.argv;
+    try {
+      process.argv = [savedArgv[0], savedArgv[1], "127.0.0.1", "6502", "--probe-assumptions"];
+      const t1 = parseTarget();
+      assertTrue(t1.host === "127.0.0.1" && t1.port === 6502, "parseTarget: resolves host/port with bare --probe-assumptions present");
+
+      process.argv = [savedArgv[0], savedArgv[1], "127.0.0.1", "6502", "--probe-assumptions=A1,A3"];
+      const t2 = parseTarget();
+      assertTrue(t2.host === "127.0.0.1" && t2.port === 6502, "parseTarget: resolves host/port with --probe-assumptions=<list> present");
+    } finally {
+      process.argv = savedArgv;
+    }
+  }
 
   // --- --capture mode selftest additions (no socket, no emulator) ---------
 
