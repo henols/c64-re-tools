@@ -183,3 +183,65 @@ created under this phase directory, and none needs to be deleted.
 Only this document. `.claude/settings.json`, `.gitignore`, and
 `scripts/audit-gate.mjs` are unmodified by this task, consistent with the
 plan's explicit instruction.
+
+## A2 / A3 resolution
+
+Added by plan 12-07, Task 1. The frontmatter keys `subagent_routing_A2` and
+`fields_confirmed.Bash_heredoc_full_body` above still read `UNCONFIRMED` as
+of this section's authoring -- Task 3 changes them, once there is something
+observed to change them to. **A frontmatter value must never be advanced
+ahead of the body evidence below.**
+
+### A2 -- subagent-routed tool calls reach the `--hook` payload
+
+Two branches on offer; Task 3 records which was taken, per the human's Task 2
+report in `12-GATE-PROOF.md`.
+
+**Branch (a) CONFIRMED.** A subagent (Route D / Step 9 in
+`12-GATE-PROOF.md`'s `## Live in-session hook block`) attempted a write and
+the human observed whether the hook fired for it.
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+Pointer: `12-GATE-PROOF.md` § Live in-session hook block, Step 9.
+
+**Branch (b) ACCEPTED LIMITATION.** No subagent-routed attempt was made (or
+the human declined). A2 is recorded as a standing, disclosed limitation:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+Fields to fill when this branch is taken: acceptance date, who accepted it,
+the residual risk in one sentence, and the backstop that carries that risk --
+Layer 1's `checkAuditGate()` re-reads the actual committed file content under
+`npm test` and CI regardless of which tool wrote it or which session context
+issued the call, and every merge to `main` auto-publishes, so there is no
+release path past a red gate even if a subagent-routing gap turned out to
+exist.
+
+### A3 -- a real Bash heredoc's full multi-line body reaches `tool_input.command`
+
+**Branch (a) CONFIRMED.** Step 5 (Route C, Bash heredoc) in
+`12-GATE-PROOF.md`'s `## Live in-session hook block` observed the refusal
+firing on a heredoc whose gated-status token is not on the first line --
+proving the full body, not just the opening `cat > ... <<'EOF'` line, reached
+`tool_input.command`.
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+Pointer: `12-GATE-PROOF.md` § Live in-session hook block, Step 5.
+
+**Branch (b) ACCEPTED LIMITATION.** Step 5 was not performed, or its result
+was inconclusive. A3 is recorded as a standing, disclosed limitation:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+Fields to fill when this branch is taken: acceptance date, who accepted it,
+the residual risk in one sentence, and the backstop -- the same
+`checkAuditGate()` re-read described under A2 above, which is indifferent to
+how the shell assembled the write.

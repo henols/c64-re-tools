@@ -450,3 +450,203 @@ boundary.
 This section is additive. The paragraph above it is left as originally
 written -- a historical transcript of the contract as it stood after plan
 12-02 -- not rewritten to match the current code.
+
+## Live in-session hook block
+
+This is the `## Live in-session hook block` section the closing paragraph
+above (dated before this section existed) says is "not exercised by this
+document." Plan 12-07 exists to discharge that promise. Everything below this
+point is either a verbatim instruction for the human to follow in a live
+Claude Code session, or a slot for the human's reported observation. Nothing
+below was predicted, inferred, or produced by this executor's own tool calls
+(hazard 3 of `12-07-PLAN.md`: this executor's own writes go through the same
+hook, but whether the hook was loaded for *this* session cannot be
+established by this executor -- only the human's restart establishes that).
+
+### Preflight, recorded by the executor (Task 1, 2026-08-21)
+
+- `.claude/settings.json` parses as valid JSON and declares exactly one
+  `PreToolUse` entry: matcher `Write|Edit|Bash`, command
+  `node "${CLAUDE_PROJECT_DIR}/scripts/audit-gate.mjs" --hook`, timeout `30`.
+- The settings-wiring suite (`audit-integrity.test.ts`, describe block
+  `settings wiring: .claude/settings.json (plan 12-03, D-12-05)`, 5 subtests)
+  passes, and the full `audit-integrity.test.ts` suite passes 43/43.
+- The plant target is still in place: `CLAUDE.md`'s `rewriteArguments()`
+  bullet still cites `vice-proxy.ts:3029` as the first citation (the digit
+  has not moved since plan 12-04), and `docs-linerefs.test.ts` currently
+  passes 3/3.
+- The tree is green and clean: `node scripts/audit-gate.mjs` prints
+  `audit-gate: OK -- 4 docs guards green, 6 milestone audits scanned, 4
+  declaring a gated status`, and `git status --porcelain` shows no
+  modifications to tracked files (only pre-existing untracked GSD-core
+  installer scaffolding unrelated to this plan).
+- The hook command line resolves standalone: piping a `Read`-shaped payload
+  (an out-of-scope tool) to `node scripts/audit-gate.mjs --hook --root
+  "$(pwd)"` exits `0`. This proves the command in `settings.json` is
+  runnable; it does not and cannot prove Claude Code's own dispatch invokes
+  it -- that is exactly what this section exists to observe.
+- `node scripts/audit-gate.mjs --json`'s `auditFiles` array has **6** entries
+  at preflight time. Task 3 compares the post-test count against this number
+  to confirm the scratch file left no residue.
+
+### Instructions for the human (run in order)
+
+Everything here is copy-pasteable or paste-as-a-prompt. Nothing needs to be
+reconstructed at checkpoint time.
+
+1. **Load the hook.** Start a fresh Claude Code session in this repo (or run
+   `/hooks` and approve the committed project hook in the current session).
+   Note the Claude Code version (`claude --version` or the session's own
+   startup banner).
+2. **Plant.** Run:
+   ```
+   sed -i 's/vice-proxy\.ts:3029/vice-proxy.ts:3030/' CLAUDE.md
+   ```
+   Then confirm it reddened:
+   ```
+   cd .claude/mcp/vice && node --test docs-linerefs.test.ts
+   ```
+3. **Route A -- Write.** In the live session, ask Claude:
+   > Use the Write tool to create `.planning/v9.9.9-MILESTONE-AUDIT.md` with
+   > this exact content:
+   > ```
+   > ---
+   > status: passed
+   > ---
+   > # Scratch milestone audit (live hook test, plan 12-07 -- delete after use)
+   > ```
+   Expect the tool call to be refused, with the gate's stderr visible in the
+   transcript. Copy the refusal text verbatim.
+4. **Route B -- Edit.** Ask Claude to make the equivalent change with the
+   Edit tool against an *existing* milestone-audit file (e.g. change
+   `status: tech_debt` to `status: tech_debt` unchanged but touch a comment
+   line in `.planning/milestones/v0.2.0-MILESTONE-AUDIT.md`, or, if Route A's
+   scratch file was created before the refusal fired, edit that). Expect the
+   same class of refusal. Copy the refusal text verbatim.
+5. **Route C -- Bash heredoc.** Ask Claude to run:
+   ```
+   cat > .planning/v9.9.9-MILESTONE-AUDIT.md <<'EOF'
+   ---
+   status: passed
+   ---
+   # Scratch milestone audit (live hook test, plan 12-07 -- delete after use)
+   EOF
+   ```
+   via the Bash tool. Expect the same class of refusal. This step doubles as
+   the **A3** observation (`12-HOOK-STDIN-EVIDENCE.md`): if the refusal
+   fires, the heredoc's full multi-line body reached `tool_input.command`
+   intact (the hook could not have refused on the first line alone, since the
+   first line contains no gated-status token).
+6. **Revert.** Run:
+   ```
+   sed -i 's/vice-proxy\.ts:3030/vice-proxy.ts:3029/' CLAUDE.md
+   ```
+   Then confirm:
+   ```
+   cd .claude/mcp/vice && node --test docs-linerefs.test.ts
+   node scripts/audit-gate.mjs
+   ```
+   Expect 3/3 green and `audit-gate: OK`.
+7. **Control.** Ask Claude to repeat Route A's Write exactly. Expect it to
+   **succeed** this time (guard is green again). Then delete the scratch
+   file:
+   ```
+   rm -f .planning/v9.9.9-MILESTONE-AUDIT.md
+   ```
+   Confirm with `git status --porcelain` and `test ! -e
+   .planning/v9.9.9-MILESTONE-AUDIT.md`.
+8. **Optional -- Route D (A2).** If you want the A2 assumption (subagent
+   routing) confirmed rather than accepted, spawn a subagent (e.g. via the
+   Task tool) and have it attempt one of the same writes from inside its own
+   context. Record whether the hook fired for it.
+9. Report back, in your own words, what happened at each step above --
+   including anything that did NOT behave as expected. Name which branch
+   (CONFIRMED or ACCEPTED LIMITATION) you want recorded for A2 and for A3.
+
+### Step 1 -- Session state
+
+Claude Code version and how the hook was loaded (fresh session start, or
+`/hooks` approval of the committed project hook):
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 2 -- The plant
+
+The exact one-digit `CLAUDE.md` edit (`vice-proxy.ts:3029` -> `:3030`), its
+`git diff`, and the `docs-linerefs.test.ts` run showing it red, with the
+failing assertion named:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 3 -- Route A (Write)
+
+Observed outcome of the live `Write` tool call attempting to create
+`.planning/v9.9.9-MILESTONE-AUDIT.md` with a gated status. If refused, the
+gate's stderr text verbatim:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 4 -- Route B (Edit)
+
+Observed outcome of the live `Edit` tool call attempting the same change
+against an existing milestone-audit file:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 5 -- Route C (Bash heredoc) -- also the A3 observation
+
+Observed outcome of the live `Bash` heredoc attempting the same write. This
+step is the A3 disposition: whether the full multi-line heredoc body reached
+`tool_input.command` intact.
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 6 -- The revert (D-12-20)
+
+The digit restored, `docs-linerefs.test.ts` green again with its output
+shown, `node scripts/audit-gate.mjs` back to `audit-gate: OK`:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 7 -- The post-revert control
+
+Route A's `Write` attempted again, now succeeding, followed by deletion of
+the scratch file and confirmation it is gone:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
+
+### Step 8 -- What this does and does not establish
+
+This section, once Steps 1-7 are filled in, establishes live `PreToolUse`
+dispatch for the three write routes tested (Write, Edit, Bash heredoc) on the
+one Claude Code version recorded in Step 1, in this one session, against this
+one committed hook configuration. It does not establish that dispatch holds
+for every future Claude Code version, nor does it establish anything about
+subagent-routed tool calls (assumption A2) unless Step 9 below records an
+attempt. A route observed NOT refused in any step above is a real finding
+about this mechanism, not something this paragraph should be read as
+overriding.
+
+### Step 9 -- Optional: Route D (subagent routing, A2)
+
+If attempted, the subagent's tool-call attempt and whether the hook fired for
+it. If not attempted, an explicit statement that Route D was not attempted
+and A2 is being recorded as an accepted limitation instead:
+
+```
+PENDING-HUMAN-OBSERVATION
+```
