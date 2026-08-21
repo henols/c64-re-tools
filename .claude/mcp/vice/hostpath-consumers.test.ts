@@ -32,32 +32,89 @@ import { STOCK_DERIVED_TOOLS } from "./stock-derived.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Matches a real ES import statement naming hostpath.ts/.mts/.mjs, after
- * `//`-comment lines have already been stripped -- never a bare
+ * `//`- and `/* ... *\/`-comments have already been stripped -- never a bare
  * `includes("hostpath")` and never a `grep -c` against raw file text. This
  * is mandatory grep-gate hygiene here: stock-paths.ts's own header mentions
  * "hostpath.ts", vice-broker-client.ts's header literally says "MUST NOT
  * import hostpath.ts", and load-order.test.ts embeds the import statement
  * as a string literal -- an unfiltered match against raw text would produce
  * a self-invalidating gate that "passes" by counting comments and string
- * literals as imports. */
-const HOSTPATH_IMPORT_RE = /^\s*import\s[^;]*from\s+"\.\/hostpath\.(ts|mts|mjs)"/;
+ * literals as imports.
+ *
+ * NEWLINE-TOLERANT (Phase 10 IN-02): matched against the WHOLE stripped
+ * source with the `m` flag, not per-line, so a multi-line named import --
+ * `import {\n  hostPath,\n} from "./hostpath.ts";` -- is caught. `[^;]*`
+ * already spans newlines in a JS character class (only `.` excludes `\n`
+ * without the `s` flag), so no other change was needed to make this
+ * tolerant once matching moved off the per-line array. */
+const HOSTPATH_IMPORT_RE = /^\s*import\s[^;]*from\s+"\.\/hostpath\.(ts|mts|mjs)"/m;
 
-/** True iff any line of the (already comment-stripped) source is a real
- * import of hostpath.ts. Extracted into ONE named predicate -- both the real
- * consumer-set scan below and the planted-violation test call this same
- * function, so there is exactly one definition of "counts as an import"
- * (the 11-01 discipline: a structural test and its own proof must share the
- * checked logic, not each carry a copy). */
-function importsHostpath(lines: string[]): boolean {
-  return lines.some((line) => HOSTPATH_IMPORT_RE.test(line));
+/** Matches a dynamic `await import("./hostpath.ts")` (or `.mts`/`.mjs`) --
+ * the other shape Phase 10 IN-02 names as invisible to a static-import-only
+ * detector. Mirrors `scripts/check-npm-packages.mjs`'s own
+ * STATIC_IMPORT_RE/DYNAMIC_IMPORT_RE pairing (added for the identical reason
+ * by an earlier plan): the dynamic pattern is ADDED ALONGSIDE the static
+ * one above, never a replacement. containerpath.ts is not covered here
+ * because HOSTPATH_IMPORT_RE never covered it either -- this file's
+ * consumer-set concern is specifically hostpath.ts, not containerpath.ts. */
+const HOSTPATH_DYNAMIC_IMPORT_RE = /import\s*\(\s*["'][^"']*\/hostpath\.(ts|mts|mjs)["']\s*\)/;
+
+/** True iff the (already comment-stripped) source imports hostpath.ts,
+ * statically or dynamically. Extracted into ONE named predicate -- both the
+ * real consumer-set scan below and the planted-violation tests call this
+ * same function, so there is exactly one definition of "counts as an
+ * import" (the 11-01 discipline: a structural test and its own proof must
+ * share the checked logic, not each carry a copy). */
+function importsHostpath(strippedSrc: string): boolean {
+  return HOSTPATH_IMPORT_RE.test(strippedSrc) || HOSTPATH_DYNAMIC_IMPORT_RE.test(strippedSrc);
 }
 
-/** Strips full-line `//` comments before matching -- a line that is ENTIRELY
- * a comment (allowing leading whitespace) is dropped; a trailing `//`
- * comment on a real code line is left alone since no import statement in
- * this codebase carries one. */
-function stripCommentLines(src: string): string[] {
-  return src.split("\n").filter((line) => !/^\s*\/\//.test(line));
+/** Strips `//` line comments and `/* ... *\/` block comments, returning the
+ * comment-stripped source as ONE newline-joined string (not an array of
+ * lines) so a multi-line import statement stays intact for a single regex
+ * match against the whole thing. This is r2000-launch.test.ts's own
+ * stripCommentLines(), reused verbatim rather than reinvented: its WR-02 fix
+ * (10-REVIEW.md) closes a block comment on the FIRST close-comment token
+ * found by position, never by whether the trimmed line happens to END with
+ * one, and re-feeds any code trailing a same-line close (`*\/ code();`) back
+ * through the same logic -- so code following a closed block comment is
+ * never silently dropped. A line that is ENTIRELY a `//` comment (allowing
+ * leading whitespace) is dropped; a trailing `//` comment on a real code
+ * line is left alone since no import statement in this codebase carries
+ * one. */
+function stripCommentLines(src: string): string {
+  const out: string[] = [];
+  let inBlock = false;
+
+  function processSegment(text: string): void {
+    if (inBlock) {
+      const closeIdx = text.indexOf("*/");
+      if (closeIdx === -1) return; // still unterminated -- drop the rest of this line
+      inBlock = false;
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    const trimmed = text.trim();
+    if (trimmed.startsWith("/*")) {
+      const openIdx = text.indexOf("/*");
+      const closeIdx = text.indexOf("*/", openIdx + 2);
+      if (closeIdx === -1) {
+        inBlock = true; // unterminated on this line -- resumes on later lines
+        return;
+      }
+      // Opens and closes on the same line (`/* ... */ code();`) -- the
+      // remainder after the closing `*/` is still real code/comment text.
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    if (/^\s*\/\//.test(text)) return; // whole-line `//` comment -- dropped
+    out.push(text);
+  }
+
+  for (const line of src.split("\n")) {
+    processSegment(line);
+  }
+  return out.join("\n");
 }
 
 /** The complete top-level module list this repo ships: every `*.ts`/`*.mts`
@@ -71,13 +128,13 @@ function topLevelProductionModules(): string[] {
 }
 
 /** The set of production modules whose stripped source contains a real
- * import of hostpath.ts/.mts/.mjs. */
+ * import of hostpath.ts/.mts/.mjs, static or dynamic. */
 function hostpathImporters(): string[] {
   const importers: string[] = [];
   for (const name of topLevelProductionModules()) {
     const src = readFileSync(join(HERE, name), "utf8");
-    const lines = stripCommentLines(src);
-    if (importsHostpath(lines)) {
+    const stripped = stripCommentLines(src);
+    if (importsHostpath(stripped)) {
       importers.push(name);
     }
   }
@@ -169,6 +226,52 @@ test("planted violation (INT-01 proof): a synthetic r2000-shaped source that DOE
     "the predicate must report a genuine hostpath.ts import -- if this fails, the absence assertion above is not actually capable of catching a real violation",
   );
   assert.equal(importsHostpath(stripCommentLines(plantedClean)), false, "a clean source with no hostpath.ts mention must not be reported");
+});
+
+test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line static and dynamic imports are caught; a comment/string-literal-only mention is not", () => {
+  // (a) Multi-line named import -- the shape a per-line array match (the
+  // pre-11.1-03 code) could never see, because the `import` keyword, the
+  // named binding and the `from "./hostpath.ts"` clause each land on a
+  // different line.
+  const multiLineStaticImport = ["import {", '  hostPath,', '  SET_ENV_HINT,', '} from "./hostpath.ts";', "", "export function useIt() {}", ""].join("\n");
+
+  // (b) Dynamic import -- the shape vice-proxy.ts's own
+  // `await import("./r2000-cli.ts")` proves exists in this repo's own style,
+  // and the shape the STATIC_IMPORT_RE-only closure walk in
+  // check-npm-packages.mjs was measured to miss before that guard grew its
+  // own DYNAMIC_IMPORT_RE sibling.
+  const dynamicImport = 'export async function useIt() {\n  const { hostPath } = await import("./hostpath.ts");\n  return hostPath;\n}\n';
+
+  // (c) Control: the ONLY two mentions of "hostpath" in this source are
+  // inside a `//` line comment and inside a string literal -- never inside a
+  // real import statement. This is the half that keeps the widened detector
+  // trustworthy: proving it does NOT turn into a substring search. Mirrors
+  // vice-broker-client.ts's real header ("MUST NOT import hostpath.ts", a
+  // `//` comment) and load-order.test.ts's real embedded import string
+  // literal -- both cited in HOSTPATH_IMPORT_RE's own doc comment above as
+  // the reason an unfiltered whole-file match would be self-invalidating.
+  const commentAndStringLiteralOnly = [
+    "// MUST NOT import hostpath.ts -- this module runs container-side.",
+    "export const EXAMPLE_IMPORT_TEXT = 'import { hostPath } from \"./hostpath.ts\";';",
+    "export function useIt() { return EXAMPLE_IMPORT_TEXT; }",
+    "",
+  ].join("\n");
+
+  assert.equal(
+    importsHostpath(stripCommentLines(multiLineStaticImport)),
+    true,
+    "a multi-line named import of hostpath.ts must be detected (Phase 10 IN-02, shape 1)",
+  );
+  assert.equal(
+    importsHostpath(stripCommentLines(dynamicImport)),
+    true,
+    "a dynamic await import(\"./hostpath.ts\") must be detected (Phase 10 IN-02, shape 2)",
+  );
+  assert.equal(
+    importsHostpath(stripCommentLines(commentAndStringLiteralOnly)),
+    false,
+    "a hostpath.ts mention inside only a // comment and a string literal must NOT be reported -- proves the widening did not become a substring search",
+  );
 });
 
 // D-05-12: the derived-module guess this test used to make -- stripping the
