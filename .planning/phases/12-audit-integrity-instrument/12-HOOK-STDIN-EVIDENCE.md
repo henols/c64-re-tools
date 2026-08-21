@@ -1,14 +1,14 @@
 ---
-outcome: "resolved (adapted route — see 'Route actually taken' below)"
-route: "A-adapted (session-transcript evidence in place of a live-firing hook; Route A's hooks do not exist on this host/repo, Route B was not exercised because it requires an operator-initiated restart)"
+outcome: "resolved (A1 by the adapted route below; A2 and A3 by live in-session hook dispatch, plan 12-07, 2026-08-21)"
+route: "A-adapted for A1 (session-transcript evidence in place of a live-firing hook; the four $HOME/.claude/hooks/ scripts Route A assumed do not exist on this host). SUPERSEDED FOR A2/A3 by plan 12-07: the committed PROJECT hook in .claude/settings.json — a different hook from the absent user-level ones — was loaded at session start and observed refusing Write, Edit and Bash calls live, so A2 and A3 rest on live dispatch, not transcript inference."
 claude_code_version: "2.1.238"
 date: 2026-08-21
 fields_confirmed:
   Write: "file_path, content, description — CONFIRMED"
   Edit: "file_path, old_string, new_string, replace_all — CONFIRMED"
   Bash: "command, description — CONFIRMED"
-  Bash_heredoc_full_body: "UNCONFIRMED (A3, partial — see below)"
-subagent_routing_A2: "UNCONFIRMED — no live PreToolUse hook exists on this host to test either context against"
+  Bash_heredoc_full_body: "CONFIRMED (A3) — live Bash heredoc refused on a gated token located on body line 3, so the full multi-line body reached tool_input.command (plan 12-07 Step 5, 2026-08-21)"
+subagent_routing_A2: "CONFIRMED — the committed project PreToolUse hook fired for a general-purpose subagent's Write call; scope: Claude Code 2.1.238, Write route only (plan 12-07 Step 9 / Route D, 2026-08-21)"
 ---
 
 # Phase 12 Plan 02 Task 1: Hook stdin field-name evidence (RESEARCH assumption A1)
@@ -201,18 +201,49 @@ report in `12-GATE-PROOF.md`.
 `12-GATE-PROOF.md`'s `## Live in-session hook block`) attempted a write and
 the human observed whether the hook fired for it.
 
+Route D was attempted on 2026-08-21 and the hook FIRED for the
+subagent's tool call. A `general-purpose` subagent was spawned via the Agent
+tool while the four docs guards were red, instructed to make exactly one
+`Write` attempt at `.planning/v9.9.9-MILESTONE-AUDIT.md` with gated-status
+content, not to retry, not to fall back to another route, and to report a
+success honestly if one occurred. It reported REFUSED and quoted the gate's
+stderr from its own tool result:
+
 ```
-PENDING-HUMAN-OBSERVATION
+PreToolUse:Write hook error: [node "${CLAUDE_PROJECT_DIR}/scripts/audit-gate.mjs" --hook]: audit-gate --hook: REFUSED
+(a) red guard(s): docs-dangling-refs.test.ts, docs-deferred-ledger.test.ts, docs-linerefs.test.ts, docs-review-disposition.test.ts.
+(b) failing assertion output:
+[... TAP subtests elided; ok 1 through ok 13 passed ...]
+not ok 14 - every vice-proxy.ts:<N> citation in CLAUDE.md's rewriteArguments() bullet points at a real rewriteArguments() call or its enclosing function
+  error: 'vice-proxy.ts:3030 (cited in CLAUDE.md) contains neither a rewriteArguments() call nor a function declaration -- drift. Line reads: "    translatedArgs = rewritten.args;"'
+... [truncated 2026 more characters]
+(c) there is no waiver file and no environment variable that relaxes this gate. The two legitimate routes are: 1) fix the documents the red guard checks, or 2) change or retire the guard itself, in a commit.
 ```
+
+The parent session verified independently that the blocked write left no file
+(`test ! -e` passed before the plant was reverted).
+
+SCOPE, stated narrowly: Claude Code 2.1.238, one in-process
+`general-purpose` subagent, `Write` route only. It does not cover a
+subagent's `Bash` or `Edit` routes, other agent types, or a nested
+`claude -p` process -- prohibited by 12-07-PLAN.md and not used. Nothing in
+the hook's dispatch path distinguishes subagent context, and the parent
+session confirmed all three routes directly, but those are arguments, not
+observations, and are not recorded here as observations.
+
+OBSERVER: the Claude Code session driving the test, not a human reading a
+screen. The quoted text is the harness's own tool-result payload rather than
+prose composed by the recorder. See `12-GATE-PROOF.md` § Live in-session hook
+block, "Provenance of these observations".
 
 Pointer: `12-GATE-PROOF.md` § Live in-session hook block, Step 9.
 
 **Branch (b) ACCEPTED LIMITATION.** No subagent-routed attempt was made (or
 the human declined). A2 is recorded as a standing, disclosed limitation:
 
-```
-PENDING-HUMAN-OBSERVATION
-```
+BRANCH NOT TAKEN. Branch (a) above was recorded instead. This
+block is retained so a reader can see which of the two dispositions the
+evidence selected, rather than finding only the surviving one.
 Fields to fill when this branch is taken: acceptance date, who accepted it,
 the residual risk in one sentence, and the backstop that carries that risk --
 Layer 1's `checkAuditGate()` re-reads the actual committed file content under
@@ -229,18 +260,41 @@ firing on a heredoc whose gated-status token is not on the first line --
 proving the full body, not just the opening `cat > ... <<'EOF'` line, reached
 `tool_input.command`.
 
+Step 5 was performed on 2026-08-21 and the refusal FIRED. The
+command dispatched through the `Bash` tool was, in full:
+
 ```
-PENDING-HUMAN-OBSERVATION
+cat > .planning/v9.9.9-MILESTONE-AUDIT.md <<'EOF'
+---
+status: passed
+---
+# Scratch milestone audit (live hook test, plan 12-07 -- delete after use)
+EOF
 ```
+
+The first line, `cat > .planning/v9.9.9-MILESTONE-AUDIT.md <<'EOF'`, carries
+the `MILESTONE-AUDIT` target but contains NO gated-status token;
+`status: passed` sits on line 3 of the heredoc body. Hook mode requires both
+halves of its predicate -- an in-scope target AND a gated status in the
+payload -- so a `tool_input.command` truncated to the opening line would have
+exited 0 under the scope fence. It refused. Therefore the full multi-line
+body reached `tool_input.command` and was scanned.
+
+This is positive evidence, not absence-of-error: the refusal is only
+reachable if the body arrived. Verbatim refusal text is recorded at
+`12-GATE-PROOF.md` § Live in-session hook block, Step 5.
+
+OBSERVER: the Claude Code session driving the test; the refusal text there is
+the harness's tool-result payload, not recorder prose.
 
 Pointer: `12-GATE-PROOF.md` § Live in-session hook block, Step 5.
 
 **Branch (b) ACCEPTED LIMITATION.** Step 5 was not performed, or its result
 was inconclusive. A3 is recorded as a standing, disclosed limitation:
 
-```
-PENDING-HUMAN-OBSERVATION
-```
+BRANCH NOT TAKEN. Step 5 was performed and its result was
+unambiguous, so branch (a) above was recorded instead. This block is retained
+so a reader can see which disposition the evidence selected.
 Fields to fill when this branch is taken: acceptance date, who accepted it,
 the residual risk in one sentence, and the backstop -- the same
 `checkAuditGate()` re-read described under A2 above, which is indifferent to
