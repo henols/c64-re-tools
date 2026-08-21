@@ -8,6 +8,7 @@ files:
   - .planning/phases/09-the-assumption-probe-go-no-go/evidence/vice-tool-harness.mjs
   - .planning/phases/09-the-assumption-probe-go-no-go/evidence/mcp-harness.mjs
   - .claude/mcp/vice/docs-review-disposition.test.ts
+resolves_phase: 15
 ---
 
 ## Problem

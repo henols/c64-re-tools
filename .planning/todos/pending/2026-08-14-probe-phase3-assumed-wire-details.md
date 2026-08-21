@@ -3,6 +3,7 @@ title: Probe Phase 3's four ASSUMED wire details against a real stock VICE build
 date: 2026-08-14
 priority: high
 source: /gsd-plan-phase 3 — no live stock VICE reachable in-environment
+resolves_phase: 13
 ---
 
 # Four behavioural/spelling details were written spec-driven, never exercised against a real binary

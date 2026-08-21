@@ -3,6 +3,7 @@ title: project-paths.mjs's .git-marker requirement for the toolkit project root 
 date: 2026-08-19
 priority: medium
 source: 08.1-WALKTHROUGH-SETUP.md FINDING-B2 — Phase 8.1 walkthrough, tracked via v0.2.0-MILESTONE-AUDIT.md §7 E-5
+resolves_phase: 15
 ---
 
 # A scratch project silently needs `git init` before the toolkit will find its root

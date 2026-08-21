@@ -3,6 +3,7 @@ title: Re-record the three VERIF-02 binmon fixtures against a real stock VICE bu
 date: 2026-08-13
 priority: high
 source: /gsd-execute-phase 2 plan 02-02 — D-19 override, no stock VICE reachable in-environment
+resolves_phase: 13
 ---
 
 # Three committed fixtures are synthetic, not hardware-recorded

@@ -10,6 +10,7 @@ files:
   - .claude/mcp/vice/tools-manifest.json:1188
   - CLAUDE.md:36
   - .planning/PROJECT.md:147
+resolves_phase: 15
 ---
 
 ## Problem

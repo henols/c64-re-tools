@@ -3,6 +3,7 @@ title: Confirm the --help backend discriminator against a real stock AND a real 
 date: 2026-08-13
 priority: high
 source: /gsd-execute-phase 2 plan 02-07 — backend detection, no real VICE binary reachable in-environment
+resolves_phase: 13
 ---
 
 # The `-mcpserver`/`-binarymonitor` --help discriminator is unverified against real hardware

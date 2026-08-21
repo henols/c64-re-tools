@@ -3,6 +3,7 @@ title: README.md and c64-ram-capture/SKILL.md name no drive-type prerequisite (n
 date: 2026-08-19
 priority: low
 source: 08.1-WALKTHROUGH-EVIDENCE.md FINDING-C4 — Phase 8.1 walkthrough, tracked via v0.2.0-MILESTONE-AUDIT.md §7 E-5
+resolves_phase: 15
 ---
 
 # Neither doc names a drive-type prerequisite

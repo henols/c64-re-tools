@@ -16,6 +16,7 @@ files:
   - .claude/mcp/vice/package.json
   - .gitignore
   - CLAUDE.md
+resolves_phase: 16
 ---
 
 ## Problem

@@ -15,6 +15,7 @@ files:
   - .claude/mcp/vice/vice-broker.mts
   - README.md:72-157
   - .claude/skills/c64-program-recon/references/tool-selection.md
+resolves_phase: 14
 ---
 
 ## Problem

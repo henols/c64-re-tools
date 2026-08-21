@@ -3,6 +3,7 @@ title: RELEASES.json's schema is undocumented anywhere in c64-ram-capture/SKILL.
 date: 2026-08-19
 priority: medium
 source: 08.1-WALKTHROUGH-SETUP.md FINDING-B1 — Phase 8.1 walkthrough, tracked via v0.2.0-MILESTONE-AUDIT.md §7 E-5
+resolves_phase: 15
 ---
 
 # `RELEASES.json`'s shape has to be learned by reading source, not docs

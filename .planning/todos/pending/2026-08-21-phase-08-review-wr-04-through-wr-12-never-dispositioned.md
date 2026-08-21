@@ -8,6 +8,7 @@ files:
   - .claude/mcp/vice/capability-registry.test.ts
   - .claude/mcp/vice/tool-support-table.test.mjs
   - scripts/check-skill-fork-honesty.mjs
+resolves_phase: 15
 ---
 
 ## Problem

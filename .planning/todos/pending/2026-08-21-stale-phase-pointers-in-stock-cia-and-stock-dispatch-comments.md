@@ -5,6 +5,7 @@ area: docs
 files:
   - .claude/mcp/vice/stock-cia.ts
   - .claude/mcp/vice/stock-dispatch.ts
+resolves_phase: 16
 ---
 
 ## Problem

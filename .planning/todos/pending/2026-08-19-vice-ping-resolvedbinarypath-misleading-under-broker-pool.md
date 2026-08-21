@@ -3,6 +3,7 @@ title: vice_ping's resolvedBinaryPath is a static bare-x64sc PATH probe, indepen
 date: 2026-08-19
 priority: high
 source: 08.1-WALKTHROUGH-EVIDENCE.md FINDING-C3 — Phase 8.1 walkthrough, tracked via v0.2.0-MILESTONE-AUDIT.md §7 E-5
+resolves_phase: 15
 ---
 
 # `resolvedBinaryPath` does not reflect the leased instance's real binary
