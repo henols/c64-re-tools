@@ -277,10 +277,29 @@ hands regenerator2000 a container format. Reverses if a consumer has only
 
 ## Deferred Items
 
-**13 items acknowledged and deferred at the v0.2.0 milestone close on 2026-08-19.**
-The pre-close artifact audit reported these; the round-4 milestone audit had
-already assessed the same set as `tech_debt` with no blockers. They were accepted
-rather than resolved, and are v0.3.0's inheritance unless dispositioned sooner.
+**13 items acknowledged and deferred at the v0.2.0 milestone close on 2026-08-19**
+(superseded by the current count below, kept here as history rather than
+overwritten). The pre-close artifact audit reported these; the round-4
+milestone audit had already assessed the same set as `tech_debt` with no
+blockers. They were accepted rather than resolved, and were v0.3.0's
+inheritance unless dispositioned sooner.
+
+**Current, as of Phase 11.1's close (2026-08-21): 17 items, derived from
+`.planning/todos/pending/` and guarded by `docs-deferred-ledger.test.ts`
+(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 17 were opened
+during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
+`2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
+`2026-08-20-vsf-as-a-bootstrap-input`,
+`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
+by Phase 11.1 itself while dispositioning Phase 10/11's review findings
+(`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
+`2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed`,
+`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`).
+**Two rows from the 2026-08-19 count above are removed here because their
+todos now live in `.planning/todos/completed/`, not because the items were
+dropped:** `2026-08-17-document-second-binmon-client-as-a-wedge-lookalike` and
+`2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes`
+are both resolved and closed.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -289,13 +308,18 @@ rather than resolved, and are v0.3.0's inheritance unless dispositioned sooner.
 | todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — four Phase 3 behavioural/spelling details written spec-driven, never exercised against a real binary |
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
-| todo | 2026-08-17-document-second-binmon-client-as-a-wedge-lookalike | — | Pending |
-| todo | 2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes | — | Pending — FINDING-A1; Debian `acme` ships no `cbm/c64/*.a` standard library, CI's own environment included |
 | todo | 2026-08-19-drive-type-prerequisite-undocumented-in-readme-and-skill | — | Pending |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
 | todo | 2026-08-19-project-paths-git-marker-requirement-undocumented | — | Pending |
 | todo | 2026-08-19-releases-json-schema-undocumented | — | Pending |
 | todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
+| todo | 2026-08-20-fully-remove-the-forked-vice-mcp-backend | — | Pending — opened during v0.3.0; not scoped to this milestone |
+| todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
+| todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
+| todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
+| todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
+| todo | 2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed | — | Pending — WR-08 (10-REVIEW.md), found while writing plan 11.1-07's disposition ledger; confirmed still live |
+| todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
 Not counted above, because they are complete on disk: the four `.planning/quick/`
@@ -312,6 +336,20 @@ first is **WR-13** — a second capability-refusal string hardcodes "the fork
 backend provides this tool", false for two `stock-only-gain` names. Verified
 unreachable today (all 38 manifest names have handlers), so it is dead code that
 violates one-source-of-truth rather than a live defect.
+
+Also carried, not blocking, from Phase 11.1's own disposition ledger
+(`2026-08-21-phase-10-and-11-review-residual-dispositions.md`): the test-only
+env hatch `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES` in `vice-proxy.ts` (narrow,
+inert unless explicitly set, no user-facing surface); the comment-scope gap in
+plan 11.1-01's phase-pointer guard (`r2000-project.ts`'s one comment-only
+FLOW-02 site is permanently outside that guard's string-literal-only reach);
+`r2000-cli.test.ts`'s harmless duplicate of `writeChain()`'s used-byte formula
+(used only to build unrelated CLI fixtures, never to verify the DOS
+convention); and `02-REVIEW.md`'s IN-05 (`stockReconnect()`'s thrown message
+still says `stockConnect:`), the one genuinely open v0.2.0 code-review
+straggler confirmed live in current source — a trivial one-line fix, left
+open because `stock-connect.ts` sits outside this phase's r2000/disassembler
+scope.
 
 ### Carried forward from earlier closes
 
@@ -331,11 +369,31 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with `/gsd-new-milestone` — it creates a fresh
-  `REQUIREMENTS.md`, which was removed at close.
+Phase 11.1 has closed v0.3.0's audit items (AUDIT-01 through AUDIT-05, FLOW-01,
+FLOW-02, INT-01, INT-02). All three v0.3.0 phases (9, 10, 11) plus this
+closure phase are complete. Two Phase 10 coverage gaps remain, deliberately
+run as separate commands rather than folded into an 11.1 plan (D-11.1-08 —
+they write phase-10 artifacts, which an 11.1 commit should not carry):
 
-- Nothing to publish: `v0.2.0` is tagged, pushed, and live on npm for both
-  packages, and the tree is in sync with `origin/main`.
+- `/gsd-validate-phase 10` — `10-VALIDATION.md` is still the pre-execution
+  planning snapshot (`status: planned`, all six task rows `⬜ pending`,
+  sign-off unchecked). The validation itself already happened —
+  `10-VERIFICATION.md` ran the full suite green plus all four CI guard
+  scripts at exit 0 and source-level mutation-kill testing — so this command
+  closes the paperwork retroactively rather than re-running anything.
+- `/gsd-secure-phase 10` — no `10-SECURITY.md` exists, despite Phase 10 being
+  the phase that introduced untrusted-input byte parsers (`r2000-d64.ts`'s
+  sector walker, `r2000-project.ts`'s `parsePrg`). Two of the phase's own
+  review findings (WR-05, WR-07) were input-handling defects — exactly the
+  surface a threat model covers. Phase 11's `11-SECURITY.md` is the model:
+  `status: verified`, `threats_open: 0`.
 
-- `R2000-16`'s assumption probe gates all of v0.3.0 and has no v0.2.0
-  dependency — it can run before the milestone is opened.
+Then close the milestone: `/gsd-complete-milestone v0.3.0`. Nothing else
+blocks it — all 12 in-scope `R2000-*` requirements are satisfied, all three
+phases are `passed`, and § Deferred Items above is now derived from
+`.planning/todos/pending/` rather than hand-maintained, so the milestone-close
+command reads an accurate deferred set.
+
+Nothing to publish beyond the milestone tag itself: `v0.2.0` is tagged,
+pushed, and live on npm for both packages, and the tree is in sync with
+`origin/main`.
