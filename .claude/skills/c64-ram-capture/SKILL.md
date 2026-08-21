@@ -262,6 +262,17 @@ Capture the power-on image as the very first action against a fresh machine, the
 idle-capture twice more and run `floor` over the set. State the result as a
 floor, not a complete set — more captures can only widen it.
 
+## Feeding the memory map's provenance sidecar
+
+`c64-program-recon`'s generated memory map (`vice-mcp r2000 render-memmap`) takes a small provenance
+sidecar as input, and this skill supplies one of its fields: `scripts/compare.mjs digest`'s `sha256`
+and `size` become the sidecar's `captureSha256`, proving which image the rendered map describes. The
+sidecar's other run-scoped keys (`port01`, `dd00`, `vicBank`, `screenRam`, `charsetOrBitmap`, `mode`,
+`liveVectorPair`, `vectorHandler`, `rasterPositions`) come from `c64-program-recon`'s own
+`derive.mjs` — **this skill does not emit the sidecar itself.** The sidecar is hand-authored from
+those two skills' outputs and validated by the renderer, which throws naming every missing or
+malformed key at once rather than rendering a document that silently carries a placeholder.
+
 ## Which skill does what
 
 This one owns the image and its identity. It does not restate what the others carry.

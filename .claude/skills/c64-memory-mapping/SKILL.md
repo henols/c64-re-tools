@@ -186,6 +186,24 @@ were expecting. Because it mutates the repo, `memmap` belongs behind a GSD
 command (`/gsd-quick`), per this project's GSD Workflow Enforcement rule — it is
 not a read-only lookup like `lookup` and `annotate`.
 
+## Feeding the enum generator
+
+`memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
+to generate program-specific enums for regenerator2000's annotation store (R2000-13): register
+writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
+generator is `.claude/mcp/vice/r2000-regbits-gen.ts`; its committed output is
+`.claude/mcp/vice/r2000-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
+`node r2000-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
+if `memmap.json` changed without a re-run.
+
+**The honest gap:** only 29 of this file's 959 entries carry a structured `bits` array. `$D015`,
+`$D017`, `$D01A` and `$D01B`–`$D01D` — the sprite-plane bitmask registers a real game writes
+constantly — are **not** among those 29, so the enum generator supplies them from its own curated
+override table (`OVERRIDES` in `r2000-regbits-gen.ts`), not from this file. Widening `memmap.json`'s
+`io` parser (or repairing the OCR damage already present in some `bits` prose, e.g. a letter `O` for
+the digit `0`) so those registers get a real structured entry here is separate work belonging to this
+skill, not the generator.
+
 ## Troubleshooting
 
 | Symptom | Fix |

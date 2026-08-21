@@ -115,6 +115,68 @@ same IRQ entry that phase-01 live work established independently (chain `$1103 �
 The method reproduces a known-good result from a static image with no emulator running, and the
 `$1116` pair is new — see `references/control-flow.md` § 2. **Confidence: HIGH** for steps 1-2.
 
+## Writing findings into the annotation store
+
+Recon's findings are not memory-map prose written once and left to rot — they are entries in a
+queryable annotation store, and the Markdown memory map is a *generated view* of that store (D-24),
+not something you hand-edit yourself.
+
+**Open or bootstrap the store**, then hand its path to every call that follows:
+
+```bash
+npx -y @henols/vice-mcp r2000 bootstrap game.prg                            # npm install
+node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 bootstrap game.prg   # in-repo/plugin
+```
+
+Every `r2000_*` tool takes an explicit `project` path pointing at the resulting `.regen2000proj`
+(D-19) — there is no ambient session state naming the store, so which project a call touched is
+always visible in the transcript.
+
+**Write findings with the named tools, not a Markdown row:**
+
+| Tool | Use for |
+|---|---|
+| `r2000_set_label_name` | Naming a routine or table (`init_screen`, `sprite_table`) |
+| `r2000_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
+| `r2000_add_scope` | Marking a handler's extent as a lexical scope |
+| `r2000_set_comment` | Recording the evidence — the carrier for the confidence grade below |
+| `r2000_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels/comments/block ranges, and batching is what makes that affordable under the per-call spawn-load-mutate-save-exit lifecycle |
+
+**Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
+bracket tokens (quoted verbatim from `r2000-confidence.ts`, the parser's own source of truth):
+
+`[confirmed-code]` (confirmed code), `[probable-code]` (probable code), `[confirmed-data]`
+(confirmed data), `[probable-data]` (probable data), `[unknown]` (unknown).
+
+A typo in the bracket token — wrong case, an underscore, a plural, stray whitespace — **fails
+loudly**; it does not silently degrade into an ungraded comment. As with `RE-FINDINGS.md`, do not
+promote a row by editing its grade in place: re-verify and restate the evidence with a fresh
+`r2000_set_comment` call, so the record of when something stopped being a guess survives.
+
+**Query instead of re-deriving.** `r2000_get_symbols`, `r2000_get_comments`, `r2000_get_blocks` and
+`r2000_get_cross_references` answer straight from the store. `r2000_search_disassembly` searches
+labels, comments and instructions together — but `max_results` is **REQUIRED** on this surface,
+because regenerator2000's own default is 50 and silently truncates a full-program pass. The query
+this whole workflow exists to make cheap:
+
+> "Show me everything still `[unknown]`" → `r2000_search_disassembly` with `query: "[unknown]"` and
+> an explicit `max_results` set above your program's comment count.
+
+(The composite address-details lookup is deliberately not on this surface — D-32, a 64K-project
+defect filed upstream — its answer is reachable as a combination of the tools above.)
+
+**Generate the memory map; do not hand-author it.** Fill in the provenance sidecar (schema and a
+filled example live in `templates/memory-map.template.md`), then:
+
+```bash
+npx -y @henols/vice-mcp r2000 render-memmap game.regen2000proj --provenance sidecar.json
+node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
+```
+
+Add `--check` to detect drift — either a hand edit to the rendered file, or a store change since it
+was last rendered. The rendered file carries a generated-file banner; treat it like every other
+generated artifact in this repo and never hand-edit it.
+
 ## Static disassembly
 
 Turning a `.prg` or a flat 64K image into ACME source, offline, is not part of this
@@ -173,7 +235,7 @@ This one is the route between the stations. It does not restate what the others 
 | `references/observation-hazards.md` | Every way a live read gives a wrong answer. **Read before driving.** |
 | `references/tool-selection.md` | Which `mcp__plugin_c64-re-tools_vice__*` call answers which question, and what to delegate |
 | `references/reconstruction.md` | Binary inclusion, behavioural-equivalence correctness bar, SMC labels, label vocabulary |
-| `templates/memory-map.template.md` | Region map with per-row confidence grading |
+| `templates/memory-map.template.md` | `render-memmap`'s provenance sidecar schema and the confidence vocabulary — the rendered map itself is generated, not hand-authored |
 
 Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you find them**,
 graded with `Evidence:` and `Confidence:`. Promote by re-logging with the new evidence, never by

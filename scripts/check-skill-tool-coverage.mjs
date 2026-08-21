@@ -447,6 +447,29 @@ need(
   !CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
   "non-vacuity: r2000_get_address_details must be absent from CURATED_R2000_TOOLS (D-32, the 64K OutOfRange defect) -- if this fails, D-32's exclusion has been silently reversed"
 );
+// 4. Non-vacuity FLOOR (plan 11-12): now that skill prose actually names
+//    r2000_* tools, the extraction finding none is itself a failure, exactly
+//    the way `extracted.size >= 30` guards the vice_* extraction above. The
+//    number 10 is not a guess -- it is the exact count plan 11-12 introduced,
+//    verified by `grep -oE '\br2000_[a-z0-9_]+' .claude/skills/**` across the
+//    three files that plan edited (c64-program-recon's SKILL.md and
+//    memory-map.template.md): r2000_add_scope, r2000_batch_execute,
+//    r2000_get_blocks, r2000_get_comments, r2000_get_cross_references,
+//    r2000_get_symbols, r2000_search_disassembly, r2000_set_comment,
+//    r2000_set_data_type, r2000_set_label_name. A future phase that adds a
+//    reference should raise this floor to the new true count -- never lower
+//    it to make a regression pass.
+need(
+  extractedR2000.size >= 10,
+  `non-vacuity: expected at least 10 distinct r2000_* names extracted from .claude/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
+);
+// 5. The generated-artifact rule (render-memmap) is the one piece of D-24
+//    guidance a future session most needs to find -- assert at least one
+//    skill file states it, rather than hoping the prose survives edits.
+need(
+  skillFiles.some((f) => readFileSync(f, "utf8").includes("render-memmap")),
+  "non-vacuity: expected at least one skill file to mention render-memmap (the memory map is a GENERATED VIEW, D-24) -- if this fails, the generated-artifact pointer has been lost from skill prose"
+);
 
 // --- Report ------------------------------------------------------------
 if (errors.length) {
@@ -471,9 +494,8 @@ console.log(
     `${categoryCount(PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY)} proxy-local-with-stock-manifest-entry, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
     `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${FORK_ONLY_UNRECOVERABLE.length} fork-only-unrecoverable, ` +
     `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase. ` +
-    // No floor asserted yet (no skill file mentions an r2000_* name until
-    // plan 11-09) -- an allowlist/floor that passes vacuously is exactly
-    // what this script's own header warns about. Printed here so plan 11-09
-    // can add a non-vacuity floor once the references actually exist.
+    // Floor asserted above (plan 11-12, need() #4): a count of 0 here is now
+    // a FAILURE, not a silent pass -- see that assertion's comment for the
+    // floor's provenance.
     `r2000_*: ${extractedR2000.size} distinct names extracted, all curated (CURATED_R2000_TOOLS has ${CURATED_R2000_TOOLS.length} entries).`
 );
