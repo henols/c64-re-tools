@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 12
 current_phase_name: Audit Integrity Instrument
 status: executing
-stopped_at: Completed 12-05-PLAN.md
-last_updated: "2026-08-21T18:07:21.701Z"
+stopped_at: Completed 12-06-PLAN.md
+last_updated: "2026-08-21T18:23:35.566Z"
 last_activity: 2026-08-21
-last_activity_desc: Phase 12 plan 05 executed (CR-01/CR-03/WR-04 closed)
-state_head: 857e4a04b10dd7b0ff367eb130428a8a54d3c8fa
+last_activity_desc: Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
+state_head: 37768107fa8250fef0975b8f3836df6938229f3e
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -57,14 +57,17 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 12 (Audit Integrity Instrument) — EXECUTING
-Plan: 5 of 7 executed
-Status: Executing Phase 12 gap-closure plans (12-05/06/07)
+Plan: 6 of 7 executed
+Status: Executing Phase 12 gap-closure plans (last: 12-06; next: 12-07)
 Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
-(CR-01) and the single-line Bash echo-append bypass (CR-03) are fixed by this
-plan, plus the dead pathish push (WR-04). CR-02's unbounded recursion in the
-unrecognised-shape fallback is still open -- next: plan 12-06. Phase is NOT
-complete until 12-06/12-07 land.
-Last activity: 2026-08-21 — Phase 12 plan 05 executed (CR-01/CR-03/WR-04 closed)
+(CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
+pathish push (WR-04) were fixed by plan 12-05. Plan 12-06 closed CR-02's
+unbounded recursion (now an iterative, depth-capped walk), plus WR-01
+(bounded guard subprocess), WR-02 (structural-failure short circuit) and
+WR-03 (check mode's missing error handling) -- the `--hook` exit surface is
+now exactly {0, 2}. Phase is NOT complete until 12-07 lands (human-gated,
+`autonomous: false`).
+Last activity: 2026-08-21 — Phase 12 plan 06 executed (CR-02/WR-01/WR-02/WR-03 closed)
 requirements mapped
 
 ## Performance Metrics
@@ -124,6 +127,7 @@ requirements mapped
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 12 P05 | 22min | 3 tasks | 3 files |
+| Phase 12 P06 | 55min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -203,6 +207,7 @@ Recent decisions affecting current work:
 - [Phase 12]: GATE-01's real-tree proof confirms status: tech_debt is gated alongside status: passed (D-12-12); gaps_found is never gated (D-12-13). — Both tech_debt and passed route to /gsd-complete-milestone, so both must be blocked while a docs guard is red; a milestone honestly reporting open gaps must never be blocked from saying so.
 - [Phase 12]: GATE-01's Bash-mode write-target scan is a content-adjacency heuristic, evadable by a base64/python -c runtime-assembled payload (T-12-02, accepted). — Layer 1 (audit-integrity.test.ts driving checkAuditGate(), which re-reads the actual committed file content regardless of how the shell wrote it) is the unevadable enforcement point; the hook is a deterrent, not the boundary.
 - [Phase 12]: [Phase 12-05]: CR-01/CR-03 closed via a bounded, non-backtracking token locator (auditTokenOffsets/textNamesMilestoneAudit, indexOf-based) plus small fixed-length windows (256/512/4096 chars), replacing the two super-linear Bash regexes and the unbounded whole-text token regex; a new unanchored gated-status scan (declaresGatedStatusUnanchored, derived from the single GATED_STATUSES set) replaces the line-anchored scan specifically in the Bash branch, closing the single-line echo/printf/tee-a/sed-i append bypass while leaving the structured Write/Edit document-content branch's line-anchored scan untouched (preserves the T-12-04 false-positive defence). WR-04's dead pathish push removed. New accepted limitation T-12-20: an in-place edit whose script argument exceeds the 4096-char window is not detected (Layer 1 still catches the landed write).
+- [Phase 12]: [Phase 12-06]: CR-02/WR-01/WR-02/WR-03 closed -- collectStringLeaves() converted to an iterative, depth-capped walk (MAX_LEAF_DEPTH=200, MAX_LEAF_NODES=50000) returning a truncation signal; hookMain() hoists the HOOK_MATCHER_TOOLS check above extraction and wraps scope determination in a try/catch; main()'s check-mode block is wrapped in one try/catch so a bad --root fails cleanly in both output modes; runGuardsLive() bounds its spawnSync to 15s (WR-01, gated at source level only, no behavioral timeout test); checkAuditGate() short-circuits before the guard spawn on a structural failure (WR-02). The --hook exit surface is now exactly {0, 2}.
 
 ### Pending Todos
 
@@ -404,8 +409,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T18:07:10.041Z
-Stopped at: Completed 12-05-PLAN.md
+Last session: 2026-08-21T18:23:35.549Z
+Stopped at: Completed 12-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

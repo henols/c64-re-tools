@@ -97,7 +97,7 @@ anyone to notice).
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
 
-**Plans**: 5/7 plans executed (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
+**Plans**: 6/7 plans executed (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
 
 **Wave 1**
 
@@ -121,7 +121,7 @@ anyone to notice).
 
 **Wave 6** *(gap closure, blocked on 12-05 — same two files)*
 
-- [ ] 12-06-PLAN.md — CR-02 + WR-01/WR-02/WR-03: an iterative depth-capped leaf walk whose truncation is a signal rather than a `RangeError`, matcher-first dispatch, symmetric try/catch in both modes, a 15 s bound on the guard subprocess, and a fast structural-failure path (D-12-03, D-12-10, D-12-14) [wave 6]
+- [x] 12-06-PLAN.md — CR-02 + WR-01/WR-02/WR-03: an iterative depth-capped leaf walk whose truncation is a signal rather than a `RangeError`, matcher-first dispatch, symmetric try/catch in both modes, a 15 s bound on the guard subprocess, and a fast structural-failure path (D-12-03, D-12-10, D-12-14) [wave 6]
 
 **Wave 7** *(gap closure, blocked on 12-06; human-gated — `autonomous: false`)*
 
@@ -251,7 +251,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 5/7 | In Progress|  |
+| 12. Audit Integrity Instrument | v0.4.0 | 6/7 | In Progress|  |
 | 13. External Verification | v0.4.0 | 0/TBD | Not started | - |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
