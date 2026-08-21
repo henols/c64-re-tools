@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled
 status: executing
-last_updated: "2026-08-21T15:34:46.880Z"
+last_updated: "2026-08-21T15:49:08.066Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -52,7 +52,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 12 (audit-integrity-instrument) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-08-21
 requirements mapped
@@ -107,6 +107,7 @@ requirements mapped
 | Phase 11.1 P07 | ~3.5h | 4 tasks | 8 files |
 | Phase 12 P01 | 90min | 2 tasks | 2 files |
 | Phase 12 P02 | 150min | 3 tasks | 3 files |
+| Phase 12 P03 | 40min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,8 @@ Recent decisions affecting current work:
 - [Phase 12]: audit-gate.mjs built as the single check point; the planted-violation test in audit-integrity.test.ts caught runGuardsLive() silently reporting green under a red guard when nested under an outer node --test (NODE_TEST_CONTEXT inheritance), fixed by stripping NODE_TEST_* from the guard subprocess env
 - [Phase 12-02]: RESEARCH.md's Route A (piggyback on live PreToolUse hooks) does not hold on this host -- resolved A1 via session-transcript inspection instead, without registering a hook or restarting the session
 - [Phase 12-02]: audit-gate.mjs's hook mode is fail-open outside the Write/Edit/MultiEdit/NotebookEdit/Bash + MILESTONE-AUDIT-token scope, fail-closed on every internal error once in scope; exit 2 plus stderr is the sole blocking mechanism, never exit-2-plus-permissionDecision JSON (anthropics/claude-code#43407)
+- [Phase 12-03]: settings.json split into a committed hooks-only file (Write|Edit|Bash PreToolUse -> audit-gate.mjs --hook) and .claude/settings.local.json (merged machine-specific permissions, still ignored); MultiEdit/NotebookEdit deliberately left out of the matcher since neither was verified against the live hook runtime
+- [Phase 12-03]: Layer 1 (audit-integrity.test.ts) now asserts the settings.json hook block itself (5 new tests), proven non-vacuous by two live break-and-restore probes against the real committed file (missing file -> exit 1; matcher narrowed to Write|Edit -> exit 1 naming the heredoc-bypass risk), closing T-12-09's silent-deletion gap
 
 ### Pending Todos
 
@@ -382,8 +385,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-21T15:34:46.865Z
-Stopped at: Completed 12-02-PLAN.md
+Last session: 2026-08-21T15:49:08.057Z
+Stopped at: Completed 12-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

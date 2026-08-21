@@ -36,7 +36,7 @@ Phase 08's `WR-04`..`WR-12` and Phase 09's `IN-01`..`IN-03` stayed invisible unt
 the completeness guard was built, and how `4f048bb` closed with that guard already
 red.
 
-- [ ] **GATE-01**: A milestone audit cannot record `status: passed` while any of the four `docs-*.test.ts` guards is red — the precondition is mechanically enforced, not documented
+- [x] **GATE-01**: A milestone audit cannot record `status: passed` while any of the four `docs-*.test.ts` guards is red — the precondition is mechanically enforced, not documented
 - [ ] **GATE-02**: Every open code-review finding across all phases is dispositioned, including Phase 08's `WR-04`..`WR-12`, Phase 09's `IN-01`..`IN-03`, `WR-13`'s second hardcoded capability-refusal string, and `02-REVIEW.md`'s `IN-05` — and `docs-review-disposition.test.ts` runs green from a clean checkout
 
 ### Backend Decision
@@ -95,7 +95,7 @@ Populated during roadmap creation.
 | EXTV-01 | 13 | Pending |
 | EXTV-02 | 13 | Pending |
 | EXTV-03 | 13 | Pending |
-| GATE-01 | 12 | Pending |
+| GATE-01 | 12 | Complete |
 | GATE-02 | 15 | Pending |
 | FORK-01 | 14 | Pending |
 | FORK-02 | 14 | Pending |

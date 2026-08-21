@@ -109,7 +109,7 @@ anyone to notice).
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 12-03-PLAN.md — commit a hooks-only `.claude/settings.json`, relocate machine-specific permissions, amend `.gitignore`, and make Layer 1 guard the wiring
+- [x] 12-03-PLAN.md — commit a hooks-only `.claude/settings.json`, relocate machine-specific permissions, amend `.gitignore`, and make Layer 1 guard the wiring
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -239,7 +239,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 2/4 | In Progress|  |
+| 12. Audit Integrity Instrument | v0.4.0 | 3/4 | In Progress|  |
 | 13. External Verification | v0.4.0 | 0/TBD | Not started | - |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
