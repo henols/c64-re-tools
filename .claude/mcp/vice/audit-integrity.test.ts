@@ -783,6 +783,59 @@ describe("hook mode: scripts/audit-gate.mjs --hook (plan 12-02, D-12-03)", () =>
       cleanup();
     }
   });
+
+  // CR-02 (12-REVIEW.md): the recursive leaf walk crashed with `RangeError:
+  // Maximum call stack size exceeded` on a 10,056-byte depth-5000 payload --
+  // a raw Node stack trace and exit 1 from exactly the fallback path built to
+  // be the MOST defensive one (T-12-08). The fix converts the walk to an
+  // explicit-stack iterative form with a depth cap (MAX_LEAF_DEPTH); a
+  // payload whose nesting exceeds the cap is treated as an unrecognised
+  // shape that could not be fully inspected and resolves to whichever of the
+  // two documented exits the guard state calls for -- never a third outcome.
+  // Built as a raw string (not JSON.stringify'd) per the hazard note above:
+  // JSON.stringify itself blows its own stack on this shape well before
+  // depth 20,000, and runHook() passes a string payload straight through
+  // without re-encoding.
+  function deepNestedHookPayload(toolName: string): string {
+    return (
+      `{"tool_name":"${toolName}","tool_input":{"unknown_field":` +
+      "[".repeat(5000) +
+      `"x"` +
+      "]".repeat(5000) +
+      `}}`
+    );
+  }
+
+  test("hook mode: a deeply-nested unrecognised payload refuses cleanly instead of crashing (CR-02)", () => {
+    const redTree = buildSyntheticTree({ redGuardIndex: 0 });
+    const greenTree = buildSyntheticTree({ redGuardIndex: null });
+    try {
+      const payload = deepNestedHookPayload("Write");
+
+      const red = runHook(payload, redTree.root);
+      assert.equal(
+        red.status,
+        2,
+        `expected the depth-truncated payload to refuse cleanly over a red guard; stderr: ${red.stderr}`,
+      );
+      assert.ok(!/RangeError/.test(red.stderr), `expected no RangeError in stderr; stderr: ${red.stderr}`);
+      assert.ok(
+        /depth|MAX_LEAF_DEPTH|exceed/i.test(red.stderr),
+        `expected stderr to name the depth cap / truncation explicitly; stderr: ${red.stderr}`,
+      );
+
+      const green = runHook(payload, greenTree.root);
+      assert.equal(
+        green.status,
+        0,
+        `expected the SAME depth-truncated payload to be allowed once every guard is green; stderr: ${green.stderr}`,
+      );
+      assert.ok(!/RangeError/.test(green.stderr), `expected no RangeError in stderr; stderr: ${green.stderr}`);
+    } finally {
+      redTree.cleanup();
+      greenTree.cleanup();
+    }
+  });
 });
 
 // SETTINGS WIRING (plan 12-03, T-12-09): the committed `.claude/settings.json`

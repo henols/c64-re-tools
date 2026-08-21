@@ -437,7 +437,22 @@ function isOldKey(key) {
   return key === "old_string" || key === "old_str" || key === "old_text";
 }
 
-/** Recursively collects every string-valued leaf of `value`, skipping any
+/** CR-02 (12-REVIEW.md): the recursive form of the walk below survived depth
+ * 2,000 and threw `RangeError: Maximum call stack size exceeded` at depth
+ * 4,000 on the host measured while writing this fix -- and a 10,056-byte
+ * depth-5000 payload was enough to crash the live `--hook` process with a
+ * raw stack trace and exit 1, from exactly the fallback path built to be the
+ * most defensive one (T-12-08). The deepest real `tool_input` shape any
+ * documented field carries is `edits: [{ new_string }]`, depth 3, so 200 is
+ * far below the crash threshold and far above any real payload. */
+const MAX_LEAF_DEPTH = 200;
+
+/** Caps the total number of string leaves a single walk collects, bounding
+ * the fallback's own work independent of the depth cap above -- a wide-but-
+ * shallow adversarial payload is bounded here rather than by depth. */
+const MAX_LEAF_NODES = 50000;
+
+/** Collects every string-valued leaf of `value` into `out`, skipping any
  * `old_string`/`old_str`/`old_text` key at any depth (D-12-13 applies to the
  * fallback path too). Used only when `tool_input`'s shape is NOT recognised
  * (T-12-08) -- joins with a real newline, never `JSON.stringify`, because
@@ -448,38 +463,69 @@ function isOldKey(key) {
  * tries `declaresGatedStatusUnanchored()` on the same joined text (CR-03),
  * which does not depend on line structure at all -- the newline join is
  * preserved here for the line-anchored half, not because it is the only
- * scan this fallback runs. */
-function collectStringLeaves(value, out) {
-  if (value == null) return;
-  if (typeof value === "string") {
-    out.push(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectStringLeaves(item, out);
-    return;
-  }
-  if (typeof value === "object") {
-    for (const [key, val] of Object.entries(value)) {
-      if (isOldKey(key)) continue;
-      collectStringLeaves(val, out);
+ * scan this fallback runs.
+ *
+ * Explicit-stack ITERATIVE walk (CR-02) -- never recursive. Pushes
+ * `{ value, depth }` records onto a plain array used as a stack, popping
+ * until empty, so this cannot itself overflow the JS call stack no matter
+ * how deep the input nests. Returns `true` when the walk stopped early
+ * because a branch's depth would exceed `MAX_LEAF_DEPTH` or the collected-
+ * leaf count would exceed `MAX_LEAF_NODES` -- a SIGNAL the caller threads
+ * through as `depthTruncated`, never a thrown exception. Mutating a module-
+ * level variable instead of returning this flag was rejected: this file has
+ * no mutable module state today (see the header's exported-surface comment)
+ * and must not acquire any. */
+function collectStringLeaves(root, out) {
+  let truncated = false;
+  const stack = [{ value: root, depth: 0 }];
+  while (stack.length > 0) {
+    const { value, depth } = stack.pop();
+    if (value == null) continue;
+    if (typeof value === "string") {
+      if (out.length >= MAX_LEAF_NODES) {
+        truncated = true;
+        continue;
+      }
+      out.push(value);
+      continue;
+    }
+    if (depth > MAX_LEAF_DEPTH) {
+      truncated = true;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) stack.push({ value: item, depth: depth + 1 });
+      continue;
+    }
+    if (typeof value === "object") {
+      for (const [key, val] of Object.entries(value)) {
+        if (isOldKey(key)) continue;
+        stack.push({ value: val, depth: depth + 1 });
+      }
     }
   }
+  return truncated;
 }
 
 /** Field-name-agnostic extraction of what a hook payload targets and
  * writes (Route C in `12-RESEARCH.md`'s Assumptions Log -- this is what
  * makes assumption A1, resolved by observation in
  * `12-HOOK-STDIN-EVIDENCE.md`, non-load-bearing either way). Returns
- * `{ pathish, written, shapeKnown, keysSeen }`.
+ * `{ pathish, written, shapeKnown, keysSeen, depthTruncated }`.
  *
  * When `tool_input` carries at least one of `HOOK_KNOWN_KEYS`, `shapeKnown`
- * is true and `pathish`/`written` are built from exactly those known keys.
- * When it carries none of them, `shapeKnown` is false and BOTH `pathish`
- * and `written` become the same single joined string of every string leaf
- * in `tool_input` (minus `old_*` keys) -- so a `*MILESTONE-AUDIT*.md` token
- * anywhere in an unrecognised payload puts the call in scope, and
- * `isHookInScope` (below) can still refuse, naming the unrecognised shape. */
+ * is true and `pathish`/`written` are built from exactly those known keys;
+ * `depthTruncated` is always `false` on this branch -- the known-key walk
+ * never recurses into `tool_input` itself. When it carries none of them,
+ * `shapeKnown` is false and BOTH `pathish` and `written` become the same
+ * single joined string of every string leaf in `tool_input` (minus `old_*`
+ * keys) -- so a `*MILESTONE-AUDIT*.md` token anywhere in an unrecognised
+ * payload puts the call in scope, and `isHookInScope` (below) can still
+ * refuse, naming the unrecognised shape. `depthTruncated` is `true` on this
+ * branch when `collectStringLeaves()` (CR-02) stopped descending early
+ * because the payload's nesting exceeded `MAX_LEAF_DEPTH` or its leaf count
+ * exceeded `MAX_LEAF_NODES` -- an additive field on this internal record;
+ * this function stays exported under the same name and signature. */
 export function extractHookTarget(toolName, toolInput) {
   const isPlainObject = toolInput !== null && typeof toolInput === "object" && !Array.isArray(toolInput);
   const keysSeen = isPlainObject ? Object.keys(toolInput) : [];
@@ -487,9 +533,9 @@ export function extractHookTarget(toolName, toolInput) {
 
   if (!isPlainObject || !shapeKnown) {
     const leaves = [];
-    if (isPlainObject) collectStringLeaves(toolInput, leaves);
+    const depthTruncated = isPlainObject ? collectStringLeaves(toolInput, leaves) : false;
     const joined = leaves.join("\n");
-    return { pathish: [joined], written: [joined], shapeKnown: false, keysSeen };
+    return { pathish: [joined], written: [joined], shapeKnown: false, keysSeen, depthTruncated };
   }
 
   const pathish = [];
@@ -514,7 +560,7 @@ export function extractHookTarget(toolName, toolInput) {
     written.push(toolInput.command);
   }
 
-  return { pathish, written, shapeKnown: true, keysSeen };
+  return { pathish, written, shapeKnown: true, keysSeen, depthTruncated: false };
 }
 
 /** True when `p`'s basename contains `MILESTONE-AUDIT` and ends `.md`,
@@ -694,6 +740,18 @@ export function isHookInScope(toolName, toolInput, extraction) {
   if (!HOOK_MATCHER_TOOLS.has(toolName)) return false;
 
   if (!extraction.shapeKnown) {
+    // CR-02: a payload whose nesting exceeded the leaf walk's depth/count
+    // cap could not be fully inspected -- by construction that IS an
+    // unrecognised shape (T-12-08's stance is refuse loudly rather than
+    // pass silently), so treat it as in scope unconditionally. This looks
+    // like the opposite of the fail-open rule immediately above, but being
+    // in scope does not mean being refused -- hookGuardVerdict() still
+    // decides below, so a green tree still exits 0. What it does mean is
+    // that the one payload class that used to crash the process (a
+    // RangeError and exit 1) now resolves to whichever of the two
+    // documented exits the guard state calls for, never a third outcome.
+    if (extraction.depthTruncated) return true;
+
     const joined = extraction.written[0] ?? "";
     // Accept EITHER scan here: a renamed tool_input field (T-12-08) is
     // exactly the scenario where the only signal available may be a
@@ -780,7 +838,12 @@ function buildHookRefusal(verdict, extraction) {
       ? "Note: tool_input carried none of the recognised fields (file_path, path, " +
         "notebook_path, content, file_text, new_string, new_str, edits, command); this " +
         "refusal was reached via the unrecognised-shape fallback (T-12-08). tool_input keys " +
-        `seen: [${extraction.keysSeen.join(", ") || "none"}].\n`
+        `seen: [${extraction.keysSeen.join(", ") || "none"}].\n` +
+        (extraction.depthTruncated
+          ? `Note: the payload's nesting exceeded the leaf walk's depth cap (MAX_LEAF_DEPTH=${MAX_LEAF_DEPTH}) ` +
+            "or its leaf-count cap; the shape could not be fully inspected, so this refusal is conservative " +
+            "rather than a confirmed match (CR-02).\n"
+          : "")
       : "";
 
   if (verdict.structuralErrors.length > 0) {
