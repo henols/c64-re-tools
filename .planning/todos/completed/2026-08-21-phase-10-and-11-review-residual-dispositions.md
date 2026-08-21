@@ -322,6 +322,21 @@ ledger did not originally cover:
   this plan's scope (a v0.2.0 phase, not the r2000/regenerator2000 family), so filed
   rather than fixed.
 
+**7. `11-REVIEW.md`'s WR-01 (`resolveStorePath()`'s symlink guard misses a not-yet-existing
+target reached through an existing directory symlink) is fixed, but not by a plan --
+by quick task `260821-a86`.**
+`11-01-SUMMARY.md`/`11-03-SUMMARY.md` cover WR-02 and WR-04 (11-REVIEW.md) by ID already, so
+the completeness guard's phase-directory SUMMARY scan finds those two without help. WR-01
+is different: it was fixed by quick task `260821-a86`
+(`.planning/quick/260821-a86-fix-phase-11-security-md-open-findings-w/260821-a86-SUMMARY.md`),
+named "WR-01's parent-realpath containment in `resolveStorePath()`" in that quick task's own
+SUMMARY and in `STATE.md`'s narrative -- neither of which is one of
+`docs-review-disposition.test.ts`'s five disposition sources (quick-task SUMMARYs live under
+`.planning/quick/`, a directory this guard does not scan, and `STATE.md` itself is not a
+source either). **Disposition: fixed**, recorded here (a `todos/completed/` document naming
+`11-REVIEW.md` and `WR-01`) so the guard's todo-scan source picks it up rather than adding a
+sixth disposition source for what is, so far, a single instance.
+
 Also fixed during this same pass: `v0.3.0-MILESTONE-AUDIT.md`'s `09-the-assumption-probe-go-no-go`
 tech_debt entry used range notation ("IN-01..IN-03") that never literally spells out
 "IN-02", which the guard's word-bounded id matching cannot expand -- reworded to "IN-01,
