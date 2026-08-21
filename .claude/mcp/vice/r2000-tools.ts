@@ -65,8 +65,8 @@
 //   - Never report `r2000_save_project` as persisted on the strength of its
 //     own text response -- always route it through
 //     `r2000-mcp-client.ts`'s `saveAndVerify()`.
-import { realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
 
@@ -605,11 +605,19 @@ export function assertCuratedTool(name: string, args?: unknown): void {
 }
 
 // ---------------------------------------------------------------------------
-// Project-path validation (T-11-PATH-ESCAPE) -- the same posture
+// Project-path validation (T-11-PATH-ESCAPE, WR-01 -- closed). Same posture
 // stock-symbols.ts takes for `.lbl` files: an LLM-supplied path reaching a
 // spawned child process. Resolve against repoRoot(), refuse an extension
 // other than .regen2000proj, and refuse anything that escapes the workspace
-// root either directly or via a symlink.
+// root either directly or via a symlink. WR-01's finding was that a
+// not-yet-existing leaf under a directory symlink bypassed containment
+// entirely (the ENOENT catch fell back to the literal, unresolved path).
+// Containment is now enforced against the DEEPEST EXISTING ancestor's
+// realpath, plus the literal remaining path segments rebuilt on top of it
+// (`resolveViaDeepestExistingAncestor()` below) -- and every one of those
+// remaining segments is itself lstat-guarded against being an unresolved
+// (e.g. dangling) symlink, which would otherwise slip through the
+// ancestor-realpath check the same way the original leaf did.
 // ---------------------------------------------------------------------------
 
 export class R2000StorePathError extends Error {
@@ -623,13 +631,78 @@ function isContained(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + sep);
 }
 
+/** Walks up from `dirname(resolved)` toward the filesystem root, collecting
+ * the literal path segments skipped along the way, until it finds the
+ * DEEPEST ancestor for which `realpathSync` succeeds. Rebuilds the
+ * candidate as `join(ancestorReal, ...remainingSegments)` -- but first
+ * lstat-guards every remaining segment: a symlink whose own target does not
+ * exist yet (or otherwise fails to resolve) still redirects a later create
+ * outside the workspace, and `realpathSync` on the full path reports plain
+ * ENOENT for it, so it would otherwise slip through the ancestor-realpath
+ * check entirely. `lstatSync`'s own ENOENT (a genuinely absent component,
+ * the tolerated case) is swallowed; any OTHER lstat error propagates as a
+ * refusal. Called only from `resolveStorePath()`'s ENOENT branch below. */
+function resolveViaDeepestExistingAncestor(resolved: string, root: string): string {
+  const remaining: string[] = [basename(resolved)];
+  let current = dirname(resolved);
+  let ancestorReal: string;
+  for (;;) {
+    try {
+      ancestorReal = realpathSync(current);
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new R2000StorePathError(
+          `could not resolve ancestor "${current}" while resolving "${resolved}" (${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      const parent = dirname(current);
+      if (parent === current) {
+        throw new R2000StorePathError(
+          `could not find any existing ancestor while resolving "${resolved}" under workspace root "${root}"`,
+        );
+      }
+      remaining.unshift(basename(current));
+      current = parent;
+    }
+  }
+
+  let accumulated = ancestorReal;
+  for (const segment of remaining) {
+    accumulated = join(accumulated, segment);
+    let st;
+    try {
+      st = lstatSync(accumulated);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue; // genuinely absent -- tolerated
+      throw new R2000StorePathError(
+        `could not stat "${accumulated}" while resolving "${resolved}" (${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+    if (st.isSymbolicLink()) {
+      throw new R2000StorePathError(
+        `"${resolved}" contains a symlink component at "${accumulated}" that does not itself resolve (dangling, or ` +
+          "otherwise unreadable via realpathSync) -- refusing rather than risk a later create redirecting outside " +
+          `the workspace root (${root})`,
+      );
+    }
+  }
+
+  return accumulated;
+}
+
 /** Resolves `project` against `repoRoot()`, refusing anything that does not
  * end in `.regen2000proj`, or that escapes the workspace either directly or
  * via a symlink. Tolerant of the path not existing yet (ENOENT during the
  * symlink-resolution step) since `r2000_save_project` can create a fresh
  * store -- unlike stock-symbols.ts's `.lbl` reader, this module never reads
  * the file itself, so a missing project is regenerator2000's own concern to
- * report, not this function's. */
+ * report, not this function's. On ENOENT, containment is enforced against
+ * the deepest EXISTING ancestor's realpath plus the literal remaining
+ * segments (`resolveViaDeepestExistingAncestor()`), closing WR-01 /
+ * T-11-PATH-ESCAPE: the previous ENOENT fallback (`real = resolved`, the
+ * literal, unresolved path) let a directory symlink one or more levels up
+ * from a not-yet-existing leaf bypass containment entirely. */
 export function resolveStorePath(project: unknown): string {
   if (typeof project !== "string" || project.trim() === "") {
     throw new R2000StorePathError(
@@ -657,7 +730,7 @@ export function resolveStorePath(project: unknown): string {
     realRoot = root;
   }
 
-  let real = resolved;
+  let real: string;
   try {
     real = realpathSync(resolved);
   } catch (err) {
@@ -665,6 +738,10 @@ export function resolveStorePath(project: unknown): string {
       throw new R2000StorePathError(`could not resolve "${resolved}" (${err instanceof Error ? err.message : String(err)})`);
     }
     // ENOENT is fine here -- r2000_save_project may create the file fresh.
+    // Walk up to the deepest EXISTING ancestor's realpath and rebuild the
+    // candidate from it, rather than falling back to the literal
+    // (unresolved) `resolved` path -- see resolveViaDeepestExistingAncestor().
+    real = resolveViaDeepestExistingAncestor(resolved, root);
   }
 
   if (!isContained(real, realRoot)) {

@@ -13,9 +13,10 @@
 // shared r2000-test-gate.ts seam (plan 11-01) -- never a hand-rolled
 // `if (!available) return`, which would report a false PASS rather than a
 // SKIP.
-import { test, after } from "node:test";
+import { test, after, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -309,6 +310,93 @@ test("resolveStorePath accepts a path under the repo root", () => {
   assert.ok(resolved.endsWith("does-not-need-to-exist.regen2000proj"));
   assert.ok(resolved.startsWith(HERE));
 });
+
+// ---------------------------------------------------------------------------
+// WR-01 / T-11-PATH-ESCAPE: parent-realpath containment. `repoRoot()`
+// (branch 0) reads `env.CLAUDE_PROJECT_DIR` fresh on every call with no
+// caching, so these tests swap it to a scratch temp dir per case --
+// mirroring `stock-symbols.test.ts`'s own `withTempWorkspace()` shape --
+// rather than planting symlinks inside this real checkout.
+// ---------------------------------------------------------------------------
+
+function withTempWorkspace<T>(fn: (dir: string, t: TestContext) => Promise<T> | T) {
+  return async (t: TestContext) => {
+    const dir = mkdtempSync(join(tmpdir(), "r2000-tools-test-workspace-"));
+    const prev = process.env.CLAUDE_PROJECT_DIR;
+    process.env.CLAUDE_PROJECT_DIR = dir;
+    try {
+      await fn(dir, t);
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+      else process.env.CLAUDE_PROJECT_DIR = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+
+test(
+  "resolveStorePath refuses a directory symlink escape via a not-yet-existing leaf (the audit's PoC), naming the resolved outside target",
+  withTempWorkspace((dir, t) => {
+    const outsideDir = mkdtempSync(join(tmpdir(), "r2000-tools-test-outside-"));
+    const linkPath = join(dir, "escape-link");
+    try {
+      symlinkSync(outsideDir, linkPath);
+    } catch (err) {
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    try {
+      assert.throws(
+        () => resolveStorePath("escape-link/pwned.regen2000proj"),
+        (err: unknown) => {
+          assert.ok(err instanceof R2000StorePathError);
+          const escapedOutside = realpathSync(outsideDir).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          assert.match((err as Error).message, new RegExp(escapedOutside));
+          return true;
+        },
+      );
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  }),
+);
+
+test(
+  "resolveStorePath refuses the same symlink escape one level deeper, so the fix cannot pass by inspecting only the immediate parent",
+  withTempWorkspace((dir, t) => {
+    const outsideDir = mkdtempSync(join(tmpdir(), "r2000-tools-test-outside-deep-"));
+    const linkPath = join(dir, "escape-link");
+    try {
+      symlinkSync(outsideDir, linkPath);
+    } catch (err) {
+      t.skip(`symlinkSync unavailable in this environment: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    try {
+      assert.throws(
+        () => resolveStorePath("escape-link/sub/x.regen2000proj"),
+        (err: unknown) => {
+          assert.ok(err instanceof R2000StorePathError);
+          const escapedOutside = realpathSync(outsideDir).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          assert.match((err as Error).message, new RegExp(escapedOutside));
+          return true;
+        },
+      );
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  }),
+);
+
+test(
+  "resolveStorePath's create path still works when an intermediate directory does not exist yet either",
+  withTempWorkspace((dir) => {
+    const realDir = realpathSync(dir);
+    const resolved = resolveStorePath("newdir/deeper/fresh.regen2000proj");
+    assert.ok(resolved.startsWith(realDir + "/"), `expected "${resolved}" to be contained under "${realDir}"`);
+    assert.ok(resolved.endsWith(join("newdir", "deeper", "fresh.regen2000proj")));
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Gated integration (D-11): criterion 2 against a real regenerator2000
