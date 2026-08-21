@@ -1,5 +1,103 @@
 # Milestones
 
+## v0.3.0 regenerator2000 static-analysis backend (Shipped: 2026-08-21)
+
+**Phases completed:** 4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks
+**Requirements:** 12/12 in-scope satisfied (4 of the original 16 cut or folded 2026-08-17)
+**Git range:** `4867535` → `4f048bb` (268 commits since `v0.2.0`)
+**Changed:** 244 files, +121,291 / −416 lines (72 files / +18,316 outside `.planning/`)
+**Timeline:** 3 days (2026-08-19 → 2026-08-21)
+**Final audit:** round 2, status `passed` — 12/12 requirements, 4/4 phases, 12/12 integration, 4/4 flows, zero open gaps
+**Known deferred items at close:** 19 (18 pending todos + Phase 03's UAT gap; see STATE.md → Deferred Items)
+
+**Delivered:** recon findings stop being prose. regenerator2000 is adopted as a
+static-analysis backend — a persistent, queryable annotation store plus a
+recursive-descent disassembler with an auto-analyzer — reached through 17 curated
+`r2000_*` tools and a `vice-mcp r2000 <verb>` CLI, entirely container-side, and
+structurally incapable of touching VICE. Register writes read as bit names,
+symbols flow both ways between the store and a live emulator, and the flat
+linear `toacme` decoder it makes obsolete is deleted.
+
+**Key accomplishments:**
+
+- **Probed the five load-bearing assumptions before building on them, then
+  honoured the answer.** A standalone go/no-go phase tested a real
+  regenerator2000 0.9.20 against seven criteria and recorded a verdict of
+  **`degrade`** (rule `R4`) when criterion 3(4) — `.vsf` machine-type
+  derivation — proved to be a coincidental default fallback rather than a
+  genuine read of the snapshot's own `"C64SC"` field. The milestone shipped
+  smaller than proposed because the gate was real: the input set narrowed to
+  `.prg` / `.d64` / flat-64K (D-34). Along the way the probe corrected its own
+  research — rustc floor `>= 1.90` not 1.85, the true dual `MIT OR Apache-2.0`
+  licence, and a Debian-release/glibc mismatch that breaks a naive multi-stage
+  container build.
+
+- **Made "regenerator2000 never touches VICE" a property of the code, twice
+  over.** `r2000-launch.ts` is the sole spawn seam: `--vice` is unreachable by
+  fixed per-verb argv builders *and* denied by a scan that throws
+  `R2000ViceFlagError`, both pinned by tests proven to fail under live
+  reintroduction. The whole `r2000_*` family registers proxy-locally through
+  `buildViceTool()` and never reaches `forwardToVice()`, so CLAUDE.md's
+  derived-tool path-translation constraint is satisfied by construction rather
+  than by an interception — and the family behaves identically on the fork and
+  stock backends.
+
+- **Turned a raw binary into an analysed project with no human in the loop.** A
+  pure-Node `.regen2000proj` synthesiser (gzip + base64 + minimal JSON) that a
+  real regenerator2000 loads and exports ACME from, with the
+  `use_illegal_opcodes`/`system` pair forced explicitly — the keystroke
+  bootstrap Phase 9 proved automatable defaults it to `false`, under which an
+  export proves nothing about 6510 illegal opcodes. Plus a container-side
+  `.d64` reader with a cycle-guarded sector-chain walk that refuses to guess,
+  a `vice-mcp r2000 <verb>` subcommand reaching its CLI before any MCP server
+  side effect runs, and one seam parsing `--verify`'s output that keys strictly
+  on ACME's own result line — proven in both directions on real transcripts,
+  including an exit-1 run where ACME still passed and an exit-0 run where ACME
+  never ran.
+
+- **Built the annotation store and proved it holds knowledge, by sealed
+  question.** 17 curated `r2000_*` tools over a hand-rolled newline-delimited
+  JSON-RPC client (chosen over `@mastra/mcp`'s `MCPClient` by a five-property
+  live measurement, yielding six distinct named failure modes). Its usefulness
+  was then tested falsifiably rather than asserted: session A annotated a
+  purpose-made fixture and sealed a question with a hashed answer key; a
+  genuinely separate session B answered it from tool calls alone, and the
+  canonical line hashed identically — `e64463d8…`.
+
+- **Closed the symbol round trip live, and made register writes readable.**
+  `sta $d011` now renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` in real
+  ACME-exported source, from a digest-pinned bit-name table generated
+  re-runnably from `memmap.json`. A 23-step transcript against genuine
+  unpatched stock `x64sc` (VICE 3.9) closes `R2000-14`/`R2000-15` end to end: a
+  store-written label resolves live, and a name discovered by disassembling the
+  running program — never read off source — is written back into the store. The
+  store became canonical and the Markdown memory map a generated view with a
+  render-digest drift guard.
+
+- **Deleted the thing this milestone earned the right to remove.** The 14-line
+  `toacme` wrapper (`cmdDisasm`), its dispatch entry, its usage line, and ~50
+  lines of `SKILL.md` caveats structural to a flat linear decoder are gone; both
+  playbooks point at the single live-verified `r2000 export-asm`/`verify` route,
+  and a whole-tree grep gate proven to bite on a non-`SKILL.md` file keeps it
+  gone.
+
+- **Closed every audit finding behind a guard, and the guard found more than the
+  audit did.** Inserted Phase 11.1 fixed or formally dispositioned all of
+  `AUDIT-01`..`AUDIT-05`, `FLOW-01`, `FLOW-02`, `INT-01`, `INT-02` plus Phase
+  10/11's outstanding review findings — each behind a mechanical guard proven
+  non-vacuous by a planted violation or a real reverted edit. Plan 11.1-07's
+  new completeness guard, on its first run, found **27** undispositioned
+  code-review findings across five phases against the plan's own pre-measured
+  8, and closed them all by fixing or filing. Both `SECURITY.md` ledgers now
+  read `threats_open: 0` / `status: verified`.
+
+**Archived:**
+- [`milestones/v0.3.0-ROADMAP.md`](milestones/v0.3.0-ROADMAP.md)
+- [`milestones/v0.3.0-REQUIREMENTS.md`](milestones/v0.3.0-REQUIREMENTS.md)
+- [`milestones/v0.3.0-MILESTONE-AUDIT.md`](milestones/v0.3.0-MILESTONE-AUDIT.md) (round 2, plus round 1 verbatim)
+
+---
+
 ## v0.2.0 Switchable stock-VICE backend (Shipped: 2026-08-19)
 
 **Phases completed:** 9 phases, 87 plans, 218 tasks
@@ -61,6 +159,7 @@ capabilities stock provably cannot have.
   `/usr/bin/x64sc`.
 
 **Archived:**
+
 - [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 - [`milestones/v0.2.0-REQUIREMENTS.md`](milestones/v0.2.0-REQUIREMENTS.md)
 - [`milestones/v0.2.0-MILESTONE-AUDIT.md`](milestones/v0.2.0-MILESTONE-AUDIT.md) (round 4, plus rounds 1-3 verbatim)

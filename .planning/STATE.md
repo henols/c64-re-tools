@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: verifying
-last_updated: "2026-08-21T11:10:28.325Z"
-last_activity: 2026-08-21
+status: Awaiting next milestone
+last_updated: "2026-08-21T12:58:31.373Z"
+last_activity: 2026-08-21 — Milestone v0.3.0 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
@@ -17,63 +17,52 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-19 after v0.2.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-08-21 at the v0.3.0 milestone close —
+full evolution review)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-**Shipped:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
+*Flagged at the v0.3.0 close, deliberately not rewritten: this says nothing about
+findings that outlive the session, which is what v0.3.0 delivered. See PROJECT.md
+→ Core Value; it is the first question `/gsd-new-milestone` should ask.*
+
+**Shipped:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
+phases, 36 plans, 101 tasks, 12/12 in-scope requirements, audit round 2
+`passed`). Recon findings are queryable state: 17 curated `r2000_*` tools and 7
+`vice-mcp r2000` CLI verbs over a persistent annotation store, container-side and
+structurally incapable of touching VICE; generated register bit-name enums; the
+symbol round trip closed live against genuine stock `x64sc`; the `toacme` decoder
+deleted.
+**Previously:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-**Current focus:** Milestone complete
-ROADMAP.md defines **three phases — 9, 10, 11** (numbering continued from v0.2.0's
-1-8 + 8.1/8.2), with all 12 in-scope `R2000-*` requirements mapped exactly once.
-Phase 9 is a standalone **go/no-go gate**: `R2000-16`'s five-assumption probe
-against a real regenerator2000 build, whose recorded verdict decides whether the
-milestone proceeds as scoped, degrades, or is reconsidered. No Phase 10/11 plan is
-written before it closes. `v0.2.0` is tagged, pushed and published on both npm
-packages, so no release work gates the milestone.
+
+**Current focus:** No open milestone. `.planning/REQUIREMENTS.md` was removed at
+the v0.3.0 close; `/gsd-new-milestone` creates a fresh one (questioning →
+research → requirements → roadmap). ROADMAP.md now carries both shipped
+milestones collapsed, with full detail in `milestones/v0.2.0-ROADMAP.md` and
+`milestones/v0.3.0-ROADMAP.md`. **Phase numbering continues from 11.1 — the next
+phase is 12**, and numbers are never reused, including the dissolved ones.
 
 ## Current Position
 
-Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
-Plan: 7 of 7
-Status: Phase complete — ready for verification
+Phase: Milestone v0.3.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-21 — Milestone v0.3.0 completed and archived
 
-All 12 plans executed across 7 waves and merged into main; verification
-`passed` (4/4 roadmap success criteria, 5/5 requirement IDs). Post-merge gate
-green at every wave; full suite 2066 pass / 0 fail, no cross-phase regressions.
+All four v0.3.0 phases (9, 10, 11, inserted 11.1) closed, 36/36 plans, 101 tasks.
+Final audit round 2: **`passed`** — 12/12 requirements, 4/4 phases, 12/12
+integration, 4/4 flows, zero open gaps. Both `SECURITY.md` ledgers
+`threats_open: 0` / `status: verified`; Nyquist compliant across all four phases.
+Archived to `milestones/v0.3.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`;
+ROADMAP.md collapsed 513 → 111 lines; `REQUIREMENTS.md` removed via `git rm`
+(history preserved).
 
-What the phase delivered: the r2000 MCP client seam (11-04) and the 17 curated
-`r2000_*` tools (11-05); register-bit enums generated from the memory map, with
-criterion 3 byte-verified against real ACME (11-06); the symbol round trip in
-code (11-08) and demonstrated live against genuine unpatched stock x64sc
-(11-11); the store made canonical with the Markdown memory map a generated view
-(11-10); and the recon/memory-mapping/ram-capture playbooks rewritten to emit
-store entries rather than prose (11-12). Criterion 1's two-session
-falsifiability proof is closed: session B answered a question sealed before it
-existed and the sha256 matched (11-07, 11-09).
-
-Security closed: `11-SECURITY.md` is `status: verified` / `threats_open: 0`
-(69 threats, 66 closed at audit, the remaining 3 closed by quick task
-260821-a86 -- WR-01's parent-realpath containment in `resolveStorePath()`,
-T-11-NAME-INJECT's REJECT policy on both label-name entry routes, and WR-04's
-Markdown-cell escaping in `renderMemoryMap()`).
-
-Open, recorded, non-blocking: the enum double-run no-op (11-06); and the three
-unregistered flags WR-02 (refusal shape), WR-03 (unbounded batch recursion) and
-WR-05 (missing post-spawn `"error"` listener), which 260821-a86 deliberately
-left out of scope.
-
-Phase 10's retroactive security audit (`10-SECURITY.md`) is also now closed:
-`status: verified` / `threats_open: 0` (25 threats, 24 closed at audit, the
-remaining one -- WR-08, unregistered until this closure, assigned T-10-19 --
-closed by quick task 260821-jd8: `parseArgs()`'s `--entry`/`--out` now refuse
-a missing or flag-shaped value instead of silently swallowing it).
-
-Last activity: 2026-08-21 - Completed quick task 260821-a86: closed Phase 11's
-three open security findings (WR-01, T-11-NAME-INJECT, WR-04); then quick task
-260821-jd8: closed Phase 10's last open security finding (WR-08 / T-10-19)
+Phase directories were **kept in place** under `.planning/phases/` as raw
+execution history rather than moved into `milestones/v0.3.0-phases/` — use
+`/gsd-cleanup` to archive them retroactively if the directory gets noisy.
 
 ## Performance Metrics
 
@@ -197,10 +186,17 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-14 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). Net -1 this
-plan: 2 closed (the dynamic-import closure-walk todo, the residual Phase 10
-review findings todo — both fully resolved, see Quick Tasks / decisions below),
-1 added (`2026-08-20-vsf-as-a-bootstrap-input.md`, filed by 11-03/D-34).
+18 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+is authoritative in `## Deferred Items` below, which is derived from the todo
+tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
+section previously read 14, a hand-maintained figure left behind when plan
+11.1-07 filed three further todos while dispositioning Phase 10/11's review
+findings (`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
+`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
+`2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`);
+corrected at the v0.3.0 close, which then filed an 18th
+(`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned`) after finding the
+disposition guard already red at `4f048bb`.
 
 Newest: `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
 bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
@@ -295,10 +291,15 @@ milestone audit had already assessed the same set as `tech_debt` with no
 blockers. They were accepted rather than resolved, and were v0.3.0's
 inheritance unless dispositioned sooner.
 
-**Current, as of quick task 260821-jd8 (2026-08-21): 17 items, derived from
-`.planning/todos/pending/` and guarded by `docs-deferred-ledger.test.ts`
-(AUDIT-04) — this table is no longer hand-maintained.** 5 of the 17 were opened
-during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
+**Current, as of the v0.3.0 milestone close (2026-08-21): 19 items — 18 pending
+todos plus Phase 03's UAT gap — derived from `.planning/todos/pending/` and
+guarded by `docs-deferred-ledger.test.ts` (AUDIT-04) — this table is no longer
+hand-maintained.** The 18th todo was filed *at the close*: the same
+`docs-review-disposition.test.ts` guard, run as part of the close, was found red
+at `4f048bb` with Phase 09's `IN-01`..`IN-03` undispositioned — predating the
+close, not caused by it. See
+`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned.md`. 4 of the 18 were
+opened during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
 `2026-08-20-vsf-as-a-bootstrap-input`,
 `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
@@ -336,14 +337,18 @@ verified` / `threats_open: 0`) are all resolved and closed — see
 | todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
+| todo | 2026-08-21-phase-09-review-in-01-in-03-never-dispositioned | low | Pending — filed at the v0.3.0 close; `09-REVIEW.md`'s three `Info` findings against Phase 9's *evidence harnesses* had no disposition anywhere. Recommended resolution is `wont-fix` citing evidence immutability (the committed probe transcripts were produced by those exact files), not an edit |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
-Not counted above, because they are complete on disk: the four `.planning/quick/`
-tasks the audit reported as `[missing]` (`260817-n6p`, `260818-nh5`,
-`260818-obc`, `260819-rop`) each carry a PLAN and a SUMMARY; the audit reads
-`missing` because their SUMMARY frontmatter has no `status:` field. Likewise the
-three UAT files reported as gaps that read `resolved` / `passed` / `passed`
-(`03-UAT.md`, `08-HUMAN-UAT.md`, `08.1-HUMAN-UAT.md`).
+Not counted above, because they are complete on disk: all nine
+`.planning/quick/` tasks the v0.3.0 pre-close audit reported as `[missing]`
+(`260817-n6p`, `260818-nh5`, `260818-obc`, `260819-rop`, `260819-tsz`,
+`260819-vie`, `260820-jwb`, `260821-a86`, `260821-jd8`) each carry a PLAN and a
+SUMMARY; the audit reads `missing` because their SUMMARY frontmatter has no
+`status:` field. (This paragraph named only the first four until the v0.3.0
+close; the five added since are the same false positive, not new debt.)
+Likewise the three UAT files reported as gaps that read `resolved` / `passed` /
+`passed` (`03-UAT.md`, `08-HUMAN-UAT.md`, `08.1-HUMAN-UAT.md`).
 
 Also carried, not blocking: roughly fifteen WR-class code-review findings across
 five phases, enumerated per phase in
@@ -385,32 +390,40 @@ Resume file: None
 
 ## Operator Next Steps
 
-Phase 11.1 has closed v0.3.0's audit items (AUDIT-01 through AUDIT-05, FLOW-01,
-FLOW-02, INT-01, INT-02). All three v0.3.0 phases (9, 10, 11) plus this
-closure phase are complete. Two Phase 10 coverage gaps remain, deliberately
-run as separate commands rather than folded into an 11.1 plan (D-11.1-08 —
-they write phase-10 artifacts, which an 11.1 commit should not carry):
+1. **`/gsd-new-milestone`** — the only thing gating further planned work.
+   Questioning → research → requirements → roadmap. It creates the fresh
+   `.planning/REQUIREMENTS.md` that was removed at this close. Next phase number
+   is **12**.
 
-- `/gsd-validate-phase 10` — `10-VALIDATION.md` is still the pre-execution
-  planning snapshot (`status: planned`, all six task rows `⬜ pending`,
-  sign-off unchecked). The validation itself already happened —
-  `10-VERIFICATION.md` ran the full suite green plus all four CI guard
-  scripts at exit 0 and source-level mutation-kill testing — so this command
-  closes the paperwork retroactively rather than re-running anything.
+2. **`git push origin v0.3.0`** if the tag was not pushed at close time — check
+   with `git ls-remote --tags origin v0.3.0`. Note that a merge to `main`
+   auto-publishes a patch version unless the commit subject carries
+   `[skip release]`, so the npm semver can already be ahead of the `v0.3.0`
+   planning label.
 
-- `/gsd-secure-phase 10` — no `10-SECURITY.md` exists, despite Phase 10 being
-  the phase that introduced untrusted-input byte parsers (`r2000-d64.ts`'s
-  sector walker, `r2000-project.ts`'s `parsePrg`). Two of the phase's own
-  review findings (WR-05, WR-07) were input-handling defects — exactly the
-  surface a threat model covers. Phase 11's `11-SECURITY.md` is the model:
-  `status: verified`, `threats_open: 0`.
+**Two things worth reading before scoping the next milestone, both raised by this
+close rather than by a phase:**
 
-Then close the milestone: `/gsd-complete-milestone v0.3.0`. Nothing else
-blocks it — all 12 in-scope `R2000-*` requirements are satisfied, all three
-phases are `passed`, and § Deferred Items above is now derived from
-`.planning/todos/pending/` rather than hand-maintained, so the milestone-close
-command reads an accurate deferred set.
+- **The Core Value may be a milestone out of date.** It describes live emulator
+  driving only; v0.3.0's whole point was knowledge that outlives the session, and
+  the sealed-question test proved that value directly. PROJECT.md → Core Value
+  carries the flag and a candidate rewording. Deliberately not amended on one
+  milestone's evidence.
 
-Nothing to publish beyond the milestone tag itself: `v0.2.0` is tagged,
-pushed, and live on npm for both packages, and the tree is in sync with
-`origin/main`.
+- **The deferred ledger is trustworthy for the first time.** 19 items (18 pending
+  todos + Phase 03's UAT gap), derived from `.planning/todos/pending/` and
+  guarded in both directions. The count rose from 13 because it is now *counted*,
+  not because the debt grew that much — see `## Deferred Items`. The three
+  highest-value items are unchanged across two milestones and are all the same
+  failure mode: an internal check standing in for an external one.
+
+- **The document guards are only load-bearing if something reads them.** This
+  close found `docs-review-disposition.test.ts` red at `4f048bb` — the commit
+  whose subject says "all findings closed". Plan 11.1-07 built the right
+  instrument and the audit was then written without reading its last three lines.
+  The 18th todo carries the concrete suggestion: require a green run of the four
+  `docs-*.test.ts` guards before a milestone audit may record `status: passed`.
+
+**Optional, non-blocking:** `/gsd-cleanup` to move the four v0.3.0 phase
+directories into `milestones/v0.3.0-phases/` — they were deliberately left in
+place at close.

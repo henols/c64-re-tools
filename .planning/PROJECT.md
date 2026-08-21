@@ -4,9 +4,10 @@
 
 A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
 Commodore 64 games, reusable across C64 projects. It ships a `vice` MCP server
-driving a host VICE emulator through an on-demand broker, plus six C64
-reverse-engineering skills, distributed both as two npm packages
-(`@henols/vice-mcp`, `@henols/c64-re-tools`) and as a Claude Code plugin.
+driving a host VICE emulator through an on-demand broker, a **static-analysis
+backend** over regenerator2000, plus six C64 reverse-engineering skills,
+distributed both as two npm packages (`@henols/vice-mcp`,
+`@henols/c64-re-tools`) and as a Claude Code plugin.
 
 **As of v0.2.0 the plugin runs on a VICE anyone can install.** Two backends are
 selectable per project: the **stock** backend drives unmodified upstream `x64sc`
@@ -18,6 +19,16 @@ backward-compatible argument shape, and the three capabilities stock provably
 cannot have (`vice_sid_get_state`, `vice_keyboard_matrix`,
 `vice_keyboard_restore`) refuse by name and say which backend provides them.
 
+**As of v0.3.0 recon findings are state, not prose.** regenerator2000 is a
+required, container-side, static-analysis-only prerequisite reached through **17
+curated `r2000_*` tools** and a `vice-mcp r2000 <verb>` CLI. It holds a
+persistent, queryable annotation store — labels, comments, block types, scopes,
+cross-references — and a recursive-descent disassembler with an auto-analyzer.
+It is structurally incapable of touching VICE (`--vice` unreachable *and*
+denied), so it behaves identically on both backends. Register writes render as
+generated bit-name enums, symbols flow both ways between the store and a live
+emulator, and the flat linear `toacme` decoder this replaced is deleted.
+
 ## Core Value
 
 A Claude session can reliably drive a real C64 emulator to reverse-engineer a
@@ -27,6 +38,16 @@ state — and keep working when the emulator misbehaves.
 *Still correct after v0.2.0.* Shipping the second backend did not shift it; the
 milestone widened *which* emulator qualifies as "a real C64 emulator" without
 changing what the session needs to do with it.
+
+**Flagged at the v0.3.0 close, deliberately not rewritten yet.** This statement
+is entirely about driving a *live* emulator, and v0.3.0's whole point is the
+opposite axis: findings that persist as queryable state *between* sessions, held
+by a tool that never touches the emulator at all. The two-session sealed-question
+test proved that value directly. One milestone of evidence is thin ground for
+restating the ONE thing, so it is recorded as the first question
+`/gsd-new-milestone` should ask rather than silently amended here. Candidate
+shape: *a Claude session can drive a real C64 emulator to reverse-engineer a
+program, and what it learns outlives the session.*
 
 ## Requirements
 
@@ -58,17 +79,21 @@ changing what the session needs to do with it.
 - ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`R2000-11`; the 17 curated `r2000_*` tools)
 - ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`R2000-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
 - ✓ Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`R2000-14`, `R2000-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
+- ✓ regenerator2000 is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented — v0.3.0 Phase 10 (`R2000-01`; two independent guarantees — unreachable by fixed per-verb argv builders *and* denied by a scan throwing `R2000ViceFlagError`, both pinned by tests proven to fail under live reintroduction)
+- ✓ It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — v0.3.0 Phase 10 (`R2000-02`; the `r2000_*` family registers proxy-locally via `buildViceTool()` and never reaches `forwardToVice()`, asserted structurally by `hostpath-consumers.test.ts` over a `readdirSync`-derived module set. **Scope honesty:** the two-projects-at-once half is a *stated* upstream limit, not a detected one, and the devcontainer half is documented rather than exercised — no devcontainer exists in this repo)
+- ✓ It is a declared prerequisite named in the install documentation alongside VICE, with its licence notice in `THIRD-PARTY-NOTICES.md` — v0.3.0 Phase 10 (`R2000-03`; the notice records the **true dual `MIT OR Apache-2.0`** licence. The requirement as written said "Apache-2.0", which the Phase 9 probe falsified; every Apache-2.0-only mention in the living documents was corrected)
+- ✓ `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by a regenerator2000 route — v0.3.0 Phase 10 (`R2000-05`; `cmdDisasm`, its dispatch entry, its usage line and ~50 lines of decoder-shaped `SKILL.md` caveats deleted, with a whole-tree grep gate proven to bite on a non-`SKILL.md` file)
+- ✓ A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted — v0.3.0 Phase 10 (`R2000-06`; `--verify`'s output parsed by one seam keying strictly on ACME's own result line, proven in both directions on real transcripts — an exit-1 run where ACME still passed, an exit-0 run where ACME never ran)
+- ✓ Project bootstrap from a raw binary is automated rather than a documented manual step — v0.3.0 Phase 10 (`R2000-09`; a pure-Node `.regen2000proj` synthesiser a real regenerator2000 loads, with `use_illegal_opcodes`/`system` forced explicitly, plus a container-side `.d64` reader that refuses to guess between matching entries)
 
 ### Active
 
-<!-- Next scope: milestone v0.3.0, regenerator2000 static-analysis backend. Proposed, not opened. -->
+<!-- Empty by design: v0.3.0 shipped 2026-08-21 and the next milestone is not yet
+     scoped. Run `/gsd-new-milestone` — it defines a fresh REQUIREMENTS.md, which
+     is what repopulates this section. Standing candidates (not requirements
+     until scoped) are listed under "Next Milestone Goals" below. -->
 
-- [ ] regenerator2000 is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented (`R2000-01`)
-- [ ] It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — and a devcontainer, and two projects open at once, both work without an upstream patch (`R2000-02`)
-- [ ] It is a declared prerequisite named in the install documentation alongside VICE, with its Apache-2.0 notice in `THIRD-PARTY-NOTICES.md` (`R2000-03`)
-- [ ] `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by a regenerator2000 route (`R2000-05`)
-- [ ] A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted (`R2000-06`)
-- [ ] Project bootstrap from a raw binary is automated rather than a documented manual step (`R2000-09`)
+*(none — awaiting `/gsd-new-milestone`)*
 
 ### Out of Scope
 
@@ -82,23 +107,42 @@ changing what the session needs to do with it.
 - **Distributed / multi-host broker** — outside the current single-host architecture; no demand established.
 - **Fixing the unauthenticated emulator endpoint exposure** — real (documented in `.planning/codebase/CONCERNS.md`), but a property of the external fork and its `0.0.0.0` bind, not of this project's scope.
 - **Tool surplus on either backend, absent a caller** *(added v0.2.0, 2026-08-17)* — 17 requirements were cut against one measured test: *does a shipped skill call it, or does something a skill calls depend on it?* Cut: client-side screenshots and the PNG encoder (`SHOT-01..05`), call backtrace (`DERIV-02`), checkpoint groups and ignore counts (`DERIV-03`), memory fill and every `*_set_state` write half, all nine stock-only gains (`GAIN-01..09`, Phase 6 entire), disk detach, and the parity harness. Each stays in `milestones/v0.2.0-REQUIREMENTS.md` marked `CUT` with rationale, so restoring one is a scope decision rather than archaeology. **The fork's other 33 uncalled tools are surplus, not a gap.**
+- **regenerator2000 capability surplus, absent a caller** *(added v0.3.0, cut 2026-08-17)* — 4 of the original 16 `R2000-*` requirements were folded or cut on the same measured test v0.2.0 used. Cut: HTML export with clickable xrefs (`R2000-07` — a shareable artifact no skill produces or consumes; still available ad-hoc via `--export_html`); the two-project limit as a reported error (`R2000-04` — folded into install documentation, since building detection for an upstream port collision is work in the wrong place); the static-vs-live tool-selection axis (`R2000-12` — folded into v0.2.0's `SKILL-01`, which already rewrote the same playbooks); and the `.vsf`/`.raw` bridge as its own requirement (`R2000-08` — it is which file extension you hand over, not a deliverable). Each stays in `milestones/v0.3.0-REQUIREMENTS.md` with rationale. A separate MCP-server-standup phase was dissolved into a task at the same time.
+- **`.vsf` as a regenerator2000 bootstrap input** *(added v0.3.0, D-34)* — the synthesis route hands over `.prg` / `.d64` / flat-64K only. Phase 9 found that a `.vsf`'s machine type reads correct only by coincidence: `"C64SC"` matches none of regenerator2000's literal arms, so it falls through to that tool's own C64 default and a non-C64 snapshot would be misreported. Prefer `.vsf` for anything *leaving* the emulator; that preference does not extend to this input set. Filed as `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md` — reverses only if a consumer has `.vsf` captures and cannot re-capture as `.raw`.
+- **Launching regenerator2000 with `--vice`, in any form** *(added v0.3.0, D-R1/D-07)* — not a scoping preference but a load-bearing invariant. It is what makes the whole `r2000_*` family backend-agnostic and keeps the binary monitor's single-client rule intact. Guarded twice in code, not documented once.
 - **Uniform tool lists across backends** *(added v0.2.0)* — superseded the original "the MCP surface must not change" constraint and `.planning/intel/decisions.md`'s `DEC-preserve-mcp-surface`. Stock advertises only what it implements. A skill written against the full fork surface therefore *breaks* on stock rather than degrading, which is why the playbooks must name the stock route or the fork requirement.
 
 ## Context
 
-**Where this stands.** v0.2.0 shipped 2026-08-19: 9 phases, 87 plans, 51/51
-in-scope requirements, 8 days. The exit route off the fork is built and proven —
-a user with an apt-installed VICE can run the six shipped skills, and is told
-plainly where they must reach for the fork instead. The final audit (round 4)
-returned `tech_debt`, not `passed`: nothing is broken and the tree is green, but
-the accumulated deferred work is large enough to deserve an explicit decision
-rather than silent inheritance.
+**Where this stands.** v0.3.0 shipped 2026-08-21: 4 phases, 36 plans, 101 tasks,
+12/12 in-scope requirements, 3 days. Two axes are now built. **Live:** a user
+with an apt-installed VICE can run the six shipped skills, and is told plainly
+where they must reach for the fork instead (v0.2.0, audit round 4 `tech_debt`).
+**Static:** what a recon session learns is written into a queryable annotation
+store instead of prose, and the symbol round trip between the two closes
+(v0.3.0, audit round 2 **`passed`** — the first `passed` verdict this project has
+recorded, with zero open gaps across requirements, phases, integration and
+flows).
 
-**Current codebase state.** ~54k lines added outside `.planning/` across 151
-files this milestone. Node ≥ 22.18, TypeScript run directly via native
-type-stripping (no build step for the shipped server). Stock backend: 38 tools,
-9 of them derived client-side. Fork backend: 62 tools, unchanged.
-`docs/tool-support.md` is the repository's first generated markdown file.
+**Current codebase state.** ~18k lines added outside `.planning/` across 72 files
+this milestone (~54k across 151 files in v0.2.0). Node ≥ 22.18, TypeScript run
+directly via native type-stripping (no build step for the shipped server). Stock
+backend: 38 tools, 9 derived client-side. Fork backend: 62 tools, unchanged.
+Static-analysis surface: 17 curated `r2000_*` tools plus 7 `vice-mcp r2000` CLI
+verbs, all container-side. Two generated-and-guarded markdown artifacts now —
+`docs/tool-support.md` and the store-rendered memory map, each with a
+digest/byte-identity drift guard.
+
+**Documents are now guarded like code.** This milestone's most transferable
+output is not a feature: it is that planning-document claims got mechanical
+guards. `docs-linerefs.test.ts` pins CLAUDE.md's `rewriteArguments()` citations;
+`docs-dangling-refs.test.ts` is a hand-written character state machine that fails
+if any shipped string literal names a phase number; `docs-deferred-ledger.test.ts`
+derives `STATE.md`'s deferred ledger from `.planning/todos/pending/` and fails in
+*both* directions; `docs-review-disposition.test.ts` fails if any phase's review
+finding lacks a cited disposition. That last one, on its first run, found **27**
+undispositioned findings across five phases against a pre-measured estimate of 8
+— the process risk was real and 3× larger than predicted.
 
 **The lesson this milestone taught, four times, in escalating forms.** A test
 written by the same pass that wrote the code proves less than it looks like it
@@ -112,13 +156,22 @@ every case the external check — a real assembler, a real emulator, a real
 container, a real broker launch — found what the internal one could not. Phase 8.1
 is the cleanest instance: running the one unwitnessed claim *falsified* it.
 
-**Known debt carried into v0.3.0.** 13 items acknowledged at close (see
-`STATE.md` → Deferred Items): 12 tracked pending todos and Phase 03's three
-open human-UAT scenarios. The highest-value three are the synthetic VERIF-02 wire
-fixtures, the unconfirmed `--help` backend discriminator, and the four Phase 3
-wire details written spec-driven and never exercised. Separately: `vice-proxy.ts`
-remains large and is the sole tool-surface seam — client-side derivations go in
-sibling modules, never appended to it.
+**Known debt carried out of v0.3.0.** 19 items acknowledged at close, up from
+v0.2.0's 13: 18 tracked pending todos plus Phase 03's three open human-UAT
+scenarios. The ledger is no longer hand-maintained — it is derived from
+`.planning/todos/pending/` and guarded both directions (`STATE.md` → Deferred
+Items). **The debt grew while being counted honestly for the first time**, which
+is the more useful reading than the raw delta: 4 items were opened during v0.3.0
+as real scope decisions, **4 were filed by the new completeness guard** (3 by plan
+11.1-07 and a 4th at this close), and 3 were retired to `completed/`. The highest-value three are unchanged from v0.2.0 and
+all name the same failure mode — an internal check standing in for an external
+one: the synthetic `VERIF-02` wire fixtures, the unconfirmed `--help` backend
+discriminator, and the four Phase 3 wire details written spec-driven and never
+exercised against a real binary. Newly notable: Phase 08's `WR-04`..`WR-12`, 9
+v0.2.0 review findings that were never dispositioned and only surfaced because
+the guard was built. Separately: `vice-proxy.ts` remains large and is the sole
+tool-surface seam — client-side derivations go in sibling modules, never appended
+to it.
 
 **Existing planning context (do not re-derive).** `.planning/codebase/` holds the
 codebase map. `.planning/intel/` holds the ingested doc set: decisions,
@@ -126,16 +179,19 @@ constraints, `CAND-*` scope items, and resolutions. `.planning/INGEST-CONFLICTS.
 records two user-resolved precedence warnings (W1, W2).
 `.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
-**Shipping history.** Newest tag `v0.2.0`; both npm packages published at 0.2.0.
-The planning label `v0.2.0` and the published npm semver currently coincide at
-0.2.0 but are determined independently — every merge to `main` auto-publishes a
+**Shipping history.** Newest tag `v0.3.0`; the version number resolves from a
+single `VERSION` template rather than being hand-maintained in six places
+(quick task `260819-tsz`), and release assets are stamped/zipped/attached by one
+seam both CI release paths call (`260819-vie` — v0.2.0 had shipped with none,
+because the merge path's `GITHUB_TOKEN` tag never re-triggers the tag-gated job).
+The planning label and the published npm semver are determined independently — every merge to `main` auto-publishes a
 patch version unless the subject contains `[skip release]`, so npm can run ahead
 of the planning label at any time.
 
 ## Constraints
 
 - **Compatibility**: The stdio MCP surface is **trimmed per backend** — stock advertises only the tools it implements, so the two backends expose different tool lists (Phase 2, D-07). A tool advertised on both keeps the same name and a backward-compatible argument shape — stock may add optional parameters but never removes, retypes, or newly-requires one — and the fork's list is unchanged from v0.1.x. A skill written against the full fork surface therefore *breaks* on stock rather than degrading; the playbooks must name the stock route or the fork requirement (SKILL-01). *(Supersedes the original "the surface must not change" constraint, and is pinned by `manifest-arg-compat.test.ts`.)*
-- **Architecture**: The transport swap happens behind `vice.ts`'s `call()` seam for *direct* tools. **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`** — `rewriteArguments()` runs at `vice-proxy.ts:2889` inside `forwardToVice()` and before `call()`, so a derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container. Second site with the same cause: `gatherWedgeEvidence()` calls `rewriteArguments()` itself, at `vice-proxy.ts:1368`. (Line numbers in this bullet are checked against the source at each phase and drift between phases; treat a mismatch as drift to re-verify, not as evidence the constraint itself changed.)
+- **Architecture**: The transport swap happens behind `vice.ts`'s `call()` seam for *direct* tools. **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`** — `rewriteArguments()` runs at `vice-proxy.ts:3029` inside `forwardToVice()` (which starts at `:2964`) and before `call()`, so a derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container. Second site with the same cause: `gatherWedgeEvidence()` calls `rewriteArguments()` itself, at `vice-proxy.ts:1508` (the function starts at `:1484`). The `r2000_*` family (v0.3.0 Phase 11) is registered through `buildViceTool()` and never reaches `forwardToVice()`, so neither call site is reachable from it — the constraint is satisfied by construction for that family, not by an interception. (Line numbers in this bullet are checked against the source at each phase and drift between phases; treat a mismatch as drift to re-verify, not as evidence the constraint itself changed. `docs-linerefs.test.ts` mechanically checks the two `rewriteArguments()` citations — the figures above were stale at `:2889`/`:1368` until the v0.3.0 close.)
 - **Protocol (settled, normative)**: 11-byte request header / 12-byte response header, all multi-byte values little-endian. Confirmed opcode set and error codes per `docs/phase0-binmon-findings.md` §5.
 - **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three: `STOPPED` (0x62), `RESUMED` (0x63), `JAM` (0x61), plus `CHECKPOINT_INFO` (0x11) on every checkpoint hit and `REGISTER_INFO` (0x31) on every monitor open. The last two **share a response type with a legitimate command reply**, so demux must key on request-id and never resolve a pending request with an event.
 - **Protocol**: `JAM` (0x61) has a **zero-length body**. `monitor_binary.c:384-394` computes the PC then passes `length = 0`, so no PC is sent. Every client surveyed assumes 2 bytes and breaks on it.
@@ -157,6 +213,11 @@ of the planning label at any time.
 - **Tech stack**: Node ≥ 22.18 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
 - **Architecture**: Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
+- **Dependency**: regenerator2000 is a **required, container-side prerequisite**, not an optional accelerator (D-R2). Install is `cargo install regenerator2000` — no upstream release assets exist — and its real toolchain floor is **rustc ≥ 1.90**, transitive and undeclared in its own `Cargo.toml` (not edition 2024's 1.85; `--locked` does not work around it). Licence is the dual **`MIT OR Apache-2.0`**, not Apache-2.0 alone.
+- **Architecture**: regenerator2000 is **never** launched with `--vice` (D-R1/D-07). `r2000-launch.ts` is the sole spawn seam for CLI verbs and `r2000-mcp-client.ts` the second, necessary async spawn site; both are guard-before-spawn, checked as a property over the shipped module set (`package.json` `files[]`, not a raw directory listing) by `r2000-spawn-seam.test.ts`.
+- **Capability**: regenerator2000's keystroke-bootstrapped project defaults `use_illegal_opcodes: false`, under which an ACME export contains no illegal-opcode mnemonic at all — so an unqualified default run proves nothing about 6510 illegal opcodes. The synthesiser forces the `use_illegal_opcodes`/`system` pair explicitly.
+- **Capability**: regenerator2000 reads a `.vsf`'s machine type by matching literal arms that `"C64SC"` does not match, falling through to its own C64 default. A C64 snapshot reads correct only by coincidence; a non-C64 one would be misreported. Hand it `.prg` / `.d64` / flat-64K (D-34).
+- **Capability**: regenerator2000's MCP HTTP mode has no `--mcp-port`/`--mcp-bind`, so only one project can be served at a time. This is a **stated** limit carried in the install docs, not a detected-and-reported one (`R2000-04` was cut). The `--mcp-server-stdio` route is unaffected.
 - **Testing**: `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested — their correctness only means anything against a real emulator's timing. Preserve the documented invariants (exactly one resume per wait; poll on `hit_count`, never on paused state).
 
 ## Engineering Governance
@@ -198,6 +259,16 @@ ceiling is explicitly recorded.
 | Cut scope by measured caller, not by judgment (2026-08-17) | Diffing the six skills' actual `vice_*` usage against both manifests answers "is this needed" mechanically | ✓ Good — 29 open requirements → 14, Phase 6 removed whole, and every cut names its requirements so reversal is a scope decision |
 | Trim the stock manifest instead of keeping surface shape uniform (D-07) | Advertising a tool the backend cannot serve is the dishonesty the milestone exists to remove | ✓ Good — and it forced `SKILL-01`: playbooks now name the stock route or the fork requirement at the point of use |
 | Run the walkthrough for real rather than assert it (Phase 8.1) | The one claim in the milestone with no witness was the install-to-capture flow | ✓ Good — and it **failed**, exposing the `Drive8Type=0` defect. Phase 8.2 fixed it and re-ran to a verified 65536-byte capture. The cheapest defect this milestone found came from refusing to assume |
+| Make the assumption probe a standalone go/no-go **phase**, not a criterion inside one (v0.3.0, 2026-08-19) | `R2000-16`'s failure mode is reconsider-the-milestone, not replan-the-phase. A phase boundary makes that gate structural rather than skippable | ✓ Good — and the gate fired for real: criterion 3(4) scored `partial`, rule `R4` selected `degrade`, and the input set narrowed to `.prg`/`.d64`/flat-64K. It also corrected three of its own research inputs (rustc floor, dual licence, a glibc mismatch). A probe that cannot say no is theatre |
+| Honour the `degrade` verdict rather than override it | The rule was written and its inputs recorded *before* the answer was known; overriding it would have made every future gate advisory | ✓ Good — cost one input format, kept the mechanism credible. `R4` specifically, not `R3`: the bootstrap was **not** the degraded element, so Phase 10 still delivered full automation |
+| Register the `r2000_*` family proxy-locally via `buildViceTool()`, never through `forwardToVice()` | CLAUDE.md's derived-tool constraint says a tool behind `call()` receives host-translated paths and acts on them inside the container | ✓ Good — the constraint is satisfied **by construction**: neither `rewriteArguments()` call site is reachable from the family, so there is no interception to forget. Also makes the family backend-agnostic for free |
+| Guard `--vice` twice — unreachable by construction *and* denied by a scan | A single guard is one refactor away from silently lapsing, and the invariant is what keeps the family backend-agnostic and the binary monitor's single-client rule intact | ✓ Good — both pinned by tests proven to fail under live reintroduction mutations, not merely written |
+| Synthesise `.regen2000proj` in pure Node instead of using the tmux keystroke bootstrap the probe had already proven automatable | The keystroke route works, but defaults `use_illegal_opcodes: false` — under which an export proves nothing about illegal opcodes | ✓ Good — the working route was rejected for the correct one. Forces the `use_illegal_opcodes`/`system` pair explicitly, pinned by planted-violation-verified tests |
+| Hand-roll the newline-delimited JSON-RPC client instead of using `@mastra/mcp`'s `MCPClient` | Decided by a five-property live measurement against the real binary, not by preference | ✓ Good — yields six distinct named failure modes instead of one opaque one, plus independent persistence verification for `r2000_save_project` |
+| Make the store canonical and the Markdown memory map a generated view | A hand-edited map and a queryable store cannot both be the truth | ✓ Good — `render-memmap --check` plus a render-digest drift guard makes the divergence mechanical rather than a review item |
+| Prove the store's value by sealed question, not by assertion (Phase 11 criteria 1) | "A later session can query instead of re-deriving" is exactly the kind of claim that reads true and tests nothing | ✓ Good — session A sealed a question with a hashed answer key; a genuinely separate session B answered from tool calls alone and the canonical line hashed identically (`e64463d8…`). The strongest evidence this milestone produced |
+| Close every audit finding behind a guard proven non-vacuous, not merely fixed (Phase 11.1) | An audit finding fixed without a guard is a finding that returns | ✓ Good — each guard demonstrated by a planted violation or a real reverted edit before acceptance. The completeness guard then found **27** undispositioned findings against a pre-measured 8, and the audit closed `passed` |
+| Extend document guarding from source claims to planning claims | v0.2.0's audits kept finding stale planning-document assertions by hand, repeatedly | ✓ Good — four `docs-*.test.ts` guards now fail CI on line-reference drift, dangling phase pointers, an undelegated deferred ledger, and undispositioned review findings. This close found two more stale counts *because* the guards exist |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -218,49 +289,113 @@ This document evolves at phase transitions and milestone boundaries.
 
 ## Current State
 
-**Shipped: v0.2.0 Switchable stock-VICE backend** — 2026-08-19.
-9 phases, 87 plans, 218 tasks, 51/51 in-scope requirements, 8 days.
+**Shipped: v0.3.0 regenerator2000 static-analysis backend** — 2026-08-21.
+4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks, 12/12 in-scope
+requirements, 3 days, 268 commits.
 Full record: [`MILESTONES.md`](MILESTONES.md) ·
-[`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md) ·
-[`milestones/v0.2.0-MILESTONE-AUDIT.md`](milestones/v0.2.0-MILESTONE-AUDIT.md)
+[`milestones/v0.3.0-ROADMAP.md`](milestones/v0.3.0-ROADMAP.md) ·
+[`milestones/v0.3.0-REQUIREMENTS.md`](milestones/v0.3.0-REQUIREMENTS.md) ·
+[`milestones/v0.3.0-MILESTONE-AUDIT.md`](milestones/v0.3.0-MILESTONE-AUDIT.md)
 
-The plugin no longer requires a custom VICE build. Stock upstream `x64sc` is a
-first-class, project-selectable backend with 38 tools; the fork keeps its 62 and
-is the documented route for the three capabilities stock provably cannot have.
-The install story, the per-backend support table, and the playbook routes all
-ship. The definition of done was never parity — it was *"a user with an
-apt-installed VICE can run the six shipped skills, and is told plainly where they
-must reach for the fork instead"* — and that is what was verified, end to end,
-against a genuine `/usr/bin/x64sc` (VICE 3.9), through the real broker.
+Recon findings stop being prose. regenerator2000 is a required, container-side,
+static-analysis-only prerequisite reached through 17 curated `r2000_*` tools and
+7 `vice-mcp r2000` CLI verbs, structurally incapable of touching VICE. A raw
+binary becomes an analysed project with no human in the loop; register writes
+render as generated bit-name enums (`sta $d011` → `lda
+#D011_YSCROLL3_ROW25_SCREENON_TEXT`, reassembling byte-identical under real
+ACME); symbols flow both ways between the store and a live emulator; and the
+flat linear `toacme` decoder this replaced is deleted, grep-gated gone.
 
-**Audit verdict: `tech_debt`, no blockers.** Nyquist fully compliant across all
-nine phases. 13 items acknowledged as deferred at close (`STATE.md` → Deferred
-Items), none of them blocking a tag.
+**Audit verdict: `passed`.** Round 2, zero open gaps — 12/12 requirements, 4/4
+phases, 12/12 integration, 4/4 flows. The first `passed` this project has
+recorded (v0.2.0 closed `tech_debt`). Round 1's findings were closed by inserted
+Phase 11.1, each behind a guard proven non-vacuous rather than merely fixed. Both
+`SECURITY.md` ledgers read `threats_open: 0` / `status: verified`. Nyquist
+compliant across all four phases, including a retroactive Phase 10 ledger and a
+Phase 11.1 ledger the closure phase had initially created a gap in itself.
 
-**Shipped.** `v0.2.0` is tagged on the remote and is an ancestor of
-`origin/main`; both npm packages are published at 0.2.0; every local tag is
-pushed; the working tree is in sync with `origin/main`.
+**Two things the milestone proved beyond its requirements.** The go/no-go gate
+fired for real and was honoured — the milestone shipped *smaller* than proposed
+because criterion 3(4) came back `partial`. And planning documents got mechanical
+guards; the completeness guard's first run found 27 undispositioned review
+findings against a pre-measured 8.
 
-**Phase 9 complete — the assumption probe returned `degrade`.** 2026-08-20.
-8 plans, 5 waves, no product code: the deliverable is evidence. `regenerator2000
-0.9.20` was driven for real, and four of the five assumptions hold — the pty
-tolerates a non-TTY, the Save-As bootstrap completes **with no human**, ACME
-reassembly is byte-identical once `use_illegal_opcodes` is on, and an unmodified
-`--export_lbl` file is consumed by the live `vice_symbols_load`. The fifth is a
-genuine `partial`: a `.vsf` carries its start address, but its machine type reads
-correct only by coincidence — `"C64SC"` matches none of regenerator2000's literal
-arms, so it falls through to that tool's own C64 default, and a non-C64 snapshot
-would be misreported. Rule `R4` therefore fired, not `R3`: **the bootstrap is not
-the degraded element**, so Phase 10 still delivers automation. Verdict and all
-five criteria: [`docs/phase9-regenerator2000-probe-findings.md`](../docs/phase9-regenerator2000-probe-findings.md).
+**Prior milestone — v0.2.0 Switchable stock-VICE backend**, 2026-08-19: 9 phases,
+87 plans, 218 tasks, 51/51 in-scope requirements, 8 days, audit round 4
+`tech_debt`. The plugin no longer requires a custom VICE build. Stock upstream
+`x64sc` is a first-class, project-selectable backend with 38 tools; the fork
+keeps its 62 and is the documented route for the three capabilities stock
+provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
+(VICE 3.9) through the real broker. Archived at
+[`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
 
-## Current Milestone: v0.3.0 regenerator2000 static-analysis backend
+## Current Milestone: none — awaiting `/gsd-new-milestone`
+
+v0.3.0 closed 2026-08-21. `.planning/REQUIREMENTS.md` was removed at close;
+`/gsd-new-milestone` runs questioning → research → requirements → roadmap and
+creates a fresh one. **Phase numbering continues from 11.1 — the next phase is
+12.** Numbers are never reused, including the dissolved ones.
+
+## Next Milestone Goals
+
+Nothing scoped yet. Standing candidates, in the order their cost is currently
+understood:
+
+1. **The carried debt, dispositioned rather than inherited a third time.** 19
+   items were accepted at v0.3.0's close, up from 13 at v0.2.0's — but the ledger
+   is now *derived and guarded* rather than hand-counted, so this is the first
+   number that can be trusted. The three highest-value are unchanged across two
+   milestones, which is itself the argument for scoping them: the synthetic
+   `VERIF-02` wire fixtures, the unconfirmed `--help` backend discriminator, and
+   the four Phase 3 wire details written spec-driven and never exercised. All
+   three are the same failure mode — an internal check standing in for an
+   external one — and this project has now been taught that lesson five times.
+   Newly surfaced and concrete: Phase 08's `WR-04`..`WR-12`, 9 v0.2.0 review
+   findings that only became visible when the completeness guard was built, and
+   Phase 09's `IN-01`..`IN-03`, found at the v0.3.0 close with the guard already
+   red at `4f048bb`. **Both of those argue for one small process change over any
+   code fix:** require a green run of the four `docs-*.test.ts` guards before a
+   milestone audit may record `status: passed`. The instrument exists; nothing
+   yet forces anyone to read it.
+2. **Remove the forked VICE backend, or decide not to.** Filed as
+   `.planning/todos/pending/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`.
+   v0.2.0's close reaffirmed keeping it as the hedge for SID read-back, matrix
+   keyboard and RESTORE/NMI. That reasoning still holds *today*, and the entry in
+   Out of Scope stands — but it is now the largest single simplification
+   available, and the decision deserves to be made deliberately rather than by
+   default each milestone.
+3. **The upstream contributions**, recorded as out of scope here but genuinely
+   worth doing: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60
+   lines, closes stock's hardest loss for everyone), and regenerator2000's
+   `--mcp-port` / `--mcp-bind` (~5 lines, unblocks two projects at once and a
+   host-side TUI — currently a *stated* limit in this project's install docs
+   precisely because it cannot be fixed downstream).
+4. **Restate the Core Value, or confirm it.** v0.3.0 delivered persistent
+   cross-session knowledge, which the current one-sentence Core Value does not
+   describe at all (see the flag under Core Value above). One milestone is thin
+   evidence; two would not be.
+5. **Packaging and repo shape** — `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json.md`,
+   plus `QUAL-01..03` (tests for `acme.mjs` / `driver.mjs` / `derive.mjs`,
+   orphaned planning references in source comments, and the emulator
+   control-plane network exposure).
+
+**Shipped since this section was last written:** v0.3.0, 2026-08-21. Every
+release-plumbing gap v0.2.0 exposed is closed — one `VERSION` template with a
+resolver seam replaced six hand-maintained strings, and one
+`scripts/release-assets.sh` seam is called by both CI release paths, since
+`release-on-merge`'s `GITHUB_TOKEN` tag cannot re-trigger the tag-gated job.
+v0.2.0's missing plugin zip was attached retroactively.
+
+<details>
+<summary>Previous milestone detail — v0.3.0 phase-by-phase narrative (archived 2026-08-21)</summary>
+
+**v0.3.0 regenerator2000 static-analysis backend — as it was tracked during execution:**
 
 **Goal:** Adopt regenerator2000 as a static-analysis-only backend so recon findings
 become queryable, undoable state instead of Markdown prose — and the symbol round
 trip between static annotation and the live emulator finally closes.
 
-**Target features:**
+**Target features (all delivered):**
 - The `R2000-16` assumption probe answered against a real build, as a standalone
   go/no-go gate before any further plan is written — the pty/HTTP-MCP question
   decides whether project bootstrap is automatable at all
@@ -279,54 +414,46 @@ trip between static annotation and the live emulator finally closes.
 - The symbol round trip: annotations export as VICE label files into the symbol
   store, and names discovered live flow back
 
-**Key context:**
-- **Structurally independent of v0.2.0.** regenerator2000 never touches VICE, so it
-  behaves identically on both backends. Only Phase 11's `DERIV-04`-on-stock
-  dependency reaches back into v0.2.0 at all.
-- **The probe gates the milestone, not just its first phase.** If regenerator2000
-  cannot be driven without a human, the annotation store is unreachable from a
-  skill and the milestone should be *reconsidered* rather than replanned. That is
-  why it is its own phase with an explicit gate rather than a criterion inside a
-  larger one.
-- **Required prerequisite, not an optional accelerator** (D-R2). Optional-with-
-  detection was rejected: it forbids any removal, since every skill would need a
-  working fallback, and it adds a third axis of conditionality on top of
-  stock-vs-fork.
-- **Install story regresses on its own axis.** No release assets exist upstream, so
-  install is `cargo install regenerator2000` — a Rust toolchain. Accepted when D-R2
-  was reaffirmed.
-- Research is **not** owed: `.planning/notes/regenerator2000-integration.md` is the
-  research, source-read at `ricardoquesada/regenerator2000@main`, with three
-  upstream blockers confirmed at file:line and a verified overlap map.
-- 12 of 16 `R2000-*` requirements are in scope; `R2000-04`, `-07`, `-08` and `-12`
-  were folded or cut on 2026-08-17 with rationale recorded in ROADMAP.md.
+**How it actually went, phase by phase:**
+- **Phase 9 (8 plans, no product code — the deliverable is evidence).** Verdict
+  `degrade`, rule `R4`. Four of five assumptions held: the pty tolerates a
+  non-TTY, the Save-As bootstrap completes with no human, ACME reassembly is
+  byte-identical once `use_illegal_opcodes` is on, and an unmodified
+  `--export_lbl` file is consumed by the live `vice_symbols_load`. The fifth is a
+  genuine `partial` — a `.vsf` carries its start address, but `"C64SC"` matches
+  none of regenerator2000's literal arms and falls through to its own C64
+  default, so a non-C64 snapshot would be misreported. `R4` not `R3`: the
+  bootstrap was **not** the degraded element, so Phase 10 still delivered
+  automation. The probe also corrected its own inputs — rustc floor ≥ 1.90, the
+  true dual licence, and a Debian-release/glibc mismatch breaking naive
+  multi-stage builds.
+- **Phase 10 (9 plans).** The adoption boundary made structural, the bootstrap
+  automated, and the removal earned: `--vice` guarded twice, a pure-Node
+  `.regen2000proj` synthesiser, a cycle-guarded `.d64` reader that refuses to
+  guess, the `vice-mcp r2000` subcommand, one `--verify`-parsing seam keyed on
+  ACME's own result line, and `cmdDisasm`/`toacme` deleted behind a whole-tree
+  grep gate.
+- **Phase 11 (12 plans).** The store, the enums and the round trip: 17 curated
+  tools over a hand-rolled NDJSON JSON-RPC client, `memmap.json`-generated
+  bit-name enums verified byte-identical under real ACME, the store made
+  canonical with the memory map a generated view, the playbooks rewritten to
+  emit store entries rather than prose — and criterion 1 closed by a two-session
+  sealed-question test whose hashes matched.
+- **Phase 11.1 (7 plans, inserted after audit round 1).** Every audit finding
+  fixed or formally dispositioned behind a guard proven non-vacuous. Its own
+  completeness guard then found 27 undispositioned review findings across five
+  phases against a pre-measured 8, and closed them all by fixing or filing.
 
-## Next Milestone Goals
+**Verdict at close:** audit round 2 `passed`, zero open gaps against the audited
+scope, 19 items deferred with a derived-and-guarded ledger. One honest asterisk,
+recorded at the close rather than after it: the completeness guard 11.1-07 built
+was **already red at `4f048bb`** — the commit whose subject reads "all findings
+closed" — with Phase 09's three `Info`-severity `IN-*` findings undispositioned.
+Neither audit round scanned Phase 9's review. The findings themselves are minor
+and against non-shipping evidence harnesses, so the `passed` verdict stands; the
+overstated commit subject and the unread guard do not.
 
-**Beyond v0.3.0** — nothing scoped yet. The standing candidates, in the order
-their cost is currently understood:
-
-1. **The carried debt, dispositioned rather than inherited again.** 13 items were
-   accepted at v0.2.0's close (`STATE.md` -> Deferred Items) and the round-4 audit
-   assessed the set as `tech_debt`. The three highest-value are the synthetic
-   `VERIF-02` wire fixtures, the unconfirmed `--help` backend discriminator, and
-   the four Phase 3 wire details written spec-driven and never exercised against a
-   real binary. Each is a case of the same lesson: an internal check standing in
-   for an external one.
-2. **The upstream contributions**, already recorded as out of scope here but
-   genuinely worth doing: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor
-   (~60 lines, closes stock's hardest loss for everyone), and regenerator2000's
-   `--mcp-port` / `--mcp-bind` (~5 lines total, unblocks two projects at once and a
-   host-side TUI).
-3. **`QUAL-01..03`** — tests for `acme.mjs` / `driver.mjs` / `derive.mjs`, orphaned
-   planning references in source comments, and the emulator control-plane network
-   exposure.
-
-**Shipped since this section was last written:** v0.2.0 reached users on
-2026-08-19 — npm `0.2.0` for both packages, tag and GitHub Release at `089127a`,
-plugin zip attached. The version number is now resolved from a single `VERSION`
-template rather than hand-maintained in six places; see README's "Publishing
-(maintainers)".
+</details>
 
 <details>
 <summary>Previous milestone detail — v0.2.0 phase-by-phase narrative (archived 2026-08-19)</summary>
@@ -624,12 +751,25 @@ finding WR-04 widened its blast radius: the generated memory map writes label an
 comment text unescaped into Markdown table cells, and comments may be multi-line.
 Five warning-level review findings total in `11-REVIEW.md`; none critical.
 
-**Bookkeeping note:** Phase 10's requirements (`R2000-01`, `-02`, `-03`, `-05`,
-`-06`, `-09`) remain in Active below. Phase 10 closed without graduating them and
-Phase 11 did not touch them, so they are left as-is rather than closed by a phase
-that did not deliver them.
+**Bookkeeping note (written at Phase 11 close, resolved at the v0.3.0 close):**
+Phase 10's requirements (`R2000-01`, `-02`, `-03`, `-05`, `-06`, `-09`) were
+left in Active at the time — Phase 10 closed without graduating them and Phase
+11 did not touch them, so they were not closed by a phase that had not
+delivered them. All six were graduated to Validated at the v0.3.0 milestone
+close, two with scope-honesty caveats recorded (`R2000-02`'s devcontainer and
+two-projects halves; `R2000-03`'s licence, which the Phase 9 probe falsified as
+written).
 
 </details>
 
 ---
-*Last updated: 2026-08-21 after Phase 11 close (`R2000-10`, `-11`, `-13`, `-14`, `-15` graduated to Validated; annotation store, generated enums and the closed symbol round trip recorded). Previously: 2026-08-20 after Phase 9 close; 2026-08-19 at v0.2.0 milestone close.*
+*Last updated: 2026-08-21 at the **v0.3.0 milestone close** — full evolution
+review: "What This Is" gained the static-analysis axis; Core Value flagged for
+restatement rather than silently amended; the six `R2000-01/-02/-03/-05/-06/-09`
+Active items graduated to Validated (two with scope-honesty caveats recorded);
+three v0.3.0 entries added to Out of Scope; five capability/dependency
+constraints added and the `rewriteArguments()` line citations corrected from a
+stale `:2889`/`:1368` to `:3029`/`:1508`; ten decisions added to Key Decisions;
+Context, Current State and Next Milestone Goals rewritten; the v0.3.0 execution
+narrative archived in `<details>`. Previously: 2026-08-21 after Phase 11 close;
+2026-08-20 after Phase 9 close; 2026-08-19 at v0.2.0 milestone close.*
