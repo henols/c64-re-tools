@@ -42,6 +42,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 - [x] **Phase 9: The Assumption Probe (Go/No-Go)** - Answer the five load-bearing assumptions against a real regenerator2000 build and record an explicit verdict on whether the milestone proceeds — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
 - [x] **Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal** - Guard `--vice` in code, run container-side with no path translation, turn a raw binary into a project without a human, and retire the `toacme` shim (completed 2026-08-20)
 - [x] **Phase 11: Annotation Store, Enums, and the Symbol Round Trip** - Recon writes queryable state, `memmap.json` generates enums, and names flow both ways between the store and the live emulator (completed 2026-08-21)
+- [ ] **Phase 11.1: Close v0.3.0 Audit Items (INSERTED)** - Fix or formally disposition every milestone-audit finding, each behind a mechanical guard (see `v0.3.0-MILESTONE-AUDIT.md`)
 
 ## Progress
 
@@ -60,6 +61,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 0/0 | Not planned | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -228,8 +230,16 @@ Consequences carried, not solved: r2000-assisted two-release diffing in
 `c64-provenance-diff` is blocked by the first limit, and is documented for the
 user (`R2000-03`'s install documentation, per the `R2000-04` fold) rather than
 worked around. Synthesizing a `.regen2000proj` ourselves was considered and
-rejected — it depends on an undocumented serde format, and the pty bootstrap
-makes it unnecessary.
+rejected at scoping time — it depends on an undocumented serde format, and the
+pty bootstrap appeared to make it unnecessary. **Superseded during Phase 10
+(D-01):** direct in-Node synthesis is exactly what shipped — `r2000-project.ts`'s
+`synthesizeProject()` writes a minimal, forced-settings project file from
+`.prg`/`.d64`/flat-64K with no pty and no spawn at all, which is both simpler and
+safer than driving the TUI under `script`/`tmux`. The serde-format risk was
+contained by writing only the fields the loader requires and forcing
+`use_illegal_opcodes` and the machine `system` rather than inheriting
+auto-detection. This paragraph is kept, corrected rather than deleted, because the
+rejection is what the pty probe (`R2000-16`(1)) was scoped against.
 
 Also carried: the install story regresses on its own axis. No upstream release
 assets exist, so install is `cargo install regenerator2000` — a Rust toolchain.
@@ -414,6 +424,33 @@ Notes:
   scoped to a single fixture and regenerator2000 0.9.20, so criterion 4 above should
   still treat it as "compatible for the format observed," not "for all inputs forever."
 
+### Phase 11.1: Close v0.3.0 Audit Items (INSERTED)
+
+**Goal**: Every finding the v0.3.0 milestone audit recorded is either fixed or
+formally dispositioned, and each one that could drift back is held by a
+mechanical guard rather than by a promise
+**Depends on**: Phase 11; the findings are enumerated in `v0.3.0-MILESTONE-AUDIT.md`
+**Requirements**: none new — this phase closes audit findings against the
+existing 12, it does not add scope
+**Plans**: TBD (run `/gsd-plan-phase 11.1`)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11.1 to break down)
+
+Notes:
+
+- **This is the v0.2.0 Phase 8.1/8.2 pattern repeated.** That milestone closed
+  the same way: an inserted phase whose whole job was to run the one unwitnessed
+  claim and fix what it falsified. The precedent is deliberate.
+- The two items that must not ship: the `.vsf` refusal message pointing a user at
+  "Phase 11's job" (a remediation path that does not exist, pinned green by a
+  test), and the three CLI verbs carrying R2000-13/-14/-15 that no playbook names.
+- **Guard-first, not fix-first.** A fix without a guard is how four of these
+  findings arrived: `hostpath-consumers.test.ts` enumerated a module list that
+  stopped growing with the family, and `check-skill-tool-coverage.mjs` checks
+  `r2000_*` tool names in prose but never CLI verbs. Every fix here that can be
+  pinned, is.
+
 ## Cut from v0.3.0 scope (2026-08-17)
 
 Still valid. Four of the sixteen `R2000-*` requirements were folded or cut, and
@@ -457,7 +494,8 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 |-------|----------------|--------|-----------|
 | 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 9/9 | Complete | 2026-08-20 |
-| 11. Annotation Store, Enums, and the Symbol Round Trip | 0/12 | Planned | - |
+| 11. Annotation Store, Enums, and the Symbol Round Trip | 12/12 | Complete | 2026-08-21 |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | 0/0 | Not planned | - |
 
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*

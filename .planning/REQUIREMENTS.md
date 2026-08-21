@@ -151,8 +151,17 @@ file:line, verified overlap map, decisions D-R1..D-R4).
   boolean `--mcp-server` and the hardcoded port 3000. This specifically blocks
   r2000-assisted two-release diffing in `c64-provenance-diff`. A known limit, not a
   plan.
-- **Synthesizing a `.regen2000proj` ourselves** — it is serde-serialized and
-  undocumented, and the pty bootstrap makes it unnecessary.
+- **Synthesizing a `.regen2000proj` ourselves** *(rejected at scoping 2026-08-19;
+  **superseded by D-01 during Phase 10**)*. The original reasoning: it is
+  serde-serialized and undocumented, and the pty bootstrap makes it unnecessary.
+  What shipped is the opposite — `r2000-project.ts`'s `synthesizeProject()` writes
+  the project file directly in Node from `.prg`/`.d64`/flat-64K, with no pty and no
+  spawn, and it is the route `R2000-09` is satisfied by. The format risk was
+  contained by emitting only the fields the loader requires and *forcing*
+  `use_illegal_opcodes` and the machine `system` instead of inheriting
+  regenerator2000's auto-detection. Left here corrected rather than deleted: the
+  rejection is what `R2000-16`(1)'s pty probe was scoped against, so removing it
+  would make Phase 9's gate look unmotivated.
 
 ## Coverage
 

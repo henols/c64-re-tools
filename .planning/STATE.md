@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
-status: milestone_complete
-last_updated: 2026-08-21T00:15:25.957Z
-last_activity: 2026-08-21 -- Phase 11 complete (12/12 plans), verification passed
+status: in_progress
+last_updated: "2026-08-21T07:11:53.065Z"
+last_activity: "2026-08-21 - Completed quick task 260821-a86: closed Phase 11's"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
   total_plans: 29
   completed_plans: 29
-  percent: 100
-stopped_at: Milestone complete (Phase 11 was final phase)
+  percent: 75
 ---
 
 # Project State
@@ -37,9 +36,9 @@ packages, so no release work gates the milestone.
 
 ## Current Position
 
-Phase: 11 -- complete
-Plan: 12/12 complete
-Status: Milestone complete (v0.3.0 -- Phase 11 was the final phase)
+Phase: 11.1 -- inserted, not planned
+Plan: 0/0 -- not planned
+Status: Closing v0.3.0 audit items before milestone close
 
 All 12 plans executed across 7 waves and merged into main; verification
 `passed` (4/4 roadmap success criteria, 5/5 requirement IDs). Post-merge gate
@@ -125,6 +124,8 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
   the thesis is in question. A note inside a larger phase makes that gate skippable;
   a phase boundary makes it structural. Precedent: v0.2.0 Phase 8.1, where running
   the one unwitnessed claim falsified it.
+
+- Phase 11.1 inserted after Phase 11: Close v0.3.0 audit items: the stale .vsf pointer, the undocumented CLI verbs, and the guards that let them drift (URGENT)
 
 ### Decisions
 
