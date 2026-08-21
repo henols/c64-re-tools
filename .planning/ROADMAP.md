@@ -61,7 +61,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
-| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 0/0 | Not planned | - |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 0/7 | Planned | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -432,10 +432,17 @@ mechanical guard rather than by a promise
 **Depends on**: Phase 11; the findings are enumerated in `v0.3.0-MILESTONE-AUDIT.md`
 **Requirements**: none new — this phase closes audit findings against the
 existing 12, it does not add scope
-**Plans**: TBD (run `/gsd-plan-phase 11.1`)
+**Plans**: 7 plans in 3 waves (planned 2026-08-21; `use_worktrees` false — several
+deliverables are `STATE.md` content, which worktree mode strips from commits)
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 11.1 to break down)
+- [ ] 11.1-01-PLAN.md — FLOW-02: reword both `.vsf` surfaces to name the backlog file, retarget the test that pinned "Phase 11", and guard every shipped string literal against phase pointers (wave 1)
+- [ ] 11.1-02-PLAN.md — FLOW-01: document `gen-enums` in `c64-memory-mapping` and the `export-lbl`/`import-lbl` round trip in `c64-program-recon`, behind a verb-coverage gate derived from `r2000-cli.ts` (wave 1)
+- [ ] 11.1-03-PLAN.md — INT-01 + Phase 10 IN-02: make the `R2000-02` absence assertion self-deriving with a floor, and teach it multi-line and dynamic imports (wave 1)
+- [ ] 11.1-04-PLAN.md — WR-10 + IN-04 + INT-02 + Phase 11 IN-02: bound the blocking spawn with named errors, correct the spawn-seam header and check the `assertNoViceFlag`-first invariant, and mark `regenerateAndReload()` library-only (wave 1)
+- [ ] 11.1-05-PLAN.md — WR-11 + IN-05 + IN-03 + IN-01: honest `acme.mjs --help` pinned in both directions, a deletion pin that stops false-positiving on `disasm-*.ts`, and a bounded drained exit on the `r2000` CLI path (wave 1)
+- [ ] 11.1-06-PLAN.md — WR-09 + IN-06 + WR-12: restore `bootstrapProject()`'s never-throw contract and pin it structurally, refuse options a verb does not implement, and pin the `.d64` used-byte convention against a hand-written sector (wave 2)
+- [ ] 11.1-07-PLAN.md — AUDIT-01 + AUDIT-04/-05: the disposition ledger for every undispositioned finding, then STATE.md's Deferred Items and Operator Next Steps refreshed behind a derivation guard (wave 3, must land last)
 
 Notes:
 
@@ -495,7 +502,7 @@ reconsidered. No Phase 10 or 11 plan is written before Phase 9 closes.
 | 9. The Assumption Probe (Go/No-Go) | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | 9/9 | Complete | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | 12/12 | Complete | 2026-08-21 |
-| 11.1 Close v0.3.0 Audit Items (INSERTED) | 0/0 | Not planned | - |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | 0/7 | Planned | - |
 
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
