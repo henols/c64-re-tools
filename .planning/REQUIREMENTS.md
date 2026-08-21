@@ -64,8 +64,11 @@ file:line, verified overlap map, decisions D-R1..D-R4).
 - [x] **R2000-09**: Project bootstrap from a raw binary is automated rather than a
       documented manual step: a `.prg`, a `.d64` (named entry), or a flat 64K
       capture becomes a `.regen2000proj` without a human. `.vsf` is dropped from
-      this requirement's input set and deferred to Phase 11's `c64-ram-capture`
-      extension (D-03; see `ROADMAP.md` § Phase 10 criterion 3 for the reason).
+      this requirement's input set (D-03; see `ROADMAP.md` § Phase 10 criterion 3
+      for the reason) and is **not** deferred to a later phase — no `R2000-*`
+      requirement covers it as a bootstrap input (confirmed by D-34), so it is
+      filed as backlog:
+      `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`.
       If `R2000-16`(1) fails, this degrades to a documented one-time interactive
       step and every affected playbook says so.
 - [x] **R2000-05**: `acme-build`'s `disasm` verb and its `toacme`-on-PATH
@@ -137,7 +140,10 @@ file:line, verified overlap map, decisions D-R1..D-R4).
   dropped from Phase 10's bootstrap input set entirely (see `R2000-09`'s corrected
   text), because the bootstrap never hands regenerator2000 a container format in
   the first place. Flat 64K (`.raw`) is the surviving non-`.prg`/`.d64` route for
-  this phase; `.vsf` moves to Phase 11's `c64-ram-capture` extension.
+  this phase. `.vsf` has **no** later phase as its home — no `R2000-*` requirement
+  covers it as a bootstrap input (confirmed by D-34), so it is filed as backlog
+  rather than pointed at a phase:
+  `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`.
 - **`R2000-12` — static-vs-live tool-selection axis** *(folded 2026-08-17)*. Folded
   into v0.2.0's `SKILL-01`, which already rewrites the same playbooks for backend
   routing. One pass over `c64-program-recon`, not two.

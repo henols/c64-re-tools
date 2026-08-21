@@ -7,7 +7,10 @@ files:
   - .planning/ROADMAP.md:291
   - .planning/ROADMAP.md:424
   - .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-CONTEXT.md:458
+  - .planning/REQUIREMENTS.md:66
+  - .planning/REQUIREMENTS.md:140
   - docs/phase9-regenerator2000-probe-findings.md
+  - .claude/mcp/vice/docs-dangling-refs.test.ts
 ---
 
 ## Problem
@@ -18,8 +21,17 @@ extension, `R2000-14`/`R2000-15`" as `.vsf`'s eventual home. That pointer was wr
 `R2000-14`/`R2000-15` are about the symbol round trip (export/import VICE label files),
 not about accepting `.vsf` snapshots as a regenerator2000 bootstrap input. Phase 11 (D-34)
 confirmed no `R2000-*` requirement actually covers this, so the dangling forward reference
-is corrected at its three sites (ROADMAP.md's standing constraint, Phase 10 criterion 3's
-parenthetical, and the cut-table `R2000-08` row) and the idea is captured here instead.
+is corrected at its sites and the idea is captured here instead.
+
+Plan 11-03 corrected four of them (ROADMAP.md's standing constraint, Phase 10 criterion 3's
+parenthetical, the cut-table `R2000-08` row, and `10-CONTEXT.md`'s Deferred Ideas entry) but
+missed two more in `.planning/REQUIREMENTS.md` — `R2000-09`'s own requirement text and the
+`R2000-08` fold entry — which survived phase completion, verification and a security audit
+because 11-03-T1's declared check was a hand-run `grep -c vsf .planning/ROADMAP.md`, scoped to
+a single file. The Phase 11 validation audit (2026-08-21) fixed both and replaced the one-file
+grep with a repo-wide mechanical guard, `.claude/mcp/vice/docs-dangling-refs.test.ts`, which
+runs in CI. **If this backlog item is ever deleted, that guard fails** — the corrected pointers
+all send the reader here.
 
 ## Why it's still deferred
 

@@ -1,10 +1,14 @@
 ---
 phase: 11
 slug: annotation-store-enums-and-the-symbol-round-trip
-status: planned
+status: validated
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-08-20
+audited: 2026-08-21
+audit_gaps_found: 2
+audit_gaps_resolved: 2
+audit_gaps_escalated: 0
 ---
 
 # Phase 11 — Validation Strategy
@@ -76,41 +80,41 @@ requirement-level rows or adds one with its reason recorded in the owning plan.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|--------|
-| 11-01-T1 | 11-01 | 1 | R2000-10 (folded todo 2, WR-02) | T-11-VACUOUS | D-07's `--vice` deny-by-construction guard is non-vacuous | unit + planted violation | `node --test r2000-launch.test.ts` | ⬜ |
-| 11-01-T2 | 11-01 | 1 | R2000-13 (folded todo 2, WR-04) | T-11-FALSESUCCESS-ACME | An ACME transcript containing a failure never reports a pass | unit, pinned fixtures | `node --test r2000-verify.test.ts` | ⬜ |
-| 11-01-T3 | 11-01 | 1 | R2000-10 | T-11-GATE-DRIFT | One D-11 availability gate; its hard-FAIL mode observed failing | unit + env-driven demo | `node --test r2000-verify.test.ts` | ⬜ |
-| 11-02-T1 | 11-02 | 1 | R2000-10 (WR-05/06) | T-11-D64-TRUNC, T-11-D64-NAME | A truncated `.d64` throws; a printed name is a selectable name | unit, synthetic images | `node --test r2000-d64.test.ts` | ⬜ |
-| 11-02-T2 | 11-02 | 1 | R2000-10 (WR-07) | T-11-RAW-GUESS | A wrong-size flat capture is refused, not reinterpreted | unit, real files | `node --test r2000-cli.test.ts` | ⬜ |
-| 11-02-T3 | 11-02 | 1 | R2000-10 (folded todo 1, WR-03) | T-11-HONESTY-BYPASS, T-11-PKG-CLOSURE | Dynamically-imported modules cannot fall out of `files[]`; the honesty exemption is scoped and bounded | CI scripts + planted violations | `node scripts/check-npm-packages.mjs` | ⬜ |
-| 11-03-T1 | 11-03 | 1 | R2000-13 (D-34) | T-11-DOC-DANGLE | No document points at Phase 11 as `.vsf`'s home | doc assertion (grep gate) | `grep -c vsf .planning/ROADMAP.md` cross-checked against the Phase-11 mention count | ⬜ |
-| 11-03-T2 | 11-03 | 1 | R2000-14 (D-35), R2000-13 (D-22) | T-11-DOC-OVERCLAIM | The `--export_lbl` claim is verified and scoped to 0.9.20 + this fixture | doc assertion + existing suite | `cd .claude/mcp/vice && npm run test:automated` | ⬜ |
-| 11-03-T3 | 11-03 | 1 | R2000-10, R2000-14 | T-11-DOC-DRIFT | CLAUDE.md's cited line numbers match the source | unit + planted violation | `node --test docs-linerefs.test.ts` | ⬜ |
-| 11-04-T1 | 11-04 | 2 | R2000-14, R2000-15 (D-28) | T-11-VICE, T-11-PATH-XLATE | `--import_lbl` cannot be built without `--mcp-server-stdio`; no r2000 module imports `hostpath.ts` | unit, exact-argv | `node --test r2000-launch.test.ts hostpath-consumers.test.ts` | ⬜ |
-| 11-04-T2 | 11-04 | 2 | R2000-10 | T-11-HANG, T-11-PHANTOM-DEP | Five named client failure modes measured; no direct SDK import | integration vs stub servers | `node --test r2000-mcp-client.test.ts` | ⬜ |
-| 11-04-T3 | 11-04 | 2 | R2000-10, R2000-14, R2000-15 | T-11-FALSESUCCESS, T-11-DEMUX | A save is never reported without an independent re-read; responses correlate on `id` | stubs + live real child, gated | `VICE_REQUIRE_R2000=1 node --test r2000-mcp-client.test.ts` | ⬜ |
-| 11-05-T1 | 11-05 | 3 | R2000-10, R2000-11 | T-11-BATCH, T-11-UNCURATED, T-11-PATH-ESCAPE, T-11-D32 | The curated gate refuses any name outside the D-18 set, including nested batch names, before any spawn | unit + integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ⬜ |
-| 11-05-T2 | 11-05 | 3 | R2000-10 | T-11-PATH-XLATE | No `r2000_*` runner reaches `forwardToVice()`/`rewriteArguments()`; family in neither manifest | structural + proxy handshake | `node --test stock-dispatch.test.ts vice-proxy.test.ts` | ⬜ |
-| 11-05-T3 | 11-05 | 3 | R2000-10 | T-11-PROSE | An `r2000_*` name in skill prose must exist and be curated | CI script + planted violation | `node scripts/check-skill-tool-coverage.mjs` | ⬜ |
-| 11-06-T1 | 11-06 | 4 | R2000-13 (D-22) | T-11-REGBITS-PROSE, T-11-GEN-DRIFT | Generated identifiers are legal ACME; the table is digest-pinned to `memmap.json` | unit + drift guard | `node --test r2000-regbits.test.ts` | ⬜ |
-| 11-06-T2 | 11-06 | 4 | R2000-13 (D-20, D-23) | T-11-ENUM-NAME, T-11-SILENT-CAP, T-11-MISBIND, T-11-GLOBAL-WRITE | No unsanitized identifier reaches `create_project_enum`; coverage reported, never implied | unit + property + zero-spawn refusal | `node --test r2000-enum-gen.test.ts` | ⬜ |
-| 11-06-T3 | 11-06 | 4 | R2000-13 (criterion 3) | T-11-ENUM-NAME | `lda #$1b`/`sta $d011` renders semantically in the ACME export and reassembles | integration (live r2000 + real ACME), gated | `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts r2000-cli.test.ts` | ⬜ |
-| 11-07-T1 | 11-07 | 4 | R2000-10 | — | The recon subject is reproducible from source | external oracle (real ACME byte-compare) | `acme -f cbm -o /tmp/x.prg recon-subject.a && cmp` | ⬜ |
-| 11-07-T2 | 11-07 | 4 | R2000-10 (criterion 1, session A) | T-11-LEAK | Findings persist and re-read in a fresh session | integration (live r2000) + committed artifact | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ⬜ |
-| 11-07-T3 | 11-07 | 4 | R2000-10 (criterion 1, the question) | T-11-GUESSABLE, T-11-SEAL-DRIFT | The answer key cannot drift from the answer it seals | unit (seal recomputation) | `node --test r2000-answer-key.test.ts` | ⬜ |
-| 11-08-T1 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-PARSER-DUP, T-11-MERGE-DIVERGE | No third `al C:` parser; `vice_symbols_load` stays replace-not-merge | typecheck + source assertions | `npx tsc --noEmit -p tsconfig.json` | ⬜ |
-| 11-08-T2 | 11-08 | 5 | R2000-15 (criterion 4, mechanism) | T-11-IMPORT-DISCARD, T-11-LBL-SIZE | `--import_lbl` is never reported as success without a post-save read-back; the discard trap is pinned | integration (live r2000), gated | `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | ⬜ |
-| 11-08-T3 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-SIZE | The label-file ceilings survive the CLI route | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ⬜ |
-| 11-09-T1 | 11-09 | 5 | R2000-10, R2000-11 (criterion 1, session B) | T-11-CONTEXT-BLEED | A prose-blind session answers from the store alone | human-witnessed transcript (recorded artifact) | `grep -q "canonical answer" SESSION-B-ANSWER.md` | ⬜ |
-| 11-09-T2 | 11-09 | 5 | R2000-10 | T-11-RETROFIT, T-11-VACUOUS-CHECK | A mismatch is reported, never repaired; a missing answer FAILS rather than skips | unit (seal comparison) | `node --test r2000-answer-key.test.ts` | ⬜ |
-| 11-10-T1 | 11-10 | 6 | R2000-10 (D-25) | T-11-GRADE-TYPO, T-11-SECOND-STORE | A typo'd grade prefix fails instead of degrading to ungraded | unit, must-fail-on-typo | `node --test r2000-confidence.test.ts` | ⬜ |
-| 11-10-T2 | 11-10 | 6 | R2000-10 (D-24, D-27) | T-11-GEN-EDIT, T-11-PLACEHOLDER, T-11-SKILLPATH | The memory map is generated; a hand edit or a store change is detected; no placeholder is emitted | golden output + drift guard, gated | `VICE_REQUIRE_R2000=1 node --test r2000-memmap-render.test.ts` | ⬜ |
-| 11-10-T3 | 11-10 | 6 | R2000-10 | T-11-GEN-EDIT | `render-memmap --check` exits non-zero on drift | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ⬜ |
-| 11-11-T1 | 11-11 | 6 | R2000-14 (criterion 4, outbound) | T-11-FLAG-ORDER, T-11-SINGLE-CLIENT | A store label resolves a live address on genuine stock; `-default` precedes `-binarymonitor` | live stock `x64sc` walkthrough | `grep -q "al C:" outbound.lbl` | ⬜ |
-| 11-11-T2 | 11-11 | 6 | R2000-15 (criterion 4, the loop) | T-11-TWO-DUMPS, T-11-NAME-INJECT | The inbound name is proven absent before the live discovery | live walkthrough + human-check | `grep -q "absent before" WALKTHROUGH.md` | ⬜ |
-| 11-11-T3 | 11-11 | 6 | R2000-14, R2000-15 (BACK-02 standing gate) | T-11-OVERCLAIM | The fork is verified unregressed; no gate is claimed without quoted output | regression gate + packaging validation | `npm run test:automated && npm run typecheck && npm run smoke && node scripts/check-npm-packages.mjs` | ⬜ |
-| 11-12-T1 | 11-12 | 7 | R2000-10, R2000-11 | T-11-PROSE-FAKE-TOOL, T-11-TEMPLATE-HANDFILL | Every `r2000_*` name in prose exists and is curated; the template offers nothing to hand-fill | CI prose gates + doc assertions | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-skill-fork-honesty.mjs` | ⬜ |
-| 11-12-T2 | 11-12 | 7 | R2000-13 | T-11-PROSE-OVERCLAIM | The memmap coverage gap is stated, not glossed | CI prose gate | `node scripts/check-skill-fork-honesty.mjs` | ⬜ |
-| 11-12-T3 | 11-12 | 7 | R2000-10 | T-11-PROSE-FAKE-TOOL, T-11-STALE-TARBALL | The reference floor can fail; the installer's generated copy carries the edits | CI script + planted violation + packaging | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-npm-packages.mjs` | ⬜ |
+| 11-01-T1 | 11-01 | 1 | R2000-10 (folded todo 2, WR-02) | T-11-VACUOUS | D-07's `--vice` deny-by-construction guard is non-vacuous | unit + planted violation | `node --test r2000-launch.test.ts` | ✅ |
+| 11-01-T2 | 11-01 | 1 | R2000-13 (folded todo 2, WR-04) | T-11-FALSESUCCESS-ACME | An ACME transcript containing a failure never reports a pass | unit, pinned fixtures | `node --test r2000-verify.test.ts` | ✅ |
+| 11-01-T3 | 11-01 | 1 | R2000-10 | T-11-GATE-DRIFT | One D-11 availability gate; its hard-FAIL mode observed failing | unit + env-driven demo | `node --test r2000-verify.test.ts` | ✅ |
+| 11-02-T1 | 11-02 | 1 | R2000-10 (WR-05/06) | T-11-D64-TRUNC, T-11-D64-NAME | A truncated `.d64` throws; a printed name is a selectable name | unit, synthetic images | `node --test r2000-d64.test.ts` | ✅ |
+| 11-02-T2 | 11-02 | 1 | R2000-10 (WR-07) | T-11-RAW-GUESS | A wrong-size flat capture is refused, not reinterpreted | unit, real files | `node --test r2000-cli.test.ts` | ✅ |
+| 11-02-T3 | 11-02 | 1 | R2000-10 (folded todo 1, WR-03) | T-11-HONESTY-BYPASS, T-11-PKG-CLOSURE | Dynamically-imported modules cannot fall out of `files[]`; the honesty exemption is scoped and bounded | CI scripts + planted violations | `node scripts/check-npm-packages.mjs` | ✅ |
+| 11-03-T1 | 11-03 | 1 | R2000-13 (D-34) | T-11-DOC-DANGLE | No document points at Phase 11 as `.vsf`'s home | **was** doc assertion (one-file grep) → **now** unit + planted violation | `node --test docs-dangling-refs.test.ts` | ✅ (**audit-repaired** — see Audit 2026-08-21) |
+| 11-03-T2 | 11-03 | 1 | R2000-14 (D-35), R2000-13 (D-22) | T-11-DOC-OVERCLAIM | The `--export_lbl` claim is verified and scoped to 0.9.20 + this fixture | doc assertion + existing suite | `cd .claude/mcp/vice && npm run test:automated` | ✅ |
+| 11-03-T3 | 11-03 | 1 | R2000-10, R2000-14 | T-11-DOC-DRIFT | CLAUDE.md's cited line numbers match the source | unit + planted violation | `node --test docs-linerefs.test.ts` | ✅ |
+| 11-04-T1 | 11-04 | 2 | R2000-14, R2000-15 (D-28) | T-11-VICE, T-11-PATH-XLATE | `--import_lbl` cannot be built without `--mcp-server-stdio`; no r2000 module imports `hostpath.ts` | unit, exact-argv | `node --test r2000-launch.test.ts hostpath-consumers.test.ts` | ✅ |
+| 11-04-T2 | 11-04 | 2 | R2000-10 | T-11-HANG, T-11-PHANTOM-DEP | Five named client failure modes measured; no direct SDK import | integration vs stub servers | `node --test r2000-mcp-client.test.ts` | ✅ |
+| 11-04-T3 | 11-04 | 2 | R2000-10, R2000-14, R2000-15 | T-11-FALSESUCCESS, T-11-DEMUX | A save is never reported without an independent re-read; responses correlate on `id` | stubs + live real child, gated | `VICE_REQUIRE_R2000=1 node --test r2000-mcp-client.test.ts` | ✅ |
+| 11-05-T1 | 11-05 | 3 | R2000-10, R2000-11 | T-11-BATCH, T-11-UNCURATED, T-11-PATH-ESCAPE, T-11-D32 | The curated gate refuses any name outside the D-18 set, including nested batch names, before any spawn | unit + integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ✅ |
+| 11-05-T2 | 11-05 | 3 | R2000-10 | T-11-PATH-XLATE | No `r2000_*` runner reaches `forwardToVice()`/`rewriteArguments()`; family in neither manifest | structural + proxy handshake | `node --test stock-dispatch.test.ts vice-proxy.test.ts` | ✅ (structural half in CI; handshake half manual — see audit note) |
+| 11-05-T3 | 11-05 | 3 | R2000-10 | T-11-PROSE | An `r2000_*` name in skill prose must exist and be curated | CI script + planted violation | `node scripts/check-skill-tool-coverage.mjs` | ✅ |
+| 11-06-T1 | 11-06 | 4 | R2000-13 (D-22) | T-11-REGBITS-PROSE, T-11-GEN-DRIFT | Generated identifiers are legal ACME; the table is digest-pinned to `memmap.json` | unit + drift guard | `node --test r2000-regbits.test.ts` | ✅ |
+| 11-06-T2 | 11-06 | 4 | R2000-13 (D-20, D-23) | T-11-ENUM-NAME, T-11-SILENT-CAP, T-11-MISBIND, T-11-GLOBAL-WRITE | No unsanitized identifier reaches `create_project_enum`; coverage reported, never implied | unit + property + zero-spawn refusal | `node --test r2000-enum-gen.test.ts` | ✅ |
+| 11-06-T3 | 11-06 | 4 | R2000-13 (criterion 3) | T-11-ENUM-NAME | `lda #$1b`/`sta $d011` renders semantically in the ACME export and reassembles | integration (live r2000 + real ACME), gated | `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts r2000-cli.test.ts` | ✅ |
+| 11-07-T1 | 11-07 | 4 | R2000-10 | — | The recon subject is reproducible from source | external oracle (real ACME byte-compare), now **mechanized + CI-gated** | `VICE_REQUIRE_ACME=1 node --test r2000-answer-key.test.ts` | ✅ (**audit-mechanized** — see Audit 2026-08-21) |
+| 11-07-T2 | 11-07 | 4 | R2000-10 (criterion 1, session A) | T-11-LEAK | Findings persist and re-read in a fresh session | integration (live r2000) + committed artifact | `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | ✅ |
+| 11-07-T3 | 11-07 | 4 | R2000-10 (criterion 1, the question) | T-11-GUESSABLE, T-11-SEAL-DRIFT | The answer key cannot drift from the answer it seals | unit (seal recomputation) | `node --test r2000-answer-key.test.ts` | ✅ |
+| 11-08-T1 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-PARSER-DUP, T-11-MERGE-DIVERGE | No third `al C:` parser; `vice_symbols_load` stays replace-not-merge | typecheck + source assertions | `npx tsc --noEmit -p tsconfig.json` | ✅ |
+| 11-08-T2 | 11-08 | 5 | R2000-15 (criterion 4, mechanism) | T-11-IMPORT-DISCARD, T-11-LBL-SIZE | `--import_lbl` is never reported as success without a post-save read-back; the discard trap is pinned | integration (live r2000), gated | `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | ✅ |
+| 11-08-T3 | 11-08 | 5 | R2000-14, R2000-15 | T-11-LBL-SIZE | The label-file ceilings survive the CLI route | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ✅ |
+| 11-09-T1 | 11-09 | 5 | R2000-10, R2000-11 (criterion 1, session B) | T-11-CONTEXT-BLEED | A prose-blind session answers from the store alone | human-witnessed transcript (recorded artifact) | `grep -q "canonical answer" SESSION-B-ANSWER.md` | ✅ |
+| 11-09-T2 | 11-09 | 5 | R2000-10 | T-11-RETROFIT, T-11-VACUOUS-CHECK | A mismatch is reported, never repaired; a missing answer FAILS rather than skips | unit (seal comparison) | `node --test r2000-answer-key.test.ts` | ✅ |
+| 11-10-T1 | 11-10 | 6 | R2000-10 (D-25) | T-11-GRADE-TYPO, T-11-SECOND-STORE | A typo'd grade prefix fails instead of degrading to ungraded | unit, must-fail-on-typo | `node --test r2000-confidence.test.ts` | ✅ |
+| 11-10-T2 | 11-10 | 6 | R2000-10 (D-24, D-27) | T-11-GEN-EDIT, T-11-PLACEHOLDER, T-11-SKILLPATH | The memory map is generated; a hand edit or a store change is detected; no placeholder is emitted | golden output + drift guard, gated | `VICE_REQUIRE_R2000=1 node --test r2000-memmap-render.test.ts` | ✅ |
+| 11-10-T3 | 11-10 | 6 | R2000-10 | T-11-GEN-EDIT | `render-memmap --check` exits non-zero on drift | CLI integration, gated | `VICE_REQUIRE_R2000=1 node --test r2000-cli.test.ts` | ✅ |
+| 11-11-T1 | 11-11 | 6 | R2000-14 (criterion 4, outbound) | T-11-FLAG-ORDER, T-11-SINGLE-CLIENT | A store label resolves a live address on genuine stock; `-default` precedes `-binarymonitor` | live stock `x64sc` walkthrough | `grep -q "al C:" outbound.lbl` | ✅ |
+| 11-11-T2 | 11-11 | 6 | R2000-15 (criterion 4, the loop) | T-11-TWO-DUMPS, T-11-NAME-INJECT | The inbound name is proven absent before the live discovery | live walkthrough + human-check | `grep -q "absent before" WALKTHROUGH.md` | ✅ |
+| 11-11-T3 | 11-11 | 6 | R2000-14, R2000-15 (BACK-02 standing gate) | T-11-OVERCLAIM | The fork is verified unregressed; no gate is claimed without quoted output | regression gate + packaging validation | `npm run test:automated && npm run typecheck && npm run smoke && node scripts/check-npm-packages.mjs` | ✅ |
+| 11-12-T1 | 11-12 | 7 | R2000-10, R2000-11 | T-11-PROSE-FAKE-TOOL, T-11-TEMPLATE-HANDFILL | Every `r2000_*` name in prose exists and is curated; the template offers nothing to hand-fill | CI prose gates + doc assertions | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-skill-fork-honesty.mjs` | ✅ |
+| 11-12-T2 | 11-12 | 7 | R2000-13 | T-11-PROSE-OVERCLAIM | The memmap coverage gap is stated, not glossed | CI prose gate | `node scripts/check-skill-fork-honesty.mjs` | ✅ |
+| 11-12-T3 | 11-12 | 7 | R2000-10 | T-11-PROSE-FAKE-TOOL, T-11-STALE-TARBALL | The reference floor can fail; the installer's generated copy carries the edits | CI script + planted violation + packaging | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-npm-packages.mjs` | ✅ |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -186,6 +190,154 @@ protected by a guard whose test can currently go blind.
 
 ---
 
+## Validation Audit 2026-08-21
+
+Every one of the 35 rows' declared automated commands was executed on this host. Real
+`regenerator2000 0.9.20` and real ACME 0.97 "Zem" are both present, so **no gated leg skipped
+silently** — the live halves genuinely ran.
+
+| Metric | Count |
+|--------|-------|
+| Rows audited | 35 |
+| Gaps found | 2 |
+| Resolved | 2 |
+| Escalated | 0 |
+| Rows green as declared | 33 |
+
+**Full suite:** `VICE_REQUIRE_ACME=1 npm run test:automated` → 1954 tests, **1949 pass, 0 fail,
+0 skipped, 5 todo**. The 5 todos are `vice-sync.ts`'s `readCheckpoint()`/`waitCheckpointHit()`/
+`runToCheckpoint()`/`reset()`/`screenshot()` — pre-existing, and deliberately never unit-tested
+per CLAUDE.md's own Testing constraint ("their correctness only means anything against a real
+emulator's timing"). Not Phase 11 gaps.
+
+**Other gates re-run green:** `npx tsc --noEmit` · `npm run smoke` (78 tools advertised) ·
+`node scripts/check-npm-packages.mjs` (73 / 35 files, 6 skills — unchanged, so the new test file
+is correctly absent from `files[]`) · `check-skill-tool-coverage.mjs` · `check-skill-fork-honesty.mjs`
+· `test-gate.test.ts`'s own drift guard.
+
+### Gap 1 — 11-03-T1 / T-11-DOC-DANGLE: the dangling `.vsf` pointer was never fully closed
+
+**The row's own verification was the reason.** Its declared automated command was
+`grep -c vsf .planning/ROADMAP.md` cross-checked by hand against a mention count — scoped to
+**one file**, for a defect class that spanned **six sites in four files**. Plan 11-03's commit
+`4c5ffef` corrected four of them (ROADMAP.md ×3, `10-CONTEXT.md` ×1) and its SUMMARY claimed
+the class closed. Two survived in `.planning/REQUIREMENTS.md`:
+
+- `:66` — `R2000-09`'s own requirement text: "`.vsf` is dropped from this requirement's input
+  set and deferred to **Phase 11's `c64-ram-capture` extension**".
+- `:140` — the `R2000-08` fold entry: "`.vsf` **moves to Phase 11's `c64-ram-capture`
+  extension**".
+
+Both survived plan 11-03, phase completion (`7bc4b19`), goal-backward verification (`214fa54`,
+which scored the phase 4/4) and a full security audit. A one-file grep could not have caught
+them, and no human re-reading did.
+
+Worth recording *how* the second one was found: a line-based `grep -i vsf | grep -i "phase 11"`
+found `:140` but **missed `:66`**, because that sentence's two halves straddle a line break.
+The new guard found it on its first run — it joins wrapped lines before splitting sentences,
+which is exactly why it is a scanner and not a grep.
+
+**Resolution:**
+
+1. Both sentences rewritten to state `.vsf` has **no** later phase as its home, pointing at the
+   backlog item (`.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`) instead of a
+   phase — matching ROADMAP.md's already-corrected wording.
+2. The one-file grep replaced with `.claude/mcp/vice/docs-dangling-refs.test.ts`, a **repo-wide,
+   CI-running** guard (4 tests). It scans the six normative forward-looking documents
+   (`ROADMAP.md`, `REQUIREMENTS.md`, `CLAUDE.md`, `README.md`, `docs/roadmap-stock-vice.md`,
+   `docs/stock-vice-parity.md`) for any sentence that both mentions `.vsf` and hands a topic to a
+   numbered phase. Deliberately **not** scoped to `.planning/phases/**` — those are historical
+   records that legitimately quote the wrong wording while describing its removal, and a guard
+   with false positives gets switched off. It also asserts the backlog item still exists (deleting
+   it re-creates the dangling reference in the other direction) and carries a **planted-violation
+   test using the verbatim wording that survived**, including the line break it straddled, so the
+   guard cannot go vacuous the way WR-02's did.
+3. The backlog item's `files:` list and Problem section now record all six sites, which two were
+   missed, why, and that the guard depends on the item's continued existence.
+
+### Gap 2 — 11-07-T1: a declared external oracle that nothing mechanized
+
+The row declares "the recon subject is reproducible from source", verified by
+`acme -f cbm -o /tmp/x.prg recon-subject.a && cmp`. That command **does** pass (re-run by hand
+during this audit: byte-identical). But it was a shell command typed once — nothing re-ran it.
+Every other piece of criterion 1's committed evidence is guarded in CI by
+`r2000-answer-key.test.ts`; the fixture the entire two-session proof was *derived from* was not.
+An edit to `recon-subject.a`, or a re-export of the `.prg` from a different source, would drift
+silently while the sealed answer key went on sealing an answer about a program that no longer
+matched its own source.
+
+**Resolution:** the byte-compare now lives in `r2000-answer-key.test.ts` (7 tests → 10), the file
+that already owns criterion 1's evidence. It **runs in CI**: `ci.yml`'s Test step installs ACME
+and sets `VICE_REQUIRE_ACME=1`, so a missing ACME hard-FAILS rather than skipping. Three
+behaviours were proven by measurement, not assumed:
+
+| Condition | Observed |
+|-----------|----------|
+| `VICE_REQUIRE_ACME=1 ACME_BIN=/nonexistent-acme` | 8 pass, **1 fail**, 1 skipped — hard-FAIL, as required |
+| `ACME_BIN=/nonexistent-acme`, env unset | 9 pass, 0 fail, **1 skipped** — named SKIP, never a false pass |
+| One byte of the committed `.prg` flipped | **FAILS** with the T-11-RETROFIT message — the guard is non-vacuous (fixture restored; tree clean) |
+
+The failure message states the T-11-RETROFIT policy explicitly: a divergence is a real result to
+report, **not** to be fixed by re-exporting the `.prg`, because the sealed answer key describes
+the committed program.
+
+**One scope decision recorded honestly.** The new test needed an ACME availability gate, and
+`disasm-roundtrip.test.ts` and `r2000-cli.test.ts` each already carry a hand-copied one — a third
+copy is precisely the divergence `r2000-test-gate.ts` exists to prevent (the two existing copies
+have *already* diverged: neither passes a `spawnSync` timeout, the seam does). The gate was
+therefore added to `r2000-test-gate.ts`, the sanctioned seam, and the new test imports it. The two
+pre-existing copies were **not** migrated: `r2000-cli.test.ts`'s gate semantics are load-bearing
+for criterion 3's already-verified evidence (`11-VERIFICATION.md` cites its test 35 by name), and
+an audit should not silently re-cut the ground under evidence it is auditing. So the seam is the
+route for new consumers, not yet the only implementation — stated as such in its own header and
+filed as backlog:
+`.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md`.
+
+### Annotation — 11-05-T2: half its command does not run in CI
+
+Not a gap, but recorded so nobody mistakes it for full CI coverage. The row's command names
+`vice-proxy.test.ts`, which is a member of `test-gate.mjs`'s frozen `MANUAL_ONLY_TESTS` — it
+spawns a real proxy, so `npm run test:automated` never runs it. Checked where the load-bearing
+assertions actually live: **all three are in `stock-dispatch.test.ts`, which does run in CI** —
+`runR2000Tool()` reaching no VICE transport, the `r2000Def.name` registration bypassing the
+backend-aware seam by design, and every curated `r2000_*` name being absent from *both*
+manifests. Only the live wire-`tools/list` handshake half is manual, which is correct for it.
+Combined run measured: 242 pass, 0 fail, 4 skipped.
+
+### Measured per-command results
+
+| Command | Result |
+|---------|--------|
+| `node --test r2000-launch.test.ts` | 21 pass |
+| `node --test r2000-verify.test.ts` | 12 pass |
+| `node --test r2000-d64.test.ts` | 14 pass |
+| `node --test r2000-cli.test.ts` | 43 pass |
+| `node --test docs-linerefs.test.ts` | 3 pass |
+| `node --test docs-dangling-refs.test.ts` | 4 pass *(new)* |
+| `node --test r2000-launch.test.ts hostpath-consumers.test.ts` | 28 pass |
+| `node --test r2000-mcp-client.test.ts` | 23 pass |
+| `node --test r2000-regbits.test.ts` | 13 pass |
+| `node --test r2000-enum-gen.test.ts` | 23 pass |
+| `node --test r2000-answer-key.test.ts` | 10 pass *(was 7)* |
+| `node --test r2000-confidence.test.ts` | 15 pass |
+| `node --test r2000-memmap-render.test.ts` | 18 pass |
+| `node --test stock-dispatch.test.ts vice-proxy.test.ts` | 242 pass, 4 skipped |
+| `VICE_REQUIRE_R2000=1 node --test r2000-tools.test.ts` | 27 pass |
+| `VICE_REQUIRE_R2000=1 node --test r2000-symbol-roundtrip.test.ts` | 8 pass |
+| `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-enum-gen.test.ts r2000-cli.test.ts` | 66 pass |
+| `node scripts/check-npm-packages.mjs` | OK — 73 / 35 files, 6 skills |
+| `node scripts/check-skill-tool-coverage.mjs` | OK — 37 `vice_*`, 10 `r2000_*` all curated |
+| `node scripts/check-skill-fork-honesty.mjs` | OK — 11 fork-only mentions, all section-scoped |
+| `npx tsc --noEmit -p tsconfig.json` | clean |
+| `npm run smoke` | OK — 78 tools advertised |
+| **Evidence assertions** | |
+| `grep -q "canonical answer" evidence/criterion1/SESSION-B-ANSWER.md` | found |
+| `grep -q "al C:" evidence/criterion4/outbound.lbl` | found — 8 label lines |
+| `grep -q "absent before" evidence/criterion4/WALKTHROUGH.md` | found |
+| `acme -f cbm` + `cmp` on `evidence/criterion1/fixture/recon-subject.a` | byte-identical (now mechanized — see Gap 2) |
+
+---
+
 ## Validation Sign-Off
 
 - [x] All tasks have `<automated>` verify or a Wave 0 dependency — 35/35
@@ -198,3 +350,16 @@ protected by a guard whose test can currently go blind.
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** planner sign-off 2026-08-20 (12 plans, 35 tasks, 7 waves)
+
+### Post-execution audit sign-off (2026-08-21)
+
+- [x] All 35 rows' declared automated commands executed, not read — results tabled above
+- [x] No gated leg skipped silently: real `regenerator2000 0.9.20` and real ACME 0.97 both present
+- [x] 2 gaps found, 2 resolved, 0 escalated to manual-only
+- [x] Both new/extended guards proven non-vacuous by planted violation, not asserted to be
+- [x] Both env-gated hard-FAIL modes observed failing, and both SKIP modes observed skipping
+- [x] Full suite + typecheck + smoke + all three CI scripts green after the changes
+- [x] One deliberate scope limit stated rather than glossed (the two unmigrated ACME gates) and filed as backlog
+- [x] `nyquist_compliant: true` still holds — every requirement now has automated verification that can fail
+
+**Approval:** validation audit 2026-08-21 (35/35 rows measured; 2 gaps closed)
