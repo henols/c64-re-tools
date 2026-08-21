@@ -42,6 +42,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * literals as imports. */
 const HOSTPATH_IMPORT_RE = /^\s*import\s[^;]*from\s+"\.\/hostpath\.(ts|mts|mjs)"/;
 
+/** True iff any line of the (already comment-stripped) source is a real
+ * import of hostpath.ts. Extracted into ONE named predicate -- both the real
+ * consumer-set scan below and the planted-violation test call this same
+ * function, so there is exactly one definition of "counts as an import"
+ * (the 11-01 discipline: a structural test and its own proof must share the
+ * checked logic, not each carry a copy). */
+function importsHostpath(lines: string[]): boolean {
+  return lines.some((line) => HOSTPATH_IMPORT_RE.test(line));
+}
+
 /** Strips full-line `//` comments before matching -- a line that is ENTIRELY
  * a comment (allowing leading whitespace) is dropped; a trailing `//`
  * comment on a real code line is left alone since no import statement in
@@ -67,7 +77,7 @@ function hostpathImporters(): string[] {
   for (const name of topLevelProductionModules()) {
     const src = readFileSync(join(HERE, name), "utf8");
     const lines = stripCommentLines(src);
-    if (lines.some((line) => HOSTPATH_IMPORT_RE.test(line))) {
+    if (importsHostpath(lines)) {
       importers.push(name);
     }
   }
@@ -103,22 +113,62 @@ test("the disassembler modules (not yet reachable from stock-dispatch.ts in this
   }
 });
 
+/** The r2000 production module family, derived from disk rather than typed
+ * (INT-01/D-11.1-03): every `r2000-*.ts` file `topLevelProductionModules()`
+ * already excludes `*.test.*` from. This is the SAME `readdirSync`-based
+ * helper the five-member EXPECTED_IMPORTERS test above uses -- reused, not a
+ * second directory walk -- filtered down to the r2000 name pattern. */
+function r2000ProductionModules(): string[] {
+  return topLevelProductionModules().filter((name) => /^r2000-.*\.ts$/.test(name));
+}
+
+// Measured true count as of this phase (11.1-03, 2026-08-21): 14 production
+// r2000-*.ts modules on disk. This floor must be RAISED, never lowered, as
+// the family grows -- an empty or broken glob (e.g. a typo'd filter regex,
+// or a directory walk that silently resolves to the wrong path) must fail
+// this test rather than pass vacuously, which is the exact defect INT-01
+// found in the ten-name hard-coded array this replaces.
+const R2000_MODULE_FLOOR = 14;
+
+test("the r2000 module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
+  const modules = r2000ProductionModules();
+  assert.ok(
+    modules.length >= R2000_MODULE_FLOOR,
+    `expected >= ${R2000_MODULE_FLOOR} r2000-*.ts production modules on disk, found ${modules.length} -- ` +
+      "an empty or broken glob must fail loudly here rather than let the absence assertion below pass trivially",
+  );
+});
+
+test("INT-01's positive control: the four modules the audit found uncovered are present in the derived r2000 set", () => {
+  // The finding's own reproduction, kept as a permanent test: if a future
+  // rename or move drops one of these out of the glob, this says which one
+  // -- rather than the absence test below silently stopping short again.
+  const modules = r2000ProductionModules();
+  for (const name of ["r2000-acme-ident.ts", "r2000-regbits-gen.ts", "r2000-symbols.ts", "r2000-test-gate.ts"]) {
+    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived r2000 module set`);
+  }
+});
+
 test("the r2000 module family (D-08/R2000-02) is absent from the consumer set -- regenerator2000 runs container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
   const importers = hostpathImporters();
-  for (const name of [
-    "r2000-launch.ts",
-    "r2000-project.ts",
-    "r2000-d64.ts",
-    "r2000-cli.ts",
-    "r2000-verify.ts",
-    "r2000-mcp-client.ts",
-    "r2000-tools.ts",
-    "r2000-enum-gen.ts",
-    "r2000-memmap-render.ts",
-    "r2000-confidence.ts",
-  ]) {
+  const r2000Modules = r2000ProductionModules();
+  // Non-vacuity is asserted separately above; this loop still guards against
+  // an empty array silently making every assertion below vacuously true.
+  assert.ok(r2000Modules.length > 0, "r2000ProductionModules() must not be empty");
+  for (const name of r2000Modules) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
+});
+
+test("planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses", () => {
+  const plantedViolation = `import { hostPath } from "./hostpath.ts";\nexport function doSomething() {}\n`;
+  const plantedClean = `export function doSomething() {}\n`;
+  assert.equal(
+    importsHostpath(stripCommentLines(plantedViolation)),
+    true,
+    "the predicate must report a genuine hostpath.ts import -- if this fails, the absence assertion above is not actually capable of catching a real violation",
+  );
+  assert.equal(importsHostpath(stripCommentLines(plantedClean)), false, "a clean source with no hostpath.ts mention must not be reported");
 });
 
 // D-05-12: the derived-module guess this test used to make -- stripping the
