@@ -61,7 +61,7 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 | 9. The Assumption Probe (Go/No-Go) | v0.3.0 | 8/8 | Complete | 2026-08-20 |
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
-| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 1/7 | In Progress|  |
+| 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 2/7 | In Progress|  |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -437,7 +437,7 @@ deliverables are `STATE.md` content, which worktree mode strips from commits)
 
 Plans:
 - [x] 11.1-01-PLAN.md — FLOW-02: reword both `.vsf` surfaces to name the backlog file, retarget the test that pinned "Phase 11", and guard every shipped string literal against phase pointers (wave 1)
-- [ ] 11.1-02-PLAN.md — FLOW-01: document `gen-enums` in `c64-memory-mapping` and the `export-lbl`/`import-lbl` round trip in `c64-program-recon`, behind a verb-coverage gate derived from `r2000-cli.ts` (wave 1)
+- [x] 11.1-02-PLAN.md — FLOW-01: document `gen-enums` in `c64-memory-mapping` and the `export-lbl`/`import-lbl` round trip in `c64-program-recon`, behind a verb-coverage gate derived from `r2000-cli.ts` (wave 1)
 - [ ] 11.1-03-PLAN.md — INT-01 + Phase 10 IN-02: make the `R2000-02` absence assertion self-deriving with a floor, and teach it multi-line and dynamic imports (wave 1)
 - [ ] 11.1-04-PLAN.md — WR-10 + IN-04 + INT-02 + Phase 11 IN-02: bound the blocking spawn with named errors, correct the spawn-seam header and check the `assertNoViceFlag`-first invariant, and mark `regenerateAndReload()` library-only (wave 1)
 - [ ] 11.1-05-PLAN.md — WR-11 + IN-05 + IN-03 + IN-01: honest `acme.mjs --help` pinned in both directions, a deletion pin that stops false-positiving on `disasm-*.ts`, and a bounded drained exit on the `r2000` CLI path (wave 1)

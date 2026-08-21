@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: regenerator2000 static-analysis backend
 status: executing
-last_updated: "2026-08-21T08:14:18.643Z"
+last_updated: "2026-08-21T08:32:13.846Z"
 last_activity: 2026-08-21
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 36
-  completed_plans: 30
+  completed_plans: 31
   percent: 75
 ---
 
@@ -37,7 +37,7 @@ packages, so no release work gates the milestone.
 ## Current Position
 
 Phase: 11.1 -- Close v0.3.0 Audit Items (INSERTED)
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 
 All 12 plans executed across 7 waves and merged into main; verification
@@ -110,6 +110,7 @@ three open security findings (WR-01, T-11-NAME-INJECT, WR-04)
 | Phase 09 P08 | 10m | 2 tasks | 2 files |
 | Phase 11 P03 | 28min | 3 tasks | 10 files |
 | Phase 11.1 P01 | 45min | 2 tasks | 4 files |
+| Phase 11.1 P02 | 55min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,8 @@ Recent decisions affecting current work:
 - [Phase 11-03]: Ran sequentially on main with no worktree isolation, per this plan's own worktree: false frontmatter -- its deliverables ARE .planning/ROADMAP.md/REQUIREMENTS.md content plus two todo-file git mv moves, which worktree mode strips from executor commits
 - [Phase 11-03]: Reworded ROADMAP.md's Phase-10-criterion-3 .vsf note from 'Phase 11 confirmed this (D-34)' to 'confirmed by D-34' after the literal string 'Phase 11' on a .vsf-mentioning line tripped the acceptance grep gate that checks no document still names Phase 11 as .vsf's home -- same meaning, mechanically clean
 - [Phase 11.1]: D-11.1-01: both r2000-cli.ts .vsf surfaces reworded to name .planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md instead of a phase; a committed character-state-machine guard (docs-dangling-refs.test.ts) now fails if any shipped string literal names a phase number
+- [Phase 11.1-02]: D-11.1-02: gen-enums, export-lbl, import-lbl documented in c64-memory-mapping/c64-program-recon; the symbol round trip documented as one closed loop matching Phase 11's live walkthrough, not two one-way dumps
+- [Phase 11.1-02]: check-skill-tool-coverage.mjs's r2000 CLI verb list is parsed from r2000-cli.ts's dispatch switch (scripts/lib/r2000-cli-verbs.mjs), never hand-typed -- proven non-vacuous by a committed planted-violation test
 
 ### Pending Todos
 
@@ -309,8 +312,8 @@ violates one-source-of-truth rather than a live defect.
 
 ## Session Continuity
 
-Last session: 2026-08-21T08:14:18.610Z
-Stopped at: Completed 11.1-01-PLAN.md
+Last session: 2026-08-21T08:32:13.827Z
+Stopped at: Completed 11.1-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
