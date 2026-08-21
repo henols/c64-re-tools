@@ -138,11 +138,25 @@ independent of each other and may execute in parallel)
 **Requirements**: EXTV-01, EXTV-02, EXTV-03
 **Success Criteria** (what must be TRUE):
 
-  1. The three capturable `VERIF-02` binmon wire fixtures are re-recorded from a real stock VICE binary, and no sidecar in the fixture set still declares itself synthetic while being relied on as ground truth — evidenced by the committed fixtures plus a capture transcript
+  1. The three capturable `VERIF-02` binmon wire fixtures are re-recorded from a real VICE binary — whichever `x64sc` resolves first in `PATH`, per D-13-01, with the sidecar recording that build honestly — and no sidecar in the fixture set still declares itself synthetic while being relied on as ground truth — evidenced by the committed fixtures plus a capture transcript
   2. The `--help` backend discriminator (`BACK-01`/`BACK-04`) is run against a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
-  3. Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised is run against a real binary, with a committed transcript naming a pass or fail per detail, and any contradicted detail corrected at its source
+  3. Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised (A1, A2, A3, A5 — A4 is out of scope per D-13-05 and stays open in its own todo) is run against a real binary, with a committed transcript naming a pass, fail or inconclusive per detail, and any contradicted detail corrected at its source
 
-**Plans**: TBD
+**Plans**: 5 plans (3 waves)
+
+**Wave 1** *(the three sub-items are independent and run in parallel)*
+
+- [ ] 13-01-PLAN.md — EXTV-01: live re-capture of `display-get`/`event-interleaved`/`checkpoint-list` from the first-in-`PATH` binary, decode of the real request ids and terminator frame, and reconciliation of every consumer that depended on the synthetic provenance — in one plan so the tree is never red (D-13-01, D-13-06)
+- [ ] 13-02-PLAN.md — EXTV-02: both `--help` transcripts committed verbatim with real-hardware sidecars, `probeBackend()` and `resolvedBackend()` run live against both real builds, and a real-hardware regression block kept apart from the author-constructed fixtures (D-13-03)
+- [ ] 13-03-PLAN.md — EXTV-03: `probe-binmon.mjs` extended with A1/A2/A3/A5 probes plus offline selftest coverage, run live, and one recorded verdict per assumption (D-13-02, D-13-07; A4 excluded per D-13-05)
+
+**Wave 2** *(blocked on 13-01 and 13-03 — shares `stock-protocol.ts` with 13-01 and reads 13-03's verdicts)*
+
+- [ ] 13-04-PLAN.md — EXTV-03 corrections: every confirmed assumption's `[ASSUMED]` label removed at every `grep`-enumerated site, every contradicted one regression-tested before its label comes off, and a committed all-or-nothing label-discipline guard (D-13-04)
+
+**Wave 3** *(blocked on 13-01, 13-02 and 13-04)*
+
+- [ ] 13-05-PLAN.md — Ledger close: both retired verdicts in `docs/phase2-backend-probe-evidence.md` resolved with artifact citations, two todos closed, the probe-debt todo trimmed to A4 only, surfaced-but-unfixed findings filed, and `STATE.md`'s deferred ledger re-derived so its two-directional guard stays green (D-13-03, D-13-05)
 
 ### Phase 14: Backend Decision
 
