@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// The ONE authoritative place in this repo that spawns regenerator2000.
+// This module's original header (through 11.1-03) claimed to be the only
+// place in this repo that shells out to regenerator2000. That claim was
+// WRONG and is corrected below (INT-02/D-11.1-05) -- noted here, not
+// deleted outright, because this line is the sentence the correction below
+// is against.
 //
 // Why this seam exists at all (D-06): this directory is the only place a
 // guard test actually runs in CI -- `hostpath-consumers.test.ts`'s
@@ -9,10 +13,31 @@
 // is also planned to land in this same directory, so this module is the
 // natural first tenant rather than a throwaway.
 //
-// What this is the ONE authoritative place for: every regenerator2000
-// spawn in this repo. No other file may shell out to the `regenerator2000`
-// binary directly -- if a future caller needs a new verb, it gets a new
-// fixed builder here, not a bespoke `spawnSync` call at the call site.
+// CORRECTED CLAIM (INT-02/D-11.1-05): this is NOT the only file that spawns
+// regenerator2000 -- `r2000-mcp-client.ts` is a second, necessary spawn
+// site, and its own header already said so correctly ("both spawn call
+// sites in this repo") while this file's original claim above said the
+// opposite. What this file IS actually the one authoritative place for:
+//   - the `--vice` guard (`FORBIDDEN_R2000_FLAGS`, `assertNoViceFlag()`,
+//     `viceFlagRefusalMessage()`) that every spawn site in this repo must
+//     call before spawning;
+//   - every FIXED argv builder (`buildExportAsmArgs()`, `buildVerifyArgs()`,
+//     `buildMcpServerStdioArgs()`, `buildExportLblArgs()`,
+//     `buildImportLblArgs()`) -- a future verb gets a new fixed builder
+//     here, never a bespoke ad hoc argv assembled at a call site;
+//   - the ONE **synchronous**, blocking `spawnSync` of regenerator2000
+//     (`runR2000()`), used by every CLI verb (`r2000-cli.ts`) and by
+//     `r2000-verify.ts`/`r2000-symbols.ts`.
+// `r2000-mcp-client.ts`'s `withR2000Session()` is the ONE **asynchronous**
+// spawn site (`spawn()`, not `spawnSync()`) -- it exists because a
+// long-lived MCP-over-stdio child session cannot be a blocking call, which
+// `runR2000()` deliberately is. Both sites are safe for the same reason:
+// EVERY spawn call site in this repo calls `assertNoViceFlag(argv)` before
+// spawning, and that is no longer a prose promise -- `r2000-spawn-seam.test.ts`
+// derives the full production-module set, finds every regenerator2000
+// spawn call site in it, and FAILS if any of them spawns without guarding
+// first, or if a third, unguarded site ever appears. `R2000-01`'s
+// guarantee is therefore checked, not merely stated.
 //
 // What NOT to do, named concretely (D-07/D-08):
 //   - Never add a caller-supplied argv pass-through parameter (no rest
@@ -196,6 +221,71 @@ export interface RunR2000Result {
   stderr: string;
 }
 
+/** Fallback used when `R2000_TIMEOUT_MS`'s env override is absent or
+ * invalid (WR-10, 10-REVIEW.md:481-511). Exported as its own name, distinct
+ * from `R2000_TIMEOUT_MS`, so `parseR2000TimeoutMs()` and its tests can
+ * refer to "the default" without re-deriving the literal `120_000`. */
+export const R2000_DEFAULT_TIMEOUT_MS = 120_000;
+
+/** One-time stderr warning for a malformed `R2000_TIMEOUT_MS` override,
+ * mirroring `repo-root.ts`'s "warn once on stderr rather than throw on a
+ * bad env var" convention -- a bad timeout value is an operator mistake,
+ * not a reason to crash the process before it has done anything. */
+let warnedBadTimeoutEnv = false;
+
+/**
+ * Parses a `R2000_TIMEOUT_MS`-shaped raw string into a valid, positive
+ * timeout in milliseconds, falling back to `fallbackMs` (with a one-time
+ * stderr warning naming the rejected value) for anything non-numeric,
+ * `NaN`, zero or negative. Never returns `NaN` -- a bad value must fall
+ * back to the default, never propagate into `spawnSync`'s `timeout` option
+ * unchecked.
+ *
+ * Exported and free of any module-load-time side effect so a test can
+ * exercise every input shape directly, by calling this function, rather
+ * than mutating `process.env.R2000_TIMEOUT_MS` after `R2000_TIMEOUT_MS`
+ * has already been evaluated -- exactly the IN-04 mistake (`R2000_BIN` is
+ * resolved once at module load; env mutation afterward is a no-op against
+ * it) applied to a second env-derived constant.
+ */
+export function parseR2000TimeoutMs(
+  raw: string | undefined,
+  fallbackMs: number = R2000_DEFAULT_TIMEOUT_MS
+): number {
+  if (raw === undefined) return fallbackMs;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    if (!warnedBadTimeoutEnv) {
+      warnedBadTimeoutEnv = true;
+      console.error(
+        `warn: R2000_TIMEOUT_MS="${raw}" is not a positive, finite number -- falling back to the default ` +
+          `(${fallbackMs}ms). Set R2000_TIMEOUT_MS to a positive number of milliseconds to override it.`
+      );
+    }
+    return fallbackMs;
+  }
+  return n;
+}
+
+/** The default `runR2000()` timeout (WR-10): 120s unless overridden by
+ * `R2000_TIMEOUT_MS`, validated by `parseR2000TimeoutMs()` above so a bad
+ * override cannot turn into `NaN` inside `spawnSync`'s `timeout` option
+ * (an unbounded, non-numeric timeout is the same hazard as no timeout at
+ * all). A per-call `opts.timeoutMs` always overrides this module-level
+ * default (D-11.1-04) -- this constant only supplies what every one of the
+ * seven CLI verbs gets when it does not ask for anything different. */
+export const R2000_TIMEOUT_MS: number = parseR2000TimeoutMs(process.env.R2000_TIMEOUT_MS);
+
+/** `spawnSync`'s Node default `maxBuffer` is 1 MiB. That is too small for
+ * this module's own reason to exist: `--verify`/`--export_asm` transcripts
+ * ARE the payload `acmeVerdict()` and the label parsers exist to parse, so
+ * a verbose-but-successful child run must never turn into a truncated
+ * buffer and an opaque `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`/`ENOBUFS` stack
+ * in place of the parsed verdict this seam was built to produce (WR-10).
+ * 32 MiB is comfortably above any transcript measured live against
+ * regenerator2000 0.9.20 on this host. */
+export const R2000_MAX_BUFFER = 32 * 1024 * 1024;
+
 /**
  * Spawns regenerator2000 with the given argv. Calls `assertNoViceFlag(argv)`
  * as the FIRST statement of this function body, deliberately, so the guard
@@ -205,19 +295,60 @@ export interface RunR2000Result {
  * Always spawns with an argv ARRAY and never enables a shell interpreter for
  * the child process, so a caller-controlled filename can never be
  * interpreted by a shell.
+ *
+ * BOUNDED (WR-10, 10-REVIEW.md:481-511): this is a **blocking** `spawnSync`,
+ * so an unbounded child owns the whole Node event loop -- no JSON-RPC, no
+ * diagnostics, nothing, for as long as the child runs. `timeout` defaults to
+ * `R2000_TIMEOUT_MS` (120s, env-overridable) and `maxBuffer` is fixed at
+ * `R2000_MAX_BUFFER` (32 MiB); `opts.timeoutMs` still overrides the default
+ * per call. Both bounds, when hit, are translated into a named, actionable
+ * `Error` naming the limit and the argv -- never a raw re-thrown `spawnSync`
+ * error object, which is what WR-10 found: a *successful* verify with a
+ * verbose transcript could previously surface as an opaque `ENOBUFS` stack
+ * instead of the parsed verdict this module exists to produce.
  */
 export function runR2000(argv: readonly string[], opts: RunR2000Options = {}): RunR2000Result {
   assertNoViceFlag(argv);
+  // Caller override preserved (D-11.1-04): opts.timeoutMs still wins over
+  // the module-level default. `timeoutMs` below mirrors the exact
+  // expression passed to spawnSync() so the two can never drift and an
+  // error message below can name the real bound that was actually applied.
+  const timeoutMs = opts.timeoutMs ?? R2000_TIMEOUT_MS;
   const r = spawnSync(R2000_BIN, [...argv], {
     encoding: "utf8",
     cwd: opts.cwd,
-    timeout: opts.timeoutMs,
+    timeout: opts.timeoutMs ?? R2000_TIMEOUT_MS,
+    maxBuffer: R2000_MAX_BUFFER,
   });
   if (r.error) {
-    if ((r.error as NodeJS.ErrnoException).code === "ENOENT") {
+    const err = r.error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
       throw new Error(
         `regenerator2000 was not found on PATH -- install it with \`cargo install regenerator2000\` and ` +
           `ensure \`regenerator2000\` is on $PATH (or set R2000_BIN to its full path).`
+      );
+    }
+    // Timeout (WR-10): Node's shape has varied across versions -- observed
+    // on this host (Node 22) as `error.code === "ETIMEDOUT"` PLUS
+    // `r.signal === "SIGTERM"` together, so both are checked rather than
+    // relying on either alone.
+    if (err.code === "ETIMEDOUT" || r.signal === "SIGTERM") {
+      throw new Error(
+        `regenerator2000 timed out after ${timeoutMs}ms and was killed (argv: [${argv.join(", ")}]) -- ` +
+          `either the child is wedged, or a real run legitimately needs longer than ${timeoutMs}ms. Raise ` +
+          `R2000_TIMEOUT_MS (or pass { timeoutMs } to runR2000()) if the latter.`
+      );
+    }
+    // Max-buffer overrun (WR-10): observed on this host as
+    // `error.code === "ENOBUFS"`; matched more broadly against the message
+    // too, since Node's own docs describe this failure mode inconsistently
+    // across versions as `ENOBUFS` or `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`.
+    if (err.code === "ENOBUFS" || /MAXBUFFER|maxBuffer/i.test(err.message ?? "")) {
+      const limitMiB = (R2000_MAX_BUFFER / (1024 * 1024)).toFixed(0);
+      throw new Error(
+        `regenerator2000's combined stdout+stderr exceeded the ${limitMiB} MiB limit (argv: ` +
+          `[${argv.join(", ")}]) -- its output was truncated, so any verdict parsed from it would be ` +
+          `unreliable. This is a hard failure, never a silently-shortened transcript feeding a pass.`
       );
     }
     throw r.error;

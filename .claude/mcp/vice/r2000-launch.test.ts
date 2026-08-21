@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import {
   R2000_BIN,
@@ -27,6 +28,10 @@ import {
   buildImportLblArgs,
   runR2000,
   R2000ViceFlagError,
+  R2000_TIMEOUT_MS,
+  R2000_DEFAULT_TIMEOUT_MS,
+  R2000_MAX_BUFFER,
+  parseR2000TimeoutMs,
 } from "./r2000-launch.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -192,27 +197,40 @@ test("assertNoViceFlag does not throw on a filename that merely contains the sub
 
 // -- 5. runR2000 enforces the scan before any subprocess is spawned ---------
 
-test("runR2000 throws R2000ViceFlagError before spawning, even with a binary name guaranteed not to exist", () => {
-  const originalBin = process.env.R2000_BIN;
-  process.env.R2000_BIN = "definitely-not-installed-r2000-binary-xyz";
-  try {
-    assert.throws(
-      () => runR2000(["--vice", "localhost:6502"]),
-      (err: unknown) => {
-        assert.ok(err instanceof R2000ViceFlagError, "must throw the flag error, not an ENOENT spawn error");
-        assert.equal(err.name, "R2000ViceFlagError");
-        return true;
-      }
-    );
-  } finally {
-    if (originalBin === undefined) delete process.env.R2000_BIN;
-    else process.env.R2000_BIN = originalBin;
-  }
+// IN-04 (10-REVIEW.md:596-608): the previous version of this test mutated
+// `process.env.R2000_BIN` and titled itself "with a binary name guaranteed
+// not to exist" -- but `R2000_BIN` is resolved from the environment ONCE at
+// module load (see its own doc comment above), so mutating
+// `process.env.R2000_BIN` after the module has already loaded is a no-op
+// against it and the title described something that never happened. What
+// this test actually proves -- and the only thing it ever proved -- is that
+// `runR2000()`'s `assertNoViceFlag(argv)` call precedes any spawn attempt,
+// regardless of which binary `R2000_BIN` resolved to. Retitled and the dead
+// env-mutation dance removed accordingly; this file no longer assigns to
+// that environment variable anywhere.
+test("runR2000 throws R2000ViceFlagError before spawning -- the --vice guard runs before any spawn is attempted", () => {
+  assert.throws(
+    () => runR2000(["--vice", "localhost:6502"]),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ViceFlagError, "must throw the flag error, not an ENOENT spawn error");
+      assert.equal(err.name, "R2000ViceFlagError");
+      return true;
+    }
+  );
 });
 
-test("R2000_BIN itself resolves from the environment at module load (documented override convention)", () => {
-  assert.equal(typeof R2000_BIN, "string");
-  assert.ok(R2000_BIN.length > 0);
+// IN-04: replaces the unfalsifiable `typeof R2000_BIN === "string"` pair
+// (a `??` default makes that assertion true for every possible input) with
+// an assertion of the actual documented override convention -- the default
+// resolves to the literal "regenerator2000" -- guarded on the env var
+// genuinely being unset in this process, and skipped with a stated reason
+// otherwise (e.g. a developer running the suite with R2000_BIN exported).
+test("R2000_BIN resolves to the documented default when R2000_BIN is unset in the environment", (t) => {
+  if (process.env.R2000_BIN !== undefined) {
+    t.skip("process.env.R2000_BIN is set in this environment, so the default cannot be observed here");
+    return;
+  }
+  assert.equal(R2000_BIN, "regenerator2000");
 });
 
 // -- 6. Deny-by-construction: no rest parameter / pass-through identifier --
@@ -422,3 +440,88 @@ test(
     );
   }
 );
+
+// -- 10. WR-10: bounded spawn -- default timeout, validation, and a real ---
+//        timeout observed firing through runR2000() itself --------------
+
+test("R2000_TIMEOUT_MS is 120000 (R2000_DEFAULT_TIMEOUT_MS) when R2000_TIMEOUT_MS is unset in the environment", (t) => {
+  if (process.env.R2000_TIMEOUT_MS !== undefined) {
+    t.skip("process.env.R2000_TIMEOUT_MS is set in this environment, so the default cannot be observed here");
+    return;
+  }
+  assert.equal(R2000_DEFAULT_TIMEOUT_MS, 120_000);
+  assert.equal(R2000_TIMEOUT_MS, 120_000);
+});
+
+test("R2000_MAX_BUFFER is exported and is well above Node's 1 MiB spawnSync default", () => {
+  assert.equal(typeof R2000_MAX_BUFFER, "number");
+  assert.ok(R2000_MAX_BUFFER > 1024 * 1024, "R2000_MAX_BUFFER must exceed Node's 1 MiB spawnSync default");
+  assert.equal(R2000_MAX_BUFFER, 32 * 1024 * 1024);
+});
+
+test("parseR2000TimeoutMs: a bad override (non-numeric, zero, negative) falls back to the default, never NaN", () => {
+  // WR-10/IN-04 discipline: the validation helper is called directly with
+  // every input shape, rather than mutating process.env.R2000_TIMEOUT_MS
+  // and hoping the already-evaluated R2000_TIMEOUT_MS constant reacts --
+  // that is exactly the IN-04 mistake (module-load-time constants do not
+  // observe a later env mutation) applied to a second env-derived value.
+  for (const bad of ["abc", "0", "-1", "", "NaN", "Infinity", "-Infinity"]) {
+    const result = parseR2000TimeoutMs(bad, R2000_DEFAULT_TIMEOUT_MS);
+    assert.equal(Number.isNaN(result), false, `parseR2000TimeoutMs(${JSON.stringify(bad)}) produced NaN`);
+    assert.equal(
+      result,
+      R2000_DEFAULT_TIMEOUT_MS,
+      `parseR2000TimeoutMs(${JSON.stringify(bad)}) must fall back to the default`
+    );
+  }
+});
+
+test("parseR2000TimeoutMs: undefined resolves to the fallback, and a valid positive override is honoured verbatim", () => {
+  assert.equal(parseR2000TimeoutMs(undefined, R2000_DEFAULT_TIMEOUT_MS), R2000_DEFAULT_TIMEOUT_MS);
+  assert.equal(parseR2000TimeoutMs("5000", R2000_DEFAULT_TIMEOUT_MS), 5000);
+  assert.equal(parseR2000TimeoutMs("1", R2000_DEFAULT_TIMEOUT_MS), 1);
+});
+
+// The timeout is proven REAL by driving it through runR2000() itself, not
+// merely by trusting the spawnSync options object. R2000_BIN is resolved
+// once at module load (the IN-04 lesson), so this test cannot set
+// process.env.R2000_BIN in THIS process and expect runR2000() to see it --
+// instead it launches a fresh Node child process with R2000_BIN set to
+// process.execPath in that child's environment, imports r2000-launch.ts
+// fresh inside it (a genuinely new module load sees the env var), and has
+// that child call runR2000() with { timeoutMs: 250 } against a Node
+// one-liner that sleeps for 5s. The child's own stdout reports whether
+// runR2000() threw the named timeout error -- this test then asserts on
+// that report, so the timeout is observed firing through the real
+// production code path, not reasoned about.
+test("runR2000({ timeoutMs: 250 }) against a genuinely slow child throws a named, actionable error -- never a raw spawnSync error object", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const childProgram =
+    `import { runR2000 } from ${JSON.stringify(join(here, "r2000-launch.ts"))};\n` +
+    `try {\n` +
+    `  runR2000(["-e", "setTimeout(() => {}, 5000)"], { timeoutMs: 250 });\n` +
+    `  console.log("NO_THROW");\n` +
+    `} catch (e) {\n` +
+    `  console.log("THREW:" + JSON.stringify({ message: e.message, isPlainSpawnError: typeof e.errno === "number" }));\n` +
+    `}\n`;
+
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", childProgram], {
+    encoding: "utf8",
+    timeout: 15_000,
+    env: { ...process.env, R2000_BIN: process.execPath },
+  });
+
+  assert.equal(r.status, 0, `child process exited non-zero (stderr: ${r.stderr})`);
+  const stdout = r.stdout ?? "";
+  assert.match(stdout, /^THREW:/, `expected the child to report a thrown error, got: ${stdout}${r.stderr}`);
+
+  const reported = JSON.parse(stdout.slice("THREW:".length).trim());
+  assert.match(reported.message, /timed out after 250ms/);
+  assert.match(reported.message, /setTimeout/, "the error message must name the argv");
+  assert.equal(
+    reported.isPlainSpawnError,
+    false,
+    "the thrown error must be the named Error this module constructs, not a raw spawnSync error object (which " +
+      "carries a numeric errno field) -- WR-10's whole point is that this is never a raw re-thrown spawnSync error"
+  );
+});
