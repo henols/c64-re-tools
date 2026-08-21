@@ -43,12 +43,32 @@
 // by `/gsd-complete-milestone` itself, and `status: gaps_found` is never
 // gated (D-12-13) -- honest bad news must never be obstructed.
 //
+// HOOK MODE (plan 12-02, D-12-03): `--hook` reads a Claude Code `PreToolUse`
+// payload on stdin (`{ tool_name, tool_input }`) and refuses an in-scope
+// gated write with `exit 2` plus the reason on stderr -- never the `exit 2`
+// + JSON `permissionDecision` combination, which is unreliable on current
+// Claude Code (anthropics/claude-code#43407; see the output-contract comment
+// near `hookMain()`). Scope is fail-OPEN: a call whose `tool_name` is not
+// one of Write/Edit/MultiEdit/NotebookEdit/Bash, or that names no
+// `*MILESTONE-AUDIT*.md` target, exits 0 before any `spawnSync` -- a bug in
+// this file must not be able to brick unrelated Write/Edit/Bash calls
+// repo-wide. Once a call IS in scope, every subsequent internal failure
+// (malformed JSON, an unrecognised `tool_input` shape, a truncated stdin
+// read, a guard-spawn failure) exits 2 rather than 0 -- fail-CLOSED, exactly
+// once scope is established, per D-12-14's "no hatch" premise. Target
+// extraction (`extractHookTarget`/`isHookInScope`) is field-name-agnostic by
+// construction (Route C in `12-RESEARCH.md`'s Assumptions Log): it is not
+// betting on any single `tool_input` field name staying stable, and a
+// payload shape this file does not recognise still refuses loudly, naming
+// the unrecognised keys, rather than silently passing (T-12-08).
+//
 // Exported surface (all directory-parameterised; no globals, no env reads):
 // `docsGuardFiles`, `DOCS_GUARD_FLOOR`, `EXPECTED_DOCS_GUARD_NAMES`,
 // `runGuardsLive`, `frontmatterStatus`, `isGatedStatus`,
-// `milestoneAuditFiles`, `checkAuditGate`. Plan 12-02 extends this same
-// file with a `--hook` mode and MUST NOT rename or re-derive any of the
-// above.
+// `milestoneAuditFiles`, `checkAuditGate`, plus hook-mode's
+// `writtenDeclaresGatedStatus`, `extractHookTarget`, `isHookInScope`. Plan
+// 12-03 wires `--hook` into `.claude/settings.json` and MUST NOT rename or
+// re-derive any of the above.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -332,22 +352,452 @@ export function checkAuditGate({ viceDir, planningDir }) {
   return { allowed, redGuards, guardOutput: guardResult, gatedAudits, structuralErrors, reason };
 }
 
+// ============================================================================
+// HOOK MODE (plan 12-02, D-12-03/D-12-04) -- everything below this line is
+// the `--hook` extension of the single check point above. It calls
+// `docsGuardFiles()`, `runGuardsLive()`, `DOCS_GUARD_FLOOR`,
+// `EXPECTED_DOCS_GUARD_NAMES` and `isGatedStatus()` exactly as check mode
+// does; it does not re-derive any of them.
+// ============================================================================
+
+/** The `tool_name` values this hook ever considers in scope. Everything
+ * else (Read, Grep, Glob, Task, WebFetch, ...) exits 0 before any
+ * `spawnSync`, unconditionally -- D-12-14's "absolute, no hatch" premise
+ * applies only once a call is already known to be in this set. */
+const HOOK_MATCHER_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]);
+
+/** `tool_input` keys that plausibly carry a *path* this call is aimed at.
+ * `command` is added for `Bash` specifically inside `extractHookTarget` --
+ * the command string is itself the "path-ish" thing a heredoc/redirect
+ * targets a file through. */
+const HOOK_PATH_KEYS = ["file_path", "path", "notebook_path"];
+
+/** `tool_input` keys that plausibly carry *written* text. Deliberately
+ * excludes `old_string`/`old_str`/`old_text` (see `isOldKey` below) --
+ * D-12-13: an Edit that downgrades an existing `status: passed` to
+ * `status: gaps_found` carries the gated string in its OLD side, and
+ * blocking that would obstruct exactly the honest-bad-news case this gate
+ * must never obstruct. `command` is folded in separately below, since a
+ * `Bash` call's written text and its "path" are the same string. */
+const HOOK_WRITTEN_KEYS = ["content", "file_text", "new_string", "new_str"];
+
+/** The full known-key set used only to decide whether `tool_input`'s SHAPE
+ * is recognised at all (T-12-08). Presence of a key counts, independent of
+ * its value's type -- an unrecognised VALUE under a recognised key is not
+ * the failure mode this guards against; an unrecognised SHAPE is. */
+const HOOK_KNOWN_KEYS = [...HOOK_PATH_KEYS, ...HOOK_WRITTEN_KEYS, "edits", "command"];
+
+function isOldKey(key) {
+  // Never collected as written text -- D-12-13. Listed here once, checked
+  // once, in both the known-shape path below and the unrecognised-shape
+  // fallback's recursive leaf collector.
+  return key === "old_string" || key === "old_str" || key === "old_text";
+}
+
+/** Recursively collects every string-valued leaf of `value`, skipping any
+ * `old_string`/`old_str`/`old_text` key at any depth (D-12-13 applies to the
+ * fallback path too). Used only when `tool_input`'s shape is NOT recognised
+ * (T-12-08) -- joins with a real newline, never `JSON.stringify`, because
+ * `JSON.stringify` escapes newlines to a literal two-character `\n`, which
+ * would defeat `writtenDeclaresGatedStatus()`'s line-anchored scan and turn
+ * this fallback into the silent no-op it exists to prevent. */
+function collectStringLeaves(value, out) {
+  if (value == null) return;
+  if (typeof value === "string") {
+    out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringLeaves(item, out);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [key, val] of Object.entries(value)) {
+      if (isOldKey(key)) continue;
+      collectStringLeaves(val, out);
+    }
+  }
+}
+
+/** Field-name-agnostic extraction of what a hook payload targets and
+ * writes (Route C in `12-RESEARCH.md`'s Assumptions Log -- this is what
+ * makes assumption A1, resolved by observation in
+ * `12-HOOK-STDIN-EVIDENCE.md`, non-load-bearing either way). Returns
+ * `{ pathish, written, shapeKnown, keysSeen }`.
+ *
+ * When `tool_input` carries at least one of `HOOK_KNOWN_KEYS`, `shapeKnown`
+ * is true and `pathish`/`written` are built from exactly those known keys.
+ * When it carries none of them, `shapeKnown` is false and BOTH `pathish`
+ * and `written` become the same single joined string of every string leaf
+ * in `tool_input` (minus `old_*` keys) -- so a `*MILESTONE-AUDIT*.md` token
+ * anywhere in an unrecognised payload puts the call in scope, and
+ * `isHookInScope` (below) can still refuse, naming the unrecognised shape. */
+export function extractHookTarget(toolName, toolInput) {
+  const isPlainObject = toolInput !== null && typeof toolInput === "object" && !Array.isArray(toolInput);
+  const keysSeen = isPlainObject ? Object.keys(toolInput) : [];
+  const shapeKnown = isPlainObject && HOOK_KNOWN_KEYS.some((k) => k in toolInput);
+
+  if (!isPlainObject || !shapeKnown) {
+    const leaves = [];
+    if (isPlainObject) collectStringLeaves(toolInput, leaves);
+    const joined = leaves.join("\n");
+    return { pathish: [joined], written: [joined], shapeKnown: false, keysSeen };
+  }
+
+  const pathish = [];
+  const written = [];
+
+  for (const key of HOOK_PATH_KEYS) {
+    if (typeof toolInput[key] === "string") pathish.push(toolInput[key]);
+  }
+  if (toolName === "Bash" && typeof toolInput.command === "string") {
+    pathish.push(toolInput.command);
+  }
+
+  for (const key of HOOK_WRITTEN_KEYS) {
+    if (typeof toolInput[key] === "string") written.push(toolInput[key]);
+  }
+  if (Array.isArray(toolInput.edits)) {
+    for (const edit of toolInput.edits) {
+      if (edit && typeof edit === "object") {
+        if (typeof edit.new_string === "string") written.push(edit.new_string);
+        if (typeof edit.new_text === "string") written.push(edit.new_text);
+      }
+    }
+  }
+  if (typeof toolInput.command === "string") {
+    written.push(toolInput.command);
+  }
+
+  return { pathish, written, shapeKnown: true, keysSeen };
+}
+
+/** True when `p`'s basename contains `MILESTONE-AUDIT` and ends `.md`,
+ * matching `milestoneAuditFiles()`'s own discovery pattern above. */
+function isMilestoneAuditPath(p) {
+  if (typeof p !== "string" || p.length === 0) return false;
+  const base = p.split(/[\\/]/).pop() ?? p;
+  return base.includes("MILESTONE-AUDIT") && base.endsWith(".md");
+}
+
+/** A bare `*MILESTONE-AUDIT*.md`-shaped token anywhere in unstructured text
+ * (the shapeKnown:false fallback, and a malformed-JSON raw-text scan). Not
+ * a path parser -- just "does this text contain a token that looks like a
+ * milestone-audit filename". */
+const MILESTONE_AUDIT_TOKEN_RE = /[^\s'"<>]*MILESTONE-AUDIT[^\s'"<>]*\.md/;
+
+/** Finds any line declaring a gated `status:` value, tolerating leading
+ * whitespace (unlike `frontmatterStatus()`'s column-zero rule) because a
+ * heredoc body inside a shell command, or an unrecognised-shape fallback's
+ * joined text, is not column-anchored. Reuses `isGatedStatus()` for the
+ * passed/tech_debt check itself -- D-12-12/D-12-13's gated-status set is
+ * defined in exactly one place. */
+export function writtenDeclaresGatedStatus(text) {
+  if (typeof text !== "string" || text.length === 0) return false;
+  const lines = text.replace(/\r/g, "").split("\n");
+  for (const line of lines) {
+    const m = /^\s*status:\s*(.*)$/.exec(line);
+    if (!m) continue;
+    let value = m[1].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (isGatedStatus(value)) return true;
+  }
+  return false;
+}
+
+// D-12-04/T-12-02: a CONTENT-adjacency scan, deliberately not a shell-syntax
+// parser -- see the accepted-limitation comment on `bashTargetsMilestoneAudit`
+// below. Covers the redirect/writer shapes D-12-04 names: `>`, `>>`, `tee`
+// (with optional `-a`), and `dd of=` want the target IMMEDIATELY after the
+// writer token; `sed -i`/`perl -i` edit their target in place, which can
+// appear anywhere later in the same command (the script argument comes
+// between the flag and the filename in real usage).
+const BASH_ADJACENT_WRITE_RE =
+  /(?:>>?|tee(?:\s+-a)?|dd\s+of=)\s*['"]?[^\s'"]*MILESTONE-AUDIT[^\s'"]*\.md/;
+const BASH_INPLACE_EDIT_RE =
+  /(?:sed\s+-i[^\s]*|perl\s+-i[^\s]*)[\s\S]*?['"]?[^\s'"]*MILESTONE-AUDIT[^\s'"]*\.md/;
+
+/** T-12-02 (accepted limitation, recorded here and in the phase SUMMARY): a
+ * base64-encoded payload, or a `python -c` one-liner that assembles the
+ * write target or the gated text at runtime, evades this scan by design --
+ * this function matches literal command TEXT, never shell semantics, and
+ * deliberately does not attempt to parse shell syntax generally. Layer 1
+ * (`audit-integrity.test.ts` / `checkAuditGate()`) re-reads the actual
+ * committed file content regardless of how the shell wrote it, and is the
+ * unevadable enforcement point this function is only a partial backstop
+ * for. */
+function bashTargetsMilestoneAudit(command) {
+  if (typeof command !== "string") return false;
+  return BASH_ADJACENT_WRITE_RE.test(command) || BASH_INPLACE_EDIT_RE.test(command);
+}
+
+/** The fail-open/fail-closed boundary itself (D-12-14, scoped). Returns
+ * true only for a call this hook considers itself responsible for -- every
+ * out-of-scope path here is reached BEFORE any `spawnSync`. */
+export function isHookInScope(toolName, toolInput, extraction) {
+  if (!HOOK_MATCHER_TOOLS.has(toolName)) return false;
+
+  if (!extraction.shapeKnown) {
+    const joined = extraction.written[0] ?? "";
+    return MILESTONE_AUDIT_TOKEN_RE.test(joined) && writtenDeclaresGatedStatus(joined);
+  }
+
+  if (toolName === "Bash") {
+    const command = typeof toolInput?.command === "string" ? toolInput.command : "";
+    return bashTargetsMilestoneAudit(command) && writtenDeclaresGatedStatus(command);
+  }
+
+  const hasAuditPath = extraction.pathish.some(isMilestoneAuditPath);
+  if (!hasAuditPath) return false;
+  return extraction.written.some((w) => writtenDeclaresGatedStatus(w));
+}
+
+/** Same-text fallback used only when `JSON.parse` itself fails (malformed
+ * stdin) -- there is no `tool_input` object to extract from at all, so this
+ * scans the raw stdin text directly for the same two signals
+ * (`isHookInScope`'s shapeKnown:false branch uses the identical pair).
+ *
+ * `rawText` here is still JSON SOURCE text (that is exactly why it failed to
+ * parse) -- a real line break inside a JSON string value is written as the
+ * two-character escape sequence `\n`, never an actual line-break byte, so
+ * `writtenDeclaresGatedStatus()`'s line-anchored scan would never find a
+ * `status:` line embedded in e.g. a broken `content` value without first
+ * decoding that escape (and `\r`) back into real line breaks. */
+function rawTextIndicatesScope(rawText) {
+  if (!MILESTONE_AUDIT_TOKEN_RE.test(rawText)) return false;
+  const decoded = rawText.replace(/\\r/g, "\r").replace(/\\n/g, "\n");
+  return writtenDeclaresGatedStatus(decoded);
+}
+
+/** Re-runs the derived guard set live and reports pass/fail, reusing
+ * `docsGuardFiles()`/`runGuardsLive()`/`DOCS_GUARD_FLOOR`/
+ * `EXPECTED_DOCS_GUARD_NAMES` exactly as `checkAuditGate()` does (D-12-01:
+ * one seam, no duplicate logic). Deliberately does NOT scan `planningDir`
+ * for already-gated audits the way `checkAuditGate()` does -- hook mode's
+ * question is narrower: "if this in-scope write lands, is any guard red
+ * right now?", not "what does the whole tree currently declare?". */
+function hookGuardVerdict(root) {
+  const viceDir = join(root, ".claude", "mcp", "vice");
+  const guardFiles = docsGuardFiles(viceDir);
+
+  const structuralErrors = [];
+  if (guardFiles.length < DOCS_GUARD_FLOOR) {
+    structuralErrors.push(
+      `only ${guardFiles.length} docs-*.test.ts guard(s) found in ${viceDir} (>= ${DOCS_GUARD_FLOOR} required) -- ` +
+        "an empty or broken glob must fail loudly here rather than let this gate report green forever"
+    );
+  }
+  for (const name of EXPECTED_DOCS_GUARD_NAMES) {
+    if (!guardFiles.includes(name)) {
+      structuralErrors.push(
+        `expected guard "${name}" is missing from the derived guard set [${guardFiles.join(", ") || "none"}]`
+      );
+    }
+  }
+  if (structuralErrors.length > 0) {
+    return { allowed: false, redGuards: [], guardFiles, guardOutput: null, structuralErrors };
+  }
+
+  const guardResult = runGuardsLive(viceDir, guardFiles);
+  const guardsRed = guardResult.status !== 0;
+  const redGuards = guardsRed ? parseRedGuardNames(guardResult, guardFiles) : [];
+  return { allowed: !guardsRed, redGuards, guardFiles, guardOutput: guardResult, structuralErrors: [] };
+}
+
+/** Assembles the D-12-15 three-part refusal (red guard name(s), its
+ * assertion text, the two legitimate routes), prefixed with the
+ * unrecognised-shape note (T-12-08) when `extraction.shapeKnown` is false. */
+function buildHookRefusal(verdict, extraction) {
+  const shapeNote =
+    extraction.shapeKnown === false
+      ? "Note: tool_input carried none of the recognised fields (file_path, path, " +
+        "notebook_path, content, file_text, new_string, new_str, edits, command); this " +
+        "refusal was reached via the unrecognised-shape fallback (T-12-08). tool_input keys " +
+        `seen: [${extraction.keysSeen.join(", ") || "none"}].\n`
+      : "";
+
+  if (verdict.structuralErrors.length > 0) {
+    return `audit-gate --hook: REFUSED\n${shapeNote}Structural failure: ${verdict.structuralErrors.join("; ")}\n`;
+  }
+
+  const guardNames = verdict.redGuards.length > 0 ? verdict.redGuards.join(", ") : verdict.guardFiles.join(", ");
+  const assertionText = truncate(`${verdict.guardOutput.stdout}\n${verdict.guardOutput.stderr}`.trim(), 4000);
+  return (
+    `audit-gate --hook: REFUSED\n${shapeNote}` +
+    `(a) red guard(s): ${guardNames}.\n` +
+    `(b) failing assertion output:\n${assertionText}\n` +
+    "(c) there is no waiver file and no environment variable that relaxes this gate. The two legitimate " +
+    "routes are: 1) fix the documents the red guard checks, or 2) change or retire the guard itself, in a commit.\n"
+  );
+}
+
+/** Bounded stdin read (T-12-01, hook DoS). 5000ms timeout guard and a 10 MiB
+ * byte cap -- on either, stop reading and hand back whatever arrived plus
+ * `truncated: true` rather than hang; the caller decides fail-open/closed
+ * from there (a truncated payload that is still in scope fails closed). */
+function readHookStdin(callback) {
+  const MAX_BYTES = 10 * 1024 * 1024;
+  const TIMEOUT_MS = 5000;
+  let data = "";
+  let bytes = 0;
+  let truncated = false;
+  let finished = false;
+
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    callback(data, { truncated });
+  };
+
+  const timer = setTimeout(() => {
+    truncated = true;
+    finish();
+  }, TIMEOUT_MS);
+
+  try {
+    process.stdin.setEncoding("utf8");
+  } catch {
+    // stdin not a readable stream (e.g. closed) -- treat as zero bytes.
+    finish();
+    return;
+  }
+  process.stdin.on("data", (chunk) => {
+    bytes += Buffer.byteLength(chunk, "utf8");
+    data += chunk;
+    if (bytes > MAX_BYTES) {
+      truncated = true;
+      finish();
+      process.stdin.pause();
+    }
+  });
+  process.stdin.on("end", () => finish());
+  process.stdin.on("error", () => finish());
+}
+
+/** `--hook` entry point. Never `eval()`s, `import()`s, `require()`s, or
+ * shell-executes any part of the stdin payload (ASVS V5, T-12-03) -- the
+ * only subprocess this spawns is the same guard-file `spawnSync` check mode
+ * already uses, via `hookGuardVerdict()` -> `runGuardsLive()`. */
+function hookMain(rootArg) {
+  const root = resolve(rootArg ?? join(HERE, ".."));
+
+  readHookStdin((stdinText, { truncated }) => {
+    if (stdinText.length === 0) {
+      // Zero bytes arrived -- scope is unknowable. Blocking every tool call
+      // in the session is exactly the DoS this mitigation exists to
+      // prevent, so fail OPEN here specifically (T-12-01).
+      process.exit(0);
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(stdinText);
+    } catch (err) {
+      if (rawTextIndicatesScope(stdinText)) {
+        const reason = truncated
+          ? "stdin read was truncated (5000ms timeout or 10 MiB cap) before a complete JSON " +
+            "payload arrived; failing closed because the partial payload still names a " +
+            "milestone-audit path and a gated status token."
+          : `stdin payload could not be parsed as JSON (${err.message}); failing closed ` +
+            "because the raw payload still names a milestone-audit path and a gated status token.";
+        process.stderr.write(
+          `audit-gate --hook: REFUSED (malformed payload)\n${reason}\n` +
+            "There is no waiver file and no environment variable that relaxes this gate.\n"
+        );
+        process.exitCode = 2;
+      } else {
+        process.exitCode = 0;
+      }
+      return;
+    }
+
+    const toolName = parsed && typeof parsed.tool_name === "string" ? parsed.tool_name : "";
+    const toolInput = parsed && typeof parsed === "object" ? parsed.tool_input : undefined;
+
+    const extraction = extractHookTarget(toolName, toolInput);
+    const inScope = isHookInScope(toolName, toolInput, extraction);
+
+    if (!inScope) {
+      process.exitCode = 0;
+      return;
+    }
+
+    // In scope from here on -- every remaining path fails CLOSED (D-12-14).
+    if (truncated) {
+      process.stderr.write(
+        "audit-gate --hook: REFUSED (truncated stdin)\n" +
+          "stdin read was truncated (5000ms timeout or 10 MiB cap) while evaluating an " +
+          "in-scope tool call; failing closed rather than risk missing a gated write.\n" +
+          "There is no waiver file and no environment variable that relaxes this gate.\n"
+      );
+      process.exitCode = 2;
+      return;
+    }
+
+    let verdict;
+    try {
+      verdict = hookGuardVerdict(root);
+    } catch (err) {
+      process.stderr.write(
+        "audit-gate --hook: REFUSED (internal error)\n" +
+          `${err?.stack ?? String(err)}\n` +
+          "There is no waiver file and no environment variable that relaxes this gate. Fix the " +
+          "underlying error, or change or retire the affected guard, in a commit.\n"
+      );
+      process.exitCode = 2;
+      return;
+    }
+
+    if (verdict.allowed) {
+      process.exitCode = 0;
+      return;
+    }
+
+    // Output contract (Pitfall 2 / anthropics/claude-code#43407): exit 2
+    // plus a stderr reason is the ONLY blocking mechanism used here. Do NOT
+    // print a `hookSpecificOutput.permissionDecision` JSON blob on stdout
+    // alongside this exit 2 -- on this Claude Code build, JSON is only
+    // honoured on exit 0, and the combined exit-2-plus-JSON form is
+    // unreliable (see the upstream issue). If a future maintainer is
+    // tempted to "improve" this by adding that JSON back, don't -- re-verify
+    // against a real plant first.
+    process.stderr.write(buildHookRefusal(verdict, extraction));
+    process.exitCode = 2;
+  });
+}
+
 function parseArgs(argv) {
   let root;
   let json = false;
+  let hook = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--root") {
       root = argv[i + 1];
       i += 1;
     } else if (argv[i] === "--json") {
       json = true;
+    } else if (argv[i] === "--hook") {
+      hook = true;
     }
   }
-  return { root, json };
+  return { root, json, hook };
 }
 
 function main() {
-  const { root: rootArg, json } = parseArgs(process.argv.slice(2));
+  const { root: rootArg, json, hook } = parseArgs(process.argv.slice(2));
+
+  if (hook) {
+    hookMain(rootArg);
+    return;
+  }
+
   const root = resolve(rootArg ?? join(HERE, ".."));
   const viceDir = join(root, ".claude", "mcp", "vice");
   const planningDir = join(root, ".planning");
