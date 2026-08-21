@@ -94,7 +94,11 @@ anyone to notice).
   1. A guard deliberately turned red is proven to block the audit-`passed` path — a committed transcript shows the mechanism refusing to record `status: passed` while it is red
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
-**Plans**: TBD
+**Plans**: 4 plans (4 waves, sequential — each wave builds on the previous)
+- [ ] 12-01-PLAN.md — `scripts/audit-gate.mjs` (the single check point) + Layer 1 `audit-integrity.test.ts` with the committed planted pair
+- [ ] 12-02-PLAN.md — resolve the PreToolUse payload shape empirically, then add `--hook` mode and pin its contract with committed tests
+- [ ] 12-03-PLAN.md — commit a hooks-only `.claude/settings.json`, relocate machine-specific permissions, amend `.gitignore`, and make Layer 1 guard the wiring
+- [ ] 12-04-PLAN.md — the one-time real-tree plant-and-revert transcript (`12-GATE-PROOF.md`) satisfying criteria 1 and 2
 
 ### Phase 13: External Verification
 **Goal**: The three highest-value carried items are re-proven against real
