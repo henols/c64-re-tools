@@ -221,9 +221,88 @@ import { R2000_TOOL_DEFINITIONS, runR2000Tool } from "./r2000-tools.ts";
 // before any lease, socket or handler exists. A dynamic import is used
 // (not a static one) so the CLI module is not part of the server's startup
 // cost on the normal, non-`r2000` path.
+//
+// IN-01 (10-REVIEW.md; 11.1-CONTEXT.md AUDIT-01, D-11.1-04): `console.log`/
+// `console.error` writes to `process.stdout`/`process.stderr` are
+// ASYNCHRONOUS on POSIX once the fd is a pipe (Node opens pipe/socket fds
+// non-blocking, unlike a TTY or a regular file), so a bare `process.exit()`
+// immediately after can discard whatever write has not yet drained --
+// measured at a 128 KiB truncation point on this host's Node for a single
+// write exceeding the OS pipe's capacity. The reachable trigger is
+// `cmdExportAsm`'s `console.error(result.stderr)` in r2000-cli.ts, which can
+// carry a large diagnostic from the spawned regenerator2000 child: the one
+// case where the user most needs the diagnostic is exactly the case a piped
+// invocation could silently lose it in. `drainStdio()` below explicitly
+// awaits both streams' own pending writes (a `write("", cb)`-style
+// zero-length write's callback fires only once every prior queued write has
+// actually flushed) before the terminating `process.exit(code)`.
+//
+// T-11.1-EXITHANG: the drain is BOUNDED to `R2000_CLI_DRAIN_TIMEOUT_MS`. An
+// exit that hangs forever waiting on a pipe nobody reads is worse than a
+// truncated diagnostic -- this project's standing rule is that a teardown
+// path never becomes a hang (see the "never end the process from a teardown
+// handler" comment above; a BOUNDED drain here does not violate that rule
+// for the same reason the original unbounded `process.exit()` did not: this
+// still runs before any lease, socket or handler exists, and now also can
+// never block indefinitely).
+const R2000_CLI_DRAIN_TIMEOUT_MS = 300;
+
+/** Resolves once `stream`'s own pending writes have flushed, or after
+ * `timeoutMs`, whichever comes first. A zero-length `write("", cb)`'s
+ * callback fires strictly after every write queued ahead of it on the same
+ * stream has completed -- so this is a genuine drain barrier, not a fixed
+ * sleep. Guarded so a stream that is not writable (already closed/ended,
+ * e.g. under `> /dev/null` teardown races) resolves immediately rather than
+ * calling `write()` on it. */
+function drainStdio(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (!stream.writable) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, R2000_CLI_DRAIN_TIMEOUT_MS);
+    stream.write("", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 if (process.argv[2] === "r2000") {
+  // A broken pipe (the reader closing early, e.g. `| head`) makes
+  // `stream.write()` fail with EPIPE. Awaiting `drainStdio()` below gives
+  // that failure the chance to actually surface as Node's stream 'error'
+  // event -- which throws UNCAUGHT and crashes the process if nothing is
+  // listening, converting what used to be a silent (bare `process.exit()`
+  // outran the async error) success into a stack-trace crash. This
+  // mirrors the SAME EPIPE class this file already guards against for the
+  // server path further down (see that handler's own
+  // modelcontextprotocol/typescript-sdk#1564 citation) -- registered here
+  // too because this branch exits long before reaching that one.
+  process.stdout.on("error", () => {});
+  process.stderr.on("error", () => {});
+
+  // Test-only escape hatch, never documented to end users and inert unless
+  // this exact env var is set: writes a deterministic filler payload
+  // through this SAME drained-exit path, so vice-proxy.test.ts can measure
+  // an exact byte count well above any OS pipe capacity without needing a
+  // real regenerator2000 project (empirically, neither `--help`'s ~5.6 KB
+  // USAGE text nor a synthesized/garbage `.regen2000proj` fed to
+  // export-asm's error path scales anywhere near 128 KiB on this host's
+  // regenerator2000 0.9.20 -- both were measured before this hatch was
+  // added; see 11.1-05-SUMMARY.md for the measurements). Never reachable
+  // from a real `r2000 <verb>` invocation: the check is against a specific,
+  // unambiguous env var name no real caller would ever set.
+  const testFillBytes = process.env.VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES;
+  if (testFillBytes) {
+    process.stdout.write("x".repeat(Number(testFillBytes)));
+    await Promise.all([drainStdio(process.stdout), drainStdio(process.stderr)]);
+    process.exit(0);
+  }
+
   const { runR2000Cli } = await import("./r2000-cli.ts");
   const code = await runR2000Cli(process.argv.slice(3));
+  await Promise.all([drainStdio(process.stdout), drainStdio(process.stderr)]);
   process.exit(code);
 }
 

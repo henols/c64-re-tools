@@ -31,7 +31,7 @@
 // this file was altered by this change.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
@@ -6328,4 +6328,86 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
   } finally {
     proxy.child.kill("SIGKILL");
   }
+});
+
+// ---------------------------------------------------------------------------
+// IN-01 (10-REVIEW.md; 11.1-CONTEXT.md AUDIT-01, D-11.1-04): a piped `r2000`
+// invocation must not lose output to `process.exit()` discarding an
+// undrained async write, and the bounded drain that fixes it must not turn
+// a truncation into a hang.
+//
+// MEASURED, not inspected (per the plan's own instruction): the pre-fix
+// dispatch (`git show HEAD~2:vice-proxy.ts`, i.e. before this plan's Task 3
+// commit) truncated a piped 512000-byte payload at exactly 65536 bytes on
+// this host's Node/kernel (a full OS pipe capacity, not the review's
+// originally-measured 128 KiB -- environment-dependent, same defect class).
+// See 11.1-05-SUMMARY.md for the full pre-fix/post-fix transcript recorded
+// during that live measurement (a scratch copy of the pre-fix dispatch with
+// the SAME test-only fill hatch added, run once, then discarded -- never
+// committed, since the fix itself is what this suite pins going forward).
+//
+// Route chosen for the payload (the plan names two -- "the --help/USAGE
+// path repeated" or "an export-asm against a generated fixture" -- and
+// leaves the choice open): NEITHER scales on this host. `--help`'s USAGE
+// text is a fixed ~5.6 KB string, and cmdExportAsm's error path was
+// measured directly against both a garbage `.regen2000proj` and a garbage
+// flat `.raw` capture -- regenerator2000 0.9.20's own diagnostic stays a
+// small, roughly constant size (67-221 bytes) regardless of input size, so
+// neither route can deterministically clear "well above 128 KiB" without a
+// real, large capture this plan is explicitly not allowed to require. The
+// fix therefore ships a narrow, clearly-labelled test-only escape hatch,
+// `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`, gated behind an env var name no
+// real caller would ever set, that writes a deterministic filler payload
+// through the SAME drained-exit code path a real `r2000 <verb>` call uses
+// -- see that hatch's own comment in vice-proxy.ts for the measurements
+// that ruled out both named routes.
+const FILL_PAYLOAD_BYTES = 512000; // well above the 65536-byte truncation point measured above
+
+test("IN-01: a piped r2000 invocation delivers the whole payload, well above the OS pipe capacity, with an exact byte count", () => {
+  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], {
+    env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES) },
+    maxBuffer: FILL_PAYLOAD_BYTES * 2,
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.length, FILL_PAYLOAD_BYTES, "the piped payload must arrive complete, not truncated");
+});
+
+test("IN-01: the drain is bounded -- a piped invocation whose reader never drains still exits promptly (no hang)", () => {
+  const start = Date.now();
+  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], {
+    env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES * 10) },
+    // No stdio pipe consumer attached at all -- 'ignore' means the OS pipe
+    // fills and is never drained by anything, the exact "nobody reads the
+    // pipe" scenario T-11.1-EXITHANG guards against.
+    stdio: ["ignore", "ignore", "ignore"],
+    timeout: 5000,
+  });
+  const elapsedMs = Date.now() - start;
+  assert.equal(result.status, 0, "must still exit 0, not be killed by the test's own 5s spawnSync timeout");
+  assert.ok(elapsedMs < 2000, `expected the bounded drain to resolve well under 2s (T-11.1-EXITHANG); took ${elapsedMs}ms`);
+});
+
+test("IN-01: r2000 --help's real (small) output is unaffected by the fix -- piped byte count equals unpiped byte count", () => {
+  const piped = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"]);
+  assert.equal(piped.status, 0);
+
+  const scratchDir = mkdtempSync(join(tmpdir(), "vice-proxy-in01-"));
+  const outFile = join(scratchDir, "help.out");
+  try {
+    spawnSync("sh", ["-c", `${JSON.stringify(process.execPath)} ${JSON.stringify(PROXY_PATH)} r2000 --help > ${JSON.stringify(outFile)}`]);
+    const unpipedBytes = statSync(outFile).size;
+    assert.equal(piped.stdout.length, unpipedBytes, "piped and unpiped byte counts must match exactly");
+  } finally {
+    rmSync(scratchDir, { recursive: true, force: true });
+  }
+});
+
+test("IN-01: the r2000 CLI dispatch still ends the process promptly with no server ready log line", () => {
+  const start = Date.now();
+  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], { encoding: "utf8" });
+  const elapsedMs = Date.now() - start;
+  assert.equal(result.status, 0);
+  assert.ok(elapsedMs < 5000, `expected a prompt exit, took ${elapsedMs}ms`);
+  assert.doesNotMatch(result.stdout, /listening on|MCPServer started/i);
+  assert.doesNotMatch(result.stderr, /listening on|MCPServer started/i);
 });
