@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
 status: executing
-stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-22T23:12:33.008Z"
+stopped_at: Completed 16-07-PLAN.md
+last_updated: "2026-08-22T23:52:55.472Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 16 execution started
-state_head: 8fb40ec9dd77f81d73bbf94d81647310f81d2e9d
+state_head: 1941bc271a2bc876ce4dc46c76bc079775caf8fe
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 36
-  completed_plans: 34
+  completed_plans: 35
   percent: 67
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 16 (Packaging and Repo Shape) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
@@ -247,6 +247,7 @@ Last activity: 2026-08-22 — Phase 16 execution started
 | Phase 16 P03 | 10min | 2 tasks | 3 files |
 | Phase 16 P04 | ~55min | 3 tasks | 238 files |
 | Phase 16 P06 | 55min | 3 tasks | 3 files |
+| Phase 16 P07 | ~90min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -368,6 +369,7 @@ Recent decisions affecting current work:
 - [Phase 16]: 16-03: PKG-01 merge half verified rather than rebuilt -- wireMcp() already implemented correct merge semantics; added 18 node:test cases (in-process happy paths + subprocess-driven refusal paths via an entry-point dispatch guard) pinning it against the shipped cli.mjs, zero new dependencies — The pending todo's own Solution step 4 asked for exactly this test; a malformed-config refusal was the security research's named tampering mitigation and was previously unasserted
 - [Phase 16]: Phase 16 plan 04: relocated the MCP server package (@henols/vice-mcp) from .claude/mcp/vice/ to src/mcp/vice/ in one atomic git mv; repoRoot()'s branch-4 hop count reviewed and left unchanged (same 3-segment depth); found and fixed 3 functional literals plus ~22 stale .claude/skills self-references that plan 16-01's own sweep missed; published tarball proven byte-identical to the pre-move baseline — PKG-01's second, larger half -- the same relocation machinery plan 16-01 proved on the skills tree, driven through the ~180-file vice-mcp package
 - [Phase 16]: Phase 16 plan 16-06: PKG-02 closed -- all three previously-untested skill CLI scripts (acme.mjs, driver.mjs, derive.mjs) now have committed, discovered test coverage (47 new tests: 16+17+14); a driver.mjs .d.mts declaration file was tried and reverted after it leaked into the installer npm tarball, replaced with a scoped @ts-expect-error on the one import line instead; parseAddr()'s null-address branch confirmed unreachable through the shipped (unexported) surface, pinned to its nearest reachable observed proxy rather than invented or fixed by editing the script.
+- [Phase 16]: PKG-03: comment-scoped orphaned-phase-pointer guard built; 15 sites + 2 test decision-id strings repointed at existing permanent records; fixture + gate-proof committed — Cut-phase citations must name the phase, not its number (re-tripping risk); matching is per-physical-line, not per-span, to avoid cross-line false positives measured in the real corpus
 
 ### Pending Todos
 
@@ -759,8 +761,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T23:12:32.845Z
-Stopped at: Completed 16-06-PLAN.md
+Last session: 2026-08-22T23:52:55.305Z
+Stopped at: Completed 16-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
