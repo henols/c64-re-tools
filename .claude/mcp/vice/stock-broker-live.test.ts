@@ -906,3 +906,176 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Plan 15-08 Task 2: scenario 2's KEYBOARD half (03-HUMAN-UAT.md test 2) --
+// a hand-assembled, genuinely-running reacting program, proven running by a
+// register read before anything is injected, then vice_keyboard_petscii's
+// effect observed in the program's own screen-memory observation cell.
+//
+// The JOYSTICK half of scenario 2 is deliberately NOT here: it reproduced
+// Phase 13 A3's exact zero-delta result (both CIA1 port bytes unchanged
+// across all five single-bit rounds) even against a program proven running
+// -- a measurement, not a pass/fail, per this plan's own instruction to keep
+// a measurement out of the committed test file. See
+// 15-UAT-EVIDENCE.md for the full transcript, including the ACME source and
+// the running-state proof this test also performs.
+// ---------------------------------------------------------------------------
+
+/** The reacting program's own source -- hand-rolled hardware addresses, no
+ * library (the acme-build scaffold's own template.a convention: a "10 SYS
+ * <entry>" BASIC stub whose link pointer ACME computes and VICE's own
+ * relink independently recomputes to the SAME value for a well-formed
+ * BASIC program, unlike this file's OWN deliberately-invalid raw-code
+ * fixture above, which the relink corrupts -- FINDING-D1 does not apply to
+ * a genuine BASIC-stub program). Loops forever copying the KERNAL keyboard
+ * buffer's head byte ($0277, the exact address vice_keyboard_petscii's own
+ * KEYBOARD_FEED wire command targets per stock-input.ts) into screen cell
+ * $0400, and both CIA1 port bytes ($dc00/$dc01 -- A3's own two candidate
+ * ports) into $0401/$0402. */
+const REACTING_PROGRAM_SOURCE = `!cpu 6510
+* = $0801
+
+        !word .eol, 10
+        !byte $9e
+        !byte '0' + entry % 10000 / 1000
+        !byte '0' + entry %  1000 /  100
+        !byte '0' + entry %   100 /   10
+        !byte '0' + entry %    10
+        !byte 0
+.eol    !word 0
+
+entry
+        sei
+loop
+        lda $c6
+        beq skipkey
+        lda $0277
+        sta $0400
+skipkey
+        lda $dc00
+        sta $0401
+        lda $dc01
+        sta $0402
+        jmp loop
+`;
+
+/** The reacting program's real, assembled loop range -- read off ACME's own
+ * .rep listing (recorded verbatim in 15-UAT-EVIDENCE.md): entry ($080d,
+ * "sei") then loop ($080e) through the final jmp's last byte ($0826). A
+ * register read landing anywhere in [LOOP_START, LOOP_END] proves execution
+ * is inside this program's own loop, not merely that SOME code is running. */
+const REACTING_LOOP_START = 0x080e;
+const REACTING_LOOP_END = 0x0826;
+
+/** Assembles REACTING_PROGRAM_SOURCE with the real `acme` binary (never a
+ * hand-rolled byte array -- this plan's own instruction to record the
+ * assembler's version banner only makes sense if acme genuinely ran) and
+ * returns the resulting .prg path plus acme's own `--version` banner. */
+function assembleReactingProgram(dir: string): { prgPath: string; acmeVersion: string } {
+  const acmeVersion = execFileSync("acme", ["--version"], { encoding: "utf8" }).trim();
+  const srcPath = join(dir, "reacting.a");
+  writeFileSync(srcPath, REACTING_PROGRAM_SOURCE);
+  const prgPath = join(dir, "reacting.prg");
+  execFileSync("acme", ["-v1", "-f", "cbm", "-o", prgPath, srcPath], { stdio: "pipe" });
+  return { prgPath, acmeVersion };
+}
+
+test(
+  "stock-broker-live: a hand-assembled reacting program is proven genuinely running (PC inside its own loop), then a vice_keyboard_petscii-injected byte lands in its observation cell",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    let report: HarnessReport | null = null;
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+      const { prgPath, acmeVersion } = assembleReactingProgram(scratchDir);
+      console.log(`stock-broker-live (scenario 2, keyboard): acme --version -> ${acmeVersion}`);
+
+      const brokerJson = await waitForBrokerJson(stateDir);
+      const host = "127.0.0.1";
+      assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
+
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const controlSession = opened.session;
+
+      const acquired = await controlSession.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+
+      const pid = await readGrantPid(grant.epoch_file);
+      recordPid(pid);
+
+      const ready = await waitForStockReady(grant.port);
+      assert.ok(ready, `the broker-launched instance at port ${grant.port} never answered a binary-monitor probe within the deadline`);
+
+      const deps = depsFor(host, grant, controlSession, stateDir);
+
+      // NO vice_disk_attach -- bare .prg autostart, same shape as Task 2's
+      // POST-FIX case above; this test needs no disk at all.
+      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-broker-live (scenario 2, keyboard): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
+
+      // --- Running-state proof: resume, sleep, halt+read registers, check
+      // PC lands inside the loop's own address range. A result obtained
+      // against a halted machine is worthless (this plan's own instruction).
+      let confirmedRunning = false;
+      let lastRegisters: Record<string, number> | null = null;
+      let confirmedPc: number | null = null;
+      for (let attempt = 0; attempt < 10 && !confirmedRunning; attempt++) {
+        await dispatchStock("vice_execution_run", {}, deps);
+        await new Promise((r) => setTimeout(r, 500));
+        const regsResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsPayload = parseOkPayload(regsResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        lastRegisters = regsPayload.registers as Record<string, number>;
+        const pcKey = Object.keys(lastRegisters).find((k) => k.toUpperCase() === "PC");
+        const pc = pcKey !== undefined ? lastRegisters[pcKey] : undefined;
+        console.log(`stock-broker-live (scenario 2, keyboard): running-state attempt ${attempt}: registers=${JSON.stringify(lastRegisters)}`);
+        if (typeof pc === "number" && pc >= REACTING_LOOP_START && pc <= REACTING_LOOP_END) {
+          confirmedRunning = true;
+          confirmedPc = pc;
+        }
+      }
+      console.log(
+        `stock-broker-live (scenario 2, keyboard): running-state proof -- PC=0x${(confirmedPc ?? -1).toString(16)} inside loop range ` +
+          `[0x${REACTING_LOOP_START.toString(16)}, 0x${REACTING_LOOP_END.toString(16)}], confirmed=${confirmedRunning}`,
+      );
+      assert.ok(
+        confirmedRunning,
+        `the reacting program never showed a PC inside its own loop range [0x${REACTING_LOOP_START.toString(16)}, 0x${REACTING_LOOP_END.toString(16)}]; last registers: ${JSON.stringify(lastRegisters)}`,
+      );
+
+      // --- Keyboard half: inject one PETSCII byte, resume, sleep, read the
+      // observation cell -- before AND after quoted, per this plan's own
+      // instruction never to summarise "input was observed".
+      const injectedByte = 0x41;
+      const beforeInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const beforeInjectPayload = parseOkPayload(beforeInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-broker-live (scenario 2, keyboard): $0400 before injection = ${JSON.stringify(beforeInjectPayload.bytes)}`);
+
+      const petsciiResult = await dispatchStock("vice_keyboard_petscii", { data: [injectedByte] }, deps);
+      const petsciiPayload = parseOkPayload(petsciiResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-broker-live (scenario 2, keyboard): vice_keyboard_petscii([0x${injectedByte.toString(16)}]) -> ${JSON.stringify(petsciiPayload)}`);
+
+      await dispatchStock("vice_execution_run", {}, deps);
+      await new Promise((r) => setTimeout(r, 800));
+      const afterInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const afterInjectPayload = parseOkPayload(afterInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`stock-broker-live (scenario 2, keyboard): $0400 after injection (byte 0x${injectedByte.toString(16)}) = ${JSON.stringify(afterInjectPayload.bytes)}`);
+
+      assert.deepEqual(
+        afterInjectPayload.bytes,
+        [injectedByte],
+        `expected the injected PETSCII byte 0x${injectedByte.toString(16)} to land in the observation cell, got ${JSON.stringify(afterInjectPayload.bytes)}`,
+      );
+
+      await controlSession.release();
+    });
+
+    assert.ok(report !== null, "withBrokerHarness must have returned a report");
+    assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
+  },
+);

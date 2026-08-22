@@ -152,3 +152,179 @@ plan's work began, and `grep -l "broker-control-singleton" *.test.ts` resolves i
 `stock-broker-live.test.ts`) -- not a process this run started or leaked. Every `withBrokerHarness()`
 scratch directory (`mkdtempSync(tmpdir(), "stock-broker-live-...")`) is removed in that helper's
 own `finally` block; none was found left behind by manual inspection after the run.
+
+## Scenario 2 — `vice_keyboard_petscii` and `vice_joystick_set` against a running program
+
+**Verdict: PARTIAL.** The keyboard half is a clean PASS, deterministically asserted in a new
+committed test case. The joystick half reproduced Phase 13 A3's exact zero-delta result --
+against a program this run itself proved was genuinely running -- which is a real, valuable
+negative result, recorded honestly rather than massaged into a pass.
+
+### The reacting program
+
+Hand-rolled, hardware addresses as literals (no C64 library -- the acme-build scaffold's own
+library gap is a recorded Phase 8.1 finding; this follows the same worked-around convention as
+the scaffold's `template.a`), assembled with the real `acme` binary on `$PATH`:
+
+```
+acme --version -> ACME, release 0.97 ("Zem"), 31 Jan 2021
+                  Platform independent version.
+```
+
+Source, recorded verbatim (this is the exact string assembled both by the committed test and by
+the ad-hoc joystick probe below):
+
+```asm
+!cpu 6510
+* = $0801
+
+        !word .eol, 10
+        !byte $9e
+        !byte '0' + entry % 10000 / 1000
+        !byte '0' + entry %  1000 /  100
+        !byte '0' + entry %   100 /   10
+        !byte '0' + entry %    10
+        !byte 0
+.eol    !word 0
+
+entry
+        sei
+loop
+        lda $c6
+        beq skipkey
+        lda $0277
+        sta $0400
+skipkey
+        lda $dc00
+        sta $0401
+        lda $dc01
+        sta $0402
+        jmp loop
+```
+
+This is the standard "10 SYS &lt;entry&gt;" BASIC-stub launch idiom (identical shape to
+`acme-build/template.a`) -- **not** a raw-code fixture, so FINDING-D1's relink corruption does not
+apply here: ACME's own computed `.eol` link pointer and VICE's independent relink-on-RUN scan land
+on the identical value for a well-formed BASIC program (confirmed empirically below: the program
+runs correctly). ACME's own `.rep` listing (real output, this session) gives the exact assembled
+addresses:
+
+```
+     4  0801 0b080a00                   !word .eol, 10
+     5  0805 9e                         !byte $9e
+     6  0806 32                         !byte '0' + entry % 10000 / 1000
+     7  0807 30                         !byte '0' + entry %  1000 /  100
+     8  0808 36                         !byte '0' + entry %   100 /   10
+     9  0809 31                         !byte '0' + entry %    10
+    10  080a 00                         !byte 0
+    11  080b 0000               .eol    !word 0
+    13                          entry
+    14  080d 78                         sei
+    15                          loop
+    16  080e a5c6                       lda $c6
+    17  0810 f006                       beq skipkey
+    18  0812 ad7702                     lda $0277
+    19  0815 8d0004                     sta $0400
+    20                          skipkey
+    21  0818 ad00dc                     lda $dc00
+    22  081b 8d0104                     sta $0401
+    23  081e ad01dc                     lda $dc01
+    24  0821 8d0204                     sta $0402
+    25  0824 4c0e08                     jmp loop
+```
+
+`entry` = `$080D`, `loop` = `$080E`; the loop's own instruction range is `[$080E, $0826]`
+(inclusive, the last byte of the final `jmp loop`).
+
+The program is autostarted as a bare `.prg` (no disk needed at all for this scenario).
+
+### Running-state proof (both runs -- committed test and ad-hoc probe)
+
+Committed test run (`node --test`, this session):
+
+```
+running-state attempt 0: registers={"PC":61105,"A":79,"X":1,"Y":8,"SP":243,"00":47,"01":55,"FL":119,"LIN":0,"CYC":1}
+running-state attempt 1: registers={"PC":2078,"A":127,"X":0,"Y":0,"SP":246,"00":47,"01":55,"FL":4,"LIN":0,"CYC":2}
+running-state proof -- PC=0x81e inside loop range [0x80e, 0x826], confirmed=true
+```
+
+`0x81e` (`$081E`, the `lda $dc01` instruction) sits squarely inside `[$080E, $0826]` -- the CPU is
+executing this program's own loop, not sitting at some KERNAL/BASIC address. Attempt 0's PC
+(`61105` = `$EEF1`, a KERNAL address) is the machine still finishing its boot/RUN sequence at the
+first sample; attempt 1 lands inside the loop, one resume-sleep-read cycle later. Ad-hoc probe run
+(ACME + broker launch fresh) produced the equivalent proof independently: `PC=0x81b` inside the
+same range on its second sample.
+
+### Keyboard half (committed, deterministic)
+
+```
+$0400 before injection = [32]
+vice_keyboard_petscii([0x41]) -> {"byteCount":1,"petsciiHex":"41","note":"Bytes are queued in the KERNAL keyboard buffer -- nothing consumes them until the machine runs. This client never issues an unrequested resume (D-05); resume explicitly to have the buffer read.","runState":"stopped"}
+$0400 after injection (byte 0x41) = [65]
+```
+
+`32` (`$20`, PETSCII space -- the default screen-fill character) before; `65` (`$41`, the exact
+injected byte) after. **Verdict: PASS**, asserted in the committed test
+(`stock-broker-live.test.ts`).
+
+### Joystick half (ad-hoc probe, not committed -- a measurement, not a pass/fail)
+
+Single-bit rounds, fixed order (up, down, left, right, fire), never two bits at once -- identical
+methodology to Phase 13 A3, this time against a program independently proven running (above). Both
+CIA1 port bytes (`$dc00`/`$dc01`) read before and after every round, resumed and given 800ms of
+real run time between the `vice_joystick_set` call and the read:
+
+```
+vice_joystick_set(up) -> {"port":1,"directions":["up"],"fire":false,"value":1,"valueBits":["up"],"runState":"stopped"}
+joystick up: $dc00/$dc01 before=[127,255] after=[127,255]
+vice_joystick_set(center) -> {"port":1,"directions":["center"],"fire":false,"value":0,"valueBits":[],"runState":"stopped"}
+vice_joystick_set(down) -> {"port":1,"directions":["down"],"fire":false,"value":2,"valueBits":["down"],"runState":"stopped"}
+joystick down: $dc00/$dc01 before=[127,255] after=[127,255]
+vice_joystick_set(center) -> {"port":1,"directions":["center"],"fire":false,"value":0,"valueBits":[],"runState":"stopped"}
+vice_joystick_set(left) -> {"port":1,"directions":["left"],"fire":false,"value":4,"valueBits":["left"],"runState":"stopped"}
+joystick left: $dc00/$dc01 before=[127,255] after=[127,255]
+vice_joystick_set(center) -> {"port":1,"directions":["center"],"fire":false,"value":0,"valueBits":[],"runState":"stopped"}
+vice_joystick_set(right) -> {"port":1,"directions":["right"],"fire":false,"value":8,"valueBits":["right"],"runState":"stopped"}
+joystick right: $dc00/$dc01 before=[127,255] after=[127,255]
+vice_joystick_set(center) -> {"port":1,"directions":["center"],"fire":false,"value":0,"valueBits":[],"runState":"stopped"}
+vice_joystick_set(fire) -> {"port":1,"directions":["center"],"fire":true,"value":16,"valueBits":["fire"],"runState":"stopped"}
+joystick fire: $dc00/$dc01 before=[127,255] after=[127,255]
+```
+
+**Zero delta on every one of the five single-bit rounds, at both port bytes** -- `$DC00` stayed
+`127` (`0x7F`) and `$DC01` stayed `255` (`0xFF`) through every `JOYPORT_SET` call, including the
+`fire` round. This is byte-identical to Phase 13's A3 result
+(`13-PROBE-RESULTS.md` § A3: `up 0x7f->0x7f / 0x01: ff->ff`, etc., zero delta across two
+independent sessions).
+
+**Cross-reference to A3, and what this eliminates.** A3 named three candidate explanations for its
+null result: (a) `JOYPORT_SET` has no effect on the emulated CIA1 lines on this build, (b)
+`port=1` maps to neither `$DC00` nor `$DC01` and a different port value would show a delta, or (c)
+some other precondition -- e.g. a running program actively driving the CIA data-direction register
+-- is required before a read reflects the joystick lines. **This run's own running-state proof
+(above) directly tests candidate (c) and finds no delta even with a program continuously reading
+both CIA1 port bytes into its own observation cells while genuinely executing.** Candidate (c) is
+therefore eliminated as the explanation for A3's null result; candidates (a) and (b) remain open
+(this run cannot distinguish between them -- both would produce the identical zero-delta
+observation).
+
+**Verdict: PARTIAL, honestly.** The keyboard half passed cleanly; the joystick half reproduces a
+genuine negative result under a strictly stronger precondition than A3 tested (a confirmed-running
+program, not merely an accepted wire body). No delta was observed at either candidate port for any
+of the five single-bit directions or fire, so **no bit-to-port mapping is recorded** and **no
+`[ASSUMED]` label in `stock-input.ts`/`stock-protocol.ts` is touched by this plan** --
+`assumption-label-discipline.test.ts`'s all-or-nothing guard (`EXPECTED_LABEL_SITES.A3 =
+["stock-input.ts", "stock-protocol.ts"]`) stays exactly as it was; `git diff --stat
+.claude/mcp/vice/stock-input.ts` is empty. If a future plan (or a future probe with a different
+precondition, e.g. genuine `Drive8Type`/CIA data-direction-register setup) DOES observe a delta,
+that plan is the one to update the label -- not this one, and not by inference from this null
+result.
+
+### Cleanup
+
+The ad-hoc probe's own broker daemon reported `shutdown complete -- 0 instance(s) processed, 0
+signalled` after its own explicit SIGTERM-then-SIGKILL teardown, and its `mkdtempSync` scratch
+directory was removed in the same `finally` block. `pgrep -af x64sc` after both runs (committed
+test suite and ad-hoc probe) showed no process from this scenario; `pgrep -af vice-broker` showed
+only the same pre-existing `broker-control.test.ts` singleton named in Scenario 1's cleanup
+section, confirmed unrelated by the same `ps -o lstart` timestamp check.
