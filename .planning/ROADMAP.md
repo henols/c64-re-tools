@@ -269,7 +269,37 @@ not need to rediscover it.
   3. The five DEBT-02 undocumented behaviours (`Drive8Type` prerequisite, project-paths git-marker requirement, `releases.json` schema, `vice_ping`'s `resolvedBinaryPath` under the broker pool, the refuted warp-over-`resource_set` claim) are each documented at the location a user would actually look, cited by file
   4. Phase 03's three pending UAT scenarios in `03-HUMAN-UAT.md` are executed against real fixtures and a running program, and each is recorded `pass` or `fail` with evidence — none left `pending`
 
-**Plans**: TBD
+**Planning note (2026-08-22, discovered while planning this phase)**: the guard
+criterion 1 names is green today **for the wrong reason**. Its heading parser only
+matches level-3 finding headings ending in a colon, so it sees 119 of the 150
+findings that actually exist — `03-REVIEW.md` (14 findings, all level 4),
+`05-REVIEW.md` (16, all level 4) and `14-REVIEW.md` (1, level 3 with no colon) are
+wholly or partly invisible to it. Measured live against the tree at `3f0089f`:
+widening the parser surfaces **9 undispositioned findings** the shipped guard cannot
+see (8 in `03-REVIEW.md`, 1 in `14-REVIEW.md`; `05-REVIEW.md`'s 16 are already
+dispositioned via `05-REVIEW-FIX.md`). Plan 15-01 is therefore the phase's tracer:
+it widens the parser first, because until it does, "every open finding" means
+something different from what criterion 1 intends. Two further corrections found at
+plan time: `13-REVIEW.md`'s `WR-01` is **already fixed** at source (commit
+`f73d0fa`), and the `tools-manifest.json` "staleness" todo is inverted —
+`vice_snapshot_list`'s absence is D-16's deliberate deletion, so regenerating the
+manifest would re-add a tool the project decided to remove.
+
+**Plans**: 12 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — TRACER: widen the disposition guard's parser, prove it end-to-end on one finding
+- [ ] 15-02-PLAN.md — Phase 08 GATE-02: skill-corpus extraction (WR-12) and the two lint scripts (WR-06/07/09/10/11)
+- [ ] 15-03-PLAN.md — Phase 08 GATE-02: cell escaping (WR-04), bounded declaration scans (WR-08), single-source refusal (WR-13)
+- [ ] 15-04-PLAN.md — Phase 03's eight newly-surfaced findings, re-verified then fixed or superseded
+- [ ] 15-05-PLAN.md — Phase 09 wont-fix, Phase 13's four, and `02-REVIEW.md`'s `IN-05` at source
+- [ ] 15-06-PLAN.md — DEBT-02: the three `c64-ram-capture` documentation gaps
+- [ ] 15-07-PLAN.md — DEBT-01: build-atomic isolation, fixture provenance labels, test-gate migration
+- [ ] 15-08-PLAN.md — DEBT-03: UAT scenarios 1 and 2 live against genuine stock VICE
+- [ ] 15-09-PLAN.md — DEBT-02: the refuted warp claim marked fork-only, and `vice_ping`'s field named honestly
+- [ ] 15-10-PLAN.md — DEBT-03: scenario 3 and the A4 checkpoint-flood probe (one experiment, two items)
+- [ ] 15-11-PLAN.md — Disk-attach record corrected, manifest todo inverted, CI command settled from a run log
+- [ ] 15-12-PLAN.md — Closure: per-finding verdicts, promotions with owners, requirements and ledger reconciled
 
 ### Phase 16: Packaging and Repo Shape
 
