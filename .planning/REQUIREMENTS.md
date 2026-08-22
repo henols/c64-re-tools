@@ -244,6 +244,28 @@ tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
   and `apt`/package-manager version tables (see README.md → "Which VICE you
   get, per package manager") before assuming the trigger has not fired.
 
+### Control-Plane Bind Follow-on (PKG-04, decided `accept`, Phase 16 plan 16-02)
+
+Deliberately not built in Phase 16 — this milestone's Out of Scope table already
+excludes it ("Any new tool on either backend ... This milestone adds no capability"),
+and a smart bind default is new behaviour, not a documentation fix. Recorded here as
+the named alternative PROJECT.md's Key Decisions PKG-04 row defers rather than drops:
+
+- **Smart default: bind loopback unless a container topology is detected.** Today the
+  broker's `controlHost` (`vice-broker.mts:987`) resolves unconditionally from
+  `VICE_BROKER_CONTROL_HOST ?? "0.0.0.0"`, with no branch on any container signal.
+  Phase 16 plan 16-02's evidence (`16-PKG04-EVIDENCE.md`) confirmed
+  `container-guard.mts`'s five-signal detector is **not** consulted at this decision at
+  all today — its only current role is a pre-flight refuse/allow gate on whether the
+  broker process itself may start inside a container (`containerGuardEnforce()` in
+  `vice-broker.mts`'s `main()`), a different question from "is a consumer reaching this
+  broker from inside a container." Building the smart default is therefore a real
+  design change — a new detection question answered at a new call site — not a small
+  wiring fix routing an existing answer to a new consumer. Owner: whichever future
+  milestone next revisits the PKG-04 accepted-risk row; its own reversal condition
+  names this item plus mirroring the existing binary-monitor host pattern that already
+  warns once on widening away from loopback.
+
 ### Promoted by DEBT-01
 
 - **`vice_disk_attach`'s contract-redesign question.** Phase 13's A5 probe (`13-PROBE-RESULTS.md`)
