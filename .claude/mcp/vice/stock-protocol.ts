@@ -723,10 +723,11 @@ export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): 
 // body layout below is [CITED] against the official VICE manual (§13);
 // each encoder's own JSDoc states whether its behavioural (not wire-shape)
 // claim has since been live-probed. RESEARCH.md Assumptions Log row A2 was
-// closed CONFIRMED by 13-PROBE-RESULTS.md; rows A3 and A5 remain [ASSUMED]
-// -- A3 stayed INCONCLUSIVE (no observable signal either way) and A5 was
-// CONTRADICTED (still pending its correction) -- and each of those two
-// JSDocs still names its row and points at .planning/todos/pending/ for the
+// closed CONFIRMED by 13-PROBE-RESULTS.md. Two rows below are still
+// unconfirmed -- A3 stayed INCONCLUSIVE (no observable signal either way)
+// and A5 was CONTRADICTED (still pending its correction) -- and each of
+// those two encoders' own JSDoc, below, still carries its own [ASSUMED]
+// naming that row and pointing at .planning/todos/pending/ for the
 // remaining probe debt.
 // ---------------------------------------------------------------------------
 
