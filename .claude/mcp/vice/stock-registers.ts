@@ -106,8 +106,8 @@ export function resetRegisterCatalogsForTest(): void {
  * build that enumerates zero registers cannot support
  * vice_registers_set, and that failure must be visible on every call,
  * never silently cached as "zero registers, nothing to resolve". A
- * rejected fetch (empty enumeration or a wire error) is evicted from the
- * cache before this function returns, so the NEXT call retries instead
+ * rejected fetch, whether from an empty enumeration or a wire error, is
+ * evicted from the cache before this function returns, so the NEXT call retries instead
  * of permanently memoising the failure.
  */
 export async function registerCatalogFor(session: StockConnectSession): Promise<RegisterCatalog> {

@@ -189,7 +189,17 @@ test("mechanical completeness: the registry's name set equals the manifest-deriv
       }
     }
     const declBody = proxyLines.slice(openLineIndex, bodyEndLineIndex).join("\n");
-    const decl = declBody.match(/name:\s*"([^"]+)"/);
+    // Anchored through the opening brace so this witness carries the SAME
+    // `name:`-is-the-first-field assumption its two siblings
+    // (generate-tool-support-table.mjs, tool-support-table.test.mjs) already
+    // encode. Unanchored, this site would match a `name:` anywhere in the
+    // bounded body, so the three sites' own header comments -- each claiming
+    // to be a witness proving the other two right -- described an agreement
+    // that did not hold. `[^{]*` spans the `const IDENT: ToolDefinition = `
+    // prefix (declBody starts at the declaration LINE here, not at the brace
+    // as in the .mjs sibling), which is why the brace-anchored form used
+    // there cannot be copied verbatim.
+    const decl = declBody.match(/^[^{]*\{\s*name:\s*"([^"]+)"/);
     if (!decl) {
       throw new Error(
         `"${ident}"'s own declaration body (bounded to its own lines, stopping before the next ` +

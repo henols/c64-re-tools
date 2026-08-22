@@ -65,7 +65,7 @@ export CONTAINER_WORKSPACE_PATH="$(git rev-parse --show-toplevel)"
 export HOST_WORKSPACE_PATH="/host$(git rev-parse --show-toplevel)"
 ```
 
-`npm run test:automated` is the subset of `npm test` that excludes the eight
+`npm run test:automated` is the subset of `npm test` that excludes the nine
 manual-only files (see `test-gate.mjs`'s own header).
 
 ```sh
