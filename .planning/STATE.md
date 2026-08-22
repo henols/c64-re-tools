@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-07-PLAN.md
-last_updated: "2026-08-22T16:35:16.370Z"
+stopped_at: Completed 15-09-PLAN.md
+last_updated: "2026-08-22T16:56:29.199Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: 4ea813d5bb2537b29d6a9f37a6ce1215192d7ed6
+state_head: 41994c0eb7bb6a7cc761b4721c1b98db05546045
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 25
+  completed_plans: 26
   percent: 50
 ---
 
@@ -57,8 +57,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 8 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08 — non-sequential; 08 depends only on
-15-01 and ran ahead of 06/07; 06 and 07 now both executed). The
+Plan: 9 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09 — non-sequential; 08
+depends only on 15-01 and ran ahead of 06/07; 09 depends on 15-03/15-07, both
+already complete). The
 `state.advance-plan` counter's own sequential "N of 12" framing does not fit a wave-parallel
 phase; this line is corrected by hand
 per plan 08's own execution, not by the tool's blind increment.
@@ -209,6 +210,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 15 P05 | 45min | 3 tasks | 6 files |
 | Phase 15-debt-and-review-disposition P06 | 35min | 3 tasks | 6 files |
 | Phase 15 P07 | 55min | 3 tasks | 12 files |
+| Phase 15 P09 | 40min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -316,6 +318,7 @@ Recent decisions affecting current work:
 - [Phase 15]: 13-REVIEW.md WR-01 confirmed already fixed at commit f73d0fa (contrary to 15-RESEARCH.md's stale two-line-fix claim) and pinned mechanically via a readdirSync-derived sh -c interpolation gate; WR-02/IN-01 deferred with named reopen triggers; IN-02 promoted to plan 15-12 with a named owner
 - [Phase 15]: Phase 15 plan 15-06 closed DEBT-02's items 1-2-3 (drive-type closing note, project-root prerequisite, RELEASES.json schema) in c64-ram-capture/SKILL.md, each grep-verified against the implementing module; three todos moved to completed/
 - [Phase 15]: Phase 15 plan 15-07 fixed three cheap pending todos: build-atomic.test.ts's cleanup-scan flake (private wrapper dir, proven by planted violation, commit 7484afa), cpuhistory-get*/cpuhistory-get-multi.json's mislabelled fork-as-stock capturedFrom (commit d67f0ef, derive-the-kind follow-on named rather than fixed since it touches evidence-immutable probe-binmon.mjs), and the hand-copied ACME/regenerator2000 gate migration onto r2000-test-gate.ts across three files (commit 185187a), proven by a measured before/after pass-count table identical in every cell
+- [Phase 15]: Phase 15 plan 15-09: GAINS-PROTOCOL.md's warp error codes corrected to the measured 2026-08-20 stock-3.10 values (0x01 object-does-not-exist, 0x8f only for int-typed set); vice_machine_config_set's WarpMode caveated fork-only in docs/stock-vice-parity.md and capability-registry.ts (existing fields, no schema growth); vice_ping's resolvedBinaryPath documented as a startup-time probe with a new backward-compatible resolvedBinaryPathScope field. Both pending todos closed; STATE.md ledger reconciled (pending 12->10, total 13->11).
 
 ### Pending Todos
 
@@ -630,8 +633,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T16:35:16.230Z
-Stopped at: Completed 15-07-PLAN.md
+Last session: 2026-08-22T16:56:29.092Z
+Stopped at: Completed 15-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
