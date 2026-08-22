@@ -108,7 +108,41 @@ fixtures for:
 The follow-up todo tracking this is
 `.planning/todos/pending/2026-08-13-re-record-binmon-fixtures-against-real-stock-vice.md`.
 
-## 2. `--help` discriminator evidence (RESEARCH.md A1 / Open Question 2): NOT GATHERED
+**Closure (2026-08-22, plan 13-05): this section is CLOSED, closing
+`EXTV-01`.** The re-capture ran against whichever `x64sc` resolved first on
+`$PATH` on the capturing host — `fork:/usr/local/bin/x64sc`, VICE
+`3.10.0.0` — per D-13-01's rule to capture from the first-resolved binary
+rather than a hardcoded path. Full frame tables, per-case verdicts and the
+exact commands run are recorded in
+`.planning/phases/13-external-verification/13-CAPTURE-TRANSCRIPT.md`.
+
+The two previously-unverified readings above resolved as follows:
+
+1. **`event-interleaved.bin`'s event order.** The real capture's order is
+   the command's own correlated reply first, then `RESUMED`, then
+   `REGISTER_INFO`, then `STOPPED`. This **differs** from this section's
+   synthetic model (`RESUMED, STOPPED, REGISTER_INFO,` then the reply) but
+   **matches** `docs/phase1-probe-results.md` line 248/262's
+   already-recorded order. The real capture's broadcast frames around each
+   `CHECKPOINT_SET` call — never modeled by the synthetic fixture — also
+   required correcting `checkpoint-list.bin`'s `correlat:` test's
+   `events.length` assertion from 2 to 8 against the real bytes.
+2. **`checkpoint-list.bin`'s terminator frame shape.** **CONFIRMED.** The
+   real terminal frame is `response_type = 0x14` (`CHECKPOINT_LIST`) with a
+   4-byte `u32LE` count body — exactly this section's synthetic guess.
+   `stock-protocol.ts`'s `CheckpointList` branch needed no correction.
+
+**D-13-01's accepted consequence, recorded here for a later reader:** these
+fixtures are real hardware evidence for the wire *protocol*, captured from
+whichever build resolved first in `PATH` on the capturing host — the
+**fork**, not genuine stock. If the fork backend is later retired, these
+fixtures describe a binary the project no longer ships. Whether genuine
+stock 3.9 and the fork 3.10 build produce byte-identical wire frames for
+these three cases was **deliberately left out of scope** for `EXTV-01`
+rather than left silently unexamined — see D-13-01,
+`.planning/phases/13-external-verification/13-CONTEXT.md`.
+
+## 2. `--help` discriminator evidence (RESEARCH.md A1 / Open Question 2): RESOLVED (EXTV-02)
 
 Plan 02-02's Task 3 was written to gather this evidence, but it depends on
 the *same* missing prerequisite as the fixtures above — a real, reachable
@@ -128,25 +162,39 @@ Plan 02-07 is expected to implement backend detection by string-matching
 `-binarymonitor`-only (stock), per D-02/D-03
 (`.planning/phases/02-stock-backend-connection/02-CONTEXT.md`).
 
-**Verdict: OPEN, not resolved either way.** This document does not claim
-`--help` introspection works, and does not claim it fails. Neither
-`-mcpserver` nor `-binarymonitor` grep counts were obtained, because no
-`x64sc --help 2>&1` transcript from either build exists to grep. Plan
-02-07 must gather this evidence itself — as a checkpoint at the start of
-its own execution, run by a developer against a real host with both
-builds available (mirroring plan 02-02's original Task 3
-`checkpoint:human-verify` instructions almost verbatim) — before
-implementing the `-mcpserver`/`-binarymonitor` string-match mechanism
-against it. If that evidence-gathering step shows the expectation does not
-hold (neither build lists `-mcpserver`, or `--help` produces nothing
-usable), plan 02-07's detection mechanism needs revising before it ships,
-exactly as the original Task 3 already anticipated.
+**Verdict at the time this section was written: OPEN, not resolved either
+way.** This document did not claim `--help` introspection works, and did
+not claim it fails. Neither `-mcpserver` nor `-binarymonitor` grep counts
+had been obtained, because no `x64sc --help 2>&1` transcript from either
+build existed to grep.
 
-This is a deferred check, not a resolved one, and not a silent gap: it is
-recorded here precisely so plan 02-07 does not proceed on an assumption
-that RESEARCH.md itself already flagged `[ASSUMED]` and this plan could
-not upgrade to `[VERIFIED]`.
+**Resolution (2026-08-22, plan 13-05), closing `EXTV-02`.** Both
+`classifyHelpOutput()` and `probeBackend()` are now confirmed against two
+real binaries present on the same host: the genuine unpatched stock build
+(`/usr/bin/x64sc`, VICE 3.9) and the fork build (`/usr/local/bin/x64sc`,
+VICE 3.10). Verbatim `--help` transcripts from both builds are committed at
+`fixtures/backend-detect/stock-help-transcript.txt` and
+`fixtures/backend-detect/fork-help-transcript.txt`; the full binary
+enumeration, per-binary grep counts, and every live run are recorded in
+`.planning/phases/13-external-verification/13-HELP-DISCRIMINATOR-EVIDENCE.md`.
+
+`probeBackend()` returned `"stock"` for `/usr/bin/x64sc` and `"fork"` for
+`/usr/local/bin/x64sc` — neither classified `"unknown"`.
+`resolvedBackend()` was exercised end to end against both binaries with a
+fresh scratch `.vice-supervisor/`: each binary's first call sourced
+`"probe"`, and its second call (after `resetResolvedBackendForTests()`)
+sourced `"cache"` with the probe count unchanged at 1 — the on-disk cache
+round-trips the correct verdict on a second call with zero additional
+probes.
+
+**Recorded honestly, not upgraded past its evidence:** both real builds
+exit 0 with non-empty output on the first attempted flag (`--help`), so
+`probeBackend()`'s fallback loop's `-help`/`-?` branches were never
+reached in this run. Those branches remain **unexercised on this host,
+not verified** — nothing here demonstrates what either build does on an
+unrecognized flag or an empty-output failure mode; it only demonstrates
+that `--help` itself always succeeds on both builds tested here.
 
 ---
 *Recorded by plan 02-02, 2026-08-13, under the mid-execution scope
-override described above.*
+override described above. Resolution recorded by plan 13-05, 2026-08-22.*

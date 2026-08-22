@@ -159,6 +159,10 @@ below is renumbered to stay contiguous.)
    *setting* one is unavailable.
 
 7. **Expected divergences licensed by design (Phase 3 — D-01, D-03, D-05, D-14)**
+   A wrong implementation detail among the probed wire assumptions below is
+   not a licensed divergence — it is a silently wrong answer; per-assumption
+   verdicts live in `docs/phase2-backend-probe-evidence.md` and
+   `13-PROBE-RESULTS.md` (`.planning/phases/13-external-verification/`).
    - **Every stock answer is stock-native (D-01).** A tool present on both
      backends does not reproduce the fork's JSON answer shape. The fork
      manifest carries no `outputSchema` on any tool, so there is no
