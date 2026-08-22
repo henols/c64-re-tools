@@ -421,13 +421,24 @@ order.
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 16-01-PLAN.md — Tracer: relocate the six skills to `src/skills/` end-to-end (manifest, packaging validator, both corpus checks, installer sync, CI, the three skills-path literals inside the MCP package), and record the dev-time decision
 - [ ] 16-02-PLAN.md — PKG-04: verify the broker control-plane facts against source and a live socket, then record the `0.0.0.0` bind as a dated accepted risk in PROJECT.md with the rejected narrow branch and a named follow-on
 - [ ] 16-03-PLAN.md — Stand up `installer/`'s first test suite and pin `wireMcp()`'s nine merge behaviours and six refusal behaviours against the shipped CLI
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 16-04-PLAN.md — Relocate the MCP server to `src/mcp/vice/`, sweep ~30 functional consumers, prove tarball parity (73 entries unchanged), and resolve the `repoRoot()` depth record
-- [ ] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 16-06-PLAN.md — PKG-02: three committed CLI-script test files (`acme.mjs`, `driver.mjs`, `derive.mjs`) inside the MCP package, reusing the existing assembler-availability seam
 - [ ] 16-07-PLAN.md — PKG-03: a comment-scoped orphaned-reference gate (assignment shapes plus roadmap-derived cut phases), 15 sites fixed, a committed fixture, and a recorded plant-and-revert demonstration
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
 
 ### Phase 17: Project Identity and Ledger Close
 
