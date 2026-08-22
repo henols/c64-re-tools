@@ -79,7 +79,7 @@ test("repoRoot() branch 0: CLAUDE_PROJECT_DIR wins over BOTH a .git walk and a c
   // must win regardless of what the .git walk or CONTAINER_WORKSPACE_PATH say.
   const pluginRoot = mkdtempSync(join(tmpdir(), "reporoot-plugin-"));
   mkdirSync(join(pluginRoot, ".git")); // the plugin's own checkout -- branch 2 would return this
-  const pluginFrom = join(pluginRoot, ".claude", "mcp", "vice");
+  const pluginFrom = join(pluginRoot, "src", "mcp", "vice");
   mkdirSync(pluginFrom, { recursive: true });
 
   const project = mkdtempSync(join(tmpdir(), "reporoot-project-"));
@@ -96,21 +96,47 @@ test("repoRoot() branch 0: CLAUDE_PROJECT_DIR wins over BOTH a .git walk and a c
   );
 });
 
-test("repoRoot() last-resort fallback (quick-260731-p8a, path-anchor regression): climbs THREE levels from a <root>/.claude/mcp/<server> path, not four", () => {
+test("repoRoot() last-resort fallback (quick-260731-p8a, path-anchor regression; phase 16-04 rebuilt this fixture at src/mcp/vice): climbs THREE levels from a <root>/src/mcp/<server> path, not four", () => {
   // Deliberately has no .git ancestor and no CONTAINER_WORKSPACE_PATH, so the
   // ladder falls all the way through to branch 4 -- the fixed-hop last
   // resort this move touched. The relocated tree is one level shallower than
   // the old <root>/.claude/skills/<skill>/scripts shape (scripts/ was
   // flattened away), so a naive move that kept the old four-level hop would
-  // land on <tmpdir>/.claude/mcp instead of <tmpdir> itself, which is exactly
+  // land on <tmpdir>/src/mcp instead of <tmpdir> itself, which is exactly
   // the silent-wrong-directory failure this file's header forbids.
   //
-  // THIS ASSERTION IS ALSO WHY authored TypeScript stayed FLAT in
-  // .claude/mcp/vice/ (siblings of resources/) rather than moving into a
-  // src/ subdirectory during the 01.6.1 conversion: doing so would add a
-  // FOURTH level and silently break this exact hop count again. A future
-  // reader proposing that move should read this comment before doing it.
+  // THE DISTINCTION THIS COMMENT MUST DRAW (phase 16-04): what breaks this
+  // hop count is adding a FOURTH level INSIDE the flat module directory --
+  // nesting authored TypeScript one level deeper than `src/mcp/vice/` itself
+  // (siblings of resources/), the exact move the 01.6.1-era version of this
+  // comment warned against. What does NOT break it is relocating the same
+  // three-segment shape elsewhere directly under the repo root, which is
+  // what phase 16-04 did: `.claude/mcp/vice/` -> `src/mcp/vice/`, still three
+  // segments below the root. A future reader proposing to nest sources one
+  // level deeper inside this module directory should still read this
+  // comment before doing it; a future reader merely relocating this same
+  // three-segment directory elsewhere under the root is not the move this
+  // comment forbids.
   const root = mkdtempSync(join(tmpdir(), "reporoot-threelevel-"));
+  const moduleDir = join(root, "src", "mcp", "vice");
+  mkdirSync(moduleDir, { recursive: true });
+
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(repoRoot({ from: moduleDir, env: {} }), root);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth, not of one particular directory name: the OLD .claude/mcp/vice three-segment shape also still climbs three levels", () => {
+  // Added by phase 16-04 alongside the rebuilt-at-the-new-shape test above,
+  // so this hop count is pinned as "three segments below the root", not
+  // "the directory happens to be named src/mcp/vice". Any future reader
+  // relocating this module tree again to a different three-segment name
+  // still has this assertion's shape as a template.
+  const root = mkdtempSync(join(tmpdir(), "reporoot-threelevel-old-shape-"));
   const moduleDir = join(root, ".claude", "mcp", "vice");
   mkdirSync(moduleDir, { recursive: true });
 

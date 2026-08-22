@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .claude/mcp/vice/resources/vice-launcher.sh
+# src/mcp/vice/resources/vice-launcher.sh
 #
 # HAND-AUTHORED -- not generated. It lives beside the generated vice-broker.mjs
 # purely because install-resources.mjs deploys the whole resources/ directory
@@ -38,7 +38,7 @@ SELF_DIR="$(cd "$(dirname "$SELF_PATH")" && pwd)"
 #
 # WHY THIS FUNCTION EXISTS AT ALL: a fixed `".."` hop (`REPO_ROOT="$(cd
 # "$(dirname "$SELF_PATH")/.." && pwd)"`) is wrong from this launcher's own
-# location, `.claude/mcp/vice/resources/` -- four levels below the repo root,
+# location, `src/mcp/vice/resources/` -- four levels below the repo root,
 # not one. NOTHING would error on a wrong fixed hop count: the script would
 # just read a permanently-empty `.vice-supervisor` state directory forever,
 # and restart detection would quietly stop working while every command kept
@@ -73,7 +73,7 @@ _REPO_ROOT_WARNED_NO_MARKER=0
 #      paths.
 #   4. Otherwise, a location-shaped last resort, also with a one-time stderr
 #      note: FOUR levels up when <absolute-dir>'s own directory is named
-#      `resources` (matching `<root>/.claude/mcp/vice/resources`),
+#      `resources` (matching `<root>/src/mcp/vice/resources`),
 #      ONE level up otherwise.
 resolve_repo_root() {
   local from="$1" dir parent base

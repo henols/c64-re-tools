@@ -39,6 +39,19 @@
 // `scripts/` segment. Branch 4's hop count below moved from four levels to
 // three to match. Branches 1-3 are depth-independent (an env var check, then
 // a `.git` ancestor walk) and needed no change.
+//
+// FOURTH MOVE (phase 16-04, 2026-08-23): the module directory relocated
+// again, from `.claude/mcp/vice/` to `src/mcp/vice/` (packaging and repo
+// shape). `src`/`mcp`/`vice` is the same three path segments below the
+// repository root as the old `.claude`/`mcp`/`vice` shape -- this is
+// reviewed and confirmed, not assumed, from the segment count itself. Branch
+// 4's hop count was therefore reviewed and deliberately left unchanged: this
+// move relocates the same flat, three-segment shape elsewhere directly under
+// the root, which is a different move from nesting authored sources one
+// level deeper INSIDE this directory (which would make four, and IS what
+// branches 1-3's depth-independence and branch 4's fixed hop count would not
+// survive). See repo-root.test.ts's own standing caution for that
+// distinction, drawn explicitly there for the first time by this move.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, sep } from "node:path";
@@ -84,7 +97,7 @@ function isInside(child: string, parent: string): boolean {
  *      Claude Code exports for the workspace it is driving. This is the ONLY
  *      branch that is correct when this module is consumed as an installed
  *      plugin: the MCP's own files then live under the plugin install dir
- *      (e.g. `~/.claude/plugins/<marketplace>/<plugin>/.claude/mcp/vice/`),
+ *      (e.g. `~/.claude/plugins/<marketplace>/<plugin>/src/mcp/vice/`),
  *      NOT inside the project the user is working in, so neither the
  *      `from`-relative `.git` walk (branch 2, which would find the plugin's
  *      OWN checkout) nor a CONTAINER_WORKSPACE_PATH containment check
@@ -108,7 +121,7 @@ function isInside(child: string, parent: string): boolean {
  *      be exactly the quiet-wrong-answer failure class this file exists to
  *      prevent, so this path emits a one-time stderr note naming both paths.
  *   4. Otherwise, three levels up from `from`, with a one-time stderr note.
- *      Last resort only -- three levels is what `<root>/.claude/mcp/<server>/`
+ *      Last resort only -- three levels is what `<root>/src/mcp/<server>/`
  *      implies. In this repo branch 4 never actually runs (there is always a
  *      `.git` ancestor), which is exactly why the paired synthetic test in
  *      repo-root.test.ts is the only thing that would catch a wrong hop
@@ -160,7 +173,7 @@ export function repoRoot({ from = HERE, env = process.env }: RepoRootOptions = {
     const fallback = resolve(from, "..", "..", "..");
     console.error(
       `warn: could not find a .git ancestor above ${from} and CONTAINER_WORKSPACE_PATH is not set -- ` +
-        `falling back to three levels up (${fallback}), the shape <root>/.claude/mcp/<server>/ implies. ` +
+        `falling back to three levels up (${fallback}), the shape <root>/src/mcp/<server>/ implies. ` +
         `This is a last resort; if it's wrong, set CONTAINER_WORKSPACE_PATH or run from inside a git repo.`
     );
   }
