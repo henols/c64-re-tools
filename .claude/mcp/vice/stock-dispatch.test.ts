@@ -6,7 +6,7 @@
 // constraint.
 import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -28,6 +28,7 @@ import {
 } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
+import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { DENY_LIST, MachineRestartedError, type ToolInfo } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
@@ -1141,6 +1142,21 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
+/** WR-13: derives the expected dispatchStock() miss-branch text from
+ * capability-registry.ts's own renderer -- the same fallback dispatchStock()
+ * itself uses -- rather than re-typing a wording literal, so this test
+ * cannot drift from the source it is meant to verify. `vice_snapshot_list`
+ * (absent from BOTH manifests, not just stock) is the one name in
+ * DELIBERATELY_ABSENT_TOOL_NAMES with no registry entry, and is the only
+ * one this file expects to hit the internal-inconsistency fallback. */
+function expectedStockMissMessage(name: string): string {
+  return (
+    capabilityRefusalMessage(name, "stock") ??
+    `${name} is advertised on the stock backend's manifest but has no handler in the stock ` +
+      `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`
+  );
+}
+
 test("dispatch: stockHandlerFor returns a function for every one of the 38 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
@@ -1169,7 +1185,7 @@ test("dispatch: stockHandlerFor returns undefined for every deliberately-absent 
   }
 });
 
-test("dispatch: dispatchStock refuses every deliberately-absent tool naming the tool and the fork backend, without reading deps", async () => {
+test("dispatch: dispatchStock refuses every deliberately-absent tool with the exact message capabilityRefusalMessage() renders (WR-13), without reading deps", async () => {
   for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
     const deps = {
       ensureLease: () => {
@@ -1180,11 +1196,15 @@ test("dispatch: dispatchStock refuses every deliberately-absent tool naming the 
     assert.equal(result.isError, true);
     const text = JSON.stringify(result.content);
     assert.match(text, new RegExp(name));
-    assert.match(text, /fork/i);
+    assert.ok(
+      text.includes(JSON.stringify(expectedStockMissMessage(name)).slice(1, -1)),
+      `expected the miss-branch text for ${name} to equal capabilityRefusalMessage()'s rendering (or its ` +
+        `internal-inconsistency fallback), got: ${text}`,
+    );
   }
 });
 
-test("refus: dispatchStock on a name with no handler refuses by name, names the fork, never calls forwardToVice, and never touches deps", async () => {
+test("refus: dispatchStock on a fork-only hardware tool (vice_sid_get_state) refuses with capabilityRefusalMessage()'s exact text, never calls forwardToVice, and never touches deps (WR-13)", async () => {
   let depsTouched = false;
   const emptyDeps = new Proxy({} as StockDispatchDeps, {
     get(target, prop) {
@@ -1192,12 +1212,28 @@ test("refus: dispatchStock on a name with no handler refuses by name, names the 
       return (target as unknown as Record<string | symbol, unknown>)[prop];
     },
   });
-  const result = await dispatchStock("vice_mem_read", {}, emptyDeps);
+  const result = await dispatchStock("vice_sid_get_state", {}, emptyDeps);
   assert.equal(result.isError, true);
   const text = JSON.stringify(result.content);
-  assert.match(text, /vice_mem_read/);
-  assert.match(text, /fork/i);
+  assert.match(text, /vice_sid_get_state/);
+  assert.ok(
+    text.includes(JSON.stringify(expectedStockMissMessage("vice_sid_get_state")).slice(1, -1)),
+    `expected dispatchStock()'s miss text to equal capabilityRefusalMessage("vice_sid_get_state", "stock"), got: ${text}`,
+  );
   assert.equal(depsTouched, false, "a miss must never read any field off deps");
+});
+
+test("refus: dispatchStock on a name absent from BOTH manifests (no registry entry) falls back to the internal-inconsistency message, never a false backend claim (WR-13)", async () => {
+  const result = await dispatchStock("vice_snapshot_list", {}, { ensureLease: async () => ({ ok: true, lease: null }) });
+  assert.equal(result.isError, true);
+  const text = JSON.stringify(result.content);
+  assert.match(text, /vice_snapshot_list/);
+  assert.match(text, /internal inconsistency/);
+  assert.doesNotMatch(text, /fork backend provides this tool/, "must never assert a specific providing backend when the registry has no entry");
+  assert.ok(
+    text.includes(JSON.stringify(expectedStockMissMessage("vice_snapshot_list")).slice(1, -1)),
+    `expected the fallback text to equal expectedStockMissMessage("vice_snapshot_list"), got: ${text}`,
+  );
 });
 
 test("refus: dispatchStock never returns a success shape for an unknown tool name", async () => {
@@ -2842,4 +2878,90 @@ test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal 
   assert.equal(result.isError, true);
   assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
   assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
+});
+
+// ---------------------------------------------------------------------------
+// WR-13 single-source invariant: no shipped module outside
+// capability-registry.ts may carry a competing capability-refusal wording.
+//
+// DISCOVERY, not enumeration: the scanned module set is derived from
+// package.json's files[] array -- the SHIPPED production .ts/.mts set --
+// the same shippedTsModules() idiom r2000-spawn-seam.test.ts already
+// established in this repo, rather than a hand-typed file list that could
+// silently omit a future offender.
+//
+// capability-registry.ts:335-346 documents the ONE authoritative refusal
+// contract (BACK-05): a hardware loss gets NO "wait for a later phase"
+// framing (none is coming), and the providing backend is read from
+// entry.providedBy, never hardcoded. WR-13 found stock-dispatch.ts's OLD
+// miss branch violating both: it hardcoded "the fork backend provides this
+// tool" (false for a stock-only-gain name) and used exactly the forbidden
+// "wait for a later phase" framing. This test pins that fix as a standing
+// invariant across every shipped module, not just the one file this plan
+// touched.
+function shippedTsModules(): string[] {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files?: string[] };
+  const entries = (pkg.files ?? []).filter((f) => /\.(ts|mts)$/.test(f));
+  for (const entry of entries) {
+    assert.ok(
+      existsSync(join(HERE, entry)),
+      `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`,
+    );
+  }
+  return entries;
+}
+
+/** Strips comment lines (a line whose first non-whitespace characters open a
+ * `//`, `/*`, or `*` continuation line) before scanning -- capability-registry
+ * .ts's OWN doc comment quotes both forbidden shapes as prose describing what
+ * NOT to do (335-346), and this file's own comments quote WR-13's fixed
+ * wording; neither is a live occurrence. Line-oriented, not the fuller
+ * codeOnly() string-literal stripper r2000-spawn-seam.test.ts uses -- no
+ * shipped module's non-comment code has any legitimate reason to hold either
+ * forbidden phrase inside a string literal either, so the simpler filter is
+ * sufficient here. */
+function nonCommentLines(src: string): string[] {
+  return src.split("\n").filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line));
+}
+
+test("invariant (WR-13): no shipped module outside capability-registry.ts hardcodes a fork-provides refusal claim", () => {
+  const offenders: string[] = [];
+  for (const modulePath of shippedTsModules()) {
+    if (modulePath === "capability-registry.ts") continue; // the one authoritative source, see :335-346
+    const lines = nonCommentLines(readFileSync(join(HERE, modulePath), "utf8"));
+    for (const line of lines) {
+      if (/\bbackend provides this tool\b/i.test(line)) {
+        offenders.push(`${modulePath}: ${line.trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `capability-registry.ts:8-13/335-346 (WR-13) names it the ONE authoritative refusal source -- a second ` +
+      `hardcoded "<backend> provides this tool" claim is exactly the defect that survived a consolidation ` +
+      `unnoticed. Offending line(s): ${JSON.stringify(offenders)}`,
+  );
+});
+
+test("invariant (WR-13): no shipped module outside capability-registry.ts pairs future-phase framing with a VICE_BACKEND selection instruction", () => {
+  const offenders: string[] = [];
+  for (const modulePath of shippedTsModules()) {
+    if (modulePath === "capability-registry.ts") continue; // its own doc comment DESCRIBES the forbidden shape; :335-346 is prose, not a live instance
+    const lines = nonCommentLines(readFileSync(join(HERE, modulePath), "utf8"));
+    for (let i = 0; i < lines.length; i++) {
+      if (!/wait for a later phase/i.test(lines[i])) continue;
+      const window = lines.slice(i, i + 3).join(" ");
+      if (/VICE_BACKEND/.test(window)) {
+        offenders.push(`${modulePath}:~line ${i + 1}: ${lines[i].trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `capability-registry.ts:335-346 (WR-13) forbids "wait for a later phase" framing for a hardware loss -- ` +
+      `none is coming. Paired with a VICE_BACKEND selection instruction it is exactly the wording WR-13 ` +
+      `removed from stock-dispatch.ts's miss branch. Offending line(s): ${JSON.stringify(offenders)}`,
+  );
 });
