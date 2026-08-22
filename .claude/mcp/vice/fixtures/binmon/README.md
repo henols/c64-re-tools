@@ -55,9 +55,21 @@ build -- see "Bounded by design" below.
 | `display-get.bin` / `.json` | `display-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
 | `event-interleaved.bin` / `.json` | `event-interleaved` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
 | `checkpoint-list.bin` / `.json` | `checkpoint-list` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
-| `cpuhistory-get.bin` / `.json` | `cpuhistory-get` | **real capture** -- `stock:/usr/local/bin/x64sc` (sidecar's literal value; that binary is actually the fork build, not upstream stock -- known mislabel, see CLAUDE.md and the paragraph above; tracked outside this plan's scope) | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
-| `cpuhistory-get-multi.bin` / `.json` | `cpuhistory-get-multi` | **real capture** -- `stock:/usr/local/bin/x64sc` (sidecar's literal value; same known mislabel as above) | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+| `cpuhistory-get.bin` / `.json` | `cpuhistory-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+| `cpuhistory-get-multi.bin` / `.json` | `cpuhistory-get-multi` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
 | `cpuhistory-get-unsupported.bin` / `.json` | `cpuhistory-get-unsupported` | **real capture** -- `stock:/usr/bin/x64sc` (INVALID_TYPE error frame; genuine unpatched stock; **needs a 3.9-class build to re-record**) | 3.9.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
+
+**The `capturedFrom` kind token (`fork`/`stock`) is operator-supplied, not
+derived.** `probe-binmon.mjs`'s `runCapture()` builds it from
+`process.env.CAPTURE_BACKEND_KIND`, set by hand at capture time -- nothing
+validates it against which binary actually answered (`VICE_BIN`, recorded in
+the same string). `cpuhistory-get`/`cpuhistory-get-multi` carried a wrong
+kind for over two months before this was caught (see
+`2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock.md` in
+`.planning/todos/completed/`); a future capture run can make the identical
+mistake. Read each sidecar's own `capturedFrom` path segment against
+CLAUDE.md's binary framing if the kind looks surprising, rather than trusting
+the kind label alone.
 
 Each `.bin` is the raw, concatenated wire bytes in real capture arrival order;
 each `.json` sidecar carries exactly `capturedFrom`, `viceVersion`,
