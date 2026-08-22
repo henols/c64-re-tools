@@ -96,3 +96,59 @@ process, then:
   discriminator (`docs/phase2-backend-probe-evidence.md` §2's OPEN verdict),
   a different, independently-scoped gap from the same environment
   constraint that produced this one.
+
+## Resolution
+
+Closed by phase 13, plan 13-01 (`bfae419`, `f219e40`, `e97ab78`, `ca7bdf0`)
+and closed in the record by plan 13-05 (`ed61f98`). Requirement `EXTV-01`.
+Artifacts: `.planning/phases/13-external-verification/13-CAPTURE-TRANSCRIPT.md`
+(the full evidence record), `docs/phase2-backend-probe-evidence.md` §1
+(the closed override record).
+
+Answers to this todo's six numbered acceptance steps:
+
+1. **No case hit `MAX_CAPTURE_FRAMES`.** Frame counts: `display-get` 1
+   frame, `event-interleaved` 4 frames, `checkpoint-list` 11 frames — all
+   far below the 32-frame cap. No case printed the `ABORTED` message.
+2. **`display-get.bin`'s geometry matched exactly.** All seven decoded
+   fields (`dw`/`dh`/`xo`/`yo`/`iw`/`ih`/`bpp`) matched
+   `docs/phase1-probe-results.md`'s previously-recorded reading
+   field-for-field; `imageLength` and the frame's declared `body_length`
+   both checked out arithmetically.
+3. **The real `event-interleaved.bin` event sequence differs from this
+   todo's synthetic model and was corrected.** Real order: the command's
+   own correlated reply first, then `RESUMED`, `REGISTER_INFO`, `STOPPED` —
+   not the synthetic `RESUMED, STOPPED, REGISTER_INFO, <reply>` guess. It
+   matches `docs/phase1-probe-results.md` line 248/262's already-recorded
+   order. `docs/phase2-backend-probe-evidence.md` was updated (plan
+   13-05) and `stock-protocol.test.ts`'s `correlat:` checkpoint-list test's
+   `events.length` assertion was corrected from 2 to 8 against the real
+   interleaved broadcast frames the synthetic fixture never modeled.
+4. **The real `checkpoint-list.bin` terminator frame CONFIRMED the assumed
+   shape — no correction needed.** `response_type = 0x14`
+   (`CHECKPOINT_LIST`) with a 4-byte `u32LE` count body, exactly as
+   guessed; `stock-protocol.ts`'s `CheckpointList` branch was left
+   untouched (`git diff --stat stock-protocol.ts` for that task was
+   empty).
+5. **All three `.bin`/`.json` pairs replaced.** Each sidecar now carries
+   `capturedFrom: "fork:/usr/local/bin/x64sc"`, `viceVersion: "3.10.0.0"`,
+   a real `capturedAt` timestamp, and `synthetic: false`; the
+   `specSections`/`note` keys were removed.
+   `fixtures/binmon/README.md`'s provenance table and prose were rewritten
+   to state all six fixtures (these three plus the pre-existing
+   `cpuhistory-get*` three) are real captures.
+6. **`binmon-fixtures.test.ts`'s `fixture:` tests pass against the real
+   bytes.** The two `WR-10` tests whose premise inverted (asserting
+   `synthetic: true` for these three cases) were rewritten, not merely
+   tweaked, to describe the post-EXTV-01 world; the `WR-09` "states
+   provenance as real" expectation array was updated; and the
+   `correlat:`/`checkpoint-list` `events.length` assertion above was
+   corrected per this plan's own rule against silently loosening a
+   failing assertion.
+
+The binary resolved dynamically via `command -v x64sc` to
+`/usr/local/bin/x64sc` (the fork, VICE 3.10.0.0) rather than genuine stock
+3.9 — this is D-13-01's accepted, honestly-recorded consequence (see
+`docs/phase2-backend-probe-evidence.md` §1's closure), not a deviation
+from this todo's own acceptance check, which named "a real stock `x64sc`
+build" generically and did not require a specific binary.
