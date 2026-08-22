@@ -41,13 +41,14 @@
 // works: the verb list is PARSED from `r2000-cli.ts`'s own dispatch switch
 // (`scripts/lib/r2000-cli-verbs.mjs`), never a hand-typed array -- a
 // hard-coded list is exactly how this class of finding arrives.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
 import { CURATED_R2000_TOOLS } from "../.claude/mcp/vice/r2000-tools.ts";
 import { parseR2000CliVerbs, verbsMissingFromSkills, R2000_CLI_VERB_FLOOR } from "./lib/r2000-cli-verbs.mjs";
+import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -58,37 +59,16 @@ const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
 
-// --- Walk .claude/skills/ for *.md and *.mjs files (including *.test.mjs) --
-// Never follows a symlink out of the tree; skips any node_modules segment
-// defensively even though the directory is small, committed, and gitignore
-// keeps node_modules out of it repo-wide.
-function walkSkills(dir, acc, dirsSeen) {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return acc;
-  }
-  for (const entry of entries) {
-    if (entry.name === "node_modules") continue;
-    const p = join(dir, entry.name);
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) {
-      walkSkills(p, acc, dirsSeen);
-    } else if (/\.(md|mjs)$/.test(entry.name)) {
-      acc.push(p);
-    }
-  }
-  return acc;
-}
-
-const skillFiles = walkSkills(SKILLS_DIR, [], null);
+// walkSkills(), MCP_PREFIX_RE, TOOL_NAME_RE and topLevelSkillDirs() now
+// live in ./lib/skill-corpus.mjs (WR-12, 08-REVIEW.md) -- this script no
+// longer carries its own copy; see that module's header for why.
+const skillFiles = walkSkills(SKILLS_DIR);
 
 // Top-level skill directories actually scanned (>=1 file read in each) --
-// non-vacuity control 2.
-const topLevelDirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => e.name);
+// non-vacuity control 2. This assertion is about THIS run's traversal, not
+// a corpus primitive, so it stays local rather than moving into the shared
+// module.
+const topLevelDirs = topLevelSkillDirs(SKILLS_DIR);
 const dirsWithAFileRead = new Set();
 for (const f of skillFiles) {
   const rel = f.slice(SKILLS_DIR.length + 1);
@@ -97,13 +77,8 @@ for (const f of skillFiles) {
 }
 
 // --- Extraction --------------------------------------------------------
-// Strip any "mcp__<plugin>_vice__" prefix BEFORE matching, so a call site
-// written as mcp__plugin_c64-re-tools_vice__vice_keyboard_restore yields the
-// bare tool name vice_keyboard_restore rather than nothing at all (the
-// underscore-joined prefix would otherwise defeat a plain \b word boundary --
-// "_vice__vice_x" has no non-word character anywhere near the join point).
-const MCP_PREFIX_RE = /mcp__[\w-]+_vice__/g;
-const TOOL_NAME_RE = /\bvice_[a-z0-9_]+/g;
+// MCP_PREFIX_RE/TOOL_NAME_RE/extractToolNames() now live in
+// ./lib/skill-corpus.mjs (WR-12) -- imported above, not re-derived here.
 // Plan 11-05, Phase 11: a second, independent extraction pass for the
 // curated r2000_* surface (D-16/D-18). Kept in its OWN map rather than
 // merged into `extracted` above -- the two families are served through
@@ -118,8 +93,11 @@ const extracted = new Map();
 const extractedR2000 = new Map();
 for (const f of skillFiles) {
   const raw = readFileSync(f, "utf8");
+  const matches = extractToolNames(raw);
+  // r2000_* is a separate family with its own gate (CURATED_R2000_TOOLS,
+  // never either manifest) -- not part of the shared skill-corpus module,
+  // but it still needs the same MCP-prefix strip before matching.
   const cleaned = raw.replace(MCP_PREFIX_RE, "");
-  const matches = cleaned.match(TOOL_NAME_RE) || [];
   const r2000Matches = cleaned.match(R2000_TOOL_NAME_RE) || [];
   const rel = f.slice(ROOT.length + 1);
   for (const name of matches) {

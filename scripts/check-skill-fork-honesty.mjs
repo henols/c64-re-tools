@@ -52,11 +52,12 @@
 // .claude/skills/ or README.md -- both are untrusted/first-party prose that
 // is matched, never executed. The only import is the first-party
 // capability-registry.ts.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
 import { fileClaimViolations, isStandaloneDisasmToken } from "./lib/skill-honesty-checks.mjs";
+import { walkSkills, MCP_PREFIX_RE, TOOL_NAME_RE, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
@@ -69,38 +70,16 @@ const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
 
-// --- Walk .claude/skills/ for *.md and *.mjs files (including *.test.mjs) --
-// Copied from scripts/check-skill-tool-coverage.mjs's walkSkills(): never
-// follows a symlink out of the tree; skips any node_modules segment
-// defensively even though the directory is small, committed, and gitignore
-// keeps node_modules out of it repo-wide.
-function walkSkills(dir, acc) {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return acc;
-  }
-  for (const entry of entries) {
-    if (entry.name === "node_modules") continue;
-    const p = join(dir, entry.name);
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) {
-      walkSkills(p, acc);
-    } else if (/\.(md|mjs)$/.test(entry.name)) {
-      acc.push(p);
-    }
-  }
-  return acc;
-}
-
-const skillFiles = walkSkills(SKILLS_DIR, []);
+// walkSkills(), MCP_PREFIX_RE, TOOL_NAME_RE and topLevelSkillDirs() now
+// live in ./lib/skill-corpus.mjs (WR-12, 08-REVIEW.md) -- this script no
+// longer carries its own copy; see that module's header for why.
+const skillFiles = walkSkills(SKILLS_DIR);
 
 // Top-level skill directories actually scanned (>=1 file read in each) --
-// non-vacuity control.
-const topLevelDirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => e.name);
+// non-vacuity control. This assertion is about THIS run's traversal, not
+// a corpus primitive, so it stays local rather than moving into the shared
+// module.
+const topLevelDirs = topLevelSkillDirs(SKILLS_DIR);
 const dirsWithAFileRead = new Set();
 for (const f of skillFiles) {
   const rel = f.slice(SKILLS_DIR.length + 1);
@@ -118,11 +97,8 @@ const FORK_ONLY_NAMES = new Set(
 const registryByName = new Map(CAPABILITY_REGISTRY.map((e) => [e.name, e]));
 
 // --- Extraction --------------------------------------------------------
-// Strip any "mcp__<plugin>_vice__" prefix BEFORE matching, so a call site
-// written as mcp__plugin_c64-re-tools_vice__vice_keyboard_matrix yields the
-// bare tool name vice_keyboard_matrix rather than nothing at all.
-const MCP_PREFIX_RE = /mcp__[\w-]+_vice__/g;
-const TOOL_NAME_RE = /\bvice_[a-z0-9_]+/g;
+// MCP_PREFIX_RE/TOOL_NAME_RE now live in ./lib/skill-corpus.mjs (WR-12) --
+// imported above, not re-derived here.
 
 // Annotation signals -- a section is "annotated" when its body matches any
 // of these, case-insensitive. Kept short and literal; this script never
