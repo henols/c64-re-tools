@@ -142,7 +142,7 @@ independent of each other and may execute in parallel)
   2. The `--help` backend discriminator (`BACK-01`/`BACK-04`) is run against a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
   3. Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised (A1, A2, A3, A5 — A4 is out of scope per D-13-05 and stays open in its own todo) is run against a real binary, with a committed transcript naming a pass, fail or inconclusive per detail, and any contradicted detail corrected at its source
 
-**Plans**: 3/5 plans executed (3 waves)
+**Plans**: 4/5 plans executed (3 waves)
 
 **Wave 1** *(the three sub-items are independent and run in parallel)*
 
@@ -152,7 +152,7 @@ independent of each other and may execute in parallel)
 
 **Wave 2** *(blocked on 13-01 and 13-03 — shares `stock-protocol.ts` with 13-01 and reads 13-03's verdicts)*
 
-- [ ] 13-04-PLAN.md — EXTV-03 corrections: every confirmed assumption's `[ASSUMED]` label removed at every `grep`-enumerated site, every contradicted one regression-tested before its label comes off, and a committed all-or-nothing label-discipline guard (D-13-04)
+- [x] 13-04-PLAN.md — EXTV-03 corrections: every confirmed assumption's `[ASSUMED]` label removed at every `grep`-enumerated site, every contradicted one regression-tested before its label comes off, and a committed all-or-nothing label-discipline guard (D-13-04)
 
 **Wave 3** *(blocked on 13-01, 13-02 and 13-04)*
 
@@ -266,7 +266,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 | 12. Audit Integrity Instrument | v0.4.0 | 6/7 | In Progress|  |
-| 13. External Verification | v0.4.0 | 3/5 | In Progress|  |
+| 13. External Verification | v0.4.0 | 4/5 | In Progress|  |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |

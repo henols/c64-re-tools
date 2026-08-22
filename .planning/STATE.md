@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 13
 current_phase_name: External Verification
 status: executing
-stopped_at: Completed 13-03-PLAN.md
-last_updated: "2026-08-22T00:01:28.443Z"
+stopped_at: Completed 13-04-PLAN.md
+last_updated: "2026-08-22T00:23:40.113Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 13 execution started
-state_head: 07ff20cb1440e3c8d30f9c5ca723cd500ae50a0c
+state_head: 3dc221fea0da3b1a9066dcacb82661feadafea9d
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 13 (External Verification) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
 (CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
@@ -131,6 +131,7 @@ requirements mapped
 | Phase 13 P01 | 40min | 3 tasks | 11 files |
 | Phase 13 P02 | 27min | 2 tasks | 7 files |
 | Phase 13 P03 | 25min | 3 tasks | 2 files |
+| Phase 13 P04 | 25min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,7 @@ Recent decisions affecting current work:
 - [Phase 13]: EXTV-02 shared with sibling 13-05; requirements.ready-ids correctly held 0/1 ready, not marked complete yet
 - [Phase 13]: x64sc --help's own startup diagnostics are not byte-reproducible across runs (randomized VSP-bug channel line); discriminator substrings themselves are stable -- documented in 13-HELP-DISCRIMINATOR-EVIDENCE.md and fixtures README rather than silently worked around
 - [Phase 13]: Phase 13 plan 03: probed A1/A2/A3/A5 live against fork VICE 3.10 -- A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5 CONTRADICTED (AUTOSTART with runAfter=false still resets+loads); vice_disk_attach contract finding handed to plan 13-05
+- [Phase 13]: Phase 13 plan 04: A1/A2 assumption labels removed (confirmed live against fork VICE 3.10); A3/A5 left assumed (INCONCLUSIVE/CONTRADICTED); A5's vice_disk_attach tool-contract finding handed to plan 13-05 via D-13-04's escape hatch; assumption-label-discipline.test.ts ships as a permanent all-or-nothing label guard
 
 ### Pending Todos
 
@@ -418,8 +420,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T00:01:28.358Z
-Stopped at: Completed 13-03-PLAN.md
+Last session: 2026-08-22T00:23:40.050Z
+Stopped at: Completed 13-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
