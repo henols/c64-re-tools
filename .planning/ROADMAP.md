@@ -205,6 +205,27 @@ remove clause cannot be satisfied in-phase (research Q1/Q2 sizes the deletion at
 and a premise rewrite of the 505-line honesty guard) and 14-05 records a
 follow-on-phase recommendation rather than reporting it satisfied.
 
+**Notes**: Branch token: **`retain`**, decided 2026-08-22 by a human at plan
+14-01's `gate="blocking-human"` checkpoint after explicit escalation — not
+inferred, not auto-approved, not a third silent default carry. See
+PROJECT.md → Key Decisions, the dated `FORK-01` row. Per-criterion verdict:
+
+  1. **Satisfied.** PROJECT.md carries the dated `FORK-01` row naming the
+     `KEYBOARD_MATRIX_SET` opcode landing as the reversal trigger, pinned by
+     `docs-fork-decision.test.ts`.
+  2. **Satisfied.** All 17 point-of-use mention sites for the three hard-loss
+     tools verdicted `holds-as-is` against the retained branch, with zero
+     rewrite needed (`14-ROUTE-EVIDENCE.md`); each tool's runtime refusal
+     string is pinned by a test naming the fork route (`Set VICE_BACKEND=fork`).
+  3. **Satisfied for the retained path; the "remove" clause does not apply
+     on this branch.** The fork's own `-mcpserver` HTTP transport was
+     exercised live for the first time in this repository's history against
+     a real fork binary (`/usr/local/bin/x64sc`, VICE 3.10) — 6/6 passing,
+     including `vice_sid_get_state` end to end (`14-CRITERION3-EVIDENCE.md`).
+     Since `retain` was decided, criterion 3's "if remove, no code path still
+     advertises or spawns the fork transport" clause is not in play — no
+     unmet part to record, no follow-on removal phase to recommend.
+
 ### Phase 15: Debt and Review Disposition
 
 **Goal**: Every open code-review finding across all phases is dispositioned, and
@@ -215,6 +236,29 @@ finally executed and recorded. This is the milestone's bulk workload.
 **Depends on**: Phase 14 (the fork decision determines the disposition of
 fork-coupled todos, e.g. `warp-over-resource_set`, which the fork-removal todo
 itself notes "would make moot")
+
+**Fork-decision consequence (resolved 2026-08-22, Phase 14 plan 14-05)**:
+FORK-01 decided `retain` — the fork-removal todo it "would make moot" is
+itself now closed (see `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`),
+but that closure does NOT make `warp-over-resource_set` moot. Its
+fork-facing question is answered the other way: since the fork stays, its
+Solution item 4 (`vice_machine_config_set`'s `WarpMode` description is a
+SKILL-01 landmine) is the applicable route — **mark the description
+fork-only, do not delete it** — recorded directly on that todo. Separately,
+`WR-13`'s dead second hardcoded capability-refusal string is **unaffected
+and still open**: Phase 14 plan 14-02 made zero edits to
+`capability-registry.ts` (all 17 mention sites verdicted `holds-as-is`), so
+`WR-13` remains exactly the dead-code-violating-one-source-of-truth finding
+this phase's `GATE-02` work must disposition — not fixed, not superseded.
+
+**Structural-cause handoff**: this phase's own code-review findings will
+land after 14-05's own last SUMMARY and therefore cannot be dispositioned by
+any plan of Phase 14 itself — the same structural cause Phases 08, 09 and 13
+each filed a todo for (the review gate runs after the last plan's SUMMARY).
+`GATE-02` already owns dispositioning open findings across all phases;
+Phase 14 is now named as the fourth instance so this phase's own plans do
+not need to rediscover it.
+
 **Requirements**: GATE-02, DEBT-01, DEBT-02, DEBT-03
 **Success Criteria** (what must be TRUE):
 
@@ -237,6 +281,17 @@ relocation once, after all of that has settled, sweeps the path and
 line-reference citations a single time instead of re-sweeping them per phase.
 **Depends on**: Phases 12-15 (relocates the payload only after the fork decision
 and all disposition work have landed, so the move sweeps a final file set once)
+
+**Fork-decision consequence (resolved 2026-08-22, Phase 14 plan 14-05)**:
+FORK-01 decided `retain`, and plan 14-04 confirmed zero code deletion under
+the current tree — both of its code-consequence tasks (the
+`resolvedBackend()` default flip; the `vice-errors.ts` extraction) are gated
+to non-`retain` branches by their own precondition and were correctly
+skipped (`git diff --quiet -- .claude/mcp/vice` after 14-04). The
+sweep-path-and-line-reference-once rationale above is **unamended**: nothing
+about this phase's `src/`-relocation scope changed as a result of the fork
+decision.
+
 **Requirements**: PKG-01, PKG-02, PKG-03, PKG-04
 **Success Criteria** (what must be TRUE):
 
@@ -262,6 +317,18 @@ landed. This phase edits planning documents only and touches no source, so
 placing it after Phase 16 does not disturb the sweep-once rationale above.
 **Depends on**: Phases 15 and 16 (the ledger measurement requires every
 disposition *and* PKG-01's todo to have already left `.planning/todos/pending/`)
+
+**Fork-decision consequence (resolved 2026-08-22, Phase 14 plan 14-05)**:
+Phase 14 closed one pending todo
+(`2026-08-20-fully-remove-the-forked-vice-mcp-backend`, resolved `retain`)
+against the dated FORK-01 decision, reducing the pending-todo count `DEBT-04`
+measures from 21 to 20 (STATE.md → Deferred Items: 22 → 21 total items,
+counting the one UAT-gap row). This is **not** the "true close" count
+criterion 2 requires — Phases 15 and 16 still have disposition and
+relocation work outstanding (including `warp-over-resource_set`'s remaining
+fix and PKG-01's own relocation todo) that will move the count further
+before this phase's measurement is taken.
+
 **Planning note**: plan this phase with **worktree mode off**. Its deliverables
 are `STATE.md` and `PROJECT.md` content, and worktree mode strips those files
 from commits — a plan of this shape silently cannot deliver.

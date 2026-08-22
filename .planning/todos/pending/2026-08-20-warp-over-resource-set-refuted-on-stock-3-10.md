@@ -92,3 +92,22 @@ reply. Both already match the project's settled protocol constraints.
 
 Probe script kept at `scratchpad/warp-probe.mjs` for this session; re-create from the
 table above if it is needed after the scratchpad is cleared.
+
+## FORK-01 decision applied (2026-08-22, Phase 14 plan 14-05)
+
+`FORK-01` decided **`retain`** (human decision at plan 14-01's
+`gate="blocking-human"` checkpoint; see `.planning/PROJECT.md` → Key
+Decisions, dated 2026-08-22). This answers the fork-facing half of item 4
+above: the fork backend is **not** going away, so `vice_machine_config_set`'s
+`WarpMode` description is **not moot**. The applicable route is the one item
+4 already named — fix the description so it no longer advertises `WarpMode`
+as a generally-available resource, and if the fork's patched build genuinely
+honours it, mark that capability fork-only per SKILL-01 so a stock-backend
+skill cannot silently assume it. Phase 15 should execute this fix on that
+basis rather than re-deriving whether the fork still exists.
+
+The cross-reference to
+`.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`
+above is now stale in one respect: that todo is closed (resolved `retain`),
+but its closure does not make this todo's own remaining fix moot — see
+above.

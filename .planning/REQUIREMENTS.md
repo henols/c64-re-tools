@@ -105,6 +105,35 @@ Acknowledged, not in this roadmap.
 - **UP-01**: A `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`) — closes stock's hardest loss for everyone, and would satisfy one of `FORK-01`'s reversal criteria
 - **UP-02**: regenerator2000's `--mcp-port` / `--mcp-bind` (~5 lines) — unblocks two projects at once and a host-side TUI, currently a *stated* limit in this project's install documentation precisely because it cannot be fixed downstream
 
+### Fork Backend Follow-on (FORK-01, decided `retain`, Phase 14 plan 14-05)
+
+Deliberately excluded from Phase 14's own scope (research Pitfall 4: Phase
+14's requirements are the decision and the routes, not reimplement-or-drop
+24 tools). Each item below is owned follow-on work, not an unstated gap,
+tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
+
+- **The 24-fork-only-tool disposition.** If `FORK-01` is ever revisited and
+  decided away from `retain`, each of the 24 fork-only tools enumerated in
+  `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`
+  (chip-state read/write, matrix keyboard, display, sprites/memory/checkpoints,
+  disk/machine-config) needs a per-tool disposition — drop, reimplement on
+  the binary monitor, or record as an accepted permanent loss. Owner: the
+  milestone that next opens `FORK-01`.
+- **Breaking-tool-surface release handling.** `@henols/vice-mcp` advertises
+  62 named tools today, and every merge to `main` auto-publishes a patch
+  version unless the commit subject carries `[skip release]`. Any future
+  removal of fork-only tools is a semver-major, breaking change and needs a
+  deliberate major-version release, not an ordinary merge. Owner: whoever
+  executes a future non-`retain` `FORK-01` decision.
+- **`KEYBOARD_MATRIX_SET` reversal-trigger tracking.** `FORK-01`'s reversal
+  criterion (`UP-01` landing in a released VICE, then reaching this
+  project's documented primary install path a release cycle later) has no
+  version probe — an opcode with zero wire presence today cannot be
+  mechanically detected. It is tracked manually. Owner: whoever next opens
+  a milestone that revisits backend decisions; check VICE's release notes
+  and `apt`/package-manager version tables (see README.md → "Which VICE you
+  get, per package manager") before assuming the trigger has not fired.
+
 ### Promoted by DEBT-01
 
 - Whatever `DEBT-01` promotes rather than closes lands here by construction, with its rationale already written.
@@ -119,6 +148,7 @@ Acknowledged, not in this roadmap.
 | Restating Core Value as a bookkeeping edit | `CORE-01` requires the evidence to be weighed. An edit made while opening the milestone would have been the third silent carry. |
 | Re-litigating the 21 requirements cut in v0.2.0 / v0.3.0 | They sit in the milestone archives marked `CUT` with rationale. Restoring one is a scope decision for a future milestone, not debt. |
 | `.vsf` as a regenerator2000 bootstrap input | Covered by `DEBT-01` as a disposition, not as a build. D-34 stands unless a consumer has `.vsf` captures and cannot re-capture as `.raw`. |
+| A version probe for `KEYBOARD_MATRIX_SET` (a hypothetical future VICE binary-monitor opcode, `UP-01`) | The opcode has zero wire presence as of VICE 3.10 — nothing to probe for yet. Building a probe for a capability that does not exist would be speculative engineering against an unlanded upstream change; `FORK-01`'s reversal trigger is tracked manually instead (see Future Requirements → Fork Backend Follow-on). |
 
 ## Traceability
 
