@@ -13,7 +13,7 @@
 // out of the dispatch switch itself.
 //
 // This module is imported by BOTH `scripts/check-skill-tool-coverage.mjs`
-// (the CI script) and `.claude/mcp/vice/r2000-verb-coverage.test.ts` (the
+// (the CI script) and `src/mcp/vice/r2000-verb-coverage.test.ts` (the
 // committed non-vacuity/planted-violation proof) -- one definition, two
 // callers, the same "single seam, two callers" shape `version.ts` /
 // `scripts/version.mjs` already use in this repo. `check-skill-tool-
@@ -22,9 +22,9 @@
 // call the predicate in isolation -- exactly why this logic could not stay
 // inline in the CI script.
 //
-// Lives under `scripts/lib/`, not `.claude/mcp/vice/`, on purpose: it has
+// Lives under `scripts/lib/`, not `src/mcp/vice/`, on purpose: it has
 // no runtime role in the shipped MCP server, so it must stay out of
-// `.claude/mcp/vice/package.json`'s `files[]` (a shipped-runtime allow-list
+// `src/mcp/vice/package.json`'s `files[]` (a shipped-runtime allow-list
 // enforced by `scripts/check-npm-packages.mjs`), while still being tracked
 // by git so `scripts/package.sh`'s `git archive` includes it.
 

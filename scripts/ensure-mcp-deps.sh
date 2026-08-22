@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Provision the VICE MCP server's npm dependencies on session start.
 #
-# The MCP server (.claude/mcp/vice) has real runtime dependencies (@mastra/mcp,
+# The MCP server (src/mcp/vice) has real runtime dependencies (@mastra/mcp,
 # @mastra/core). A plugin ships no node_modules, so they must be installed on
 # the consumer's machine before the server is first launched. Because the
 # server is ESM ("type": "module"), Node resolves bare specifiers by walking up
 # from the importing file -- NODE_PATH is NOT consulted for ESM -- so the
 # modules have to live next to the source, i.e. in
-# `${CLAUDE_PLUGIN_ROOT}/.claude/mcp/vice/node_modules`, not in a side dir.
+# `${CLAUDE_PLUGIN_ROOT}/src/mcp/vice/node_modules`, not in a side dir.
 #
 # We install there, and gate the (slow) `npm ci` on a lockfile hash stamped
 # into ${CLAUDE_PLUGIN_DATA} (which survives plugin updates), so a normal
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-MCP_DIR="$PLUGIN_ROOT/.claude/mcp/vice"
+MCP_DIR="$PLUGIN_ROOT/src/mcp/vice"
 LOCK="$MCP_DIR/package-lock.json"
 
 if [ ! -f "$LOCK" ]; then

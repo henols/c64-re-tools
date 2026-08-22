@@ -32,14 +32,14 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: .claude/mcp/vice/package-lock.json
+          cache-dependency-path: src/mcp/vice/package-lock.json
 
       - name: Install MCP server dependencies
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         run: npm ci --no-audit --no-fund
 
       - name: Typecheck
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         run: npm run typecheck
 
       - name: Install ACME cross-assembler (DISASM-03 round-trip gate)
@@ -108,7 +108,7 @@ jobs:
           echo "scaffold assembled: ${PRG} loads at \$0801"
 
       - name: Test
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         env:
           # Second half of the loud-failure gate: with this set,
           # disasm-roundtrip.test.ts turns "ACME absent" from a named SKIP
@@ -141,7 +141,7 @@ jobs:
         run: npm test
 
       - name: Smoke-test the MCP server (boots under type-stripping + MCP handshake)
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         run: npm run smoke
 
       - name: Validate npm package contents
@@ -246,7 +246,7 @@ jobs:
       # Publish the MCP server first: the installer depends on this exact version.
       # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
       - name: Publish @henols/vice-mcp
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm publish
@@ -319,7 +319,7 @@ jobs:
 
       - name: Publish @henols/vice-mcp
         if: steps.gate.outputs.release == 'true'
-        working-directory: .claude/mcp/vice
+        working-directory: src/mcp/vice
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm publish

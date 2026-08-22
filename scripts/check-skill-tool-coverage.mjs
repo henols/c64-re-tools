@@ -26,7 +26,7 @@
 // the fix is always in capability-registry.ts, never here.
 //
 // This script only ever readFileSync()s and regex-matches skill content, and
-// imports exactly one first-party TypeScript module from .claude/mcp/vice/
+// imports exactly one first-party TypeScript module from src/mcp/vice/
 // (capability-registry.ts, Node's native type-stripping resolves it with no
 // build step and no flag). That one new import does not weaken this script's
 // standing rule: it still never import()s, require()s, eval()s or spawns anything from src/skills/ --
@@ -45,13 +45,13 @@ import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
-import { CURATED_R2000_TOOLS } from "../.claude/mcp/vice/r2000-tools.ts";
+import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
+import { CURATED_R2000_TOOLS } from "../src/mcp/vice/r2000-tools.ts";
 import { parseR2000CliVerbs, verbsMissingFromSkills, R2000_CLI_VERB_FLOOR } from "./lib/r2000-cli-verbs.mjs";
 import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const VICE_DIR = join(ROOT, ".claude/mcp/vice");
+const VICE_DIR = join(ROOT, "src/mcp/vice");
 const SKILLS_DIR = join(ROOT, "src/skills");
 
 const errors = [];

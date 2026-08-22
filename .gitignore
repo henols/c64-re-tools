@@ -1,14 +1,14 @@
-# npm dependencies for the VICE MCP server (.claude/mcp/vice). Provisioned on
+# npm dependencies for the VICE MCP server (src/mcp/vice). Provisioned on
 # the consumer side by scripts/ensure-mcp-deps.sh; never committed.
 node_modules/
 
 # Host-side VICE supervisor/broker runtime state, written under the resolved
-# project root at runtime (see .claude/mcp/vice/repo-root.ts).
+# project root at runtime (see src/mcp/vice/repo-root.ts).
 /.vice-supervisor/
 /.vice-supervisor.bak-*/
 
 # Host-side RAM snapshots written by the vice_snapshot_save tool, at the path
-# snapshotPathFor() builds in .claude/mcp/vice/stock-paths.ts
+# snapshotPathFor() builds in src/mcp/vice/stock-paths.ts
 # (<repoRoot>/.vice-snapshots/<name>.vsf plus its .json sidecar). This is a
 # *product* byproduct, not a project artifact: any consumer of that tool gets
 # these files written into their own repo, which is why it is ignored here

@@ -65,15 +65,15 @@ if (mcp) {
 // The two published npm packages track the plugin version, and the installer
 // depends on the EXACT vice-mcp version it ships against, so a single `v<version>`
 // tag publishes a coherent set (installer -> its bundled vice-mcp).
-const vicePkg = readJson(".claude/mcp/vice/package.json");
+const vicePkg = readJson("src/mcp/vice/package.json");
 const installerPkg = readJson("installer/package.json");
 if (plugin && vicePkg) {
   if (vicePkg.name !== "@henols/vice-mcp")
     errors.push(`vice package name is "${vicePkg.name}", expected "@henols/vice-mcp"`);
   if (vicePkg.private)
-    errors.push(".claude/mcp/vice/package.json is still marked private (cannot be published)");
+    errors.push("src/mcp/vice/package.json is still marked private (cannot be published)");
   if (vicePkg.version !== plugin.version)
-    errors.push(`version mismatch: .claude/mcp/vice/package.json "${vicePkg.version}" vs plugin "${plugin.version}"`);
+    errors.push(`version mismatch: src/mcp/vice/package.json "${vicePkg.version}" vs plugin "${plugin.version}"`);
 }
 if (plugin && installerPkg) {
   if (installerPkg.name !== "@henols/c64-re-tools")
@@ -89,8 +89,8 @@ if (plugin && installerPkg) {
 
 // Required files.
 [".mcp.json", "scripts/ensure-mcp-deps.sh",
- ".claude/mcp/vice/package.json", ".claude/mcp/vice/package-lock.json",
- ".claude/mcp/vice/vice-proxy.ts",
+ "src/mcp/vice/package.json", "src/mcp/vice/package-lock.json",
+ "src/mcp/vice/vice-proxy.ts",
  "installer/package.json", "installer/bin/cli.mjs", "installer/scripts/sync-skills.mjs"].forEach(mustExist);
 
 // The payload must activate only when installed, not by repo-root auto-discovery
@@ -98,10 +98,10 @@ if (plugin && installerPkg) {
 // Solution step 4). Scoped to the two payload directories only: the root .claude/
 // directory itself legitimately still holds this repository's own dev configuration
 // and its GSD tooling, so this must never assert on .claude/ itself being absent.
-// The second entry (the relocated MCP-server parent directory) is added by plan
-// 16-04, which moves .claude/mcp/vice -> src/mcp/vice; do not write it in now,
-// since it would make this check red on landing.
-const mustNotExist = [".claude/skills"];
+// Both entries now present: plan 16-01 added the skills entry, and plan 16-04
+// adds the second (the relocated MCP-server parent directory), moving
+// .claude/mcp/vice -> src/mcp/vice.
+const mustNotExist = [".claude/skills", ".claude/mcp/vice"];
 for (const rel of mustNotExist) {
   if (fs.existsSync(path.join(root, rel)))
     errors.push(`${rel} exists at the repository root -- the payload must activate only when installed, not by repo-root auto-discovery`);

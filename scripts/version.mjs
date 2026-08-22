@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI over `.claude/mcp/vice/version.ts` -- the ONE implementation of this
+// CLI over `src/mcp/vice/version.ts` -- the ONE implementation of this
 // repo's version-resolution algorithm (D-5). This script is a thin wrapper:
 // every rule decision (`pinned` / `no-published` / `prefix-differs` /
 // `prefix-matches`) comes from `resolveVersion()` in the seam, imported
@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/scripts
 const ROOT = dirname(HERE); // <root>
-const SEAM_PATH = join(ROOT, ".claude", "mcp", "vice", "version.ts");
+const SEAM_PATH = join(ROOT, "src", "mcp", "vice", "version.ts");
 const PACKAGE_NAME = "@henols/vice-mcp";
 
 const { DEV_PLACEHOLDER, resolveVersion, compareVersions, readTemplate } = await import(
@@ -36,7 +36,7 @@ const { DEV_PLACEHOLDER, resolveVersion, compareVersions, readTemplate } = await
 // and `check` drive off this single array so there is exactly one place
 // that knows where they live.
 const DERIVED_STRINGS = [
-  { file: ".claude/mcp/vice/package.json", path: ["version"] },
+  { file: "src/mcp/vice/package.json", path: ["version"] },
   { file: "installer/package.json", path: ["version"] },
   { file: "installer/package.json", path: ["dependencies", "@henols/vice-mcp"] },
   { file: ".claude-plugin/plugin.json", path: ["version"] },

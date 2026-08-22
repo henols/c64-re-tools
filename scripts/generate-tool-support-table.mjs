@@ -8,16 +8,16 @@
 // the whole answer mechanically from three inputs -- the two shipped
 // manifests plus capability-registry.ts -- and emits it as one markdown
 // document, docs/tool-support.md. The committed copy is guarded against
-// drift by .claude/mcp/vice/tool-support-table.test.mjs's byte-identity test.
+// drift by src/mcp/vice/tool-support-table.test.mjs's byte-identity test.
 //
 // D-E, ONE SOURCE OF TRUTH: this script imports CAPABILITY_REGISTRY directly
-// from .claude/mcp/vice/capability-registry.ts rather than holding any reason
+// from src/mcp/vice/capability-registry.ts rather than holding any reason
 // text of its own. If a Note column reads wrong, the fix is always in that
 // registry, never here.
 //
 // NEW CROSS-BOUNDARY PRECEDENT: every existing script under scripts/ only
-// reads JSON out of .claude/mcp/vice/ (see check-skill-tool-coverage.mjs). This
-// is the first script/ file to import .claude/mcp/vice/*.ts directly. That
+// reads JSON out of src/mcp/vice/ (see check-skill-tool-coverage.mjs). This
+// is the first script/ file to import src/mcp/vice/*.ts directly. That
 // works because this whole repo runs on Node's native TypeScript
 // type-stripping (no build step for the shipped server) and a repo-root .mjs
 // importing a sibling .ts resolves and executes with no flag under Node
@@ -27,22 +27,22 @@
 //
 // WHAT THIS SCRIPT NEVER DOES: it never writes anything except through the
 // CLI's direct-invocation guard at the bottom (following
-// .claude/mcp/vice/test-gate.mjs's import.meta.url guard), and
+// src/mcp/vice/test-gate.mjs's import.meta.url guard), and
 // generateToolSupportTable() itself performs zero I/O side effects beyond the
 // readFileSync calls needed to compute its return value -- it is a pure
 // function of its inputs, which is what makes
-// .claude/mcp/vice/tool-support-table.test.mjs's fixture-driven structural
+// src/mcp/vice/tool-support-table.test.mjs's fixture-driven structural
 // tests possible.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
-import { DENY_LIST } from "../.claude/mcp/vice/vice.ts";
+import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
+import { DENY_LIST } from "../src/mcp/vice/vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
-const VICE_DIR = join(ROOT, ".claude/mcp/vice");
+const VICE_DIR = join(ROOT, "src/mcp/vice");
 
 const DEFAULT_FORK_MANIFEST_PATH = join(VICE_DIR, "tools-manifest.json");
 const DEFAULT_STOCK_MANIFEST_PATH = join(VICE_DIR, "tools-manifest.stock.json");

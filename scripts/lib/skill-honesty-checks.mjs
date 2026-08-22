@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/lib/skill-honesty-checks.mjs -- shared predicates for
 // `scripts/check-skill-fork-honesty.mjs`, proven non-vacuous by a committed
-// test (`.claude/mcp/vice/skill-honesty-checks.test.ts`) that this module
+// test (`src/mcp/vice/skill-honesty-checks.test.ts`) that this module
 // makes possible in the first place.
 //
 // `check-skill-fork-honesty.mjs` runs its whole check at import time (it is
@@ -14,9 +14,9 @@
 // already established in this repo, for the same reason: pull the logic out
 // so a test can call it directly.
 //
-// Lives under `scripts/lib/`, not `.claude/mcp/vice/`, on purpose: neither
+// Lives under `scripts/lib/`, not `src/mcp/vice/`, on purpose: neither
 // export has a runtime role in the shipped MCP server, so this file must
-// stay out of `.claude/mcp/vice/package.json`'s `files[]` (a shipped-runtime
+// stay out of `src/mcp/vice/package.json`'s `files[]` (a shipped-runtime
 // allow-list enforced by `scripts/check-npm-packages.mjs`) while still being
 // tracked by git so `scripts/package.sh`'s `git archive` includes it.
 //
@@ -64,7 +64,7 @@ export function fileClaimViolations(content, { forbidden = [], required = [] } =
  * pin about a `disasm` VERB that plan 10-06 deleted from `acme.mjs`.
  *
  * Excluded by construction (NOT violations):
- *   "see .claude/mcp/vice/disasm-decoder.ts for the opcode table"
+ *   "see src/mcp/vice/disasm-decoder.ts for the opcode table"
  *   "disasm-opcodes.ts and disasm-renderer.ts are the other two modules"
  * Still caught (real reintroductions of the deleted verb):
  *   "run acme.mjs disasm foo.prg"

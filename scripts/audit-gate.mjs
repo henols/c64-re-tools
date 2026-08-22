@@ -25,7 +25,7 @@
 //    without touching any real behaviour or reading any real environment
 //    variable.
 //  - Do not make this script reachable from this repo's own top-level
-//    package-script entries (see `.claude/mcp/vice/package.json`'s
+//    package-script entries (see `src/mcp/vice/package.json`'s
 //    `scripts` block). D-12-11 requires the guard files be invoked
 //    directly, as their own file names, never through that broader
 //    automated-suite entry point -- doing so would also quietly settle the
@@ -115,7 +115,7 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from
  * a plain, non-recursive `readdirSync` filtered by a fixed pattern (D-12-07)
  * -- never a hand-maintained array. Deliberately non-recursive: every
- * current and anticipated guard lives directly in `.claude/mcp/vice/`, and
+ * current and anticipated guard lives directly in `src/mcp/vice/`, and
  * a recursive walk here would risk picking up an unrelated `docs-*.test.ts`
  * fixture nested under a subdirectory (e.g. a `fixtures/` folder) that was
  * never meant to be a live guard. */
@@ -385,7 +385,7 @@ export function checkAuditGate({ viceDir, planningDir }) {
   // an empty derived guard set, runGuardsLive(viceDir, []) becomes a
   // zero-positional `node --test`, which Node reads as "auto-discover every
   // test file in the tree" -- measured: this does not finish within 15
-  // seconds in this repo's real .claude/mcp/vice directory -- so the one
+  // seconds in this repo's real src/mcp/vice directory -- so the one
   // path meant to fail fast and loudly would instead run the whole suite
   // first. The verdict here was already correct before this fix (a
   // structural failure); only the TIME was wrong.
@@ -834,7 +834,7 @@ function rawTextIndicatesScope(rawText) {
  * question is narrower: "if this in-scope write lands, is any guard red
  * right now?", not "what does the whole tree currently declare?". */
 function hookGuardVerdict(root) {
-  const viceDir = join(root, ".claude", "mcp", "vice");
+  const viceDir = join(root, "src", "mcp", "vice");
   const guardFiles = docsGuardFiles(viceDir);
 
   const structuralErrors = [];
@@ -1093,7 +1093,7 @@ function main() {
   }
 
   const root = resolve(rootArg ?? join(HERE, ".."));
-  const viceDir = join(root, ".claude", "mcp", "vice");
+  const viceDir = join(root, "src", "mcp", "vice");
   const planningDir = join(root, ".planning");
 
   // WR-03 (12-REVIEW.md): pre-fix, a mistyped --root threw an uncaught

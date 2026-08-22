@@ -49,7 +49,7 @@ function packFiles(dir) {
 }
 
 // --- @henols/vice-mcp -------------------------------------------------------
-const vice = packFiles(join(ROOT, ".claude/mcp/vice"));
+const vice = packFiles(join(ROOT, "src/mcp/vice"));
 need(vice.name === "@henols/vice-mcp", `vice-mcp: name is "${vice.name}", expected "@henols/vice-mcp"`);
 need(vice.files.includes("vice-proxy.ts"), "vice-mcp: missing vice-proxy.ts (bin entry)");
 need(vice.files.includes("tools-manifest.json"), "vice-mcp: missing tools-manifest.json");
@@ -124,7 +124,7 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 // produces the same "is imported by ... but is not in the published
 // tarball" failure a missing static import already did.
 {
-  const viceDir = join(ROOT, ".claude/mcp/vice");
+  const viceDir = join(ROOT, "src/mcp/vice");
   const listed = new Set(vice.files);
   const seen = new Set();
   const stack = ["vice-proxy.ts"];
@@ -163,7 +163,7 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 
 // --- DISASM-07: no new runtime dependency was added -------------------------
 {
-  const vicePkg = JSON.parse(readFileSync(join(ROOT, ".claude/mcp/vice/package.json"), "utf8"));
+  const vicePkg = JSON.parse(readFileSync(join(ROOT, "src/mcp/vice/package.json"), "utf8"));
   const depKeys = Object.keys(vicePkg.dependencies ?? {});
   const expected = ["@mastra/mcp", "@mastra/core"];
   const sameCount = depKeys.length === expected.length;
@@ -185,8 +185,8 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   if (pointerExists) {
     const pointerText = readFileSync(pointerPath, "utf8");
     need(
-      pointerText.includes(".claude/mcp/vice/THIRD-PARTY-NOTICES.md"),
-      "repo root: THIRD-PARTY-NOTICES.md pointer does not name the canonical .claude/mcp/vice/THIRD-PARTY-NOTICES.md path"
+      pointerText.includes("src/mcp/vice/THIRD-PARTY-NOTICES.md"),
+      "repo root: THIRD-PARTY-NOTICES.md pointer does not name the canonical src/mcp/vice/THIRD-PARTY-NOTICES.md path"
     );
   }
 }

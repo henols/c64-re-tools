@@ -1,0 +1,121 @@
+{
+  "name": "@henols/vice-mcp",
+  "version": "0.0.0-dev",
+  "description": "VICE emulator MCP server for C64 reverse-engineering: a stdio MCP server that proxies vice tools to a host VICE MCP server.",
+  "type": "module",
+  "bin": {
+    "vice-mcp": "vice-proxy.ts"
+  },
+  "main": "vice-proxy.ts",
+  "files": [
+    "vice-proxy.ts",
+    "vice.ts",
+    "vice-sync.ts",
+    "vice-probe.ts",
+    "vice-broker-client.ts",
+    "version.ts",
+    "stock-protocol.ts",
+    "stock-connect.ts",
+    "containerpath.ts",
+    "hostpath.ts",
+    "repo-root.ts",
+    "install-resources.ts",
+    "incident-record.ts",
+    "refresh-manifest.ts",
+    "build.ts",
+    "container-guard.mts",
+    "backend-detect.mts",
+    "capability-registry.ts",
+    "stock-dispatch.ts",
+    "stock-derived.ts",
+    "stock-handler.ts",
+    "stock-runstate.ts",
+    "stock-address.ts",
+    "stock-paths.ts",
+    "stock-machine.ts",
+    "stock-petscii.ts",
+    "stock-input.ts",
+    "stock-memory.ts",
+    "stock-registers.ts",
+    "stock-checkpoints.ts",
+    "stock-execution.ts",
+    "stock-condition.ts",
+    "stock-disassemble.ts",
+    "disasm-opcodes.ts",
+    "disasm-decoder.ts",
+    "disasm-renderer.ts",
+    "stock-memory-search.ts",
+    "stock-symbols.ts",
+    "stock-vicii.ts",
+    "stock-cia.ts",
+    "stock-sprites.ts",
+    "stock-timing.ts",
+    "stock-run-until.ts",
+    "stock-diagnose.ts",
+    "stock-recycle.ts",
+    "r2000-launch.ts",
+    "r2000-project.ts",
+    "r2000-d64.ts",
+    "r2000-cli.ts",
+    "r2000-verify.ts",
+    "r2000-mcp-client.ts",
+    "r2000-tools.ts",
+    "r2000-symbols.ts",
+    "r2000-regbits-gen.ts",
+    "r2000-regbits.json",
+    "r2000-enum-gen.ts",
+    "r2000-acme-ident.ts",
+    "r2000-confidence.ts",
+    "r2000-memmap-render.ts",
+    "resources",
+    "tools-manifest.json",
+    "tools-manifest.stock.json",
+    "README.md",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Henrik Olsson",
+    "url": "https://github.com/henols"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henols/c64-re-tools.git",
+    "directory": "src/mcp/vice"
+  },
+  "homepage": "https://github.com/henols/c64-re-tools#readme",
+  "bugs": {
+    "url": "https://github.com/henols/c64-re-tools/issues"
+  },
+  "keywords": [
+    "c64",
+    "commodore-64",
+    "vice",
+    "6502",
+    "6510",
+    "mcp",
+    "reverse-engineering"
+  ],
+  "scripts": {
+    "test": "node --test '*.test.*'",
+    "test:automated": "node test-gate.mjs",
+    "test:manual": "node test-gate.mjs --manual",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node build.ts",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@mastra/mcp": "1.15.0",
+    "@mastra/core": "1.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}

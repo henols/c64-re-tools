@@ -55,12 +55,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { CAPABILITY_REGISTRY } from "../.claude/mcp/vice/capability-registry.ts";
+import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { fileClaimViolations, isStandaloneDisasmToken } from "./lib/skill-honesty-checks.mjs";
 import { walkSkills, MCP_PREFIX_RE, TOOL_NAME_RE, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const VICE_DIR = join(ROOT, ".claude/mcp/vice");
+const VICE_DIR = join(ROOT, "src/mcp/vice");
 const SKILLS_DIR = join(ROOT, "src/skills");
 const README_PATH = join(ROOT, "README.md");
 const PARITY_DOC_PATH = join(ROOT, "docs/stock-vice-parity.md");

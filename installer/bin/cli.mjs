@@ -30,7 +30,7 @@ const PKG_ROOT = dirname(HERE);
 const SKILLS_SRC = join(PKG_ROOT, "skills");
 
 // The single version-resolution seam this repo maintains is
-// `.claude/mcp/vice/version.ts` (quick-260819-tsz, D-5). This package
+// `src/mcp/vice/version.ts` (quick-260819-tsz, D-5). This package
 // deliberately does NOT import it: it ships without the seam file (its
 // `files[]` is `bin/`, `skills/`, `README.md`) and targets node >= 18, which
 // cannot type-strip the seam's `.ts` the way the vice-mcp package's own
@@ -48,7 +48,7 @@ const SELF_VERSION = typeof SELF.version === "string" ? SELF.version : "0.0.0";
 const MCP_PKG = "@henols/vice-mcp";
 // The dev placeholder every derived, publishable version string carries in
 // the working tree (R-2, quick-260819-tsz). Defined authoritatively as
-// `DEV_PLACEHOLDER` in `.claude/mcp/vice/version.ts` -- repeated here as a
+// `DEV_PLACEHOLDER` in `src/mcp/vice/version.ts` -- repeated here as a
 // literal, NOT imported, because this package deliberately ships without
 // that seam file (see the comment above) and targets node >= 18, which
 // cannot type-strip a `.ts` import the way the vice-mcp package's own
