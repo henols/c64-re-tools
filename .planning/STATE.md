@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-10-PLAN.md
-last_updated: "2026-08-22T17:25:55.835Z"
+stopped_at: Completed 15-11-PLAN.md
+last_updated: "2026-08-22T17:50:52.752Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: f0869750b516e52a58cdb2912ea8a4dc1555b421
+state_head: 9e4abfa8f2ce666b7c3d40ddb1cdb271573dbf7d
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
   percent: 50
 ---
 
@@ -57,9 +57,10 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 10 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09, 10 — non-sequential; 08
+Plan: 11 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 — non-sequential; 08
 depends only on 15-01 and ran ahead of 06/07; 09 depends on 15-03/15-07, both
-already complete; 10 depends on 15-08/15-09, both already complete). The
+already complete; 10 depends on 15-08/15-09, both already complete; 11 (wave 8)
+depends on 15-09/15-10, both already complete). The
 `state.advance-plan` counter's own sequential "N of 12" framing does not fit a wave-parallel
 phase; this line is corrected by hand
 per plan 08's own execution, not by the tool's blind increment.
@@ -212,6 +213,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 15 P07 | 55min | 3 tasks | 12 files |
 | Phase 15 P09 | 40min | 3 tasks | 10 files |
 | Phase 15 P10 | 28min | 3 tasks | 8 files |
+| Phase 15 P11 | 40min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -322,6 +324,10 @@ Recent decisions affecting current work:
 - [Phase 15]: Phase 15 plan 15-09: GAINS-PROTOCOL.md's warp error codes corrected to the measured 2026-08-20 stock-3.10 values (0x01 object-does-not-exist, 0x8f only for int-typed set); vice_machine_config_set's WarpMode caveated fork-only in docs/stock-vice-parity.md and capability-registry.ts (existing fields, no schema growth); vice_ping's resolvedBinaryPath documented as a startup-time probe with a new backward-compatible resolvedBinaryPathScope field. Both pending todos closed; STATE.md ledger reconciled (pending 12->10, total 13->11).
 - [Phase 15]: [Phase 15-10]: A4 (the D-11 rate-limiter's setImmediate() auto-disable deferral) live-tested against genuine stock VICE (KERNAL IRQ at $EA31, ~21 observed hits/sec) and CONFIRMED for the rates and host tested -- auto-disable fired, wire-side enabled flag independently confirmed false, emulator kept progressing; probe-debt todo closed with all five original assumptions accounted for
 - [Phase 15]: [Phase 15-10]: 03-HUMAN-UAT.md's last pending scenario (scenario 3) closed pass, citing 15-A4-PROBE-EVIDENCE.md; file now carries zero result: [pending] rows, status stays partial (scenario 2's joystick half remains an honest negative result)
+- [Phase 15]: [Phase 15-11] vice_disk_attach's approximation string and docs/stock-vice-parity.md's D-14 bullet both corrected to state the real reset-plus-load behaviour Phase 13's A5 probe observed; the plan's own claimed second disagreeing site at :311 was verified and found unrelated (a different D-14).
+- [Phase 15]: [Phase 15-11] tools-manifest.json staleness todo disposed wont-fix on the D-16 ground (deliberate deletion, not staleness); fork-live.test.ts's live-surface diff now names D-16 explicitly via a new shared fork-deleted-tools.ts constant, never a second hand-typed list.
+- [Phase 15]: [Phase 15-11] CI test-command divergence settled keep-npm-test from GitHub Actions run 32517575905's own log (all nine MANUAL_ONLY_TESTS suites pass cleanly in under two minutes); documented in ci.yml's Test-step comment citing the run id, naming zero manual-only test filenames.
+- [Phase 15]: [Phase 15-11] vice_disk_attach's contract-redesign question promoted to REQUIREMENTS.md Future Requirements with plan 15-12 named as owner, not implemented here; REQUIREMENTS.md itself untouched by this plan.
 
 ### Pending Todos
 
@@ -676,8 +682,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T17:25:55.719Z
-Stopped at: Completed 15-10-PLAN.md
+Last session: 2026-08-22T17:50:52.664Z
+Stopped at: Completed 15-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
