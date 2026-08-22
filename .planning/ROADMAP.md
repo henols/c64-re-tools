@@ -71,7 +71,7 @@ becomes a fix or a dated decision, and the two questions this project has
 answered *by default* each milestone (the fork backend, the Core Value
 statement) get answered deliberately.
 
-- [ ] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (verification 2026-08-21: gaps_found, 6/11 — Layer 1 holds, Layer 2 `--hook` has 3 blocker defects)
+- [x] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (verification 2026-08-22: passed, 11/11 — both layers proven, the live `PreToolUse` dispatch observed refusing all four write routes) (completed 2026-08-22)
 - [x] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies (completed 2026-08-22)
 - [ ] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route
 - [ ] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed
@@ -97,7 +97,7 @@ anyone to notice).
   2. With all four guards genuinely green, the same mechanism allows `status: passed` — evidenced by a real green run recorded against the milestone-audit tooling
   3. The check point lives in code or an executable script that the audit command actually calls, cited by file and line — not a checklist instruction a future audit could skip
 
-**Plans**: 6/7 plans executed (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
+**Plans**: 7/7 plans executed (7 waves, sequential — each wave builds on the previous; waves 5-7 are gap closure from `12-VERIFICATION.md`)
 
 **Wave 1**
 
@@ -125,7 +125,7 @@ anyone to notice).
 
 **Wave 7** *(gap closure, blocked on 12-06; human-gated — `autonomous: false`)*
 
-- [ ] 12-07-PLAN.md — the two `human_verification:` items: the live in-session `PreToolUse` block `12-04-PLAN.md` deferred and never performed, recorded in `12-GATE-PROOF.md`, plus a dated terminal state for RESEARCH assumptions A2 and A3 (D-12-03, D-12-19, D-12-20) [wave 7]
+- [x] 12-07-PLAN.md — the two `human_verification:` items: the live in-session `PreToolUse` block `12-04-PLAN.md` deferred and never performed, recorded in `12-GATE-PROOF.md`, plus a dated terminal state for RESEARCH assumptions A2 and A3 (D-12-03, D-12-19, D-12-20) [wave 7]
 
 ### Phase 13: External Verification
 
@@ -265,7 +265,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 10. Adoption Boundaries, Automated Bootstrap, and the Removal | v0.3.0 | 9/9 | Complete    | 2026-08-20 |
 | 11. Annotation Store, Enums, and the Symbol Round Trip | v0.3.0 | 12/12 | Complete    | 2026-08-21 |
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
-| 12. Audit Integrity Instrument | v0.4.0 | 6/7 | In Progress|  |
+| 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |

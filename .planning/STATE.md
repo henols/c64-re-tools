@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 12
-current_phase_name: Audit Integrity Instrument
+current_phase: 14
+current_phase_name: Backend Decision
 status: planning
-stopped_at: Phase 13 complete, ready to plan Phase 12
-last_updated: "2026-08-22T06:59:35.402Z"
+stopped_at: Phases 12 and 13 both complete, ready to plan Phase 14
+last_updated: "2026-08-22T07:35:02.340Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 13 complete, transitioned to Phase 12
-state_head: 4f019345ed7a4d3e9ff824b1f479d609f004d8bf
+last_activity_desc: Phase 12 closed out (12-07 SUMMARY reconstructed, re-verified 11/11); next unplanned phase is 14
+state_head: 6b41c525c7fc3e70df7f1b5281784073c1f77979
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 12
-  completed_plans: 11
-  percent: 17
+  completed_plans: 12
+  percent: 33
 ---
 
 # Project State
@@ -56,18 +56,31 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 12 — Audit Integrity Instrument
-Plan: 12-07 outstanding (6/7 summarized)
-Status: Resume execution — not "ready to plan"; Phase 12 is already planned
-**Phase 12 needs attention before it can close, and its records disagree.**
-`12-07-PLAN.md` has no SUMMARY, so the plan index reports it incomplete and
-ROADMAP shows 6/7 / In Progress with the checkbox unticked. But
-`12-VERIFICATION.md` reads `status: verified`, 11/11, and credits plan 12-07
-by name for closing both former human-verification items with live in-session
-evidence. So 12-07's work appears done and verified while its SUMMARY was
-never written — reconcile which is true before re-running anything; do not
-re-execute 12-07 on the assumption it never ran. ROADMAP line 74 also still
-carries the superseded "gaps_found, 6/11" verdict from 2026-08-21.
+Phase: 14 — Backend Decision
+Plan: Not started
+Status: Ready to plan
+**Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
+verification `passed` 11/11).** The record disagreement flagged here earlier is
+resolved, and it was a bookkeeping gap, not missing work: plan 12-07's three
+tasks were executed and committed on 2026-08-21 (`f81abd6`, `6ca1785`) but its
+SUMMARY was never written, so every plan index reported 12-07 incomplete and
+the phase never closed. `/gsd-execute-phase 12`'s safe-resume gate caught the
+mismatch, stopped before dispatching a duplicate executor, and the SUMMARY was
+reconstructed from the two commits with every acceptance criterion re-run live
+rather than assumed (`f9729fb`). Re-verification then re-derived all 11 truths
+from the tree instead of copying the prior report forward, and corrected three
+drifted `audit-gate.mjs` line citations (`checkAuditGate()`:353,
+`hookGuardVerdict()`:836, `hookMain()`:944). ROADMAP's superseded
+"gaps_found, 6/11" verdict is replaced.
+
+Both `GATE-01` layers are now proven. Layer 1 is `checkAuditGate()` under
+`npm test` and CI; Layer 2 is the committed `Write|Edit|Bash` PreToolUse hook,
+observed live refusing all four write routes — Write, Edit in two payload
+shapes, a Bash heredoc, and a subagent's Write — against a genuinely red guard,
+then allowing the same Write after the revert. Standing, disclosed limitation:
+that evidence is session-observed rather than independently human-reproduced,
+covering Claude Code 2.1.238 on this host; `12-GATE-PROOF.md` §"Provenance of
+these observations" says so and names what it does not establish.
 
 Phase 13 — External Verification — is COMPLETE (2026-08-22, 5/5 plans,
 verification `passed` 9/9 after one gap-closure round). It verified the
@@ -97,16 +110,19 @@ interpolates into a shell command line); that todo also records the
 structural cause worth fixing — the code-review gate runs *after* the last
 plan's SUMMARY, so no plan can ever disposition its own phase's findings,
 which is why phases 08, 09 and 13 each filed the same todo.
-Next session should read: `12-07-PLAN.md` and `12-VERIFICATION.md` (to settle
-the disagreement above), then Phase 13's five SUMMARY.md files,
+Next session should read: ROADMAP's Phase 14 section (Backend Decision — the
+fork-backend question needs a dated decision with named reversal criteria, and
+every hard-loss capability needs a real user-facing route), the two todos that
+bear on it (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
+`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`),
 `docs/phase2-backend-probe-evidence.md`, and `## Deferred Items` below.
-Last activity: 2026-08-22 — Phase 13 complete, transitioned to Phase 12
+Last activity: 2026-08-22 — Phase 12 complete, transitioned to Phase 13
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 121
+- Total plans completed: 128
 - Average duration: —
 - Total execution time: —
 
@@ -127,6 +143,7 @@ Last activity: 2026-08-22 — Phase 13 complete, transitioned to Phase 12
 | 10 | 9 | - | - |
 | 11 | 12 | - | - |
 | 13 | 5 | - | - |
+| 12 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -482,7 +499,7 @@ scope.
 ## Session Continuity
 
 Last session: 2026-08-22T00:45:04.198Z
-Stopped at: Phase 13 complete, ready to plan Phase 12
+Stopped at: Phase 12 complete, ready to plan Phase 13
 Resume file: None
 
 ## Operator Next Steps
