@@ -1261,7 +1261,13 @@ Chip-prefixed resources are built as `util_concat(chipname, suffix)` where `chip
 `-warp`/`+warp` go through `CALL_FUNCTION` into a static variable specifically so they do
 *not* become a resource (`vsync.c:220-241`, comment: *"We don't want -warp / +warp to end
 up in the config file, so we don't use a resource"*). A tree-wide grep for `"WarpMode"`
-returns nothing. **`RESOURCE_SET WarpMode 1` will fail with `0x8f`.** The only
+returns nothing. **Measured against genuine unpatched stock `/usr/bin/x64sc` (VICE 3.10)
+over the loopback binary monitor on 2026-08-20:** `RESOURCE_GET WarpMode` and a
+string-typed `RESOURCE_SET WarpMode "1"` both fail with `0x01` (object does not exist);
+only an int-typed `RESOURCE_SET WarpMode 1` fails with `0x8f` (invalid parameter). A
+client that keys "unsupported resource" off `0x8f` alone misclassifies the failure it is
+most likely to actually see, because the string-typed convenience form — the natural
+shape for a caller letting VICE coerce the value — returns `0x01` instead. The only
 runtime-settable speed control over the binary monitor is `Speed`.
 
 ### Joystick / joyport
@@ -1348,7 +1354,7 @@ the client connects.
 | resource | note |
 |---|---|
 | `Speed` | `0` is *not* an error — it is silently coerced to 100 with `log_warning` (`vsync.c:166-169`). A tool that sets `Speed = 0` intending "unlimited" gets 100% and no error. Use `InitialWarpMode` at launch for warp instead. |
-| `WarpMode` | Does not exist. Any tool advertising warp toggling over `RESOURCE_SET` is wrong (C.3). |
+| `WarpMode` | Does not exist — `RESOURCE_GET`/`RESOURCE_SET` both fail (`0x01` object-does-not-exist for the read and for a string-typed set, `0x8f` invalid-parameter only for an int-typed set; measured 2026-08-20 against genuine stock VICE 3.10). Any tool advertising warp toggling over `RESOURCE_SET` is wrong (C.3). The launch-time `InitialWarpMode` resource is a separate silent-success trap at runtime: `RESOURCE_SET InitialWarpMode 1` returns `0x00` and reads back as `1`, but per `vsync.c:207-209` the value is only consulted at launch — the readback proves nothing about the running instance's actual speed. Whether a runtime set has *any* effect on emulation speed is still open (not measured here). **Decision:** a stock-backend resource-set tool should return an explicit launch-time-only result for `InitialWarpMode` rather than a bare refusal — a refusal is indistinguishable from an unsupported resource, and this one genuinely exists and is genuinely settable, just not effective until relaunch. |
 | `VICIIBorderMode` | `set_border_mode()` defers the change to `vsync_on_vsync_do()` (`viciisc/vicii-resources.c:~140`), so it does **not** take effect while the emulator is stopped in the monitor — only after the next `EXIT` + frame. It also changes the framebuffer geometry, invalidating any cached `DISPLAY_GET` dimensions. |
 | `VICIIFilter`, `VICIIExternalPalette`, `VICIIPaletteFile`, `VICIIColor*`, `VICIIPAL*` | Safe, no reset. But they change the palette (C.6), so invalidate any cached `PALETTE_GET`. |
 | Anything `RES_EVENT_STRICT` | Fails with `0x8f` while netplay is non-idle (`resources.c:resources_set_int` returns `-2`). |
