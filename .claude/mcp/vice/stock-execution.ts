@@ -224,9 +224,11 @@ export const handleExecutionRun: StockSessionHandler = async (args, session) => 
  * the derived run state is "unknown" (D-07, via refuseIfUnknown()).
  *
  * `stepOver: true`'s runtime semantic (skip a JSR's subroutine as one step)
- * is [ASSUMED] -- RESEARCH.md Assumptions Log row A2 -- never probed against
- * a real JSR. See `.planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md`
- * for the outstanding probe debt. This is NOT claimed as verified here.
+ * was live-probed against a real JSR on fork VICE 3.10 and CONFIRMED
+ * (RESEARCH.md Assumptions Log row A2, closed by 13-PROBE-RESULTS.md §A2):
+ * the post-step PC landed at JSR+3, matching a full subroutine skip, and
+ * the result was reproduced identically across two independent live
+ * sessions.
  */
 export const handleExecutionStep: StockSessionHandler = async (args, session) => {
   const unexpected = refuseUnexpectedArgs(args, ["count", "stepOver"], "vice_execution_step");

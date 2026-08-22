@@ -720,12 +720,14 @@ export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): 
 
 // ---------------------------------------------------------------------------
 // Execution and machine-control body encoders (Phase 3, Task 2). Every
-// body layout below is [CITED] against the official VICE manual (§13) but
-// has NOT been exercised against a real binary in this environment -- each
-// JSDoc says so explicitly, and where RESEARCH.md's Assumptions Log flags a
-// behavioural (not wire-shape) assumption, the JSDoc names the row (A2, A3,
-// A5) and points at .planning/todos/pending/ for the probe debt. None of
-// these are claimed as verified.
+// body layout below is [CITED] against the official VICE manual (§13);
+// each encoder's own JSDoc states whether its behavioural (not wire-shape)
+// claim has since been live-probed. RESEARCH.md Assumptions Log row A2 was
+// closed CONFIRMED by 13-PROBE-RESULTS.md; rows A3 and A5 remain [ASSUMED]
+// -- A3 stayed INCONCLUSIVE (no observable signal either way) and A5 was
+// CONTRADICTED (still pending its correction) -- and each of those two
+// JSDocs still names its row and points at .planning/todos/pending/ for the
+// remaining probe debt.
 // ---------------------------------------------------------------------------
 
 export interface AdvanceInstructionsBodyOptions {
@@ -739,9 +741,11 @@ export interface AdvanceInstructionsBodyOptions {
  * exercised, with stepOver=0 only, in probe-binmon.mjs's async-events check]
  *
  * `stepOver = true`'s runtime meaning (skip a `JSR`'s subroutine as one
- * step, matching the fork's own `stepOver` field name) is [ASSUMED] --
- * RESEARCH.md Assumptions Log row A2 -- never probed against a real `JSR`.
- * See `.planning/todos/pending/` for the outstanding probe debt.
+ * step, matching the fork's own `stepOver` field name) was live-probed
+ * against a real `JSR` on fork VICE 3.10 and CONFIRMED (RESEARCH.md
+ * Assumptions Log row A2, closed by 13-PROBE-RESULTS.md §A2): the post-step
+ * PC landed at JSR+3, reproduced identically across two independent live
+ * sessions.
  */
 export function advanceInstructionsBody({ stepOver = false, count = 1 }: AdvanceInstructionsBodyOptions = {}): Buffer {
   if (!Number.isInteger(count) || count < 1 || count > 0xffff) {

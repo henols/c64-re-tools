@@ -101,10 +101,14 @@ let warnedRemoteMonitorBindWidened = false;
  * the binmon address already used -- one resolution, not two. When
  * `remoteMonitorPort` is omitted (undefined), the returned argv is
  * byte-identical to what this function always returned -- no
- * `-remotemonitor` at all. `-remotemonitoraddress`'s exact spelling is
- * `[ASSUMED]` by symmetry with `-binarymonitoraddress` (RESEARCH.md
- * Assumption A1) and is filed as probe debt under
- * `.planning/todos/pending/`. Widening THIS bind away from loopback emits
+ * `-remotemonitor` at all. `-remotemonitoraddress`'s exact spelling was
+ * live-probed against a real fork-3.10 binary and CONFIRMED (RESEARCH.md
+ * Assumption A1, closed by 13-PROBE-RESULTS.md §A1: the flag bound a real,
+ * accepting text-monitor listener, corroborated independently by
+ * `ss -ltnp`). Genuine stock 3.9 was not independently probed in that run --
+ * the spelling itself is a symmetrical CLI flag pair and is not
+ * version-sensitive, so this is recorded as a low-risk carry-forward rather
+ * than implied stock-3.9 coverage. Widening THIS bind away from loopback emits
  * its own one-time stderr note (`warnedRemoteMonitorBindWidened`), naming
  * the resolved address and stating that VICE's TEXT monitor accepts
  * arbitrary monitor commands and is unauthenticated -- Phase 3 dials
