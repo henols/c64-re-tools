@@ -272,27 +272,36 @@ for (const [name, reason] of NOT_A_TOOL_NAMES) {
 // D-E consolidation: the old reason assertion required both "BACK-05" and
 // "SKILL-01" to appear in the reason text -- a check that can never hold
 // against capability-registry.ts's reasons, which are user-facing refusal
-// prose and deliberately carry no planning identifier. Replaced with three
+// prose and deliberately carry no planning identifier. Replaced with two
 // checks that hold against the registry itself: the reason is non-empty and
-// long enough to be a real explanation, and the source entry's own
-// category/providedBy are exactly what this classification claims.
+// long enough to be a real explanation, and (below, WR-06) a cardinality
+// assertion that the projection captured the registry's whole hardware/fork
+// set -- not the two per-member category/providedBy echoes this comment
+// used to claim as "three checks", which re-asserted the exact predicates
+// FORK_ONLY_UNRECOVERABLE was filtered on and so could never fail
+// (08-REVIEW.md WR-06).
 for (const [name, reason] of FORK_ONLY_UNRECOVERABLE) {
   need(
     Boolean(reason) && reason.length >= 40,
     `${name}: FORK_ONLY_UNRECOVERABLE reason must be non-empty and at least 40 characters`
   );
-  const registryEntry = CAPABILITY_REGISTRY.find((e) => e.name === name);
-  need(
-    Boolean(registryEntry) && registryEntry.category === "hardware",
-    `${name}: FORK_ONLY_UNRECOVERABLE but its capability-registry.ts entry's category is not "hardware"`
-  );
-  need(
-    Boolean(registryEntry) && registryEntry.providedBy === "fork",
-    `${name}: FORK_ONLY_UNRECOVERABLE but its capability-registry.ts entry's providedBy is not "fork"`
-  );
   need(forkNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but absent from the FORK manifest`);
   need(!stockNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but present in the STOCK manifest -- it is no longer unrecoverable and this entry must be deleted`);
 }
+// Non-vacuous (WR-06): pins that the projection actually selected the
+// registry's whole hardware/fork set, so a category retag in
+// capability-registry.ts is visible here rather than silently shrinking
+// (or growing) this classification without this script noticing. The
+// floor is the actual measured count as of this fix, not an unchecked
+// import of a prior review's literal -- re-verify against
+// capability-registry.ts before raising or lowering it.
+const registryHardwareForkCount = CAPABILITY_REGISTRY.filter(
+  (e) => e.category === "hardware" && e.providedBy === "fork"
+).length;
+need(
+  FORK_ONLY_UNRECOVERABLE.length === registryHardwareForkCount && registryHardwareForkCount >= 6,
+  `FORK_ONLY_UNRECOVERABLE must project every hardware/fork registry entry (got ${FORK_ONLY_UNRECOVERABLE.length} of ${registryHardwareForkCount}, expected >= 6)`
+);
 
 // --- Assertion: PENDING_LATER_PHASE absent from stock (the drift guard) ---
 for (const [name, reason] of PENDING_LATER_PHASE) {
@@ -313,42 +322,6 @@ for (const [name] of PENDING_LATER_PHASE) {
   );
 }
 
-// --- Assertion: FORK_ONLY_UNRECOVERABLE's skill-referenced subset is EXACTLY
-// the three names ROADMAP.md's Phase 5 criterion 5 names (D-05-08) --------
-// D-E consolidation: FORK_ONLY_UNRECOVERABLE now derives all 6 of the
-// registry's hardware/fork entries, but only 3 (vice_sid_get_state,
-// vice_keyboard_matrix, vice_keyboard_restore) are actually referenced by any
-// shipped skill file (vice_keyboard_chord, vice_keyboard_key_press and
-// vice_keyboard_key_release appear in no skill). Plain per-entry liveness
-// (every allowlisted name must be referenced) is too weak here -- it would
-// pass vacuously for 3 unreferenced entries. A set-equality assertion is
-// strictly stronger: it pins the corrected three-tool exception list
-// mechanically, and fails in BOTH directions -- a new bare skill reference to
-// one of the other three hardware tools, or one of the three current three
-// ceasing to be referenced.
-const EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS = new Set([
-  "vice_sid_get_state",
-  "vice_keyboard_matrix",
-  "vice_keyboard_restore",
-]);
-const actualSkillReferencedHardwareTools = new Set(
-  FORK_ONLY_UNRECOVERABLE.filter(([name]) => extracted.has(name)).map(([name]) => name)
-);
-const missingFromSkillReferences = [...EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS].filter(
-  (name) => !actualSkillReferencedHardwareTools.has(name)
-);
-const unexpectedSkillReferences = [...actualSkillReferencedHardwareTools].filter(
-  (name) => !EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS.has(name)
-);
-need(
-  missingFromSkillReferences.length === 0,
-  `FORK_ONLY_UNRECOVERABLE set-equality: expected skill-referenced hardware tool(s) no longer referenced by any skill file -- stale expectation, update EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS: ${missingFromSkillReferences.join(", ")}`
-);
-need(
-  unexpectedSkillReferences.length === 0,
-  `FORK_ONLY_UNRECOVERABLE set-equality: a hardware tool not in EXPECTED_SKILL_REFERENCED_HARDWARE_TOOLS is now referenced by a skill file -- add it to the expected set (and to ROADMAP.md's Phase 5 criterion 5 exception list) or remove the skill reference: ${unexpectedSkillReferences.join(", ")}`
-);
-
 // --- The core check ---------------------------------------------------------
 // WR-11: PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY is deliberately NOT allowlisted.
 // Its members ARE in the stock manifest, so they must resolve through the
@@ -358,10 +331,29 @@ need(
 // silently excluded them from the count -- shrinking the coverage number the
 // script exists to report while claiming they were "present in neither
 // manifest by design".
+//
+// WR-07: the D-E consolidation grew FORK_ONLY_UNRECOVERABLE from 3
+// hand-typed names to all 6 of the registry's hardware/fork entries, and
+// allowlisting it whole (as this used to do) silently made
+// vice_keyboard_chord/vice_keyboard_key_press/vice_keyboard_key_release
+// core-check-exempt as a refactor side effect, not a decision anyone made
+// -- no shipped skill references those three. Only the hardware/fork
+// entries a skill ACTUALLY mentions are allowlisted here, so the other
+// three stay under the core check below: a bare, unannotated mention of
+// one of them now fails exactly like an unclassified name would, instead
+// of being silently exempted. This also replaces the hand-typed set of
+// expected skill-referenced hardware tool names that used to live here (a
+// THIRD copy of the same three-tool fact, after capability-registry.ts and
+// ROADMAP.md's criterion-5 parenthetical) -- the exemption is now derived
+// from actual skill references, never re-typed.
 const allowlistedNames = new Set(
-  [...PROXY_LOCAL_TOOLS, ...DENY_LISTED_TOOLS, ...NOT_A_TOOL_NAMES, ...FORK_ONLY_UNRECOVERABLE, ...PENDING_LATER_PHASE].map(
-    ([n]) => n
-  )
+  [
+    ...PROXY_LOCAL_TOOLS,
+    ...DENY_LISTED_TOOLS,
+    ...NOT_A_TOOL_NAMES,
+    ...FORK_ONLY_UNRECOVERABLE.filter(([n]) => extracted.has(n)),
+    ...PENDING_LATER_PHASE,
+  ].map(([n]) => n)
 );
 let resolvedAdvertisedCount = 0;
 for (const [name, files] of extracted) {
