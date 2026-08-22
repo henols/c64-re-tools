@@ -177,8 +177,25 @@ red.
   > for the rates and host tested (plan 15-10). `03-HUMAN-UAT.md` carries zero `result:
   > [pending]` rows; its own `status:` field stays `partial` (not softened to force an overall
   > pass) because scenario 2's joystick half is a genuine, honestly-recorded negative result —
-  > DEBT-03's criterion is "recorded pass or fail with evidence", which all three scenarios
-  > satisfy, not "passed".
+  > **Closure note (Phase 15).** All three scenarios were executed live against genuine stock
+  > VICE at `/usr/bin/x64sc` and recorded with cited evidence; `03-HUMAN-UAT.md` has zero
+  > remaining `result: [pending]` rows. Scenario 1 `pass` (plan 15-08, snapshot round trip
+  > decided by two byte comparisons); scenario 3 `pass` (plan 15-10, the A4 checkpoint-flood
+  > probe: ~21 hits/second, deferred auto-disable fired, `enabled: false` re-confirmed on the
+  > wire, emulator still executing after the flood).
+  >
+  > **Scenario 2 is recorded `partial`, and this criterion's own wording says "rather than left
+  > partial" — so that tension is settled here rather than quoted around.** "Left partial" means
+  > an abandoned or unfinished run; scenario 2 is neither. Both of its halves were driven to a
+  > definite, evidenced outcome under a program first *proven* to be running (PC verified inside
+  > its own loop range): the keyboard half is a deterministic `pass`, committed to
+  > `stock-broker-live.test.ts`; the joystick half is a definite negative — zero delta at both
+  > CIA1 ports across all five single-bit directions plus fire — reproducing Phase 13's A3 result
+  > and thereby *eliminating* one of A3's three candidate explanations. `partial` labels the
+  > scenario having two halves with different verdicts, not an experiment left half-run. The
+  > negative was deliberately kept out of the committed test file and recorded in
+  > `15-UAT-EVIDENCE.md` so it reads as a measurement, not a passing assertion. Recording it as
+  > `pass` would have been the massaged result this criterion exists to prevent.
 
 - [ ] **DEBT-04**: The deferred-items ledger at the v0.4.0 close is still derived and guarded, and its count is lower than the 19 items inherited
 
@@ -265,6 +282,21 @@ tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
   that produced this milestone's own committed probe transcripts). Owner: whichever future
   plan next edits `probe-binmon.mjs`'s capture path for an unrelated reason — not this
   milestone, and not a standalone justification to touch that file on its own.
+- **`c64-ram-capture`'s keyboard-typed-`LOAD` fallback not progressing within its bounded
+  poll.** Plan 15-12 promoted this todo rather than fixing or `wont-fix`-ing it: neither
+  closing condition was met, and plan 15-08's live UAT work produced no evidence bearing on
+  this specific stall (scenario 1 exercised the `vice_autostart` / `vice_disk_attach` route,
+  not the keyboard-typed fallback). Recorded here because the todo now sits in
+  `.planning/todos/completed/`, where `docs-deferred-ledger.test.ts` structurally cannot see
+  it — that guard only reconciles STATE.md against files still in `pending/`, so a promotion
+  filed only in the todo body would have had no tracked visibility anywhere in the guarded
+  system. It carries no requirement ID of its own: it does not block `DIST-03`'s closure (the
+  `vice_autostart` route already carries that pass independently) and is not one of
+  `DEBT-02`'s five named behaviours. Owner: whichever future plan or milestone next touches
+  `c64-ram-capture`'s keyboard-typed-fallback load path, or does deeper stock-VICE
+  binary-monitor CPU-timing work generally (the resume/sleep discipline
+  `08.2-BROKER-LIVE-EVIDENCE.md`'s FINDING-D2 established) — no v0.4.0 phase (12-17) touches
+  this file or this fallback route.
 
 ## Out of Scope
 
