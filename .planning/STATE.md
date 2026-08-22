@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-03-PLAN.md
-last_updated: "2026-08-22T14:44:57.941Z"
+stopped_at: Completed 15-04-PLAN.md
+last_updated: "2026-08-22T15:07:50.930Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: e9fa7374f3ab847c2499b2f0c97d02e468f1863f
+state_head: 4e784a40d8989e95fafff314403e22e6e79b46db
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 20
+  completed_plans: 21
   percent: 50
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Status: Ready to execute
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
@@ -200,6 +200,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 15 P01 | 28min | 3 tasks | 5 files |
 | Phase 15 P02 | 22 min | 3 tasks | 3 files |
 | Phase 15-debt-and-review-disposition P03 | 19min | 3 tasks | 6 files |
+| Phase 15 P04 | 40min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -299,6 +300,8 @@ Recent decisions affecting current work:
 - [Phase 15]: WR-07's allowlist narrowing implemented exactly per 08-REVIEW.md's fix; documented that it does not catch a future stealth mention of a currently-unreferenced hardware/fork tool (architectural limit of the single-pass filter), not silently claimed closed. — Evidence-based disposition over an inflated 'fully fixed' claim, matching this plan's own prohibition against recording a finding fixed without proof.
 - [Phase 15-debt-and-review-disposition]: WR-05 already fixed (commit 21a42cb); no new code needed, cited with the TS7016/allowJs:false reason the review's suggested import route was not taken — capability-registry.test.ts's synthetic-tool set was already derived mechanically from vice-proxy.ts before this plan ran
 - [Phase 15-debt-and-review-disposition]: Plan 15-04 closed all eight of 03-REVIEW.md's newly-surfaced findings, re-verifying each against current source before touching anything. WR-06/IN-05/IN-06 fixed in stock-live.test.ts (commit aaaffce); IN-02/IN-04 fixed and WR-07/IN-03 re-verified-then-fixed in stock-registers.ts/.test.ts/vice-proxy.test.ts (commit e8621d7) — WR-07's false-negative class and IN-03's dead union member were confirmed still live by direct source inspection, contrary to the plan's own stale premise that both had superseded; WR-08 likewise confirmed STILL OPEN (README.md still said "three" against an actual eight, and still omitted VICE_LIVE_STOCK_BIN) and fixed rather than recorded superseded, since the plan's "moot" premise did not hold either. The pending todo this phase's 15-01 plan filed was moved to `.planning/todos/completed/` with a Resolution section citing all eight verdicts and commits; pending-todo count returns to 20 (see `### Pending Todos` above and `## Deferred Items` below)
+- [Phase 15]: [Phase 15-04] WR-08 and IN-03 re-verified against current source and found STILL OPEN, contrary to the plan's own stale "moot"/"superseded" claims; both fixed for real (README.md manual-only count/env var, OPEN_SERVERS narrowed to Set<Server>) rather than dispositioned falsely. — Matches this plan's own must-have (never record a finding fixed/superseded without a landed fix or reproducible evidence) and 15-01's precedent of trusting direct source verification over inherited review claims.
+- [Phase 15]: [Phase 15-04] registerCatalogFor() now caches the in-flight promise (not the resolved catalog) with rejection eviction, closing a real concurrent-duplicate-REGISTERS_AVAILABLE race; non-vacuity proven by two planted-revert probes. — IN-02's finding was real: two synchronous callers on a fresh session previously each saw an empty cache before either write landed, sending two wire requests.
 
 ### Pending Todos
 
@@ -564,8 +567,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T14:44:57.580Z
-Stopped at: Completed 15-03-PLAN.md
+Last session: 2026-08-22T15:07:50.841Z
+Stopped at: Completed 15-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
