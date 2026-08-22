@@ -9,9 +9,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import { stockConnect, stockDisconnect, stockReconnect, clampCpuHistoryCount, type StockConnectBrokerControl } from "./stock-connect.ts";
 import {
@@ -963,4 +964,39 @@ test("stockConnect: a restarted machine's replaced binary re-validates the capab
       await stockDisconnect(second);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Source-level disposition pins (Phase 15 review-finding closure). These
+// scan stock-connect.ts's own source text rather than asserting a literal
+// message string or hand-typed file list, so each invariant survives future
+// wording/file-set changes and generalizes past the one call site its
+// finding named.
+// ---------------------------------------------------------------------------
+
+const STOCK_CONNECT_TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const STOCK_CONNECT_SOURCE = readFileSync(join(STOCK_CONNECT_TEST_DIR, "stock-connect.ts"), "utf8");
+
+test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where: "stock-connect.ts:<fn>" field is prefixed with that SAME function\'s name', () => {
+  // Derived, not literal: pairs each `where:`-carrying throw with the
+  // message template's own leading `<name>:` prefix by scanning the actual
+  // throw statement, rather than hardcoding either string. A future throw
+  // site added inside stockConnect() itself (not only stockReconnect()) is
+  // covered by the same regex, not just the one site IN-05 named.
+  const throwWherePattern = /throw new \w+\(\s*`([A-Za-z]\w*):(?:(?!throw new)[\s\S])*?where:\s*"stock-connect\.ts:(\w+)"/g;
+  const matches = [...STOCK_CONNECT_SOURCE.matchAll(throwWherePattern)];
+  assert.ok(
+    matches.length > 0,
+    'expected at least one where: "stock-connect.ts:<fn>" throw site to check -- if this is 0, the site IN-05 pins was removed/renamed and this assertion is vacuous',
+  );
+  for (const match of matches) {
+    const messagePrefix = match[1];
+    const whereFn = match[2];
+    assert.equal(
+      messagePrefix,
+      whereFn,
+      `thrown message is prefixed "${messagePrefix}:" but its own where: field names "${whereFn}" -- ` +
+        `a wrong function name in the thrown message misdirects diagnosis (02-REVIEW.md IN-05)`,
+    );
+  }
 });

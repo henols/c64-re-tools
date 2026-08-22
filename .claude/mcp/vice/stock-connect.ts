@@ -534,7 +534,7 @@ export async function stockReconnect(session: StockConnectSession, { lastToolCal
 
   if (baselineEpoch === null || currentEpoch === null || currentEpoch !== baselineEpoch) {
     throw new MachineRestartedError(
-      `stockConnect: reconnect to target ${session.targetId} could not prove machine identity across the reconnect ` +
+      `stockReconnect: reconnect to target ${session.targetId} could not prove machine identity across the reconnect ` +
         `(baseline epoch ${String(baselineEpoch)}, current epoch ${String(currentEpoch)})`,
       { baselineEpoch, currentEpoch, where: "stock-connect.ts:stockReconnect", lastToolCall },
     );
