@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // stock-live.test.ts
 //
 // OPT-IN, MANUAL-ONLY. Turns 03-UAT.md test 5's ad-hoc live probe into a
@@ -79,10 +78,9 @@ const resolvedBinPath = process.env.VICE_LIVE_STOCK_BIN ?? VICE_LIVE_STOCK_BIN_D
  * which would report a false PASS rather than a SKIP. */
 const SKIP_REASON: string | false = !process.env.VICE_LIVE_STOCK_BIN
   ? `stock-live.test.ts is opt-in and default-skipped -- set VICE_LIVE_STOCK_BIN=/usr/bin/x64sc ` +
-    `(or another real, genuinely unpatched stock VICE binary's absolute path) to run it. Defaults to ` +
-    `${VICE_LIVE_STOCK_BIN_DEFAULT} when set to a truthy non-path value. A bare "x64sc" on PATH resolves ` +
-    `to the fork build (which has -mcpserver, not this stock binary monitor path) -- always name the ` +
-    `stock binary by absolute path.`
+    `(or another real, genuinely unpatched stock VICE binary's absolute path) to run it. A bare "x64sc" on ` +
+    `PATH resolves to the fork build (which has -mcpserver, not this stock binary monitor path) -- always ` +
+    `name the stock binary by absolute path.`
   : !existsSync(resolvedBinPath)
     ? `VICE_LIVE_STOCK_BIN="${resolvedBinPath}" does not exist on disk -- opt-in requires a real stock VICE ` +
       `binary at that absolute path (e.g. /usr/bin/x64sc). A bare "x64sc" on PATH would resolve to the fork ` +
@@ -161,9 +159,8 @@ const VICE_LIVE_STOCK_BIN_39_DEFAULT = "/usr/bin/x64sc";
 const resolvedBin39Path = process.env.VICE_LIVE_STOCK_BIN_39 ?? VICE_LIVE_STOCK_BIN_39_DEFAULT;
 const SKIP_REASON_39: string | false = !process.env.VICE_LIVE_STOCK_BIN_39
   ? `07-13's genuine-VICE-3.9 proofs are opt-in and default-skipped -- set VICE_LIVE_STOCK_BIN_39=/usr/bin/x64sc ` +
-    `(or another real, genuinely unpatched stock VICE 3.9 binary's absolute path) to run them. Defaults to ` +
-    `${VICE_LIVE_STOCK_BIN_39_DEFAULT} when set to a truthy non-path value. A bare "x64sc" on PATH resolves to the ` +
-    `fork build -- always name the stock binary by absolute path.`
+    `(or another real, genuinely unpatched stock VICE 3.9 binary's absolute path) to run them. A bare "x64sc" ` +
+    `on PATH resolves to the fork build -- always name the stock binary by absolute path.`
   : !existsSync(resolvedBin39Path)
     ? `VICE_LIVE_STOCK_BIN_39="${resolvedBin39Path}" does not exist on disk -- opt-in requires a real, genuinely ` +
       `unpatched stock VICE 3.9 binary at that absolute path.`
@@ -174,7 +171,7 @@ const resolvedBin310Path = process.env.VICE_LIVE_STOCK_BIN_310 ?? VICE_LIVE_STOC
 const SKIP_REASON_310: string | false = !process.env.VICE_LIVE_STOCK_BIN_310
   ? `07-13's genuine-VICE-3.10 proofs (Gap 1, CR-01's inversion) are opt-in and default-skipped -- set ` +
     `VICE_LIVE_STOCK_BIN_310=/usr/local/bin/x64sc (or another real VICE >= 3.10 binary's absolute path) to run ` +
-    `them. Defaults to ${VICE_LIVE_STOCK_BIN_310_DEFAULT} when set to a truthy non-path value.`
+    `them.`
   : !existsSync(resolvedBin310Path)
     ? `VICE_LIVE_STOCK_BIN_310="${resolvedBin310Path}" does not exist on disk -- opt-in requires a real VICE >= ` +
       `3.10 binary at that absolute path.`
@@ -461,10 +458,15 @@ test(
       assert.equal(flagResult.isError, true, `vice_registers_set({register:"${flagName}", value:1}) must be refused`);
       const flagText = (flagResult as { content: { type: "text"; text: string }[] }).content[0]!.text;
       console.log(`stock-live: flag-bit refusal for "${flagName}" -> ${flagText}`);
+      const escapedStatusName = statusEntry!.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(
         flagText,
-        new RegExp(statusEntry!.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-        `flag-bit refusal for "${flagName}" must name the live status register "${statusEntry!.name}", got: ${flagText}`,
+        // Anchored to the handler's full emitted phrase (stock-registers.ts's
+        // `reported by this catalog as "${statusName}"`), not a bare register
+        // name -- a single-character status register (e.g. "P") would
+        // otherwise match almost any refusal text that never names it (IN-06).
+        new RegExp(`reported by this catalog as "${escapedStatusName}"`),
+        `flag-bit refusal for "${flagName}" must name the live status register "${statusEntry!.name}" via the handler's full phrase, got: ${flagText}`,
       );
       assert.match(
         flagText,
