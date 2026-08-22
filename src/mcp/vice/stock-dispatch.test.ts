@@ -420,8 +420,8 @@ const TRIMMED_TOOL_DECISIONS: Array<[string, string]> = [
   ["vice_key_release", "hard loss -- low-level keyboard family"],
   ["vice_keyboard_matrix", "hard loss -- low-level keyboard family"],
   ["vice_keyboard_chord", "hard loss -- low-level keyboard family"],
-  ["vice_machine_config_get", "Phase 6"],
-  ["vice_machine_config_set", "Phase 6"],
+  ["vice_machine_config_get", "CUT from scope 2026-08-17 -- docs/stock-vice-parity.md's dated record"],
+  ["vice_machine_config_set", "CUT from scope 2026-08-17 -- docs/stock-vice-parity.md's dated record"],
 ];
 
 test("manifest/backend (trimmed tools absent): none of the twelve decision-trimmed tools appears in tools-manifest.stock.json", () => {

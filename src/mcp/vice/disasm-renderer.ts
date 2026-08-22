@@ -7,8 +7,8 @@
 // `stock-disassemble.ts` (04-05) wires the real symbol resolver in via
 // `RenderOptions.symbolFor`; this file never imports `stock-address.ts`
 // itself, so it stays importable by anything that only has an
-// `Instruction[]` in hand (Phase 5's backtrace, Phase 6's CPU-history decode
-// -- neither has a live symbol store).
+// `Instruction[]` in hand. Both originally-planned such consumers (Phase 5's
+// backtrace, a CPU-history decode) were cut from v0.2.0 scope on 2026-08-17.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS

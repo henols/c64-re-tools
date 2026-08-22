@@ -100,9 +100,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// This is the one table the decoder (04-03), Phase 5's backtrace (DERIV-02)
-// and Phase 6's CPU-history decode (GAIN-01) all read instruction lengths
-// from. A wrong length here silently desynchronises every instruction after
+// This is the one table the decoder (04-03) and Phase 5's backtrace
+// (DERIV-02) read instruction lengths from. GAIN-01's CPU-history decode, a
+// third would-be consumer, was cut with the whole of Stock-Only Gains, 2026-08-17 (ROADMAP.md). A wrong length here silently desynchronises every instruction after
 // it in every one of those consumers (criterion 2's own wording) -- there is
 // no runtime check downstream that would catch a transcription typo on its
 // own; that is what `disasm-opcodes.test.ts`'s independent bit-pattern

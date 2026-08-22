@@ -25,10 +25,10 @@
 //     resumes explicitly, on its own schedule.
 //   - Never add vice_joystick_tap. A tap needs the machine to RUN for a
 //     measured interval -- an unrequested EXIT (forbidden by D-05) plus a
-//     frame/cycle measurement that does not exist on stock until Phase 7's
-//     timing route lands (docs/stock-vice-parity.md section A item 7).
-//     vice_joystick_set (hold/release/centre) satisfies DIRECT-07's
-//     joystick half in the meantime.
+//     frame/cycle measurement stock's wire protocol has no route for at
+//     all (docs/stock-vice-parity.md section A item 7). This exclusion is
+//     permanent, not pending: vice_joystick_set (hold/release/centre)
+//     satisfies DIRECT-07's joystick half instead.
 //   - Never construct an ok-answer outside stockAnswer(). Every successful
 //     result below is built through it, never a bare
 //     `{ content: [...], isError: false }` literal.
@@ -187,11 +187,11 @@ function isValidDirection(value: string): value is JoystickDirection {
  * the fork's exact names and documented string-or-array shape.
  *
  * vice_joystick_tap is deliberately absent from this module (and the whole
- * stock manifest) -- a tap needs the machine to run for a measured
- * interval, which is an unrequested EXIT (forbidden by D-05) plus a
- * frame/cycle measurement stock does not have until Phase 7's timing route
- * lands (docs/stock-vice-parity.md section A item 7). Do not approximate it
- * with a sleep; do not implement it here.
+ * stock manifest), permanently -- a tap needs the machine to run for a
+ * measured interval, which is an unrequested EXIT (forbidden by D-05) plus
+ * a frame/cycle measurement stock's wire protocol has no route for at all
+ * (docs/stock-vice-parity.md section A item 7). Do not approximate it with
+ * a sleep; do not implement it here.
  */
 export const handleJoystickSet: StockSessionHandler = async (args, session) => {
   if (!isPlainObject(args)) {

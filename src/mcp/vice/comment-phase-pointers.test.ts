@@ -471,17 +471,33 @@ test("positive control: the extractor captures comments and skips string/templat
   assert.doesNotMatch(commentTexts, /template with Phase 99 inside a string too/, "the extractor must not capture template-literal bodies");
 });
 
-test("census: current corpus state (informational -- Task 2 enables the enforcing assertions)", () => {
-  // Task 1 deliberately does not assert either list is empty yet -- the
-  // real corpus still carries the 15 sites this guard exists to find.
-  // Task 2 fixes every site and replaces this test with the two enforcing
-  // assertions, in the SAME commit, so no red guard is ever committed.
-  const assignmentHits = danglingPhaseCommentAssignments();
-  const cutHits = cutPhaseCommentReferences();
-  console.log(`comment-phase-pointers census: ${assignmentHits.length} assignment-shape hit(s), ${cutHits.length} cut-phase hit(s)`);
-  for (const h of assignmentHits) console.log(`  [assignment:${h.family}] ${h.file}:${h.line}: ${h.text}`);
-  for (const h of cutHits) console.log(`  [cut-phase:${h.phase}] ${h.file}:${h.line}: ${h.text}`);
-  assert.ok(true);
+test("no shipped src/mcp/vice/ source comment assigns pending/future work to a numbered phase (PKG-03)", () => {
+  // Task 1 committed this corpus scan without asserting emptiness -- the
+  // real tree still carried 7 assignment-shape sites. Task 2 fixed all of
+  // them (repointing each at an already-recorded permanent reason) and
+  // enables this assertion in the same commit, so no red guard ever lands.
+  const hits = danglingPhaseCommentAssignments();
+  assert.deepEqual(hits, [],
+    "orphaned assignment-shape phase pointer(s) found in shipped source comments -- repoint each at " +
+      "an existing permanent record (a parity-doc cut entry, a module's own exclusion header) rather " +
+      "than a phase number:\n" +
+      hits.map((h) => `  [${h.family}] ${h.file}:${h.line}: ${h.text}`).join("\n"),
+  );
+});
+
+test("no shipped source comment names a phase the roadmap records as cut or dissolved (PKG-03)", () => {
+  // Task 1 committed this corpus scan without asserting emptiness -- the
+  // real tree still carried 9 cut-phase reference sites (all naming Phase
+  // 6, cut 2026-08-17). Task 2 fixed all of them, and enables this
+  // assertion in the same commit.
+  const hits = cutPhaseCommentReferences();
+  assert.deepEqual(hits, [],
+    "shipped source comment(s) name a phase the roadmap records as cut -- a reference to a cut phase " +
+      "is orphaned by definition, narration included. Repoint at the phase's NAME rather than its " +
+      "number where citing history (e.g. \"Stock-Only Gains\" rather than \"Phase 6\"), since the " +
+      "cut-phase check matches any numbered mention, or at the permanent record the cut left behind:\n" +
+      hits.map((h) => `  [cut-phase:${h.phase}] ${h.file}:${h.line}: ${h.text}`).join("\n"),
+  );
 });
 
 // ---------------------------------------------------------------------------

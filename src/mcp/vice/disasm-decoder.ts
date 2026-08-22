@@ -1,24 +1,24 @@
 // disasm-decoder.ts
 //
 // The pure `decode(bytes, startAddress, opts) -> Instruction[]` function --
-// D-05's standalone module. Phase 5's backtrace (DERIV-02) and Phase 6's
-// CPU-history decode (GAIN-01) import THIS file directly, never a tool
-// module, so a protocol import here would force those consumers to pull in
-// transport code they do not need. This module has no emulator, no
-// protocol, no network -- its only input is a byte array. Note: DERIV-02 and
-// GAIN-01 were both cut from v0.2.0 scope on 2026-08-17 -- see the
-// startAddress bound below, which is now defense-in-depth on a currently
-// unreachable path rather than a guard against a live in-process caller.
+// D-05's standalone module, kept import-free of `stock-*.ts`/`vice*.ts`/any
+// `node:` builtin so any future non-tool consumer (a decode call with no
+// socket in the picture) could depend on this one file without dragging in
+// transport code. Two originally-planned consumers never landed: Phase 5's
+// backtrace (DERIV-02) and a CPU-history decode (GAIN-01) were both cut
+// from v0.2.0 scope on 2026-08-17 -- see the startAddress bound below,
+// which is now defense-in-depth on a currently unreachable path rather
+// than a guard against a live in-process caller.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS RATHER THAN LIVING INSIDE THE TOOL HANDLER
 // ---------------------------------------------------------------------------
-// `stock-disassemble.ts` (04-05) is the tool-facing consumer, but three other
-// consumers need decoding without a socket in the picture at all: the
-// renderer (04-04), Phase 5's backtrace and Phase 6's CPU-history decode.
-// Keeping decode() import-free of `stock-*.ts`/`vice*.ts`/any `node:`
-// builtin means all four can depend on this one file without dragging in
-// transport code.
+// `stock-disassemble.ts` (04-05) is the tool-facing consumer; the renderer
+// (04-04) is the only other one that exists. Two more were planned (Phase
+// 5's backtrace, DERIV-02, and a CPU-history decode, GAIN-01) but both
+// were cut from v0.2.0 scope on 2026-08-17 before being built. Keeping
+// decode() import-free of `stock-*.ts`/`vice*.ts`/any `node:` builtin means
+// both existing consumers can depend on this file without transport code.
 //
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO

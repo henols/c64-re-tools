@@ -23,8 +23,8 @@
 //     hex by default" rule belongs to the checkpoint-condition emitter, not
 //     this parser. Do not conflate the two.
 //   - Never implement symbol resolution in Phase 3. setSymbolResolver() is
-//     a deliberately empty extension point until Phase 5's DERIV-04 symbol
-//     store installs a real one; the default here stays `null`.
+//     the one extension point for it: it starts `null` and stays that way
+//     until stock-symbols.ts's `vice_symbols_load` installs a real resolver.
 //   - Never add a second resolver holder. `nameFor` (address -> name,
 //     DISASM-06's first consumer, Phase 4) and `resolve` (name -> address,
 //     Phase 3) live on the SAME `SymbolResolver` object, read from the SAME
@@ -46,9 +46,9 @@ export interface SymbolResolver {
 // -- no symbol resolution happens until a later phase installs one.
 let symbolResolver: SymbolResolver | null = null;
 
-/** The deliberately-empty extension point Phase 5's DERIV-04 symbol store
- * fills. Passing `null` (the Phase 3 default) restores the "no symbol table
- * loaded" refusal. */
+/** The extension point stock-symbols.ts's `vice_symbols_load` fills at
+ * runtime. Passing `null` (the default before any load) restores the "no
+ * symbol table loaded" refusal. */
 export function setSymbolResolver(resolver: SymbolResolver | null): void {
   symbolResolver = resolver;
 }

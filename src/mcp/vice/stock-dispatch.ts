@@ -630,11 +630,11 @@ const handlePing: StockSessionHandler = async (_args, session, deps) => {
  * not an oversight (Task 2, plan 03-12):
  *   - `vice_checkpoint_set_ignore_count` (D-15)
  *   - `vice_snapshot_list` (D-16 -- deleted from both manifests)
- *   - `vice_disk_detach` (D-13 -- Phase 7, via the text monitor)
- *   - `vice_joystick_tap` (needs a resume plus Phase 7's timing route)
+ *   - `vice_disk_detach` (CUT from scope 2026-08-17 -- docs/stock-vice-parity.md's dated cut record)
+ *   - `vice_joystick_tap` (permanently excluded -- stock-input.ts's own header)
  *   - `vice_disk_read_sector` (CUT from scope 2026-08-17 -- no skill calls it; see ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)" and docs/stock-vice-parity.md item 6)
  *   - `vice_sid_get_state` and the low-level keyboard family (hard losses)
- *   - `vice_machine_config_get` / `vice_machine_config_set` (Phase 6)
+ *   - `vice_machine_config_get` / `vice_machine_config_set` (CUT from scope 2026-08-17 along with the whole of Stock-Only Gains -- docs/stock-vice-parity.md's dated cut record)
  * `dispatchStock()`'s miss branch already refuses any of these by name,
  * without reading `deps` -- there is nothing else to add for them here.
  */

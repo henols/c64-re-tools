@@ -12,17 +12,17 @@
 // WHAT NOT TO DO:
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
 //     power-cycle warning is about RESOURCE_SET (0x52) writes to
-//     MachineVideoStandard/VICIIModel/MachinePowerFrequency -- Phase 6
-//     territory, a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
+//     MachineVideoStandard/VICIIModel/MachinePowerFrequency -- the CUT
+//     vice_machine_config_get/set pair's resources (docs/stock-vice-parity.md), a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
 //     command, and an agent-requested hard reset via RESET is exactly what
 //     DIRECT-06 asks for. It needs no deny-list (RESEARCH.md Pitfall 1).
 //   - Never look for a per-unit disk-attach route mid-implementation.
 //     AUTOSTART (0xdd) has NO drive-unit field on the wire at all -- this is
 //     a protocol gap, not a code bug you can fix by looking harder
 //     (RESEARCH.md Pitfall 2).
-//   - Never add a disk-detach handler here. D-13 ships that tool in Phase 7
-//     through the text monitor -- grep-gated to zero occurrences of its name
-//     in this file's own acceptance criteria.
+//   - Never add a disk-detach handler here. D-13's vice_disk_detach was
+//     CUT from scope 2026-08-17 (docs/stock-vice-parity.md) -- grep-gated
+//     to zero occurrences of its name in this file's own acceptance criteria.
 //   - Never build a host path outside stock-paths.ts. Every filename this
 //     file sends through the wire goes through that same one wrapper --
 //     grep-gated to zero direct hostPath()/hostPathCandidates() calls here.

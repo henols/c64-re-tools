@@ -35,10 +35,10 @@
 //     last gate before the wire and re-validates every literal and every
 //     kind itself, even though parseConditionString() and conditionFromJson()
 //     also validate on the way in.
-//   - Phase 6's GAIN-06 extends this AST with raster semantics (finer-grained
-//     raster/cycle conditions) rather than replacing it or adding a second,
-//     parallel condition-building path. Any future raster work grows this
-//     module's types, it does not fork them.
+//   - GAIN-06's raster-semantics extension (finer-grained raster/cycle
+//     conditions) was cut with the whole of Stock-Only Gains, 2026-08-17
+//     (see docs/stock-vice-parity.md's dated cut record). Widening this AST
+//     is unclaimed scope with no owner -- grow these types, never fork them.
 //
 // This module has no handlers and no dispatch entries -- a later plan
 // consumes emitCondition()'s output as the only thing a condition-set
@@ -545,9 +545,9 @@ function parseSingleComparison(text: string, originalExpr: string): ConditionNod
  * conditionFromJson() produces and returns it; it never emits text itself,
  * so emitCondition() remains the only producer of wire text.
  *
- * Accepted input, deliberately narrow (widening this grammar is Phase 6's
- * GAIN-06 decision, not a maintenance liberty -- do not implement a general
- * expression parser):
+ * Accepted input, deliberately narrow (GAIN-06's plan to widen this grammar
+ * was cut along with Stock-Only Gains, 2026-08-17; widening it is unclaimed
+ * scope with no owner -- do not implement a general expression parser):
  *   - a single comparison, with or without surrounding parentheses:
  *     "A == $42", "(PC == $c000)", "SP <= $ff", "RL == $64"
  *   - a conjunction/disjunction where EVERY comparison is individually

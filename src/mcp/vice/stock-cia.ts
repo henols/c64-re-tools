@@ -36,7 +36,7 @@
 //   - This is NOT a keyboard-matrix read. $DC00/$DC01 expose only the
 //     current column selection and row result; the full matrix is
 //     `vice_keyboard_matrix`, which is provably unrecoverable on stock
-//     (`docs/stock-vice-parity.md` SS A item 2) and is Phase 8's business.
+//     (`docs/stock-vice-parity.md` SS A item 2) -- the wire protocol has no matrix command, and `KEYBOARD_FEED` (0x72) injects buffer text only.
 //   - WR-02 (2026-08-17): the port A/B joystick bits share their PINS with
 //     the keyboard matrix's column-select ($DC00) and row-read ($DC01), and
 //     a stock read halts the machine at an arbitrary PC -- often inside the

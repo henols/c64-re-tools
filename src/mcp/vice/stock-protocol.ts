@@ -821,8 +821,8 @@ export interface ResetBodyOptions {
  * [CITED docs/phase0-binmon-findings.md §5]
  *
  * NOT the RESOURCE_SET (0x52) power-cycle hazard CLAUDE.md warns about
- * (`MachineVideoStandard`/`VICIIModel`/`MachinePowerFrequency`, Phase 6
- * territory) -- this is a distinct opcode, and an agent-requested hard
+ * (`MachineVideoStandard`/`VICIIModel`/`MachinePowerFrequency`, the CUT
+ * vice_machine_config_get/set pair's resources) -- a distinct opcode, and an agent-requested hard
  * reset via RESET is exactly what DIRECT-06 asks for. It needs no
  * deny-list. This is RESEARCH.md's Pitfall 1; this comment is what stops a
  * later reviewer from "fixing" it by adding one.
