@@ -141,8 +141,24 @@ type RespondFn = (name: string, args: any) => any;
 // evidence. Do NOT treat a warning from this net as "handled" -- it means
 // some test's own teardown is broken and that test already failed on its
 // own merits; fix the leaking test, don't lean on the net.
+//
+// 15-04, IN-03: this registry tracks ONLY the `startStandInServer()` stand-in
+// (an `http.Server`), never the many per-test `controlServer` locals (a real
+// `net.Server`, started by `startControlBroker()`) -- each of those is
+// already closed by its OWN local `try`/`finally` block right where it is
+// created (see e.g. the acquire/release lifecycle tests around :2258-:2300),
+// so there is nothing left for this net to catch for them. The type used to
+// read `Set<Server | NetServer>` as if a `net.Server` might one day be
+// registered here too; it never was (confirmed: exactly one `.add()` call
+// site in this file, always the http.Server stand-in), and it would not
+// have worked anyway -- `closeAllConnections` below is `http.Server`-only
+// and is `undefined` on `net.Server`, so `close()` alone would not
+// force-drop any still-open control-plane socket. Narrowed to
+// `Set<Server>` to match what this net actually does; control-plane
+// `net.Server`s stay covered by their own already-correct local teardown,
+// not by this net.
 // ---------------------------------------------------------------------------
-const OPEN_SERVERS = new Set<Server | NetServer>();
+const OPEN_SERVERS = new Set<Server>();
 const OPEN_CHILDREN = new Set<ChildProcessWithoutNullStreams>();
 
 after(() => {
@@ -3857,6 +3873,55 @@ test("structural: no message quotes the launcher with a subcommand -- vice-launc
 // literal, no interleaving) does not do this, but a future refactor could.
 // ---------------------------------------------------------------------------
 
+// 15-04, WR-07: two fixes to the marker set above, re-verified live against
+// this file's own re-derived line numbers (the review's :3856-3875 citation
+// has drifted to :3869-3890 as of this plan -- confirmed both defects still
+// existed at plan time before either fix landed):
+//
+// 1. False-negative class: a `vice-proxy:` literal reached via `throw new
+//    SomeError(...)` (agent-visible -- the error eventually surfaces to the
+//    caller) was previously EXEMPT whenever no `text:`/`content:`/
+//    `isErrorText(` marker sat between it and the nearest earlier
+//    console.error(...) call, because "throw new"/standalone "Error(" were
+//    not agent-visible markers. Added both to the marker set.
+// 2. Mid-word false trigger: `before.lastIndexOf("text:")` matched the
+//    substring inside "context:", letting an unrelated comment or string
+//    containing "context:" flip an otherwise-exempt literal into a
+//    (falsely) reported violation. `text:`'s marker is now anchored so it
+//    cannot match when immediately preceded by a letter.
+//
+// Verified against the real vice-proxy.ts source (source-assertion only --
+// this file is MANUAL_ONLY_TESTS entry 2 and must never be executed, see
+// this plan's own prohibition): all 12 `` `vice-proxy: `` sites in
+// vice-proxy.ts are console.error(...)'s own argument; the file's only two
+// `throw new` sites (PathOutOfWorkspaceError/PathTranslationError, neither
+// carrying a vice-proxy: literal) and its one standalone `new Error(` site
+// each sit far from every vice-proxy: literal's own, much nearer,
+// console.error( call, so widening the marker set does not newly flag any
+// of them. `context:` does not appear anywhere in vice-proxy.ts today, so
+// the word-boundary fix is a hardening change with no effect on the
+// current real-source assertion below.
+const AGENT_VISIBLE_MARKERS: RegExp[] = [
+  /(^|[^A-Za-z])text:/g,
+  /content:/g,
+  /isErrorText\(/g,
+  /throw new /g,
+  /\bError\(/g,
+];
+
+/** Returns the index of the LAST match of `re` in `str` before `str`'s own
+ * end, or -1 if `re` never matches. `re` must carry the global flag. */
+function lastMatchIndex(str: string, re: RegExp): number {
+  let last = -1;
+  re.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(str))) {
+    last = m.index;
+    if (m[0].length === 0) re.lastIndex += 1;
+  }
+  return last;
+}
+
 /**
  * Finds every `` `vice-proxy: `` template-literal start in `src` that is
  * NOT the argument of a `console.error(...)` call -- i.e. every
@@ -3874,11 +3939,7 @@ function viceProxyIdentityViolations(src: string): number[] {
     const idx = m.index;
     const before = src.slice(0, idx);
     const lastConsoleError = before.lastIndexOf("console.error(");
-    const lastMarker = Math.max(
-      before.lastIndexOf("text:"),
-      before.lastIndexOf("content:"),
-      before.lastIndexOf("isErrorText(")
-    );
+    const lastMarker = Math.max(...AGENT_VISIBLE_MARKERS.map((re) => lastMatchIndex(before, re)));
     // Exempt only when console.error( is the NEARER of the two preceding
     // landmarks (or no agent-visible marker precedes this literal at all).
     const exempt = lastConsoleError !== -1 && lastConsoleError > lastMarker;
@@ -3924,6 +3985,40 @@ return { content: [{ type: "text", text: \`vice-proxy: leaked\` }] };`;
     viceProxyIdentityViolations(regressionControl).length,
     1,
     "an earlier, unrelated console.error( call must not exempt a later agent-visible vice-proxy: literal"
+  );
+
+  // WR-07 fix, false-negative control: a vice-proxy: literal reached via
+  // `throw new` (agent-visible -- the error surfaces to the caller, never
+  // logged to stderr) must be flagged even though no console.error(...)
+  // call precedes it at all on this snippet.
+  const throwNewControl = 'throw new ViceError(`vice-proxy: leaked via a thrown error`);';
+  assert.equal(
+    viceProxyIdentityViolations(throwNewControl).length,
+    1,
+    "a vice-proxy: literal reached via throw new must be flagged (the false-negative class WR-07 named)"
+  );
+
+  // WR-07 fix, false-negative control: the SAME literal must also be
+  // flagged when an EARLIER, unrelated console.error(...) call precedes it
+  // -- proves "throw new" wins as the nearer marker over a stale, earlier
+  // console.error(, not just over "no console.error( at all".
+  const throwNewAfterUnrelatedConsoleError = `console.error(\`something unrelated\`);
+throw new ViceError(\`vice-proxy: leaked via a thrown error\`);`;
+  assert.equal(
+    viceProxyIdentityViolations(throwNewAfterUnrelatedConsoleError).length,
+    1,
+    "throw new must be treated as nearer than a stale, earlier console.error( call"
+  );
+
+  // WR-07 fix, mid-word control: "context:" must NOT act as the "text:"
+  // marker -- proves the word-boundary anchor closes the secondary defect
+  // WR-07 named without also breaking the real "text:" marker.
+  const midWordControl = `// see the calling context: for details
+console.error(\`vice-proxy: still just a log line\`);`;
+  assert.equal(
+    viceProxyIdentityViolations(midWordControl).length,
+    0,
+    '"context:" must not be mistaken for the "text:" marker'
   );
 
   // The real detector, run over the real source, with the same failure

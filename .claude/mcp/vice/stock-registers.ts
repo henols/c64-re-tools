@@ -68,12 +68,19 @@ export interface RegisterCatalog {
 /** The one module-level catalog map, keyed on the session object itself --
  * NOT on session.client -- so a fresh stockReconnect() (which returns a
  * brand-new session) is indistinguishable from "never fetched" and simply
- * fetches again, with no manual invalidation path required anywhere. */
+ * fetches again, with no manual invalidation path required anywhere.
+ *
+ * Caches the in-flight PROMISE, not the resolved catalog (15-04, IN-02):
+ * two handlers racing on a fresh session both read `catalogs.get(session)`
+ * before either write lands, so caching only the resolved value let both
+ * send their own REGISTERS_AVAILABLE. Caching the promise means the second
+ * caller awaits the SAME in-flight request. A rejected promise is evicted
+ * (see registerCatalogFor()) so a failed fetch is retried, never memoised. */
 // Single-line by design: the ONLY line in this file naming the garbage-
 // collectable, session-keyed map primitive directly (grep-gated -- see
 // this plan's own acceptance criteria). Every other reference goes
 // through this factory, never a second construction call site.
-function freshCatalogMap(): WeakMap<StockConnectSession, RegisterCatalog> { return new WeakMap<StockConnectSession, RegisterCatalog>(); }
+function freshCatalogMap(): WeakMap<StockConnectSession, Promise<RegisterCatalog>> { return new WeakMap<StockConnectSession, Promise<RegisterCatalog>>(); }
 
 let catalogs = freshCatalogMap();
 
@@ -86,15 +93,22 @@ export function resetRegisterCatalogsForTest(): void {
 
 /**
  * Resolves `session`'s register catalog, fetching it through
- * REGISTERS_AVAILABLE (0x83) exactly once and caching the result on the
- * session object. Every subsequent call for the SAME session object
- * returns the cached catalog with no further wire traffic.
+ * REGISTERS_AVAILABLE (0x83) exactly once and caching the IN-FLIGHT
+ * PROMISE on the session object -- not just the resolved value, so two
+ * concurrent callers on a fresh session (before either fetch has
+ * resolved) share the SAME REGISTERS_AVAILABLE round trip rather than
+ * each sending their own (15-04, IN-02). Every subsequent call for the
+ * SAME session object returns the same promise (and, once it settles,
+ * the same resolved catalog) with no further wire traffic.
  *
  * Refuses (throws a plain Error, converted by the caller through
  * convertWireError()) an empty enumeration rather than caching it: a
  * build that enumerates zero registers cannot support
  * vice_registers_set, and that failure must be visible on every call,
- * never silently cached as "zero registers, nothing to resolve".
+ * never silently cached as "zero registers, nothing to resolve". A
+ * rejected fetch (empty enumeration or a wire error) is evicted from the
+ * cache before this function returns, so the NEXT call retries instead
+ * of permanently memoising the failure.
  */
 export async function registerCatalogFor(session: StockConnectSession): Promise<RegisterCatalog> {
   const existing = catalogs.get(session);
@@ -102,30 +116,41 @@ export async function registerCatalogFor(session: StockConnectSession): Promise<
     return existing;
   }
 
-  const response = await session.client.send(CommandType.RegistersAvailable, memspaceBody({ memspace: 0x00 }));
-  if (response.type !== "registers_available") {
-    throw new Error(`registerCatalogFor: expected a registers_available reply, got "${response.type}"`);
-  }
-  if (response.registers.length === 0) {
-    throw new Error(
-      "registerCatalogFor: the connected VICE build enumerated zero registers via REGISTERS_AVAILABLE -- " +
-        "it cannot support vice_registers_set, and this failure must be named rather than cached as an empty catalog",
-    );
-  }
+  const pending = (async (): Promise<RegisterCatalog> => {
+    const response = await session.client.send(CommandType.RegistersAvailable, memspaceBody({ memspace: 0x00 }));
+    if (response.type !== "registers_available") {
+      throw new Error(`registerCatalogFor: expected a registers_available reply, got "${response.type}"`);
+    }
+    if (response.registers.length === 0) {
+      throw new Error(
+        "registerCatalogFor: the connected VICE build enumerated zero registers via REGISTERS_AVAILABLE -- " +
+          "it cannot support vice_registers_set, and this failure must be named rather than cached as an empty catalog",
+      );
+    }
 
-  const byName = new Map<string, { id: number; sizeBits: number; name: string }>();
-  const byId = new Map<number, { sizeBits: number; name: string }>();
-  for (const reg of response.registers) {
-    // reg.size is stock-protocol.ts's own field name for the wire's size
-    // byte (its parser is unchanged by this plan); this module renames it
-    // to sizeBits at the point it enters the catalog so every downstream
-    // reader sees the unit named in the type.
-    byName.set(reg.name.toUpperCase(), { id: reg.id, sizeBits: reg.size, name: reg.name });
-    byId.set(reg.id, { sizeBits: reg.size, name: reg.name });
-  }
-  const catalog: RegisterCatalog = { byName, byId };
-  catalogs.set(session, catalog);
-  return catalog;
+    const byName = new Map<string, { id: number; sizeBits: number; name: string }>();
+    const byId = new Map<number, { sizeBits: number; name: string }>();
+    for (const reg of response.registers) {
+      // reg.size is stock-protocol.ts's own field name for the wire's size
+      // byte (its parser is unchanged by this plan); this module renames it
+      // to sizeBits at the point it enters the catalog so every downstream
+      // reader sees the unit named in the type.
+      byName.set(reg.name.toUpperCase(), { id: reg.id, sizeBits: reg.size, name: reg.name });
+      byId.set(reg.id, { sizeBits: reg.size, name: reg.name });
+    }
+    return { byName, byId };
+  })();
+
+  catalogs.set(session, pending);
+  // Evict on rejection so a failed fetch is retried by the next call
+  // rather than memoised forever -- only if no newer promise has already
+  // replaced this one for the same session.
+  pending.catch(() => {
+    if (catalogs.get(session) === pending) {
+      catalogs.delete(session);
+    }
+  });
+  return pending;
 }
 
 // ---------------------------------------------------------------------------

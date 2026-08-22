@@ -47,10 +47,13 @@ const REGISTER_FIXTURE = [
  * stock VICE 3.9 (/usr/bin/x64sc), recorded in 03-UAT.md test 5. `size` here
  * is the wire's own size byte, taken verbatim -- and it is a BIT count (8 or
  * 16 on a 6510), NEVER a byte count. This is the exact fact the pre-fix code
- * (`stock-registers.ts:260-268`, comparing `size` against `1`/`2`) got
- * wrong, and this fixture exists so that mistake cannot be silently
- * reintroduced: see the provenance-guard test below, which fails loudly if
- * this fixture is ever "corrected" back to 1/2. */
+ * (fixed by 03-14-PLAN.md, commit `ff82edc`, which named the wire's register
+ * width in bits -- see that commit for the pre-fix comparison against `1`/`2`;
+ * citing a line range here drifts as the file changes, so this cites the
+ * plan/commit instead, per 03-REVIEW.md IN-04) got wrong, and this fixture
+ * exists so that mistake cannot be silently reintroduced: see the
+ * provenance-guard test below, which fails loudly if this fixture is ever
+ * "corrected" back to 1/2. */
 const LIVE_REGISTER_FIXTURE_3_9 = [
   { id: 3, size: 16, name: "PC" },
   { id: 0, size: 8, name: "A" },
@@ -215,6 +218,67 @@ test("registerCatalogFor: the REGISTERS_AVAILABLE body is exactly one byte, 0x00
 test("registerCatalogFor: an empty register list refuses rather than caching", async () => {
   const { session } = makeFakeSession({ registersAvailable: [] });
   await assert.rejects(() => registerCatalogFor(session), /zero registers/);
+});
+
+// 15-04, IN-02: registerCatalogFor() caches the IN-FLIGHT PROMISE, not just
+// the resolved value, so two handlers racing on a fresh session share one
+// REGISTERS_AVAILABLE round trip instead of each sending their own. This
+// test is non-vacuous against the pre-fix shape: reverting
+// registerCatalogFor() to `const response = await session.client.send(...)`
+// followed by `catalogs.set(session, catalog)` (caching only the resolved
+// catalog) makes this test fail with sendCalls.length === 2, because
+// neither of the two synchronous calls below sees the other's cache entry
+// until after its own `await` has already fired the send (confirmed live
+// at plan time -- see 15-04-SUMMARY.md for the exact failing output).
+test("registerCatalogFor: two concurrent calls on a fresh session send exactly one REGISTERS_AVAILABLE", async () => {
+  const { session, sendCalls } = makeFakeSession();
+  const [first, second] = await Promise.all([registerCatalogFor(session), registerCatalogFor(session)]);
+  assert.equal(sendCalls.length, 1, "two concurrent callers on one fresh session must share a single wire round trip");
+  assert.equal(first, second, "both concurrent callers must resolve to the identical cached catalog object");
+});
+
+// 15-04, IN-02: a rejected fetch (e.g. an empty enumeration) must be
+// evicted from the cache, not memoised -- otherwise every later call on
+// the same session replays the same failure forever, even once the
+// underlying condition (e.g. a session swap) would let a retry succeed.
+// Non-vacuous against the pre-fix shape the same way: caching the
+// resolved value (never the promise) means there is nothing to evict on
+// rejection, but ALSO means a failed fetch is never cached at all --
+// this test instead pins the promise-caching fix's own eviction path
+// directly, by leaving the rejected promise in place (skipping the
+// `.catch()` eviction) and confirming the second call replays the SAME
+// rejection rather than retrying (confirmed live at plan time -- see
+// 15-04-SUMMARY.md for the exact failing output).
+test("registerCatalogFor: a rejected fetch is evicted so the next call retries instead of replaying the failure", async () => {
+  let callCount = 0;
+  const fakeClient = {
+    send: async (commandType: number): Promise<ResolvedResponse> => {
+      callCount += 1;
+      if (commandType === CommandType.RegistersAvailable) {
+        // First call enumerates zero registers (refused, not cached).
+        // Second call (the retry) enumerates the real fixture.
+        const registers = callCount === 1 ? [] : REGISTER_FIXTURE;
+        return { type: "registers_available", requestId: 1, errorCode: 0, registers, related: [] } as unknown as ResolvedResponse;
+      }
+      throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+    },
+  } as unknown as ViceMonitorClient;
+  const session = {
+    client: fakeClient,
+    versionQuad: "3.9",
+    capabilities: { cpuHistory: "absent" },
+    host: "127.0.0.1",
+    port: 6502,
+    targetId: "test-target",
+    brokerControl: {} as unknown as StockConnectSession["brokerControl"],
+    deps: {},
+    baselineEpoch: null,
+  } as unknown as StockConnectSession;
+
+  await assert.rejects(() => registerCatalogFor(session), /zero registers/);
+  const catalog = await registerCatalogFor(session);
+  assert.equal(catalog.byName.get("PC")?.id, 0, "the retried call must resolve the real fixture, not replay the cached rejection");
+  assert.equal(callCount, 2, "eviction must cause exactly one retry send after the rejected first send");
 });
 
 test("handleRegistersAvailable: lists every register in wire order and carries runState", async () => {
