@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 15
-current_phase_name: Debt and Review Disposition
-status: executing
-stopped_at: Completed 15-12-PLAN.md — Phase 15 complete (12/12 plans)
-last_updated: "2026-08-22T18:10:51.873Z"
+current_phase: 16
+current_phase_name: Packaging and Repo Shape
+status: planning
+stopped_at: Phase 15 complete, ready to plan Phase 16
+last_updated: "2026-08-22T18:59:51.060Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 15 complete — GATE-02/DEBT-01/DEBT-02/DEBT-03 all Complete
-state_head: 601a53ce233f4b7c4f3cb580bdf7a736d2313916
+last_activity_desc: Phase 15 complete, transitioned to Phase 16
+state_head: a1906396982083d0c3156fd3e1a377ee55794c89
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 29
-  completed_plans: 28
-  percent: 50
+  completed_plans: 29
+  percent: 67
 ---
 
 # Project State
@@ -56,20 +56,27 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 15 (Debt and Review Disposition) — COMPLETE
-Plan: 12 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12 — non-sequential; 08
-depends only on 15-01 and ran ahead of 06/07; 09 depends on 15-03/15-07, both
-already complete; 10 depends on 15-08/15-09, both already complete; 11 (wave 8)
-depends on 15-09/15-10, both already complete; 12 (wave 9, the phase's designated
-closer) depends on all eleven prior plans). The
-`state.advance-plan` counter's own sequential "N of 12" framing does not fit a wave-parallel
-phase; this line is corrected by hand
-per plan 08's own execution, not by the tool's blind increment.
-Status: Complete (2026-08-22) — GATE-02/DEBT-01/DEBT-02/DEBT-03 all Complete in
-REQUIREMENTS.md with closure notes; `docs-review-disposition.test.ts` green
-(150 findings, 0 undispositioned); `docs-deferred-ledger.test.ts` green in
-both directions (2 pending todos, 0 UAT gaps); ROADMAP.md's Phase 15 section
-updated with the real 12-plan list and outcome Notes.
+Phase: 16 — Packaging and Repo Shape
+Plan: Not started
+Status: Ready to plan
+
+Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
+`passed` 4/4. It ran as nine waves but sequentially on the main checkout
+(`workflow.use_worktrees=false`), so plan order was wave order, not 01..12:
+08 depends only on 15-01 and ran ahead of 06/07; 09 on 15-03/15-07; 10 on 15-08/15-09;
+11 on 15-09/15-10; 12 (the designated closer) on all eleven prior plans. Note for future
+phases: `state.advance-plan`'s sequential "N of 12" counter does not fit a wave-parallel
+phase and had to be corrected by hand three times during execution — do not trust its
+blind increment as the completed set.
+
+Phase 15 outcome: GATE-02, DEBT-01, DEBT-02 and DEBT-03 all Complete in REQUIREMENTS.md
+with closure notes; pending-todo tree reduced 21 → 2, both survivors promoted to Phase 16
+with named owners (`PKG-01`, `PKG-03`); `docs-review-disposition.test.ts` green
+(150 findings, 0 undispositioned); `docs-deferred-ledger.test.ts` green in both
+directions; ROADMAP.md's Phase 15 section carries the real 12-plan list and outcome Notes.
+A post-execution code review found one CI-breaking blocker the plans' own gate could not
+see (`test:automated` excludes `vice-proxy.test.ts`); fixed in `c340a61`, and the
+verifier's one DEBT-01 gap fixed in `7c6d55d`.
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
@@ -149,13 +156,13 @@ flipped the four requirements Complete with closure notes, and reconciled
 the ledger to 2 pending todos with zero UAT gaps. Next session should read:
 ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
 which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-22 — Phase 15 complete
+Last activity: 2026-08-22 — Phase 15 complete, transitioned to Phase 16
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 133
+- Total plans completed: 145
 - Average duration: —
 - Total execution time: —
 
@@ -178,6 +185,7 @@ Last activity: 2026-08-22 — Phase 15 complete
 | 13 | 5 | - | - |
 | 12 | 7 | - | - |
 | 14 | 5 | - | - |
+| 15 | 12 | - | - |
 
 **Recent Trend:**
 
@@ -742,7 +750,7 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 ## Session Continuity
 
 Last session: 2026-08-22T18:10:51.781Z
-Stopped at: Completed 15-12-PLAN.md — Phase 15 complete (12/12 plans)
+Stopped at: Phase 15 complete, ready to plan Phase 16
 Resume file: None
 
 ## Operator Next Steps
