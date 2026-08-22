@@ -322,7 +322,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-10 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+9 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -355,7 +355,11 @@ mislabelled `cpuhistory-get*` fixtures, and the ACME/regenerator2000 gate
 migration (three todos, see `.planning/todos/completed/`), returning the
 count to 12. Phase 15 plan 15-09 then closed the `vice_ping`
 `resolvedBinaryPath` documentation todo and the warp-over-RESOURCE_SET
-refutation todo, returning the count to 10. See `## Deferred
+refutation todo, returning the count to 10. Phase 15 plan 15-10 then live-answered
+A4 (the `stop:false` rate-limiter's auto-disable deferral timing, CONFIRMED
+against genuine stock VICE) and closed the `2026-08-14-probe-phase3-assumed-
+wire-details` todo in full — see `.planning/todos/completed/` for its
+Resolution — returning the count to 9. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -470,11 +474,12 @@ probe-debt todos against real binaries: the binmon-fixture re-record todo
 (closing `EXTV-01`) and the `--help` backend-discriminator todo (closing
 `EXTV-02`) — both moved to `.planning/todos/completed/` with Resolution
 sections citing plans 13-01/13-02's commits and evidence documents. The
-third, `2026-08-14-probe-phase3-assumed-wire-details`, stays pending: three
-of its four wire assumptions (A1/A2/A3/A5, live-probed by plan 13-03) are
-now answered, and it is trimmed to A4 — the `stop:false` rate-limiter's
+third — the Phase 3 wire-assumption probe-debt item (closed in full by phase 15 plan 15-10; see
+`.planning/todos/completed/`) — stayed pending at this point: three
+of its four wire assumptions (A1/A2/A3/A5, live-probed by plan 13-03) were
+then answered, and it was trimmed to A4 — the `stop:false` rate-limiter's
 auto-disable deferral timing — as its only remaining item, deliberately
-excluded because arming that probe risks stalling the emulator's CPU loop.
+excluded at that time because arming that probe risked stalling the emulator's CPU loop.
 Phase 13 also filed two new todos for findings it surfaced but did not fix:
 a mislabelled `cpuhistory-get*` sidecar pair (`capturedFrom: "stock"`
 recorded for a fork binary) and an advertised-tool-contract finding for
@@ -571,14 +576,20 @@ module-scope comment in `vice-proxy.ts`, pinned by a new
 (`GAINS-PROTOCOL.md`'s error codes corrected, a fork-only caveat landed in
 `docs/stock-vice-parity.md` and `capability-registry.ts`, `docs/tool-support.md`
 regenerated) — pending 12 → 10, total 13 → 11.
-**Current, as of phase 15 plan 15-09 (2026-08-22): 11 items — 10
+Plan 15-10 then answered A4 (the `stop:false` rate-limiter's auto-disable deferral timing) live
+against genuine stock VICE — a real KERNAL-IRQ-hot checkpoint exceeded the D-11 guard's
+20-hits-per-second limit, the auto-disable fired, its wire-side `enabled` flag was independently
+confirmed `false`, and the emulator kept progressing afterward. Verdict CONFIRMED (for the rates
+and host tested); no new todo was filed. The Phase 3 probe-debt todo left carrying only that
+final assumption is closed in full (all five original assumptions accounted for — see its own
+`## Resolution` in `.planning/todos/completed/`) — pending 10 → 9, total 11 → 10.
+**Current, as of phase 15 plan 15-10 (2026-08-22): 10 items — 9
 pending todos plus Phase 03's UAT gap.** The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
-| todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — A1/A2/A3/A5 answered by phase 13's live probes (`13-PROBE-RESULTS.md`); trimmed to A4 only (the `stop:false` rate-limiter deferral timing), deliberately excluded — probing it risks stalling the emulator's CPU loop |
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |

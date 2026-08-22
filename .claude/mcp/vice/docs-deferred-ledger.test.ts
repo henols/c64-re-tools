@@ -117,7 +117,12 @@ test("non-vacuity: the Deferred Items section is located, non-empty, and the sca
 
   const pending = todoStems(PENDING_DIR);
   const completed = todoStems(COMPLETED_DIR);
-  assert.ok(pending.length >= 10, `expected at least 10 pending todos, got ${pending.length}`);
+  // Floors are a non-vacuity sanity check only ("did the scan find SOMETHING",
+  // not "does the debt count match a fixed contract") -- lowered from 10 to 5
+  // by phase 15 plan 15-10 when legitimate dispositioning work shrank pending
+  // below 10 for the first time. Lower again, rather than raise, if it ever
+  // trips for the same reason.
+  assert.ok(pending.length >= 5, `expected at least 5 pending todos, got ${pending.length}`);
   assert.ok(completed.length >= 5, `expected at least 5 completed todos, got ${completed.length}`);
 
   // Positive control: a specific, known-present pending stem must actually

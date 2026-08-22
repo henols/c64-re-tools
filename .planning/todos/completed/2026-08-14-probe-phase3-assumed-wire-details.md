@@ -136,3 +136,42 @@ Only A4 remains open. Closing this todo requires:
   register; item 7 now carries a caveat (added by plan 13-05) that a wrong
   probed implementation detail is a silently wrong answer, not a licensed
   divergence.
+
+## Resolution (2026-08-22, phase 15 plan 15-10)
+
+**A4 answered, and this todo closed in full.** A real `stop:false` checkpoint was armed on the
+KERNAL's default hardware-IRQ entry point (`$EA31`) against genuine unpatched stock
+`/usr/bin/x64sc` (VICE 3.9), launched through the real broker artifact
+(`.claude/mcp/vice/stock-a4-checkpoint-flood.test.ts`, the ninth `MANUAL_ONLY_TESTS` entry). The
+KERNAL IRQ handler's natural ~50-60Hz rate exceeded the D-11 guard's 20-hits-per-second limit
+without any fixture: the checkpoint's hit count climbed `0 -> 7 -> 21` in roughly 2.4 seconds,
+the guard's `setImmediate()`-deferred auto-disable fired (`hitsPerSecond: 21`), the checkpoint's
+own wire-side `enabled` flag was independently re-read and confirmed `false` (not merely the
+local report), and five bounded post-flood register reads showed the emulator's PC still moving
+(`[58836,58836,58831,58833,58836]`) — no stall, no deadlock. No escalation to a tight loop was
+needed. Full transcript, the verbatim `autoDisables` entry, and the documented scope of what this
+single-host/single-rate observation does and does not establish: `15-A4-PROBE-EVIDENCE.md`.
+**Verdict: CONFIRMED, for the rates and host tested.**
+
+All five original assumptions, final states:
+
+- **A1** — CONFIRMED (phase 13 plan 13-03, fork VICE 3.10); label removed (plan 13-04).
+- **A2** — CONFIRMED (phase 13 plan 13-03, fork VICE 3.10); label removed (plan 13-04).
+- **A3** — INCONCLUSIVE; label stays on `stock-input.ts`/`stock-protocol.ts`
+  (`assumption-label-discipline.test.ts`'s all-or-nothing guard unaffected). Phase 15 plan 15-08
+  independently reproduced the same zero-delta result against a program proven genuinely
+  running, eliminating one of three candidate explanations without resolving the rest.
+- **A4** — CONFIRMED, for the rates and host tested (this Resolution, `15-A4-PROBE-EVIDENCE.md`).
+  No `[ASSUMED]` label existed for A4 (it is a design choice, not a wire assumption — confirmed
+  by direct inspection of `assumption-label-discipline.test.ts`'s scope note), so no label change
+  applies.
+- **A5** — CONTRADICTED; label stays on `stock-protocol.ts`. Its own tool-contract finding
+  (`vice_disk_attach`'s advertised approximation) was handed to
+  `2026-08-22-vice-disk-attach-approximation-contradicted-by-a5.md`, which remains open on its
+  own track and is not closed by this Resolution.
+
+No source file was changed by this plan (`git diff --quiet .claude/mcp/vice/stock-checkpoints.ts`
+confirmed clean); the deferral mechanism was found race-free as designed, not patched.
+
+Cited commits: `dc4f6de` (Task 1, `stock-a4-checkpoint-flood.test.ts`); this todo's own move and
+`15-A4-PROBE-EVIDENCE.md`'s creation (Task 2).
