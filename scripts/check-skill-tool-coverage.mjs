@@ -29,7 +29,7 @@
 // imports exactly one first-party TypeScript module from .claude/mcp/vice/
 // (capability-registry.ts, Node's native type-stripping resolves it with no
 // build step and no flag). That one new import does not weaken this script's
-// standing rule: it still never import()s, require()s, eval()s or spawns anything from .claude/skills/ --
+// standing rule: it still never import()s, require()s, eval()s or spawns anything from src/skills/ --
 // skill content remains untrusted input that is matched, never executed.
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks `r2000_*`
@@ -52,7 +52,7 @@ import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
-const SKILLS_DIR = join(ROOT, ".claude/skills");
+const SKILLS_DIR = join(ROOT, "src/skills");
 
 const errors = [];
 const need = (cond, msg) => {
@@ -374,7 +374,7 @@ for (const [name, files] of extracted) {
 // need()s, not comments.
 need(
   extracted.size >= 30,
-  `non-vacuity: expected at least 30 distinct vice_* names extracted from .claude/skills/, got ${extracted.size} -- the extraction regex or the skills walk may be broken`
+  `non-vacuity: expected at least 30 distinct vice_* names extracted from src/skills/, got ${extracted.size} -- the extraction regex or the skills walk may be broken`
 );
 need(
   topLevelDirs.length >= 6 && topLevelDirs.every((d) => dirsWithAFileRead.has(d)),
@@ -432,7 +432,7 @@ need(
 //    r2000_* tools, the extraction finding none is itself a failure, exactly
 //    the way `extracted.size >= 30` guards the vice_* extraction above. The
 //    number 10 is not a guess -- it is the exact count plan 11-12 introduced,
-//    verified by `grep -oE '\br2000_[a-z0-9_]+' .claude/skills/**` across the
+//    verified by `grep -oE '\br2000_[a-z0-9_]+' src/skills/**` across the
 //    three files that plan edited (c64-program-recon's SKILL.md and
 //    memory-map.template.md): r2000_add_scope, r2000_batch_execute,
 //    r2000_get_blocks, r2000_get_comments, r2000_get_cross_references,
@@ -442,7 +442,7 @@ need(
 //    it to make a regression pass.
 need(
   extractedR2000.size >= 10,
-  `non-vacuity: expected at least 10 distinct r2000_* names extracted from .claude/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
+  `non-vacuity: expected at least 10 distinct r2000_* names extracted from src/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
 );
 // 5. The generated-artifact rule (render-memmap) is the one piece of D-24
 //    guidance a future session most needs to find -- assert at least one

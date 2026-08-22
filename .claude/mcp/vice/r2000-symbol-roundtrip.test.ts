@@ -373,7 +373,7 @@ test("R2000SymbolsError carries the class's own name", () => {
 // ---------------------------------------------------------------------------
 // Phase 11 IN-02 (D-11.1-06): regenerateAndReload() has zero production
 // callers today (confirmed by grep across .claude/mcp/vice/,
-// .claude/skills/ and scripts/ during the 11.1 audit). Rather than leave
+// src/skills/ and scripts/ during the 11.1 audit). Rather than leave
 // that ambiguous for a future phase to misread as "already wired", it is
 // marked LIBRARY-ONLY in its own doc comment (r2000-symbols.ts), and this
 // guard ties that marker to the real caller count in BOTH directions:
@@ -447,7 +447,7 @@ function callsRegenerateAndReload(strippedSrc: string, { excludeDeclaration }: {
 }
 
 /** Recursively lists every file under `dir`, skipping `node_modules` --
- * used to walk `.claude/skills/` and `scripts/` (which have no top-level
+ * used to walk `src/skills/` and `scripts/` (which have no top-level
  * `readdirSync`-only equivalent of `.claude/mcp/vice`'s flat layout). */
 function walkFiles(dir: string): string[] {
   const results: string[] = [];
@@ -466,14 +466,14 @@ function walkFiles(dir: string): string[] {
 
 // `.claude/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
 const REPO_ROOT = join(HERE, "..", "..", "..");
-const SKILLS_DIR = join(REPO_ROOT, ".claude", "skills");
+const SKILLS_DIR = join(REPO_ROOT, "src", "skills");
 const SCRIPTS_DIR = join(REPO_ROOT, "scripts");
 
 /** Every production module this guard searches for a REAL call to
  * `regenerateAndReload`: every top-level non-test `.ts`/`.mts` file under
  * `.claude/mcp/vice` (excluding r2000-symbols.ts's own definition site,
  * per this plan's explicit instruction), plus every file under
- * `.claude/skills/` and `scripts/` -- the same three trees the Phase 11
+ * `src/skills/` and `scripts/` -- the same three trees the Phase 11
  * IN-02 audit itself grepped. */
 function productionCallerSearchDomain(): string[] {
   const viceModules = readdirSync(HERE)

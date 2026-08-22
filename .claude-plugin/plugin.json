@@ -19,7 +19,7 @@
     "reverse-engineering",
     "mcp"
   ],
-  "skills": "./.claude/skills/",
+  "skills": "./src/skills/",
   "mcpServers": "./.mcp.json",
   "hooks": {
     "SessionStart": [

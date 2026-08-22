@@ -96,8 +96,8 @@ jobs:
           set -euo pipefail
           SCAFFOLD="${RUNNER_TEMP}/acme-build-scaffold-check.a"
           rm -f "${SCAFFOLD}" "${SCAFFOLD%.a}.prg"
-          ACME= node .claude/skills/acme-build/scripts/acme.mjs new "${SCAFFOLD}"
-          ACME= node .claude/skills/acme-build/scripts/acme.mjs build "${SCAFFOLD}"
+          ACME= node src/skills/acme-build/scripts/acme.mjs new "${SCAFFOLD}"
+          ACME= node src/skills/acme-build/scripts/acme.mjs build "${SCAFFOLD}"
           PRG="${SCAFFOLD%.a}.prg"
           test -s "${PRG}"
           LOAD_BYTES=$(od -An -tx1 -N2 "${PRG}" | tr -d ' ')

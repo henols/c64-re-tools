@@ -25,13 +25,13 @@ import { parseR2000CliVerbs, verbsMissingFromSkills, R2000_CLI_VERB_FLOOR } from
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/.claude/mcp/vice
 const ROOT = join(HERE, "..", "..", ".."); // <root>
-const SKILLS_DIR = join(ROOT, ".claude", "skills");
+const SKILLS_DIR = join(ROOT, "src", "skills");
 const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
 
 const REAL_VERBS = ["bootstrap", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
 
 /** Same file-set convention as `check-skill-tool-coverage.mjs`'s own
- * `walkSkills()`: every `.md`/`.mjs` file under `.claude/skills/`,
+ * `walkSkills()`: every `.md`/`.mjs` file under `src/skills/`,
  * skipping symlinks and `node_modules`. Kept local rather than imported --
  * the CI script executes its whole check at import time, so importing it
  * from a test would re-run the live gate instead of letting this file

@@ -22,7 +22,7 @@ import { fileClaimViolations, isStandaloneDisasmToken } from "../../../scripts/l
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/.claude/mcp/vice
 const ROOT = join(HERE, "..", "..", ".."); // <root>
-const ACME_MJS = join(ROOT, ".claude", "skills", "acme-build", "scripts", "acme.mjs");
+const ACME_MJS = join(ROOT, "src", "skills", "acme-build", "scripts", "acme.mjs");
 const CI_SCRIPT = join(ROOT, "scripts", "check-skill-fork-honesty.mjs");
 
 // The same claim spec check-skill-fork-honesty.mjs's SKILL_FILE_CLAIMS
@@ -95,11 +95,11 @@ test("isStandaloneDisasmToken(): the documented provenance-ledger exemption line
 // ---------------------------------------------------------------------------
 
 function runCiScriptWithScratchFile(scratchRelPath: string, content: string) {
-  // Written directly under .claude/skills/acme-build/ (an existing,
+  // Written directly under src/skills/acme-build/ (an existing,
   // already-walked skill directory) rather than into a fresh tmpdir --
-  // check-skill-fork-honesty.mjs only walks .claude/skills/, so a tmpdir
+  // check-skill-fork-honesty.mjs only walks src/skills/, so a tmpdir
   // scratch file would never be seen at all.
-  const scratchFile = join(ROOT, ".claude", "skills", "acme-build", scratchRelPath);
+  const scratchFile = join(ROOT, "src", "skills", "acme-build", scratchRelPath);
   writeFileSync(scratchFile, content, "utf8");
   try {
     return spawnSync(process.execPath, [CI_SCRIPT], { cwd: ROOT, encoding: "utf8" });

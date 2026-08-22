@@ -693,6 +693,9 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
     throw new Error(`renderLedger: refusing to emit -- generated tier stops at ${hex4(expected - 1)}, does not reach $FFFF`);
   }
 
+  // NOTE (plan 16-01): the embedded invocation path below is deliberately the
+  // CONSUMER's installed location (`.claude/skills/...`), not this repository's
+  // source-tree location (`src/skills/...`) -- a future sweep should not "fix" it.
   let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;

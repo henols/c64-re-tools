@@ -5,7 +5,7 @@
 // *breaks* on stock rather than degrading. This is the ONE place that checks
 // documentation honesty over first-party prose, and it now covers TWO
 // surfaces sharing that same failure class:
-//   1. playbook prose (.claude/skills/): every mention of a tool the active
+//   1. playbook prose (src/skills/): every mention of a tool the active
 //      backend might not advertise must sit in a markdown section that also
 //      states the fork requirement (and the stock route, when one exists).
 //   2. README.md: it must name the VICE_BACKEND switch, the two named
@@ -25,13 +25,13 @@
 //      instead. Before this addition, nothing re-checked that correction --
 //      the same class of stale-prose defect could return to this file with
 //      no lint catching it (this script's own skills walk only covers
-//      .claude/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
+//      src/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
 //      corrected are asserted here; the file's many legitimate historical
 //      "(Phase N, REQ-ID)" citations are untouched.
 //   4. The R2000-05 deletion pin (Phase 10, plan 10-08): plan 10-06 deleted
 //      cmdDisasm() (the toacme-backed `disasm` verb) from acme.mjs in full,
 //      and every SKILL.md/references/*.md caveat it motivated. This walks
-//      the WHOLE .claude/skills tree already collected into `skillFiles`
+//      the WHOLE src/skills tree already collected into `skillFiles`
 //      above -- not a named file list -- for "toacme"/"cmdDisasm"/the
 //      standalone "disasm" verb token, because a file-by-file version of
 //      this exact assertion is the same structural blindness that let
@@ -49,7 +49,7 @@
 //
 // This script only ever readFileSync()s and regex-matches. It never uses a
 // dynamic import, require, eval, or a spawn against anything under
-// .claude/skills/ or README.md -- both are untrusted/first-party prose that
+// src/skills/ or README.md -- both are untrusted/first-party prose that
 // is matched, never executed. The only import is the first-party
 // capability-registry.ts.
 import { existsSync, readFileSync } from "node:fs";
@@ -61,7 +61,7 @@ import { walkSkills, MCP_PREFIX_RE, TOOL_NAME_RE, topLevelSkillDirs } from "./li
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const VICE_DIR = join(ROOT, ".claude/mcp/vice");
-const SKILLS_DIR = join(ROOT, ".claude/skills");
+const SKILLS_DIR = join(ROOT, "src/skills");
 const README_PATH = join(ROOT, "README.md");
 const PARITY_DOC_PATH = join(ROOT, "docs/stock-vice-parity.md");
 
@@ -412,7 +412,7 @@ for (const claim of SKILL_FILE_CLAIMS) {
 // --- R2000-05 deletion pin (Phase 10, plan 10-08) ---------------------------
 // Plan 10-06 deleted cmdDisasm() (the toacme-backed `disasm` verb) from
 // acme.mjs in full, and every SKILL.md/references/*.md caveat that verb
-// motivated. This walks the WHOLE .claude/skills tree already collected
+// motivated. This walks the WHOLE src/skills tree already collected
 // into `skillFiles` above -- every .md and .mjs, not a named-file list --
 // because a file-by-file version of this exact assertion is the same
 // structural blindness that let c64-program-recon/references/tool-selection.md
@@ -513,7 +513,7 @@ need(
 );
 need(
   totalForkMentions >= 8,
-  `non-vacuity: expected at least 8 fork-only tool mentions across .claude/skills/, got ${totalForkMentions} -- the skills walk or extraction regex may be broken`
+  `non-vacuity: expected at least 8 fork-only tool mentions across src/skills/, got ${totalForkMentions} -- the skills walk or extraction regex may be broken`
 );
 need(
   positiveControlsSeen.has("tool-selection.md"),

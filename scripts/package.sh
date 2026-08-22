@@ -94,14 +94,14 @@ if (plugin && installerPkg) {
  "installer/package.json", "installer/bin/cli.mjs", "installer/scripts/sync-skills.mjs"].forEach(mustExist);
 
 // Every skill directory must carry a SKILL.md.
-const skillsDir = path.join(root, ".claude/skills");
+const skillsDir = path.join(root, "src/skills");
 if (fs.existsSync(skillsDir)) {
   for (const d of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     if (d.isDirectory() && !fs.existsSync(path.join(skillsDir, d.name, "SKILL.md")))
       errors.push(`skill "${d.name}" has no SKILL.md`);
   }
 } else {
-  errors.push("missing .claude/skills/");
+  errors.push("missing src/skills/");
 }
 
 if (errors.length) {
