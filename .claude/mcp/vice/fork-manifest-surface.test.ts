@@ -32,6 +32,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { DELIBERATELY_DELETED_FORK_TOOLS } from "./fork-deleted-tools.ts";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
 
@@ -66,9 +68,12 @@ test("fork-manifest-surface: tools-manifest.json parses and its tools array has 
 
 test("fork-manifest-surface: no entry is named vice_snapshot_list (D-16)", () => {
   const manifest = readManifest();
-  assert.ok(
-    !manifest.tools.some((t) => t.name === "vice_snapshot_list"),
-    "vice_snapshot_list was deleted from the fork manifest by D-16 -- it must never reappear (no consumer anywhere in the repo)"
+  const names = new Set(manifest.tools.map((t) => t.name));
+  const reappeared = DELIBERATELY_DELETED_FORK_TOOLS.filter((n) => names.has(n));
+  assert.deepEqual(
+    reappeared,
+    [],
+    `${DELIBERATELY_DELETED_FORK_TOOLS.join(", ")} was deleted from the fork manifest by D-16 -- it must never reappear (no consumer anywhere in the repo)`
   );
 });
 

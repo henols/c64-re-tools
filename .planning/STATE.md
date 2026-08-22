@@ -325,7 +325,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-9 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+7 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -362,20 +362,27 @@ refutation todo, returning the count to 10. Phase 15 plan 15-10 then live-answer
 A4 (the `stop:false` rate-limiter's auto-disable deferral timing, CONFIRMED
 against genuine stock VICE) and closed the `2026-08-14-probe-phase3-assumed-
 wire-details` todo in full — see `.planning/todos/completed/` for its
-Resolution — returning the count to 9. See `## Deferred
+Resolution — returning the count to 9. Phase 15 plan 15-11 Task 1 then
+corrected `vice_disk_attach`'s refuted no-side-effect record (both the
+returned approximation string and `docs/stock-vice-parity.md`'s D-14 bullet)
+and closed that todo — see `.planning/todos/completed/` — returning the count
+to 8. Task 2 then closed the `tools-manifest.json` staleness todo `wont-fix`
+on the inverted D-16 ground and fixed `fork-live.test.ts`'s reporting so the
+same false finding cannot recur — see `.planning/todos/completed/` —
+returning the count to 7. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
 
-Newest: `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed by
-phase 14 plan 14-03 — see `## Deferred Items` below); the todo that was
-newest before it, `2026-08-22-phase-03-review-wr-06-through-in-06-never-
-dispositioned` (filed by phase 15 plan 15-01), was closed by phase 15 plan
-15-04 and is no longer pending — see `.planning/todos/completed/`. Before
-that: two
-filed by phase 13 plan 13-05 (2026-08-22) — a mislabelled-sidecar finding and
-an advertised-tool-contract finding for `vice_disk_attach` (see `## Deferred
-Items` for both by name). Before that:
+Newest: `2026-08-13-reconcile-ci-test-command-with-narrowed-gate` (the one
+remaining pre-Phase-15 todo not yet touched by this phase's own
+dispositioning work; see `## Deferred Items` below). The two todos that were
+newest before it — `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list`
+(filed by phase 14 plan 14-03) and `2026-08-22-vice-disk-attach-
+approximation-contradicted-by-a5` (filed by phase 13 plan 13-05) — were both
+closed by phase 15 plan 15-11 (Tasks 2 and 1 respectively) and are no longer
+pending — see `.planning/todos/completed/` for both Resolutions. Before
+that:
 `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
 bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
 its machine-type auto-detection unreliable, and the D-01 synthesis route never
@@ -586,7 +593,18 @@ confirmed `false`, and the emulator kept progressing afterward. Verdict CONFIRME
 and host tested); no new todo was filed. The Phase 3 probe-debt todo left carrying only that
 final assumption is closed in full (all five original assumptions accounted for — see its own
 `## Resolution` in `.planning/todos/completed/`) — pending 10 → 9, total 11 → 10.
-**Current, as of phase 15 plan 15-10 (2026-08-22): 10 items — 9
+Plan 15-11 Task 1 then closed the `vice_disk_attach` approximation-contradicted-
+by-A5 todo — `stock-machine.ts`'s `handleDiskAttach` and `docs/stock-vice-parity.md`'s
+D-14 bullet both corrected to state the real reset-plus-load behaviour Phase 13's
+A5 probe observed, with the contract-redesign question promoted to
+`REQUIREMENTS.md` → Future Requirements (owner: plan 15-12, not yet landed) —
+pending 9 → 8, total 10 → 9.
+Plan 15-11 Task 2 then closed the `tools-manifest.json` staleness todo
+`wont-fix` on the inverted D-16 ground (`vice_snapshot_list`'s absence is a
+deliberate deletion, not staleness — regenerating would silently re-add it),
+and fixed `fork-live.test.ts`'s live-surface diff so it no longer reports a
+D-16-deleted name as an undifferentiated finding — pending 8 → 7, total 9 → 8.
+**Current, as of phase 15 plan 15-11 Task 2 (2026-08-22): 8 items — 7
 pending todos plus Phase 03's UAT gap.** The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
@@ -600,8 +618,6 @@ immediately below it plus the one `uat_gap` row.
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
-| todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
-| todo | 2026-08-22-tools-manifest-stale-missing-vice_snapshot_list | low | Pending — filed by phase 14 plan 14-03; `fork-live.test.ts`'s live surface diff found the live fork server offers `vice_snapshot_list`, which the committed `tools-manifest.json` (generated 2026-07-31) does not list. Fix is a `refresh-manifest.ts` regeneration, out of this plan's live-transport-exercise scope |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
 Not counted above, because they are complete on disk: all nine
