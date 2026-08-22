@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 14
-current_phase_name: Backend Decision
-status: executing
-stopped_at: Completed 14-05-PLAN.md
-last_updated: "2026-08-22T11:12:51.990Z"
+current_phase: 15
+current_phase_name: Debt and Review Disposition
+status: planning
+stopped_at: Phase 14 complete, ready to plan Phase 15
+last_updated: "2026-08-22T11:54:29.895Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 14 execution started
-state_head: 90b85e659a4093308cd2bcee84127630934d3e3a
+last_activity_desc: Phase 14 complete, transitioned to Phase 15
+state_head: 69465e41c580a0bcbf97fc7e4b58cbfac6e368ac
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 17
-  completed_plans: 16
-  percent: 33
+  completed_plans: 17
+  percent: 50
 ---
 
 # Project State
@@ -56,15 +56,10 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 14 (Backend Decision) — EXECUTING (5/5 plans executed; phase-completion
-step pending)
-Plan: 5 of 5
-Status: 14-01 (FORK-01 decided `retain`), 14-02, 14-03 (live fork-transport
-test + criterion-3 evidence, 6/6 passed), 14-04 (retain-branch recorded zero:
-both code-consequence tasks confirmed skipped, `.claude/mcp/vice/` diff
-clean), and 14-05 (record closed: fork-removal todo disposed retain,
-FORK-01/FORK-02 marked Complete, ROADMAP's Phase 14 Notes and Phase 15/16/17
-dependency notes resolved) all complete
+Phase: 15 — Debt and Review Disposition
+Plan: Not started
+Status: Ready to plan
+
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
 resolved, and it was a bookkeeping gap, not missing work: plan 12-07's three
@@ -129,13 +124,13 @@ milestone's bulk workload) and the remaining pending todo that bears on it
 (`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`, now carrying the
 FORK-01 answer to its fork-facing question), `docs/phase2-backend-probe-evidence.md`,
 and `## Deferred Items` below.
-Last activity: 2026-08-22 — Phase 14 plan 14-05 (final plan) executed
+Last activity: 2026-08-22 — Phase 14 complete, transitioned to Phase 15
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 128
+- Total plans completed: 133
 - Average duration: —
 - Total execution time: —
 
@@ -157,6 +152,7 @@ Last activity: 2026-08-22 — Phase 14 plan 14-05 (final plan) executed
 | 11 | 12 | - | - |
 | 13 | 5 | - | - |
 | 12 | 7 | - | - |
+| 14 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -537,7 +533,7 @@ scope.
 ## Session Continuity
 
 Last session: 2026-08-22T11:12:51.809Z
-Stopped at: Completed 14-05-PLAN.md
+Stopped at: Phase 14 complete, ready to plan Phase 15
 Resume file: None
 
 ## Operator Next Steps

@@ -73,7 +73,7 @@ statement) get answered deliberately.
 
 - [x] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (verification 2026-08-22: passed, 11/11 — both layers proven, the live `PreToolUse` dispatch observed refusing all four write routes) (completed 2026-08-22)
 - [x] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies (completed 2026-08-22)
-- [ ] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route
+- [x] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route (completed 2026-08-22)
 - [ ] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed
 - [ ] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed
 - [ ] **Phase 17: Project Identity and Ledger Close** - Core Value is restated or explicitly confirmed, and the deferred-items ledger measurably shrinks below 19 — measured at the true close, after every phase that can change the pending set
@@ -363,7 +363,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 14. Backend Decision | v0.4.0 | 5/5 | In Progress|  |
+| 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
