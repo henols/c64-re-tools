@@ -1,0 +1,1 @@
+No external API integration: this phase records a decision, edits routing docs, and (on branches keeping the fork) exercises an already-integrated transport live; no new external capability surface is wired.
