@@ -39,3 +39,22 @@ section that the drive-type gap existed and was fixed at launch time in v0.2.0. 
 future backend or launch path is added that does NOT set `-drive8type` unconditionally,
 re-open this and add the explicit manual-workaround prose the original finding called
 for.
+
+## Resolution
+
+Closed 2026-08-22, Phase 15 plan 15-06.
+
+Confirmed at source: `.claude/mcp/vice/broker-launch.mts`'s `buildViceArgs()` (stock
+branch, `broker-launch.mts:202`) builds
+`["-default", "-drive8type", "1541", "-binarymonitor", ...]` unconditionally for every
+stock launch — the flag is not gated on whether a disk is subsequently attached, nor on
+disk-vs-bare-`.prg`. (The one pre-existing escape hatch, `VICE_ARGS`/`viceArgsEnv`
+overriding the entire argv at `broker-launch.mts:163-166`, is an operator override of
+the whole launch line, not a condition on drive setup, and does not narrow this claim.)
+
+Added a one-sentence closing note to `.claude/skills/c64-ram-capture/SKILL.md`'s
+`## Boot a disk` procedure, between the program-counter-moved step and the
+keyboard-typed fallback paragraph: "The broker sets the drive type at launch for every
+stock instance, so no drive setup is needed before attaching." No `README.md` changelog
+entry added — the note lives where a user following the disk-boot procedure will read
+it, per this todo's own "What would close it" and DEBT-02's point-of-use criterion.

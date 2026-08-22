@@ -314,7 +314,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-18 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+16 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -335,7 +335,11 @@ closed the Phase 09 `IN-01`..`IN-03` todo `wont-fix` (evidence immutability;
 see `.planning/todos/completed/`), returning the count to 19, and closed the
 Phase 13 `WR-01`/`WR-02`/`IN-01`/`IN-02` todo (`WR-01` already fixed and now
 pinned; the other three deferred/promoted with named triggers/owners — see
-`.planning/todos/completed/`), returning the count to 18. See `## Deferred
+`.planning/todos/completed/`), returning the count to 18. Phase 15 plan 15-06
+Task 1 then closed the drive-type-prerequisite and project-root-`.git`-marker
+todos (DEBT-02 items 1 and 2), both documented at the point of use in
+`c64-ram-capture/SKILL.md` — see `.planning/todos/completed/` for both
+Resolutions — returning the count to 16. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -518,24 +522,26 @@ Plan 15-04 then fixed all eight of that todo's findings and closed it,
 returning pending to 20 (total 21). Task 2 of plan 15-05 closed
 `09-REVIEW.md`'s `IN-01`..`IN-03` `wont-fix` on evidence-immutability
 grounds, moving that todo to `.planning/todos/completed/` — pending 20 → 19,
-total 21 → 20. **Current, as of phase 15 plan 15-05 Task 3 (2026-08-22): 19
-items — 18 pending todos plus Phase 03's UAT gap.** Task 3 closed
+total 21 → 20. Task 3 closed
 `13-REVIEW.md`'s `WR-01`/`WR-02`/`IN-01`/`IN-02` todo — `WR-01` already fixed
 at source (commit `f73d0fa`) and now pinned by a derived test; `WR-02` and
 `IN-01` deferred with stated reopen triggers; `IN-02` promoted out of this
 repo to plan 15-12 — moving that todo to `.planning/todos/completed/` too:
-pending 19 → 18, total 20 → 19. The count in this paragraph
-is derived from, and must equal, the row count of the table immediately
-below it plus the one `uat_gap` row.
+pending 19 → 18, total 20 → 19. Plan 15-06 Task 1 then closed DEBT-02's
+drive-type-prerequisite and project-root-`.git`-marker todos, documenting
+both at the point of use in `c64-ram-capture/SKILL.md` (`## Boot a disk`'s
+closing sentence and the new prerequisite line before `## The order`) —
+pending 18 → 16, total 19 → 17. **Current, as of phase 15 plan 15-06 Task 1
+(2026-08-22): 17 items — 16 pending todos plus Phase 03's UAT gap.** The
+count in this paragraph is derived from, and must equal, the row count of
+the table immediately below it plus the one `uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
 | todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — A1/A2/A3/A5 answered by phase 13's live probes (`13-PROBE-RESULTS.md`); trimmed to A4 only (the `stop:false` rate-limiter deferral timing), deliberately excluded — probing it risks stalling the emulator's CPU loop |
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
-| todo | 2026-08-19-drive-type-prerequisite-undocumented-in-readme-and-skill | — | Pending |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
-| todo | 2026-08-19-project-paths-git-marker-requirement-undocumented | — | Pending |
 | todo | 2026-08-19-releases-json-schema-undocumented | — | Pending |
 | todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |

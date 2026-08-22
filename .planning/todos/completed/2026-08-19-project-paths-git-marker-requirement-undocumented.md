@@ -26,3 +26,21 @@ asks only for a tracked home, not the fix.
 Add a one-line prerequisite note to `c64-ram-capture/SKILL.md`'s setup section: the
 toolkit's project root must be a git repository (or `C64RE_PROJECT_ROOT` must be set),
 and a scratch project needs `git init` first.
+
+## Resolution
+
+Closed 2026-08-22, Phase 15 plan 15-06.
+
+Confirmed the real resolution order in `.claude/skills/c64-ram-capture/scripts/project-paths.mjs`'s
+`projectRoot()` (:27-40): `C64RE_PROJECT_ROOT` is checked FIRST (:28), and only if unset does
+it walk ancestors for a `.git` entry (:29-35), throwing at :36-39 naming both. (This todo's
+own wording described the check order the other way round; the docs now state the real
+order.)
+
+Added a prerequisite paragraph to `.claude/skills/c64-ram-capture/SKILL.md`, placed
+immediately before `## The order` (the file's first procedure heading, and the first
+point a scratch project would throw) — the file has no separate setup section, so this
+is the earliest point a reader passes. Also added a matching `## Troubleshooting` row
+quoting the throw's own distinctive fragment
+(`could not locate the project root -- no `.git` found above`) verbatim from
+`project-paths.mjs`, so a user who hits the error can match what they saw.

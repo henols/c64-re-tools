@@ -33,6 +33,12 @@ node $C floor   a.bin b.bin c.bin                # drift floor across a capture 
 All three modules read only committed files and the JSON **you** wrote from your
 own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
 
+**Prerequisite: a resolvable project root.** `scripts/project-paths.mjs` uses
+`C64RE_PROJECT_ROOT` when it is set, and otherwise walks up from the toolkit's
+own location for the nearest ancestor directory containing a `.git` entry. A
+scratch project has neither by default, so `git init` it first or set the
+variable — the thrown error names both when this fails.
+
 ## The order
 
 | # | Phase | Settles |
@@ -77,6 +83,9 @@ directory chain that leaves the image or loops, reported instead of hanging.
 2. `mcp__plugin_c64-re-tools_vice__vice_autostart` with the same image.
 3. `mcp__plugin_c64-re-tools_vice__vice_execution_run`.
 4. `mcp__plugin_c64-re-tools_vice__vice_registers_get` and confirm the program counter has moved.
+
+The broker sets the drive type at launch for every stock instance, so no drive setup
+is needed before attaching.
 
 If the program counter has not moved, type `LOAD"*",8,1` with
 `mcp__plugin_c64-re-tools_vice__vice_keyboard_type`, run it, then type `RUN` and run it.
@@ -320,3 +329,4 @@ through a GSD command (`/gsd-quick`).
 | `--limit 0` printed nothing | Fixed 2026-08-04 — it now means unlimited. Re-pull the script if you see the old behaviour. |
 | An epoch-drift error appeared mid-capture | The machine restarted under you. Void the run; do not salvage the artifacts. The next call succeeding does not undo it. |
 | The emulator looks dead | `vice-wedge-triage` — and enumerate your own armed checkpoints before concluding anything. |
+| `` `project-paths: could not locate the project root -- no `.git` found above ...` `` | No `.git` ancestor and no `C64RE_PROJECT_ROOT`. `git init` the project, or set the variable to its root. |
