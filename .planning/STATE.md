@@ -325,7 +325,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-7 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+6 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -369,20 +369,28 @@ and closed that todo — see `.planning/todos/completed/` — returning the coun
 to 8. Task 2 then closed the `tools-manifest.json` staleness todo `wont-fix`
 on the inverted D-16 ground and fixed `fork-live.test.ts`'s reporting so the
 same false finding cannot recur — see `.planning/todos/completed/` —
-returning the count to 7. See `## Deferred
+returning the count to 7. Task 3 then settled the CI test-command divergence
+from a real GitHub Actions run's own log (run `32517575905`; all nine
+`MANUAL_ONLY_TESTS` suites pass cleanly on the runner, so `npm test` stays in
+CI, documented with the run id in `ci.yml`'s `Test`-step comment) and closed
+that todo too — see `.planning/todos/completed/` — returning the count to 6.
+See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
 
-Newest: `2026-08-13-reconcile-ci-test-command-with-narrowed-gate` (the one
-remaining pre-Phase-15 todo not yet touched by this phase's own
-dispositioning work; see `## Deferred Items` below). The two todos that were
-newest before it — `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list`
-(filed by phase 14 plan 14-03) and `2026-08-22-vice-disk-attach-
-approximation-contradicted-by-a5` (filed by phase 13 plan 13-05) — were both
-closed by phase 15 plan 15-11 (Tasks 2 and 1 respectively) and are no longer
-pending — see `.planning/todos/completed/` for both Resolutions. Before
-that:
+Newest, by filed-date, among what remains pending: `2026-08-21-phase-08-
+review-wr-04-through-wr-12-never-dispositioned` and
+`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
+(tied, both dated 2026-08-21; see `## Deferred Items` below for both). Phase
+15 plan 15-11 closed the three todos that used to be newer than either of
+these — `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed
+by phase 14 plan 14-03), `2026-08-22-vice-disk-attach-approximation-
+contradicted-by-a5` (filed by phase 13 plan 13-05), and
+`2026-08-13-reconcile-ci-test-command-with-narrowed-gate` (the oldest-filed
+of the three, closed last, in this plan's own Task 3) — via Tasks 2, 1 and 3
+respectively — none of the three is pending any longer; see
+`.planning/todos/completed/` for all three Resolutions. Before that:
 `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
 bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
 its machine-type auto-detection unreliable, and the D-01 synthesis route never
@@ -604,14 +612,19 @@ Plan 15-11 Task 2 then closed the `tools-manifest.json` staleness todo
 deliberate deletion, not staleness — regenerating would silently re-add it),
 and fixed `fork-live.test.ts`'s live-surface diff so it no longer reports a
 D-16-deleted name as an undifferentiated finding — pending 8 → 7, total 9 → 8.
-**Current, as of phase 15 plan 15-11 Task 2 (2026-08-22): 8 items — 7
+Task 3 then settled the CI test-command divergence from a real GitHub Actions
+run's own log (run `32517575905`, 2026-08-21): all nine `MANUAL_ONLY_TESTS`
+suites pass cleanly on the runner in under two minutes, so `npm test` stays
+in CI (deliberately wider than the local `npm run test:automated` gate),
+documented in a comment above `ci.yml`'s `Test` step citing the run id — and
+closed the todo — pending 7 → 6, total 8 → 7.
+**Current, as of phase 15 plan 15-11 (2026-08-22): 7 items — 6
 pending todos plus Phase 03's UAT gap.** The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
-| todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
