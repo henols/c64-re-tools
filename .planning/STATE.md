@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
 status: executing
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-08-22T22:05:24.049Z"
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-08-22T22:48:06.362Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 16 execution started
-state_head: 75ad61e922603c831260e84c60f882eb40e3b78f
+state_head: 7bcbd1188b04807250340349c2e743639f156a39
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 36
-  completed_plans: 32
+  completed_plans: 33
   percent: 67
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 16 (Packaging and Repo Shape) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
@@ -245,6 +245,7 @@ Last activity: 2026-08-22 — Phase 16 execution started
 | Phase 16 P01 | 50min (estimated) | 3 tasks | 46 files |
 | Phase 16-packaging-and-repo-shape P02 | 25min | 2 tasks | 3 files |
 | Phase 16 P03 | 10min | 2 tasks | 3 files |
+| Phase 16 P04 | ~55min | 3 tasks | 238 files |
 
 ## Accumulated Context
 
@@ -364,6 +365,7 @@ Recent decisions affecting current work:
 - [Phase 16]: Phase 16 plan 01: skills relocated to src/skills/; D-16-02 accepted losing in-repo autoload, documented two consumer routes in README.md; found and fixed 3 out-of-scope functional path literals (r2000-regbits-gen.ts MEMMAP_PATH family) that the plan's own consumer enumeration missed
 - [Phase 16-packaging-and-repo-shape]: Accept broker control-plane 0.0.0.0 bind (PKG-04) rather than narrowing it — The bind exists so a containerised consumer dialing host.docker.internal can reach the broker; narrowing without a replacement route would be a regression. Compensating control: 256-bit token, timingSafeEqual, mode-0600 broker.json. Recorded in PROJECT.md Key Decisions with a named smart-default follow-on.
 - [Phase 16]: 16-03: PKG-01 merge half verified rather than rebuilt -- wireMcp() already implemented correct merge semantics; added 18 node:test cases (in-process happy paths + subprocess-driven refusal paths via an entry-point dispatch guard) pinning it against the shipped cli.mjs, zero new dependencies — The pending todo's own Solution step 4 asked for exactly this test; a malformed-config refusal was the security research's named tampering mitigation and was previously unasserted
+- [Phase 16]: Phase 16 plan 04: relocated the MCP server package (@henols/vice-mcp) from .claude/mcp/vice/ to src/mcp/vice/ in one atomic git mv; repoRoot()'s branch-4 hop count reviewed and left unchanged (same 3-segment depth); found and fixed 3 functional literals plus ~22 stale .claude/skills self-references that plan 16-01's own sweep missed; published tarball proven byte-identical to the pre-move baseline — PKG-01's second, larger half -- the same relocation machinery plan 16-01 proved on the skills tree, driven through the ~180-file vice-mcp package
 
 ### Pending Todos
 
@@ -755,8 +757,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T22:05:23.895Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-08-22T22:48:06.205Z
+Stopped at: Completed 16-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
