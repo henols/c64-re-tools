@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-08-22T21:43:09.254Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-08-22T21:54:37.371Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 16 execution started
-state_head: 1b208d95c5bcff3225d5796867e9a4a94f69cf2f
+state_head: 27c4ac46993dfe12a96fb611076c32237ad3a077
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 36
-  completed_plans: 30
+  completed_plans: 31
   percent: 67
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 16 (Packaging and Repo Shape) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
@@ -243,6 +243,7 @@ Last activity: 2026-08-22 — Phase 16 execution started
 | Phase 15 P11 | 40min | 3 tasks | 11 files |
 | Phase 15 P12 | ~40min (estimated) | 3 tasks | 14 files |
 | Phase 16 P01 | 50min (estimated) | 3 tasks | 46 files |
+| Phase 16-packaging-and-repo-shape P02 | 25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -360,6 +361,7 @@ Recent decisions affecting current work:
 - [Phase 15]: [Phase 15-12] Closed the phase's record: Phase 08's ten review findings (WR-04..WR-13) transcribed with resolvable commits into one Resolution table; broker-tests-stall and .vsf-bootstrap-input todos closed wont-fix; keyboard-fallback-load todo promoted with a named owner (plan 15-08's live evidence met neither of the two closing conditions this plan named); GATE-02/DEBT-01/DEBT-02/DEBT-03 flipped Complete with closure notes; pending-todo count reduced from 21 (as of 15-01) to 2, both remaining items promoted to Phase 16 (PKG-01, PKG-03)
 - [Phase 15]: [Phase 15-01, restated by 15-12's phase-close] The widened guard's two new invariants: a shape-drift detector (declaredFindingIdsInHeadings(), anchored at any heading level 1-6, whose output must be a subset of the narrower parser's) so a future fifth heading shape fails a named test instead of silently vanishing; and a fixture-driven regression test (planted WR-98/IN-97 shapes in fixtures/planted-review-fixture.md) pinning the two previously-invisible shapes against a committed fixture
 - [Phase 16]: Phase 16 plan 01: skills relocated to src/skills/; D-16-02 accepted losing in-repo autoload, documented two consumer routes in README.md; found and fixed 3 out-of-scope functional path literals (r2000-regbits-gen.ts MEMMAP_PATH family) that the plan's own consumer enumeration missed
+- [Phase 16-packaging-and-repo-shape]: Accept broker control-plane 0.0.0.0 bind (PKG-04) rather than narrowing it — The bind exists so a containerised consumer dialing host.docker.internal can reach the broker; narrowing without a replacement route would be a regression. Compensating control: 256-bit token, timingSafeEqual, mode-0600 broker.json. Recorded in PROJECT.md Key Decisions with a named smart-default follow-on.
 
 ### Pending Todos
 
@@ -751,8 +753,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T21:43:09.100Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-08-22T21:54:36.951Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

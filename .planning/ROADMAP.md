@@ -424,7 +424,7 @@ Plans:
 **Wave 1**
 
 - [x] 16-01-PLAN.md — Tracer: relocate the six skills to `src/skills/` end-to-end (manifest, packaging validator, both corpus checks, installer sync, CI, the three skills-path literals inside the MCP package), and record the dev-time decision
-- [ ] 16-02-PLAN.md — PKG-04: verify the broker control-plane facts against source and a live socket, then record the `0.0.0.0` bind as a dated accepted risk in PROJECT.md with the rejected narrow branch and a named follow-on
+- [x] 16-02-PLAN.md — PKG-04: verify the broker control-plane facts against source and a live socket, then record the `0.0.0.0` bind as a dated accepted risk in PROJECT.md with the rejected narrow branch and a named follow-on
 - [ ] 16-03-PLAN.md — Stand up `installer/`'s first test suite and pin `wireMcp()`'s nine merge behaviours and six refusal behaviours against the shipped CLI
 
 **Wave 2** *(blocked on Wave 1 completion)*
