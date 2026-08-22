@@ -177,15 +177,11 @@ red.
   > for the rates and host tested (plan 15-10). `03-HUMAN-UAT.md` carries zero `result:
   > [pending]` rows; its own `status:` field stays `partial` (not softened to force an overall
   > pass) because scenario 2's joystick half is a genuine, honestly-recorded negative result —
-  > **Closure note (Phase 15).** All three scenarios were executed live against genuine stock
-  > VICE at `/usr/bin/x64sc` and recorded with cited evidence; `03-HUMAN-UAT.md` has zero
-  > remaining `result: [pending]` rows. Scenario 1 `pass` (plan 15-08, snapshot round trip
-  > decided by two byte comparisons); scenario 3 `pass` (plan 15-10, the A4 checkpoint-flood
-  > probe: ~21 hits/second, deferred auto-disable fired, `enabled: false` re-confirmed on the
-  > wire, emulator still executing after the flood).
+  > DEBT-03's criterion is "recorded pass or fail with evidence", which all three scenarios
+  > satisfy, not "passed".
   >
-  > **Scenario 2 is recorded `partial`, and this criterion's own wording says "rather than left
-  > partial" — so that tension is settled here rather than quoted around.** "Left partial" means
+  > **On this criterion's own trailing words, "rather than left partial"** — settled here rather
+  > than quoted around, since scenario 2 is recorded `partial`. "Left partial" means
   > an abandoned or unfinished run; scenario 2 is neither. Both of its halves were driven to a
   > definite, evidenced outcome under a program first *proven* to be running (PC verified inside
   > its own loop range): the keyboard half is a deterministic `pass`, committed to

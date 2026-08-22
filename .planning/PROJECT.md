@@ -541,7 +541,9 @@ a pass. Phase 8.2 then closed that defect and re-ran the walkthrough to a real p
   test to launch through the real broker primitive instead of hand-spawning its own argv.
 
 **Known open, tracked, non-blocking:** the `vice_keyboard_type` `LOAD` fallback route does not
-progress within a bounded poll (FINDING-E2), and the `acme-build` scaffold cannot build on any
+progress within a bounded poll (FINDING-E2) — promoted with a named owner by Phase 15's DEBT-01
+disposition, so "tracked" now resolves to a specific entry: see `REQUIREMENTS.md`'s
+`### Promoted by DEBT-01`. And the `acme-build` scaffold cannot build on any
 machine provisioned the documented way because the Debian `acme` package ships no `cbm/c64/*.a`
 standard library — CI's own environment included (FINDING-A1). Also untested by design: no
 VIC-II revision / PAL-vs-NTSC / board-revision matrix, and only drive type `1541` was exercised
