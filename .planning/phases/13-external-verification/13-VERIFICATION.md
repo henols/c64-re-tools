@@ -1,61 +1,18 @@
 ---
 phase: 13-external-verification
-verified: 2026-08-22T01:05:16Z
-status: gaps_found
-score: 8/9 must-haves verified
+verified: 2026-08-22T02:10:00Z
+status: passed
+score: 9/9 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "The automated test gate (`npm run test:automated`) is green at the end of the phase, and the milestone's `docs-*.test.ts` guard set stays green (a must-have repeated in every one of this phase's five plans' `<verification>` blocks)."
-    status: failed
-    reason: >
-      Re-running the gate right now (not trusting the orchestrator's earlier "0 fail" report) shows
-      2091 tests / 2084 pass / 2 fail / 5 todo. Both failures trace to the SAME root cause: this
-      phase's own code-review report, `13-REVIEW.md` (generated 2026-08-22T00:56:11Z, AFTER plan
-      13-05's SUMMARY was written at 00:42:39Z), records 4 findings (WR-01, WR-02, IN-01, IN-02,
-      `status: issues_found`) that have no disposition anywhere — no todo names them, no SUMMARY
-      cites them as accepted, and no source fix addresses them. `docs-review-disposition.test.ts`
-      (the project's own "AUDIT-01, self-applied" completeness guard) fails directly because of
-      this. That failure then trips `audit-integrity.test.ts`'s D-12-02 guard — GATE-01, already
-      recorded `Complete` from Phase 12 ("a milestone audit cannot record status: passed while any
-      of the four docs-*.test.ts guards is red") — because `v0.3.0-MILESTONE-AUDIT.md` still
-      declares `status: passed` while a docs guard is now red. This is not a pre-existing,
-      carried-forward flake: the project's own established pattern (Phase 08/09/10/11's review
-      findings were each filed as a pending todo naming the reason, e.g.
-      `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned.md`) was not applied here,
-      because the code review ran after every plan in this phase (including 13-05, whose job was
-      exactly this kind of ledger reconciliation) had already produced its SUMMARY. Nothing in the
-      phase closes the loop the review itself opened.
-    artifacts:
-      - path: ".planning/phases/13-external-verification/13-REVIEW.md"
-        issue: "4 findings (WR-01 shell-interpolated command check in probe-binmon.mjs; WR-02 probe-binmon.mjs six-concern file-size warning; IN-01 A3 polarity short-circuit; IN-02 backend-detect transcripts omitted from reviewed file list), `status: issues_found`, none dispositioned."
-      - path: ".planning/STATE.md"
-        issue: "Deferred Items section (updated by plan 13-05 at 00:42:39Z) predates the review (00:56:11Z) and therefore has no row for these 4 findings — the section that is supposed to be the single source of truth for 'every finding this phase surfaced' is silently missing this one."
-    missing:
-      - "File a todo dispositioning WR-01/WR-02/IN-01/IN-02 (or fix them at source — WR-01 in particular has a two-line fix already written in the review itself), matching the established pattern used for every prior phase's review findings."
-      - "Add the corresponding row(s) to `STATE.md`'s Deferred Items table so `docs-deferred-ledger.test.ts` keeps reflecting the true pending-todo set."
-      - "Re-run `npm run test:automated` and confirm 0 fail before treating the phase's automated-gate must-have as satisfied."
-  - truth: "EXTV-03: 'any detail the binary contradicts is corrected at its source rather than noted' — REQUIREMENTS.md's own literal acceptance text for this requirement."
-    status: partial
-    reason: >
-      A5 (AUTOSTART `fileIndex` with `runAfter=false`) came back CONTRADICTED per `13-PROBE-RESULTS.md`,
-      but it was NOT corrected at its source — plan 13-04's Task 2 produced zero diff for A5 and
-      instead invoked D-13-04's documented escape hatch (the contradiction is an advertised
-      *tool-contract* problem — `vice_disk_attach`'s D-14 "attach without loading or running"
-      promise — not a wire-encoding bug), filing
-      `.planning/todos/pending/2026-08-22-vice-disk-attach-approximation-contradicted-by-a5.md`
-      (priority: high) instead. This is a reasonable, deliberately-planned decision recorded in
-      `13-CONTEXT.md` before any plan ran (verification phases should not silently absorb feature/
-      contract redesign), and it is executed exactly as decided. But REQUIREMENTS.md's EXTV-03 text,
-      as literally written, does not carve out that exception, and A5's `[ASSUMED]` label is a wire
-      detail that stays on with the finding "noted" (filed as a todo) rather than "corrected at its
-      source" — which is the literal reading of the checked-off requirement. This is a genuine
-      wording/scope tension the phase's own design decision created, not a defect in what was built.
-    artifacts:
-      - path: ".planning/REQUIREMENTS.md"
-        issue: "EXTV-03's checked-off ([x] Complete) text and the actual A5 disposition (escape-hatch todo, not a source correction) are in tension; no note in REQUIREMENTS.md acknowledges the D-13-04 carve-out."
-    missing:
-      - "A human decision: either amend EXTV-03's wording (or add a footnote) to acknowledge D-13-04's escape hatch as a legitimate closure path, or treat EXTV-03 as not-yet-fully-satisfied until the `vice_disk_attach` contract correction todo is closed."
+re_verification:
+  previous_status: gaps_found
+  previous_score: 8/9
+  gaps_closed:
+    - "The automated test gate (`npm run test:automated`) is green at the end of the phase, and the milestone's `docs-*.test.ts` guard set stays green."
+    - "EXTV-03: 'any detail the binary contradicts is corrected at its source rather than noted' — literal wording vs. the D-13-04 escape-hatch outcome."
+  gaps_remaining: []
+  regressions: []
 human_verification: []
 ---
 
@@ -66,9 +23,9 @@ evidence for `VERIF-02`'s three binmon fixtures (EXTV-01), the `--help` backend 
 (EXTV-02), and Phase 3's four wire assumptions A1/A2/A3/A5 (EXTV-03) — honestly, with no
 partially-stripped labels, no silently-absorbed findings, and no requirement closed on a document
 edit alone.
-**Verified:** 2026-08-22T01:05:16Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-22T02:10:00Z
+**Status:** passed
+**Re-verification:** Yes — after gap closure (commits `f73d0fa`, `b346e34`)
 
 ## Goal Achievement
 
@@ -76,94 +33,108 @@ edit alone.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | EXTV-01: three `VERIF-02` binmon fixtures are real captures, no sidecar still declares synthetic | ✓ VERIFIED | All three sidecars read back from disk: `synthetic: false`, exactly 5 keys, `capturedFrom: "fork:/usr/local/bin/x64sc"`, `viceVersion: "3.10.0.0"`. `13-CAPTURE-TRANSCRIPT.md` decodes every frame byte-by-byte; `checkpoint-list` terminator CONFIRMED (0x14, 4-byte u32LE count); `event-interleaved` order matches `docs/phase1-probe-results.md:248`. `binmon-fixtures.test.ts`, `stock-protocol.test.ts` green. |
-| 2 | No document/module header/test still describes the three fixtures as synthetic | ✓ VERIFIED | `grep -c 'NOT currently real captures' binmon-fixtures.test.ts` = 0; `binmon-fixtures.ts` header states all six fixtures are real; `fixtures/binmon/README.md`'s table has zero synthetic rows; D-13-06 fork-vs-genuine mislabel corrected in prose. |
-| 3 | EXTV-02: `--help` discriminator confirmed against both real stock and real fork `x64sc`, transcripts committed | ✓ VERIFIED | `fixtures/backend-detect/{stock,fork}-help-transcript.{txt,json}` committed, `capturedFrom: "real hardware"`, real binary paths/versions. `13-HELP-DISCRIMINATOR-EVIDENCE.md` records `probeBackend()` → `stock`/`fork` (never `unknown`) and `resolvedBackend()`'s cache round-trip (1 probe then 0). `backend-detect.test.ts` REAL HARDWARE block: 50/50 pass. |
-| 4 | Fallback-ladder (`-help`/`-?`) honesty | ✓ VERIFIED | Recorded explicitly as "unexercised on this host," not confirmed — both real builds exit 0 with non-empty `--help` output, so the ladder's later branches are never reached. Matches `docs/phase2-backend-probe-evidence.md` §2's resolution text exactly. |
-| 5 | EXTV-03: four wire assumptions (A1/A2/A3/A5) probed against a real binary, one verdict each | ✓ VERIFIED | `13-PROBE-RESULTS.md`: A1 CONFIRMED (real accepting listener, corroborated by `ss -ltnp`), A2 CONFIRMED (post-step PC == JSR+3, PC register id discovered dynamically), A3 INCONCLUSIVE (zero CIA1 delta across 5 single-bit rounds, 2 sessions), A5 CONTRADICTED (full reset+load despite `runAfter=false`). No checkpoint armed anywhere in the probe-assumptions code region (confirmed by source read). |
-| 6 | EXTV-03: any CONTRADICTED detail is corrected at its source rather than noted | ⚠️ PARTIAL | A5 is the only CONTRADICTED verdict, and it was deliberately **not** corrected at source — D-13-04's escape hatch fired because the wrongness is `vice_disk_attach`'s advertised tool contract, not the wire encoder; a todo was filed instead. This is a reasoned, pre-planned decision (see `13-CONTEXT.md`), but it is in literal tension with REQUIREMENTS.md's own EXTV-03 wording. See gap #2 below. |
-| 7 | Label discipline: A1/A2 labels removed everywhere; A3/A5 kept everywhere; never a partial strip | ✓ VERIFIED | `grep -rn '\[ASSUMED\]'` (excluding `resources/`, `*.test.*`) shows A1/A2 gone from `broker-launch.mts`/`stock-execution.ts`/`stock-protocol.ts:742`; A3 (`stock-input.ts:161,166`, `stock-protocol.ts:796`) and A5 (`stock-protocol.ts:852`) untouched. `assumption-label-discipline.test.ts`: 7/7 pass, including a planted-violation non-vacuity test that actually caught a real false-positive in the plan's own Task 1 edit (documented and fixed in 13-04-SUMMARY.md). |
-| 8 | A4's `03-RESEARCH.md` row is byte-for-byte untouched (D-13-05) | ✓ VERIFIED | `git diff 1359ef7 -- .planning/phases/03-direct-tools/03-RESEARCH.md`: A4's row line is absent from the diff; A1/A2/A3/A5 rows each gained a "Post-probe status" sentence only. |
-| 9 | Deferred ledger (`STATE.md` ↔ `.planning/todos/pending/`) stays reconciled in both directions | ✓ VERIFIED (in isolation) | `docs-deferred-ledger.test.ts` 4/4 pass standalone. Both finished todos `git mv`-moved to `completed/` with Resolution sections; probe-debt todo trimmed to A4-only; two new todos filed (`cpuhistory-get*` mislabel, `vice_disk_attach` contract). **However**, this reconciliation is now stale relative to the phase's own later-generated `13-REVIEW.md` findings — see gap #1. |
-| 10 | `npm run test:automated` is green at phase close | ✗ FAILED | Re-run just now: 2091 tests / 2084 pass / **2 fail** / 5 todo. Both failures (`docs-review-disposition.test.ts`, `audit-integrity.test.ts`) trace to `13-REVIEW.md`'s 4 undispositioned findings. This directly contradicts the "0 fail" state reported to this verifier and every plan's own `<verification>` requirement. See gap #1. |
+| 1 | EXTV-01: three `VERIF-02` binmon fixtures are real captures, no sidecar still declares synthetic | ✓ VERIFIED | Re-confirmed: all three sidecars still read `synthetic: false`, `capturedFrom: "fork:/usr/local/bin/x64sc"`. Untouched by the two gap-closure commits. |
+| 2 | No document/module header/test still describes the three fixtures as synthetic | ✓ VERIFIED | Unaffected by gap-closure commits; not re-scanned in depth this pass (previously verified, no code path in the diff touches these files). |
+| 3 | EXTV-02: `--help` discriminator confirmed against both real stock and real fork `x64sc`, transcripts committed | ✓ VERIFIED | Unaffected by gap-closure commits; fixtures untouched in `git show f73d0fa`/`b346e34` diffs. |
+| 4 | Fallback-ladder (`-help`/`-?`) honesty | ✓ VERIFIED | Unchanged; no relevant diff. |
+| 5 | EXTV-03: four wire assumptions (A1/A2/A3/A5) probed against a real binary, one verdict each | ✓ VERIFIED | `13-PROBE-RESULTS.md` unchanged by the two commits; verdicts stand (A1 CONFIRMED, A2 CONFIRMED, A3 INCONCLUSIVE, A5 CONTRADICTED). |
+| 6 | EXTV-03: any CONTRADICTED detail is corrected at its source, or the deviation is explicitly and honestly reconciled with REQUIREMENTS.md's text | ✓ VERIFIED (closure note added) | `REQUIREMENTS.md:32-46` now carries a "Closure note (Phase 13, D-13-04 escape hatch)" directly under EXTV-03's checkbox. It states plainly that "corrected at its source" is satisfied by a scoped contract todo when the contradiction is a tool-contract defect rather than a wire-encoding bug; names the exact todo (`2026-08-22-vice-disk-attach-approximation-contradicted-by-a5.md`, confirmed present in `todos/pending/`); states A5's `[ASSUMED]` label "deliberately stays on" until that todo closes (does not overstate closure); and gives per-assumption status for A1/A2/A3/A4 in the same note. This makes the carve-out visible at the point of reading, names the residual work, and does not claim more than was verified — resolving the previous pass's literal-wording tension rather than merely restating it. |
+| 7 | Label discipline: A1/A2 labels removed everywhere; A3/A5 kept everywhere; never a partial strip | ✓ VERIFIED | Re-confirmed independently: `grep -rn '\[ASSUMED\]'` (excluding tests/resources) shows A1/A2 absent, A3 (`stock-input.ts:161,166`, `stock-protocol.ts:796`) and A5 (`stock-protocol.ts:852`) present. `assumption-label-discipline.test.ts` re-run: 7/7 pass. |
+| 8 | A4's `03-RESEARCH.md` row is byte-for-byte untouched (D-13-05) | ✓ VERIFIED | Re-ran `git diff 1359ef7 -- .../03-RESEARCH.md`: A4's row absent from the diff; A1/A2/A3/A5 rows each carry only a "Post-probe status" addition, matching the prior pass exactly — the REQUIREMENTS.md edit in `b346e34` did not touch this file. |
+| 9 | Deferred ledger (`STATE.md` ↔ `.planning/todos/pending/`) stays reconciled in both directions, including this phase's own `13-REVIEW.md` findings | ✓ VERIFIED | `docs-deferred-ledger.test.ts` re-run: 4/4 pass. `STATE.md:411` now carries a row for the new `2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned` todo, closing the timing gap the prior pass flagged (ledger now postdates `13-REVIEW.md`). |
+| 10 | `npm run test:automated` is green at phase close | ✓ VERIFIED | Re-run independently in this session (not trusting the orchestrator's report): `2091 tests / 2086 pass / 0 fail / 5 todo`. `docs-review-disposition.test.ts` (4/4) and `audit-integrity.test.ts` (43/43) both pass in isolation. `npx tsc --noEmit -p tsconfig.json` clean (exit 0). |
 
-**Score:** 8/10 truths fully verified, 1 partial (EXTV-03 literal wording vs. the escape-hatch outcome), 1 failed (automated gate currently red). Rolled up to the must-haves count: 8/9 (truths 1–2, 3–4, 5, 7, 8, 9 collapse to distinct must-haves; 6 and 10 are the two flagged items).
+**Score:** 10/10 truths verified (rolled up to must-haves: 9/9 — truths 1–2, 3–4 collapse as before).
 
-### Deferred Items
+### Gap-Closure Verification Detail
 
-None — no gap here is addressed by a later phase in the current roadmap. `GATE-02` (phase 15) is scoped to Phase 08/09/10/11's *already-known* review findings (`WR-04`..`WR-12`, `IN-01`..`IN-03`, `WR-13`, `02-REVIEW.md`'s `IN-05`); it does not mention or cover Phase 13's own `13-REVIEW.md` findings, which postdate GATE-02's scoping. Nothing in the roadmap currently owns closing this gap.
+**Gap 1 — undispositioned review findings.**
+- `.planning/todos/pending/2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned.md` names all four ids (WR-01, WR-02, IN-01, IN-02) explicitly, each with its own "Recommended disposition" (fix-at-source for WR-01, defer-with-intent for WR-02, fix-if-reprobed for IN-01, fix-in-workflow for IN-02) — this is a recorded decision per finding, not a bare observation. `resolves_phase: 15` correctly routes ongoing disposition ownership to GATE-02, following the established phase-08/09 precedent named in the todo's own text.
+- `docs-review-disposition.test.ts` re-run independently: 4/4 pass (including both planted-violation/planted-false-negative non-vacuity subtests).
+- `docs-deferred-ledger.test.ts` re-run independently: 4/4 pass in both directions — every pending todo stem (including the new one) has a `STATE.md` row, and no completed todo stem remains listed as pending.
+- WR-01 was additionally fixed at source (see below), which is a stronger disposition than the todo alone requires.
+
+**Gap 1 — WR-01 fix authenticity (verified independently, not from the diff alone).** `checkCommandAvailable()` in `probe-binmon.mjs` now reads:
+```js
+function checkCommandAvailable(cmd) {
+  const r = spawnSync("sh", ["-c", 'command -v "$1"', "sh", cmd], { encoding: "utf8" });
+  return r.status === 0 && r.stdout.trim().length > 0;
+}
+```
+This is the correct positional-parameter pattern: `cmd` is passed as `argv[3]`, which `sh -c` binds to `$1` (argv[2], `"sh"`, fills the conventional `$0`) — the value is never spliced into script text, so it can never be parsed as shell syntax, regardless of content. Independently reproduced in an isolated Node process:
+- `checkCommandAvailable("c1541")` → `true` (the real guarded call site still works — a broken fix that always returned `false` would silently turn A5's probe into a permanent INCONCLUSIVE; ruled out)
+- `checkCommandAvailable("node")` → `true`
+- `checkCommandAvailable("totally-bogus-cmd-xyz")` → `false`
+- `checkCommandAvailable("node; touch /tmp/pwned_test_marker")` → `false`, and the marker file was never created — confirming the injection surface is genuinely closed, not relocated (e.g. not "fixed" by moving the same interpolation into a different shell invocation).
+
+**Gap 2 — EXTV-03 wording.** The added closure note (`REQUIREMENTS.md:32-46`) is judged to genuinely resolve the tension, not merely restate it: it (a) sits directly under the checked-off EXTV-03 line, so a reader encounters the carve-out at the point of reading rather than having to cross-reference a verification report; (b) names the exact pending todo carrying the remaining work and confirms that file exists; (c) explicitly keeps A5's `[ASSUMED]` label "on" pending that todo's closure, rather than claiming the label was resolved; (d) gives honest per-assumption status for all four (A1/A2 corrected-at-source, A3 inconclusive/label-stays, A4 deliberately not probed/D-13-05, A5 contradicted/escape-hatch). This was recorded as a maintainer decision in the task brief; the question re-verified here is whether the record is honest and complete, and it is — no must-have text is overstated.
 
 ### Required Artifacts
 
+All artifacts previously verified (see `13-CAPTURE-TRANSCRIPT.md`, `13-HELP-DISCRIMINATOR-EVIDENCE.md`, `13-PROBE-RESULTS.md`, sidecars, `assumption-label-discipline.test.ts`, completed/pending todo moves) are unaffected by the two gap-closure commits, whose diffs touch only `probe-binmon.mjs` (8 lines), `REQUIREMENTS.md`, `STATE.md`, and the new pending todo file. Re-confirmed:
+
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `fixtures/binmon/{display-get,event-interleaved,checkpoint-list}.{bin,json}` | Real captures | ✓ VERIFIED | 5-key sidecars, `synthetic: false`, truthful `fork:` kind; `.bin` byte lengths match decoded frame totals exactly. |
-| `13-CAPTURE-TRANSCRIPT.md` | Answers 6 numbered acceptance steps | ✓ VERIFIED | All 6 steps present, both verdict words (CONFIRMED / matches) stated explicitly. |
-| `fixtures/backend-detect/{stock,fork}-help-transcript.{txt,json}`, `README.md` | Real-hardware transcripts + sidecars | ✓ VERIFIED | `capturedFrom: "real hardware"`, real paths/versions; directory README documents the cmp non-determinism finding honestly. |
-| `13-HELP-DISCRIMINATOR-EVIDENCE.md` | Live-run record | ✓ VERIFIED | Enumeration, `probeBackend()`/`resolvedBackend()` verdicts, all 3 assumed sub-claims answered. |
-| `probe-binmon.mjs` `--probe-assumptions` mode | 4 probes, offline-selftest-covered | ✓ VERIFIED | `--selftest` passes; `runAssumptionProbes`/`probeA{1,2,3,5}*` all present; no `CHECKPOINT_SET` in the probe region. |
-| `13-PROBE-RESULTS.md` | 4 verdicts + `ss -ltnp` + Consequences section | ✓ VERIFIED | All present, A2/A3 explicitly state "accepted body necessary but not sufficient." |
-| `assumption-label-discipline.test.ts` | Non-vacuous all-or-nothing guard | ✓ VERIFIED | 7/7 pass including planted-violation test; derives scan from directory read with a floor. |
-| `.planning/todos/completed/2026-08-13-{re-record-binmon-fixtures,confirm-help-discriminator}...md` | Moved with Resolution sections | ✓ VERIFIED | Both present in `completed/`, absent from `pending/`, `git mv` (rename) confirmed. |
-| `.planning/todos/pending/2026-08-22-{cpuhistory-get-sidecars-mislabel,vice-disk-attach-approximation}...md` | Newly filed findings | ✓ VERIFIED | Both exist, substantive (not stubs), name affected files/behavior precisely. |
-| `13-REVIEW.md` | Code review disposition | ✗ **UNWIRED** | Exists with real, substantive findings (0 critical / 2 warning / 2 info) — but nothing in the phase closes the loop it opens; see gap #1. |
+| `13-REVIEW.md` | Code review disposition | ✓ VERIFIED (now closed) | Findings named in `docs-review-disposition.test.ts`'s recognised source #3 (`.planning/todos/pending/2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned.md`); WR-01 additionally fixed at source in `probe-binmon.mjs`. |
+| `.planning/todos/pending/2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned.md` | New disposition todo | ✓ VERIFIED | Exists, names all 4 ids with individual recommended dispositions, `resolves_phase: 15`, matching `STATE.md:411`. |
+| `REQUIREMENTS.md` EXTV-03 closure note | Honest carve-out record | ✓ VERIFIED | Present, accurate, does not overstate closure (see Gap 2 detail above). |
+| `probe-binmon.mjs` `checkCommandAvailable()` | Non-shell-interpolating command check | ✓ VERIFIED | Fixed at source; injection surface closed; legitimate `c1541` check still functions (independently reproduced). |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `buildSidecar()` in `probe-binmon.mjs` | 3 new binmon sidecars | sole writer, no hand-typed fields | ✓ WIRED | Confirmed by matching key set/values exactly against `runCapture()`'s known output shape. |
-| `13-PROBE-RESULTS.md`'s "Consequences for plan 13-04" | plan 13-04's label edits | sole authority, not re-derived | ✓ WIRED | 13-04-SUMMARY.md's grep inventory matches the consequences table's per-row disposition exactly (A1/A2 removed, A3/A5 kept). |
-| `docs/phase2-backend-probe-evidence.md` §1/§2 | `13-CAPTURE-TRANSCRIPT.md` / `13-HELP-DISCRIMINATOR-EVIDENCE.md` | citation by path | ✓ WIRED | Both sections cite the artifact paths and state findings that match the artifacts' own content (spot-checked). |
-| `.planning/todos/pending/` | `STATE.md`'s Deferred Items | `docs-deferred-ledger.test.ts` | ⚠️ STALE | Wired and passing in isolation, but the ledger predates `13-REVIEW.md` (generated after plan 13-05), so it does not yet reflect this phase's own newest undispositioned findings — not a wiring break, a timing gap. |
+| `.planning/todos/pending/` | `STATE.md`'s Deferred Items | `docs-deferred-ledger.test.ts` | ✓ WIRED | No longer stale — the new todo has a matching row; guard passes 4/4 in both directions. |
+| `13-REVIEW.md` finding ids | a recognised disposition source | `docs-review-disposition.test.ts` | ✓ WIRED | All four ids now named by the new pending todo (source #3); guard passes 4/4. |
+| `REQUIREMENTS.md` EXTV-03 | `.planning/todos/pending/2026-08-22-vice-disk-attach-approximation-contradicted-by-a5.md` | citation by path in closure note | ✓ WIRED | Todo file confirmed to exist at the cited path. |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Sidecar provenance round-trips through `loadCapturedFixture()` | `node -e '...loadCapturedFixture(c)...'` (binmon-fixtures.ts) | 3/3 report `synthetic: false` | ✓ PASS |
-| `classifyHelpOutput()` correctly classifies both real transcripts | `node --test backend-detect.test.ts` | 50/50 pass | ✓ PASS |
-| Label-discipline guard is non-vacuous | `node --test assumption-label-discipline.test.ts` | 7/7 pass, planted-violation rejected | ✓ PASS |
-| Deferred ledger guard, standalone | `node --test docs-deferred-ledger.test.ts` | 4/4 pass | ✓ PASS |
-| Full automated gate | `npm run test:automated` | 2091 tests / 2084 pass / **2 fail** / 5 todo | ✗ FAIL |
-| `npx tsc --noEmit` | — | clean | ✓ PASS |
-
-### Probe Execution
-
-Not applicable in the formal `scripts/*/tests/probe-*.sh` sense — this phase's "probes" are the phase's own subject matter (`probe-binmon.mjs --probe-assumptions`, `probe-binmon.mjs --capture`), already executed and recorded as evidence documents (`13-CAPTURE-TRANSCRIPT.md`, `13-HELP-DISCRIMINATOR-EVIDENCE.md`, `13-PROBE-RESULTS.md`), each independently spot-checked above against the actual committed bytes/source rather than accepted on narrative alone.
+| Full automated gate (re-run independently) | `cd .claude/mcp/vice && npm run test:automated` | 2091 tests / 2086 pass / 0 fail / 5 todo | ✓ PASS |
+| `docs-review-disposition.test.ts` (isolated) | `node --test docs-review-disposition.test.ts` | 4/4 pass | ✓ PASS |
+| `docs-deferred-ledger.test.ts` (isolated) | `node --test docs-deferred-ledger.test.ts` | 4/4 pass | ✓ PASS |
+| `assumption-label-discipline.test.ts` (isolated) | `node --test assumption-label-discipline.test.ts` | 7/7 pass | ✓ PASS |
+| `audit-integrity.test.ts` (isolated) | `node --test audit-integrity.test.ts` | 43/43 pass | ✓ PASS |
+| `npx tsc --noEmit` | `tsc --noEmit -p tsconfig.json` | clean, exit 0 | ✓ PASS |
+| WR-01 fix behavioral proof (out-of-repo, isolated Node process) | `checkCommandAvailable("c1541")`, `("totally-bogus-cmd-xyz")`, `("node; touch /tmp/pwned_test_marker")` | `true`, `false`, `false` + no marker file created | ✓ PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|--------------|--------|----------|
-| EXTV-01 | 13-01 | Real-capture the 3 binmon fixtures | ✓ SATISFIED | `13-CAPTURE-TRANSCRIPT.md`, sidecar read-back, `docs/phase2-backend-probe-evidence.md` §1 closure. |
-| EXTV-02 | 13-02, 13-05 | Confirm `--help` discriminator against both real builds | ✓ SATISFIED | `13-HELP-DISCRIMINATOR-EVIDENCE.md`, `fixtures/backend-detect/`, `docs/phase2-backend-probe-evidence.md` §2 closure. |
-| EXTV-03 | 13-03, 13-04, 13-05 | Probe 4 wire details, correct contradictions at source | ⚠️ PARTIALLY SATISFIED | 3 of 4 assumptions (A1 CONFIRMED, A2 CONFIRMED, A3 INCONCLUSIVE — correctly left `[ASSUMED]`) match the requirement's spirit; A5 (CONTRADICTED) was **not** corrected at source per REQUIREMENTS.md's literal text — see gap #2. No requirement in this phase's ID set is orphaned; all three map to a plan. |
+| EXTV-01 | 13-01 | Real-capture the 3 binmon fixtures | ✓ SATISFIED | Unchanged from prior pass; re-confirmed. |
+| EXTV-02 | 13-02, 13-05 | Confirm `--help` discriminator against both real builds | ✓ SATISFIED | Unchanged from prior pass; re-confirmed. |
+| EXTV-03 | 13-03, 13-04, 13-05 | Probe 4 wire details, correct contradictions at source | ✓ SATISFIED | A1/A2 CONFIRMED and corrected at source; A3 INCONCLUSIVE, label retained per design; A5 CONTRADICTED, resolved via the now-explicit and honestly-recorded D-13-04 escape hatch (REQUIREMENTS.md closure note), with its residual work tracked in a named, existing pending todo. |
 
-No orphaned requirements found — `grep -E "Phase 13"` / the PLAN frontmatter `requirements:` fields for all 5 plans collectively cover exactly EXTV-01/02/03, matching REQUIREMENTS.md's phase-13 mapping.
+No orphaned requirements.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `probe-binmon.mjs` | 1486-1489 | Shell-interpolated `sh -c` command construction in `checkCommandAvailable()` | ⚠️ Warning (already disclosed as `13-REVIEW.md` WR-01) | Dev-only probe script, single hardcoded call site today, not currently exploitable — but the pattern itself is the project's own named anti-pattern elsewhere in the same file. Undispositioned (part of gap #1). |
-| `probe-binmon.mjs` | whole file, 2429 lines | File has grown to mix 5 distinct concerns (`13-REVIEW.md` WR-02) | ℹ️ Info | No correctness impact; maintainability note. Undispositioned (part of gap #1). |
+| `probe-binmon.mjs` (pre-fix) | 1486-1489 | Shell-interpolated `sh -c` command construction (`13-REVIEW.md` WR-01) | Resolved | Fixed at source in `f73d0fa`; independently verified closed (see above). No longer an open finding. |
+| `probe-binmon.mjs` | whole file, 2429 lines | Six-concern single file (`13-REVIEW.md` WR-02) | ℹ️ Info, dispositioned (defer-with-intent) | Recorded in the new pending todo with an explicit rationale for deferring; not a blocker. |
 
-No `TODO`/`FIXME`/`XXX`/`TBD` debt markers found in any file this phase touched (`probe-binmon.mjs`, `stock-protocol.ts`, `stock-input.ts`, `stock-execution.ts`, `broker-launch.mts`, `binmon-fixtures.ts`, `backend-detect.test.ts`, `assumption-label-discipline.test.ts`).
+`13-REVIEW.md`'s IN-01 and IN-02 remain dispositioned via the same todo (fix-if-reprobed / fix-in-workflow respectively) — informational, no correctness impact, not blockers.
+
+No `TODO`/`FIXME`/`XXX`/`TBD` debt markers found in any file touched by the two gap-closure commits.
 
 ### Human Verification Required
 
-None required for this report's own findings — both flagged items (gap #1, gap #2) are mechanically confirmed facts (a currently-red test suite; a literal-wording tension against a pre-planned, documented decision), not ambiguous or UI/runtime-only questions. Gap #2, specifically, needs a **human decision** (not verification): whether D-13-04's escape hatch is accepted as satisfying EXTV-03's letter, or whether EXTV-03 should be reopened pending the `vice_disk_attach` contract-correction todo's closure. That decision does not require re-running anything — it requires a maintainer call, which is why it is recorded as a `partial` gap rather than a `human_verification` entry.
+None. Both previously-flagged items were mechanically re-checked and closed: the automated gate is genuinely green (independently re-run, not trusted from narrative), and the EXTV-03 wording tension was a maintainer decision that is now honestly and completely recorded in REQUIREMENTS.md, matching the task brief's own description of what changed.
 
 ### Gaps Summary
 
-Phase 13 delivered exactly what it set out to deliver for EXTV-01 and EXTV-02: the evidence is real, the provenance is truthfully labelled (including the fork-vs-stock distinction CLAUDE.md and MEMORY.md both call out), the retired verdicts in `docs/phase2-backend-probe-evidence.md` are honestly closed with citations, and the milestone's own established discipline (label all-or-nothing, deferred-ledger reconciliation, todo-not-silent-absorption) was followed carefully and even caught its own bug once (the label-discipline guard's planted-violation test flagging a false positive in the plan's own comment, documented in 13-04-SUMMARY.md).
+No gaps remain. The prior pass's two flagged items are both closed:
 
-The phase's one real gap is procedural, not a defect in the evidence itself: **the code review that closes out the phase (`13-REVIEW.md`) ran after every plan's SUMMARY was already written, so its 4 findings were never dispositioned by anything** — no todo, no accepted-in-summary note, no fix. This leaves `npm run test:automated` red right now (2 failures), which in turn trips the already-closed GATE-01 invariant (a milestone audit currently reads `passed`/`tech_debt` while a `docs-*.test.ts` guard is red). This is exactly the failure mode GATE-01 and `docs-review-disposition.test.ts` exist to catch, and it is currently live. The fix is small and has a clear, already-used precedent (file a todo naming WR-01/WR-02/IN-01/IN-02, or fix WR-01 directly since the review already wrote the fix), but it has not happened, so the phase cannot be called fully closed yet.
+1. **Automated gate.** `docs-review-disposition.test.ts` and `audit-integrity.test.ts` both go green because `13-REVIEW.md`'s four findings (WR-01, WR-02, IN-01, IN-02) are now named by a recorded-decision disposition source (a new pending todo, `resolves_phase: 15`, each finding given its own recommended disposition) — not merely re-observed by a verification report, which is the exact silence the guard exists to catch. WR-01 was additionally fixed at source, independently confirmed to close the injection surface without breaking the legitimate `c1541` check. Re-running the full gate in this session shows 0 fail (2091/2086/0/5), matching the claimed post-fix state.
+2. **EXTV-03 wording.** The added closure note in REQUIREMENTS.md makes the D-13-04 carve-out visible at the point EXTV-03 is read, names the exact residual-work todo, and does not overstate what was verified (A5's label explicitly stays on). This is judged to genuinely resolve the tension rather than restate it, and is recorded as the maintainer's own decision rather than this verifier's judgment call on scope.
 
-The second, lower-severity item is a wording tension: EXTV-03's literal REQUIREMENTS.md text ("any detail the binary contradicts is corrected at its source rather than noted") does not anticipate D-13-04's escape hatch, which is exactly what fired for A5. The escape hatch is a reasonable, pre-planned decision recorded before any plan executed, and its outcome (a high-priority todo naming a real, evidenced tool-contract defect) is arguably a *better* outcome than a rushed in-phase contract redesign — but it is not what EXTV-03's own checked-off text says happened. This needs a maintainer decision, not more work.
+All previously-verified truths (1, 2, 3, 4, 5, 7, 8, 9) were re-confirmed unaffected by the two gap-closure commits, whose diffs are narrowly scoped to `probe-binmon.mjs`, `REQUIREMENTS.md`, `STATE.md`, and one new todo file.
 
 ---
 
-*Verified: 2026-08-22T01:05:16Z*
+*Verified: 2026-08-22T02:10:00Z*
 *Verifier: Claude (gsd-verifier)*
