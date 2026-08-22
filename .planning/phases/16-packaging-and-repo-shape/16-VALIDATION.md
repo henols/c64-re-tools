@@ -55,15 +55,26 @@ contract each task must satisfy. The planner fills the Task ID / Plan / Wave col
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | PKG-01 (tarball contents after move) | — | Published tarball omits no required module and leaks no test/fixture/`node_modules` | integration/script | `node scripts/check-npm-packages.mjs` | ✅ exists — needs literal-path updates, not a new file | ⬜ pending |
-| TBD | TBD | TBD | PKG-01 (`.mcp.json` merge) | T-16-01 | Merge preserves unrelated keys; refuses (does not overwrite) invalid JSON or a non-object root | unit | new test in `installer/` — see Wave 0 | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-02 (`acme.mjs`) | — | N/A | unit/integration (subprocess) | `node --test <acme-cli test>` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-02 (`driver.mjs`) | — | N/A | unit (subprocess, `lookup`/`annotate` against committed `memmap.json` — never `memmap`, which needs network) | `node --test <driver-cli test>` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-02 (`derive.mjs`) | — | N/A | unit/integration (subprocess) | `node --test <derive-cli test>` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-03 (gate exists and is green) | — | N/A | unit (guard test) | `node --test <comment-pointer guard test>` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-03 (gate **bites**) | — | N/A | fixture-driven negative test | planted-violation fixture under `fixtures/`, asserted to fail the guard; plant must not survive the commit | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PKG-04 | T-16-02 | Broker control-plane exposure is either loopback-bound or explicitly accepted with rationale — never silently `0.0.0.0` and undocumented | manual/documentation on the accepted-risk branch; live bind check on the narrow branch | N/A (doc edit) **or** `ss -tlnp \| grep <control port>` | N/A | ⬜ pending |
-| TBD | TBD | TBD | (all) relocation did not break the tree | — | N/A | integration | `VICE_REQUIRE_ACME=1 npm test` (full glob, from the new package directory) | ✅ existing (`resources-sync.test.ts`, byte-pinned manifests) | ⬜ pending |
+| 16-01 T1 | 16-01 | 1 | PKG-01 (skills relocation, tracer) | T-16-07, T-16-08 | Corpus walks keep their non-vacuity floors; the sibling-directory scan cannot narrow silently | integration | `node scripts/check-skill-tool-coverage.mjs && node scripts/check-skill-fork-honesty.mjs && cd src/mcp/vice && VICE_REQUIRE_ACME=1 npm test` | ✅ exists — literal-path updates only | ⬜ pending |
+| 16-01 T2 | 16-01 | 1 | PKG-01 (payload absent from repo root; installer route) | T-16-04, T-16-09 | Auto-discoverable payload at repo root fails CI; no machine-global plugin state written | integration/script | `bash scripts/package.sh && node scripts/check-npm-packages.mjs` | ✅ exists — `mustNotExist` list added | ⬜ pending |
+| 16-01 T3 | 16-01 | 1 | PKG-01 (dev-time story recorded) | — | N/A | doc + corpus check | `node scripts/check-skill-fork-honesty.mjs` | ✅ exists | ⬜ pending |
+| 16-02 T1 | 16-02 | 1 | PKG-04 (facts verified against source + live bind) | T-16-10 | Every accepted-risk claim traces to a `file:line` or captured output; no source file edited | manual/documentation + live socket observation | `test -f .../16-PKG04-EVIDENCE.md && git diff --quiet -- src/mcp/vice`; live: `ss -tlnp` for the control port | ❌ W0 (evidence doc) | ⬜ pending |
+| 16-02 T2 | 16-02 | 1 | PKG-04 (disposition recorded) | T-16-02, T-16-11 | Exposure explicitly accepted with rationale, residual risk and reversal criteria — never silently `0.0.0.0` and undocumented | documentation (structural assertion) | `node -e` PROJECT.md row shape/content check (see plan 16-02 Task 2) + `npm run test:automated` | ❌ W0 (PROJECT.md row) | ⬜ pending |
+| 16-03 T1 | 16-03 | 1 | PKG-01 (`.mcp.json` merge, happy paths) | T-16-12, T-16-14 | Merge preserves unrelated keys and is idempotent; dry-run writes nothing | unit | `cd installer && npm test` | ❌ W0 | ⬜ pending |
+| 16-03 T2 | 16-03 | 1 | PKG-01 (`.mcp.json` merge, refusal paths) | T-16-01, T-16-13 | Six malformed consumer-config shapes are refused with bytes and directory listing unchanged | unit | `cd installer && npm test` | ❌ W0 | ⬜ pending |
+| 16-04 T1 | 16-04 | 2 | PKG-01 (MCP-server relocation + consumer sweep) | T-16-03, T-16-04, T-16-17 | Published tarball path list unchanged; no auto-discoverable payload at repo root | integration/script | `cd src/mcp/vice && npm run typecheck && VICE_REQUIRE_ACME=1 npm test`; `node scripts/check-npm-packages.mjs`; `npm pack --dry-run --json` 73-entry parity | ✅ exists — literal-path updates only | ⬜ pending |
+| 16-04 T2 | 16-04 | 2 | PKG-01 (repo-root depth record) | T-16-15 | Branch-4 hop count asserted correct and provably unedited | unit | `node -e` segment-count assertion + `cd src/mcp/vice && node --test repo-root.test.ts host-scripts.test.ts` | ✅ exists | ⬜ pending |
+| 16-04 T3 | 16-04 | 2 | PKG-01 (generated artifact + enumeration closed) | T-16-16, T-16-17 | Generated banner regenerated from its generator; every residual old-path hit deliberately classified | integration | `cd src/mcp/vice && node --test r2000-regbits.test.ts test-gate.test.ts && npm run smoke && VICE_REQUIRE_ACME=1 npm test` | ✅ exists | ⬜ pending |
+| 16-06 T1 | 16-06 | 3 | PKG-02 (`derive.mjs`) | T-16-06, T-16-24 | Per-test temp dirs only; discovered by both gates | unit/integration (subprocess) | `cd src/mcp/vice && node --test skill-program-recon-cli.test.ts` | ❌ W0 | ⬜ pending |
+| 16-06 T2 | 16-06 | 3 | PKG-02 (`driver.mjs`) | T-16-22, T-16-06 | Network rebuild verb mechanically excluded; committed data file provably unmodified | unit (in-process export + subprocess CLI) | `cd src/mcp/vice && node --test skill-memory-mapping-cli.test.ts && git diff --quiet -- src/skills/c64-memory-mapping/memmap.json` | ❌ W0 | ⬜ pending |
+| 16-06 T3 | 16-06 | 3 | PKG-02 (`acme.mjs`) | T-16-23, T-16-25 | Assembler reached through the one shared availability seam; hard-fails in CI rather than skipping | unit/integration (subprocess) | `cd src/mcp/vice && VICE_REQUIRE_ACME=1 node --test skill-acme-build-cli.test.ts && VICE_REQUIRE_ACME=1 npm test` | ❌ W0 | ⬜ pending |
+| 16-07 T1 | 16-07 | 3 | PKG-03 (gate exists, calibrated, fixture-pinned) | T-16-26, T-16-05 | Zero false positives over the measured corpus; cut-set parse asserted non-empty; fixture outside the scanned set | unit (guard test + fixture) | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts` | ❌ W0 | ⬜ pending |
+| 16-07 T2 | 16-07 | 3 | PKG-03 (zero orphaned references remain) | T-16-28, T-16-29, T-16-30 | All 15 sites repointed at existing permanent records; no new cut, no exemption, comment-only diffs | unit (corpus assertions) | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts stock-dispatch.test.ts && VICE_REQUIRE_ACME=1 npm test` | ❌ W0 | ⬜ pending |
+| 16-07 T3 | 16-07 | 3 | PKG-03 (gate **bites**) | T-16-27 | Planted violation detected then removed; plant does not survive; narration negative control stays green | fixture-driven + one-time recorded demonstration | plant → `node --test comment-phase-pointers.test.ts` (red, captured) → remove → green (captured); `git status --porcelain -- src` empty | ❌ W0 | ⬜ pending |
+| 16-05 T1 | 16-05 | 4 | PKG-01 (guidance-document sweep) | T-16-20 | Every backticked source path exists on disk; skills table mirrors the playbooks | doc (structural assertion) | `node -e` skills-table path-existence check + `cd src/mcp/vice && node --test docs-dangling-refs.test.ts` | ✅ exists | ⬜ pending |
+| 16-05 T2 | 16-05 | 4 | PKG-01 (line-reference citations re-verified) | T-16-19 | Every cited line resolves to a real call or function declaration; at least two citations present | unit (guard test) | `cd src/mcp/vice && node --test docs-linerefs.test.ts` | ✅ exists | ⬜ pending |
+| 16-05 T3 | 16-05 | 4 | PKG-01 (README + docs sweep, evidence preserved) | T-16-18, T-16-21 | No measured value, verdict or captured transcript altered; backend-honesty claims unchanged | doc + corpus check | `cd src/mcp/vice && node --test docs-linerefs.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts docs-review-disposition.test.ts`; `node scripts/check-skill-fork-honesty.mjs` | ✅ exists | ⬜ pending |
+| (all) | 16-04, 16-05, 16-06, 16-07 | 2-4 | (all) relocation did not break the tree | — | N/A | integration | `VICE_REQUIRE_ACME=1 npm test` (full glob, from the new package directory) — baseline 2292 tests / 2248 pass / 0 fail / 39 skipped / 5 todo / 23 suites, measured 2026-08-22 pre-move | ✅ existing (`resources-sync.test.ts`, byte-pinned manifests) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -84,8 +95,24 @@ contract each task must satisfy. The planner fills the Task ID / Plan / Wave col
 - [ ] `wireMcp()` regression test in `installer/` — **no test infrastructure exists in that
       package today** (no `test` script in `installer/package.json`). Standing this up is
       itself Wave 0 work if the planner takes PKG-01's merge-semantics assertion on.
+      **Planner decision: taken on** — plan 16-03, wave 1. Reasons: the promoted todo's own
+      Solution step 4 asks for exactly this test; `16-RESEARCH.md` § Security Domain names a
+      malformed consumer config as a tampering path whose only mitigation is `wireMcp()`'s
+      refuse-on-invalid branch, and an unasserted mitigation is a claim; and this item was
+      already listed here, so declining it would have had to be a recorded deferral.
 
 *No framework install needed — `node:test` is built in.*
+
+## Wave 0 assignment (filled by plan-phase)
+
+| Wave 0 item | Owning plan | Wave | Notes |
+|---|---|---|---|
+| `skill-acme-build-cli.test.ts` | 16-06 Task 3 | 3 | Lives in the MCP package (discovery is a non-recursive single-directory listing); assembler reached through `r2000-test-gate.ts`'s existing seam, never a second probe |
+| `skill-memory-mapping-cli.test.ts` | 16-06 Task 2 | 3 | In-process for the exported `lookup`, subprocess for the CLI; a self-scanning assertion mechanically forbids invoking the network `memmap` verb |
+| `skill-program-recon-cli.test.ts` | 16-06 Task 1 | 3 | Fully subprocess-driven (the script dispatches at module scope); every verb specified exhaustively — it has no external dependency |
+| `comment-phase-pointers.test.ts` + `fixtures/planted-phase-pointer-fixture.ts.txt` | 16-07 Tasks 1-3 | 3 | Pattern set dry-run against the corpus is its own acceptance criterion. Measured 2026-08-22 pre-move: 58 shipped modules, 7526 comment spans, 123 phase-naming comment lines, 7 assignment-shape hits, 9 cut-phase hits, union 15 distinct sites, **0 false positives** after a past-tense exclusion on the until-phase pattern |
+| `wireMcp()` regression test in `installer/` | 16-03 Tasks 1-2 | 1 | Adds `installer/package.json`'s first `test` script; `node:test` only, no dependency added; the test file must not ship (`files[]` is `bin/`, `skills/`, `README.md`) |
+| `16-PKG04-EVIDENCE.md` + PROJECT.md decision row | 16-02 Tasks 1-2 | 1 | Not a test file: PKG-04's accepted-risk branch has a documentation deliverable, so its Wave 0 artefact is the evidence document the row's claims trace to |
 
 ---
 

@@ -411,7 +411,23 @@ decision.
   4. The emulator control-plane network exposure is either narrowed (evidenced by a live bind-address check showing it is no longer `0.0.0.0`) or recorded in PROJECT.md as an accepted risk with rationale
   5. `resources-sync.test.ts` and the byte-pinned per-backend tool manifests still pass after the relocation — evidenced by a green test run against the moved tree
 
-**Plans**: TBD
+**Planning note**: plan numbers are not wave order. Wave 1 is plans 16-01/16-02/16-03,
+wave 2 is 16-04, wave 3 is 16-06/16-07, and wave 4 is 16-05 — the documentation and
+line-citation sweep runs last on purpose, so the citations are swept once against final
+source rather than re-swept after every source-editing plan (this phase's own sequencing
+rationale, above). Same convention as Phase 15, where wave order also differed from plan
+order.
+
+**Plans**: 7 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — Tracer: relocate the six skills to `src/skills/` end-to-end (manifest, packaging validator, both corpus checks, installer sync, CI, the three skills-path literals inside the MCP package), and record the dev-time decision
+- [ ] 16-02-PLAN.md — PKG-04: verify the broker control-plane facts against source and a live socket, then record the `0.0.0.0` bind as a dated accepted risk in PROJECT.md with the rejected narrow branch and a named follow-on
+- [ ] 16-03-PLAN.md — Stand up `installer/`'s first test suite and pin `wireMcp()`'s nine merge behaviours and six refusal behaviours against the shipped CLI
+- [ ] 16-04-PLAN.md — Relocate the MCP server to `src/mcp/vice/`, sweep ~30 functional consumers, prove tarball parity (73 entries unchanged), and resolve the `repoRoot()` depth record
+- [ ] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
+- [ ] 16-06-PLAN.md — PKG-02: three committed CLI-script test files (`acme.mjs`, `driver.mjs`, `derive.mjs`) inside the MCP package, reusing the existing assembler-availability seam
+- [ ] 16-07-PLAN.md — PKG-03: a comment-scoped orphaned-reference gate (assignment shapes plus roadmap-derived cut phases), 15 sites fixed, a committed fixture, and a recorded plant-and-revert demonstration
 
 ### Phase 17: Project Identity and Ledger Close
 
