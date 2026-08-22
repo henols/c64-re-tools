@@ -30,19 +30,19 @@
 // engineered to fire on that family.
 // ---------------------------------------------------------------------------
 
-// [verb-first-handoff] This capability was deferred to Phase 42's follow-on work.
+// [verb-first-handoff] This capability was deferred to Phase 42's follow-on work; this is Phase 42's routing call.
 
-// [possessive-plus-noun] The synthetic knob below carries Phase 42's extension, not a maintenance liberty for this module.
+// [possessive-plus-noun] The synthetic knob below carries Phase 42's extension, not a maintenance liberty for this module; this is Phase 42's call.
 
-// [owner-home] The retry budget is owned by Phase 42, not this module.
+// [owner-home] The retry budget is owned by Phase 42, not this module; this is Phase 42's call.
 
 // [is-was-possessive] Reworking the retry ladder is Phase 42's business, not a change to make here.
 
 // [comma-appositive] The synthetic knob ships in Phase 42, via a follow-on module this fixture does not name.
 
-// [needs-requires] Finishing this synthetic stub needs a resume plus Phase 42's timing route, which does not exist yet.
+// [needs-requires] Finishing this synthetic stub needs a resume plus Phase 42's timing route, which does not exist yet; this is Phase 42's route.
 
-// [until-phase-present-tense] This synthetic capability does not exist on stock until Phase 42's follow-on route lands.
+// [until-phase-present-tense] This synthetic capability does not exist on stock until Phase 42's follow-on route lands; this is Phase 42's route to build.
 
 // ---------------------------------------------------------------------------
 // CUT-PHASE POSITIVE CONTROL -- narration form. Per the plan design, ANY
