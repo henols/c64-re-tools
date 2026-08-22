@@ -310,7 +310,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-20 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+19 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close); between then and now,
@@ -324,7 +324,9 @@ question against the dated `FORK-01` decision, moving it to
 one todo), bringing the count to 21, before phase 15 plan 15-04 fixed all
 eight of that todo's findings (WR-06/WR-07/WR-08, IN-02/IN-03/IN-04/IN-05/
 IN-06) and closed it — moved to `.planning/todos/completed/` with a
-Resolution section — returning the count to 20. See `## Deferred
+Resolution section — returning the count to 20. Phase 15 plan 15-05 then
+closed the Phase 09 `IN-01`..`IN-03` todo `wont-fix` (evidence immutability;
+see `.planning/todos/completed/`), returning the count to 19. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -455,8 +457,9 @@ moved.
 Before phase 13, the 18th todo was filed *at the v0.3.0 close*: the same
 `docs-review-disposition.test.ts` guard, run as part of the close, was found red
 at `4f048bb` with Phase 09's `IN-01`..`IN-03` undispositioned — predating the
-close, not caused by it. See
-`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned.md`. 4 of the 18 were
+close, not caused by it. That todo was later closed `wont-fix` by Phase 15
+plan 15-05 on evidence-immutability grounds — see `.planning/todos/completed/`
+for the Resolution. 4 of the 18 were
 opened during v0.3.0 (the fork-backend-removal question — resolved 2026-08-22
 by Phase 14 plan 14-05, see `.planning/todos/completed/` for the Resolution
 section;
@@ -500,7 +503,14 @@ previously cited in a source the guard recognises. Task 3 (this update)
 files `03-REVIEW.md`'s remaining eight (`WR-06`, `WR-07`, `WR-08`, `IN-02`,
 `IN-03`, `IN-04`, `IN-05`, `IN-06`) as one new pending todo, owned by plan
 15-04 — see the table row below. Pending count rises 20 → 21 (one filed,
-none moved to completed); total items 21 → 22. The count in this paragraph
+none moved to completed); total items 21 → 22.
+
+Plan 15-04 then fixed all eight of that todo's findings and closed it,
+returning pending to 20 (total 21). **Current, as of phase 15 plan 15-05
+(2026-08-22): 20 items — 19 pending todos plus Phase 03's UAT gap.** Task 2
+closed `09-REVIEW.md`'s `IN-01`..`IN-03` `wont-fix` on evidence-immutability
+grounds, moving that todo to `.planning/todos/completed/` — pending 20 → 19,
+total 21 → 20. The count in this paragraph
 is derived from, and must equal, the row count of the table immediately
 below it plus the one `uat_gap` row.
 
@@ -520,7 +530,6 @@ below it plus the one `uat_gap` row.
 | todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
-| todo | 2026-08-21-phase-09-review-in-01-in-03-never-dispositioned | low | Pending — filed at the v0.3.0 close; `09-REVIEW.md`'s three `Info` findings against Phase 9's *evidence harnesses* had no disposition anywhere. Recommended resolution is `wont-fix` citing evidence immutability (the committed probe transcripts were produced by those exact files), not an edit |
 | todo | 2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock | low | Pending — filed by phase 13 plan 13-05; two real `cpuhistory-get*` sidecars record `capturedFrom: "stock"` for the fork binary path; out of D-13-06's three-fixture scope |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
 | todo | 2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned | low | Pending — filed at the phase 13 close; `13-REVIEW.md`'s four findings had no disposition beyond `13-VERIFICATION.md` naming them. Third instance of the same structural cause (after phases 08 and 09): the review gate runs after the last plan's SUMMARY, so no plan can disposition its own phase's findings. `WR-01`'s two-line fix is already written in the review |

@@ -74,3 +74,42 @@ the disposition guard (and `docs-deferred-ledger.test.ts`, `docs-dangling-refs.t
 closed" is a measured claim rather than a narrative one. That is the actual lesson here:
 plan 11.1-07 built the right instrument and then the audit was written without reading
 its last three lines.
+
+## Resolution
+
+**All three `09-REVIEW.md` findings recorded `wont-fix`, on evidence immutability.**
+Phase 15 plan 15-05 executed this todo's own recommendation exactly, rather than
+re-deriving the argument: `evidence/vice-tool-harness.mjs` and `evidence/mcp-harness.mjs`
+are throwaway probe harnesses whose committed transcripts (enumerated below) are Phase 9's
+actual deliverable, backing the `degrade` verdict and the `R4` rule recorded in
+`docs/phase9-regenerator2000-probe-findings.md` (frontmatter `verdict: degrade`,
+`verdict_rule_applied: R4`). Editing a harness after the fact breaks the correspondence
+between the harness in the tree and the evidence it is recorded as having produced — and
+all three findings are `Info`-level code-quality observations with no effect on any
+recorded result, so there is nothing recorded that a fix would improve.
+
+Concrete reopen consequence, stated once and applying to all three: if a future phase
+re-runs `vice-tool-harness.mjs` or `mcp-harness.mjs` for any reason, it must fix the
+harness first and record FRESH transcripts from the fixed version — never retro-fit these
+existing transcripts to a fixed script, since that would misrepresent which script actually
+produced them.
+
+`.planning/phases/09-the-assumption-probe-go-no-go/evidence/` currently contains (enumerated
+2026-08-22, for the record — see the `git diff` acceptance criterion below for proof nothing
+here changed): `criterion0-prerequisites.txt`, `criterion1-container-toolchain-cost.txt`,
+`criterion1-install-and-version.txt`, `criterion2-pane-after-alt-s.txt`,
+`criterion2-pane-after-enter.txt`, `criterion2-pane-initial.txt`,
+`criterion2-pty-transcript.txt`, `criterion3-export-lbl.txt`, `criterion3-reassembly.txt`,
+`criterion4-vsf-load.txt`, `criterion4-vsf-pane.txt`, `Dockerfile.multi`, `Dockerfile.single`,
+`grammar-check.mjs`, `mcp-harness.mjs`, `vice-tool-harness.mjs`, plus the `exports/` and
+`fixture/` subdirectories.
+
+| Id | File | Verdict | Reason |
+|----|------|---------|--------|
+| IN-01 | `evidence/vice-tool-harness.mjs:72,95,100` | wont-fix | `overallResult`'s dead accumulator is Info-only code quality; each call's result is already logged individually inside the loop, so fixing it changes the harness's own text and would not match the transcripts already committed as its output. |
+| IN-02 | `evidence/vice-tool-harness.mjs:44-56` | wont-fix | The lenient `?? "{}"` argument pairing is Info-only; the transcript already self-reveals the actual `{}` used, so no result was silently miscounted. A loud-failure guard here changes the harness's validation behaviour, which the evidence-immutability argument above forbids retroactively. Reopens first if a harness is ever promoted out of `evidence/`. |
+| IN-03 | `evidence/mcp-harness.mjs:42-49` | wont-fix | Missing best-effort `client.close()` on `CONNECT_FAILED` is Info-only; `StreamableHTTPClientTransport` spawns no child process, so the worst case is an abandoned HTTP session, never an orphaned OS process — no recorded transcript is affected either way. |
+
+Not one byte under `.planning/phases/09-the-assumption-probe-go-no-go/` was modified by
+this disposition — confirmed via `git diff --stat` over that directory across every commit
+this plan made.
