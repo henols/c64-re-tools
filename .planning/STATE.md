@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Phase 15 planned — 12 plans, 9 waves, ready to execute
-last_updated: "2026-08-22T13:48:16.935Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-08-22T14:05:52.408Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: 7a1c7f2c1aa4d626ab2929e8923d67296f60cfc2
+state_head: 0411e60e8743b94f15f0f19ffaf753831460f798
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 17
+  completed_plans: 18
   percent: 50
 ---
 
@@ -57,8 +57,8 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 1 of 12
-Status: Executing Phase 15
+Plan: 2 of 12
+Status: Ready to execute
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
@@ -197,6 +197,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 14 P03 | 25min | 2 tasks | 6 files |
 | Phase 14 P04 | 37min | 2 tasks | 4 files |
 | Phase 14 P05 | 26min | 2 tasks | 6 files |
+| Phase 15 P01 | 28min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -290,6 +291,9 @@ Recent decisions affecting current work:
 - [Phase 14]: fork-live.test.ts drives vice.ts's real HTTP transport seam (useInstance/call/serverInfo) against buildViceArgs()'s own fork-branch argv, forced to loopback -- registered as MANUAL_ONLY_TESTS entry 8 — Criterion 3 required the fork's own -mcpserver transport to be live-exercised at least once; no prior test in this repo had ever done so (broker-e2e.test.ts stubs the binary; the phase 8 human walkthrough and phase 13 live captures were stock-only or spoke the wrong protocol)
 - [Phase 14]: [Phase 14-04] Retain branch recorded zero: both code-consequence tasks (fork-default flip in backend-detect.mts; vice-errors.ts extraction from vice.ts) confirmed skipped -- gated to non-retain branches by their own precondition; git diff --quiet -- .claude/mcp/vice clean
 - [Phase 14]: [Phase 14-05] Closed the record: fully-remove-the-forked-vice-mcp-backend todo disposed retain (moved to completed/ with Resolution section); FORK-01/FORK-02 marked Complete in REQUIREMENTS.md; ROADMAP.md's Phase 14 Notes and Phase 15/16/17 dependency notes resolved against the retain decision; warp-over-resource_set todo answered on its fork-facing question (not moot, mark fork-only per SKILL-01); pending-todo count reduced 21->20 (22->21 total Deferred Items), not the DEBT-04 true close
+- [Phase 15]: Widened docs-review-disposition.test.ts's parseFindingIds() regex to /^#{2,6} +(WR|IN|CR)-(\d+)(?![0-9])/gm -- discovers all 150 findings across every *-REVIEW.md (was 119); 03-REVIEW.md's 14 level-4 findings and 14-REVIEW.md's no-colon IN-01 were invisible to the old regex
+- [Phase 15]: 14-REVIEW.md IN-01 closed via a new completed todo citing commit 69465e41c580a0bcbf97fc7e4b58cbfac6e368ac -- fixed in Phase 14 but never cited in a source docs-review-disposition.test.ts recognises
+- [Phase 15]: 03-REVIEW.md's eight newly-surfaced findings filed as one pending todo owned by plan 15-04, with per-finding re-verification against current source correcting two of the plan's own stale verdicts (WR-08, IN-03 both confirmed STILL OPEN, not moot/superseded)
 
 ### Pending Todos
 
@@ -551,8 +555,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T11:12:51.809Z
-Stopped at: Phase 15 planned — 12 plans, 9 waves, ready to execute
+Last session: 2026-08-22T14:05:52.308Z
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
