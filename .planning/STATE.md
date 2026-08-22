@@ -554,11 +554,10 @@ plan 11.1-01's phase-pointer guard (`r2000-project.ts`'s one comment-only
 FLOW-02 site is permanently outside that guard's string-literal-only reach);
 `r2000-cli.test.ts`'s harmless duplicate of `writeChain()`'s used-byte formula
 (used only to build unrelated CLI fixtures, never to verify the DOS
-convention); and `02-REVIEW.md`'s IN-05 (`stockReconnect()`'s thrown message
-still says `stockConnect:`), the one genuinely open v0.2.0 code-review
-straggler confirmed live in current source — a trivial one-line fix, left
-open because `stock-connect.ts` sits outside this phase's r2000/disassembler
-scope.
+convention). **`02-REVIEW.md`'s IN-05** (`stockReconnect()`'s thrown message
+named the wrong function) is no longer carried here — Phase 15 plan 15-05
+fixed it at source (commit `9849224`) and pinned it with a derived test; see
+`.planning/todos/completed/` for the Resolution.
 
 ### Carried forward from earlier closes
 
