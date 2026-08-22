@@ -150,7 +150,18 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
  * at all, so an agent told "attached to unit 9" when the image landed on
  * unit 8 would debug the wrong drive. See docs/stock-vice-parity.md's D-14
  * entry.
+ *
+ * The returned `approximation` string names BOTH real side effects Phase 13
+ * plan 13-03's live A5 probe observed against real fork VICE 3.10: a full
+ * machine reset AND a program load, not "attach without disturbing machine
+ * state." Exported so the pinning test derives its expectation from this
+ * constant rather than re-typing the sentence, so the two cannot drift. See
+ * `.planning/phases/13-external-verification/13-PROBE-RESULTS.md` § A5.
  */
+export const DISK_ATTACH_APPROXIMATION =
+  "AUTOSTART (D-14): performs a full machine reset and loads a program from the image; " +
+  "unlike vice_autostart it does not issue a final run step, as far as observed.";
+
 export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
 
@@ -182,7 +193,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
       unit: 8,
       path: containerPath,
       sentPath,
-      approximation: "AUTOSTART with the run flag clear (D-14)",
+      approximation: DISK_ATTACH_APPROXIMATION,
     });
   } catch (err) {
     return convertWireError("vice_disk_attach", err);

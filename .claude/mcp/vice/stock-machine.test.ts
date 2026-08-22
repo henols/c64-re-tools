@@ -13,7 +13,14 @@ import { mkdtempSync, existsSync, rmSync, mkdirSync, writeFileSync, readFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
+import {
+  handleMachineReset,
+  handleAutostart,
+  handleDiskAttach,
+  handleSnapshotSave,
+  handleSnapshotLoad,
+  DISK_ATTACH_APPROXIMATION,
+} from "./stock-machine.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
@@ -178,7 +185,7 @@ test("handleDiskAttach: unit: 8 records an AutoStart body whose byte 0 is 0x00 (
   assert.equal(sends[0]!.body[0], 0x00);
   const payload = JSON.parse(result.content[0]!.text);
   assert.equal(payload.unit, 8);
-  assert.equal(payload.approximation, "AUTOSTART with the run flag clear (D-14)");
+  assert.equal(payload.approximation, DISK_ATTACH_APPROXIMATION);
 });
 
 test("handleDiskAttach: refuses a missing path with zero sends", async () => {

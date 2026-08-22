@@ -267,16 +267,32 @@ below is renumbered to stay contiguous.)
      Phase 2's D-07 (the two backends' advertised lists are genuinely
      different). Their stock-only status is recorded mechanically in
      `docs/tool-support.md`, generated from the shipped manifests.
-   - **Disk attach is `AUTOSTART` with the run flag clear (D-14).**
-     `vice_disk_attach` on stock is `AUTOSTART` (0xdd) with the run flag
-     clear — a documented approximation, not an exact port. `AUTOSTART` has
+   - **Disk attach is `AUTOSTART`, and it resets and loads like `vice_autostart` (D-14).**
+     `vice_disk_attach` on stock is `AUTOSTART` (0xdd) with `runAfter: false`
+     — a documented approximation, not an exact port, previously described
+     here as attaching without disturbing machine state. Phase 13 plan
+     13-03's live A5 probe against real fork VICE 3.10 showed that
+     description was wrong, not merely unverified: the emulator's own log
+     recorded a full machine reset (`Main CPU: RESET.`) followed by
+     `AUTOSTART: Loading program '*'`, and a sentinel byte pattern written to
+     the BASIC program area was destroyed and relinked after the call — a
+     real load, not a coincidental log line. `vice_disk_attach` therefore
+     differs from `vice_autostart` only in not issuing a final run step, as
+     far as observed. Per this item's own caveat above, this was a silently
+     wrong probed implementation detail, not a licensed divergence. Full
+     evidence: `13-PROBE-RESULTS.md` § A5
+     (`.planning/phases/13-external-verification/`). `AUTOSTART` has
      **no drive-unit field at all**, so the fork's required `unit` argument
      (8-11) can only be honoured for unit 8. Units 9-11 are **refused with an
      explanation naming this exact protocol limit** — never a silent no-op
      and never a silent retarget to unit 8. Likewise `vice_autostart`'s
      optional `program` argument (load-by-name from a disk image) has no
      wire equivalent — `AUTOSTART` supports only a numeric `fileIndex` — and
-     is refused when supplied rather than silently dropped.
+     is refused when supplied rather than silently dropped. Whether the
+     tool's contract should be restructured, given how little it differs
+     from `vice_autostart`, is a product decision outside this correction's
+     scope — promoted to `REQUIREMENTS.md` → Future Requirements, owner:
+     plan 15-12.
    - **`vice_disassemble`'s illegal-opcode rendering (Phase 4 D-09).** Every
      opcode ACME's `!cpu 6510` cannot express renders as `!byte` with all its
      bytes and the decoded mnemonic in a trailing comment, so the following
