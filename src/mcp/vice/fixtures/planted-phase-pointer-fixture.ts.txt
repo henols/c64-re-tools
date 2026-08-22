@@ -1,0 +1,72 @@
+// planted-phase-pointer-fixture.ts.txt
+//
+// THIS FILE EXISTS ONLY TO PROVE comment-phase-pointers.test.ts's scanner
+// SEES every violation shape it is designed to detect, and does NOT flag
+// the legitimate historical-narration shapes it must leave legal. It is
+// read directly, by path, only from within comment-phase-pointers.test.ts
+// -- it is never executed, never typechecked, and never imported.
+//
+// WHY THE .ts.txt EXTENSION: shippedTsModules() derives its scanned set
+// from package.json's files[] entries ending in .ts/.mts. This file's name
+// ends in .txt, so it can never match that filter and can never be picked
+// up by the real corpus scan -- the same "outside the scan by construction"
+// mechanism fixtures/planted-review-fixture.md already uses for the
+// sibling docs-review-disposition.test.ts guard. Do not rename this file to
+// end in .ts; doing so would both let it leak into the real scan AND make
+// it a candidate for package.json's files[] and tsc's program, neither of
+// which this fixture is meant to be.
+//
+// Every demonstration line below is kept to ONE PHYSICAL LINE deliberately
+// -- the real guard matches per physical line (never a multi-line join),
+// so a planted example wrapped across two lines the way real prose is
+// would test line-wrapping behaviour instead of the pattern itself. Each
+// line is commented so this file could plausibly be mistaken for
+// TypeScript source by a human skimming it, but every line below is a
+// deliberately planted, synthetic sentence -- none of them describe real
+// code, real tools, or real decisions.
+
+// ---------------------------------------------------------------------------
+// POSITIVE CONTROLS -- one line per assignment-shape pattern family, each
+// engineered to fire on that family.
+// ---------------------------------------------------------------------------
+
+// [verb-first-handoff] This capability was deferred to Phase 42's follow-on work.
+
+// [possessive-plus-noun] The synthetic knob below carries Phase 42's extension, not a maintenance liberty for this module.
+
+// [owner-home] The retry budget is owned by Phase 42, not this module.
+
+// [is-was-possessive] Reworking the retry ladder is Phase 42's business, not a change to make here.
+
+// [comma-appositive] The synthetic knob ships in Phase 42, via a follow-on module this fixture does not name.
+
+// [needs-requires] Finishing this synthetic stub needs a resume plus Phase 42's timing route, which does not exist yet.
+
+// [until-phase-present-tense] This synthetic capability does not exist on stock until Phase 42's follow-on route lands.
+
+// ---------------------------------------------------------------------------
+// CUT-PHASE POSITIVE CONTROL -- narration form. Per the plan design, ANY
+// mention of a phase the roadmap records as cut is flagged, narration
+// included, so this line deliberately uses plain narration wording rather
+// than an assignment shape. Phase 6 is this repo's real recorded cut phase
+// (Stock-Only Gains, 2026-08-17) -- reused here deliberately so this
+// control is checked against the guard's real, live-parsed cut set rather
+// than a synthetic one this fixture would have to hand-maintain in step
+// with the roadmap.
+// ---------------------------------------------------------------------------
+
+// [cut-phase-narration] This synthetic knob was originally scoped for Phase 6, back when that phase still existed in the roadmap.
+
+// ---------------------------------------------------------------------------
+// NEGATIVE CONTROLS -- legitimate historical narration. None of these must
+// ever be flagged by either check, or the guard is unusable and would (per
+// this codebase's own stated principle) get switched off.
+// ---------------------------------------------------------------------------
+
+// [narration, past tense] This direction did not exist until Phase 42's synthetic broker landed, and every caller now assumes it does.
+
+// [narration, completed] This synthetic knob was built and shipped in Phase 41, and this comment records that history for a future reader.
+
+// [narration, decision citation] Per Phase 41's D-99 decision, the synthetic retry budget below is fixed at three attempts.
+
+// [narration, cross-reference] See Phase 41's SYNTH-01 for the design rationale behind the synthetic knob below; nothing here is pending.
