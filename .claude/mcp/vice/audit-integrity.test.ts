@@ -66,6 +66,7 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   "docs-dangling-refs.test.ts",
   "docs-deferred-ledger.test.ts",
   "docs-review-disposition.test.ts",
+  "docs-fork-decision.test.ts",
 ];
 
 interface GateJsonResult {
@@ -125,7 +126,7 @@ function plantedGuardBody(name: string, assertTruth: boolean): string {
 }
 
 interface SyntheticTreeOptions {
-  /** How many of the four EXPECTED_GUARD_NAMES_FOR_ASSERTION-shaped guard
+  /** How many of the EXPECTED_GUARD_NAMES_FOR_ASSERTION-shaped guard
    * files to plant. Defaults to 4 (satisfies the floor). Set lower to
    * exercise the structural-failure path (test 11). */
   guardCount?: number;
