@@ -298,10 +298,11 @@ Recent decisions affecting current work:
 - [Phase 15]: 03-REVIEW.md's eight newly-surfaced findings filed as one pending todo owned by plan 15-04, with per-finding re-verification against current source correcting two of the plan's own stale verdicts (WR-08, IN-03 both confirmed STILL OPEN, not moot/superseded)
 - [Phase 15]: WR-07's allowlist narrowing implemented exactly per 08-REVIEW.md's fix; documented that it does not catch a future stealth mention of a currently-unreferenced hardware/fork tool (architectural limit of the single-pass filter), not silently claimed closed. — Evidence-based disposition over an inflated 'fully fixed' claim, matching this plan's own prohibition against recording a finding fixed without proof.
 - [Phase 15-debt-and-review-disposition]: WR-05 already fixed (commit 21a42cb); no new code needed, cited with the TS7016/allowJs:false reason the review's suggested import route was not taken — capability-registry.test.ts's synthetic-tool set was already derived mechanically from vice-proxy.ts before this plan ran
+- [Phase 15-debt-and-review-disposition]: Plan 15-04 closed all eight of 03-REVIEW.md's newly-surfaced findings, re-verifying each against current source before touching anything. WR-06/IN-05/IN-06 fixed in stock-live.test.ts (commit aaaffce); IN-02/IN-04 fixed and WR-07/IN-03 re-verified-then-fixed in stock-registers.ts/.test.ts/vice-proxy.test.ts (commit e8621d7) — WR-07's false-negative class and IN-03's dead union member were confirmed still live by direct source inspection, contrary to the plan's own stale premise that both had superseded; WR-08 likewise confirmed STILL OPEN (README.md still said "three" against an actual eight, and still omitted VICE_LIVE_STOCK_BIN) and fixed rather than recorded superseded, since the plan's "moot" premise did not hold either. The pending todo this phase's 15-01 plan filed was moved to `.planning/todos/completed/` with a Resolution section citing all eight verdicts and commits; pending-todo count returns to 20 (see `### Pending Todos` above and `## Deferred Items` below)
 
 ### Pending Todos
 
-21 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+20 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close); between then and now,
@@ -312,15 +313,20 @@ count to 21, before phase 14 plan 14-05 closed the fork-backend-removal
 question against the dated `FORK-01` decision, moving it to
 `.planning/todos/completed/` and returning the count to 20. Phase 15 plan
 15-01 then filed one more (`03-REVIEW.md`'s eight newly-surfaced findings,
-one todo), returning the count to 21. See `## Deferred
+one todo), bringing the count to 21, before phase 15 plan 15-04 fixed all
+eight of that todo's findings (WR-06/WR-07/WR-08, IN-02/IN-03/IN-04/IN-05/
+IN-06) and closed it — moved to `.planning/todos/completed/` with a
+Resolution section — returning the count to 20. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
 
-Newest: `2026-08-22-phase-03-review-wr-06-through-in-06-never-dispositioned`
-(filed by phase 15 plan 15-01 — see `## Deferred Items` below). Previously
-newest: `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed by
-phase 14 plan 14-03 — see `## Deferred Items` below). Before that: two
+Newest: `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed by
+phase 14 plan 14-03 — see `## Deferred Items` below); the todo that was
+newest before it, `2026-08-22-phase-03-review-wr-06-through-in-06-never-
+dispositioned` (filed by phase 15 plan 15-01), was closed by phase 15 plan
+15-04 and is no longer pending — see `.planning/todos/completed/`. Before
+that: two
 filed by phase 13 plan 13-05 (2026-08-22) — a mislabelled-sidecar finding and
 an advertised-tool-contract finding for `vice_disk_attach` (see `## Deferred
 Items` for both by name). Before that:
@@ -509,7 +515,6 @@ below it plus the one `uat_gap` row.
 | todo | 2026-08-21-phase-09-review-in-01-in-03-never-dispositioned | low | Pending — filed at the v0.3.0 close; `09-REVIEW.md`'s three `Info` findings against Phase 9's *evidence harnesses* had no disposition anywhere. Recommended resolution is `wont-fix` citing evidence immutability (the committed probe transcripts were produced by those exact files), not an edit |
 | todo | 2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock | low | Pending — filed by phase 13 plan 13-05; two real `cpuhistory-get*` sidecars record `capturedFrom: "stock"` for the fork binary path; out of D-13-06's three-fixture scope |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
-| todo | 2026-08-22-phase-03-review-wr-06-through-in-06-never-dispositioned | low | Pending — filed by phase 15 plan 15-01; `03-REVIEW.md`'s eight findings (`WR-06`, `WR-07`, `WR-08`, `IN-02`..`IN-06`) were undiscovered, not merely undispositioned — all 14 of that file's findings are level-4 headings, invisible to the guard's parser before plan 15-01 Task 1 widened it. Six of the file's other findings are already dispositioned (`03-REVIEW-FIX.md`, `03-VERIFICATION.md`). Owned by plan 15-04 |
 | todo | 2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned | low | Pending — filed at the phase 13 close; `13-REVIEW.md`'s four findings had no disposition beyond `13-VERIFICATION.md` naming them. Third instance of the same structural cause (after phases 08 and 09): the review gate runs after the last plan's SUMMARY, so no plan can disposition its own phase's findings. `WR-01`'s two-line fix is already written in the review |
 | todo | 2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp | low | Pending — filed by phase 12's regression gate; `build-atomic.test.ts:184` scans the shared system `/tmp` for `.build-tmp-*` siblings, so any concurrent `build()` caller reddens it (1 fail in run 1, 0 in run 2, 6/6 green in isolation). Pre-existing (`b0975f4`), untouched by any GSD phase, and unreachable from `audit-gate.mjs`, which spawns only the four `docs-*.test.ts` guards |
 | todo | 2026-08-22-tools-manifest-stale-missing-vice_snapshot_list | low | Pending — filed by phase 14 plan 14-03; `fork-live.test.ts`'s live surface diff found the live fork server offers `vice_snapshot_list`, which the committed `tools-manifest.json` (generated 2026-07-31) does not list. Fix is a `refresh-manifest.ts` regeneration, out of this plan's live-transport-exercise scope |

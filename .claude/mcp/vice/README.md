@@ -50,6 +50,7 @@ VICE MCP server.
 | `VICE_MCP_HOST` | Host to reach the VICE MCP server on. |
 | `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/tools/`. |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
+| `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
 
 ## Development
 
@@ -64,7 +65,7 @@ export CONTAINER_WORKSPACE_PATH="$(git rev-parse --show-toplevel)"
 export HOST_WORKSPACE_PATH="/host$(git rev-parse --show-toplevel)"
 ```
 
-`npm run test:automated` is the subset of `npm test` that excludes the three
+`npm run test:automated` is the subset of `npm test` that excludes the eight
 manual-only files (see `test-gate.mjs`'s own header).
 
 ```sh
