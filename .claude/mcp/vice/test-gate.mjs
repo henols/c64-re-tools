@@ -60,6 +60,18 @@
 // Like every sibling above it is default-SKIP everywhere (opt in via
 // VICE_LIVE_FORK_BIN) and never hangs CI.
 //
+// This section's NINTH entry (phase 15 plan 15-10) covers
+// stock-a4-checkpoint-flood.test.ts: it arms a genuine non-stopping
+// (`stop:false`) checkpoint against a real, broker-launched genuine-stock
+// emulator process and drives it past stock-checkpoints.ts's D-11 rate-limit
+// guard on purpose. CLAUDE.md's own Protocol constraint documents that a
+// non-stopping checkpoint's CHECKPOINT_INFO hit frame is emitted
+// synchronously, over the blocking socket, from inside the emulator's CPU
+// loop -- so on a hot address this can stall the emulator thread, which is
+// exactly the hazard this file measures rather than avoids. It must never
+// run unattended in CI. Like every sibling above it is default-SKIP
+// everywhere (opt in via VICE_LIVE_A4_FLOOD_BIN) and never hangs CI.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -77,8 +89,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact eight test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a ninth file needs the same
+/** The exact nine test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a tenth file needs the same
  * treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -89,6 +101,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "stock-live-broker-monitor.test.ts",
   "stock-broker-live.test.ts",
   "fork-live.test.ts",
+  "stock-a4-checkpoint-flood.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS
