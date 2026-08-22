@@ -29,6 +29,22 @@ three are live-testable here — genuine unpatched stock VICE is at
 - [x] **EXTV-02**: The `--help` backend discriminator (`BACK-01`/`BACK-04`) is confirmed against both a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
 - [x] **EXTV-03**: Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised is run against a real binary, and any detail the binary contradicts is corrected at its source rather than noted
 
+  > **Closure note (Phase 13, D-13-04 escape hatch).** "Corrected at its source" is satisfied
+  > by a *scoped contract todo* when the contradiction is an advertised **tool-contract**
+  > defect rather than a wire-encoding bug. A5 (`AUTOSTART` with `runAfter=false`) came back
+  > CONTRADICTED — it performs a full machine reset and loads a program regardless of
+  > `fileIndex` — which refutes `vice_disk_attach`'s advertised D-14 "attach without loading
+  > or running" promise. That is a feature/contract redesign, and D-13-04 (decided in
+  > `13-CONTEXT.md` before any plan ran) deliberately forbids a verification phase from
+  > absorbing one. A5's fix is therefore
+  > `.planning/todos/pending/2026-08-22-vice-disk-attach-approximation-contradicted-by-a5.md`
+  > (priority: high), and A5's `[ASSUMED]` label deliberately **stays on** until that todo
+  > closes. A1 and A2 were CONFIRMED and corrected at source; A3 was INCONCLUSIVE and keeps
+  > its label; A4 was deliberately not probed (non-stopping checkpoints stall the CPU loop,
+  > D-13-05) and remains the sole open item in
+  > `.planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md`. Evidence:
+  > `.planning/phases/13-external-verification/13-PROBE-RESULTS.md`.
+
 ### Audit Integrity
 
 The instrument already exists and nothing forces anyone to read it — which is how
