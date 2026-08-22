@@ -57,8 +57,26 @@ red.
 
 ### Backend Decision
 
-- [ ] **FORK-01**: The fork-backend question is answered by a dated decision in PROJECT.md → Key Decisions that names the criteria which would reverse it, including the upstream `KEYBOARD_MATRIX_SET` coupling — not retained by default for a third close
-- [ ] **FORK-02**: Whichever way `FORK-01` goes, a user hitting any of the three hard losses (SID read-back, matrix keyboard, RESTORE/NMI) is given a route they can actually follow
+- [x] **FORK-01**: The fork-backend question is answered by a dated decision in PROJECT.md → Key Decisions that names the criteria which would reverse it, including the upstream `KEYBOARD_MATRIX_SET` coupling — not retained by default for a third close
+- [x] **FORK-02**: Whichever way `FORK-01` goes, a user hitting any of the three hard losses (SID read-back, matrix keyboard, RESTORE/NMI) is given a route they can actually follow
+
+  > **Closure note (Phase 14, plan 14-05).** `FORK-01` decided `retain` —
+  > by a **human**, at plan 14-01's `gate="blocking-human"` checkpoint, after
+  > explicit escalation (not inferred, not auto-approved). Recorded in
+  > `.planning/PROJECT.md` → Key Decisions, dated 2026-08-22, naming the
+  > upstream `KEYBOARD_MATRIX_SET` opcode landing as the reversal criterion,
+  > and pinned by `.claude/mcp/vice/docs-fork-decision.test.ts`. `FORK-02`'s
+  > "a route they can actually follow" was satisfied by **the plan's own
+  > default reading** — sub-question B was NOT overridden at the checkpoint —
+  > meaning an honest, complete statement of permanent loss (no client-side
+  > substitute for SID read-back or RESTORE/NMI) is sufficient; no
+  > replacement-capability requirement was added. Plan 14-02 verified all 17
+  > point-of-use mention sites `holds-as-is` with zero rewrite
+  > (`14-ROUTE-EVIDENCE.md`); plan 14-03 exercised the fork's own
+  > `-mcpserver` HTTP transport live for the first time in this repository
+  > (`14-CRITERION3-EVIDENCE.md`, 6/6 passing, including `vice_sid_get_state`
+  > end to end). Since the branch is `retain`, ROADMAP criterion 3's "remove"
+  > clause is not in play — no unmet part to record.
 
 ### Debt Disposition
 
@@ -113,8 +131,8 @@ Populated during roadmap creation.
 | EXTV-03 | 13 | Complete |
 | GATE-01 | 12 | Complete |
 | GATE-02 | 15 | Pending |
-| FORK-01 | 14 | Pending |
-| FORK-02 | 14 | Pending |
+| FORK-01 | 14 | Complete |
+| FORK-02 | 14 | Complete |
 | DEBT-01 | 15 | Pending |
 | DEBT-02 | 15 | Pending |
 | DEBT-03 | 15 | Pending |

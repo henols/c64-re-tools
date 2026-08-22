@@ -285,24 +285,25 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-18 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+20 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
-section previously read 14, a hand-maintained figure left behind when plan
-11.1-07 filed three further todos while dispositioning Phase 10/11's review
-findings (`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
-`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
-`2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`);
-corrected at the v0.3.0 close, which then filed an 18th
-(`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned`) after finding the
-disposition guard already red at `4f048bb`. Phase 13 plan 13-05 then closed
-two of the 18 against real binaries and filed two more, holding the count at
-18 by coincidence of the arithmetic, not because nothing moved — see
-`## Deferred Items` below for which.
+section previously read 18 (set at the phase 13 close); between then and now,
+phase 14 plan 14-03 filed one more (the `tools-manifest.json` staleness
+finding) and other tail activity filed two more (a phase-12 regression-gate
+finding and the phase-13-close review-disposition finding), bringing the
+count to 21, before phase 14 plan 14-05 closed the fork-backend-removal
+question against the dated `FORK-01` decision, moving it to
+`.planning/todos/completed/` and returning the count to 20. See `## Deferred
+Items` below for the current, itemised list — this prose figure must always
+equal that section's table row count, which has gone stale twice before and
+is not itself guarded.
 
-Newest: two filed by phase 13 plan 13-05 (2026-08-22) — a mislabelled-sidecar
-finding and an advertised-tool-contract finding for `vice_disk_attach` (see
-`## Deferred Items` for both by name). Previously newest:
+Newest: `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed by
+phase 14 plan 14-03 — see `## Deferred Items` below). Previously newest: two
+filed by phase 13 plan 13-05 (2026-08-22) — a mislabelled-sidecar finding and
+an advertised-tool-contract finding for `vice_disk_attach` (see `## Deferred
+Items` for both by name). Before that:
 `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
 bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
 its machine-type auto-detection unreliable, and the D-01 synthesis route never
@@ -396,10 +397,10 @@ milestone audit had already assessed the same set as `tech_debt` with no
 blockers. They were accepted rather than resolved, and were v0.3.0's
 inheritance unless dispositioned sooner.
 
-**Current, as of phase 13 plan 13-05 (2026-08-22): 19 items — 18 pending
+**As of phase 13 plan 13-05's close (2026-08-22): 19 items — 18 pending
 todos plus Phase 03's UAT gap — derived from `.planning/todos/pending/` and
 guarded by `docs-deferred-ledger.test.ts` (AUDIT-04) — this table is no longer
-hand-maintained.** Phase 13 closed two of the three highest-value carried
+hand-maintained (superseded by the current count below).** Phase 13 closed two of the three highest-value carried
 probe-debt todos against real binaries: the binmon-fixture re-record todo
 (closing `EXTV-01`) and the `--help` backend-discriminator todo (closing
 `EXTV-02`) — both moved to `.planning/todos/completed/` with Resolution
@@ -422,7 +423,9 @@ Before phase 13, the 18th todo was filed *at the v0.3.0 close*: the same
 at `4f048bb` with Phase 09's `IN-01`..`IN-03` undispositioned — predating the
 close, not caused by it. See
 `2026-08-21-phase-09-review-in-01-in-03-never-dispositioned.md`. 4 of the 18 were
-opened during v0.3.0 (`2026-08-20-fully-remove-the-forked-vice-mcp-backend`,
+opened during v0.3.0 (the fork-backend-removal question — resolved 2026-08-22
+by Phase 14 plan 14-05, see `.planning/todos/completed/` for the Resolution
+section;
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
 `2026-08-20-vsf-as-a-bootstrap-input`,
 `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
@@ -441,6 +444,18 @@ task 260821-jd8 — assigned T-10-19 in `10-SECURITY.md`, now `status:
 verified` / `threats_open: 0`) are all resolved and closed — see
 `.planning/todos/completed/` for the filed resolutions.
 
+**Current, as of phase 14 plan 14-05 (2026-08-22): 21 items — 20 pending
+todos plus Phase 03's UAT gap.** Between the phase-13 close and now, one
+todo was filed by 14-03 (the `tools-manifest.json` staleness finding, see
+below) and other tail activity added two more (a phase-12 regression-gate
+finding and the phase-13-close review-disposition finding, both listed
+below), bringing pending to 21. This plan (14-05) then closed the
+fork-backend-removal question against the dated `FORK-01` decision (`retain`)
+— its todo moved to `.planning/todos/completed/` with a Resolution section —
+leaving the table at the 20 rows below. The count in this paragraph is
+derived from, and must equal, the row count of the table immediately below
+it plus the one `uat_gap` row.
+
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
 | todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — A1/A2/A3/A5 answered by phase 13's live probes (`13-PROBE-RESULTS.md`); trimmed to A4 only (the `stop:false` rate-limiter deferral timing), deliberately excluded — probing it risks stalling the emulator's CPU loop |
@@ -451,7 +466,6 @@ verified` / `threats_open: 0`) are all resolved and closed — see
 | todo | 2026-08-19-project-paths-git-marker-requirement-undocumented | — | Pending |
 | todo | 2026-08-19-releases-json-schema-undocumented | — | Pending |
 | todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
-| todo | 2026-08-20-fully-remove-the-forked-vice-mcp-backend | — | Pending — opened during v0.3.0; not scoped to this milestone |
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
 | todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
