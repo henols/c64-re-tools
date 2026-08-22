@@ -5,10 +5,10 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 14
 current_phase_name: Backend Decision
 status: executing
-stopped_at: Phases 12 and 13 both complete, ready to plan Phase 14
+stopped_at: Phase 14 planned (5 plans, 3 waves); FORK-01 awaits the blocking-human checkpoint in 14-01
 last_updated: "2026-08-22T08:31:55.174Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 12 closed out (12-07 SUMMARY reconstructed, re-verified 11/11); next unplanned phase is 14
+last_activity_desc: Phase 14 planned — research, pattern map and validation strategy written; 5 plans in 3 waves, plan-checker PASSED
 state_head: 0cfe42519a4f74619a58c0f22b35fa00a42f1183
 progress:
   total_phases: 6
