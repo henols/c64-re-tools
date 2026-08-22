@@ -285,7 +285,7 @@ plan time: `13-REVIEW.md`'s `WR-01` is **already fixed** at source (commit
 `vice_snapshot_list`'s absence is D-16's deliberate deletion, so regenerating the
 manifest would re-add a tool the project decided to remove.
 
-**Plans**: 1/12 plans executed
+**Plans**: 2/12 plans executed
 
 Plans:
 **Wave 1**
@@ -294,7 +294,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 15-02-PLAN.md — Phase 08 GATE-02: skill-corpus extraction (WR-12) and the two lint scripts (WR-06/07/09/10/11)
+- [x] 15-02-PLAN.md — Phase 08 GATE-02: skill-corpus extraction (WR-12) and the two lint scripts (WR-06/07/09/10/11)
 - [ ] 15-03-PLAN.md — Phase 08 GATE-02: cell escaping (WR-04), bounded declaration scans (WR-08), single-source refusal (WR-13)
 - [ ] 15-04-PLAN.md — Phase 03's eight newly-surfaced findings, re-verified then fixed or superseded
 - [ ] 15-08-PLAN.md — DEBT-03: UAT scenarios 1 and 2 live against genuine stock VICE
@@ -424,7 +424,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 15. Debt and Review Disposition | v0.4.0 | 1/12 | In Progress|  |
+| 15. Debt and Review Disposition | v0.4.0 | 2/12 | In Progress|  |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
