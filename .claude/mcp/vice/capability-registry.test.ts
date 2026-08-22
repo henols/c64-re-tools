@@ -161,18 +161,40 @@ test("mechanical completeness: the registry's name set equals the manifest-deriv
   const r2000LoopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/);
   const r2000LoopVar = r2000LoopVarMatch ? r2000LoopVarMatch[1] : null;
   const SYNTHETIC = new Set<string>();
+  // WR-08: bound the search to THIS declaration's own body via LINE-ORIENTED
+  // scanning -- deliberately a THIRD, different bounding technique from the
+  // generator's character-offset search and tool-support-table.test.mjs's
+  // brace-depth counting, so a bug in one bounding technique is caught by
+  // the other two independent witnesses. Load-bearing (see this file's
+  // header): do not collapse the three scans into one shared helper.
+  const proxyLines = proxySource.split("\n");
   for (const m of proxySource.matchAll(/tools\[(\w+)\.name\]\s*=/g)) {
     const ident = m[1];
     if (ident === loopVar) continue;
     if (ident === r2000LoopVar) continue;
-    const decl = proxySource.match(
-      new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`),
-    );
-    if (!decl) {
+    const openLineRe = new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{`);
+    const openLineIndex = proxyLines.findIndex((l) => openLineRe.test(l));
+    if (openLineIndex === -1) {
       throw new Error(
         `could not resolve synthetic tool registration identifier "${ident}" in vice-proxy.ts to ` +
-          `a literal name -- silently dropping it would widen the exclusion set and mask a real ` +
+          `a declaration -- silently dropping it would widen the exclusion set and mask a real ` +
           `capability divergence. Fix the pattern rather than skipping the identifier.`,
+      );
+    }
+    let bodyEndLineIndex = proxyLines.length;
+    for (let i = openLineIndex + 1; i < proxyLines.length; i++) {
+      if (/^(?:const|function|export)\s/.test(proxyLines[i])) {
+        bodyEndLineIndex = i;
+        break;
+      }
+    }
+    const declBody = proxyLines.slice(openLineIndex, bodyEndLineIndex).join("\n");
+    const decl = declBody.match(/name:\s*"([^"]+)"/);
+    if (!decl) {
+      throw new Error(
+        `"${ident}"'s own declaration body (bounded to its own lines, stopping before the next ` +
+          `top-level const/function/export) has no name: field -- refusing to borrow a later ` +
+          "declaration's name.",
       );
     }
     SYNTHETIC.add(decl[1]);

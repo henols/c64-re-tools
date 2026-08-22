@@ -76,9 +76,37 @@ function independentlyDiscoverSyntheticNames(proxySource) {
     seen.add(ident);
     if (ident === loopVar) continue;
     if (ident === r2000LoopVar) continue;
-    const declRe = new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`);
-    const declMatch = proxySource.match(declRe);
-    assert.ok(declMatch, `independentlyDiscoverSyntheticNames: could not resolve "${ident}" to a literal name`);
+
+    // WR-08: bound the search to THIS declaration's own body via brace-depth
+    // counting -- deliberately a DIFFERENT bounding technique from the
+    // generator's "stop at the next top-level const/function/export" and
+    // from capability-registry.test.ts's own bound, so a bug in one bounding
+    // technique is caught by the other two independent witnesses. This is
+    // load-bearing (see this file's header): do not collapse the three
+    // scans into one shared helper.
+    const openMatch = proxySource.match(new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{`));
+    assert.ok(openMatch, `independentlyDiscoverSyntheticNames: could not resolve "${ident}" to a declaration`);
+    const braceOpenIndex = openMatch.index + openMatch[0].length - 1;
+    let depth = 0;
+    let braceCloseIndex = -1;
+    for (let i = braceOpenIndex; i < proxySource.length; i++) {
+      if (proxySource[i] === "{") depth++;
+      else if (proxySource[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          braceCloseIndex = i;
+          break;
+        }
+      }
+    }
+    assert.ok(braceCloseIndex !== -1, `independentlyDiscoverSyntheticNames: "${ident}"'s declaration body never closes`);
+    const declBody = proxySource.slice(braceOpenIndex, braceCloseIndex + 1);
+    const declMatch = declBody.match(/^\{\s*name:\s*"([^"]+)"/);
+    assert.ok(
+      declMatch,
+      `independentlyDiscoverSyntheticNames: "${ident}"'s own declaration body has no name: field -- ` +
+        "refusing to borrow a later declaration's name",
+    );
     names.add(declMatch[1]);
   }
   return names;

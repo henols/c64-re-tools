@@ -122,17 +122,39 @@ export function discoverSyntheticToolNames(proxySource) {
     if (ident === loopVar) continue; // the manifest loop's own registration -- not synthetic
     if (ident === r2000LoopVar) continue; // the r2000_* family's own loop registration -- not a VICE capability at all
 
-    const declRe = new RegExp(
-      `const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{[\\s\\S]*?name:\\s*"([^"]+)"`,
-    );
-    const declMatch = proxySource.match(declRe);
-    if (!declMatch) {
+    // WR-08: bound the search to THIS declaration's own body before extracting
+    // its name, so a declaration with no `name:` field (a spread, a computed
+    // key, a helper-built definition) throws below instead of the unbounded
+    // `[\s\S]*?` walking past the closing brace and silently borrowing a LATER
+    // declaration's `name:` -- a plausible-looking wrong tool name is worse
+    // than the throw the header comment above already promises.
+    //
+    // This bounding expression is independently written in three places
+    // (here, tool-support-table.test.mjs, capability-registry.test.ts) BY
+    // DESIGN -- each is a separate witness proving the other two right, the
+    // same reason tool-support-table.test.mjs never imports this function.
+    // Do not "helpfully" extract a shared bounding helper; that would
+    // collapse three independent witnesses into one and destroy the property.
+    const declOpenRe = new RegExp(`const\\s+${ident}\\s*:\\s*ToolDefinition\\s*=\\s*\\{`);
+    const declStart = proxySource.search(declOpenRe);
+    if (declStart === -1) {
       throw new Error(
         `generate-tool-support-table: could not resolve synthetic tool registration identifier ` +
-          `"${ident}" (from \`tools[${ident}.name] = ...\`) to a literal tool name -- expected a ` +
-          `\`const ${ident}: ToolDefinition = { name: "..." }\` declaration in vice-proxy.ts. Add the ` +
+          `"${ident}" (from \`tools[${ident}.name] = ...\`) to a declaration -- expected a ` +
+          `\`const ${ident}: ToolDefinition = { ... }\` declaration in vice-proxy.ts. Add the ` +
           "declaration, or if this is not a synthetic proxy-local tool registration, fix the discovery " +
           "regex explicitly rather than silently dropping the identifier.",
+      );
+    }
+    const declEndOffset = proxySource.slice(declStart + 1).search(/\n(?:const|function|export)\s/);
+    const declBody =
+      declEndOffset === -1 ? proxySource.slice(declStart) : proxySource.slice(declStart, declStart + 1 + declEndOffset);
+    const declMatch = declBody.match(/^[^{]*\{\s*name:\s*"([^"]+)"/);
+    if (!declMatch) {
+      throw new Error(
+        `generate-tool-support-table: "${ident}"'s own declaration body (bounded up to the next ` +
+          `top-level const/function/export) has no \`name: "..."\` field -- refusing to borrow a ` +
+          "later declaration's name. Add a `name:` field to this declaration.",
       );
     }
     names.push(declMatch[1]);
