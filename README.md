@@ -51,6 +51,32 @@ The plugin is `defaultEnabled: false`; enable it in the project where you want
 the C64 tooling. (In plugin mode the tools are namespaced
 `mcp__plugin_c64-re-tools_vice__*`.)
 
+### Developing this repo: no in-repo autoload
+
+The payload (the six skills under `src/skills/` and the `vice` MCP server) now
+lives under `src/`, which is not a path Claude Code auto-discovers. A Claude Code session opened
+on this repository's own working tree therefore does **not** auto-load the
+skills or the server the way it would if they still sat directly under
+`.claude/`. This is a deliberate tradeoff, not an oversight: with the payload
+on the auto-discovery path, "it works in the repo" was never real evidence
+that "it works when installed" — an install-path defect (a wrong manifest
+path, a stale packaging literal) was structurally invisible to local
+development, since the repo never exercised the actual install routes a
+consumer uses.
+
+Two supported ways to exercise the payload as a consumer does:
+
+- **The npm installer** — `npx @henols/c64-re-tools <dir>`, or from a
+  checkout of this repo, `node installer/bin/cli.mjs <dir>`. Either can be
+  run by an automated agent; neither touches machine-global state.
+- **A local-marketplace plugin install** — this repository's own
+  `.claude-plugin/marketplace.json` already declares `"source": "./"`, so
+  `/plugin marketplace add ./` (run from this checkout) and
+  `/plugin install c64-re-tools@c64-re-tools` install the plugin from source.
+  This route writes into the user's machine-global `~/.claude/plugins/`
+  state, so it is a **human action**, never something an automated agent
+  performs.
+
 ### Dependencies
 
 The MCP server has real npm dependencies (`@mastra/mcp`, `@mastra/core`). They

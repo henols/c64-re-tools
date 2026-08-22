@@ -8,7 +8,7 @@ description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. 
 Source in, `.prg` out. Everything goes through one script:
 
 ```bash
-A=.claude/skills/acme-build/scripts/acme.mjs   # from the repo root
+A=src/skills/acme-build/scripts/acme.mjs   # from the repo root
 
 node $A new game.asm          # scaffold a C64 program
 node $A build game.asm        # assemble -> .prg .sym .vs .rep
