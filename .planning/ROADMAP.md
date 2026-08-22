@@ -418,7 +418,7 @@ source rather than re-swept after every source-editing plan (this phase's own se
 rationale, above). Same convention as Phase 15, where wave order also differed from plan
 order.
 
-**Plans**: 4/7 plans executed
+**Plans**: 5/7 plans executed
 
 Plans:
 **Wave 1**
@@ -433,7 +433,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 16-06-PLAN.md — PKG-02: three committed CLI-script test files (`acme.mjs`, `driver.mjs`, `derive.mjs`) inside the MCP package, reusing the existing assembler-availability seam
+- [x] 16-06-PLAN.md — PKG-02: three committed CLI-script test files (`acme.mjs`, `driver.mjs`, `derive.mjs`) inside the MCP package, reusing the existing assembler-availability seam
 - [ ] 16-07-PLAN.md — PKG-03: a comment-scoped orphaned-reference gate (assignment shapes plus roadmap-derived cut phases), 15 sites fixed, a committed fixture, and a recorded plant-and-revert demonstration
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -500,7 +500,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
-| 16. Packaging and Repo Shape | v0.4.0 | 4/7 | In Progress|  |
+| 16. Packaging and Repo Shape | v0.4.0 | 5/7 | In Progress|  |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.

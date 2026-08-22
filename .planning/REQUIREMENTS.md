@@ -202,7 +202,7 @@ red.
 ### Packaging and Repo Shape
 
 - [ ] **PKG-01**: The plugin payload lives under `src/` with `.mcp.json` merged, and both published tarballs still contain exactly the right files (`scripts/check-npm-packages.mjs` green, no `node_modules/`, no tests, no fixtures leaked, skills present)
-- [ ] **PKG-02**: `acme.mjs`, `driver.mjs` and `derive.mjs` have tests (`QUAL-01`)
+- [x] **PKG-02**: `acme.mjs`, `driver.mjs` and `derive.mjs` have tests (`QUAL-01`)
 - [ ] **PKG-03**: Orphaned planning references in source comments are removed or repointed (`QUAL-02`), guarded against reintroduction
 - [ ] **PKG-04**: The emulator control-plane network exposure (`QUAL-03`) is either narrowed or recorded as accepted with rationale
 
@@ -229,12 +229,14 @@ tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
   disk/machine-config) needs a per-tool disposition — drop, reimplement on
   the binary monitor, or record as an accepted permanent loss. Owner: the
   milestone that next opens `FORK-01`.
+
 - **Breaking-tool-surface release handling.** `@henols/vice-mcp` advertises
   62 named tools today, and every merge to `main` auto-publishes a patch
   version unless the commit subject carries `[skip release]`. Any future
   removal of fork-only tools is a semver-major, breaking change and needs a
   deliberate major-version release, not an ordinary merge. Owner: whoever
   executes a future non-`retain` `FORK-01` decision.
+
 - **`KEYBOARD_MATRIX_SET` reversal-trigger tracking.** `FORK-01`'s reversal
   criterion (`UP-01` landing in a released VICE, then reaching this
   project's documented primary install path a release cycle later) has no
@@ -277,6 +279,7 @@ the named alternative PROJECT.md's Key Decisions PKG-04 row defers rather than d
   remit (the same D-13-04 escape hatch `EXTV-03`'s closure note cites). Owner: whichever future
   milestone next redesigns `vice_disk_attach`'s tool contract — no v0.4.0 phase (12-17)
   implements it; this phase only surfaced that it needs a designed answer, not a silent one.
+
 - **`code-review.md`'s file-list scoping omission.** `13-REVIEW.md`'s `IN-02` found that
   matched `.txt`/`.json` evidence-fixture pairs are not scoped as a unit by
   `.claude/gsd-core/workflows/code-review.md`'s `files:` derivation — a defect in the GSD
@@ -284,6 +287,7 @@ the named alternative PROJECT.md's Key Decisions PKG-04 row defers rather than d
   confirmed this directly against the workflow file). Owner: the GSD toolkit itself — file or
   fix upstream in the GSD core repository/workflow definition, not in this project's own
   source tree, where there is nothing to change.
+
 - **Measuring `InitialWarpMode`'s actual runtime effect.** The 2026-08-20 warp probe confirmed
   a runtime `RESOURCE_SET WarpMode` succeeds and reads back as set on stock, but per
   `vsync.c:207-209` only the launch-time value is ever consulted — whether a runtime set has
@@ -292,6 +296,7 @@ the named alternative PROJECT.md's Key Decisions PKG-04 row defers rather than d
   needs stock warp/speed control for a real capability — no v0.4.0 phase needs it; the
   documentation fix (marking `vice_machine_config_set`'s `WarpMode` fork-only) already closes
   the SKILL-01 landmine this item's parent todo existed to fix.
+
 - **Deriving `cpuhistory-get*` fixtures' `capturedFrom` kind automatically.** Plan 15-07 fixed
   the two mislabelled sidecars' `capturedFrom` field by hand (`stock` → `fork`, re-measured
   live) but did not implement deriving that field from `resolvedBackend()` automatically,
@@ -300,6 +305,7 @@ the named alternative PROJECT.md's Key Decisions PKG-04 row defers rather than d
   that produced this milestone's own committed probe transcripts). Owner: whichever future
   plan next edits `probe-binmon.mjs`'s capture path for an unrelated reason — not this
   milestone, and not a standalone justification to touch that file on its own.
+
 - **`c64-ram-capture`'s keyboard-typed-`LOAD` fallback not progressing within its bounded
   poll.** Plan 15-12 promoted this todo rather than fixing or `wont-fix`-ing it: neither
   closing condition was met, and plan 15-08's live UAT work produced no evidence bearing on
@@ -347,7 +353,7 @@ Populated during roadmap creation.
 | DEBT-04 | 17 | Pending |
 | CORE-01 | 17 | Pending |
 | PKG-01 | 16 | Pending |
-| PKG-02 | 16 | Pending |
+| PKG-02 | 16 | Complete |
 | PKG-03 | 16 | Pending |
 | PKG-04 | 16 | Pending |
 
