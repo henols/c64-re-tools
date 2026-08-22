@@ -1483,8 +1483,15 @@ const A5_SENTINEL_ADDR = 0x0801; // start of the default unexpanded BASIC progra
 const A5_SENTINEL_BYTES = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
 const A5_ZP_PTR_ADDR = 0x002b; // BASIC TXTTAB pointer (start of BASIC text), 2 bytes LE
 
+// Resolves `cmd` on PATH without ever interpolating it into a shell command
+// line (13-REVIEW.md WR-01). `command -v` needs a shell, so the shell stays --
+// but the name arrives as positional `$1`, not as spliced-in text, so a
+// caller-derived value can never be parsed as shell syntax. Do NOT "simplify"
+// this back to `sh -c \`command -v ${cmd}\``: this helper has one hardcoded
+// call site today, and the whole point of the fix is that widening it to a
+// caller-supplied binary name stays safe by construction.
 function checkCommandAvailable(cmd) {
-  const r = spawnSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
+  const r = spawnSync("sh", ["-c", 'command -v "$1"', "sh", cmd], { encoding: "utf8" });
   return r.status === 0 && r.stdout.trim().length > 0;
 }
 
