@@ -74,7 +74,7 @@ statement) get answered deliberately.
 - [x] **Phase 12: Audit Integrity Instrument** - A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red, and the precondition is mechanical (verification 2026-08-22: passed, 11/11 — both layers proven, the live `PreToolUse` dispatch observed refusing all four write routes) (completed 2026-08-22)
 - [x] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies (completed 2026-08-22)
 - [x] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route (completed 2026-08-22)
-- [ ] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed
+- [x] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed (completed 2026-08-22, 12/12 plans; pending-todo tree reduced 21 → 2, both remaining items promoted to Phase 16 with named owners)
 - [ ] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed
 - [ ] **Phase 17: Project Identity and Ledger Close** - Core Value is restated or explicitly confirmed, and the deferred-items ledger measurably shrinks below 19 — measured at the true close, after every phase that can change the pending set
 
@@ -325,11 +325,59 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 15-12-PLAN.md — Closure: per-finding verdicts, promotions with owners, requirements and ledger reconciled
+- [x] 15-12-PLAN.md — Closure: per-finding verdicts, promotions with owners, requirements and ledger reconciled
 
 **Cross-cutting constraints:**
 
 - STATE.md's `## Deferred Items` table and both of its prose count figures are updated in the same commits that move this plan's todos out of `pending/`, so `docs-deferred-ledger.test.ts` — which is in the automated gate — is never left red.
+
+**Notes (Phase 15 complete, 2026-08-22)**: Criterion-by-criterion outcome —
+
+  1. **Satisfied.** `docs-review-disposition.test.ts` runs green from a clean checkout (7/7
+     tests, 150 findings, 0 undispositioned). Phase 08's `WR-04`..`WR-12` — corrected to ten
+     findings, `WR-04`..`WR-13`, since `WR-13` is a separately-named tenth finding — all fixed
+     at source across plans 15-02/15-03 and transcribed with resolvable commits by plan 15-12.
+     Phase 09's `IN-01`..`IN-03` closed `wont-fix` on evidence-immutability grounds (plan
+     15-05). `WR-13`'s second hardcoded capability-refusal string fixed (plan 15-03,
+     `dispatchStock()` now routes through `capabilityRefusalMessage()`). `02-REVIEW.md`'s
+     `IN-05` fixed at source (plan 15-05, commit `9849224`).
+
+  2. **Satisfied.** The pending-todo tree went from 21 (measured at plan 15-01's close, after
+     the guard widening exposed 9 previously-invisible findings) to 2 at this phase's close —
+     19 todos closed across plans 15-04 through 15-12, each fixed with a commit reference,
+     closed `wont-fix` with recorded rationale, or promoted into `REQUIREMENTS.md` → Future
+     Requirements with a named owner. The two todos still pending are both promoted, not
+     silently carried: `PKG-01` (Phase 16) owns the payload-relocation todo, `PKG-03` (Phase
+     16) owns the stale-phase-pointers todo.
+
+  3. **Satisfied.** All five DEBT-02 behaviours documented at point of use, cited by file and
+     heading: `c64-ram-capture/SKILL.md`'s `## Boot a disk` closing note (`Drive8Type`), a
+     prerequisite paragraph before `## The order` plus a Troubleshooting row (project-paths
+     git-marker), a new `## Release registry shape` section (`releases.json` schema) — all
+     plan 15-06; `vice-proxy.ts`'s module-scope comment plus a new `resolvedBinaryPathScope`
+     response field (`vice_ping`) and `GAINS-PROTOCOL.md`'s corrected warp error codes plus a
+     fork-only caveat in `docs/stock-vice-parity.md`/`capability-registry.ts` (warp claim) —
+     both plan 15-09.
+
+  4. **Satisfied.** All three `03-HUMAN-UAT.md` scenarios executed live against genuine
+     `/usr/bin/x64sc` and recorded with evidence: scenario 1 pass (plan 15-08, byte-comparison
+     snapshot round trip), scenario 2 partial (plan 15-08 — keyboard pass, joystick an honest
+     zero-delta negative result reproducing Phase 13's `A3`), scenario 3 pass (plan 15-10, a
+     real checkpoint-flood probe against genuine stock VICE). None left `pending`; `status:`
+     stays `partial` rather than being softened to force an overall pass.
+
+  **The one discovery worth carrying forward**: the guard criterion 1 depends on
+  (`docs-review-disposition.test.ts`) was green throughout v0.3.0 and the v0.4.0 phases before
+  this one **for the wrong reason** — its parser matched only level-3, colon-terminated
+  finding headings, blind to 31 findings across three phases (`03-REVIEW.md`'s 14 level-4
+  findings, `05-REVIEW.md`'s 16 already dispositioned elsewhere, `14-REVIEW.md`'s 1
+  colon-less finding). Plan 15-01 widened it as this phase's own tracer, before any other
+  disposition work could rely on it meaning what it claimed. The two invariants that stop
+  this recurring — a shape-drift detector requiring every future heading-marker shape's ids
+  to be a subset of the parser's own output, and a fixture-driven regression test pinning the
+  two previously-invisible shapes against a committed fixture — are the structural fix, not
+  the widened regex alone; a sixth heading shape would fail loudly under either invariant
+  rather than silently under-counting the way the first four did.
 
 ### Phase 16: Packaging and Repo Shape
 

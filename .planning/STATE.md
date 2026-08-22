@@ -5,11 +5,11 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-11-PLAN.md
-last_updated: "2026-08-22T17:50:52.752Z"
+stopped_at: Completed 15-12-PLAN.md — Phase 15 complete (12/12 plans)
+last_updated: "2026-08-22T18:10:51.873Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 15 execution started
-state_head: 9e4abfa8f2ce666b7c3d40ddb1cdb271573dbf7d
+last_activity_desc: Phase 15 complete — GATE-02/DEBT-01/DEBT-02/DEBT-03 all Complete
+state_head: 601a53ce233f4b7c4f3cb580bdf7a736d2313916
 progress:
   total_phases: 6
   completed_phases: 3
@@ -56,15 +56,20 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 11 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 — non-sequential; 08
+Phase: 15 (Debt and Review Disposition) — COMPLETE
+Plan: 12 of 12 complete (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12 — non-sequential; 08
 depends only on 15-01 and ran ahead of 06/07; 09 depends on 15-03/15-07, both
 already complete; 10 depends on 15-08/15-09, both already complete; 11 (wave 8)
-depends on 15-09/15-10, both already complete). The
+depends on 15-09/15-10, both already complete; 12 (wave 9, the phase's designated
+closer) depends on all eleven prior plans). The
 `state.advance-plan` counter's own sequential "N of 12" framing does not fit a wave-parallel
 phase; this line is corrected by hand
 per plan 08's own execution, not by the tool's blind increment.
-Status: Executing (non-sequential wave)
+Status: Complete (2026-08-22) — GATE-02/DEBT-01/DEBT-02/DEBT-03 all Complete in
+REQUIREMENTS.md with closure notes; `docs-review-disposition.test.ts` green
+(150 findings, 0 undispositioned); `docs-deferred-ledger.test.ts` green in
+both directions (2 pending todos, 0 UAT gaps); ROADMAP.md's Phase 15 section
+updated with the real 12-plan list and outcome Notes.
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
@@ -124,13 +129,27 @@ real fork binary (14-03, 6/6 passing); 14-04 confirmed a clean retain-branch
 recorded zero; 14-05 closed the record — the fork-removal todo moved to
 `.planning/todos/completed/` with a Resolution section, FORK-01/FORK-02
 ticked Complete in REQUIREMENTS.md, and ROADMAP's Phase 14 Notes plus Phase
-15/16/17 dependency notes resolved against the decision. Next session should
-read: ROADMAP's Phase 15 section (Debt and Review Disposition — the
-milestone's bulk workload) and the remaining pending todo that bears on it
-(`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`, now carrying the
-FORK-01 answer to its fork-facing question), `docs/phase2-backend-probe-evidence.md`,
-and `## Deferred Items` below.
-Last activity: 2026-08-22 — Phase 15 execution started
+15/16/17 dependency notes resolved against the decision.
+
+**Phase 15 — Debt and Review Disposition — is COMPLETE (2026-08-22, 12/12
+plans).** The milestone's bulk workload: every open code-review finding
+across all phases dispositioned (`GATE-02`), the pending-todo tree reduced
+from 21 to 2 with every remaining item promoted to a named Phase 16 owner
+(`DEBT-01`), all five undocumented behaviours documented at point of use
+(`DEBT-02`), and Phase 03's three UAT scenarios executed live with evidence
+(`DEBT-03`, scenario 2's joystick half an honest negative result). Plan
+15-01 widened `docs-review-disposition.test.ts`'s parser first, as the
+phase's tracer, discovering 150 findings where the guard had only ever seen
+119 — the same guard that had reported green at the v0.3.0 close while blind
+to 31 findings across three phases. Plan 15-12 (wave 9, the phase's
+designated closer) transcribed Phase 08's ten-finding verdict table from
+plans 15-02/15-03's landed commits, closed the three remaining
+`wont-fix`/promoted todos, filled in every `### Promoted by DEBT-01` owner,
+flipped the four requirements Complete with closure notes, and reconciled
+the ledger to 2 pending todos with zero UAT gaps. Next session should read:
+ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
+which owns both remaining pending todos) and `## Deferred Items` below.
+Last activity: 2026-08-22 — Phase 15 complete
 
 ## Performance Metrics
 
@@ -214,6 +233,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 15 P09 | 40min | 3 tasks | 10 files |
 | Phase 15 P10 | 28min | 3 tasks | 8 files |
 | Phase 15 P11 | 40min | 3 tasks | 11 files |
+| Phase 15 P12 | TBD | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -328,10 +348,13 @@ Recent decisions affecting current work:
 - [Phase 15]: [Phase 15-11] tools-manifest.json staleness todo disposed wont-fix on the D-16 ground (deliberate deletion, not staleness); fork-live.test.ts's live-surface diff now names D-16 explicitly via a new shared fork-deleted-tools.ts constant, never a second hand-typed list.
 - [Phase 15]: [Phase 15-11] CI test-command divergence settled keep-npm-test from GitHub Actions run 32517575905's own log (all nine MANUAL_ONLY_TESTS suites pass cleanly in under two minutes); documented in ci.yml's Test-step comment citing the run id, naming zero manual-only test filenames.
 - [Phase 15]: [Phase 15-11] vice_disk_attach's contract-redesign question promoted to REQUIREMENTS.md Future Requirements with plan 15-12 named as owner, not implemented here; REQUIREMENTS.md itself untouched by this plan.
+- [Phase 15]: [Phase 15-12] Closed the phase's record: Phase 08's ten review findings (WR-04..WR-13) transcribed with resolvable commits into one Resolution table; broker-tests-stall and .vsf-bootstrap-input todos closed wont-fix; keyboard-fallback-load todo promoted with a named owner (plan 15-08's live evidence met neither of the two closing conditions this plan named); GATE-02/DEBT-01/DEBT-02/DEBT-03 flipped Complete with closure notes; pending-todo count reduced from 21 (as of 15-01) to 2, both remaining items promoted to Phase 16 (PKG-01, PKG-03)
+- [Phase 15]: [Phase 15-01, restated by 15-12's phase-close] The widened guard's two new invariants: a shape-drift detector (declaredFindingIdsInHeadings(), anchored at any heading level 1-6, whose output must be a subset of the narrower parser's) so a future fifth heading shape fails a named test instead of silently vanishing; and a fixture-driven regression test (planted WR-98/IN-97 shapes in fixtures/planted-review-fixture.md) pinning the two previously-invisible shapes against a committed fixture
 
 ### Pending Todos
 
-2 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+2 pending (2 files in `.planning/todos/pending/` + 0 UAT-gap rows = 2) — see
+`.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -655,17 +678,22 @@ suites pass cleanly on the runner in under two minutes, so `npm test` stays
 in CI (deliberately wider than the local `npm run test:automated` gate),
 documented in a comment above `ci.yml`'s `Test` step citing the run id — and
 closed the todo — pending 7 → 6, total 8 → 7.
-**Current, as of phase 15 plan 15-12 Task 1 (2026-08-22): 3 items — 2
-pending todos plus Phase 03's UAT gap** (the UAT-gap row's own removal is
-Task 3's job — see below for why it is not removed yet). The count in this
-paragraph is derived from, and must equal, the row count of the table
-immediately below it plus the one `uat_gap` row.
+**Current, as of phase 15 plan 15-12 Task 3, the phase's final reconciliation
+(2026-08-22): 2 items — 2 pending todos, zero UAT gaps.** The `uat_gap` row
+present since the v0.2.0 close is removed here: `03-HUMAN-UAT.md` now records
+zero `result: [pending]` rows (scenario 1 pass, scenario 2 partial — an
+honest joystick negative result, not a pending one — scenario 3 pass, all
+closed live by plans 15-08/15-10), so per this table's own accounting rule
+(pending todo files plus any UAT-gap row still open) there is nothing left
+to carry as a `uat_gap` row. The count in this paragraph is derived from,
+and must equal, the row count of the table immediately below it — this is
+also, for the first time, the arithmetic in full: 2 pending todo files in
+`.planning/todos/pending/` + 0 UAT-gap rows = 2.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — promoted to `PKG-01` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — promoted to `PKG-03` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
-| uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
 Not counted above, because they are complete on disk: all nine
 `.planning/quick/` tasks the v0.3.0 pre-close audit reported as `[missing]`
@@ -713,46 +741,58 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T17:50:52.664Z
-Stopped at: Completed 15-11-PLAN.md
+Last session: 2026-08-22T18:10:51.781Z
+Stopped at: Completed 15-12-PLAN.md — Phase 15 complete (12/12 plans)
 Resume file: None
 
 ## Operator Next Steps
 
-1. **`/gsd-new-milestone`** — the only thing gating further planned work.
-   Questioning → research → requirements → roadmap. It creates the fresh
-   `.planning/REQUIREMENTS.md` that was removed at this close. Next phase number
-   is **12**.
+**Phase 15 (Debt and Review Disposition) is complete.** The two immediate next
+steps, in ROADMAP order:
 
-2. **`git push origin v0.3.0`** if the tag was not pushed at close time — check
-   with `git ls-remote --tags origin v0.3.0`. Note that a merge to `main`
-   auto-publishes a patch version unless the commit subject carries
-   `[skip release]`, so the npm semver can already be ahead of the `v0.3.0`
-   planning label.
+1. **`/gsd-plan-phase 16`** — Packaging and Repo Shape (`PKG-01`..`PKG-04`).
+   This is the phase that owns both of `DEBT-01`'s two remaining promoted
+   todos: `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`
+   (`PKG-01`, the plugin-payload relocation under `src/` with `.mcp.json`
+   merge) and `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
+   (`PKG-03`, orphaned planning references in source comments). Sequenced
+   after Phase 15 deliberately — see ROADMAP's Phase 16 goal for why (sweep
+   path/line-reference citations once, after all disposition work has landed).
 
-**Two things worth reading before scoping the next milestone, both raised by this
-close rather than by a phase:**
+2. **`/gsd-plan-phase 17`** — Project Identity and Ledger Close (`CORE-01`,
+   `DEBT-04`), only after Phase 16 discharges `PKG-01`'s todo. `DEBT-04`
+   measures the deferred-items ledger at the **true** close — this plan's
+   count (2 pending todos, 0 UAT gaps) is the Phase-15 count, not the
+   milestone-final one; Phase 16 will remove at least one more item
+   (`PKG-01`'s own todo) before Phase 17 takes its measurement. `CORE-01`
+   revisits PROJECT.md's Core Value statement, flagged since the v0.3.0
+   close as possibly describing a milestone-out-of-date value (live emulator
+   driving only, vs. v0.3.0's proof that what a session learns outlives it) —
+   still not amended, per that flag's own instruction not to edit it in
+   passing.
 
-- **The Core Value may be a milestone out of date.** It describes live emulator
-  driving only; v0.3.0's whole point was knowledge that outlives the session, and
-  the sealed-question test proved that value directly. PROJECT.md → Core Value
-  carries the flag and a candidate rewording. Deliberately not amended on one
-  milestone's evidence.
+**Two things worth carrying into Phase 16/17 scoping, both raised by this
+phase's own close:**
 
-- **The deferred ledger is trustworthy for the first time.** 19 items (18 pending
-  todos + Phase 03's UAT gap), derived from `.planning/todos/pending/` and
-  guarded in both directions. The count rose from 13 because it is now *counted*,
-  not because the debt grew that much — see `## Deferred Items`. The three
-  highest-value items are unchanged across two milestones and are all the same
-  failure mode: an internal check standing in for an external one.
+- **The two promoted todos are real, scoped work, not paperwork.** `PKG-01`
+  is a genuine layout migration across two published packages, the plugin
+  manifest, the packaging script, CI, and roughly six layout-asserting tests
+  (see the todo's own "Sizing" note — "roadmap-scale ... route it through
+  `/gsd-phase`"). `PKG-03` is smaller (two comment-only sites) but touches
+  files (`stock-cia.ts`, `stock-dispatch.ts`) with a real backlog decision
+  still open for `vice_disk_detach` (pick it up as real work or make an
+  explicit cut decision — do not leave it pointing at a closed phase).
 
-- **The document guards are only load-bearing if something reads them.** This
-  close found `docs-review-disposition.test.ts` red at `4f048bb` — the commit
-  whose subject says "all findings closed". Plan 11.1-07 built the right
-  instrument and the audit was then written without reading its last three lines.
-  The 18th todo carries the concrete suggestion: require a green run of the four
-  `docs-*.test.ts` guards before a milestone audit may record `status: passed`.
+- **The document guards are only load-bearing if something reads them —
+  still true, and now measurably wider.** This phase's own tracer (plan
+  15-01) found `docs-review-disposition.test.ts` green at `3f0089f` for the
+  wrong reason: its parser only matched level-3, colon-terminated headings,
+  missing 31 findings across three phases (`03-REVIEW.md`'s 14, `05-REVIEW.md`'s
+  16 already dispositioned elsewhere, `14-REVIEW.md`'s 1). The two new shape
+  invariants (a shape-drift detector and a fixture-driven regression test —
+  see the Decisions entry above) are what stop this recurring; they should
+  be treated as load-bearing, not incidental, in any future guard change.
 
-**Optional, non-blocking:** `/gsd-cleanup` to move the four v0.3.0 phase
-directories into `milestones/v0.3.0-phases/` — they were deliberately left in
-place at close.
+**Optional, non-blocking:** `/gsd-cleanup` to archive completed v0.4.0 phase
+directories once the milestone closes — none archived yet, all left in place
+per the same deliberate-non-archival convention prior milestone closes used.
