@@ -61,3 +61,54 @@ documents this todo, and it becomes false the moment this is done.
 **Verify:** `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 node --test r2000-cli.test.ts
 disasm-roundtrip.test.ts r2000-answer-key.test.ts` — same pass counts as before the
 migration (43 / current / 9), and `npm run test:automated` green.
+
+## Resolution
+
+**Fixed.** Commit `185187a`, Phase 15 plan 15-07 Task 3.
+
+All three files (not two — this todo's own correction confirming
+`r2000-project.test.ts` carried a third, independently-divergent
+`probeR2000()`/`SKIP_REASON` copy was verified true before editing) now import
+from `r2000-test-gate.ts`: `r2000-cli.test.ts` imports `R2000_BIN`,
+`skipReasonFor`, `assertR2000RequiredIfEnvSet`, `ACME_AVAILABLE`,
+`assertAcmeRequiredIfEnvSet`; `r2000-project.test.ts` imports `R2000_BIN`,
+`skipReasonFor`, `assertR2000RequiredIfEnvSet`; `disasm-roundtrip.test.ts`
+imports `ACME_BIN`, `acmeSkipReasonFor`, `assertAcmeRequiredIfEnvSet`. No new
+export was added to the seam.
+
+**Timeout divergence resolved as instructed:** two of the three local copies
+(`r2000-cli.test.ts`'s and `disasm-roundtrip.test.ts`'s own `probeAcme()`)
+passed no `spawnSync` timeout; both now share the seam's bounded 10s probe.
+
+**HONEST SCOPE paragraph deleted** from `r2000-test-gate.ts`'s ACME header —
+it documented exactly this migration as outstanding and became false the
+moment it landed.
+
+**Pass counts proven identical, measured before AND after (not assumed from
+this todo's own remembered `43`, which had drifted — `r2000-cli.test.ts` had
+grown to 64 tests by the time this plan ran):**
+
+| File | Default (before → after) | Opt-in `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1` (before → after) |
+|---|---|---|
+| `r2000-cli.test.ts` | 64/64/0/0 → 64/64/0/0 | 64/64/0/0 → 64/64/0/0 |
+| `disasm-roundtrip.test.ts` | 5/5/0/0 → 5/5/0/0 | 5/5/0/0 → 5/5/0/0 |
+| `r2000-answer-key.test.ts` (unmigrated control) | 10/10/0/0 → 10/10/0/0 | 10/10/0/0 → 10/10/0/0 |
+| `r2000-project.test.ts` | 13/13/0/0 → 13/13/0/0 | 13/13/0/0 → 13/13/0/0 |
+| combined (`node --test` on all four) | 92/92/0/0 → 92/92/0/0 | 92/92/0/0 → 92/92/0/0 |
+
+Measured by reverting to the pre-migration tree (`git diff` saved to a patch,
+`git checkout --` the four files, ran both counts), then reapplying the
+migration patch and re-measuring — not inferred from a single post-fix run.
+Both regenerator2000 (0.9.20) and ACME (0.97 "Zem") are genuinely installed on
+this host, so the "default" and "opt-in" columns are independent proof, not
+duplicates of the same skip path.
+
+**`11-VERIFICATION.md`'s cited evidence re-confirmed, not re-cut:** test 35 in
+`r2000-cli.test.ts` ("gated (D-11+D-08): criterion 3 … renders as
+`lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` … reassembles under real ACME")
+reports `ok 35` with the identical test name before and after this change,
+under the opt-in run.
+
+`cd .claude/mcp/vice && npm run typecheck` and `npm run test:automated` both
+exit 0 post-migration (2110 tests / 2105 pass / 0 fail / 5 pre-existing todo,
+unchanged from the pre-existing baseline).

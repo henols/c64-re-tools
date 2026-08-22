@@ -317,7 +317,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-13 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+12 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -488,7 +488,8 @@ section;
 by Phase 11.1 itself while dispositioning Phase 10/11's review findings and
 building Task 4's completeness guard, which caught undispositioned findings
 outside Phase 10/11 too
-(`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
+(the hand-copied ACME/regenerator2000 gate migration — resolved 2026-08-22 by
+Phase 15 plan 15-07, see `.planning/todos/completed/` for the Resolution;
 `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
 `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`).
 **Three rows from the 2026-08-19/18-items counts above are removed here
@@ -547,8 +548,13 @@ then closed the `build-atomic.test.ts` cleanup-scan flake (fixed at commit
 `capturedFrom` kind from `stock` to `fork` (commit `d67f0ef`), with the
 derive-the-kind-automatically sub-item promoted to a named follow-on rather
 than implemented, since it would touch `probe-binmon.mjs` — pending 14 → 13,
-total 15 → 14. **Current, as of phase 15 plan 15-07 Task 2 (2026-08-22): 14
-items — 13 pending todos plus Phase 03's UAT gap.** The count in this
+total 15 → 14. Task 3 then migrated the three hand-copied ACME/regenerator2000
+gates in `r2000-cli.test.ts`, `r2000-project.test.ts` and
+`disasm-roundtrip.test.ts` onto the shared `r2000-test-gate.ts` seam (commit
+`185187a`), proven by a measured before/after pass-count table (identical in
+both the default and opt-in runs) — pending 13 → 12, total 14 → 13.
+**Current, as of phase 15 plan 15-07 Task 3 (2026-08-22): 13 items — 12
+pending todos plus Phase 03's UAT gap.** The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
 
@@ -562,7 +568,6 @@ immediately below it plus the one `uat_gap` row.
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
 | todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
-| todo | 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate | — | Pending — IN-07 (10-REVIEW.md); two (now three-file-scoped) hand-copied `probeR2000()` gates, deferred because `r2000-cli.test.ts`'s gate semantics are load-bearing for already-verified Phase 11 evidence |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
