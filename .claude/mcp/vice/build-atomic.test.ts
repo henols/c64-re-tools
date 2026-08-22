@@ -188,9 +188,21 @@ test(
       return readdirSync(parent).filter((f) => f.startsWith(".build-tmp-"));
     }
 
-    // Success path.
-    const successOut = mkdtempSync(join(tmpdir(), "build-atomic-cleanup-ok-"));
+    // Both out-dirs below live INSIDE one private wrapper directory, never
+    // directly under the shared system temp root -- so tempSiblingsOf()'s
+    // scan (dirname(dir)) is scoped to a parent this test run owns
+    // exclusively. Ten other test files in this suite also call build(),
+    // several (e.g. resources-sync.test.ts) into their own
+    // mkdtempSync(tmpdir())-scoped scratch dirs; node --test runs test FILES
+    // concurrently, so without this wrapper any of them staging a
+    // `.build-tmp-*` directory in the shared tmpdir() while this test is
+    // between its build() call and its readdirSync reddens the assertion
+    // below with zero code change on either side. See
+    // 2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp.md.
+    const wrapper = mkdtempSync(join(tmpdir(), "build-atomic-cleanup-wrapper-"));
     try {
+      // Success path.
+      const successOut = join(wrapper, "success-out");
       build({ outDir: successOut });
       assert.deepEqual(
         tempSiblingsOf(successOut),
@@ -202,14 +214,11 @@ test(
         [],
         "a .build-tmp- staging directory survived INSIDE the out-dir after a successful build"
       );
-    } finally {
-      rmSync(successOut, { recursive: true, force: true });
-    }
 
-    // Failure path: pre-create a directory at the destination path so the
-    // final rename onto that name cannot possibly succeed.
-    const failOut = mkdtempSync(join(tmpdir(), "build-atomic-cleanup-fail-"));
-    try {
+      // Failure path: pre-create a directory at the destination path so the
+      // final rename onto that name cannot possibly succeed.
+      const failOut = join(wrapper, "fail-out");
+      mkdirSync(failOut, { recursive: true });
       mkdirSync(join(failOut, "vice-broker.mjs"));
       assert.throws(() => build({ outDir: failOut }), "build() must throw when a rename target is unusable");
       assert.deepEqual(
@@ -218,7 +227,7 @@ test(
         "a .build-tmp- staging directory survived next to the out-dir after a FAILED build"
       );
     } finally {
-      rmSync(failOut, { recursive: true, force: true });
+      rmSync(wrapper, { recursive: true, force: true });
     }
   }
 );
