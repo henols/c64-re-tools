@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 13
-current_phase_name: External Verification
-status: executing
-stopped_at: Completed 13-05-PLAN.md (phase 13 complete)
-last_updated: "2026-08-22T00:45:04.284Z"
+current_phase: 12
+current_phase_name: Audit Integrity Instrument
+status: planning
+stopped_at: Phase 13 complete, ready to plan Phase 12
+last_updated: "2026-08-22T06:59:35.402Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 13 plan 13-05 closing the phase's record
-state_head: a81bea798f868dc9445fd072e7d8b4990bba3829
+last_activity_desc: Phase 13 complete, transitioned to Phase 12
+state_head: 4f019345ed7a4d3e9ff824b1f479d609f004d8bf
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 12
   completed_plans: 11
-  percent: 0
+  percent: 17
 ---
 
 # Project State
@@ -43,7 +43,7 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 13 — External Verification
+**Current focus:** Phase 12 — Audit Integrity Instrument (returning to it; Phase 13 complete)
 2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
 becomes a fix or a dated decision, and the fork-backend and Core Value questions
 get answered deliberately rather than by default. Requirements are being defined
@@ -56,33 +56,57 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 13 (External Verification) — EXECUTING
-Plan: 5 of 5 (final plan of the phase)
-Status: Plan 13-05 executing — closes the phase's record
-Phase 13 verifies the milestone's three highest-value carried items
-against real binaries instead of internal proxies. Plans 13-01/13-02
-re-recorded the three `VERIF-02` binmon fixtures and confirmed the
-`--help` backend discriminator against real stock (VICE 3.9) and fork
-(VICE 3.10) binaries. Plan 13-03 live-probed Phase 3's four wire
-assumptions against fork VICE 3.10 (A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5
-CONTRADICTED); A4 was deliberately excluded (D-13-05). Plan 13-04 removed
-the A1/A2 `[ASSUMED]` labels, left A3/A5 labelled, and shipped a permanent
-label-discipline guard (`assumption-label-discipline.test.ts`). Plan
-13-05 (this plan) closes the phase's record: both retired verdicts in
-`docs/phase2-backend-probe-evidence.md` resolved with artifact citations,
-the two finished todos moved to `.planning/todos/completed/`, the third
-trimmed to A4, two new findings filed as pending todos, and this section's
-Deferred Items ledger reconciled against the post-phase todo tree.
-Next session should read: this phase's five SUMMARY.md files,
-`docs/phase2-backend-probe-evidence.md`, and `## Deferred Items` below
-before scoping further work.
-Last activity: 2026-08-22 — Phase 13 plan 13-05 executed.
+Phase: 12 — Audit Integrity Instrument
+Plan: 12-07 outstanding (6/7 summarized)
+Status: Resume execution — not "ready to plan"; Phase 12 is already planned
+**Phase 12 needs attention before it can close, and its records disagree.**
+`12-07-PLAN.md` has no SUMMARY, so the plan index reports it incomplete and
+ROADMAP shows 6/7 / In Progress with the checkbox unticked. But
+`12-VERIFICATION.md` reads `status: verified`, 11/11, and credits plan 12-07
+by name for closing both former human-verification items with live in-session
+evidence. So 12-07's work appears done and verified while its SUMMARY was
+never written — reconcile which is true before re-running anything; do not
+re-execute 12-07 on the assumption it never ran. ROADMAP line 74 also still
+carries the superseded "gaps_found, 6/11" verdict from 2026-08-21.
+
+Phase 13 — External Verification — is COMPLETE (2026-08-22, 5/5 plans,
+verification `passed` 9/9 after one gap-closure round). It verified the
+milestone's three highest-value carried items against real binaries instead
+of internal proxies. Plans 13-01/13-02 re-recorded the three `VERIF-02`
+binmon fixtures (captured from fork `/usr/local/bin/x64sc` 3.10, labelled
+truthfully as such per D-13-02's dynamic resolution) and confirmed the
+`--help` backend discriminator against real stock (VICE 3.9) and fork (VICE
+3.10) binaries. Plan 13-03 live-probed Phase 3's four wire assumptions
+against fork VICE 3.10 (A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5 CONTRADICTED);
+A4 was deliberately excluded (D-13-05) and remains the sole open item in its
+probe-debt todo. Plan 13-04 removed the A1/A2 `[ASSUMED]` labels, left A3/A5
+labelled, and shipped a permanent label-discipline guard
+(`assumption-label-discipline.test.ts`). Plan 13-05 closed the phase's
+record: both retired verdicts in `docs/phase2-backend-probe-evidence.md`
+resolved with artifact citations, two finished todos moved to
+`.planning/todos/completed/`, the third trimmed to A4, two new findings
+filed, and the Deferred Items ledger below reconciled.
+
+Post-phase, at the tail gates: A5's contradiction is an advertised
+*tool-contract* defect (`vice_disk_attach`'s D-14 promise), so per D-13-04's
+escape hatch it became a high-priority todo rather than a source fix, and
+EXTV-03 now carries a closure note in REQUIREMENTS.md recording that
+carve-out explicitly. `13-REVIEW.md`'s four findings were dispositioned into
+a pending todo (WR-01 fixed at source: `checkCommandAvailable()` no longer
+interpolates into a shell command line); that todo also records the
+structural cause worth fixing — the code-review gate runs *after* the last
+plan's SUMMARY, so no plan can ever disposition its own phase's findings,
+which is why phases 08, 09 and 13 each filed the same todo.
+Next session should read: `12-07-PLAN.md` and `12-VERIFICATION.md` (to settle
+the disagreement above), then Phase 13's five SUMMARY.md files,
+`docs/phase2-backend-probe-evidence.md`, and `## Deferred Items` below.
+Last activity: 2026-08-22 — Phase 13 complete, transitioned to Phase 12
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 116
+- Total plans completed: 121
 - Average duration: —
 - Total execution time: —
 
@@ -102,6 +126,7 @@ Last activity: 2026-08-22 — Phase 13 plan 13-05 executed.
 | 09 | 8 | - | - |
 | 10 | 9 | - | - |
 | 11 | 12 | - | - |
+| 13 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -456,7 +481,7 @@ scope.
 ## Session Continuity
 
 Last session: 2026-08-22T00:45:04.198Z
-Stopped at: Completed 13-05-PLAN.md (phase 13 complete)
+Stopped at: Phase 13 complete, ready to plan Phase 12
 Resume file: None
 
 ## Operator Next Steps
