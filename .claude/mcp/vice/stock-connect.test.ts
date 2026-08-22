@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -999,4 +999,83 @@ test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where
         `a wrong function name in the thrown message misdirects diagnosis (02-REVIEW.md IN-05)`,
     );
   }
+});
+
+// This repo's own stripCommentLines() convention (hostpath-consumers.test.ts,
+// r2000-launch.test.ts) reused verbatim rather than reinvented: strips `//`
+// and `/* ... */` comments line-by-line, closing a block comment on the
+// FIRST close-token found by position, never by whether the trimmed line
+// happens to end with one, and re-feeding any code trailing a same-line
+// close back through the same logic.
+function stripCommentLinesForShellScan(src: string): string {
+  const out: string[] = [];
+  let inBlock = false;
+
+  function processSegment(text: string): void {
+    if (inBlock) {
+      const closeIdx = text.indexOf("*/");
+      if (closeIdx === -1) return;
+      inBlock = false;
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    const trimmed = text.trim();
+    if (trimmed.startsWith("/*")) {
+      const openIdx = text.indexOf("/*");
+      const closeIdx = text.indexOf("*/", openIdx + 2);
+      if (closeIdx === -1) {
+        inBlock = true;
+        return;
+      }
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    if (/^\s*\/\//.test(text)) return;
+    out.push(text);
+  }
+
+  for (const line of src.split("\n")) {
+    processSegment(line);
+  }
+  return out.join("\n");
+}
+
+/** The complete top-level shell-scannable module list this repo ships: every
+ * `*.ts`/`*.mjs` directly under `.claude/mcp/vice`, excluding `*.test.*`
+ * files (same `readdirSync`-derived, non-recursive convention as
+ * hostpath-consumers.test.ts's topLevelProductionModules() -- does not walk
+ * into `resources/` or `node_modules/`). Test files are excluded because
+ * they legitimately spawn shells against their own fixed, non-caller-derived
+ * fixture paths (e.g. vice-proxy.test.ts's `--help` capture helper); the
+ * finding this pin closes (13-REVIEW.md WR-01) is about a caller-derived
+ * value reaching a shell, which only shipped/production code can do. */
+function topLevelShellScanFiles(): string[] {
+  return readdirSync(STOCK_CONNECT_TEST_DIR)
+    .filter((name) => /\.(ts|mjs)$/.test(name))
+    .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name));
+}
+
+test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in .claude/mcp/vice interpolates a template placeholder into a sh -c command string", () => {
+  // Derived, not a literal check against checkCommandAvailable() alone: scans
+  // the ENTIRE derived file set for the forbidden shape (a `"-c"` argument
+  // followed by a backtick template literal containing `${`), so a future
+  // caller-derived shell command anywhere in this directory trips the same
+  // gate the review's fix (commit f73d0fa) closed for probe-binmon.mjs.
+  const shCInterpolationPattern = /["'`]-c["'`]\s*,\s*`[^`]*\$\{[^`]*`/g;
+  const violations: Array<{ file: string; snippet: string }> = [];
+  for (const name of topLevelShellScanFiles()) {
+    const src = readFileSync(join(STOCK_CONNECT_TEST_DIR, name), "utf8");
+    const stripped = stripCommentLinesForShellScan(src);
+    for (const match of stripped.matchAll(shCInterpolationPattern)) {
+      violations.push({ file: name, snippet: match[0] });
+    }
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    "found a sh -c command string interpolating a template placeholder -- this is the shell-interpolation " +
+      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.mjs's checkCommandAvailable() (commit f73d0fa); " +
+      "pass the value as a positional shell argument instead:\n" +
+      violations.map((v) => `  ${v.file}: ${v.snippet}`).join("\n"),
+  );
 });

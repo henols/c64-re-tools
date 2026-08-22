@@ -87,3 +87,54 @@ ledger-reconciling plan), or `execute-phase` should file this todo automatically
 `REVIEW.md` lands with `status: issues_found` and no disposition source names its ids —
 turning a recurring manual catch into the mechanical step the disposition guard already
 assumes exists. That is the actual fix; this todo is the third symptom.
+
+## Resolution
+
+Phase 15 plan 15-05 executed this todo's own four per-finding recommendations exactly.
+
+**`WR-01`: already fixed at source — confirmed, not re-implemented.** Direct source
+inspection (`probe-binmon.mjs:1493-1496`, current line numbers) shows `checkCommandAvailable()`
+passes the binary name as a positional shell argument (`spawnSync("sh", ["-c", 'command -v
+"$1"', "sh", cmd], ...)`), never spliced into the command line, with a comment at the fix
+site forbidding the reversion. Landed in commit `f73d0fa` (`fix(13): close 13-REVIEW.md WR-01
+— drop shell interpolation from checkCommandAvailable`), which predates this plan and was
+verified live at plan time — 15-RESEARCH.md's row calling for a two-line fix here was stale.
+`probe-binmon.mjs` was not touched by this plan (`git diff --stat` over it is empty across
+every commit). Pinned durably: a new derived source-level gate in `stock-connect.test.ts`
+("13-REVIEW.md WR-01 pin...") scans every top-level production `.ts`/`.mjs` file in
+`.claude/mcp/vice` (`readdirSync`-derived, not hand-typed) for the forbidden shape — a `"-c"`
+shell argument followed by a template literal containing `${` — so the class of defect fails
+the test suite, not only a future code review. Confirmed non-vacuous: a scratch `.mjs`
+containing the interpolated form was added to `.claude/mcp/vice`, `node --test
+stock-connect.test.ts` failed naming that exact file and snippet, and the scratch file was
+then deleted and the suite reconfirmed green (39/39).
+
+**`WR-02`: deferred with intent, per the todo's own recommendation.** `probe-binmon.mjs` is
+currently 2435 lines (was 2429 when this todo was filed — grown by 6, not shrunk) across the
+same five usage modes. Splitting it now would rewrite the file that produced Phase 13's
+committed probe transcripts, the same evidence-immutability argument governing
+`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned`. Reopen trigger, stated
+precisely: do the `probe-assumptions.mjs` split when a sixth probe mode is actually added —
+not before.
+
+**`IN-01`: wont-fix for now, with a named trigger.** Confirmed live: `probeA3JoyportBits()`
+(`probe-binmon.mjs:1465`) still short-circuits on `clearedInDc00 || clearedInDc01`. This
+matters only if A3 is re-probed, and A3 is `INCONCLUSIVE` today with its `[ASSUMED]` label
+still on `stock-input.ts`'s `JOYPORT_BITS` (confirmed: `13-PROBE-RESULTS.md` records A3
+INCONCLUSIVE, "the `[ASSUMED]` label must stay on"). Reopen trigger, stated precisely: tighten
+`polarityNotes` to report both CIA1 ports independently *before* any A3 re-probe is run, not
+after, or the same ambiguity recurs unnamed in the new evidence.
+
+**`IN-02`: promoted out of this repo, with a named owner.** Confirmed: the scoping omission is
+in `.claude/gsd-core/workflows/code-review.md`'s `files:` derivation (the review-target file
+list), not in anything Phase 13 built — this project's source is not the place to fix it.
+Matched `.txt`/`.json` evidence pairs should be scoped as a unit in that workflow's file-list
+derivation. Owner: **plan 15-12**, which records this promotion in `REQUIREMENTS.md` -> Future
+Requirements; this todo's job ends at stating the verdict and handing it over by name.
+
+| Id | Verdict | Evidence or trigger | Owner |
+|----|---------|----------------------|-------|
+| WR-01 | fixed (already landed, now pinned) | Commit `f73d0fa`; positional-argument form confirmed live at `probe-binmon.mjs:1493-1496`; pinned by `stock-connect.test.ts`'s derived `readdirSync` gate, proven non-vacuous by a planted scratch-file violation | — |
+| WR-02 | deferred with intent | Reopens when a sixth probe mode is added to `probe-binmon.mjs` (currently 2435 lines, five modes) | — |
+| IN-01 | wont-fix for now | Reopens if A3 is re-probed — tighten `polarityNotes` to report both CIA1 ports independently *before* that re-probe runs | — |
+| IN-02 | promoted out of this repo | GSD tooling fix, not a phase-13/this-repo fix | plan 15-12 (`REQUIREMENTS.md` -> Future Requirements) |

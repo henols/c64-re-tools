@@ -310,10 +310,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-19 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+18 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
-section previously read 18 (set at the phase 13 close); between then and now,
+section previously read 18 (set at the phase 13 close) before rising and
+falling again across Phase 15's own dispositioning work (see below); between
+the phase 13 close and now,
 phase 14 plan 14-03 filed one more (the `tools-manifest.json` staleness
 finding) and other tail activity filed two more (a phase-12 regression-gate
 finding and the phase-13-close review-disposition finding), bringing the
@@ -326,7 +328,10 @@ eight of that todo's findings (WR-06/WR-07/WR-08, IN-02/IN-03/IN-04/IN-05/
 IN-06) and closed it — moved to `.planning/todos/completed/` with a
 Resolution section — returning the count to 20. Phase 15 plan 15-05 then
 closed the Phase 09 `IN-01`..`IN-03` todo `wont-fix` (evidence immutability;
-see `.planning/todos/completed/`), returning the count to 19. See `## Deferred
+see `.planning/todos/completed/`), returning the count to 19, and closed the
+Phase 13 `WR-01`/`WR-02`/`IN-01`/`IN-02` todo (`WR-01` already fixed and now
+pinned; the other three deferred/promoted with named triggers/owners — see
+`.planning/todos/completed/`), returning the count to 18. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -506,11 +511,16 @@ files `03-REVIEW.md`'s remaining eight (`WR-06`, `WR-07`, `WR-08`, `IN-02`,
 none moved to completed); total items 21 → 22.
 
 Plan 15-04 then fixed all eight of that todo's findings and closed it,
-returning pending to 20 (total 21). **Current, as of phase 15 plan 15-05
-(2026-08-22): 20 items — 19 pending todos plus Phase 03's UAT gap.** Task 2
-closed `09-REVIEW.md`'s `IN-01`..`IN-03` `wont-fix` on evidence-immutability
+returning pending to 20 (total 21). Task 2 of plan 15-05 closed
+`09-REVIEW.md`'s `IN-01`..`IN-03` `wont-fix` on evidence-immutability
 grounds, moving that todo to `.planning/todos/completed/` — pending 20 → 19,
-total 21 → 20. The count in this paragraph
+total 21 → 20. **Current, as of phase 15 plan 15-05 Task 3 (2026-08-22): 19
+items — 18 pending todos plus Phase 03's UAT gap.** Task 3 closed
+`13-REVIEW.md`'s `WR-01`/`WR-02`/`IN-01`/`IN-02` todo — `WR-01` already fixed
+at source (commit `f73d0fa`) and now pinned by a derived test; `WR-02` and
+`IN-01` deferred with stated reopen triggers; `IN-02` promoted out of this
+repo to plan 15-12 — moving that todo to `.planning/todos/completed/` too:
+pending 19 → 18, total 20 → 19. The count in this paragraph
 is derived from, and must equal, the row count of the table immediately
 below it plus the one `uat_gap` row.
 
@@ -532,7 +542,6 @@ below it plus the one `uat_gap` row.
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | todo | 2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock | low | Pending — filed by phase 13 plan 13-05; two real `cpuhistory-get*` sidecars record `capturedFrom: "stock"` for the fork binary path; out of D-13-06's three-fixture scope |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
-| todo | 2026-08-22-phase-13-review-wr-01-wr-02-in-01-in-02-never-dispositioned | low | Pending — filed at the phase 13 close; `13-REVIEW.md`'s four findings had no disposition beyond `13-VERIFICATION.md` naming them. Third instance of the same structural cause (after phases 08 and 09): the review gate runs after the last plan's SUMMARY, so no plan can disposition its own phase's findings. `WR-01`'s two-line fix is already written in the review |
 | todo | 2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp | low | Pending — filed by phase 12's regression gate; `build-atomic.test.ts:184` scans the shared system `/tmp` for `.build-tmp-*` siblings, so any concurrent `build()` caller reddens it (1 fail in run 1, 0 in run 2, 6/6 green in isolation). Pre-existing (`b0975f4`), untouched by any GSD phase, and unreachable from `audit-gate.mjs`, which spawns only the four `docs-*.test.ts` guards |
 | todo | 2026-08-22-tools-manifest-stale-missing-vice_snapshot_list | low | Pending — filed by phase 14 plan 14-03; `fork-live.test.ts`'s live surface diff found the live fork server offers `vice_snapshot_list`, which the committed `tools-manifest.json` (generated 2026-07-31) does not list. Fix is a `refresh-manifest.ts` regeneration, out of this plan's live-transport-exercise scope |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
