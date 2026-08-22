@@ -51,7 +51,7 @@ Legend: ✅ available, — not available.
 | vice_keyboard_restore | ✅ | — | hardware-unrecoverable: RESTORE pulses the NMI line directly; it is not part of the keyboard matrix, and KEYBOARD_FEED has no way to produce it. vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input -- but a program polling $DC00/$DC01 directly will not see buffer injection. |
 | vice_keyboard_type | ✅ | ✅ |  |
 | vice_machine_config_get | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. |
-| vice_machine_config_set | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. |
+| vice_machine_config_set | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock has no runtime warp resource at all, and warp on stock is a launch-time flag, not a resource that can be toggled while running. |
 | vice_machine_reset | ✅ | ✅ |  |
 | vice_memory_banks | ✅ | ✅ |  |
 | vice_memory_compare | ✅ | ✅ |  |

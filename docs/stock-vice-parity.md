@@ -439,6 +439,27 @@ below is renumbered to stay contiguous.)
      `monitor_held_elsewhere`, one it can. `resolveAdvertisedToolDefinition()`
      now selects the stock manifest's own corrected entry per backend, so the
      schema an agent reads on stock matches what the handler actually emits.
+   - **`vice_machine_config_set`'s advertised `WarpMode` resource is
+     fork-only (Phase 15, `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10.md`).**
+     The fork tool's own compiled description in `tools-manifest.json`
+     advertises a `WarpMode` resource ("WarpMode (0/1) disables speed
+     limiting for fast execution"). Stock has **no runtime `WarpMode`
+     resource at all**: probed live against genuine stock `x64sc` (VICE
+     3.10) on 2026-08-20, `RESOURCE_GET WarpMode` and a string-typed
+     `RESOURCE_SET WarpMode "1"` both fail with `0x01` (object does not
+     exist); an int-typed `RESOURCE_SET WarpMode 1` fails with `0x8f`
+     (invalid parameter). The only route to warp on stock is the
+     **launch-time** flag (`-warp` / `InitialWarpMode` at broker launch) —
+     and even that resource is a silent-success trap at runtime (a runtime
+     `RESOURCE_SET InitialWarpMode 1` returns success and reads back as set,
+     but only the launch-time value is ever consulted). A skill written
+     against the fork's advertised description therefore **breaks** on
+     stock rather than degrading — exactly the `SKILL-01` hazard. The
+     description itself cannot be corrected here: `tools-manifest.json` is
+     generated from the fork binary's own compiled schema, and this bullet
+     is the project-owned caveat that stands in for it. The same caveat is
+     also carried in `capability-registry.ts`'s `vice_machine_config_set`
+     entry, so a stock caller reaching the tool at runtime sees it too.
 
 ## B. Extra stock features worth exposing (things stock does *more*)
 

@@ -280,7 +280,9 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     providedBy: "fork",
     reason:
       "Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist " +
-      "subset that never shipped on stock.",
+      "subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock " +
+      "has no runtime warp resource at all, and warp on stock is a launch-time flag, not a " +
+      "resource that can be toggled while running.",
   },
   {
     name: "vice_joystick_tap",

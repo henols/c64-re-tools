@@ -111,3 +111,48 @@ The cross-reference to
 above is now stale in one respect: that todo is closed (resolved `retain`),
 but its closure does not make this todo's own remaining fix moot — see
 above.
+
+## Resolution (2026-08-22, Phase 15 plan 15-09)
+
+All five Solution items closed or dispositioned:
+
+1. **Corrected error codes** — `.planning/research/GAINS-PROTOCOL.md`'s C.3
+   paragraph now names the measured codes: `0x01` (object does not exist) for
+   `RESOURCE_GET WarpMode` and a string-typed `RESOURCE_SET WarpMode "1"`;
+   `0x8f` (invalid parameter) only for an int-typed `RESOURCE_SET WarpMode 1`.
+   Cited to the 2026-08-20 live probe against genuine stock `/usr/bin/x64sc`
+   (VICE 3.10). Commit `d6a9c53` (Task 1).
+2. **`InitialWarpMode` silent-success trap recorded** — the Tier 4 `WarpMode`
+   row now states that `RESOURCE_SET InitialWarpMode 1` returns `0x00` and
+   reads back as `1` while only being consulted at launch, and records the
+   decision: a stock-backend resource-set tool should return an explicit
+   launch-time-only result rather than a bare refusal. Commit `d6a9c53`
+   (Task 1).
+3. **Stock warp story decided and recorded** — warp on stock is a
+   broker-launch flag only (`-warp` / `InitialWarpMode` at spawn), never a
+   runtime tool; the three pre-existing statements to this effect
+   (`GAINS-PROTOCOL.md:1487-1489`, `:1521-1524`, `CLAUDE.md`'s Capability
+   constraint, `PROJECT.md`) were checked this session and left unmodified —
+   all three already state the rule correctly and needed no edit.
+4. **`vice_machine_config_set`'s fork-only caveat landed in two project-owned
+   places, no schema growth** — `docs/stock-vice-parity.md` §A item 7 gained
+   a new bullet naming the capability fork-only, that stock has no runtime
+   warp resource at all, and that warp on stock is launch-time-only; and
+   `capability-registry.ts`'s existing `vice_machine_config_set.reason` field
+   was extended with the same caveat (two sentences, no new field —
+   `grep -c 'note:' capability-registry.ts` is 0 before and after). This
+   reaches a stock caller through `capabilityRefusalMessage("vice_machine_config_set",
+   "stock")` and a reader through `docs/tool-support.md`'s regenerated row
+   (diff limited to that one row's note cell). `tools-manifest.json` was
+   deliberately **not** edited — it is machine-generated from the fork
+   binary's own compiled schema and confirmed byte-identical
+   (`git diff --quiet .claude/mcp/vice/tools-manifest.json`). Landed in
+   this plan's Task 2 commit (see the plan's SUMMARY.md for the hash).
+5. **Optional follow-up promoted, not dropped** — whether a runtime
+   `InitialWarpMode` set has any effect on emulation speed at all remains
+   unmeasured. Promoted as a named follow-on: **owner — whichever future plan
+   next needs stock warp/speed control** (no phase currently claims it); the
+   measurement method is cheap (bracket emulated cycles against wall-clock
+   across a resume, per the todo's own Solution item 5) and should be done
+   before any stock-backend tool tries to expose `InitialWarpMode` as a
+   runtime lever.
