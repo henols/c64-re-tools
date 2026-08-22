@@ -156,7 +156,7 @@ independent of each other and may execute in parallel)
 
 **Wave 3** *(blocked on 13-01, 13-02 and 13-04)*
 
-- [ ] 13-05-PLAN.md — Ledger close: both retired verdicts in `docs/phase2-backend-probe-evidence.md` resolved with artifact citations, two todos closed, the probe-debt todo trimmed to A4 only, surfaced-but-unfixed findings filed, and `STATE.md`'s deferred ledger re-derived so its two-directional guard stays green (D-13-03, D-13-05)
+- [x] 13-05-PLAN.md — Ledger close: both retired verdicts in `docs/phase2-backend-probe-evidence.md` resolved with artifact citations, two todos closed, the probe-debt todo trimmed to A4 only, surfaced-but-unfixed findings filed, and `STATE.md`'s deferred ledger re-derived so its two-directional guard stays green (D-13-03, D-13-05)
 
 ### Phase 14: Backend Decision
 

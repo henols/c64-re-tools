@@ -25,9 +25,9 @@ been taught five times: an internal check standing in for an external one. All
 three are live-testable here — genuine unpatched stock VICE is at
 `/usr/bin/x64sc`, with the fork shadowing it earlier on `PATH`.
 
-- [ ] **EXTV-01**: The three capturable `VERIF-02` binmon wire fixtures are re-recorded from a real VICE binary, and no sidecar in the fixture set still declares itself synthetic while being relied on as ground truth
-- [ ] **EXTV-02**: The `--help` backend discriminator (`BACK-01`/`BACK-04`) is confirmed against both a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
-- [ ] **EXTV-03**: Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised is run against a real binary, and any detail the binary contradicts is corrected at its source rather than noted
+- [x] **EXTV-01**: The three capturable `VERIF-02` binmon wire fixtures are re-recorded from a real VICE binary, and no sidecar in the fixture set still declares itself synthetic while being relied on as ground truth
+- [x] **EXTV-02**: The `--help` backend discriminator (`BACK-01`/`BACK-04`) is confirmed against both a real stock `x64sc` and a real fork `x64sc`, with both transcripts committed as evidence
+- [x] **EXTV-03**: Each of the four Phase 3 behavioural/spelling wire details written spec-driven and never exercised is run against a real binary, and any detail the binary contradicts is corrected at its source rather than noted
 
 ### Audit Integrity
 
@@ -92,9 +92,9 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXTV-01 | 13 | Pending |
-| EXTV-02 | 13 | Pending |
-| EXTV-03 | 13 | Pending |
+| EXTV-01 | 13 | Complete |
+| EXTV-02 | 13 | Complete |
+| EXTV-03 | 13 | Complete |
 | GATE-01 | 12 | Complete |
 | GATE-02 | 15 | Pending |
 | FORK-01 | 14 | Pending |
@@ -110,6 +110,7 @@ Populated during roadmap creation.
 | PKG-04 | 16 | Pending |
 
 **Coverage:**
+
 - v0.4.0 requirements: 16 total
 - Mapped to phases: 16
 - Unmapped: 0 ✓ (roadmap created 2026-08-21, Phases 12-17)
