@@ -23,7 +23,7 @@
 // field naming the sharing address.
 //
 // Bit-field names below were transcribed ONCE from
-// `.claude/skills/c64-memory-mapping/memmap.json`'s entries for $DC00,
+// `src/skills/c64-memory-mapping/memmap.json`'s entries for $DC00,
 // $DC01, $DC02, $DC03, $DC08-$DC0F, $DD00, $DD01 and $DD0D, and
 // cross-checked at write time -- the same "committed literal, cross-checked
 // once, no automated drift check" posture Phase 4's D-06 already accepted

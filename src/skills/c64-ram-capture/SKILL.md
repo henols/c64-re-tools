@@ -14,7 +14,7 @@ failure and it is invisible in a hex dump. Two committed modules do that byte wo
 and name the offending address when it is wrong.
 
 ```bash
-S=.claude/skills/c64-ram-capture/scripts    # from the repo root
+S=src/skills/c64-ram-capture/scripts    # from the repo root
 P=$S/d64-parse.mjs   A=$S/dump-artifacts.mjs
 C=$S/compare.mjs     L=$S/releases.mjs
 
@@ -315,7 +315,7 @@ The registry lives at `<project root>/recovery/RELEASES.json` by default —
 override the whole path with `C64RE_REGISTRY`, or just the containing
 directory with `C64RE_DATA_DIR`.
 
-`.claude/skills/c64-ram-capture/RELEASES.json.example` is a copyable starting
+`src/skills/c64-ram-capture/RELEASES.json.example` is a copyable starting
 point with every field above populated with placeholder values.
 
 ## References

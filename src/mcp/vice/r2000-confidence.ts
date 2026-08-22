@@ -18,7 +18,7 @@
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR:
 //   - the five-grade vocabulary (`CONFIDENCE_GRADES`), copied verbatim from
-//     `.claude/skills/c64-program-recon/templates/memory-map.template.md`'s
+//     `src/skills/c64-program-recon/templates/memory-map.template.md`'s
 //     own confidence table -- nowhere else in this repo may hand-write one
 //     of these five phrases or bracket tokens as a second copy;
 //   - the parser (`parseConfidencePrefix`) that decides whether a comment

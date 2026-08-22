@@ -9,7 +9,7 @@ Look up what a C64 address means, and document a 6502 listing by resolving every
 address it touches. One script does both, offline, anywhere Node ≥18 runs:
 
 ```bash
-D=.claude/skills/c64-memory-mapping/scripts/driver.mjs   # relative to the repo root
+D=src/skills/c64-memory-mapping/scripts/driver.mjs   # relative to the repo root
 
 node $D lookup '$D011' '$FFD2'      # what lives at an address
 node $D annotate --file game.asm    # document a listing or .asm file
@@ -191,8 +191,8 @@ not a read-only lookup like `lookup` and `annotate`.
 `memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
 to generate program-specific enums for regenerator2000's annotation store (R2000-13): register
 writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
-generator is `.claude/mcp/vice/r2000-regbits-gen.ts`; its committed output is
-`.claude/mcp/vice/r2000-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
+generator is `src/mcp/vice/r2000-regbits-gen.ts`; its committed output is
+`src/mcp/vice/r2000-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
 `node r2000-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
 if `memmap.json` changed without a re-run.
 
@@ -211,7 +211,7 @@ separate, later step, once a `.regen2000proj` already exists (`r2000 bootstrap`,
 
 ```bash
 npx -y @henols/vice-mcp r2000 gen-enums game.regen2000proj                            # npm install
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 gen-enums game.regen2000proj  # in-repo/plugin
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 gen-enums game.regen2000proj  # in-repo/plugin
 ```
 
 `r2000 gen-enums` requires an EXISTING `.regen2000proj` — it does not bootstrap one from a raw

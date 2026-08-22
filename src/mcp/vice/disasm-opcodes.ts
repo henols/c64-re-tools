@@ -43,7 +43,7 @@
 // Mnemonic naming: two deliberate departures from cc65's own spelling
 // ---------------------------------------------------------------------------
 // cc65 spells two illegal opcodes differently from ACME's verified
-// `!cpu 6510` mnemonic set (`.claude/skills/acme-build/SKILL.md`: `lax dcp
+// `!cpu 6510` mnemonic set (`src/skills/acme-build/SKILL.md`: `lax dcp
 // sax slo rla sre rra isc anc alr arr sbx las tas sha shx shy jam`). This
 // table follows ACME's names, not cc65's, at exactly these two opcodes, so
 // that `acmeExpressible` below can be computed by simple set membership

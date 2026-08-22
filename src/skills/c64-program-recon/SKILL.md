@@ -13,7 +13,7 @@ Build a network of confirmed facts. Once the vectors, the IRQ handler, the main 
 tables are known, everything else classifies far more easily.
 
 ```bash
-D=.claude/skills/c64-program-recon/scripts/derive.mjs   # from the repo root
+D=src/skills/c64-program-recon/scripts/derive.mjs   # from the repo root
 
 node $D vectors dump.bin                                # $01 + six vectors, which pair is live
 node $D vic --dd00 3E --d018 18 --d011 1B --d016 C8     # bank, screen, charset, mode
@@ -125,7 +125,7 @@ not something you hand-edit yourself.
 
 ```bash
 npx -y @henols/vice-mcp r2000 bootstrap game.prg                            # npm install
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 bootstrap game.prg   # in-repo/plugin
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 bootstrap game.prg   # in-repo/plugin
 ```
 
 Every `r2000_*` tool takes an explicit `project` path pointing at the resulting `.regen2000proj`
@@ -179,7 +179,7 @@ into the store and discovering one live are two legs of **one loop**, in this or
 
    ```bash
    npx -y @henols/vice-mcp r2000 export-lbl game.regen2000proj                            # npm install
-   node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-lbl game.regen2000proj  # in-repo/plugin
+   node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-lbl game.regen2000proj  # in-repo/plugin
    ```
 
 2. **Load it into the running machine — `vice_symbols_load`, exactly once.** Load that `.lbl` file
@@ -197,7 +197,7 @@ into the store and discovering one live are two legs of **one loop**, in this or
 
    ```bash
    npx -y @henols/vice-mcp r2000 import-lbl game.regen2000proj discovered.lbl                            # npm install
-   node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 import-lbl game.regen2000proj discovered.lbl  # in-repo/plugin
+   node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 import-lbl game.regen2000proj discovered.lbl  # in-repo/plugin
    ```
 
 Two traps: `export-lbl` exports **USER** labels only — the auto-generated `a_D011`/`e_FFD2`
@@ -212,7 +212,7 @@ filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
 npx -y @henols/vice-mcp r2000 render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
 ```
 
 Add `--check` to detect drift — either a hand edit to the rendered file, or a store change since it
@@ -226,7 +226,7 @@ skill's own method — it is a separate route:
 
 ```bash
 npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
 ```
 
 This is **static**, over a file on disk — `vice_disassemble` (the live-RAM route

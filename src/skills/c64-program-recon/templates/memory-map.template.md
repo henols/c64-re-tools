@@ -9,7 +9,7 @@ Run the generator once findings are in the store:
 
 ```bash
 npx -y @henols/vice-mcp r2000 render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and

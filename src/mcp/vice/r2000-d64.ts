@@ -4,12 +4,12 @@
 // requirement.
 //
 // WHY THIS FILE EXISTS HERE, AND NOT AS AN EXTENSION OF
-// `.claude/skills/c64-ram-capture/scripts/d64-parse.mjs`: the researcher's
+// `src/skills/c64-ram-capture/scripts/d64-parse.mjs`: the researcher's
 // own recommendation (RESEARCH.md Open Question #2) was to extend
 // `d64-parse.mjs` in place, since it already walks the directory chain. That
 // is not reachable in practice: this MCP server ships as `@henols/vice-mcp`,
 // whose `files[]` in `package.json` lists only `src/mcp/vice/` contents,
-// while `.claude/skills/**` ships in the *other* package
+// while `src/skills/**` ships in the *other* package
 // (`@henols/c64-re-tools`). An import from this seam into a skill script
 // cannot resolve on either npm-installer route (neither copies the sibling
 // package's source tree onto disk next to it), and

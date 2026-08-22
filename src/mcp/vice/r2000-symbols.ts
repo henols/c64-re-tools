@@ -349,7 +349,7 @@ export interface RegenerateAndReloadResult {
  * LIBRARY-ONLY (Phase 11 IN-02, D-11.1-06): as of this phase,
  * `regenerateAndReload()` is a library-only export -- available for
  * programmatic use, with NO PRODUCTION CALLER anywhere in this repo
- * (`src/mcp/vice/`, `.claude/skills/`, `scripts/`). A future phase must
+ * (`src/mcp/vice/`, `src/skills/`, `scripts/`). A future phase must
  * not assume it is wired into any real workflow just because it is the
  * named D-29 live-discovery merge point.
  *

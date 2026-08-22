@@ -138,7 +138,7 @@ regenerator2000, reached through
 
 ```bash
 npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
-node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
+node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
 ```
 
 A recursive-descent disassembler with an auto-analyzer does not render strings,
@@ -170,8 +170,8 @@ the shipped scaffold on every build with `$ACME` cleared (the "Assemble the
 acme-build scaffold (library-free)" step in `.github/workflows/ci.yml`), so
 this claim is re-checkable rather than a one-machine observation.
 
-Copy `acme.mjs` into any project's `.claude/skills/acme-build/scripts/`, and
-`template.a` into `.claude/skills/acme-build/`, to use this elsewhere.
+Copy `acme.mjs` into any project's `src/skills/acme-build/scripts/`, and
+`template.a` into `src/skills/acme-build/`, to use this elsewhere.
 
 ## Which skill does what
 

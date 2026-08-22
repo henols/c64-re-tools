@@ -29,7 +29,7 @@
 //   - Never interpolate the rendered listing (or any test input) into a
 //     shell command string. `assemble()` below writes it to a file and
 //     spawns `acme` with an argv array (T-04-06-01) -- the same convention
-//     `.claude/skills/acme-build/scripts/acme.mjs` already uses for the one
+//     `src/skills/acme-build/scripts/acme.mjs` already uses for the one
 //     other place this repo shells out to ACME.
 //   - Never hardcode a static "known unassemblable" list for Suite C. Every
 //     assertion in that suite is driven from `disasm-opcodes.ts`'s own

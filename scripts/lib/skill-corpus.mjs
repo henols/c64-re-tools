@@ -26,7 +26,7 @@
 //
 // This module only ever `readFileSync()`/`readdirSync()`s and
 // regex-matches. It never `import()`s, `require()`s, `eval()`s, or spawns
-// anything under `.claude/skills/` -- skill content remains untrusted
+// anything under `src/skills/` -- skill content remains untrusted
 // input that is matched, never executed, matching both consuming scripts'
 // own header rules.
 import { readdirSync } from "node:fs";

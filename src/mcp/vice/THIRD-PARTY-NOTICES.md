@@ -72,7 +72,7 @@ availability gate; CI installs it via `apt-get install -y acme` in
 `.github/workflows/ci.yml`'s `build` job). **No ACME source, header, data
 table or output is included in this repository or in the published
 package**, so ACME's licence does not attach to anything shipped. ACME never
-appears in `.claude/mcp/vice/package.json`'s `files[]`, `dependencies`, or
+appears in `src/mcp/vice/package.json`'s `files[]`, `dependencies`, or
 `devDependencies` — it is an apt/CI-installed tool, never an npm package.
 
 ## Build/CI tools — not incorporated: regenerator2000
@@ -94,7 +94,7 @@ Verified version `0.9.20`, published 2026-07-11 by `ricardoquesada`
 (matching the linked GitHub repository owner), checked 2026-08-20 — so this
 provenance claim is re-checkable against a specific release.
 
-regenerator2000 never appears in `.claude/mcp/vice/package.json`'s
+regenerator2000 never appears in `src/mcp/vice/package.json`'s
 `files[]`, `dependencies`, or `devDependencies` — it is a `cargo
 install`-provided tool, never an npm package.
 

@@ -694,9 +694,9 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
   }
 
   // NOTE (plan 16-01): the embedded invocation path below is deliberately the
-  // CONSUMER's installed location (`.claude/skills/...`), not this repository's
+  // CONSUMER's installed location (`src/skills/...`), not this repository's
   // source-tree location (`src/skills/...`) -- a future sweep should not "fix" it.
-  let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
+  let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node src/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;
   for (const r of sorted) {
@@ -711,7 +711,7 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
 
   const header = `# \`recovery/PROVENANCE.md\` -- the provenance ledger\n\n` +
     `Two tiers, one direction of truth. The **generated tier** below is machine-produced by ` +
-    `\`.claude/skills/c64-provenance-diff/scripts/diff-images.mjs\`'s \`renderLedger\` and is regenerable at any time from the committed ` +
+    `\`src/skills/c64-provenance-diff/scripts/diff-images.mjs\`'s \`renderLedger\` and is regenerable at any time from the committed ` +
     `dumps plus the recorded offset -- never hand-edit it. The **prose tier** underneath states the ` +
     `facts a table cannot hold. This file is the ledger; \`docs/provenance.md\` will be a summary ` +
     `pointer and inline \`; PROVENANCE:\` tags in \`src/\` will be the point-of-use copy -- one ` +
@@ -786,7 +786,7 @@ const VERBS = {
           anchor_count: anchors.length,
           anchors_agreeing: proof.usable.length,
           proven_at: provenAt,
-          method: "anchor-proven via .claude/skills/c64-provenance-diff/scripts/diff-images.mjs anchor-search -- see NOTES.md for the full narrative",
+          method: "anchor-proven via src/skills/c64-provenance-diff/scripts/diff-images.mjs anchor-search -- see NOTES.md for the full narrative",
         });
       }
     }

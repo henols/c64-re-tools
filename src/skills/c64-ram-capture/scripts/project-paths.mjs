@@ -6,7 +6,7 @@
 //
 //   1. The project root is found by walking UP for a `.git` marker. Counting
 //      hops from `import.meta.url` breaks the moment the toolkit is installed
-//      somewhere other than `.claude/skills/<skill>/scripts/`, and it breaks
+//      somewhere other than `src/skills/<skill>/scripts/`, and it breaks
 //      silently -- paths resolve to a plausible wrong place rather than erroring.
 //   2. Every data location is overridable by environment variable, so a project
 //      that does not use this repo's `recovery/` + `disks/` layout can point the

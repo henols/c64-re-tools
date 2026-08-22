@@ -402,7 +402,7 @@ export function buildRegBitsDocument(): RegBitsDocument {
     _generated: {
       generator: "r2000-regbits-gen.ts",
       memmapSha256: memmapSha256(),
-      warning: "GENERATED FILE -- do not hand-edit. Regenerate via `node r2000-regbits-gen.ts` from .claude/mcp/vice.",
+      warning: "GENERATED FILE -- do not hand-edit. Regenerate via `node r2000-regbits-gen.ts` from src/mcp/vice.",
     },
   };
   for (const key of Object.keys(table).sort()) {

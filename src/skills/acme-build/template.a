@@ -1,5 +1,5 @@
 ; C64 / 6510 program skeleton.
-; Build:  node .claude/skills/acme-build/scripts/acme.mjs build THIS.a
+; Build:  node src/skills/acme-build/scripts/acme.mjs build THIS.a
 ; No !to here on purpose - the driver passes -o, and having both makes ACME
 ; warn "Output file already chosen" and silently ignore the !to.
 ;

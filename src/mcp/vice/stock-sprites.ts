@@ -12,13 +12,13 @@
 // PROVENANCE (required reading before touching the four geometry
 // functions below): vicBank(), vicBankBase(), screenBase() and
 // spriteDataAddress() are PORTED, NOT RE-DERIVED, from
-// .claude/skills/c64-ram-capture/scripts/dump-artifacts.mjs's own
+// src/skills/c64-ram-capture/scripts/dump-artifacts.mjs's own
 // vicBank()/screenBase()/spriteDataAddresses map, which carries a
 // committed, verified fixture: dd00_raw=193 (0xC1), d018_raw=49 (0x31) ->
 // screen_base=35840. stock-sprites.test.ts re-asserts the SAME fixture as
 // its own cross-check -- do not change any of the four expressions without
 // also updating that committed fixture's provenance. The skill's
-// JavaScript is copied here, never imported at runtime -- .claude/skills/
+// JavaScript is copied here, never imported at runtime -- src/skills/
 // is a different package, absent from src/mcp/vice's files[], so a
 // runtime cross-package import would be missing from the published
 // tarball.

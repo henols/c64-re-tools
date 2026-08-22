@@ -21,7 +21,7 @@
 //   - Never assign `cycles: 0` or `cycles: null` for an unmeasurable
 //     bracket. `measurable: false` with a `reason` and NO `cycles` key at
 //     all is the only honest shape -- see the incident this rule exists to
-//     prevent: `.claude/skills/c64-program-recon/references/observation-hazards.md`'s
+//     prevent: `src/skills/c64-program-recon/references/observation-hazards.md`'s
 //     record of the fork's stopwatch reading 258,504,308 cycles and being
 //     trusted as fact.
 //   - Never hardcode a register id for LIN/CYC/PC. `registerCatalogFor()`

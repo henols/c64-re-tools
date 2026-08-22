@@ -452,7 +452,7 @@ export function renderLoading(entries) {
     "This document is the absence-as-evidence record: per release, the armed set with its justification, the " +
     "idle calibration result, the coverage reached with a mechanical arrival proof per milestone, the states not " +
     "reached, the attributed hits, and the teardown enumeration. Every measurement below was fetched by the " +
-    "executing agent's own `mcp__plugin_c64-re-tools_vice__*` tool calls; `.claude/skills/c64-ram-capture/scripts/watch-loads.mjs` and `.claude/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
+    "executing agent's own `mcp__plugin_c64-re-tools_vice__*` tool calls; `src/skills/c64-ram-capture/scripts/watch-loads.mjs` and `src/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
     "only the pure logic that resolves, attributes, orders and renders it -- neither module contacted the " +
     "emulator.\n\n";
   for (const { id, log } of entries) {
