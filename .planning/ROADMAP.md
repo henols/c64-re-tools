@@ -176,7 +176,26 @@ claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
   2. A user who hits SID read-back, matrix keyboard, or RESTORE/NMI is told, at the point of use, a route they can actually follow — evidenced by the live doc/skill text, not merely asserted in this roadmap
   3. The decision is reflected in the code's actual state, checked live: if "remove", no code path still advertises or spawns the fork transport; if "retain", the retained path is exercised once more against a real fork binary and still passes
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Decision brief, the blocking FORK-01 checkpoint, the dated Key Decisions row, and the guard that reads it back (tracer; not autonomous)
+- [ ] 14-02-PLAN.md — FORK-02: enumerate all hard-loss route sites, judge each against the decided branch, then apply only what the verdicts require
+- [ ] 14-03-PLAN.md — Criterion 3 live: the first committed exercise of the fork's own `-mcpserver` HTTP transport against a real fork binary
+- [ ] 14-04-PLAN.md — Branch-conditional code consequence: stop the fork being the silent default, and move the stock backend's shared error types out of the fork transport module
+- [ ] 14-05-PLAN.md — Close the record: dispose the standing todo, reconcile the deferred ledger, and hand the outcome to Phases 15/16/17
+
+**Planning note**: plan this phase with **worktree mode off**. Every plan's
+deliverables include `.planning/` and `PROJECT.md`/`ROADMAP.md`/`STATE.md`
+content, which worktree mode strips from executor commits. The FORK-01 branch is
+decided by a human at 14-01's `blocking-human` checkpoint and is NOT pre-decided
+by the plan set; plans 14-02, 14-04 and 14-05 read the recorded branch token
+(`retain`, `deprecate-first`, `remove-now`) from `14-01-SUMMARY.md` and skip
+branch-inapplicable tasks visibly. On a `remove-now` outcome, criterion 3's
+remove clause cannot be satisfied in-phase (research Q1/Q2 sizes the deletion at
+~15 production modules, 23 test files, 4 skill playbooks, README, the parity doc
+and a premise rewrite of the 505-line honesty guard) and 14-05 records a
+follow-on-phase recommendation rather than reporting it satisfied.
 
 ### Phase 15: Debt and Review Disposition
 
