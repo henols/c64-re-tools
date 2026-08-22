@@ -204,6 +204,23 @@ test("a fixture stock manifest that ADDS a currently fork-only name moves that r
   }
 });
 
+test("every table row has exactly 4 cells -- no registry prose can split a row (WR-04)", () => {
+  const generated = generateToolSupportTable();
+  for (const line of generated.split("\n")) {
+    if (!/^\|\s*vice_/.test(line)) continue;
+    // Split on a pipe NOT preceded by the cell() helper's own backslash escape
+    // (WR-04) -- an escaped `\|` inside a cell's prose is a literal character,
+    // not a column boundary, and must not be counted as one.
+    const parts = line.split(/(?<!\\)\|/);
+    assert.equal(
+      parts.length - 2,
+      4,
+      `row has the wrong cell count -- a registry reason/alternative string likely contains an ` +
+        `unescaped pipe or newline: ${line}`,
+    );
+  }
+});
+
 test("derived-union equality: the generated document's row set equals an independently-computed union of the three inputs", () => {
   const forkManifest = JSON.parse(readFileSync(FORK_MANIFEST_PATH, "utf8"));
   const stockManifest = JSON.parse(readFileSync(STOCK_MANIFEST_PATH, "utf8"));

@@ -66,6 +66,13 @@ const CATEGORY_LABEL = {
 const AVAILABLE_MARK = "✅"; // checkmark
 const UNAVAILABLE_MARK = "—"; // em dash
 
+/** Markdown table cells cannot contain a raw pipe or newline -- registry
+ * prose (row.name, row.note) is user-facing and may acquire either in the
+ * future (WR-04, 08-REVIEW.md:330-362). Escaped here, at the ONE emission
+ * point, rather than at each field's origin -- so a future third free-text
+ * column needs no new escaping call site of its own. */
+const cell = (text) => text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+
 /**
  * Two-hop discovery of the proxy-local synthetic tool names (research
  * Pitfall 2): `vice-proxy.ts` registers `vice_result_continue`,
@@ -238,7 +245,7 @@ export function generateToolSupportTable(options = {}) {
   for (const row of rows) {
     const forkCell = row.onFork ? AVAILABLE_MARK : UNAVAILABLE_MARK;
     const stockCell = row.onStock ? AVAILABLE_MARK : UNAVAILABLE_MARK;
-    lines.push(`| ${row.name} | ${forkCell} | ${stockCell} | ${row.note} |`);
+    lines.push(`| ${cell(row.name)} | ${forkCell} | ${stockCell} | ${cell(row.note)} |`);
   }
   lines.push("");
   lines.push(
