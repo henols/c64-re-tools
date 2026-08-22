@@ -5,10 +5,10 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 13
 current_phase_name: External Verification
 status: executing
-stopped_at: Completed 13-04-PLAN.md
-last_updated: "2026-08-22T00:23:40.113Z"
+stopped_at: Executing 13-05-PLAN.md
+last_updated: "2026-08-22T00:35:43.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 13 execution started
+last_activity_desc: Phase 13 plan 13-05 closing the phase's record
 state_head: 3dc221fea0da3b1a9066dcacb82661feadafea9d
 progress:
   total_phases: 6
@@ -57,18 +57,26 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 13 (External Verification) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
-Layer 1 (`checkAuditGate()`) holds; Layer 2 `--hook`'s regex-backtracking DoS
-(CR-01), the single-line Bash echo-append bypass (CR-03), and the dead
-pathish push (WR-04) were fixed by plan 12-05. Plan 12-06 closed CR-02's
-unbounded recursion (now an iterative, depth-capped walk), plus WR-01
-(bounded guard subprocess), WR-02 (structural-failure short circuit) and
-WR-03 (check mode's missing error handling) -- the `--hook` exit surface is
-now exactly {0, 2}. Phase is NOT complete until 12-07 lands (human-gated,
-`autonomous: false`).
-Last activity: 2026-08-22 — Phase 13 execution started
-requirements mapped
+Plan: 5 of 5 (final plan of the phase)
+Status: Plan 13-05 executing — closes the phase's record
+Phase 13 verifies the milestone's three highest-value carried items
+against real binaries instead of internal proxies. Plans 13-01/13-02
+re-recorded the three `VERIF-02` binmon fixtures and confirmed the
+`--help` backend discriminator against real stock (VICE 3.9) and fork
+(VICE 3.10) binaries. Plan 13-03 live-probed Phase 3's four wire
+assumptions against fork VICE 3.10 (A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5
+CONTRADICTED); A4 was deliberately excluded (D-13-05). Plan 13-04 removed
+the A1/A2 `[ASSUMED]` labels, left A3/A5 labelled, and shipped a permanent
+label-discipline guard (`assumption-label-discipline.test.ts`). Plan
+13-05 (this plan) closes the phase's record: both retired verdicts in
+`docs/phase2-backend-probe-evidence.md` resolved with artifact citations,
+the two finished todos moved to `.planning/todos/completed/`, the third
+trimmed to A4, two new findings filed as pending todos, and this section's
+Deferred Items ledger reconciled against the post-phase todo tree.
+Next session should read: this phase's five SUMMARY.md files,
+`docs/phase2-backend-probe-evidence.md`, and `## Deferred Items` below
+before scoping further work.
+Last activity: 2026-08-22 — Phase 13 plan 13-05 executed.
 
 ## Performance Metrics
 
@@ -219,6 +227,7 @@ Recent decisions affecting current work:
 - [Phase 13]: x64sc --help's own startup diagnostics are not byte-reproducible across runs (randomized VSP-bug channel line); discriminator substrings themselves are stable -- documented in 13-HELP-DISCRIMINATOR-EVIDENCE.md and fixtures README rather than silently worked around
 - [Phase 13]: Phase 13 plan 03: probed A1/A2/A3/A5 live against fork VICE 3.10 -- A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5 CONTRADICTED (AUTOSTART with runAfter=false still resets+loads); vice_disk_attach contract finding handed to plan 13-05
 - [Phase 13]: Phase 13 plan 04: A1/A2 assumption labels removed (confirmed live against fork VICE 3.10); A3/A5 left assumed (INCONCLUSIVE/CONTRADICTED); A5's vice_disk_attach tool-contract finding handed to plan 13-05 via D-13-04's escape hatch; assumption-label-discipline.test.ts ships as a permanent all-or-nothing label guard
+- [Phase 13]: Phase 13 plan 05: closed both retired verdicts in docs/phase2-backend-probe-evidence.md -- EXTV-01 (fork:/usr/local/bin/x64sc, VICE 3.10.0.0; terminator-frame reading CONFIRMED, event order differs from the synthetic model but matches phase1-probe-results.md) and EXTV-02 (probeBackend()/resolvedBackend() confirmed against both real binaries, -help/-? fallback branches recorded unexercised rather than verified); moved the fixtures and discriminator todos to completed/ with Resolution sections; trimmed the probe-phase3 todo to A4 only; filed two new pending todos (cpuhistory-get* sidecar mislabel; vice_disk_attach's D-14 approximation contradicted by A5); reconciled STATE.md's Deferred Items ledger against the post-phase todo tree -- docs-deferred-ledger.test.ts green in both directions
 
 ### Pending Todos
 
@@ -232,9 +241,15 @@ findings (`2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate`,
 `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`);
 corrected at the v0.3.0 close, which then filed an 18th
 (`2026-08-21-phase-09-review-in-01-in-03-never-dispositioned`) after finding the
-disposition guard already red at `4f048bb`.
+disposition guard already red at `4f048bb`. Phase 13 plan 13-05 then closed
+two of the 18 against real binaries and filed two more, holding the count at
+18 by coincidence of the arithmetic, not because nothing moved — see
+`## Deferred Items` below for which.
 
-Newest: `2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
+Newest: two filed by phase 13 plan 13-05 (2026-08-22) — a mislabelled-sidecar
+finding and an advertised-tool-contract finding for `vice_disk_attach` (see
+`## Deferred Items` for both by name). Previously newest:
+`2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
 bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
 its machine-type auto-detection unreliable, and the D-01 synthesis route never
 hands regenerator2000 a container format. Reverses if a consumer has only
@@ -327,10 +342,28 @@ milestone audit had already assessed the same set as `tech_debt` with no
 blockers. They were accepted rather than resolved, and were v0.3.0's
 inheritance unless dispositioned sooner.
 
-**Current, as of the v0.3.0 milestone close (2026-08-21): 19 items — 18 pending
+**Current, as of phase 13 plan 13-05 (2026-08-22): 19 items — 18 pending
 todos plus Phase 03's UAT gap — derived from `.planning/todos/pending/` and
 guarded by `docs-deferred-ledger.test.ts` (AUDIT-04) — this table is no longer
-hand-maintained.** The 18th todo was filed *at the close*: the same
+hand-maintained.** Phase 13 closed two of the three highest-value carried
+probe-debt todos against real binaries: the binmon-fixture re-record todo
+(closing `EXTV-01`) and the `--help` backend-discriminator todo (closing
+`EXTV-02`) — both moved to `.planning/todos/completed/` with Resolution
+sections citing plans 13-01/13-02's commits and evidence documents. The
+third, `2026-08-14-probe-phase3-assumed-wire-details`, stays pending: three
+of its four wire assumptions (A1/A2/A3/A5, live-probed by plan 13-03) are
+now answered, and it is trimmed to A4 — the `stop:false` rate-limiter's
+auto-disable deferral timing — as its only remaining item, deliberately
+excluded because arming that probe risks stalling the emulator's CPU loop.
+Phase 13 also filed two new todos for findings it surfaced but did not fix:
+a mislabelled `cpuhistory-get*` sidecar pair (`capturedFrom: "stock"`
+recorded for a fork binary) and an advertised-tool-contract finding for
+`vice_disk_attach` (its documented no-side-effect approximation is
+empirically false, per plan 13-03's A5 probe). The pending count holds at 18
+— two closed, two filed — by arithmetic coincidence, not because nothing
+moved.
+
+Before phase 13, the 18th todo was filed *at the v0.3.0 close*: the same
 `docs-review-disposition.test.ts` guard, run as part of the close, was found red
 at `4f048bb` with Phase 09's `IN-01`..`IN-03` undispositioned — predating the
 close, not caused by it. See
@@ -356,9 +389,7 @@ verified` / `threats_open: 0`) are all resolved and closed — see
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
-| todo | 2026-08-13-confirm-help-discriminator-against-real-vice-binaries | high | Pending — BACK-01/BACK-04's `--help` backend discriminator unconfirmed against real stock and fork binaries |
-| todo | 2026-08-13-re-record-binmon-fixtures-against-real-stock-vice | high | Pending — VERIF-02's three capturable fixtures are synthetic, honestly marked in every sidecar |
-| todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — four Phase 3 behavioural/spelling details written spec-driven, never exercised against a real binary |
+| todo | 2026-08-14-probe-phase3-assumed-wire-details | high | Pending — A1/A2/A3/A5 answered by phase 13's live probes (`13-PROBE-RESULTS.md`); trimmed to A4 only (the `stop:false` rate-limiter deferral timing), deliberately excluded — probing it risks stalling the emulator's CPU loop |
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
 | todo | 2026-08-19-drive-type-prerequisite-undocumented-in-readme-and-skill | — | Pending |
@@ -374,6 +405,8 @@ verified` / `threats_open: 0`) are all resolved and closed — see
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | todo | 2026-08-21-phase-09-review-in-01-in-03-never-dispositioned | low | Pending — filed at the v0.3.0 close; `09-REVIEW.md`'s three `Info` findings against Phase 9's *evidence harnesses* had no disposition anywhere. Recommended resolution is `wont-fix` citing evidence immutability (the committed probe transcripts were produced by those exact files), not an edit |
+| todo | 2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock | low | Pending — filed by phase 13 plan 13-05; two real `cpuhistory-get*` sidecars record `capturedFrom: "stock"` for the fork binary path; out of D-13-06's three-fixture scope |
+| todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
 Not counted above, because they are complete on disk: all nine
