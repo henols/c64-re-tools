@@ -13,6 +13,9 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+// Entry-point dispatch guard (see the bottom of this file): the same idiom
+// `src/skills/c64-memory-mapping/scripts/driver.mjs` already uses, so a bare
+// `import` from a test file does not also execute the CLI.
 import {
   existsSync,
   readFileSync,
@@ -266,4 +269,12 @@ function main() {
   }
 }
 
-main();
+// Only dispatch when this module is the process entry point -- i.e. run as
+// `node bin/cli.mjs ...` or via the `c64-re-tools` bin shim -- not when
+// imported by a test (installer/wire-mcp.test.mjs imports `wireMcp`/`readJson`
+// below and must not trigger a real install as a side effect).
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
+
+export { wireMcp, readJson };

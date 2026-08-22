@@ -48,6 +48,7 @@
   },
   "scripts": {
     "sync-skills": "node scripts/sync-skills.mjs",
-    "prepack": "node scripts/sync-skills.mjs"
+    "prepack": "node scripts/sync-skills.mjs",
+    "test": "node --test '*.test.mjs'"
   }
 }
