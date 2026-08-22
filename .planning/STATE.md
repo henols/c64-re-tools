@@ -314,7 +314,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-16 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+15 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -339,7 +339,10 @@ pinned; the other three deferred/promoted with named triggers/owners — see
 Task 1 then closed the drive-type-prerequisite and project-root-`.git`-marker
 todos (DEBT-02 items 1 and 2), both documented at the point of use in
 `c64-ram-capture/SKILL.md` — see `.planning/todos/completed/` for both
-Resolutions — returning the count to 16. See `## Deferred
+Resolutions — returning the count to 16. Task 2 then closed DEBT-02's third
+item, the `RELEASES.json` schema todo, adding a `## Release registry shape`
+section plus a copyable `RELEASES.json.example` — returning the count to 15.
+See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -531,10 +534,14 @@ pending 19 → 18, total 20 → 19. Plan 15-06 Task 1 then closed DEBT-02's
 drive-type-prerequisite and project-root-`.git`-marker todos, documenting
 both at the point of use in `c64-ram-capture/SKILL.md` (`## Boot a disk`'s
 closing sentence and the new prerequisite line before `## The order`) —
-pending 18 → 16, total 19 → 17. **Current, as of phase 15 plan 15-06 Task 1
-(2026-08-22): 17 items — 16 pending todos plus Phase 03's UAT gap.** The
-count in this paragraph is derived from, and must equal, the row count of
-the table immediately below it plus the one `uat_gap` row.
+pending 18 → 16, total 19 → 17. Plan 15-06 Task 2 then closed DEBT-02's
+third item, `RELEASES.json`'s undocumented schema, adding a `## Release
+registry shape` section (before `## References`) and a copyable
+`RELEASES.json.example` — pending 16 → 15, total 17 → 16. **Current, as of
+phase 15 plan 15-06 Task 2 (2026-08-22): 16 items — 15 pending todos plus
+Phase 03's UAT gap.** The count in this paragraph is derived from, and must
+equal, the row count of the table immediately below it plus the one
+`uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -542,7 +549,6 @@ the table immediately below it plus the one `uat_gap` row.
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
-| todo | 2026-08-19-releases-json-schema-undocumented | — | Pending |
 | todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |

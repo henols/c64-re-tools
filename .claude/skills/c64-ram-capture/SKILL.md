@@ -296,6 +296,28 @@ This one owns the image and its identity. It does not restate what the others ca
 | Whether the emulator is wedged, and whether it is safe to recycle | `vice-wedge-triage` |
 | **A verified 64K image, or proving two captures equivalent** | here |
 
+## Release registry shape
+
+`scripts/releases.mjs` is the only module that reads a release id out of the
+registry — every other module takes the id as an argument. Its shape:
+
+| Field | Level | Required | For |
+|---|---|---|---|
+| `schema_version` | top-level | — | The registry format version. |
+| `schema_notes` | top-level | — | Free-text stating the registry's N-readiness claim (`node $L schema-notes`). |
+| `releases` | top-level | yes | The array of release entries below. |
+| `id` | per-release | yes | The `--release` argument every other script takes. |
+| `canonical` | per-release | — | A boolean on one entry, not "the canonical image" — there are N releases. |
+| `disk_image` | per-release | yes | Project-relative path to the release's `.d64`. |
+| `dumps` | per-release | **yes, as an array** | Per-capture records written by `write-set`. **Must be an array, never omitted** — `releases.mjs`'s `list` command reads `r.dumps.length` with no guard (`releases.mjs:98`), so a missing `dumps` throws `TypeError: Cannot read properties of undefined` instead of listing anything. An empty array (`[]`) is fine; an absent key is not. `releases.mjs` itself imposes no per-entry shape; `scripts/watch-loads.mjs` (a different reader) looks up an entry by `label` and reads its `range_manifest`, which the example below follows. |
+
+The registry lives at `<project root>/recovery/RELEASES.json` by default —
+override the whole path with `C64RE_REGISTRY`, or just the containing
+directory with `C64RE_DATA_DIR`.
+
+`.claude/skills/c64-ram-capture/RELEASES.json.example` is a copyable starting
+point with every field above populated with placeholder values.
+
 ## References
 
 What this skill ships, and the committed modules it leans on. No `references/`
@@ -307,6 +329,7 @@ split: the workflow fits in one file, which is the right call when it does.
 | `templates/capture-record.template.md` | The per-capture record: identity, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
 | `scripts/d64-parse.mjs` | `.d64` directory, BAM, and `--json` fakery detection. Fixture-tested against both real images by `scripts/d64-parse.test.mjs`. |
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
+| `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |
 
 Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you
 find them**, graded with `Evidence:` and `Confidence:`. Promote by re-logging with

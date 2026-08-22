@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "schema_notes": "Adding a release is one releases[] entry plus one invocation of tools/recover.mjs -- see c64-ram-capture/SKILL.md '## Release registry shape'.",
+  "releases": [
+    {
+      "id": "example-release",
+      "canonical": true,
+      "disk_image": "disks/example-release.d64",
+      "dumps": [
+        {
+          "label": "example-label",
+          "range_manifest": "recovery/example-release/dumps/example-release-example-label.map.json"
+        }
+      ]
+    }
+  ]
+}
