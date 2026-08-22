@@ -80,8 +80,9 @@ const resolvedBinPath = process.env.VICE_LIVE_FORK_BIN ?? VICE_LIVE_FORK_BIN_DEF
 const SKIP_REASON: string | false = !process.env.VICE_LIVE_FORK_BIN
   ? `fork-live.test.ts is opt-in and default-skipped -- set VICE_LIVE_FORK_BIN=/usr/local/bin/x64sc ` +
     `(or another real fork VICE binary's absolute path, i.e. one whose --help output advertises ` +
-    `-mcpserver) to run it. Defaults to ${VICE_LIVE_FORK_BIN_DEFAULT} when set to a truthy non-path ` +
-    `value. A bare "x64sc" on PATH resolves to the fork build at /usr/local/bin/x64sc, while genuine ` +
+    `-mcpserver) to run it. ${VICE_LIVE_FORK_BIN_DEFAULT} is only a default for an UNSET variable -- an ` +
+    `empty value counts as unset, and a set-but-wrong path is reported by the next branch, not defaulted ` +
+    `away. A bare "x64sc" on PATH resolves to the fork build at /usr/local/bin/x64sc, while genuine ` +
     `unpatched stock (no -mcpserver at all) lives at /usr/bin/x64sc -- always name the fork binary by ` +
     `absolute path.`
   : !existsSync(resolvedBinPath)
