@@ -285,7 +285,7 @@ plan time: `13-REVIEW.md`'s `WR-01` is **already fixed** at source (commit
 `vice_snapshot_list`'s absence is D-16's deliberate deletion, so regenerating the
 manifest would re-add a tool the project decided to remove.
 
-**Plans**: 6/12 plans executed
+**Plans**: 7/12 plans executed
 
 Plans:
 **Wave 1**
@@ -305,7 +305,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 15-06-PLAN.md — DEBT-02: the three `c64-ram-capture` documentation gaps
+- [x] 15-06-PLAN.md — DEBT-02: the three `c64-ram-capture` documentation gaps
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -424,7 +424,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 15. Debt and Review Disposition | v0.4.0 | 6/12 | In Progress|  |
+| 15. Debt and Review Disposition | v0.4.0 | 7/12 | In Progress|  |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
