@@ -176,12 +176,12 @@ claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
   2. A user who hits SID read-back, matrix keyboard, or RESTORE/NMI is told, at the point of use, a route they can actually follow — evidenced by the live doc/skill text, not merely asserted in this roadmap
   3. The decision is reflected in the code's actual state, checked live: if "remove", no code path still advertises or spawns the fork transport; if "retain", the retained path is exercised once more against a real fork binary and still passes
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 14-01-PLAN.md — Decision brief, the blocking FORK-01 checkpoint, the dated Key Decisions row, and the guard that reads it back (tracer; not autonomous)
+- [x] 14-01-PLAN.md — Decision brief, the blocking FORK-01 checkpoint, the dated Key Decisions row, and the guard that reads it back (tracer; not autonomous)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -294,7 +294,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 14. Backend Decision | v0.4.0 | 0/TBD | Not started | - |
+| 14. Backend Decision | v0.4.0 | 1/5 | In Progress|  |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
