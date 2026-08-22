@@ -197,3 +197,7 @@ The disposition guard (`docs-review-disposition.test.ts`) is green from a clean 
 ---
 *Phase: 15-debt-and-review-disposition*
 *Completed: 2026-08-22*
+
+## Self-Check: PASSED
+
+All created/modified files confirmed present on disk (`docs-review-disposition.test.ts`, `fixtures/planted-review-fixture.md`, both new todo files, this SUMMARY). All four commits confirmed in `git log` (`245cb36`, `c1d4f93`, `0411e60`, `1d4d371`). Plan-level `<verification>` re-run: `npm run typecheck` exits 0, `docs-review-disposition.test.ts` 7/7 pass (150 findings, 0 undispositioned), `docs-deferred-ledger.test.ts` 4/4 pass, `npm run test:automated` 2097 pass / 0 fail / 5 pre-existing todo, no `*-REVIEW.md` file touched.
