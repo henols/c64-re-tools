@@ -288,18 +288,48 @@ manifest would re-add a tool the project decided to remove.
 **Plans**: 12 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 15-01-PLAN.md — TRACER: widen the disposition guard's parser, prove it end-to-end on one finding
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 15-02-PLAN.md — Phase 08 GATE-02: skill-corpus extraction (WR-12) and the two lint scripts (WR-06/07/09/10/11)
 - [ ] 15-03-PLAN.md — Phase 08 GATE-02: cell escaping (WR-04), bounded declaration scans (WR-08), single-source refusal (WR-13)
 - [ ] 15-04-PLAN.md — Phase 03's eight newly-surfaced findings, re-verified then fixed or superseded
-- [ ] 15-05-PLAN.md — Phase 09 wont-fix, Phase 13's four, and `02-REVIEW.md`'s `IN-05` at source
-- [ ] 15-06-PLAN.md — DEBT-02: the three `c64-ram-capture` documentation gaps
-- [ ] 15-07-PLAN.md — DEBT-01: build-atomic isolation, fixture provenance labels, test-gate migration
 - [ ] 15-08-PLAN.md — DEBT-03: UAT scenarios 1 and 2 live against genuine stock VICE
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 15-05-PLAN.md — Phase 09 wont-fix, Phase 13's four, and `02-REVIEW.md`'s `IN-05` at source
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 15-06-PLAN.md — DEBT-02: the three `c64-ram-capture` documentation gaps
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 15-07-PLAN.md — DEBT-01: build-atomic isolation, fixture provenance labels, test-gate migration
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 15-09-PLAN.md — DEBT-02: the refuted warp claim marked fork-only, and `vice_ping`'s field named honestly
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 15-10-PLAN.md — DEBT-03: scenario 3 and the A4 checkpoint-flood probe (one experiment, two items)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 15-11-PLAN.md — Disk-attach record corrected, manifest todo inverted, CI command settled from a run log
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 15-12-PLAN.md — Closure: per-finding verdicts, promotions with owners, requirements and ledger reconciled
+
+**Cross-cutting constraints:**
+
+- STATE.md's `## Deferred Items` table and both of its prose count figures are updated in the same commits that move this plan's todos out of `pending/`, so `docs-deferred-ledger.test.ts` — which is in the automated gate — is never left red.
 
 ### Phase 16: Packaging and Repo Shape
 

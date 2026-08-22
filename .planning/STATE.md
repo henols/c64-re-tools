@@ -4,16 +4,16 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
-status: planning
-stopped_at: Phase 14 complete, ready to plan Phase 15
-last_updated: "2026-08-22T11:54:29.895Z"
+status: executing
+stopped_at: Phase 15 planned — 12 plans, 9 waves, ready to execute
+last_updated: "2026-08-22T13:25:42.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 14 complete, transitioned to Phase 15
-state_head: 69465e41c580a0bcbf97fc7e4b58cbfac6e368ac
+last_activity_desc: Phase 15 planned — 12 plans in 9 waves, plan-checker passed
+state_head: 346d062b92a81774ba3e2a9111371c3417a7a7d6
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 17
+  total_plans: 29
   completed_plans: 17
   percent: 50
 ---
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 15 — Debt and Review Disposition
+Phase: 15 (Debt and Review Disposition) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
@@ -533,7 +533,7 @@ scope.
 ## Session Continuity
 
 Last session: 2026-08-22T11:12:51.809Z
-Stopped at: Phase 14 complete, ready to plan Phase 15
+Stopped at: Phase 15 planned — 12 plans, 9 waves, ready to execute
 Resume file: None
 
 ## Operator Next Steps
