@@ -163,3 +163,44 @@ No edit is made to any skill, doc, or source file by this task (confirmed by
 are `holds-as-is`; Task 2 and Task 3 apply that verdict with zero source/doc
 diff, recording the zero-diff outcome as the decided result of the `retain`
 branch rather than an omission.
+
+## Guards, after
+
+Task 2 added three test assertions to `capability-registry.test.ts` (pinning
+`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore` refusal
+strings) with **zero edit** to `capability-registry.ts` itself. Task 3 made
+**zero edit** to any of the 8 skill/doc files listed in `## Site inventory`
+above — every site's verdict was `holds-as-is`, so there is nothing to amend.
+Both guard scripts, re-run after both tasks, from the repo root, verbatim
+stdout:
+
+```
+$ node scripts/check-skill-fork-honesty.mjs
+check-skill-fork-honesty: OK -- 11 fork-only mentions across 30 files in 6 skill directories, all section-scoped-compliant; 24 fork-only names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all 6 required strings and none of the 2 forbidden ones; docs/stock-vice-parity.md carries all 1 required strings and none of the 5 forbidden ones (08-06's regression guard).
+$ echo $?
+0
+```
+
+```
+$ node scripts/check-skill-tool-coverage.mjs
+check-skill-tool-coverage: OK -- 37 distinct vice_* names extracted from 30 files across 6 skill directories; 31 resolved as advertised on the stock manifest (38 tools total). Classified: 0 proxy-local (neither manifest), 2 proxy-local-with-stock-manifest-entry, 1 deny-listed, 2 not-a-tool-name, 6 fork-only-unrecoverable, 0 pending-later-phase. r2000_*: 10 distinct names extracted, all curated (CURATED_R2000_TOOLS has 17 entries). r2000 CLI verbs: 7 parsed from r2000-cli.ts, 7/7 resolved (named by at least one skill file).
+$ echo $?
+0
+```
+
+**Every figure is byte-identical to the "Guards, before" baseline** — 11
+fork-only mentions, 30 files, 6 skill directories, 24 fork-only names, 6
+required README strings / 2 forbidden, 1 required parity-doc string / 5
+forbidden; 37 distinct `vice_*` names, 31 resolved on stock manifest, 6
+fork-only-unrecoverable, 10 `r2000_*` names / 17 curated entries, 7/7 CLI
+verbs resolved. This is expected and correct on the `retain` branch: no
+site's verdict required an edit, so no count could have moved.
+
+`cd .claude/mcp/vice && node --test docs-dangling-refs.test.ts
+docs-linerefs.test.ts capability-registry.test.ts` — 24/24 passing (13 in
+`capability-registry.test.ts`, including the 3 new hard-loss-refusal
+assertions Task 2 added).
+
+`git diff --quiet -- scripts/check-skill-fork-honesty.mjs
+scripts/lib/skill-honesty-checks.mjs` exits 0 — no non-vacuity floor in the
+honesty guard was touched.
