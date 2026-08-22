@@ -34,6 +34,34 @@ test("fork-only hardware tool on stock names the tool, unrecoverable, the fork r
   assert.match(message!, /write-only/i);
 });
 
+test("fork-only hardware tool on stock (vice_keyboard_matrix) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)", () => {
+  const message = capabilityRefusalMessage("vice_keyboard_matrix", "stock");
+  assert.ok(message, "expected a refusal message, got undefined");
+  assert.match(message!, /vice_keyboard_matrix/);
+  assert.match(message!, /unrecoverable/);
+  assert.match(message!, /VICE_BACKEND=fork/);
+  const entry = capabilityEntryFor("vice_keyboard_matrix");
+  assert.ok(entry?.alternative, "expected vice_keyboard_matrix to carry an alternative");
+  assert.ok(
+    message!.includes(entry!.alternative!),
+    "expected the shared KEYBOARD_ALTERNATIVE text (vice_joystick_set route) in the refusal",
+  );
+});
+
+test("fork-only hardware tool on stock (vice_keyboard_restore) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)", () => {
+  const message = capabilityRefusalMessage("vice_keyboard_restore", "stock");
+  assert.ok(message, "expected a refusal message, got undefined");
+  assert.match(message!, /vice_keyboard_restore/);
+  assert.match(message!, /unrecoverable/);
+  assert.match(message!, /VICE_BACKEND=fork/);
+  const entry = capabilityEntryFor("vice_keyboard_restore");
+  assert.ok(entry?.alternative, "expected vice_keyboard_restore to carry an alternative");
+  assert.ok(
+    message!.includes(entry!.alternative!),
+    "expected the shared KEYBOARD_ALTERNATIVE text (vice_joystick_set route) in the refusal",
+  );
+});
+
 test("fork-only descoped tool on stock names the tool, not implemented, the fork route, and never says unrecoverable", () => {
   const message = capabilityRefusalMessage("vice_memory_fill", "stock");
   assert.ok(message, "expected a refusal message, got undefined");
