@@ -4,16 +4,16 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 14
 current_phase_name: Backend Decision
-status: planning
+status: executing
 stopped_at: Phases 12 and 13 both complete, ready to plan Phase 14
-last_updated: "2026-08-22T07:35:02.340Z"
+last_updated: "2026-08-22T08:31:55.174Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 12 closed out (12-07 SUMMARY reconstructed, re-verified 11/11); next unplanned phase is 14
-state_head: 6b41c525c7fc3e70df7f1b5281784073c1f77979
+state_head: 0cfe42519a4f74619a58c0f22b35fa00a42f1183
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 12
+  total_plans: 17
   completed_plans: 12
   percent: 33
 ---
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 14 — Backend Decision
+Phase: 14 (Backend Decision) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
 resolved, and it was a bookkeeping gap, not missing work: plan 12-07's three

@@ -179,10 +179,18 @@ claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 14-01-PLAN.md — Decision brief, the blocking FORK-01 checkpoint, the dated Key Decisions row, and the guard that reads it back (tracer; not autonomous)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 14-02-PLAN.md — FORK-02: enumerate all hard-loss route sites, judge each against the decided branch, then apply only what the verdicts require
 - [ ] 14-03-PLAN.md — Criterion 3 live: the first committed exercise of the fork's own `-mcpserver` HTTP transport against a real fork binary
 - [ ] 14-04-PLAN.md — Branch-conditional code consequence: stop the fork being the silent default, and move the stock backend's shared error types out of the fork transport module
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 14-05-PLAN.md — Close the record: dispose the standing todo, reconcile the deferred ledger, and hand the outcome to Phases 15/16/17
 
 **Planning note**: plan this phase with **worktree mode off**. Every plan's
