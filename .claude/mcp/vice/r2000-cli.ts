@@ -178,7 +178,7 @@ this CLI never guesses which entry to use (D-02).
 machine-type field is correct only by coincidence for C64 snapshots, and no
 R2000-* requirement covers .vsf as a bootstrap input (D-34). The idea is
 recorded as backlog at
-.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to
+.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to
 .prg, .d64 or a flat 64K capture.
 `;
 
@@ -362,7 +362,7 @@ function bootstrapProject(
       "bootstrap: .vsf input is not supported -- regenerator2000's auto-detected machine-type field only " +
         'reads correctly by coincidence ("C64SC" falls through to its own default, matching none of its ' +
         "literal System arms). Filed as backlog, not covered by any R2000-* requirement (D-34): see " +
-        ".planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to .prg, .d64 or a flat " +
+        ".planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to .prg, .d64 or a flat " +
         "64K capture instead.",
     );
     return { code: 1 };

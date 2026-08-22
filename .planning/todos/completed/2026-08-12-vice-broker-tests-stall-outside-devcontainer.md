@@ -52,3 +52,32 @@ yet never emits a TAP line at all, while tests 1-5 each finish under 400ms. Test
 This is the broker subsystem the current milestone (`v0.2.0`, switchable
 stock-VICE backend) is reworking, so this may be resolved or invalidated by that
 work anyway.
+
+## Resolution
+
+**Closed `wont-fix` (Phase 15, plan 15-12), promoting the existing 2026-08-12 dated
+user decision above into this Resolution rather than re-deciding it.** The three
+named files (`vice-broker-launch.test.ts`, `vice-proxy.test.ts`, `broker-e2e.test.ts`)
+depend on manual host setup — a real broker topology, a real emulator process, and a
+real display environment — so they cannot be driven unattended in an automated gate.
+
+**Consequence:** they stay excluded from the automated test gate
+(`npm run test:automated` / `test-gate.mjs`'s `MANUAL_ONLY_TESTS`) and are treated as
+manual, environment-dependent checks, not a regression when they hang or are skipped
+under `npm run test:automated`.
+
+**Cross-reference:** Phase 15 plan 15-11's CI test-command decision (Task 3, closed
+todo `2026-08-13-reconcile-ci-test-command-with-narrowed-gate.md`) touched this same
+manual-only set from the other direction — it settled, from a real GitHub Actions run's
+own log (run `32517575905`), that all nine `MANUAL_ONLY_TESTS` suites (including these
+three) DO run to completion cleanly on a CI runner, so `npm test`'s wider glob stays in
+CI while the narrower `npm run test:automated` remains the local/gate-facing subset.
+That decision does not reopen this one: the two are about different environments (CI
+runner vs. this repository's own dev/agent host), and the 2026-08-12 finding that these
+three stall specifically on a bare host (not inside a devcontainer, not on the CI
+runner) stands unchanged.
+
+Disposed by DEBT-01 (Phase 15, plan 15-12) — this todo carried no `resolves_phase`
+frontmatter field of its own (it predates that convention, filed at the v0.2.0
+Phase 1 merge), so none is added retroactively; this Resolution section is the
+authoritative closure record.

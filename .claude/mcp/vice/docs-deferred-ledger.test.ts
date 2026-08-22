@@ -120,15 +120,21 @@ test("non-vacuity: the Deferred Items section is located, non-empty, and the sca
   // Floors are a non-vacuity sanity check only ("did the scan find SOMETHING",
   // not "does the debt count match a fixed contract") -- lowered from 10 to 5
   // by phase 15 plan 15-10 when legitimate dispositioning work shrank pending
-  // below 10 for the first time. Lower again, rather than raise, if it ever
-  // trips for the same reason.
-  assert.ok(pending.length >= 5, `expected at least 5 pending todos, got ${pending.length}`);
+  // below 10 for the first time, then from 5 to 2 by phase 15 plan 15-12 (the
+  // phase's designated closer), which closed four of the six remaining
+  // pending todos in one task, leaving exactly 2. Lower again, rather than
+  // raise, if it ever trips for the same reason -- DEBT-04 (Phase 17) may
+  // shrink this further still.
+  assert.ok(pending.length >= 2, `expected at least 2 pending todos, got ${pending.length}`);
   assert.ok(completed.length >= 5, `expected at least 5 completed todos, got ${completed.length}`);
 
   // Positive control: a specific, known-present pending stem must actually
   // be found by predicate 1's own matcher -- without this, the two tests
-  // above could both pass by scanning nothing.
-  const knownStem = "2026-08-20-vsf-as-a-bootstrap-input";
+  // above could both pass by scanning nothing. Was
+  // "2026-08-20-vsf-as-a-bootstrap-input" until phase 15 plan 15-12 closed
+  // that todo wont-fix; switched to a todo plan 15-12 deliberately leaves
+  // pending (promoted to PKG-01 with a named owner, not moved to completed/).
+  const knownStem = "2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json";
   assert.ok(pending.includes(knownStem), `expected ${knownStem} to be a real pending todo -- update the control if it has been resolved`);
   assert.deepEqual(missingPendingStems([knownStem], section!), [], `the positive-control stem ${knownStem} was not found by missingPendingStems() against the real section text`);
 });

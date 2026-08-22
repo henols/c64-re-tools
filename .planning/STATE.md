@@ -331,7 +331,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-6 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+2 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -380,28 +380,54 @@ from a real GitHub Actions run's own log (run `32517575905`; all nine
 `MANUAL_ONLY_TESTS` suites pass cleanly on the runner, so `npm test` stays in
 CI, documented with the run id in `ci.yml`'s `Test`-step comment) and closed
 that todo too — see `.planning/todos/completed/` — returning the count to 6.
-See `## Deferred
+**Phase 15 plan 15-12 (the phase's designated closer) then closed all four remaining
+"genuinely close now" todos in one task:** the Phase 08 review todo (`WR-04`
+through `WR-13`, ten findings — both plans 15-02 and 15-03 had already fixed all
+ten at source; this closure transcribes their per-finding verdicts with
+resolvable commits into one `## Resolution` table), the broker-tests-stall todo
+(`wont-fix`, promoting the pre-existing 2026-08-12 user decision), the `.vsf`
+bootstrap-input todo (`wont-fix`, quoting `REQUIREMENTS.md`'s own Out of Scope
+table verbatim — required updating three shipped runtime/comment string
+literals in `r2000-cli.ts`/`r2000-project.ts` and `docs-dangling-refs.test.ts`'s
+own `VSF_BACKLOG_ITEM` constant from `pending/` to `completed/`, since the
+r2000 CLI's own refusal message names this exact path), and the
+keyboard-fallback-load todo (promoted with a named owner — neither of the
+two closing conditions the plan named was met by plan 15-08's live evidence:
+scenario 1 used `vice_autostart`, not the keyboard-typed `LOAD` route, and
+scenario 2's `vice_keyboard_petscii` injection proved keyboard injection
+works but never issued a `LOAD` command, so neither reproduced this todo's
+specific stall nor demonstrated the fallback route working) — see
+`.planning/todos/completed/` for all four Resolutions. Two todos remain
+pending, both promoted to a Phase 16 requirement with a named owner rather
+than fixed here (`2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`
+→ `PKG-01`; `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
+→ `PKG-03`; both already carry `resolves_phase: 16` in their own frontmatter) —
+returning the count to **2**. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
 
-Newest, by filed-date, among what remains pending: `2026-08-21-phase-08-
-review-wr-04-through-wr-12-never-dispositioned` and
-`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
-(tied, both dated 2026-08-21; see `## Deferred Items` below for both). Phase
-15 plan 15-11 closed the three todos that used to be newer than either of
-these — `2026-08-22-tools-manifest-stale-missing-vice_snapshot_list` (filed
-by phase 14 plan 14-03), `2026-08-22-vice-disk-attach-approximation-
-contradicted-by-a5` (filed by phase 13 plan 13-05), and
-`2026-08-13-reconcile-ci-test-command-with-narrowed-gate` (the oldest-filed
-of the three, closed last, in this plan's own Task 3) — via Tasks 2, 1 and 3
-respectively — none of the three is pending any longer; see
-`.planning/todos/completed/` for all three Resolutions. Before that:
-`2026-08-20-vsf-as-a-bootstrap-input.md` — `.vsf` as a regenerator2000
-bootstrap input, deferred: no `R2000-*` requirement covers it, Phase 9 found
-its machine-type auto-detection unreliable, and the D-01 synthesis route never
-hands regenerator2000 a container format. Reverses if a consumer has only
-`.vsf` captures and cannot re-capture as `.raw`.
+**As of phase 15 plan 15-12 Task 1 (2026-08-22), only two todos remain pending
+— both promoted, neither fixed or closed here.** Plan 15-12 Task 1 closed the
+four todos that used to fill this paragraph's "newest pending" slot —
+`2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned` (ten
+Phase 08 findings, transcribed with resolvable commits from plans 15-02/15-03),
+`2026-08-12-vice-broker-tests-stall-outside-devcontainer` (`wont-fix`,
+promoting the pre-existing 2026-08-12 decision), `2026-08-20-vsf-as-a-
+bootstrap-input` (`wont-fix`, quoting `REQUIREMENTS.md`'s own Out of Scope
+line verbatim), and `2026-08-19-keyboard-fallback-load-does-not-progress-
+within-bounded-poll` (promoted with a named owner — plan 15-08's live
+evidence bore on neither of the two closing conditions) — see
+`.planning/todos/completed/` for all four Resolutions.
+
+The two todos that remain pending are `2026-08-20-relocate-plugin-payload-
+under-src-and-merge-mcp-json` and `2026-08-21-stale-phase-pointers-in-stock-
+cia-and-stock-dispatch-comments`, both promoted to named Phase 16
+requirements (`PKG-01` and `PKG-03` respectively — both todos already carried
+`resolves_phase: 16` in their own frontmatter, confirmed against
+`REQUIREMENTS.md`'s Phase 16 goal text before promoting) rather than fixed in
+this phase. Neither is carried silently: both are recorded with named owners
+in `REQUIREMENTS.md` → Future Requirements → `### Promoted by DEBT-01`.
 
 ### Quick Tasks Completed
 
@@ -522,7 +548,10 @@ opened during v0.3.0 (the fork-backend-removal question — resolved 2026-08-22
 by Phase 14 plan 14-05, see `.planning/todos/completed/` for the Resolution
 section;
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
-`2026-08-20-vsf-as-a-bootstrap-input`, and the warp-over-RESOURCE_SET
+the `.vsf`-as-a-regenerator2000-bootstrap-input backlog item (resolved
+`wont-fix` 2026-08-22 by Phase 15 plan 15-12, quoting `REQUIREMENTS.md`'s own
+Out of Scope line — see `.planning/todos/completed/` for the Resolution), and
+the warp-over-RESOURCE_SET
 refutation (resolved 2026-08-22 by Phase 15 plan 15-09, see
 `.planning/todos/completed/` for the Resolution)); 3 more were opened
 by Phase 11.1 itself while dispositioning Phase 10/11's review findings and
@@ -530,8 +559,10 @@ building Task 4's completeness guard, which caught undispositioned findings
 outside Phase 10/11 too
 (the hand-copied ACME/regenerator2000 gate migration — resolved 2026-08-22 by
 Phase 15 plan 15-07, see `.planning/todos/completed/` for the Resolution;
-`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`,
-`2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned`).
+`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`;
+the Phase 08 review-disposition backlog item, v0.2.0's `08-REVIEW.md`
+`WR-04`..`WR-13`, resolved 2026-08-22 by Phase 15 plans 15-02/15-03/15-12 —
+see `.planning/todos/completed/` for the Resolution).
 **Three rows from the 2026-08-19/18-items counts above are removed here
 because their todos now live in `.planning/todos/completed/`, not because the
 items were dropped:** the second-binmon-client wedge-lookalike documentation
@@ -624,19 +655,16 @@ suites pass cleanly on the runner in under two minutes, so `npm test` stays
 in CI (deliberately wider than the local `npm run test:automated` gate),
 documented in a comment above `ci.yml`'s `Test` step citing the run id — and
 closed the todo — pending 7 → 6, total 8 → 7.
-**Current, as of phase 15 plan 15-11 (2026-08-22): 7 items — 6
-pending todos plus Phase 03's UAT gap.** The count in this
+**Current, as of phase 15 plan 15-12 Task 1 (2026-08-22): 3 items — 2
+pending todos plus Phase 03's UAT gap** (the UAT-gap row's own removal is
+Task 3's job — see below for why it is not removed yet). The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
-| todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
-| todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
-| todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
-| todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
-| todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
-| todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
+| todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — promoted to `PKG-01` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
+| todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — promoted to `PKG-03` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 
 Not counted above, because they are complete on disk: all nine
@@ -651,11 +679,14 @@ Likewise the three UAT files reported as gaps that read `resolved` / `passed` /
 
 Also carried, not blocking: roughly fifteen WR-class code-review findings across
 five phases, enumerated per phase in
-`milestones/v0.2.0-MILESTONE-AUDIT.md` → `tech_debt`. The one worth reading
-first is **WR-13** — a second capability-refusal string hardcodes "the fork
-backend provides this tool", false for two `stock-only-gain` names. Verified
-unreachable today (all 38 manifest names have handlers), so it is dead code that
-violates one-source-of-truth rather than a live defect.
+`milestones/v0.2.0-MILESTONE-AUDIT.md` → `tech_debt`. **WR-13 is no longer among
+them** — Phase 15 plan 15-03 fixed it (commit `e9fa737`): `dispatchStock()`'s
+miss branch now calls `capabilityRefusalMessage(name, "stock")` instead of the
+locally-hardcoded "the fork backend provides this tool" wording, pinned by two
+new invariant tests scanning every shipped module for either forbidden shape.
+See the Phase 08 review-disposition backlog item, moved to
+`.planning/todos/completed/` by Phase 15 plan 15-12, for the full
+ten-finding disposition table.
 
 Also carried, not blocking, from Phase 11.1's own disposition ledger (filed
 under `.planning/todos/completed/`, dated 2026-08-21): the test-only

@@ -67,3 +67,27 @@ need regenerator2000 to accept a VICE snapshot directly — at which point the m
 auto-detection limit above would need to be worked around (verify or explicitly set the
 system field, the same technique already used for `use_illegal_opcodes` in Phase 10's
 generated projects) rather than trusted.
+
+## Resolution
+
+**Closed `wont-fix` (Phase 15, plan 15-12), quoting the pre-existing decision already
+recorded in `.planning/REQUIREMENTS.md`'s Out of Scope table verbatim rather than
+inventing a new rationale:**
+
+> `.vsf` as a regenerator2000 bootstrap input | Covered by `DEBT-01` as a disposition, not
+> as a build. D-34 stands unless a consumer has `.vsf` captures and cannot re-capture as
+> `.raw`.
+
+This is the same reversal condition this todo's own "What would change the decision"
+section already names above — a consumer who has *only* `.vsf` captures and cannot
+re-capture as `.raw`/flat-64K. No such consumer has surfaced across three milestones
+(v0.2.0, v0.3.0, v0.4.0/Phase 15), and none of `R2000-*`'s 12 in-scope requirements
+covers `.vsf` as a project bootstrap input (confirmed above: `R2000-14`/`R2000-15` are
+the symbol round trip, not this). Phase 9's `.vsf` machine-type auto-detection limit
+(`docs/phase9-regenerator2000-probe-findings.md` § Accepted limits, entry 2) stands
+unresolved and would need to be worked around, not merely noted, the day this reverses.
+
+`docs-dangling-refs.test.ts`'s repo-wide guard (which fails if this backlog item is ever
+deleted, since the corrected pointers all send the reader here) remains satisfied — this
+file stays in `.planning/todos/completed/`, never deleted, per DEBT-01's own prohibition
+against deleting a pending todo file.

@@ -55,7 +55,7 @@ const NORMATIVE_DOCS = Object.freeze([
 /** The backlog item `.vsf` was filed as. It IS `.vsf`'s recorded home, so it
  * must keep existing -- if it is deleted, the corrected pointers in
  * NORMATIVE_DOCS all become dangling again in the other direction. */
-const VSF_BACKLOG_ITEM = ".planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md";
+const VSF_BACKLOG_ITEM = ".planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md";
 
 /** Splits prose into sentence-ish units. Markdown wraps mid-sentence, so
  * splitting on lines would hide a pointer whose two halves straddle a line

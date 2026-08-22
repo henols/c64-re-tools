@@ -61,7 +61,7 @@
 // moment that phase closed -- a phase number is a planning artifact, not a
 // durable remediation path. The idea is recorded as backlog, not assigned
 // to any phase: see
-// `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`. (This is
+// `.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md`. (This is
 // a comment, not a user-facing string literal, so it is fixed here by hand
 // rather than by `docs-dangling-refs.test.ts`'s guard -- see that guard's
 // header for why it is deliberately scoped to string literals only.)
