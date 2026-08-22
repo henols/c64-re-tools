@@ -319,7 +319,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-12 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+10 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -347,7 +347,12 @@ todos (DEBT-02 items 1 and 2), both documented at the point of use in
 Resolutions — returning the count to 16. Task 2 then closed DEBT-02's third
 item, the `RELEASES.json` schema todo, adding a `## Release registry shape`
 section plus a copyable `RELEASES.json.example` — returning the count to 15.
-See `## Deferred
+Phase 15 plan 15-07 then closed the `build-atomic.test.ts` flake, the
+mislabelled `cpuhistory-get*` fixtures, and the ACME/regenerator2000 gate
+migration (three todos, see `.planning/todos/completed/`), returning the
+count to 12. Phase 15 plan 15-09 then closed the `vice_ping`
+`resolvedBinaryPath` documentation todo and the warp-over-RESOURCE_SET
+refutation todo, returning the count to 10. See `## Deferred
 Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
@@ -485,8 +490,9 @@ opened during v0.3.0 (the fork-backend-removal question — resolved 2026-08-22
 by Phase 14 plan 14-05, see `.planning/todos/completed/` for the Resolution
 section;
 `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
-`2026-08-20-vsf-as-a-bootstrap-input`,
-`2026-08-20-warp-over-resource-set-refuted-on-stock-3-10`); 3 more were opened
+`2026-08-20-vsf-as-a-bootstrap-input`, and the warp-over-RESOURCE_SET
+refutation (resolved 2026-08-22 by Phase 15 plan 15-09, see
+`.planning/todos/completed/` for the Resolution)); 3 more were opened
 by Phase 11.1 itself while dispositioning Phase 10/11's review findings and
 building Task 4's completeness guard, which caught undispositioned findings
 outside Phase 10/11 too
@@ -554,8 +560,15 @@ total 15 → 14. Task 3 then migrated the three hand-copied ACME/regenerator2000
 gates in `r2000-cli.test.ts`, `r2000-project.test.ts` and
 `disasm-roundtrip.test.ts` onto the shared `r2000-test-gate.ts` seam (commit
 `185187a`), proven by a measured before/after pass-count table (identical in
-both the default and opt-in runs) — pending 13 → 12, total 14 → 13.
-**Current, as of phase 15 plan 15-07 Task 3 (2026-08-22): 13 items — 12
+both the default and opt-in runs) — pending 13 → 12, total 14 → 13. Plan 15-09
+then closed the `vice_ping` `resolvedBinaryPath` documentation todo (a
+`resolvedBinaryPathScope` sibling field added to the response, plus a
+module-scope comment in `vice-proxy.ts`, pinned by a new
+`vice-proxy-ping.test.ts`) and the warp-over-RESOURCE_SET refutation todo
+(`GAINS-PROTOCOL.md`'s error codes corrected, a fork-only caveat landed in
+`docs/stock-vice-parity.md` and `capability-registry.ts`, `docs/tool-support.md`
+regenerated) — pending 12 → 10, total 13 → 11.
+**Current, as of phase 15 plan 15-09 (2026-08-22): 11 items — 10
 pending todos plus Phase 03's UAT gap.** The count in this
 paragraph is derived from, and must equal, the row count of the table
 immediately below it plus the one `uat_gap` row.
@@ -566,10 +579,8 @@ immediately below it plus the one `uat_gap` row.
 | todo | 2026-08-13-reconcile-ci-test-command-with-narrowed-gate | — | Pending — CI runs bare `npm test`, not `npm run test:automated`; both verified green from the main checkout, so the divergence hides no red gate |
 | todo | 2026-08-12-vice-broker-tests-stall-outside-devcontainer | low | Pending — pre-existing, user-dispositioned 2026-08-12 as "not a bug to fix" |
 | todo | 2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll | — | Pending — FINDING-E2; does not affect DIST-03, whose passing route was `vice_autostart` |
-| todo | 2026-08-19-vice-ping-resolvedbinarypath-misleading-under-broker-pool | — | Pending |
 | todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — opened during v0.3.0; packaging change, not scoped to this milestone |
 | todo | 2026-08-20-vsf-as-a-bootstrap-input | — | Pending — filed by plan 11-03/D-34; no `R2000-*` requirement covers `.vsf` as a bootstrap input |
-| todo | 2026-08-20-warp-over-resource-set-refuted-on-stock-3-10 | — | Pending — opened during v0.3.0; three doc/manifest sites plus a fork-tool claim to correct |
 | todo | 2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned | — | Pending — 9 findings from v0.2.0's 08-REVIEW.md, found by Task 4's completeness guard; 3 spot-checked and confirmed still live, out of this phase's r2000-only scope |
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |

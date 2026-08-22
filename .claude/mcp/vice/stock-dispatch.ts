@@ -592,7 +592,22 @@ export function withDerivedTool(
  * comment on why). Built through stockAnswer() so the answer now also
  * carries `runState` (D-06: every stock answer, and `vice_ping` is a stock
  * answer) alongside every field that was already there.
+ *
+ * 2026-08-19 finding (closed Phase 15 plan 15-09): `resolvedBinaryPath` is a
+ * ONE-TIME, MCP-server-process-startup `$PATH` probe (see vice-proxy.ts's
+ * `ACTIVE_BACKEND` comment) -- it is independent of which binary the broker
+ * actually leased for THIS request. `resolvedBinaryPathScope` below is an
+ * additive, backward-compatible sibling field (the existing field name and
+ * shape are unchanged) that carries that qualification into the answer
+ * itself, so a caller reading the response -- not just this source comment --
+ * learns not to treat the path as this request's authoritative binary
+ * identity.
  */
+const RESOLVED_BINARY_PATH_SCOPE =
+  "one-time MCP-server-process-startup PATH probe; NOT the binary the broker leased for this " +
+  "request -- for the authoritative per-instance binary, read the broker's own launch record " +
+  "(epoch.json's vice_bin field)";
+
 const handlePing: StockSessionHandler = async (_args, session, deps) => {
   return stockAnswer(session.client, {
     status: "ok",
@@ -603,6 +618,9 @@ const handlePing: StockSessionHandler = async (_args, session, deps) => {
     // it, an agent reading `"x64sc"` cannot tell "this is where the binary is"
     // from "this is what we were told to look for, and we could not find it".
     resolvedBinaryPathIsResolved: deps.resolvedBinaryPathIsResolved ?? false,
+    // 2026-08-19 finding: names what resolvedBinaryPath actually is (a
+    // startup-time probe) and where to look instead for a per-request answer.
+    resolvedBinaryPathScope: RESOLVED_BINARY_PATH_SCOPE,
     capabilities: session.capabilities,
   });
 };

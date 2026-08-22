@@ -313,6 +313,23 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 // selection, the tools construction loop's dispatch choice, and the final
 // ready log line) reads THIS constant, never the raw environment variable
 // and never a second detection call.
+//
+// `ACTIVE_BACKEND.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
+// reports (see stock-dispatch.ts's `handlePing()`). It is resolved exactly
+// ONCE here, at MCP-server process startup, by a bare `x64sc` `$PATH` probe
+// run in THIS process's own environment -- it is NOT re-probed per request
+// and has no connection to the broker, a separate, already-running process
+// that leases whichever instance it chose to whatever request comes in. On a
+// host where bare `x64sc` resolves to one build, `resolvedBinaryPath` reports
+// that build's path on every ping, even when the broker actually launched
+// (or later recycled to) a different one. The authoritative per-instance
+// answer lives in the broker's own launch record (`epoch.json`'s `vice_bin`
+// field, written by `broker-epoch.mts`) -- Phase 8.2 plan 04's own
+// walkthrough had to route around this field entirely and prove backend
+// identity from that launch record plus a live `ps -o args=` read instead
+// (2026-08-19 finding, closed as a documentation fix by Phase 15 plan 15-09
+// rather than a per-request requery, which would be a behavioural change out
+// of a disposition phase's remit).
 const ACTIVE_BACKEND = backendDetect.resolvedBackend();
 
 // -------------------------------------------------------------- JSON-RPC
