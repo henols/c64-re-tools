@@ -49,6 +49,26 @@
 // Like `docs-dangling-refs.test.ts` and `docs-deferred-ledger.test.ts`, this
 // file verifies planning documents, not shipped runtime behaviour, and is
 // deliberately kept OUT of `package.json`'s `files[]`.
+//
+// PARSER BLIND SPOT (found and fixed by plan 15-01, 2026-08-22): this guard
+// was GREEN for the wrong reason. Its heading regex was `^### (WR|IN|CR)-
+// (\d+):` -- level-3 headings ending in a colon, ONLY. That shape saw 119 of
+// the 150 findings that actually exist across every `*-REVIEW.md`, and the
+// missing 31 were not merely undispositioned, they were INVISIBLE to the
+// parser -- a smaller, literal repeat of AUDIT-01's own defect ("no
+// disposition anywhere" versus "no finding recorded at all"). Two real
+// files proved it: `03-REVIEW.md` uses level-4 (`####`) headings for all 14
+// of its findings (none matched); `14-REVIEW.md`'s `IN-01` uses a level-3
+// heading with no colon (`### IN-01 (Info) -- ...`, an em-dash instead).
+// `05-REVIEW.md`'s 16 findings share the same `####` shape but were already
+// dispositioned via `05-REVIEW-FIX.md`, so widening the parser only
+// surfaced 9 genuinely undispositioned findings (8 in `03-REVIEW.md`, 1 in
+// `14-REVIEW.md`), not 31. `parseFindingIds()` now accepts any heading
+// level 2 through 6 and terminates the id at the first non-digit, and
+// `declaredFindingIdsInHeadings()` plus a per-file non-emptiness check
+// (below) exist specifically so a FIFTH heading shape fails loudly, by
+// name, the next time this recurs, instead of silently reporting "0
+// undispositioned" while blind.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -84,14 +104,47 @@ function phaseNumToken(phaseDirName: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Every `### WR-09:` / `### IN-03:` / `### CR-01:` style finding heading in
- * a REVIEW.md's raw text, returned as `"WR-09"` etc. */
+/** Every finding heading in a REVIEW.md's raw text, at ANY heading level 2
+ * through 6, returned as `"WR-09"` etc. Requires at least one space after
+ * the marker and terminates the id at the first non-digit -- `WR-011` never
+ * parses as `WR-01`, a level-2 or level-5 heading matches exactly like a
+ * level-3/4 one, and an id followed directly by an em-dash or at end-of-line
+ * both match (no colon or trailing-space requirement). See this file's
+ * header for the two real defects (`03-REVIEW.md`, `14-REVIEW.md`) that
+ * motivated widening this past the original `^### ...:` shape. Ids are
+ * de-duplicated per call (first-seen order preserved) so one id declared
+ * under two heading styles in the same file yields ONE finding, not two. */
 function parseFindingIds(reviewContent: string): string[] {
+  const seen = new Set<string>();
   const ids: string[] = [];
-  const re = /^### (WR|IN|CR)-(\d+):/gm;
+  const re = /^#{2,6} +(WR|IN|CR)-(\d+)(?![0-9])/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(reviewContent)) !== null) {
-    ids.push(`${m[1]}-${m[2]}`);
+    const id = `${m[1]}-${m[2]}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/** The shape-drift detector. Every id appearing immediately after a heading
+ * marker at ANY level 1 through 6 -- deliberately anchored at the marker
+ * itself, not anywhere on the heading line, so a cross-reference inside a
+ * heading's own prose (e.g. `05-REVIEW.md:308`'s `#### WR-04: ... CR-01/
+ * CR-02 ...`) does not count as a declaration of `CR-01`/`CR-02`. Levels 2-6
+ * are exactly what `parseFindingIds()` accepts; level 1 is included here so
+ * that a future finding heading written at the document-title level fails
+ * the shape-coverage test BY NAME instead of silently vanishing, the same
+ * way `03-REVIEW.md`'s all-`####` findings and `14-REVIEW.md`'s no-colon
+ * `###` finding vanished before this plan. */
+function declaredFindingIdsInHeadings(reviewContent: string): string[] {
+  const ids: string[] = [];
+  const re = /^#{1,6} +((?:WR|IN|CR)-\d+)\b/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(reviewContent)) !== null) {
+    ids.push(m[1]);
   }
   return ids;
 }
@@ -236,10 +289,27 @@ function dispositionTextForPhase(
   return `${phaseDocsText}\n${todosText}\n${milestoneText}`;
 }
 
+/** Numeric-then-lexical comparison of two phase-number tokens (`"08.2"`,
+ * `"10"`, `"03"`) -- splits on `.` and compares each dotted component as a
+ * number, so `"9"` sorts before `"10"` and `"08.2"` sorts after `"08"`. */
+function comparePhaseNum(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const va = pa[i] ?? 0;
+    const vb = pb[i] ?? 0;
+    if (va !== vb) return va - vb;
+  }
+  return 0;
+}
+
 /** Every (phase, id) pair with no disposition anywhere -- AUDIT-01's defect,
  * expressed as an assertion. Caches the per-phase disposition text so each
  * phase's directory/todo/audit set is only read once regardless of how many
- * findings it has. */
+ * findings it has. Return value is sorted by (phaseNum, reviewFile, id) so
+ * the assertion's failure text is byte-identical across runs and platforms,
+ * regardless of `readdirSync`'s unspecified enumeration order. */
 function undispositionedFindings(): Finding[] {
   const findings = scanAllReviewFindings();
   const todos = [...readTodoFiles(TODOS_PENDING_DIR), ...readTodoFiles(TODOS_COMPLETED_DIR)];
@@ -255,6 +325,13 @@ function undispositionedFindings(): Finding[] {
     }
     if (!isDispositioned(finding.id, text)) undispositioned.push(finding);
   }
+  undispositioned.sort((a, b) => {
+    const byPhase = comparePhaseNum(a.phaseNum, b.phaseNum);
+    if (byPhase !== 0) return byPhase;
+    if (a.reviewFile !== b.reviewFile) return a.reviewFile < b.reviewFile ? -1 : 1;
+    if (a.id !== b.id) return a.id < b.id ? -1 : 1;
+    return 0;
+  });
   return undispositioned;
 }
 
@@ -268,9 +345,12 @@ test("every REVIEW.md finding id anywhere in .planning/phases/ has a recorded di
   );
 });
 
-test("positive control: the parser sees known-present anchors, and the total clears a floor of >= 100", () => {
+test("positive control: the parser sees known-present anchors, and the total clears a floor of >= 150", () => {
   const findings = scanAllReviewFindings();
-  assert.ok(findings.length >= 100, `expected at least 100 findings across all REVIEW.md files, got ${findings.length}`);
+  assert.ok(
+    findings.length >= 150,
+    `expected at least 150 findings across all REVIEW.md files (widened parser, plan 15-01), got ${findings.length}`,
+  );
 
   const hasAnchor = (phaseDir: string, id: string) =>
     findings.some((f) => f.phaseDir === phaseDir && f.id === id);
@@ -286,6 +366,85 @@ test("positive control: the parser sees known-present anchors, and the total cle
     hasAnchor("09-the-assumption-probe-go-no-go", "WR-01"),
     "expected 09-REVIEW.md -> WR-01 to be discovered",
   );
+  // The two previously-invisible shapes this plan widened the parser for.
+  assert.ok(
+    hasAnchor("03-direct-tools", "WR-06"),
+    "expected 03-REVIEW.md (level-4 headings) -> WR-06 to be discovered",
+  );
+  assert.ok(
+    hasAnchor("14-backend-decision", "IN-01"),
+    "expected 14-REVIEW.md (level-3, no-colon heading) -> IN-01 to be discovered",
+  );
+});
+
+test("shape coverage: every id declared immediately after ANY heading marker is in the parsed set", () => {
+  // A fourth (or fifth) heading shape must fail HERE, by name, instead of
+  // silently vanishing the way 03-REVIEW.md's ####s and 14-REVIEW.md's
+  // no-colon ### did before plan 15-01.
+  for (const phaseDir of readdirSync(PHASES_DIR)) {
+    const phaseDirPath = join(PHASES_DIR, phaseDir);
+    let entries: string[];
+    try {
+      entries = readdirSync(phaseDirPath);
+    } catch {
+      continue;
+    }
+    if (phaseNumToken(phaseDir) === null) continue;
+    for (const file of entries) {
+      if (!/^[0-9][0-9.]*-REVIEW\.md$/.test(file)) continue;
+      const content = readFileSync(join(phaseDirPath, file), "utf8");
+      const declared = declaredFindingIdsInHeadings(content);
+      const parsed = new Set(parseFindingIds(content));
+      for (const id of declared) {
+        assert.ok(
+          parsed.has(id),
+          `${file} (${phaseDir}): heading-declared id "${id}" was not in parseFindingIds()'s output -- ` +
+            `a heading shape parseFindingIds() cannot see`,
+        );
+      }
+    }
+  }
+});
+
+test("non-emptiness: any REVIEW.md containing at least one (WR|IN|CR)-NN token parses to at least one finding", () => {
+  // The exact assertion that would have caught the 03/05/14 blind spot on
+  // the day it appeared -- a file with id tokens in it that yields zero
+  // parsed findings is exactly what "invisible to the guard" looks like.
+  const tokenRe = /\b(?:WR|IN|CR)-\d+\b/;
+  for (const phaseDir of readdirSync(PHASES_DIR)) {
+    const phaseDirPath = join(PHASES_DIR, phaseDir);
+    let entries: string[];
+    try {
+      entries = readdirSync(phaseDirPath);
+    } catch {
+      continue;
+    }
+    if (phaseNumToken(phaseDir) === null) continue;
+    for (const file of entries) {
+      if (!/^[0-9][0-9.]*-REVIEW\.md$/.test(file)) continue;
+      const content = readFileSync(join(phaseDirPath, file), "utf8");
+      if (!tokenRe.test(content)) continue; // zero tokens -> zero findings is fine
+      const parsed = parseFindingIds(content);
+      assert.ok(
+        parsed.length > 0,
+        `${file} (${phaseDir}): contains at least one (WR|IN|CR)-NN token but parseFindingIds() found none -- ` +
+          `this is the exact blind-spot shape plan 15-01 fixed`,
+      );
+    }
+  }
+});
+
+test("fixture-driven: the planted WR-98/IN-97 shapes parse, and WR-980 does not parse as WR-98", () => {
+  const fixturePath = join(HERE, "fixtures", "planted-review-fixture.md");
+  const fixtureContent = readFileSync(fixturePath, "utf8");
+  const ids = parseFindingIds(fixtureContent);
+  assert.ok(ids.includes("WR-98"), "expected the planted level-4 WR-98 heading to parse");
+  assert.ok(ids.includes("IN-97"), "expected the planted level-3, no-colon IN-97 heading to parse");
+
+  const syntheticContent = "#### WR-980: a decoy id that must not parse as WR-98\n";
+  const syntheticIds = parseFindingIds(syntheticContent);
+  assert.ok(!syntheticIds.includes("WR-98"), "WR-980 must not parse as WR-98");
+  assert.ok(syntheticIds.includes("WR-980"), "WR-980 must parse as its own id");
 });
 
 test("planted violation: a synthetic finding id mentioned nowhere is reported undispositioned", () => {

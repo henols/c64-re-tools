@@ -31,6 +31,24 @@ be trusted, and so a disposition checker proven to report it as
 undispositioned (when nothing names it) can be trusted too.
 **Fix:** not applicable.
 
+#### WR-98: a synthetic level-4 finding, the `03-REVIEW.md` shape
+
+**File:** nowhere -- this finding does not describe real code.
+**Issue:** none. This heading exists solely to regression-test the
+level-4 (`####`), colon-terminated heading shape `03-REVIEW.md` uses
+throughout, which plan 15-01 found invisible to the pre-widening parser.
+**Fix:** not applicable.
+
+## Info
+
+### IN-97 (Info) — a synthetic level-3, no-colon finding, the `14-REVIEW.md` shape
+
+**File:** nowhere -- this finding does not describe real code.
+**Issue:** none. This heading exists solely to regression-test the level-3,
+no-colon, parenthesised-word-then-em-dash heading shape `14-REVIEW.md`'s
+`IN-01` uses, which plan 15-01 found invisible to the pre-widening parser.
+**Fix:** not applicable.
+
 ---
 
 _Reviewed: 2026-08-21_
