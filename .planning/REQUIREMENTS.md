@@ -53,7 +53,33 @@ the completeness guard was built, and how `4f048bb` closed with that guard alrea
 red.
 
 - [x] **GATE-01**: A milestone audit cannot record `status: passed` while any of the four `docs-*.test.ts` guards is red — the precondition is mechanically enforced, not documented
-- [ ] **GATE-02**: Every open code-review finding across all phases is dispositioned, including Phase 08's `WR-04`..`WR-12`, Phase 09's `IN-01`..`IN-03`, `WR-13`'s second hardcoded capability-refusal string, and `02-REVIEW.md`'s `IN-05` — and `docs-review-disposition.test.ts` runs green from a clean checkout
+- [x] **GATE-02**: Every open code-review finding across all phases is dispositioned, including Phase 08's `WR-04`..`WR-12`, Phase 09's `IN-01`..`IN-03`, `WR-13`'s second hardcoded capability-refusal string, and `02-REVIEW.md`'s `IN-05` — and `docs-review-disposition.test.ts` runs green from a clean checkout
+
+  > **Closure note (Phase 15).** The guard's own parser was widened in-phase before anything
+  > else could be dispositioned against it (plan 15-01, the phase's tracer): it went from
+  > matching only level-3, colon-terminated finding headings to any heading level 2-6, and
+  > discovered **150 findings** where it had previously seen only **119**. The two
+  > previously-invisible heading shapes were `03-REVIEW.md`'s level-4 (`####`) findings (14 of
+  > them) and `14-REVIEW.md`'s level-3-no-colon `IN-01`; both are now pinned by a
+  > fixture-driven regression test so a fifth heading shape fails loudly rather than silently
+  > vanishing the way these two did. The guard runs green from a clean checkout:
+  > `docs-review-disposition.test.ts` (7/7 pass, 150 findings, 0 undispositioned), re-confirmed
+  > at this closure. **No finding was disposed `superseded` in this phase's own work** —
+  > every finding closed by plans 15-01 through 15-12 was confirmed genuinely still open (or,
+  > for `WR-05`, already fixed at a cited prior commit) by direct re-verification against
+  > current source before being fixed or dispositioned; plan 15-01 itself corrected two of the
+  > phase's own initial verification claims (`WR-08`, `IN-03`) from a stated `MOOT`/
+  > `SUPERSEDED` back to `STILL OPEN` after direct source inspection found both claims false.
+  > Named findings and their disposition:
+  > Phase 08's `WR-04`..`WR-13` (ten findings, not nine — `WR-13` is the tenth, named
+  > separately by the ROADMAP) all fixed at source across plans 15-02/15-03, transcribed with
+  > resolvable commits in `.planning/todos/completed/2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned.md`;
+  > Phase 09's `IN-01`..`IN-03` closed `wont-fix` on evidence-immutability grounds (plan
+  > 15-05); `02-REVIEW.md`'s `IN-05` fixed at source (plan 15-05, commit `9849224`);
+  > `13-REVIEW.md`'s four findings dispositioned (plan 15-05: `WR-01` already fixed and pinned,
+  > `WR-02`/`IN-01` deferred with named reopen triggers, `IN-02` promoted — see `### Promoted
+  > by DEBT-01` below); `03-REVIEW.md`'s eight newly-surfaced findings (found by 15-01's own
+  > widening) all fixed (plan 15-04).
 
 ### Backend Decision
 
@@ -80,9 +106,80 @@ red.
 
 ### Debt Disposition
 
-- [ ] **DEBT-01**: Every item in `.planning/todos/pending/` is fixed, dispositioned `wont-fix` with recorded rationale, or explicitly promoted with a named owner — none carried silently into v0.5.0
-- [ ] **DEBT-02**: The undocumented-behaviour todos are closed by documenting the behaviour where a user would actually look for it — the `Drive8Type` prerequisite, the project-paths git-marker requirement, the `releases.json` schema, `vice_ping`'s misleading `resolvedBinaryPath` under the broker pool, and the refuted warp-over-`resource_set` claim
-- [ ] **DEBT-03**: Phase 03's three pending UAT scenarios are executed against real fixtures and a running program, and recorded pass or fail with evidence rather than left partial
+- [x] **DEBT-01**: Every item in `.planning/todos/pending/` is fixed, dispositioned `wont-fix` with recorded rationale, or explicitly promoted with a named owner — none carried silently into v0.5.0
+
+  > **Closure note (Phase 15, plan 15-12).** The pending count moved from **21** (as of plan
+  > 15-01, after the guard-widening exposed nine previously-invisible findings) to **2** at
+  > this closure — 19 todos closed across plans 15-04 through 15-12. This is the Phase-15
+  > count, not the milestone-final one: Phase 17 measures `DEBT-04` after Phase 16 discharges
+  > the payload-relocation todo (`PKG-01`), the last item this milestone's own work still
+  > removes. Every promotion carries a named `Owner:` clause under `### Promoted by DEBT-01`
+  > below. `wont-fix` dispositions (rationale quoted in full in each todo's own `## Resolution`):
+  > Phase 09's `IN-01`..`IN-03` (evidence-immutability — the harnesses' committed transcripts
+  > back the milestone's own `degrade`/`R4` verdict); the broker-tests-stall todo (they depend
+  > on manual host setup — a real broker topology, emulator and display — so they cannot be
+  > driven unattended); the `.vsf`-as-bootstrap-input todo (quoting `REQUIREMENTS.md`'s own
+  > pre-existing Out of Scope decision verbatim); the `tools-manifest.json` staleness todo
+  > (inverted — `vice_snapshot_list`'s absence is D-16's deliberate deletion, not staleness).
+  > Every other closed item was fixed at source with a resolvable commit (see each todo's own
+  > `## Resolution` in `.planning/todos/completed/`). The two todos still pending are both
+  > promoted with a named owner, not carried silently: `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`
+  > → `PKG-01` (Phase 16), `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
+  > → `PKG-03` (Phase 16) — both todos already carried `resolves_phase: 16` in their own
+  > frontmatter, confirmed against Phase 16's own goal text (which names both `PKG-01` and
+  > `PKG-03` by exactly these descriptions) before promoting.
+
+- [x] **DEBT-02**: The undocumented-behaviour todos are closed by documenting the behaviour where a user would actually look for it — the `Drive8Type` prerequisite, the project-paths git-marker requirement, the `releases.json` schema, `vice_ping`'s misleading `resolvedBinaryPath` under the broker pool, and the refuted warp-over-`resource_set` claim
+
+  > **Closure note (Phase 15).** All five behaviours documented at their point of use, by file
+  > and heading: (1) the `Drive8Type` prerequisite — `.claude/skills/c64-ram-capture/SKILL.md`'s
+  > `## Boot a disk` procedure closing note (plan 15-06); (2) the project-paths git-marker
+  > requirement — a prerequisite paragraph before `## The order` plus a Troubleshooting row
+  > (plan 15-06); (3) the `releases.json` schema — a new `## Release registry shape` section
+  > before `## References`, plus a copyable `RELEASES.json.example` shipped in the skill's own
+  > directory (plan 15-06); (4) `vice_ping`'s `resolvedBinaryPath` — a module-scope comment at
+  > `vice-proxy.ts`'s `ACTIVE_BACKEND` resolution, plus a new additive `resolvedBinaryPathScope`
+  > sibling field in the response itself, pinned by `vice-proxy-ping.test.ts` (plan 15-09); (5)
+  > the refuted warp-over-`resource_set` claim — `GAINS-PROTOCOL.md`'s warp section corrected
+  > to the measured 2026-08-20 stock-3.10 error codes, plus the `InitialWarpMode`
+  > silent-success trap and tool-behaviour decision (plan 15-09). **The warp item's caveat
+  > landed in two project-owned files** (`docs/stock-vice-parity.md`'s licensed-divergence
+  > register and `capability-registry.ts`'s existing `reason` field), not in the *generated*
+  > `docs/tool-support.md`/`tools-manifest.json` directly — `docs/tool-support.md` was
+  > regenerated from the edited `reason` field (so it does carry the caveat, with a diff
+  > limited to the one changed note cell) but `tools-manifest.json` was deliberately left
+  > untouched, since it is generated from the fork binary's own compiled schema and this is a
+  > text/documentation caveat, not a schema change. Placement is a judgment call
+  > (`15-VALIDATION.md` independently records DEBT-02 as manual-only for this reason); Task 3
+  > of plans 15-06 and 15-09 each record a first-time-reader walk confirming the citation, not
+  > an automated assertion that a reader would stop there.
+
+- [x] **DEBT-03**: Phase 03's three pending UAT scenarios are executed against real fixtures and a running program, and recorded pass or fail with evidence rather than left partial
+
+  > **Closure note (Phase 15).** All three scenarios executed live against genuine
+  > `/usr/bin/x64sc` and recorded, per-scenario: **scenario 1** (`vice_autostart`/
+  > `vice_disk_attach`/`vice_snapshot_load`) — **pass**, decided by byte comparison (plan
+  > 15-08). **Scenario 2** (`vice_keyboard_petscii`/`vice_joystick_set` against a proven-running
+  > program) — **partial**: the keyboard half is a clean, deterministic pass; the joystick half
+  > is an honest negative result — all five single-bit `JOYPORT_SET` rounds plus fire showed
+  > zero delta at both CIA1 port bytes, reproducing Phase 13's `A3` (`INCONCLUSIVE`) finding
+  > under a strictly stronger precondition (an independently-proven-running program, which
+  > rules out A3's "running-program precondition" candidate explanation while leaving the
+  > other two open) (plan 15-08). No fix was promoted for the joystick half specifically — `A3`
+  > was already a standing, disclosed `[ASSUMED]` limitation before this phase (pinned by
+  > `assumption-label-discipline.test.ts`), and this phase's live evidence narrows, rather than
+  > resolves, which of A3's remaining two candidate explanations applies; the transcript is
+  > recorded in `15-UAT-EVIDENCE.md` for whichever future probe re-attempts A3. **Scenario 3**
+  > (the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure)
+  > — **pass**: a real `stop:false` checkpoint armed on the KERNAL's default IRQ vector
+  > (`$EA31`) was driven to `hitsPerSecond: 21`, the D-11 guard's auto-disable fired and was
+  > independently confirmed wire-side, and the emulator kept progressing afterward — CONFIRMED
+  > for the rates and host tested (plan 15-10). `03-HUMAN-UAT.md` carries zero `result:
+  > [pending]` rows; its own `status:` field stays `partial` (not softened to force an overall
+  > pass) because scenario 2's joystick half is a genuine, honestly-recorded negative result —
+  > DEBT-03's criterion is "recorded pass or fail with evidence", which all three scenarios
+  > satisfy, not "passed".
+
 - [ ] **DEBT-04**: The deferred-items ledger at the v0.4.0 close is still derived and guarded, and its count is lower than the 19 items inherited
 
 ### Project Identity
@@ -136,7 +233,38 @@ tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
 
 ### Promoted by DEBT-01
 
-- Whatever `DEBT-01` promotes rather than closes lands here by construction, with its rationale already written.
+- **`vice_disk_attach`'s contract-redesign question.** Phase 13's A5 probe (`13-PROBE-RESULTS.md`)
+  found `vice_disk_attach` performs a full machine reset and load, contradicting its own
+  advertised "attach without loading or running" approximation — corrected in the returned
+  string and `docs/stock-vice-parity.md`'s D-14 bullet by plan 15-11, but the deeper question
+  (should the tool be restructured, given how little it differs from `vice_autostart`?) was
+  deliberately not answered — a feature/contract redesign is out of a disposition phase's
+  remit (the same D-13-04 escape hatch `EXTV-03`'s closure note cites). Owner: whichever future
+  milestone next redesigns `vice_disk_attach`'s tool contract — no v0.4.0 phase (12-17)
+  implements it; this phase only surfaced that it needs a designed answer, not a silent one.
+- **`code-review.md`'s file-list scoping omission.** `13-REVIEW.md`'s `IN-02` found that
+  matched `.txt`/`.json` evidence-fixture pairs are not scoped as a unit by
+  `.claude/gsd-core/workflows/code-review.md`'s `files:` derivation — a defect in the GSD
+  toolkit's own workflow definition, not in anything this project's phases built (plan 15-05
+  confirmed this directly against the workflow file). Owner: the GSD toolkit itself — file or
+  fix upstream in the GSD core repository/workflow definition, not in this project's own
+  source tree, where there is nothing to change.
+- **Measuring `InitialWarpMode`'s actual runtime effect.** The 2026-08-20 warp probe confirmed
+  a runtime `RESOURCE_SET WarpMode` succeeds and reads back as set on stock, but per
+  `vsync.c:207-209` only the launch-time value is ever consulted — whether a runtime set has
+  any measurable effect on emulation speed (item 5 of the original warp todo's five-item
+  Solution list) was left unmeasured by design (plan 15-09). Owner: whichever future plan next
+  needs stock warp/speed control for a real capability — no v0.4.0 phase needs it; the
+  documentation fix (marking `vice_machine_config_set`'s `WarpMode` fork-only) already closes
+  the SKILL-01 landmine this item's parent todo existed to fix.
+- **Deriving `cpuhistory-get*` fixtures' `capturedFrom` kind automatically.** Plan 15-07 fixed
+  the two mislabelled sidecars' `capturedFrom` field by hand (`stock` → `fork`, re-measured
+  live) but did not implement deriving that field from `resolvedBackend()` automatically,
+  since the change would touch `probe-binmon.mjs`'s capture path — a file plan 15-05 already
+  marked evidence-immutable for `13-REVIEW.md`'s `WR-02` (splitting it would rewrite the file
+  that produced this milestone's own committed probe transcripts). Owner: whichever future
+  plan next edits `probe-binmon.mjs`'s capture path for an unrelated reason — not this
+  milestone, and not a standalone justification to touch that file on its own.
 
 ## Out of Scope
 
@@ -160,12 +288,12 @@ Populated during roadmap creation.
 | EXTV-02 | 13 | Complete |
 | EXTV-03 | 13 | Complete |
 | GATE-01 | 12 | Complete |
-| GATE-02 | 15 | Pending |
+| GATE-02 | 15 | Complete |
 | FORK-01 | 14 | Complete |
 | FORK-02 | 14 | Complete |
-| DEBT-01 | 15 | Pending |
-| DEBT-02 | 15 | Pending |
-| DEBT-03 | 15 | Pending |
+| DEBT-01 | 15 | Complete |
+| DEBT-02 | 15 | Complete |
+| DEBT-03 | 15 | Complete |
 | DEBT-04 | 17 | Pending |
 | CORE-01 | 17 | Pending |
 | PKG-01 | 16 | Pending |
