@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-08-PLAN.md
-last_updated: "2026-08-22T15:32:58.109Z"
+stopped_at: Completed 15-05-PLAN.md
+last_updated: "2026-08-22T15:57:56.545Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: ec3f46c0ec290192503d32ed4b8e94dbebed4b5b
+state_head: e85794b63cee8c864b990d12c2d06d6454f9fa23
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 22
+  completed_plans: 23
   percent: 50
 ---
 
@@ -57,8 +57,8 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 5 of 12 complete (01, 02, 03, 04, 08 — non-sequential; 08 depends only on 15-01 and ran
-ahead of 05-07, which remain not yet executed). The `state.advance-plan` counter's own
+Plan: 6 of 12 complete (01, 02, 03, 04, 05, 08 — non-sequential; 08 depends only on 15-01 and
+ran ahead of 06-07, which remain not yet executed). The `state.advance-plan` counter's own
 sequential "N of 12" framing does not fit a wave-parallel phase; this line is corrected by hand
 per plan 08's own execution, not by the tool's blind increment.
 Status: Executing (non-sequential wave)
@@ -205,6 +205,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 15-debt-and-review-disposition P03 | 19min | 3 tasks | 6 files |
 | Phase 15 P04 | 40min | 3 tasks | 7 files |
 | Phase 15 P08 | 24min | 3 tasks | 3 files |
+| Phase 15 P05 | 45min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -307,6 +308,9 @@ Recent decisions affecting current work:
 - [Phase 15]: [Phase 15-04] WR-08 and IN-03 re-verified against current source and found STILL OPEN, contrary to the plan's own stale "moot"/"superseded" claims; both fixed for real (README.md manual-only count/env var, OPEN_SERVERS narrowed to Set<Server>) rather than dispositioned falsely. — Matches this plan's own must-have (never record a finding fixed/superseded without a landed fix or reproducible evidence) and 15-01's precedent of trusting direct source verification over inherited review claims.
 - [Phase 15]: [Phase 15-04] registerCatalogFor() now caches the in-flight promise (not the resolved catalog) with rejection eviction, closing a real concurrent-duplicate-REGISTERS_AVAILABLE race; non-vacuity proven by two planted-revert probes. — IN-02's finding was real: two synchronous callers on a fresh session previously each saw an empty cache before either write landed, sending two wire requests.
 - [Phase 15]: 15-08: closed 03-HUMAN-UAT.md scenarios 1/2 with live evidence against genuine stock VICE 3.9 -- scenario 1 pass (byte-comparison snapshot round trip), scenario 2 partial (keyboard pass, joystick zero-delta reproducing Phase 13 A3 under a proven-running program; no [ASSUMED] label touched) — DEBT-03 requires execution with evidence, not a claim; both scenarios were live-testable in this environment
+- [Phase 15]: 02-REVIEW.md IN-05 fixed: stockReconnect() thrown message corrected to name itself, pinned by a derived where:-vs-message-prefix invariant test (commit 9849224)
+- [Phase 15]: 09-REVIEW.md IN-01..IN-03 recorded wont-fix on evidence-immutability grounds (Phase 9's probe-harness transcripts back the milestone's degrade/R4 verdict); not one byte under Phase 09's directory changed
+- [Phase 15]: 13-REVIEW.md WR-01 confirmed already fixed at commit f73d0fa (contrary to 15-RESEARCH.md's stale two-line-fix claim) and pinned mechanically via a readdirSync-derived sh -c interpolation gate; WR-02/IN-01 deferred with named reopen triggers; IN-02 promoted to plan 15-12 with a named owner
 
 ### Pending Todos
 
@@ -589,8 +593,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T15:32:58.024Z
-Stopped at: Completed 15-08-PLAN.md
+Last session: 2026-08-22T15:57:56.447Z
+Stopped at: Completed 15-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
