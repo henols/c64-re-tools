@@ -248,3 +248,134 @@ test("dry-run, existing-file case: file content byte-identical before and after,
     assert.equal(result.action, "added");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Refusal paths -- six malformed consumer-config shapes from this plan's
+// Task 2, each proven to refuse totally: non-zero exit, message names the
+// file, bytes unchanged, AND no sibling file/dir appears in the scratch
+// directory (a refusal that leaves a backup or temp file behind would pass
+// the bytes-unchanged check but still be a partial refusal).
+// ---------------------------------------------------------------------------
+
+test("refuses truncated JSON: non-zero exit, message names the file, bytes unchanged, no sibling created", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = '{"mcpServers": {';
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses an empty (zero-byte) consumer config file -- distinct from a missing file, which instead creates one; easy pair for a future refactor to collapse", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = "";
+    writeFileSync(mcpPath, before);
+    assert.equal(readFileSync(mcpPath, "utf8").length, 0, "fixture must be a genuine zero-byte file");
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.equal(after.length, 0, "empty file stays zero bytes after refusal");
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses a JSON array root: non-zero exit naming it is not an object, bytes unchanged, no sibling created", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = "[]";
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    assert.ok(res.stderr.includes("is not a JSON object"), `stderr should say not-an-object: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses the JSON literal null: non-zero exit, bytes unchanged, no sibling created", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = "null";
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses a bare JSON string: non-zero exit, bytes unchanged, no sibling created", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = '"hello"';
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses a bare JSON number: non-zero exit, bytes unchanged, no sibling created", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = "42";
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
+
+test("refuses JSON-with-comments: intended/deliberate behaviour, not a gap -- readJson() is a plain JSON.parse, comment-bearing input is unparseable, and refusing to touch the file is strictly safer than guessing at the author's intent and rewriting it", async () => {
+  await withTempDir((dir) => {
+    const mcpPath = join(dir, ".mcp.json");
+    const before = '{\n  // a human comment JSON.parse cannot handle\n  "mcpServers": {}\n}\n';
+    writeFileSync(mcpPath, before);
+    const entriesBefore = readdirSync(dir).sort();
+
+    const res = runWireMcpSubprocess(dir, DEFAULT_OPTS);
+
+    assert.notEqual(res.status, 0);
+    assert.ok(res.stderr.includes(mcpPath), `stderr should name ${mcpPath}: ${res.stderr}`);
+    assert.ok(res.stderr.includes("not valid JSON"), `stderr should say not-valid-JSON: ${res.stderr}`);
+    const after = readFileSync(mcpPath, "utf8");
+    assert.equal(after, before);
+    assert.deepEqual(readdirSync(dir).sort(), entriesBefore);
+  });
+});
