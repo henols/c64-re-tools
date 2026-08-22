@@ -317,7 +317,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-15 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
+14 pending — see `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -540,11 +540,13 @@ closing sentence and the new prerequisite line before `## The order`) —
 pending 18 → 16, total 19 → 17. Plan 15-06 Task 2 then closed DEBT-02's
 third item, `RELEASES.json`'s undocumented schema, adding a `## Release
 registry shape` section (before `## References`) and a copyable
-`RELEASES.json.example` — pending 16 → 15, total 17 → 16. **Current, as of
-phase 15 plan 15-06 Task 2 (2026-08-22): 16 items — 15 pending todos plus
-Phase 03's UAT gap.** The count in this paragraph is derived from, and must
-equal, the row count of the table immediately below it plus the one
-`uat_gap` row.
+`RELEASES.json.example` — pending 16 → 15, total 17 → 16. Plan 15-07 Task 1
+then closed the `build-atomic.test.ts` cleanup-scan flake (fixed at commit
+`7484afa`, immune to concurrent `build()` callers) — pending 15 → 14, total
+16 → 15. **Current, as of phase 15 plan 15-07 Task 1 (2026-08-22): 15 items
+— 14 pending todos plus Phase 03's UAT gap.** The count in this paragraph is
+derived from, and must equal, the row count of the table immediately below
+it plus the one `uat_gap` row.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -561,7 +563,6 @@ equal, the row count of the table immediately below it plus the one
 | todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — found while writing plan 11.1-07's disposition ledger; two comment-only "Phase 7"/"Phase 8" pointers outside the r2000 family and outside plan 11.1-01's string-literal-only guard by design |
 | todo | 2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock | low | Pending — filed by phase 13 plan 13-05; two real `cpuhistory-get*` sidecars record `capturedFrom: "stock"` for the fork binary path; out of D-13-06's three-fixture scope |
 | todo | 2026-08-22-vice-disk-attach-approximation-contradicted-by-a5 | high | Pending — filed by phase 13 plan 13-05 via D-13-04's escape hatch; `vice_disk_attach`'s advertised "attach without loading or running" approximation is empirically false per `13-PROBE-RESULTS.md` §A5 |
-| todo | 2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp | low | Pending — filed by phase 12's regression gate; `build-atomic.test.ts:184` scans the shared system `/tmp` for `.build-tmp-*` siblings, so any concurrent `build()` caller reddens it (1 fail in run 1, 0 in run 2, 6/6 green in isolation). Pre-existing (`b0975f4`), untouched by any GSD phase, and unreachable from `audit-gate.mjs`, which spawns only the four `docs-*.test.ts` guards |
 | todo | 2026-08-22-tools-manifest-stale-missing-vice_snapshot_list | low | Pending — filed by phase 14 plan 14-03; `fork-live.test.ts`'s live surface diff found the live fork server offers `vice_snapshot_list`, which the committed `tools-manifest.json` (generated 2026-07-31) does not list. Fix is a `refresh-manifest.ts` regeneration, out of this plan's live-transport-exercise scope |
 | uat_gap | Phase 03 — `03-HUMAN-UAT.md` | — | Partial, 3 pending scenarios: `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load` against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a running program; the hot non-stopping-checkpoint auto-disable guard under sustained 20+/sec hit pressure |
 

@@ -53,3 +53,49 @@ directory first and create `successOut` / `failOut` *inside* it, leaving
 `dirname(outDir)` private. That preserves exactly what the test is asserting (no
 `.build-tmp-` survives next to the out-dir) while making it immune to every other
 concurrent `build()` caller.
+
+## Resolution
+
+**Fixed.** Commit `7484afa`, Phase 15 plan 15-07 Task 1.
+
+`successOut` and `failOut` now live inside one private `mkdtempSync()` wrapper
+directory (`build-atomic-cleanup-wrapper-*`) instead of directly under
+`os.tmpdir()`, so `tempSiblingsOf()`'s scan of `dirname(dir)` is scoped to a
+parent this test run owns exclusively. The assertion's meaning is unchanged —
+no `.build-tmp-*` staging directory may survive next to the out-dir — it is
+just no longer sensitive to any other process's temp usage.
+
+The ten-file `build()` concurrency surface this fix immunises against, confirmed
+by `grep -rl "from \"./build.ts\"" *.test.ts` in `.claude/mcp/vice` (all callers
+of the same `build()` entry point, `build-atomic.test.ts` itself excluded):
+`broker-control.test.ts`, `broker-e2e.test.ts`, `broker-kill.test.ts`,
+`broker-launch.test.ts` (import only, no direct call), `resources-sync.test.ts`
+(the sharpest collision risk — its own `scratchDir` is
+`mkdtempSync(join(tmpdir(), "resources-sync-"))`, landing in the exact same
+shared parent this test used to scan), `stock-broker-live.test.ts`,
+`stock-live-broker-monitor.test.ts`, `vice-broker-acquire.test.ts`,
+`vice-broker-launch.test.ts` (import only, no direct call),
+`vice-broker-supervision.test.ts`.
+
+**Proven by a planted violation, not a single green run**, exactly as this
+todo's own evidence style requires:
+
+- Pre-fix: `mkdir -p /tmp/.build-tmp-planted-probe-12345 && node --test
+  build-atomic.test.ts` — the cleanup test failed with `+
+  ['.build-tmp-planted-probe-12345']` where `[]` was expected. Removed the
+  planted directory afterward.
+- Post-fix: same planted directory in `/tmp`, same command — the cleanup test
+  passed; the wrapper's private parent no longer overlaps `/tmp`.
+
+**Re-verified, not assumed:**
+- `cd .claude/mcp/vice && npm run typecheck` — exit 0.
+- `node --test build-atomic.test.ts`, three consecutive runs — 6/6 pass every
+  time.
+- `npm run test:automated`, two consecutive runs — `2110 tests / 2105 pass / 0
+  fail / 5 pre-existing todo`, identical both times (matches the pre-existing
+  baseline recorded in `15-06-SUMMARY.md`'s Self-Check).
+
+The flake was pre-existing (`build-atomic.test.ts`'s only prior commit is
+`b0975f4`) and was never reachable from `audit-gate.mjs` (which spawns only the
+four `docs-*.test.ts` guards, never the full suite) — no milestone-audit
+verdict was ever affected by it.
