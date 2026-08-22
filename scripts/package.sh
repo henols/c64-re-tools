@@ -93,6 +93,20 @@ if (plugin && installerPkg) {
  ".claude/mcp/vice/vice-proxy.ts",
  "installer/package.json", "installer/bin/cli.mjs", "installer/scripts/sync-skills.mjs"].forEach(mustExist);
 
+// The payload must activate only when installed, not by repo-root auto-discovery
+// (pending todo 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json.md,
+// Solution step 4). Scoped to the two payload directories only: the root .claude/
+// directory itself legitimately still holds this repository's own dev configuration
+// and its GSD tooling, so this must never assert on .claude/ itself being absent.
+// The second entry (the relocated MCP-server parent directory) is added by plan
+// 16-04, which moves .claude/mcp/vice -> src/mcp/vice; do not write it in now,
+// since it would make this check red on landing.
+const mustNotExist = [".claude/skills"];
+for (const rel of mustNotExist) {
+  if (fs.existsSync(path.join(root, rel)))
+    errors.push(`${rel} exists at the repository root -- the payload must activate only when installed, not by repo-root auto-discovery`);
+}
+
 // Every skill directory must carry a SKILL.md.
 const skillsDir = path.join(root, "src/skills");
 if (fs.existsSync(skillsDir)) {
