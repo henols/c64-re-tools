@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 14
 current_phase_name: Backend Decision
 status: executing
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-08-22T10:07:12.421Z"
+stopped_at: Completed 14-04-PLAN.md
+last_updated: "2026-08-22T10:47:13.400Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 14 execution started
-state_head: 1dfcfebc089b60794114ba24b31e7bf4a21eaa8c
+state_head: 6143d20805bd120380d9647922d952b009fdcbea
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 33
 ---
 
@@ -57,9 +57,11 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 14 (Backend Decision) — EXECUTING
-Plan: 4 of 5
-Status: Executing — 14-01 (FORK-01 decided `retain`), 14-02, and 14-03 (live
-fork-transport test + criterion-3 evidence, 6/6 passed) complete; 14-04 next
+Plan: 5 of 5
+Status: Executing — 14-01 (FORK-01 decided `retain`), 14-02, 14-03 (live
+fork-transport test + criterion-3 evidence, 6/6 passed), and 14-04 (retain-branch
+recorded zero: both code-consequence tasks confirmed skipped, `.claude/mcp/vice/`
+diff clean) complete; 14-05 next
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
 resolved, and it was a bookkeeping gap, not missing work: plan 12-07's three
@@ -187,6 +189,7 @@ Last activity: 2026-08-22 — Phase 14 execution started
 | Phase 14 P01 | 17min | 3 tasks | 4 files |
 | Phase 14 P02 | 22min | 3 tasks | 2 files |
 | Phase 14 P03 | 25min | 2 tasks | 6 files |
+| Phase 14 P04 | 37min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -278,6 +281,7 @@ Recent decisions affecting current work:
 - [Phase 14]: FORK-01 decided `retain` by a human at the blocking-human checkpoint (14-01 Task 2): the forked VICE MCP backend stays the default hedge, formalised in PROJECT.md with a dated Key Decisions row naming KEYBOARD_MATRIX_SET reversal criteria. Sub-question B was NOT overridden.
 - [Phase 14]: [Phase 14-02] FORK-02 evidenced true on the retain branch with zero rewrite: all 17 point-of-use mention sites verdicted holds-as-is; runtime refusal for vice_sid_get_state/vice_keyboard_matrix/vice_keyboard_restore pinned by three tests; capability-registry.ts and all 8 skill/doc files left unedited, recorded as the decided retain-branch outcome rather than an omission.
 - [Phase 14]: fork-live.test.ts drives vice.ts's real HTTP transport seam (useInstance/call/serverInfo) against buildViceArgs()'s own fork-branch argv, forced to loopback -- registered as MANUAL_ONLY_TESTS entry 8 — Criterion 3 required the fork's own -mcpserver transport to be live-exercised at least once; no prior test in this repo had ever done so (broker-e2e.test.ts stubs the binary; the phase 8 human walkthrough and phase 13 live captures were stock-only or spoke the wrong protocol)
+- [Phase 14]: [Phase 14-04] Retain branch recorded zero: both code-consequence tasks (fork-default flip in backend-detect.mts; vice-errors.ts extraction from vice.ts) confirmed skipped -- gated to non-retain branches by their own precondition; git diff --quiet -- .claude/mcp/vice clean
 
 ### Pending Todos
 
@@ -506,8 +510,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T10:07:12.226Z
-Stopped at: Completed 14-03-PLAN.md
+Last session: 2026-08-22T10:47:13.275Z
+Stopped at: Completed 14-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
