@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 14
 current_phase_name: Backend Decision
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-08-22T09:20:14.725Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-08-22T09:44:22.265Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 14 execution started
-state_head: f0b6473cc86e3681b1a5337975276c26585ed649
+state_head: 670355ac6d226e82124c9c59852d1daea1a11230
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
   percent: 33
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 14 (Backend Decision) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Executing — 14-01 complete (FORK-01 decided `retain`), 14-02 next
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
 verification `passed` 11/11).** The record disagreement flagged here earlier is
@@ -184,6 +184,7 @@ Last activity: 2026-08-22 — Phase 14 execution started
 | Phase 13 P04 | 25min | 3 tasks | 7 files |
 | Phase 13-external-verification P05 | 35min | 3 tasks | 8 files |
 | Phase 14 P01 | 17min | 3 tasks | 4 files |
+| Phase 14 P02 | 22min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -273,6 +274,7 @@ Recent decisions affecting current work:
 - [Phase 13]: Phase 13 plan 04: A1/A2 assumption labels removed (confirmed live against fork VICE 3.10); A3/A5 left assumed (INCONCLUSIVE/CONTRADICTED); A5's vice_disk_attach tool-contract finding handed to plan 13-05 via D-13-04's escape hatch; assumption-label-discipline.test.ts ships as a permanent all-or-nothing label guard
 - [Phase 13]: Phase 13 plan 05: closed both retired verdicts in docs/phase2-backend-probe-evidence.md -- EXTV-01 (fork:/usr/local/bin/x64sc, VICE 3.10.0.0; terminator-frame reading CONFIRMED, event order differs from the synthetic model but matches phase1-probe-results.md) and EXTV-02 (probeBackend()/resolvedBackend() confirmed against both real binaries, -help/-? fallback branches recorded unexercised rather than verified); moved the fixtures and discriminator todos to completed/ with Resolution sections; trimmed the probe-phase3 todo to A4 only; filed two new pending todos (cpuhistory-get* sidecar mislabel; vice_disk_attach's D-14 approximation contradicted by A5); reconciled STATE.md's Deferred Items ledger against the post-phase todo tree -- docs-deferred-ledger.test.ts green in both directions
 - [Phase 14]: FORK-01 decided `retain` by a human at the blocking-human checkpoint (14-01 Task 2): the forked VICE MCP backend stays the default hedge, formalised in PROJECT.md with a dated Key Decisions row naming KEYBOARD_MATRIX_SET reversal criteria. Sub-question B was NOT overridden.
+- [Phase 14]: [Phase 14-02] FORK-02 evidenced true on the retain branch with zero rewrite: all 17 point-of-use mention sites verdicted holds-as-is; runtime refusal for vice_sid_get_state/vice_keyboard_matrix/vice_keyboard_restore pinned by three tests; capability-registry.ts and all 8 skill/doc files left unedited, recorded as the decided retain-branch outcome rather than an omission.
 
 ### Pending Todos
 
@@ -500,8 +502,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T09:20:14.582Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-08-22T09:44:22.055Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

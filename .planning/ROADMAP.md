@@ -176,7 +176,7 @@ claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
   2. A user who hits SID read-back, matrix keyboard, or RESTORE/NMI is told, at the point of use, a route they can actually follow — evidenced by the live doc/skill text, not merely asserted in this roadmap
   3. The decision is reflected in the code's actual state, checked live: if "remove", no code path still advertises or spawns the fork transport; if "retain", the retained path is exercised once more against a real fork binary and still passes
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -185,7 +185,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 14-02-PLAN.md — FORK-02: enumerate all hard-loss route sites, judge each against the decided branch, then apply only what the verdicts require
+- [x] 14-02-PLAN.md — FORK-02: enumerate all hard-loss route sites, judge each against the decided branch, then apply only what the verdicts require
 - [ ] 14-03-PLAN.md — Criterion 3 live: the first committed exercise of the fork's own `-mcpserver` HTTP transport against a real fork binary
 - [ ] 14-04-PLAN.md — Branch-conditional code consequence: stop the fork being the silent default, and move the stock backend's shared error types out of the fork transport module
 
@@ -294,7 +294,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 14. Backend Decision | v0.4.0 | 1/5 | In Progress|  |
+| 14. Backend Decision | v0.4.0 | 2/5 | In Progress|  |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
