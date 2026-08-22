@@ -176,7 +176,7 @@ claims (e.g. the `warp-over-resource_set` todo) ahead of knowing the outcome
   2. A user who hits SID read-back, matrix keyboard, or RESTORE/NMI is told, at the point of use, a route they can actually follow — evidenced by the live doc/skill text, not merely asserted in this roadmap
   3. The decision is reflected in the code's actual state, checked live: if "remove", no code path still advertises or spawns the fork transport; if "retain", the retained path is exercised once more against a real fork binary and still passes
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -191,7 +191,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 14-05-PLAN.md — Close the record: dispose the standing todo, reconcile the deferred ledger, and hand the outcome to Phases 15/16/17
+- [x] 14-05-PLAN.md — Close the record: dispose the standing todo, reconcile the deferred ledger, and hand the outcome to Phases 15/16/17
 
 **Planning note**: plan this phase with **worktree mode off**. Every plan's
 deliverables include `.planning/` and `PROJECT.md`/`ROADMAP.md`/`STATE.md`
@@ -213,10 +213,12 @@ PROJECT.md → Key Decisions, the dated `FORK-01` row. Per-criterion verdict:
   1. **Satisfied.** PROJECT.md carries the dated `FORK-01` row naming the
      `KEYBOARD_MATRIX_SET` opcode landing as the reversal trigger, pinned by
      `docs-fork-decision.test.ts`.
+
   2. **Satisfied.** All 17 point-of-use mention sites for the three hard-loss
      tools verdicted `holds-as-is` against the retained branch, with zero
      rewrite needed (`14-ROUTE-EVIDENCE.md`); each tool's runtime refusal
      string is pinned by a test naming the fork route (`Set VICE_BACKEND=fork`).
+
   3. **Satisfied for the retained path; the "remove" clause does not apply
      on this branch.** The fork's own `-mcpserver` HTTP transport was
      exercised live for the first time in this repository's history against
@@ -361,7 +363,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 11.1 Close v0.3.0 Audit Items (INSERTED) | v0.3.0 | 7/7 | Complete   | 2026-08-21 |
 | 12. Audit Integrity Instrument | v0.4.0 | 7/7 | Complete    | 2026-08-22 |
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
-| 14. Backend Decision | v0.4.0 | 4/5 | In Progress|  |
+| 14. Backend Decision | v0.4.0 | 5/5 | In Progress|  |
 | 15. Debt and Review Disposition | v0.4.0 | 0/TBD | Not started | - |
 | 16. Packaging and Repo Shape | v0.4.0 | 0/TBD | Not started | - |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
