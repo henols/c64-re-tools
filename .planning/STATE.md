@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 15
 current_phase_name: Debt and Review Disposition
 status: executing
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-08-22T14:27:42.803Z"
+stopped_at: Completed 15-03-PLAN.md
+last_updated: "2026-08-22T14:44:57.941Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 15 execution started
-state_head: f2eea297e7ff9761f996d5ae6a7a115fd9c727bc
+state_head: e9fa7374f3ab847c2499b2f0c97d02e468f1863f
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 29
-  completed_plans: 19
+  completed_plans: 20
   percent: 50
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 15 (Debt and Review Disposition) — EXECUTING
-Plan: 3 of 12
+Plan: 4 of 12
 Status: Ready to execute
 
 **Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
@@ -199,6 +199,7 @@ Last activity: 2026-08-22 — Phase 15 execution started
 | Phase 14 P05 | 26min | 2 tasks | 6 files |
 | Phase 15 P01 | 28min | 3 tasks | 5 files |
 | Phase 15 P02 | 22 min | 3 tasks | 3 files |
+| Phase 15-debt-and-review-disposition P03 | 19min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -296,6 +297,7 @@ Recent decisions affecting current work:
 - [Phase 15]: 14-REVIEW.md IN-01 closed via a new completed todo citing commit 69465e41c580a0bcbf97fc7e4b58cbfac6e368ac -- fixed in Phase 14 but never cited in a source docs-review-disposition.test.ts recognises
 - [Phase 15]: 03-REVIEW.md's eight newly-surfaced findings filed as one pending todo owned by plan 15-04, with per-finding re-verification against current source correcting two of the plan's own stale verdicts (WR-08, IN-03 both confirmed STILL OPEN, not moot/superseded)
 - [Phase 15]: WR-07's allowlist narrowing implemented exactly per 08-REVIEW.md's fix; documented that it does not catch a future stealth mention of a currently-unreferenced hardware/fork tool (architectural limit of the single-pass filter), not silently claimed closed. — Evidence-based disposition over an inflated 'fully fixed' claim, matching this plan's own prohibition against recording a finding fixed without proof.
+- [Phase 15-debt-and-review-disposition]: WR-05 already fixed (commit 21a42cb); no new code needed, cited with the TS7016/allowJs:false reason the review's suggested import route was not taken — capability-registry.test.ts's synthetic-tool set was already derived mechanically from vice-proxy.ts before this plan ran
 
 ### Pending Todos
 
@@ -557,8 +559,8 @@ scope.
 
 ## Session Continuity
 
-Last session: 2026-08-22T14:27:42.688Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-08-22T14:44:57.580Z
+Stopped at: Completed 15-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
