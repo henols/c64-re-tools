@@ -91,3 +91,51 @@ milestone exists to stop.
   plan that correctly re-recorded the three D-13-06-scoped fixtures with
   `CAPTURE_BACKEND_KIND=fork` explicitly set, avoiding the same mistake
   for those three.
+
+## Resolution
+
+**Fixed.** Commit `d67f0ef`, Phase 15 plan 15-07 Task 2.
+
+Both sidecars' `capturedFrom` corrected from `stock:/usr/local/bin/x64sc` to
+`fork:/usr/local/bin/x64sc` — kind token only, same path, same bytes. The
+correctly-labelled sibling, `cpuhistory-get-unsupported.json`
+(`stock:/usr/bin/x64sc`), was left untouched (`git diff --stat` empty).
+
+**Binary identity re-measured live this session, not inherited from the
+finding's own claim:**
+- `/usr/local/bin/x64sc --help 2>&1 | grep -c -- "-mcpserver"` → `5` (the
+  fork build).
+- `/usr/bin/x64sc --help 2>&1 | grep -c -- "-mcpserver"` → `0` (genuine
+  stock).
+
+**No test asserted these two files' `capturedFrom` by literal name.**
+`binmon-fixtures.test.ts`'s `EXTV-01` test ("the three re-recorded fixtures
+report synthetic: false, with a capturedFrom naming the kind and path of the
+binary that actually answered") is scoped to exactly `display-get`,
+`event-interleaved`, `checkpoint-list` — confirmed by reading the test's own
+case list before editing. The only assertion touching `cpuhistory-get*` checks
+`synthetic: false` (a separate, unaffected key), and `node --test
+binmon-fixtures.test.ts` was 32/32 before and after this change.
+
+`fixtures/binmon/README.md`'s provenance table rows updated to match, and a
+new note added recording that the `capturedFrom` kind token is
+operator-supplied (`CAPTURE_BACKEND_KIND`, set by hand at capture time in
+`probe-binmon.mjs`'s `runCapture()`) rather than derived from which binary
+actually answered — so a future reader knows the field can be wrong in this
+specific way, and a future capture run can make the identical mistake.
+
+**Named follow-on, not implemented here (per this todo's own "What a fix
+would touch" list and this plan's explicit instruction not to touch
+`probe-binmon.mjs`):** deriving `CAPTURE_BACKEND_KIND` automatically from
+`resolvedBackend()` against the same `VICE_BIN`, instead of trusting an
+operator-typed value, is the root-cause fix that would prevent a third
+recurrence. `probe-binmon.mjs` carries plan 15-05's evidence-immutability
+status for `13-REVIEW.md WR-02` (its capture-evidence role must not be
+touched casually mid-disposition-phase), so this sub-item is promoted with a
+named owner rather than fixed here: **owner = whichever future plan next
+edits `probe-binmon.mjs`'s capture path** (no phase currently scheduled;
+re-open this note if one is planned).
+
+Re-verified: `cd .claude/mcp/vice && node --test binmon-fixtures.test.ts`
+32/32; `npm run test:automated` 2110/2105/0/5, unchanged from the pre-fix
+baseline.
