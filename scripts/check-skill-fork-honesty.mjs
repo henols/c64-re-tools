@@ -100,10 +100,15 @@ const registryByName = new Map(CAPABILITY_REGISTRY.map((e) => [e.name, e]));
 // MCP_PREFIX_RE/TOOL_NAME_RE now live in ./lib/skill-corpus.mjs (WR-12) --
 // imported above, not re-derived here.
 
-// Annotation signals -- a section is "annotated" when its body matches any
-// of these, case-insensitive. Kept short and literal; this script never
-// attempts to parse markdown structure beyond splitting on ATX headings.
-const ANNOTATION_RE = /(fork-only|requires the fork backend|requires the fork|fork backend|VICE_BACKEND)/i;
+// Annotation signals. WR-10 (08-REVIEW.md): "fork backend" and "VICE_BACKEND"
+// are strict superstrings of the two precise phrases below, so they only
+// ever WEAKENED the rule -- incidental prose like "the fork backend is
+// faster here" or an unrelated VICE_BACKEND mention used to silence a
+// whole section. Dropped; only the two precise phrases remain. This
+// pattern is now used ONLY as the single-fork-only-name fallback below
+// (`names.length === 1`); a section naming two or more fork-only tools
+// must satisfy the per-tool windowed match (`nearName`) instead.
+const ANNOTATION_RE = /(fork-only|requires the fork\b)/i;
 
 // The proximity rule (research Assumption A4, resolved): markdown-section
 // scope. Split each .md file into sections at ATX headings (^#{1,6} );
@@ -132,22 +137,62 @@ function splitSections(text) {
 }
 
 // Stale-forward-reference check (research Pitfall 5): a sentence deferring a
-// capability to a numbered phase, using a possessive "Phase N's ..." idiom
-// (the shape this project's own prose uses to hand a capability off to a
-// future phase, e.g. "Phase 8's BACK-05 is what reports the absence") co-
-// occurring on the same line with one of the stale-framing words below.
+// capability to a numbered phase co-occurring, ANYWHERE in the same
+// paragraph, with one of the stale-framing words below.
 //
-// Deliberately narrower than a bare `Phase \d` co-occurrence: a plain
-// citation like "(Phase 7, D-02)" that quotes a THIRD PARTY's own doc string
-// ("cycles is documented as *not yet implemented*" -- the fork's own schema
-// text, not this project's claim) is not a deferral and must not be flagged.
-// Verified against the real tree this session: the possessive form matches
-// exactly one line in six skills (control-flow.md's now-stale
-// "Phase 8's `BACK-05`" sentence) and excludes tool-selection.md's unrelated
-// "(Phase 7, D-02)" citation, which shares the same stale-word vocabulary
-// ("not yet implemented") but is not a deferral of a capability.
-const PHASE_POSSESSIVE_RE = /Phase\s+\d+['’]s/;
+// WR-09 (08-REVIEW.md): this used to require both signals on the SAME
+// PHYSICAL LINE, so whether a two-clause sentence tripped it was an
+// accident of the author's hard wrap -- the one defect it was written to
+// catch (control-flow.md's now-fixed "Phase 8's `BACK-05`" sentence) shared
+// a line by luck; wrapped one word earlier, the identical defect would have
+// passed. Now scoped to a blank-line-delimited paragraph instead (via
+// splitParagraphs(), whitespace-normalised to a single line before
+// testing), so a hard-wrap can never hide the same defect again.
+//
+// The phase-reference pattern is also widened from possessive-only
+// ("Phase N's") to optional-possessive, so "deferred to Phase 9",
+// "Phase 9 will report the absence" and "not yet built (Phase 9)" are all
+// caught -- all three were previously invisible.
+//
+// A widened, paragraph-scoped, non-possessive pattern would otherwise
+// false-positive on tool-selection.md's own "(Phase 7, D-02)" citation --
+// a THIRD PARTY's own doc string ("cycles is documented as *not yet
+// implemented*", the fork's own schema text) quoted alongside a real
+// identifier citation, not a deferral, but sharing both the stale-word
+// vocabulary AND (once bare "Phase N" counts) the phase-reference
+// vocabulary. PHASE_CITATION_RE strips exactly that "(Phase N, ID-NN)"
+// citation shape before testing PHASE_REF_RE, so a real citation can sit in
+// the same paragraph as a stale word without tripping this check, while a
+// genuine bare "Phase N" deferral elsewhere in the same paragraph is still
+// caught (the strip only removes the citation's own text, nothing else).
+const PHASE_REF_RE = /Phase\s+\d+(['’]s)?/;
+const PHASE_CITATION_RE = /\(Phase\s+\d+,\s*[^)]+\)/g;
 const STALE_WORDS_RE = /\b(deferred|not yet|until|unavailable)\b/i;
+
+// Blank-line-delimited paragraph splitter. Each paragraph carries the
+// 1-based line number of its FIRST line, for the report -- a paragraph, not
+// a physical line, is now the unit of scope, but the failure message must
+// still point somewhere useful in the file.
+function splitParagraphs(text) {
+  const lines = text.split("\n");
+  const paragraphs = [];
+  let current = [];
+  let startLine = 1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      if (current.length > 0) {
+        paragraphs.push({ text: current.join("\n"), startLine });
+        current = [];
+      }
+      continue;
+    }
+    if (current.length === 0) startLine = i + 1;
+    current.push(line);
+  }
+  if (current.length > 0) paragraphs.push({ text: current.join("\n"), startLine });
+  return paragraphs;
+}
 
 let totalForkMentions = 0;
 const positiveControlsSeen = new Set();
@@ -156,14 +201,15 @@ for (const f of skillFiles) {
   const raw = readFileSync(f, "utf8");
   const rel = f.slice(ROOT.length + 1);
 
-  // Stale-forward-reference: line-based, independent of section scope.
-  const rawLines = raw.split("\n");
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i];
-    if (PHASE_POSSESSIVE_RE.test(line) && STALE_WORDS_RE.test(line)) {
+  // Stale-forward-reference: paragraph-scoped, independent of section scope
+  // and of where the author happened to hard-wrap a line.
+  for (const para of splitParagraphs(raw)) {
+    const flat = para.text.replace(/\s+/g, " ");
+    const flatForPhaseCheck = flat.replace(PHASE_CITATION_RE, "");
+    if (PHASE_REF_RE.test(flatForPhaseCheck) && STALE_WORDS_RE.test(flat)) {
       need(
         false,
-        `${rel}:${i + 1}: stale forward reference to a numbered phase ("${line.trim()}") -- ` +
+        `${rel}:${para.startLine}: stale forward reference to a numbered phase -- ` +
           `state the current truth instead, and name no future phase`
       );
     }
@@ -184,21 +230,43 @@ for (const f of skillFiles) {
 
     totalForkMentions += forkMentionsInSection.length;
 
-    const isAnnotated = ANNOTATION_RE.test(sectionText);
-    if (isAnnotated) {
-      if (rel.endsWith("tool-selection.md")) positiveControlsSeen.add("tool-selection.md");
-      if (rel.endsWith("control-flow.md")) positiveControlsSeen.add("control-flow.md");
-      continue;
-    }
-
-    // Not annotated -- find the 1-based line number of the first fork-only
-    // mention in this section, relative to the whole file, for the report.
-    const firstMention = forkMentionsInSection[0];
-    const upToMention = cleaned.slice(0, firstMention.index);
-    const lineOffset = upToMention.split("\n").length - 1;
-    const lineNo = section.startLine + lineOffset;
     const names = [...new Set(forkMentionsInSection.map((m) => m[0]))];
+
+    // WR-10: compliance is decided PER TOOL, not per section. An
+    // annotation about tool A must not license a bare mention of tool B in
+    // the same section -- the old rule matched ANYWHERE in the section
+    // body with no association between the annotation and the name it was
+    // meant to annotate. `nearName` requires the annotation phrase to sit
+    // within a bounded window (200 chars, never crossing a newline) on
+    // either side of THIS name specifically. The `names.length === 1`
+    // fallback keeps every currently-compliant single-fork-only-tool
+    // section (all 7 flagged sections in the committed corpus, confirmed
+    // by 08-REVIEW.md, have exactly one distinct fork-only name each)
+    // compliant without requiring the annotation to sit inside the
+    // 200-char window of that lone name -- there is no ambiguity about
+    // which tool a section-wide annotation refers to when only one is
+    // named.
     for (const name of names) {
+      const nearName = new RegExp(
+        `${name}[^\\n]{0,200}(fork-only|requires the fork)|` +
+          `(fork-only|requires the fork)[^\\n]{0,200}${name}`,
+        "i"
+      );
+      const compliant = nearName.test(cleaned) || (ANNOTATION_RE.test(sectionText) && names.length === 1);
+      if (compliant) {
+        if (rel.endsWith("tool-selection.md")) positiveControlsSeen.add("tool-selection.md");
+        if (rel.endsWith("control-flow.md")) positiveControlsSeen.add("control-flow.md");
+        continue;
+      }
+
+      // WR-11: the line offset is computed from THIS name's OWN first
+      // mention in the section, not the section's first fork-only mention
+      // of ANY name -- previously every message after the first cited a
+      // line where its own name never appeared.
+      const ownFirstMention = forkMentionsInSection.find((m) => m[0] === name);
+      const upToMention = cleaned.slice(0, ownFirstMention.index);
+      const lineOffset = upToMention.split("\n").length - 1;
+      const lineNo = section.startLine + lineOffset;
       const entry = registryByName.get(name);
       const altText = entry?.alternative ? ` Stock route: ${entry.alternative}` : " No stock route exists.";
       need(
