@@ -129,6 +129,7 @@ import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { tryLaunchOne, probeReady } from "./broker-launch.mts";
 import { createBrokerState } from "./broker-state.mts";
+import { snapshotPathFor, snapshotMetaPathFor } from "./stock-paths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
@@ -536,6 +537,172 @@ test(
 
     assert.ok(report !== null, "withBrokerHarness must have returned a report");
     assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 15-08 Task 1: the vice_snapshot_save -> vice_snapshot_load round trip
+// -- scenario 1's third and final leg (03-HUMAN-UAT.md test 1). Reuses the
+// .d64 case's fixture and broker-launch shape above; the verdict rests on
+// TWO byte comparisons, never on the absence of an error (this plan's own
+// must-have): the perturbed scratch region must come BACK to its
+// pre-perturbation bytes (proves the load restored state), and the
+// program's own verified payload region must STILL match afterwards (proves
+// the load restored THIS machine, not some other one).
+//
+// NOTE on scratch-directory placement: stock-paths.ts's snapshotPathFor()/
+// snapshotMetaPathFor() are FIXED to <repoRoot()>/.vice-snapshots/<name>.{vsf,json}
+// -- there is no override to redirect a save/load into this harness's own
+// mkdtempSync() scratch directory (by design: T-3-05, keeping every
+// snapshot inside the workspace's hostpath.ts-translatable tree). This test
+// therefore cleans up its own snapshot artifacts explicitly in a finally
+// block, rather than relying on withBrokerHarness's scratchDir teardown --
+// .vice-snapshots/ is gitignored, but an orphaned .vsf left behind is still
+// exactly the kind of scratch-directory leak this plan's must-haves forbid.
+// ---------------------------------------------------------------------------
+
+/** RAM under BASIC ROM in bank 0 ($C000-$CFFF) -- always plain RAM
+ * regardless of banking, and outside this fixture's own load region
+ * ($0801-$0812 inclusive), so a write here can never collide with the
+ * loaded program's own bytes. */
+const SNAPSHOT_SCRATCH_ADDRESS = 0xc000;
+const SNAPSHOT_PERTURB_BYTES: readonly number[] = Object.freeze([0xde, 0xad, 0xbe, 0xef]);
+const SNAPSHOT_ROUND_TRIP_NAME = "brokerlive_roundtrip";
+
+test(
+  "stock-broker-live: vice_snapshot_save -> perturb -> vice_snapshot_load restores the perturbed scratch region and leaves the loaded program's payload intact, decided by byte comparison",
+  { skip: SKIP_REASON_D64, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    const snapshotPath = snapshotPathFor(SNAPSHOT_ROUND_TRIP_NAME);
+    const snapshotMetaPath = snapshotMetaPathFor(SNAPSHOT_ROUND_TRIP_NAME);
+    try {
+      let report: HarnessReport | null = null;
+      report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+        const { prgPath } = writePrgFixture(scratchDir);
+        const d64Path = writeD64Fixture(scratchDir, prgPath);
+
+        const brokerJson = await waitForBrokerJson(stateDir);
+        const host = "127.0.0.1";
+        assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
+
+        const opened = await openBrokerControl(stateDir);
+        assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+        if (!opened.ok) return;
+        const controlSession = opened.session;
+
+        const acquired = await controlSession.acquire();
+        assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+        if (!acquired.ok) return;
+        const grant = acquired.grant;
+
+        const pid = await readGrantPid(grant.epoch_file);
+        recordPid(pid);
+
+        const ready = await waitForStockReady(grant.port);
+        assert.ok(ready, `the broker-launched instance at port ${grant.port} never answered a binary-monitor probe within the deadline`);
+
+        const deps = depsFor(host, grant, controlSession, stateDir);
+
+        const diskAttachResult = await dispatchStock("vice_disk_attach", { unit: 8, path: d64Path }, deps);
+        const diskAttachPayload = parseOkPayload(diskAttachResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        console.log(`stock-broker-live (snapshot round trip): vice_disk_attach -> ${JSON.stringify(diskAttachPayload)}`);
+
+        const autostartResult = await dispatchStock("vice_autostart", { path: d64Path, run: true }, deps);
+        const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        console.log(`stock-broker-live (snapshot round trip): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
+
+        const loadPoll = await pollUntilBytesMatch(deps, VERIFIED_PAYLOAD_ADDRESS, VERIFIED_PAYLOAD, 20000);
+        console.log(
+          `stock-broker-live (snapshot round trip): load poll expected=${JSON.stringify(VERIFIED_PAYLOAD)} observed=${JSON.stringify(loadPoll.lastObserved)} ` +
+            `(${loadPoll.attempts} attempts, matched=${loadPoll.matched})`,
+        );
+        assert.ok(loadPoll.matched, `the loaded program must land before the snapshot round trip can begin, got ${JSON.stringify(loadPoll.lastObserved)}`);
+
+        // --- Baseline: read the scratch region BEFORE any perturbation --
+        // this is exactly what vice_snapshot_save below captures, and
+        // exactly what vice_snapshot_load must restore. Never assumed to be
+        // zero or any other fixed value -- whatever it genuinely is.
+        const baselineRead = await dispatchStock(
+          "vice_memory_read",
+          { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
+          deps,
+        );
+        const baselinePayload = parseOkPayload(baselineRead as { content: { type: "text"; text: string }[]; isError: boolean });
+        const baselineBytes = baselinePayload.bytes as number[];
+        console.log(`stock-broker-live (snapshot round trip): baseline $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} bytes = ${JSON.stringify(baselineBytes)}`);
+
+        const saveResult = await dispatchStock("vice_snapshot_save", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const savePayload = parseOkPayload(saveResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        console.log(`stock-broker-live (snapshot round trip): vice_snapshot_save -> ${JSON.stringify(savePayload)}`);
+
+        const perturbResult = await dispatchStock(
+          "vice_memory_write",
+          { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, data: [...SNAPSHOT_PERTURB_BYTES] },
+          deps,
+        );
+        parseOkPayload(perturbResult as { content: { type: "text"; text: string }[]; isError: boolean });
+
+        const perturbedRead = await dispatchStock(
+          "vice_memory_read",
+          { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
+          deps,
+        );
+        const perturbedPayload = parseOkPayload(perturbedRead as { content: { type: "text"; text: string }[]; isError: boolean });
+        const perturbedBytes = perturbedPayload.bytes as number[];
+        console.log(`stock-broker-live (snapshot round trip): perturbed $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} bytes = ${JSON.stringify(perturbedBytes)}`);
+        assert.deepEqual(
+          perturbedBytes,
+          [...SNAPSHOT_PERTURB_BYTES],
+          `the perturbation write must stick before the round trip proves anything: expected ${JSON.stringify(SNAPSHOT_PERTURB_BYTES)}, got ${JSON.stringify(perturbedBytes)}`,
+        );
+
+        const loadResult = await dispatchStock("vice_snapshot_load", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const loadPayload = parseOkPayload(loadResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        console.log(`stock-broker-live (snapshot round trip): vice_snapshot_load -> ${JSON.stringify(loadPayload)}`);
+
+        // --- Half 1: the perturbed region must have RETURNED to its
+        // pre-perturbation bytes -- proves the load restored state.
+        const restoredRead = await dispatchStock(
+          "vice_memory_read",
+          { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
+          deps,
+        );
+        const restoredPayload = parseOkPayload(restoredRead as { content: { type: "text"; text: string }[]; isError: boolean });
+        const restoredBytes = restoredPayload.bytes as number[];
+        console.log(`stock-broker-live (snapshot round trip): restored $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} bytes = ${JSON.stringify(restoredBytes)}`);
+        assert.deepEqual(
+          restoredBytes,
+          baselineBytes,
+          `expected vice_snapshot_load to restore $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} to its pre-perturbation bytes ${JSON.stringify(baselineBytes)}, got ${JSON.stringify(restoredBytes)}`,
+        );
+        assert.notDeepEqual(restoredBytes, [...SNAPSHOT_PERTURB_BYTES], `the restored bytes must not still be the perturbed pattern -- the load must have actually done something`);
+
+        // --- Half 2: the program's own verified payload region must STILL
+        // match -- proves the load restored THIS machine, not some other.
+        const payloadRead = await dispatchStock(
+          "vice_memory_read",
+          { address: `$${VERIFIED_PAYLOAD_ADDRESS.toString(16)}`, size: VERIFIED_PAYLOAD.length, encoding: "array", sideEffects: false },
+          deps,
+        );
+        const payloadAfterLoadPayload = parseOkPayload(payloadRead as { content: { type: "text"; text: string }[]; isError: boolean });
+        const payloadBytesAfterLoad = payloadAfterLoadPayload.bytes as number[];
+        console.log(`stock-broker-live (snapshot round trip): payload region after load = ${JSON.stringify(payloadBytesAfterLoad)}`);
+        assert.deepEqual(
+          payloadBytesAfterLoad,
+          [...VERIFIED_PAYLOAD],
+          `expected the program's own verified payload region to still match after the snapshot load, got ${JSON.stringify(payloadBytesAfterLoad)}`,
+        );
+
+        await controlSession.release();
+      });
+
+      assert.ok(report !== null, "withBrokerHarness must have returned a report");
+      assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
+    } finally {
+      rmSync(snapshotPath, { force: true });
+      rmSync(snapshotMetaPath, { force: true });
+    }
   },
 );
 
