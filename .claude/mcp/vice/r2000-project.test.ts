@@ -54,6 +54,7 @@ import {
   flatImageOrigin,
   decodeRawData,
 } from "./r2000-project.ts";
+import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 // ---------------------------------------------------------------------------
 // Unit half -- always runs, no external binary involved.
@@ -128,40 +129,18 @@ test("flatImageOrigin: throws otherwise, naming the actual length", () => {
 // Integration half -- gated on a real regenerator2000 binary.
 // ---------------------------------------------------------------------------
 
-const R2000_BIN = process.env.R2000_BIN ?? "regenerator2000";
+// Uses the shared r2000-test-gate.ts seam (R2000_BIN/skipReasonFor/
+// assertR2000RequiredIfEnvSet, imported above) instead of a local copy --
+// see 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md.
 
-function probeR2000(): boolean {
-  const r = spawnSync(R2000_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
-  if (r.error) return false;
-  const banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  return /regenerator2000/i.test(banner);
-}
-
-const R2000_AVAILABLE = probeR2000();
-
-/** Computed exactly once. Every regenerator2000-dependent test in this file
- * passes this through node:test's own `{ skip }` option -- never a
- * hand-rolled early return, which would report a false PASS rather than a
- * SKIP (disasm-roundtrip.test.ts's own D-08 pattern, renamed here per
- * D-11). */
-const SKIP_REASON: string | false = R2000_AVAILABLE
-  ? false
-  : `r2000-project.test.ts's regenerator2000-dependent suites are skipped -- no real ` +
-    `regenerator2000 was found at R2000_BIN="${R2000_BIN}". Set R2000_BIN to an absolute ` +
-    `path to a real "regenerator2000" binary, or install one (cargo install regenerator2000 -- ` +
-    `verified against 0.9.20 during Phase 9/10 planning). D-11 keeps CI from setting ` +
-    `VICE_REQUIRE_R2000, so this is an expected SKIP there -- see the "regenerator2000 ` +
-    `availability gate (D-11)" test below for the hard-fail path.`;
+/** Computed exactly once, by the shared seam. Every regenerator2000-dependent
+ * test in this file passes this through node:test's own `{ skip }` option --
+ * never a hand-rolled early return, which would report a false PASS rather
+ * than a SKIP. */
+const SKIP_REASON: string | false = skipReasonFor("r2000-project.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
-  if (process.env.VICE_REQUIRE_R2000) {
-    assert.ok(
-      R2000_AVAILABLE,
-      `VICE_REQUIRE_R2000 is set but no real regenerator2000 was found at R2000_BIN="${R2000_BIN}" -- ` +
-        `a maintainer who sets this variable expects a hard FAIL, never a SKIP, when the binary is ` +
-        `actually missing.`,
-    );
-  }
+  assertR2000RequiredIfEnvSet(assert);
 });
 
 let r2000WorkDir: string | undefined;

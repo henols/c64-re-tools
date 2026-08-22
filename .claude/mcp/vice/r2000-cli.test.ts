@@ -19,6 +19,13 @@ import { dirname, join } from "node:path";
 import { runR2000Cli, VERB_OPTIONS } from "./r2000-cli.ts";
 import { tsToOffset } from "./r2000-d64.ts";
 import { synthesizeProject } from "./r2000-project.ts";
+import {
+  R2000_AVAILABLE,
+  skipReasonFor,
+  assertR2000RequiredIfEnvSet,
+  ACME_AVAILABLE,
+  assertAcmeRequiredIfEnvSet,
+} from "./r2000-test-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -441,40 +448,19 @@ test("in-process: bootstrap on a .prg whose length happens to be 4096 still boot
 });
 
 // ---------------------------------------------------------------------------
-// Gated test -- needs a real regenerator2000. Mirrors D-11's SKIP/
-// VICE_REQUIRE_R2000 shape (r2000-project.test.ts's own convention), never a
-// hand-rolled early return.
+// Gated test -- needs a real regenerator2000. Uses the shared
+// r2000-test-gate.ts seam (R2000_AVAILABLE/skipReasonFor/
+// assertR2000RequiredIfEnvSet, imported above) instead of a local copy --
+// see 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md.
 // ---------------------------------------------------------------------------
 
-const R2000_BIN = process.env.R2000_BIN ?? "regenerator2000";
-
-function probeR2000(): boolean {
-  const r = spawnSync(R2000_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
-  if (r.error) return false;
-  const banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  return /regenerator2000/i.test(banner);
-}
-
-const R2000_AVAILABLE = probeR2000();
-
-/** Computed exactly once. Passed through node:test's own `{ skip }` option --
- * never a hand-rolled early return, which would report a false PASS rather
- * than a SKIP. */
-const SKIP_REASON: string | false = R2000_AVAILABLE
-  ? false
-  : `r2000-cli.test.ts's regenerator2000-dependent test is skipped -- no real regenerator2000 was found at ` +
-    `R2000_BIN="${R2000_BIN}". Set R2000_BIN to an absolute path to a real "regenerator2000" binary, or ` +
-    `install one (cargo install regenerator2000 -- verified against 0.9.20 during Phase 9/10 planning). D-11 ` +
-    `keeps CI from setting VICE_REQUIRE_R2000, so this is an expected SKIP there.`;
+/** Computed exactly once, by the shared seam. Passed through node:test's own
+ * `{ skip }` option -- never a hand-rolled early return, which would report a
+ * false PASS rather than a SKIP. */
+const SKIP_REASON: string | false = skipReasonFor("r2000-cli.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
-  if (process.env.VICE_REQUIRE_R2000) {
-    assert.ok(
-      R2000_AVAILABLE,
-      `VICE_REQUIRE_R2000 is set but no real regenerator2000 was found at R2000_BIN="${R2000_BIN}" -- a ` +
-        `maintainer who sets this variable expects a hard FAIL, never a SKIP, when the binary is actually missing.`,
-    );
-  }
+  assertR2000RequiredIfEnvSet(assert);
 });
 
 test(
@@ -690,26 +676,14 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// Local ACME gate, mirroring disasm-roundtrip.test.ts's own convention
-// exactly (renamed nothing -- same ACME_BIN/VICE_REQUIRE_ACME env vars,
-// since criterion 3's test is the SAME external-oracle claim that file
-// already established the convention for).
+// ACME gate, using the shared r2000-test-gate.ts seam (ACME_BIN/
+// ACME_AVAILABLE/acmeSkipReasonFor/assertAcmeRequiredIfEnvSet, imported
+// above) instead of a local copy of disasm-roundtrip.test.ts's original
+// convention -- see
+// 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md. The
+// seam's probeAcme() passes a 10s spawnSync timeout; this file's own local
+// copy previously passed none -- converged on the seam's bounded probe.
 // ---------------------------------------------------------------------------
-
-const ACME_BIN = process.env.ACME_BIN ?? "acme";
-
-function probeAcme(): boolean {
-  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8" });
-  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  if (r.error || !/acme/i.test(banner)) {
-    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8" });
-    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  }
-  if (r.error) return false;
-  return /acme/i.test(banner);
-}
-
-const ACME_AVAILABLE = probeAcme();
 
 const CRITERION3_SKIP_REASON: string | false =
   R2000_AVAILABLE && ACME_AVAILABLE
@@ -718,13 +692,7 @@ const CRITERION3_SKIP_REASON: string | false =
       `ACME (ACME_AVAILABLE=${ACME_AVAILABLE}) -- see this file's own D-11/D-08 gates above for how to install either.`;
 
 test("ACME availability gate (D-08), reused for criterion 3", () => {
-  if (process.env.VICE_REQUIRE_ACME) {
-    assert.ok(
-      ACME_AVAILABLE,
-      `VICE_REQUIRE_ACME is set but no real ACME was found at ACME_BIN="${ACME_BIN}" -- criterion 3 requires ` +
-        "a hard FAIL, never a skip, whenever the CI gate expects ACME to be present.",
-    );
-  }
+  assertAcmeRequiredIfEnvSet(assert);
 });
 
 /** Unlike withTempDir() (system tmpdir, fine for the CLI's own bootstrap/

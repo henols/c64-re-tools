@@ -54,49 +54,25 @@ import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
 import { CommandType } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 // ---------------------------------------------------------------------------
-// Gate: is a real ACME reachable at ACME_BIN?
+// Gate: is a real ACME reachable at ACME_BIN? Uses the shared
+// r2000-test-gate.ts seam (ACME_BIN/acmeSkipReasonFor/
+// assertAcmeRequiredIfEnvSet, imported above) -- this file established the
+// ACME_BIN/VICE_REQUIRE_ACME convention originally, but the probe itself now
+// lives in one place. See
+// 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md.
 // ---------------------------------------------------------------------------
 
-const ACME_BIN = process.env.ACME_BIN ?? "acme";
-
-function probeAcme(): boolean {
-  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8" });
-  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  if (r.error || !/acme/i.test(banner)) {
-    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8" });
-    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  }
-  if (r.error) return false;
-  return /acme/i.test(banner);
-}
-
-const ACME_AVAILABLE = probeAcme();
-
-/** Computed exactly once. Every ACME-dependent test in this file passes this
- * through node:test's own `{ skip }` option -- never a hand-rolled early
- * return, which would report a false PASS rather than a SKIP
- * (stock-live.test.ts's own pattern). */
-const SKIP_REASON: string | false = ACME_AVAILABLE
-  ? false
-  : `disasm-roundtrip.test.ts's ACME-dependent suites are skipped -- no real ACME cross-assembler ` +
-    `was found at ACME_BIN="${ACME_BIN}". Set ACME_BIN to an absolute path to a real "acme" binary, ` +
-    `or install one (apt-get install acme -- verified against Debian trixie/Ubuntu during planning). ` +
-    `CI's build job installs it before this file runs (.github/workflows/ci.yml's "Install ACME ` +
-    `cross-assembler" step) and sets VICE_REQUIRE_ACME=1 so a missing ACME there FAILS instead of ` +
-    `skipping -- see the "ACME availability gate (D-08)" test below.`;
+/** Computed exactly once, by the shared seam. Every ACME-dependent test in
+ * this file passes this through node:test's own `{ skip }` option -- never a
+ * hand-rolled early return, which would report a false PASS rather than a
+ * SKIP. */
+const SKIP_REASON: string | false = acmeSkipReasonFor("disasm-roundtrip.test.ts");
 
 test("ACME availability gate (D-08)", () => {
-  if (process.env.VICE_REQUIRE_ACME) {
-    assert.ok(
-      ACME_AVAILABLE,
-      `VICE_REQUIRE_ACME is set but no real ACME was found at ACME_BIN="${ACME_BIN}" -- criterion 4's ` +
-        `"exclusions are enumerated and asserted rather than skipped" requires this to FAIL, never skip, ` +
-        `whenever the CI gate expects ACME to be present. .github/workflows/ci.yml's "Install ACME ` +
-        `cross-assembler" step should have installed it before this test ran.`,
-    );
-  }
+  assertAcmeRequiredIfEnvSet(assert);
 });
 
 // ---------------------------------------------------------------------------

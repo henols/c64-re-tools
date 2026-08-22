@@ -102,17 +102,9 @@ export function assertR2000RequiredIfEnvSet(assertLib: typeof import("node:asser
 // `r2000-cli.test.ts` hand-copied it for criterion 3. The Phase 11
 // validation audit needed a THIRD copy for criterion 1's fixture
 // reproducibility check -- which is precisely the divergence this module's
-// own header exists to stop. So the probe lives here instead, and every NEW
-// ACME-gated test file imports it from here rather than copying it again.
-//
-// HONEST SCOPE: the two PRE-EXISTING copies (`disasm-roundtrip.test.ts`,
-// which established the convention, and `r2000-cli.test.ts`, which
-// hand-copied it plus its own `probeR2000()`) were NOT migrated by the
-// validation audit -- `r2000-cli.test.ts`'s gate semantics are load-bearing
-// for criterion 3's already-verified evidence, and rewriting them was
-// outside an audit's remit. So this is the seam for new consumers, not yet
-// the only implementation. Migration is filed as backlog:
-// `.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md`.
+// own header exists to stop. So the probe lives here instead, and every
+// ACME-gated test file (`disasm-roundtrip.test.ts`, `r2000-cli.test.ts`)
+// imports it from here rather than copying it.
 //
 // The env var names are deliberately UNCHANGED (`ACME_BIN`,
 // `VICE_REQUIRE_ACME`) -- it is the same external-oracle claim, and CI
