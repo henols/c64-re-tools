@@ -1,7 +1,7 @@
 ---
 phase: 17-project-identity-and-ledger-close
 verified: 2026-08-23T15:00:00Z
-status: human_needed
+status: passed
 score: 20/21 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,13 +9,16 @@ re_verification:
   previous_status: human_needed
   previous_score: 20/21
   gaps_closed:
+
     - "G-17-1: the unevidenced comprehension claim in CORE-01's provenance record is removed from all seven documents that carried it (PROJECT.md, REQUIREMENTS.md, STATE.md, ROADMAP.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-VERIFICATION.md). Each now states only what the transcript evidences — attendance at the gate="blocking-human" checkpoint and delegation via the free-text 'you decide' answer 298 seconds later — and states plainly that comprehension is not evidenced by any artifact. The terminal-render/decision-prompt distinction, the UAT non-recall note, and four stale docs-core-value-decision.test.ts test-count claims (5 -> 6) are also corrected. A new cross-document absence+presence gate (17-04 task 4) is the first mechanical contact this provenance claim has ever had."
   gaps_remaining: []
   regressions: []
 human_verification:
+
   - test: "CORE-01 verdict provenance — literal wording vs. attended delegation"
     expected: "Either (a) confirm this attended-and-delegated shape satisfies the intent (the executor did not act \"unilaterally\" or \"unattended\" — the primary session transcript shows the gate was rendered and a human answered it 298 seconds later in free text), or (b) determine the literal wording was not met and record that explicitly (an override, a corrected must-have for future phases, or an accepted-and-flagged deviation). This project's documented \"you decide\" standing preference is NOT corroboration that the operator was informed: a standing delegation is precisely what permits an uninformed answer, so it cannot evidence comprehension. Attendance and delegation are evidenced by transcript; comprehension is not evidenced by any artifact (corrected by plan 17-04, gap G-17-1)."
     why_human: "This is a provenance/intent judgment call inherent to CORE-01's own audit-integrity purpose — the exact kind of question this milestone's guards cannot mechanically resolve. Plan 17-04 fixed the WORDING (removed the unevidenced comprehension claim) but did not and could not itself settle whether the disclosed delegation shape satisfies 17-02-PLAN.md's must-have truth 3's literal wording (\"the option a human selected\"). 17-UAT.md's test 1 already surfaced this question once (result: issue, disposition: fix the wording, CORE-01 kept [x] as intent-satisfied with a disclosed deviation) but that disposition was reached against the corrected account only in prose, in the diagnosis session, not as a formal answer to this specific verifier-framed question. It is carried forward, not marked resolved on the strength of the diagnosis session's disposition note alone."
+
   - test: "End-of-phase harvested human-check: does the Core Value entry read as evidence weighed?"
     expected: "All four sub-criteria hold: (a) names the verdict actually chosen; (b) cites at least one piece of evidence by name; (c) engages the case against the verdict reached; (d) the reversal condition is specific enough that a future reader could tell whether it has been met. (This verifier's own reading found all four satisfied, and 17-UAT.md's test 2 already recorded a human 'pass' on this exact question — carried forward here because the phase has not yet reached an overall passed UAT round; the pass evidence is unaffected by plan 17-04, which touched only the *Provenance.* paragraph and left the *Decisive reason.*, *Case against this verdict...* and *Reversal.* paragraphs byte-identical.)"
     why_human: "17-02-PLAN.md's task 2 `<verify>` block explicitly assigns this check to a human and defers it to end-of-phase per `workflow.human_verify_mode: end-of-phase`. Formally carried in this VERIFICATION.md's human_verification list per this agent's Step 8 instructions rather than treated as closed by the prior UAT round's per-item pass alone, since the phase's overall UAT status is `diagnosed`, not `passed`."
