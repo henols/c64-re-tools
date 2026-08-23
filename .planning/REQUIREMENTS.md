@@ -210,10 +210,15 @@ red.
   > floor of two could not express a genuinely empty tree; plan 17-01 task 2 then edited
   > `STATE.md`'s `## Deferred Items` table and `### Pending Todos` prose to the true count.
   > This 0 excludes, and does not resolve, two categories the table's own accounting rule
-  > never covered: the `### Carried forward from earlier closes` table's four still-`Deferred`
-  > rows (`UP-01`/`UP-02`, `QUAL-01`, `QUAL-02`, `QUAL-03`), and the roughly fifteen carried
-  > WR-class code-review findings enumerated in `milestones/v0.2.0-MILESTONE-AUDIT.md` — so
-  > this 0 is not a claim of zero known debt.
+  > never covered: the `### Carried forward from earlier closes` table's one still-open row
+  > (`UP-01`/`UP-02`), and the roughly fifteen carried WR-class code-review findings
+  > enumerated in `milestones/v0.2.0-MILESTONE-AUDIT.md` — so this 0 is not a claim of zero
+  > known debt. (Corrected 2026-08-23 by `.planning/quick/260823-kf6`: this note counted the
+  > three `QUAL-01`..`QUAL-03` rows among those exclusions until then. They were already
+  > closed when it was written — by this same milestone's Phase 16, `PKG-02`/`PKG-03`/`PKG-04`
+  > — and `v0.4.0-MILESTONE-AUDIT.md`'s round-1 tech-debt cluster 1 caught it. The rows in
+  > `STATE.md` now read closed; `PKG-04`'s is an accepted risk, not a narrowing, and its
+  > `### Control-Plane Bind Follow-on` remains open.)
 
 ### Project Identity
 
