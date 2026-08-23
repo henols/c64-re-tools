@@ -37,7 +37,7 @@
 // test.ts, this file verifies repository wiring, not runtime behaviour, and
 // is deliberately absent from package.json's files[] (see the acceptance
 // criterion in 16-08-PLAN.md that greps for it there).
-import { test } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -249,71 +249,77 @@ const ciYamlText = readFileSync(CI_YAML_PATH, "utf8");
 const buildBlock = extractBuildJobBlock(ciYamlText);
 const suiteDirectories = walkTestSuiteDirectories(ROOT);
 
-test("extraction: the build job slice is non-empty and strictly shorter than the whole file", () => {
-  assert.ok(isWellFormedExtraction(buildBlock, ciYamlText), "extractBuildJobBlock() returned an empty or whole-file block");
-});
+// Grouped under one named suite (matching audit-integrity.test.ts's established
+// describe() convention) since every test below cooperates to prove the same
+// claim -- "every committed test suite is executed by CI" -- rather than being
+// independent, unrelated checks.
+describe("ci-suite-coverage: every committed test suite is executed by CI", () => {
+  test("extraction: the build job slice is non-empty and strictly shorter than the whole file", () => {
+    assert.ok(isWellFormedExtraction(buildBlock, ciYamlText), "extractBuildJobBlock() returned an empty or whole-file block");
+  });
 
-test("extraction: a degenerate extraction (whole file, or empty) is never treated as well-formed", () => {
-  // Direct unit test of the invariant, independent of the real file: proves
-  // the check itself would catch the bug class it exists to catch, rather
-  // than relying solely on today's real ci.yml never triggering it.
-  assert.equal(isWellFormedExtraction(ciYamlText, ciYamlText), false, "whole-file extraction must not be well-formed");
-  assert.equal(isWellFormedExtraction("", ciYamlText), false, "empty extraction must not be well-formed");
-});
+  test("extraction: a degenerate extraction (whole file, or empty) is never treated as well-formed", () => {
+    // Direct unit test of the invariant, independent of the real file: proves
+    // the check itself would catch the bug class it exists to catch, rather
+    // than relying solely on today's real ci.yml never triggering it.
+    assert.equal(isWellFormedExtraction(ciYamlText, ciYamlText), false, "whole-file extraction must not be well-formed");
+    assert.equal(isWellFormedExtraction("", ciYamlText), false, "empty extraction must not be well-formed");
+  });
 
-test("extraction: the build job block contains at least one working-directory: line", () => {
-  assert.ok(/working-directory:/.test(buildBlock), "extracted block has no working-directory: line -- the slice is probably wrong");
-});
+  test("extraction: the build job block contains at least one working-directory: line", () => {
+    assert.ok(/working-directory:/.test(buildBlock), "extracted block has no working-directory: line -- the slice is probably wrong");
+  });
 
-test("non-vacuity: the walk found at least three distinct suite directories", () => {
-  assert.ok(
-    suiteDirectories.length >= 3,
-    `expected at least 3 suite directories, found ${suiteDirectories.length}: ${suiteDirectories.join(", ")} -- the corpus cannot silently shrink`
-  );
-});
+  test("non-vacuity: the walk found at least three distinct suite directories", () => {
+    assert.ok(
+      suiteDirectories.length >= 3,
+      `expected at least 3 suite directories, found ${suiteDirectories.length}: ${suiteDirectories.join(", ")} -- the corpus cannot silently shrink`
+    );
+  });
 
-test("non-vacuity: each of the three known roots has at least one test file", () => {
-  assert.ok(suiteDirectories.includes("src/mcp/vice"), "no test file found directly under src/mcp/vice");
-  assert.ok(suiteDirectories.includes("installer"), "no test file found under installer");
-  assert.ok(
-    suiteDirectories.some((d) => SKILLS_SCRIPTS_DIR_RE.test(d)),
-    "no test file found under any src/skills/*/scripts directory"
-  );
-});
+  test("non-vacuity: each of the three known roots has at least one test file", () => {
+    assert.ok(suiteDirectories.includes("src/mcp/vice"), "no test file found directly under src/mcp/vice");
+    assert.ok(suiteDirectories.includes("installer"), "no test file found under installer");
+    assert.ok(
+      suiteDirectories.some((d) => SKILLS_SCRIPTS_DIR_RE.test(d)),
+      "no test file found under any src/skills/*/scripts directory"
+    );
+  });
 
-test("non-vacuity: every FROZEN_REGISTRY key is a directory that exists on disk", () => {
-  for (const dir of Object.keys(FROZEN_REGISTRY)) {
-    assert.ok(existsSync(join(ROOT, dir)), `registry key ${dir} does not exist on disk -- the registry has outlived a deleted suite`);
-  }
-});
+  test("non-vacuity: every FROZEN_REGISTRY key is a directory that exists on disk", () => {
+    for (const dir of Object.keys(FROZEN_REGISTRY)) {
+      assert.ok(existsSync(join(ROOT, dir)), `registry key ${dir} does not exist on disk -- the registry has outlived a deleted suite`);
+    }
+  });
 
-test("the repository as committed passes: every walked suite directory is covered by the build job", () => {
-  const result = checkCoverage(suiteDirectories, buildBlock);
-  assert.ok(result.ok, formatFailure(result));
-});
+  test("the repository as committed passes: every walked suite directory is covered by the build job", () => {
+    const result = checkCoverage(suiteDirectories, buildBlock);
+    assert.ok(result.ok, formatFailure(result));
+  });
 
-test("planted violation: removing the installer's build-job step fails coverage, naming installer", () => {
-  const withoutInstallerStep = removeStepByName(buildBlock, "Test the installer");
-  assert.notEqual(withoutInstallerStep, buildBlock, "the planted removal did not change the build block -- step text drifted");
-  const result = checkCoverage(suiteDirectories, withoutInstallerStep);
-  assert.equal(result.ok, false);
-  assert.ok(result.unproven.includes("installer"), `expected "installer" in unproven, got: ${JSON.stringify(result)}`);
-});
+  test("planted violation: removing the installer's build-job step fails coverage, naming installer", () => {
+    const withoutInstallerStep = removeStepByName(buildBlock, "Test the installer");
+    assert.notEqual(withoutInstallerStep, buildBlock, "the planted removal did not change the build block -- step text drifted");
+    const result = checkCoverage(suiteDirectories, withoutInstallerStep);
+    assert.equal(result.ok, false);
+    assert.ok(result.unproven.includes("installer"), `expected "installer" in unproven, got: ${JSON.stringify(result)}`);
+  });
 
-test("planted violation: removing the skills build-job step fails coverage, naming a src/skills directory", () => {
-  const withoutSkillsStep = removeStepByName(buildBlock, "Test the skills");
-  assert.notEqual(withoutSkillsStep, buildBlock, "the planted removal did not change the build block -- step text drifted");
-  const result = checkCoverage(suiteDirectories, withoutSkillsStep);
-  assert.equal(result.ok, false);
-  assert.ok(
-    result.unproven.some((d) => SKILLS_SCRIPTS_DIR_RE.test(d)),
-    `expected a src/skills/*/scripts directory in unproven, got: ${JSON.stringify(result)}`
-  );
-});
+  test("planted violation: removing the skills build-job step fails coverage, naming a src/skills directory", () => {
+    const withoutSkillsStep = removeStepByName(buildBlock, "Test the skills");
+    assert.notEqual(withoutSkillsStep, buildBlock, "the planted removal did not change the build block -- step text drifted");
+    const result = checkCoverage(suiteDirectories, withoutSkillsStep);
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.unproven.some((d) => SKILLS_SCRIPTS_DIR_RE.test(d)),
+      `expected a src/skills/*/scripts directory in unproven, got: ${JSON.stringify(result)}`
+    );
+  });
 
-test("planted violation (generalized case): a directory outside every known root fails, naming that directory", () => {
-  const fakeDir = "src/some-new-tool/scripts";
-  const result = checkCoverage([...suiteDirectories, fakeDir], buildBlock);
-  assert.equal(result.ok, false);
-  assert.ok(result.unregistered.includes(fakeDir), `expected ${fakeDir} in unregistered, got: ${JSON.stringify(result)}`);
+  test("planted violation (generalized case): a directory outside every known root fails, naming that directory", () => {
+    const fakeDir = "src/some-new-tool/scripts";
+    const result = checkCoverage([...suiteDirectories, fakeDir], buildBlock);
+    assert.equal(result.ok, false);
+    assert.ok(result.unregistered.includes(fakeDir), `expected ${fakeDir} in unregistered, got: ${JSON.stringify(result)}`);
+  });
 });
