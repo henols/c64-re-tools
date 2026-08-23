@@ -60,3 +60,16 @@ audit-closure phase, which only dispositions.
   handler via the text monitor) or make an explicit, recorded cut decision the way
   `vice_disk_read_sector` was cut in v0.2.0 — do not leave it pointing at a phase that
   already closed without it.
+
+## Resolution
+
+**Fixed**, via promotion to a Phase 16 requirement that then shipped. `DEBT-01`'s closure
+note (Phase 15) promoted this todo to `PKG-03` (Phase 16), and Phase 16 plan 16-07 closed
+it: a comment-scoped orphaned-planning-reference gate was built (assignment shapes plus
+roadmap-derived cut phases), all 15 pre-existing sites fixed — including both named in this
+todo, each repointed at an already-recorded permanent reason rather than a phase number —
+plus 2 decision-id strings in `stock-dispatch.test.ts`, a committed fixture, and a
+plant-and-revert demonstration. See
+`.planning/phases/16-packaging-and-repo-shape/16-07-SUMMARY.md`, `16-PKG03-CENSUS.md` and
+`16-PKG03-GATE-PROOF.md` for the full evidence, and `.planning/REQUIREMENTS.md`'s `PKG-03`
+entry for the requirement-level record.

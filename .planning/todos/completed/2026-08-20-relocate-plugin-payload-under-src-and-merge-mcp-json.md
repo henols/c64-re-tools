@@ -122,3 +122,15 @@ dev-mode route replaces it. That decision drives everything else and should be m
 plugin manifest, the packaging script, CI, and roughly six layout-asserting tests. Route it
 through `/gsd-phase` (add a phase) rather than `/gsd-quick`. Step 1's decision is a good
 `/gsd-discuss-phase` input.
+
+## Resolution
+
+**Fixed**, via promotion to a Phase 16 requirement that then shipped. `DEBT-01`'s closure
+note (Phase 15) promoted this todo to `PKG-01` (Phase 16), and Phase 16 discharged it
+across two plans: 16-04 performed the relocation itself — `@henols/vice-mcp` moved from
+`.claude/mcp/vice/` to `src/mcp/vice/` in one atomic `git mv`, tarball proven
+byte-identical to the pre-move baseline — and 16-08/16-10 closed the tarball-leak and
+consumer-installed-path regressions `16-VERIFICATION.md`'s `⚠️ PARTIAL` verdict found at
+that point. See `.planning/phases/16-packaging-and-repo-shape/16-04-SUMMARY.md`,
+`16-08-SUMMARY.md` and `16-10-SUMMARY.md` for the full evidence, and
+`.planning/REQUIREMENTS.md`'s `PKG-01` closure note for the requirement-level record.

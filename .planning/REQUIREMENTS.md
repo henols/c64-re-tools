@@ -193,11 +193,52 @@ red.
   > `15-UAT-EVIDENCE.md` so it reads as a measurement, not a passing assertion. Recording it as
   > `pass` would have been the massaged result this criterion exists to prevent.
 
-- [ ] **DEBT-04**: The deferred-items ledger at the v0.4.0 close is still derived and guarded, and its count is lower than the 19 items inherited
+- [x] **DEBT-04**: The deferred-items ledger at the v0.4.0 close is still derived and guarded, and its count is lower than the 19 items inherited
+
+  > **Closure note (Phase 17, plans 17-01/17-03).** The pending count moved **2 → 0**
+  > (0 pending todo files in `.planning/todos/pending/` + 0 UAT-gap rows = 0), the first
+  > time this project's pending-todo tree has read genuinely empty. The cause: Phase 16
+  > discharged both survivors DEBT-01 promoted — `PKG-01` (the plugin-payload relocation)
+  > and `PKG-03` (the stale phase pointers) — leaving nothing in `pending/` for this
+  > measurement to find. 0 is strictly lower than the 19 items inherited at the v0.3.0
+  > close, and this closes DEBT-01's own forward reference — its closure note promised
+  > "Phase 17 measures `DEBT-04` after Phase 16 discharges the payload-relocation todo
+  > (`PKG-01`)", and this is where that promise is discharged. The ledger is still
+  > *derived* from `.planning/todos/pending/` and still *guarded in both directions* by
+  > `src/mcp/vice/docs-deferred-ledger.test.ts`: plan 17-01 task 1 lowered the guard's
+  > non-vacuity floor from `pending.length >= 2` to no floor at all, because the previous
+  > floor of two could not express a genuinely empty tree; plan 17-01 task 2 then edited
+  > `STATE.md`'s `## Deferred Items` table and `### Pending Todos` prose to the true count.
+  > This 0 excludes, and does not resolve, two categories the table's own accounting rule
+  > never covered: the `### Carried forward from earlier closes` table's four still-`Deferred`
+  > rows (`UP-01`/`UP-02`, `QUAL-01`, `QUAL-02`, `QUAL-03`), and the roughly fifteen carried
+  > WR-class code-review findings enumerated in `milestones/v0.2.0-MILESTONE-AUDIT.md` — so
+  > this 0 is not a claim of zero known debt.
 
 ### Project Identity
 
-- [ ] **CORE-01**: PROJECT.md's Core Value either states what v0.3.0 proved — that what a session learns outlives it — or records a dated confirmation that it should not, with the evidence weighed either way
+- [x] **CORE-01**: PROJECT.md's Core Value either states what v0.3.0 proved — that what a session learns outlives it — or records a dated confirmation that it should not, with the evidence weighed either way
+
+  > **Closure note (Phase 17, plans 17-02/17-03).** CORE-01 decided **keep-dated**:
+  > PROJECT.md's Core Value leading statement is left byte-identical, and a new dated
+  > paragraph records that the evidence was actually weighed rather than silently carried
+  > a third close. The choice was escalated to a human at plan 17-02 task 1's
+  > `gate="blocking-human"` checkpoint — not inferred, not auto-approved — where the full
+  > evidence (six items for restating, five against, from `17-RESEARCH.md`'s `## Core
+  > Value evidence`) was presented in full. The human, having read it, declined to select
+  > between the two options and explicitly delegated the call to the orchestrating
+  > session; the orchestrator then selected `keep-dated`. Recorded precisely rather than
+  > smoothed over: a human saw the gate and responded to it, but the verdict word itself
+  > was the orchestrator's, not a literal human selection. Recorded in `.planning/PROJECT.md`
+  > → `## Core Value`, dated 2026-08-23. Evidence weighed: `R2000-01`'s structural
+  > argument that regenerator2000 is never launched with `--vice` and is guarded in code,
+  > so the outlives-the-session property belongs to a component structurally incapable of
+  > driving VICE at all; Phase 11's two-session sealed-question test (`R2000-10`) and the
+  > symbol round trip (`R2000-14`/`R2000-15`) — this project's strongest persistence
+  > evidence, named as such and weighed against restating rather than left unweighed. What
+  > pins it mechanically: `src/mcp/vice/docs-core-value-decision.test.ts`, built by plan
+  > 17-02 task 3 because the keep-dated branch requires a guard (5 tests: non-vacuity, ISO
+  > date, named evidence, reversal condition, planted violation).
 
 ### Packaging and Repo Shape
 
@@ -370,8 +411,8 @@ Populated during roadmap creation.
 | DEBT-01 | 15 | Complete |
 | DEBT-02 | 15 | Complete |
 | DEBT-03 | 15 | Complete |
-| DEBT-04 | 17 | Pending |
-| CORE-01 | 17 | Pending |
+| DEBT-04 | 17 | Complete |
+| CORE-01 | 17 | Complete |
 | PKG-01 | 16 | Complete |
 | PKG-02 | 16 | Complete |
 | PKG-03 | 16 | Complete |
