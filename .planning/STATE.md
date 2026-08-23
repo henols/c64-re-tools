@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: executing
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-08-23T08:29:42.465Z"
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-08-23T08:53:28.063Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 execution started
-state_head: 56dac650d3eb1a740c08c173d83e14ca2b04f8d6
+state_head: c6d6794a6d9c755a5fcf8b5ee55afdb53661604c
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 43
-  completed_plans: 41
+  completed_plans: 42
   percent: 83
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 17 (Project Identity and Ledger Close) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
@@ -265,6 +265,7 @@ Last activity: 2026-08-23 — Phase 17 execution started
 | Phase 16 P10 | ~70min | 3 tasks | 8 files |
 | Phase 16 P11 | 30min | 2 tasks | 2 files |
 | Phase 17 P01 | 20min | 2 tasks | 2 files |
+| Phase 17 P02 | 25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -397,6 +398,7 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-11]: New decision register 16-GAP-CLOSURE-DECISIONS.md records five deliberate non-reversals with owners/reversal triggers (four SKILL.md quick-references, recovery-schema.mjs, project-paths.mjs, repo-root.test.ts, and 16-REVIEW.md's IN-01 recorded as renamed-not-left by plan 16-09), the spec-less probe's four-item accounting (two authored, two flagged unresolved), the three recalled prohibitions, and five newly-found sites with their closing plans
 - [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
 - [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
+- [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator — Full evidence presented at the checkpoint; human declined to select and delegated the call; orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
 
 ### Pending Todos
 
@@ -817,8 +819,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T08:29:42.267Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-08-23T08:53:27.837Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
