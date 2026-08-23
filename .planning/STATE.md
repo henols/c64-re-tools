@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: executing
-stopped_at: Completed 17-03-PLAN.md
-last_updated: "2026-08-23T11:09:16.447Z"
+stopped_at: Completed 17-04-PLAN.md
+last_updated: "2026-08-23T11:28:30.909Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 17 execution started
-state_head: ba885a59f1bd55de1544a83cf27e263167bc09ab
+last_activity_desc: Phase 17 gap-closure plan 17-04 executed (G-17-1)
+state_head: 939515821a68c568018f3b2c6bcbf37e4675fe48
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 44
-  completed_plans: 43
+  completed_plans: 44
   percent: 83
 ---
 
@@ -57,11 +57,11 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 17 (Project Identity and Ledger Close) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 17
+Plan: 4 of 4
+Status: All plans executed — phase verification pending
 
-**Phase 17 — Project Identity and Ledger Close — is COMPLETE (2026-08-23, 3/3
-plans).** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
+**Phase 17 — Project Identity and Ledger Close — all 4 plans executed
+(2026-08-23), phase verification pending.** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
 non-vacuity floor could not express a genuinely empty pending-todo tree — it
 asserted `pending.length >= 2`, a floor written when 0 pending seemed
 theoretical, and was red 1 pass / 3 fail the moment Phase 16 discharged the
@@ -85,7 +85,12 @@ closer) ticked both requirements Complete in REQUIREMENTS.md with closure
 notes, closed ROADMAP.md's Phase 17 section to its real plan list and
 outcome, re-took the pending-todo measurement after every one of this
 phase's own edits (still 0), and confirmed the full `npm test` suite green
-with every `docs-*.test.ts` guard passing.
+with every `docs-*.test.ts` guard passing. Plan 17-04 (gap closure for
+`17-UAT.md`'s `G-17-1`) then retracted the unevidenced comprehension claim
+from all seven documents that carried it — 16 matching lines to 0 — while
+keeping the transcript-backed attendance and delegation positively stated,
+and corrected four stale `docs-core-value-decision.test.ts` counts to the
+measured 6. Full `npm test` re-confirmed green (2395 tests, 0 fail).
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's
@@ -860,7 +865,7 @@ deferred-items ledger reads 0 (down from the 19 inherited at the v0.3.0
 close); ROADMAP.md's Phase 17 section carries its real 3-plan list and
 outcome; the full `npm test` suite is green with every `docs-*.test.ts` guard
 passing. Milestone-close work itself (rewriting ROADMAP's `**v0.4.0 in
-progress:**` narrative into a final-state paragraph, cutting the release) is
+progress:[████████░░] 83%
 deliberately out of scope for Phase 17 — that belongs to the two commands
 below.
 

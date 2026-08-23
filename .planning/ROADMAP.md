@@ -76,7 +76,7 @@ statement) get answered deliberately.
 - [x] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route (completed 2026-08-22)
 - [x] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed (completed 2026-08-22, 12/12 plans; pending-todo tree reduced 21 → 2, both remaining items promoted to Phase 16 with named owners)
 - [x] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed (completed 2026-08-23)
-- [x] **Phase 17: Project Identity and Ledger Close** - Core Value carries a dated `keep-dated` verdict (`CORE-01`) decided at a `blocking-human` checkpoint, and the deferred-items ledger reads 0 at the true close, down from 19 (`DEBT-04`) (completed 2026-08-23, 3/3 plans)
+- [x] **Phase 17: Project Identity and Ledger Close** - Core Value carries a dated `keep-dated` verdict (`CORE-01`) decided at a `blocking-human` checkpoint, and the deferred-items ledger reads 0 at the true close, down from 19 (`DEBT-04`) (completed 2026-08-23, 4/4 plans)
 
 ## Phase Details
 
@@ -502,7 +502,7 @@ from commits — a plan of this shape silently cannot deliver.
   2. `STATE.md` → Deferred Items, still derived from `.planning/todos/pending/` and guarded in both directions by `docs-deferred-ledger.test.ts`, reports a count strictly lower than 19
   3. The count is taken with no phase of this milestone left to run — nothing remaining that could remove another item from the pending set after the measurement
 
-**Plans**: 3/4 plans executed (3 waves, plus one gap-closure wave from `17-UAT.md`'s `G-17-1`)
+**Plans**: 4/4 plans executed (3 waves, plus one gap-closure wave from `17-UAT.md`'s `G-17-1`)
 
 Plans:
 **Wave 1**
@@ -521,7 +521,7 @@ Plans:
 
 **Gap-closure wave 1** *(blocked on Wave 3 completion)*
 
-- [ ] 17-04-PLAN.md — `G-17-1`: correct the unevidenced comprehension claim in CORE-01's provenance record across seven planning documents (attendance and delegation stay stated — the transcript establishes both), separate what the terminal render carried from what the decision prompt carried, remove `17-VERIFICATION.md`'s circular corroboration from the standing "you decide" preference, record the UAT non-recall, and bring four stale `docs-core-value-decision.test.ts` counts to the measured value (CORE-01)
+- [x] 17-04-PLAN.md — `G-17-1`: correct the unevidenced comprehension claim in CORE-01's provenance record across seven planning documents (attendance and delegation stay stated — the transcript establishes both), separate what the terminal render carried from what the decision prompt carried, remove `17-VERIFICATION.md`'s circular corroboration from the standing "you decide" preference, record the UAT non-recall, and bring four stale `docs-core-value-decision.test.ts` counts to the measured value (CORE-01)
 
 **Notes (Phase 17 complete, 2026-08-23)**: Criterion-by-criterion outcome —
 
@@ -584,7 +584,7 @@ Plans:
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete    | 2026-08-23 |
-| 17. Project Identity and Ledger Close | v0.4.0 | 3/3 | Complete    | 2026-08-23 |
+| 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | In Progress|  |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
