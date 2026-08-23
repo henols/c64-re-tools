@@ -38,7 +38,7 @@ mcp-deps.lock.sha256
 dist/
 
 # Skills copied into the installer package by installer/scripts/sync-skills.mjs
-# on `npm pack`/`prepack`. Generated from the canonical .claude/skills/; never
+# on `npm pack`/`prepack`. Generated from the canonical src/skills/; never
 # committed.
 /installer/skills/
 
