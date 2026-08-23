@@ -440,6 +440,21 @@ Plans:
 
 - [x] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
 
+**Gap closure** *(planned 2026-08-23 from `16-VERIFICATION.md` status `gaps_found` 4/5 plus the committed `16-REVIEW.md`: 1 critical, 4 warnings, 1 info; run with `/gsd-execute-phase 16 --gaps-only`)*
+
+**Gap-closure wave 1**
+
+- [ ] 16-08-PLAN.md — Success Criterion 1: filter the installer copy seam, promote the tarball leak assertion into the single packing seam so both packages are checked by one code path, and make CI's `build` job run every committed test suite behind a coverage guard (PKG-01, PKG-02)
+- [ ] 16-09-PLAN.md — WR-02/IN-01: correct the two half-swept repo-root chain comments and the two synthetic scratch shapes, and add a calibrated hop-chain guard with a committed fixture (PKG-03)
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 16-10-PLAN.md — CR-01/WR-03 and two sites neither gap input named: restore all four consumer-installed path literals the `src/` sweep rewrote, repair the self-contradictory guarding comment, and add two behavioural guards plus one class registry guard (PKG-01)
+
+**Gap-closure wave 3** *(blocked on gap-closure wave 2)*
+
+- [ ] 16-11-PLAN.md — Close-out bookkeeping: flip PKG-04 to complete with a closure note, add PKG-01's closure note, and record every decided-and-left item and flagged assumption in `16-GAP-CLOSURE-DECISIONS.md` (PKG-04)
+
 ### Phase 17: Project Identity and Ledger Close
 
 **Goal**: PROJECT.md's Core Value is either restated to reflect what v0.3.0
