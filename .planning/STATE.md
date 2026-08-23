@@ -5,11 +5,11 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: verifying
-stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-08-23T09:06:27.505Z"
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-08-23T09:06:45.903Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 execution started
-state_head: e63ac184d6e63cc2d2318c8644ba1cf17261e3d9
+state_head: 1070b97495b707a46431d9471b3b59ec31386601
 progress:
   total_phases: 6
   completed_phases: 5
@@ -845,8 +845,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T09:01:50.317Z
-Stopped at: Completed 17-03-PLAN.md — Phase 17 and the v0.4.0 requirement set are complete
+Last session: 2026-08-23T09:06:45.701Z
+Stopped at: Completed 17-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
