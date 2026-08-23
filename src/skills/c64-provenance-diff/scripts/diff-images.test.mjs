@@ -516,6 +516,27 @@ test("renderLedger produces byte-identical generated-tier output across two runs
   assert.equal(tier1, tier2);
 });
 
+test("renderLedger's generated ledger names the consumer's installed script location, never this repository's source-tree location (16-REVIEW.md CR-01 regression)", () => {
+  const generatedRanges = [
+    { start: 0, end: 32767, kind: "game", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "identical", reason: "" },
+    { start: 32768, end: 65535, kind: "loader", verdict: "CRACKER-PATCH", agreeing_releases: 0, evidence: "loader replacement", reason: "" },
+  ];
+  const md = renderLedger({ generatedRanges, gapTolerance: 16, prose: "prose text" });
+  const consumerPath = ".claude/skills/c64-provenance-diff/scripts/diff-images.mjs";
+  const sourceTreePath = "src/skills/c64-provenance-diff/scripts/diff-images.mjs";
+  const consumerCount = md.split(consumerPath).length - 1;
+  assert.ok(
+    consumerCount >= 2,
+    `renderLedger output must name the consumer-installed path "${consumerPath}" at least twice (regenerate-with comment + header prose); found ${consumerCount}`
+  );
+  const sourceTreeCount = md.split(sourceTreePath).length - 1;
+  assert.equal(
+    sourceTreeCount,
+    0,
+    `renderLedger output must never name this repository's source-tree path "${sourceTreePath}"; found ${sourceTreeCount}`
+  );
+});
+
 test("renderLedger sorts rows by start address ascending then end address ascending", () => {
   const generatedRanges = [
     { start: 100, end: 199, kind: "game", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "id", reason: "" },

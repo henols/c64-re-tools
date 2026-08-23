@@ -693,10 +693,10 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
     throw new Error(`renderLedger: refusing to emit -- generated tier stops at ${hex4(expected - 1)}, does not reach $FFFF`);
   }
 
-  // NOTE (plan 16-01): the embedded invocation path below is deliberately the
-  // CONSUMER's installed location (`src/skills/...`), not this repository's
-  // source-tree location (`src/skills/...`) -- a future sweep should not "fix" it.
-  let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node src/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
+  // NOTE (plans 16-01, 16-10): the embedded invocation path below is deliberately the
+  // CONSUMER's installed location (`.claude/skills/...`), not this repository's
+  // source-tree location (`src/skills/...`) -- pinned by diff-images.test.mjs and skill-consumer-paths.test.ts (16-REVIEW.md CR-01).
+  let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;
   for (const r of sorted) {
@@ -711,7 +711,7 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
 
   const header = `# \`recovery/PROVENANCE.md\` -- the provenance ledger\n\n` +
     `Two tiers, one direction of truth. The **generated tier** below is machine-produced by ` +
-    `\`src/skills/c64-provenance-diff/scripts/diff-images.mjs\`'s \`renderLedger\` and is regenerable at any time from the committed ` +
+    `\`.claude/skills/c64-provenance-diff/scripts/diff-images.mjs\`'s \`renderLedger\` and is regenerable at any time from the committed ` +
     `dumps plus the recorded offset -- never hand-edit it. The **prose tier** underneath states the ` +
     `facts a table cannot hold. This file is the ledger; \`docs/provenance.md\` will be a summary ` +
     `pointer and inline \`; PROVENANCE:\` tags in \`src/\` will be the point-of-use copy -- one ` +
@@ -786,7 +786,7 @@ const VERBS = {
           anchor_count: anchors.length,
           anchors_agreeing: proof.usable.length,
           proven_at: provenAt,
-          method: "anchor-proven via src/skills/c64-provenance-diff/scripts/diff-images.mjs anchor-search -- see NOTES.md for the full narrative",
+          method: "anchor-proven via .claude/skills/c64-provenance-diff/scripts/diff-images.mjs anchor-search -- see NOTES.md for the full narrative",
         });
       }
     }
