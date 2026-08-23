@@ -134,20 +134,23 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 - ✓ A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted — v0.3.0 Phase 10 (`R2000-06`; `--verify`'s output parsed by one seam keying strictly on ACME's own result line, proven in both directions on real transcripts — an exit-1 run where ACME still passed, an exit-0 run where ACME never ran)
 - ✓ Project bootstrap from a raw binary is automated rather than a documented manual step — v0.3.0 Phase 10 (`R2000-09`; a pure-Node `.regen2000proj` synthesiser a real regenerator2000 loads, with `use_illegal_opcodes`/`system` forced explicitly, plus a container-side `.d64` reader that refuses to guess between matching entries)
 
+- ✓ The three highest-value carried items are verified against real binaries instead of internal proxies — v0.4.0 Phase 13 (`EXTV-01`/`EXTV-02`/`EXTV-03`; `VERIF-02`'s fixtures re-recorded from a real binary, the `--help` discriminator confirmed against both real stock and real fork with transcripts committed, and the four spec-driven Phase 3 wire details run — details the binary contradicted were corrected at source rather than annotated)
+- ✓ A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red — v0.4.0 Phase 12 (`GATE-01`; mechanically enforced as a precondition, not documented). Every open code-review finding across all phases is dispositioned and `docs-review-disposition.test.ts` runs green from a clean checkout — Phase 15 (`GATE-02`)
+- ✓ The fork-backend question is a dated decision with named reversal criteria, not a default carried a third time — v0.4.0 Phase 14 (`FORK-01` decided **retain**, with the upstream `KEYBOARD_MATRIX_SET` coupling named as a reversal criterion; `FORK-02` gives any user hitting one of the three hard losses a route they can follow)
+- ✓ Every pending todo is fixed, dispositioned `wont-fix` with rationale, or explicitly promoted — nothing carried silently into v0.5.0 — v0.4.0 Phase 15 (`DEBT-01`/`DEBT-02`) and Phase 17 (`DEBT-04`; the ledger closes at **0**, derived and guarded in both directions by `docs-deferred-ledger.test.ts`, down from the 19 items inherited at the v0.3.0 close)
+- ✓ Phase 03's three pending UAT scenarios are executed against real fixtures and a running program — v0.4.0 Phase 15 (`DEBT-03`; recorded pass or fail with evidence rather than left partial)
+- ✓ Core Value is confirmed on two milestones of evidence, resolving the flag left at the v0.3.0 close — v0.4.0 Phase 17 (`CORE-01` decided **keep-dated** at a `gate="blocking-human"` checkpoint, with the case against the verdict carried rather than resolved and a specific reversal condition stated; pinned by `docs-core-value-decision.test.ts`. The provenance record was itself corrected by plan 17-04 after UAT gap `G-17-1` — see the `*Provenance.*` paragraph under Core Value)
+- ✓ The plugin payload lives under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed — v0.4.0 Phase 16 (`PKG-01`..`PKG-04`; both published tarballs still validated by `scripts/check-npm-packages.mjs`)
+
 ### Active
 
-<!-- v0.4.0 scope, opened 2026-08-21. These are the milestone's target features,
-     not yet requirement-level: `/gsd-new-milestone` step 9 writes the REQ-IDs
-     into a fresh `.planning/REQUIREMENTS.md` and this list is restated against
-     them. Hypotheses until shipped. -->
+<!-- v0.4.0 closed 2026-08-23 with all 16 requirements Complete and every target
+     feature above moved to Validated. No milestone is open: the next scope is
+     chosen by `/gsd-new-milestone`, which writes fresh REQ-IDs into
+     `.planning/REQUIREMENTS.md` and restates this list against them. See
+     "Next Milestone Goals" below for the standing candidates. -->
 
-- [ ] The three highest-value carried items are verified against real binaries instead of internal proxies — `VERIF-02`'s synthetic binmon fixtures re-recorded, `BACK-01`/`BACK-04`'s `--help` discriminator confirmed against stock *and* fork, the four spec-driven Phase 3 wire details exercised
-- [ ] A milestone audit cannot record `status: passed` while any of the four `docs-*.test.ts` guards is red
-- [ ] The fork-backend question is a dated decision with named reversal criteria, not a default carried a third time
-- [ ] Every pending todo is fixed, dispositioned `wont-fix` with rationale, or explicitly promoted — nothing carried silently into v0.5.0
-- [ ] Phase 03's three pending UAT scenarios are executed against real fixtures and a running program
-- [ ] Core Value is restated or explicitly confirmed on two milestones of evidence, resolving the flag left at the v0.3.0 close
-- [ ] The plugin payload lives under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed
+- *(none — v0.4.0 closed; awaiting the next milestone's scope)*
 
 ### Out of Scope
 
@@ -345,6 +348,11 @@ This document evolves at phase transitions and milestone boundaries.
 
 ## Current State
 
+**In flight: v0.4.0 Debt discharged, decisions settled** — all six phases complete
+2026-08-23 (44/44 plans, 16/16 requirements), milestone audit not yet run. See
+"Current Milestone" below. The shipped-milestone entry with its audit verdict is
+written here by `/gsd-complete-milestone`.
+
 **Shipped: v0.3.0 regenerator2000 static-analysis backend** — 2026-08-21.
 4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks, 12/12 in-scope
 requirements, 3 days, 268 commits.
@@ -388,6 +396,14 @@ provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 ## Current Milestone: v0.4.0 Debt discharged, decisions settled
 
 **Opened:** 2026-08-21, immediately after the v0.3.0 close.
+
+**All phases complete: 2026-08-23.** Six phases (12, 13, 14, 15, 16, 17), 44/44
+plans, 16/16 requirements Complete, 0 open. Every target feature below shipped and
+has moved to Requirements → Validated. The milestone is not yet *closed* — the
+remaining step is `/gsd-complete-milestone v0.4.0`, which runs the milestone audit
+and archives the roadmap. Until that runs, the audit verdict for v0.4.0 is
+unrecorded, and this section rather than `## Current State` is the authoritative
+statement of where the milestone stands.
 
 **Goal:** Stop inheriting the same ledger a third time — every carried item
 becomes a fix or a dated decision, and the two questions this project has
@@ -850,21 +866,13 @@ written).
 </details>
 
 ---
-*Last updated: 2026-08-21 at the **v0.4.0 milestone open** (`/gsd-new-milestone`)
-— "Current Milestone" opened as v0.4.0 *Debt discharged, decisions settled* with
-seven target features and the two upstream contributions explicitly excluded (with
-their coupling to the fork decision named); the Active requirements section
-repopulated with those seven as hypotheses, replacing the "awaiting
-`/gsd-new-milestone`" placeholder; "Next Milestone Goals" reduced to what v0.4.0
-deliberately did not take. Core Value's v0.3.0 flag is left standing on purpose —
-resolving it is a v0.4.0 deliverable, not a bookkeeping edit made while opening
-the milestone. Previously: 2026-08-21 at the **v0.3.0 milestone close** — full
-evolution review: "What This Is" gained the static-analysis axis; Core Value flagged for
-restatement rather than silently amended; the six `R2000-01/-02/-03/-05/-06/-09`
-Active items graduated to Validated (two with scope-honesty caveats recorded);
-three v0.3.0 entries added to Out of Scope; five capability/dependency
-constraints added and the `rewriteArguments()` line citations corrected from a
-stale `:2889`/`:1368` to `:3029`/`:1508`; ten decisions added to Key Decisions;
-Context, Current State and Next Milestone Goals rewritten; the v0.3.0 execution
-narrative archived in `<details>`. Previously: 2026-08-21 after Phase 11 close;
-2026-08-20 after Phase 9 close; 2026-08-19 at v0.2.0 milestone close.*
+
+*Last updated: 2026-08-23 after Phase 17 close (v0.4.0's final phase). All seven
+v0.4.0 target features moved from Active to Validated with their closing phases and
+requirement ids; Active is now empty pending the next milestone's scope. Current
+State and Current Milestone record that all six phases are complete and the
+milestone audit is the one remaining step. `## Core Value`'s CORE-01 verdict and
+its corrected `*Provenance.*` paragraph were written in Phase 17 itself (plans
+17-02 and 17-04) and are unchanged here. Previously: 2026-08-21 at the v0.3.0
+milestone close; 2026-08-21 after Phase 11 close; 2026-08-20 after Phase 9 close;
+2026-08-19 at v0.2.0 milestone close.*

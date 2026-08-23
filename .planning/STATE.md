@@ -4,33 +4,35 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
-status: executing
-stopped_at: Completed 17-04-PLAN.md
-last_updated: "2026-08-23T11:28:30.909Z"
+status: completed
+stopped_at: Phase 17 complete — all phases complete
+last_updated: "2026-08-23T11:55:54.449Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 17 re-verified after G-17-1 gap closure — human_needed, awaiting UAT
-state_head: 939515821a68c568018f3b2c6bcbf37e4675fe48
+last_activity_desc: Phase 17 complete
+state_head: 64acd37d1d86e619cff82d19dc9d8f5263050946
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 44
   completed_plans: 44
-  percent: 83
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-21 at the v0.4.0 milestone open)
+See: .planning/PROJECT.md (updated 2026-08-23 after the Phase 17 close)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
-*Flag still standing, now with an owner: this says nothing about findings that
-outlive the session, which is what v0.3.0 delivered. Restating or explicitly
-confirming it is a **v0.4.0 target feature**, not a bookkeeping edit — see
-PROJECT.md → Core Value for the candidate shape.*
+*Flag discharged 2026-08-23 by `CORE-01` (Phase 17, plan 17-02): the verdict is
+**keep-dated** — the statement above is left byte-identical, and PROJECT.md →
+Core Value now carries the dated record of the evidence weighed, the case against
+the verdict, and a specific reversal condition. Pinned by
+`docs-core-value-decision.test.ts`. It still says nothing about findings that
+outlive the session; that omission is now a decision rather than a default.*
 
 **Shipped:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
 phases, 36 plans, 101 tasks, 12/12 in-scope requirements, audit round 2
@@ -56,12 +58,15 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 17 (Project Identity and Ledger Close) — EXECUTING
-Plan: 4 of 4
-Status: All plans executed; re-verified after G-17-1 (human_needed, 20/21) — awaiting UAT
+Phase: 17 (Project Identity and Ledger Close) — COMPLETE
+Plan: 4 of 4 executed
+Status: Phase 17 verified and closed (2026-08-23) — UAT 2/2 pass, verification passed,
+security threats_open 0. Milestone v0.4.0 is 100% complete: all 6 phases (12-17), 44/44
+plans. Next action is `/gsd-complete-milestone v0.4.0`.
 
-**Phase 17 — Project Identity and Ledger Close — all 4 plans executed
-(2026-08-23), phase verification pending.** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
+**Phase 17 — Project Identity and Ledger Close — all 4 plans executed and the
+phase closed (2026-08-23): UAT 2/2 pass, `17-VERIFICATION.md` status `passed`,
+`17-SECURITY.md` `threats_open: 0`.** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
 non-vacuity floor could not express a genuinely empty pending-todo tree — it
 asserted `pending.length >= 2`, a floor written when 0 pending seemed
 theoretical, and was red 1 pass / 3 fail the moment Phase 16 discharged the
@@ -198,13 +203,13 @@ flipped the four requirements Complete with closure notes, and reconciled
 the ledger to 2 pending todos with zero UAT gaps. Next session should read:
 ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
 which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-23 — Phase 17 execution started
+Last activity: 2026-08-23 — Phase 17 complete
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 156
+- Total plans completed: 160
 - Average duration: —
 - Total execution time: —
 
@@ -229,6 +234,7 @@ Last activity: 2026-08-23 — Phase 17 execution started
 | 14 | 5 | - | - |
 | 15 | 12 | - | - |
 | 16 | 11 | - | - |
+| 17 | 4 | 2026-08-23 | Ledger closed to 0; CORE-01 decided keep-dated; G-17-1 provenance correction |
 
 **Recent Trend:**
 
@@ -852,8 +858,10 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T09:06:45.701Z
-Stopped at: Completed 17-03-PLAN.md
+Last session: 2026-08-23
+Stopped at: Phase 17 verified and closed (UAT 2/2 pass, verification `passed`,
+  `17-SECURITY.md` `threats_open: 0`); v0.4.0 is 100% complete — all 6 phases,
+  44/44 plans. Ready to run `/gsd-audit-milestone`, then `/gsd-complete-milestone`.
 Resume file: None
 
 ## Operator Next Steps
@@ -862,10 +870,10 @@ Resume file: None
 v0.4.0 requirement (16/16, no open Traceability row).** `DEBT-04` and `CORE-01`
 are both ticked Complete in `REQUIREMENTS.md` with closure notes; the
 deferred-items ledger reads 0 (down from the 19 inherited at the v0.3.0
-close); ROADMAP.md's Phase 17 section carries its real 3-plan list and
-outcome; the full `npm test` suite is green with every `docs-*.test.ts` guard
+close); ROADMAP.md's Phase 17 section carries its real plan list and
+outcome (4 plans — 17-04 closed UAT gap `G-17-1` after the first three); the full `npm test` suite is green with every `docs-*.test.ts` guard
 passing. Milestone-close work itself (rewriting ROADMAP's `**v0.4.0 in
-progress:[████████░░] 83%
+progress:[██████████] 100%
 deliberately out of scope for Phase 17 — that belongs to the two commands
 below.
 

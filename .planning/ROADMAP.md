@@ -584,7 +584,7 @@ Plans:
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete    | 2026-08-23 |
-| 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | In Progress|  |
+| 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete    | 2026-08-23 |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
