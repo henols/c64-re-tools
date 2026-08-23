@@ -4,12 +4,12 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
-status: executing
+status: verifying
 stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-08-23T08:53:28.063Z"
+last_updated: "2026-08-23T09:01:50.317Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 execution started
-state_head: c6d6794a6d9c755a5fcf8b5ee55afdb53661604c
+state_head: 1e45e8434d5f00348d520c32ed3bebc5f02f523c
 progress:
   total_phases: 6
   completed_phases: 5
@@ -56,9 +56,34 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 17 (Project Identity and Ledger Close) — EXECUTING
+Phase: 17 (Project Identity and Ledger Close) — COMPLETE
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
+
+**Phase 17 — Project Identity and Ledger Close — is COMPLETE (2026-08-23, 3/3
+plans).** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
+non-vacuity floor could not express a genuinely empty pending-todo tree — it
+asserted `pending.length >= 2`, a floor written when 0 pending seemed
+theoretical, and was red 1 pass / 3 fail the moment Phase 16 discharged the
+last two survivors (`PKG-01`, `PKG-03`). Fixing that floor to no floor at all
+(not a smaller nonzero number) was real source work under `src/mcp/vice/`,
+not a planning-document edit — the phase's own Goal claim to the contrary is
+corrected in ROADMAP.md. With the guard able to express zero, plan 17-01 then
+brought the `## Deferred Items` ledger below to the true v0.4.0-close count:
+**0** (0 pending todo files + 0 UAT-gap rows), down from the 19 items
+inherited at the v0.3.0 close. Plan 17-02 decided `CORE-01` at a
+`gate="blocking-human"` checkpoint: the full evidence was presented to a
+human, who read it, declined to select between `restate`/`keep-dated`, and
+explicitly delegated the call to the orchestrating session — the orchestrator
+then selected **keep-dated** on `R2000-01`'s structural argument that
+regenerator2000 is never launched with `--vice`. Recorded precisely in
+PROJECT.md → Core Value (dated 2026-08-23) and pinned by
+`src/mcp/vice/docs-core-value-decision.test.ts` (5/5). Plan 17-03 (this
+closer) ticked both requirements Complete in REQUIREMENTS.md with closure
+notes, closed ROADMAP.md's Phase 17 section to its real plan list and
+outcome, re-took the pending-todo measurement after every one of this
+phase's own edits (still 0), and confirmed the full `npm test` suite green
+with every `docs-*.test.ts` guard passing.
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's
@@ -396,9 +421,9 @@ Recent decisions affecting current work:
 - [Phase 16]: 16-10: Reverted CR-01 consumer-path regression (renderLedger/anchor-search/renderLoading/template.a/SKILL.md), shipped skill-consumer-paths.test.ts as a frozen four-entry registry guard against the class recurring; docs-review-disposition.test.ts and audit-integrity.test.ts confirmed fully green (2386/2342/0/39/5) for the first time this phase
 - [Phase 16]: [Phase 16-11]: PKG-04 flipped to checked/Complete in REQUIREMENTS.md with a closure note citing PROJECT.md's dated accepted-risk row and 16-PKG04-EVIDENCE.md, explicitly preserving the open Control-Plane Bind Follow-on; PKG-01 given a companion closure note naming plans 16-08/16-10
 - [Phase 16]: [Phase 16-11]: New decision register 16-GAP-CLOSURE-DECISIONS.md records five deliberate non-reversals with owners/reversal triggers (four SKILL.md quick-references, recovery-schema.mjs, project-paths.mjs, repo-root.test.ts, and 16-REVIEW.md's IN-01 recorded as renamed-not-left by plan 16-09), the spec-less probe's four-item accounting (two authored, two flagged unresolved), the three recalled prohibitions, and five newly-found sites with their closing plans
-- [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
+- [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion, and made the positive control conditional on pending.length > 0 (selecting its stem from the live pending array instead of a hard-coded filename) — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
 - [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
-- [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator — Full evidence presented at the checkpoint; human declined to select and delegated the call; orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
+- [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — Full evidence presented at the checkpoint; human declined to select and delegated the call; orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
 
 ### Pending Todos
 
@@ -819,58 +844,46 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T08:53:27.837Z
-Stopped at: Completed 17-02-PLAN.md
+Last session: 2026-08-23T09:01:50.317Z
+Stopped at: Completed 17-03-PLAN.md — Phase 17 and the v0.4.0 requirement set are complete
 Resume file: None
 
 ## Operator Next Steps
 
-**Phase 15 (Debt and Review Disposition) is complete.** The two immediate next
-steps, in ROADMAP order:
+**Phase 17 (Project Identity and Ledger Close) is complete, and with it every
+v0.4.0 requirement (16/16, no open Traceability row).** `DEBT-04` and `CORE-01`
+are both ticked Complete in `REQUIREMENTS.md` with closure notes; the
+deferred-items ledger reads 0 (down from the 19 inherited at the v0.3.0
+close); ROADMAP.md's Phase 17 section carries its real 3-plan list and
+outcome; the full `npm test` suite is green with every `docs-*.test.ts` guard
+passing. Milestone-close work itself (rewriting ROADMAP's `**v0.4.0 in
+progress:**` narrative into a final-state paragraph, cutting the release) is
+deliberately out of scope for Phase 17 — that belongs to the two commands
+below.
 
-1. **`/gsd-plan-phase 16`** — Packaging and Repo Shape (`PKG-01`..`PKG-04`).
-   This is the phase that owns both of `DEBT-01`'s two remaining promoted
-   todos: `2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`
-   (`PKG-01`, the plugin-payload relocation under `src/` with `.mcp.json`
-   merge) and `2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`
-   (`PKG-03`, orphaned planning references in source comments). Sequenced
-   after Phase 15 deliberately — see ROADMAP's Phase 16 goal for why (sweep
-   path/line-reference citations once, after all disposition work has landed).
+**Read this before running either command below:** Phase 17 is the *last*
+phase of v0.4.0, and `code_review` is enabled — this phase's own
+post-execution review runs *after* this SUMMARY, with no Phase 18 in this
+milestone to inherit or disposition anything it files. If that review (or any
+later check) files a new todo into `.planning/todos/pending/`, the ledger
+count this phase recorded as 0 is stale by exactly that much, and nothing
+downstream in *this* milestone catches it structurally. **The backstop is
+`/gsd-audit-milestone`**, which runs next and is itself gated by `GATE-01`
+(blocks recording `status: passed` while any `docs-*.test.ts` guard is red) —
+so a reader who later finds a Phase 17 todo in `pending/` should read that as
+anticipated by this record, not missed by it.
 
-2. **`/gsd-plan-phase 17`** — Project Identity and Ledger Close (`CORE-01`,
-   `DEBT-04`), only after Phase 16 discharges `PKG-01`'s todo. `DEBT-04`
-   measures the deferred-items ledger at the **true** close — this plan's
-   count (2 pending todos, 0 UAT gaps) is the Phase-15 count, not the
-   milestone-final one; Phase 16 will remove at least one more item
-   (`PKG-01`'s own todo) before Phase 17 takes its measurement. `CORE-01`
-   revisits PROJECT.md's Core Value statement, flagged since the v0.3.0
-   close as possibly describing a milestone-out-of-date value (live emulator
-   driving only, vs. v0.3.0's proof that what a session learns outlives it) —
-   still not amended, per that flag's own instruction not to edit it in
-   passing.
+The two next steps, in order:
 
-**Two things worth carrying into Phase 16/17 scoping, both raised by this
-phase's own close:**
+1. **`/gsd-audit-milestone`** — audits v0.4.0's completion against its
+   original intent before anything is archived. Run this first; it is the
+   named backstop for any post-count finding above.
 
-- **The two promoted todos are real, scoped work, not paperwork.** `PKG-01`
-  is a genuine layout migration across two published packages, the plugin
-  manifest, the packaging script, CI, and roughly six layout-asserting tests
-  (see the todo's own "Sizing" note — "roadmap-scale ... route it through
-  `/gsd-phase`"). `PKG-03` is smaller (two comment-only sites) but touches
-  files (`stock-cia.ts`, `stock-dispatch.ts`) with a real backlog decision
-  still open for `vice_disk_detach` (pick it up as real work or make an
-  explicit cut decision — do not leave it pointing at a closed phase).
-
-- **The document guards are only load-bearing if something reads them —
-  still true, and now measurably wider.** This phase's own tracer (plan
-  15-01) found `docs-review-disposition.test.ts` green at `3f0089f` for the
-  wrong reason: its parser only matched level-3, colon-terminated headings,
-  missing 31 findings across three phases (`03-REVIEW.md`'s 14, `05-REVIEW.md`'s
-  16 already dispositioned elsewhere, `14-REVIEW.md`'s 1). The two new shape
-  invariants (a shape-drift detector and a fixture-driven regression test —
-  see the Decisions entry above) are what stop this recurring; they should
-  be treated as load-bearing, not incidental, in any future guard change.
+2. **`/gsd-complete-milestone`** — archives the completed milestone and
+   prepares `PROJECT.md`/`ROADMAP.md`/`REQUIREMENTS.md` for the next cycle,
+   once the audit above is clean.
 
 **Optional, non-blocking:** `/gsd-cleanup` to archive completed v0.4.0 phase
-directories once the milestone closes — none archived yet, all left in place
-per the same deliberate-non-archival convention prior milestone closes used.
+directories, left until last — the same deliberate-non-archival convention
+prior milestone closes used (none of v0.4.0's phase directories are archived
+yet; all left in place).
