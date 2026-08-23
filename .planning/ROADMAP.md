@@ -502,7 +502,7 @@ from commits — a plan of this shape silently cannot deliver.
   2. `STATE.md` → Deferred Items, still derived from `.planning/todos/pending/` and guarded in both directions by `docs-deferred-ledger.test.ts`, reports a count strictly lower than 19
   3. The count is taken with no phase of this milestone left to run — nothing remaining that could remove another item from the pending set after the measurement
 
-**Plans**: 3/3 plans executed
+**Plans**: 3/4 plans executed (3 waves, plus one gap-closure wave from `17-UAT.md`'s `G-17-1`)
 
 Plans:
 **Wave 1**
@@ -516,6 +516,12 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 17-03-PLAN.md — Closer: tick DEBT-04 and CORE-01 with closure notes, flip both Traceability rows, correct this section's own stale claims, re-take the pending measurement after every edit, and run the full suite (DEBT-04, CORE-01)
+
+**Gap closure** *(planned 2026-08-23 from `17-UAT.md` gap `G-17-1`, severity `minor`, diagnosed in `.planning/debug/core-01-provenance-overstates-human-involvement.md`; run with `/gsd-execute-phase 17 --gaps-only`)*
+
+**Gap-closure wave 1** *(blocked on Wave 3 completion)*
+
+- [ ] 17-04-PLAN.md — `G-17-1`: correct the unevidenced comprehension claim in CORE-01's provenance record across seven planning documents (attendance and delegation stay stated — the transcript establishes both), separate what the terminal render carried from what the decision prompt carried, remove `17-VERIFICATION.md`'s circular corroboration from the standing "you decide" preference, record the UAT non-recall, and bring four stale `docs-core-value-decision.test.ts` counts to the measured value (CORE-01)
 
 **Notes (Phase 17 complete, 2026-08-23)**: Criterion-by-criterion outcome —
 
