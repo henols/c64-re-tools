@@ -337,3 +337,26 @@ test("renderLoading does NOT add the blocked-run warning for an ordinary (non-bl
   const md = renderLoading([{ id: "example", log: normalLog }]);
   assert.doesNotMatch(md, /NOT AN EVIDENCED ZERO/, "an ordinary log must not be flagged as a blocked run");
 });
+
+test("renderLoading names both watch-loads.mjs and dump-artifacts.mjs at the consumer's installed location, never this repository's source-tree location (16-REVIEW.md CR-01 class)", async () => {
+  const { renderLoading } = await import("./watch-loads.mjs");
+  const normalLog = {
+    machine: "C64SC",
+    video_standard: "PAL",
+    vice_version: "3.10",
+    armed: [],
+    idle_calibration: { cycles_advanced: 100, sentinels: [] },
+    hits: [],
+  };
+  const md = renderLoading([{ id: "example", log: normalLog }]);
+  for (const name of ["watch-loads.mjs", "dump-artifacts.mjs"]) {
+    assert.ok(
+      md.includes(`.claude/skills/c64-ram-capture/scripts/${name}`),
+      `renderLoading output must name the consumer-installed path for ${name}`
+    );
+    assert.ok(
+      !md.includes(`src/skills/c64-ram-capture/scripts/${name}`),
+      `renderLoading output must never name this repository's source-tree path for ${name}`
+    );
+  }
+});

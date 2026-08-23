@@ -445,6 +445,12 @@ function renderReleaseSection(id, log) {
  * string templating over already-fetched data -- nothing here reads a file
  * or contacts anything; the CLI `render` verb below is what reads the
  * hit-log files and writes the result.
+ *
+ * The two script paths named in the output below are deliberately the
+ * consumer's installed location, not this repository's source tree -- this
+ * string is written into a `recovery/LOADING.md` a consumer keeps. Plan
+ * 16-04's blanket sweep rewrote them once (16-REVIEW.md CR-01 class); pinned
+ * by the test below plus the class-level registry in skill-consumer-paths.test.ts.
  */
 export function renderLoading(entries) {
   let out = "# `recovery/LOADING.md` -- the on-demand-load detection record\n\n";
@@ -452,7 +458,7 @@ export function renderLoading(entries) {
     "This document is the absence-as-evidence record: per release, the armed set with its justification, the " +
     "idle calibration result, the coverage reached with a mechanical arrival proof per milestone, the states not " +
     "reached, the attributed hits, and the teardown enumeration. Every measurement below was fetched by the " +
-    "executing agent's own `mcp__plugin_c64-re-tools_vice__*` tool calls; `src/skills/c64-ram-capture/scripts/watch-loads.mjs` and `src/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
+    "executing agent's own `mcp__plugin_c64-re-tools_vice__*` tool calls; `.claude/skills/c64-ram-capture/scripts/watch-loads.mjs` and `.claude/skills/c64-ram-capture/scripts/dump-artifacts.mjs` hold " +
     "only the pure logic that resolves, attributes, orders and renders it -- neither module contacted the " +
     "emulator.\n\n";
   for (const { id, log } of entries) {
