@@ -418,7 +418,7 @@ source rather than re-swept after every source-editing plan (this phase's own se
 rationale, above). Same convention as Phase 15, where wave order also differed from plan
 order.
 
-**Plans**: 9/11 plans executed
+**Plans**: 10/11 plans executed
 
 Plans:
 **Wave 1**
@@ -449,7 +449,7 @@ Plans:
 
 **Gap-closure wave 2** *(blocked on gap-closure wave 1)*
 
-- [ ] 16-10-PLAN.md — CR-01/WR-03 and two sites neither gap input named: restore all four consumer-installed path literals the `src/` sweep rewrote, repair the self-contradictory guarding comment, and add two behavioural guards plus one class registry guard (PKG-01)
+- [x] 16-10-PLAN.md — CR-01/WR-03 and two sites neither gap input named: restore all four consumer-installed path literals the `src/` sweep rewrote, repair the self-contradictory guarding comment, and add two behavioural guards plus one class registry guard (PKG-01)
 
 **Gap-closure wave 3** *(blocked on gap-closure wave 2)*
 
@@ -515,7 +515,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
-| 16. Packaging and Repo Shape | v0.4.0 | 9/11 | In Progress|  |
+| 16. Packaging and Repo Shape | v0.4.0 | 10/11 | In Progress|  |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
