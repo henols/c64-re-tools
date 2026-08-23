@@ -152,3 +152,39 @@ planning:
 
 Every site above is named with the plan that closed it — no site is recorded as still open
 by this document.
+
+## Section 5 — Round-2 code review (post-gap-closure), and its disposition
+
+After plans `16-08`..`16-11` landed, the execute-phase code-review gate re-reviewed the
+tree. Because a review already existed at the deterministic `16-REVIEW.md` path, round 1
+was first archived to `16-REVIEW-round1-2026-08-23.md` — a filename that deliberately does
+**not** match `docs-review-disposition.test.ts`'s `^[0-9][0-9.]*-REVIEW\.md$` gate, so the
+archive preserves the record without minting duplicate disposition obligations.
+
+Round 2 was scoped to the **18-file gap-closure delta** rather than the whole phase. Round 1
+had already reviewed all 98 files at the same `standard` depth, and the code-review workflow
+itself warns that a scope above 50 files produces a superficial pass; the delta is the only
+code in this phase that had never been reviewed.
+
+**Result: 0 critical, 2 warnings, 0 info.** Both were the defect class this round exists to
+eliminate — *a verification that cannot fail* — so both were **fixed, not deferred**
+(commit `f1fb821`). Shipping the round with two known-toothless guards would have left the
+phase in the condition it was created to fix.
+
+| Finding | Site | Disposition |
+|---|---|---|
+| `WR-05` | `src/mcp/vice/ci-suite-coverage.test.ts` — the `FROZEN_REGISTRY` proof check was a bare `step.includes("run: npm test")`, satisfied by any command merely *starting* with the proof (e.g. `npm test -- --test-name-pattern=…`, a realistic way to silently narrow what CI runs). For the `installer` entry this weak check was the only guard. | **Fixed** in `f1fb821`. Replaced with `runsExactly()`, requiring the command to be the whole rest of its physical line — generalizing the already-correct `/run:\s*npm test\b/` shape from the sibling `ci-guardrails.test.mjs`. Proven RED-then-GREEN against the real `ci.yml` with a byte-identical revert. |
+| `WR-06` | `hop-chain-comments.test.ts` scanned only `*.ts`/`*.mts` directly under `src/mcp/vice/`, so it was structurally blind to `src/skills/*/scripts/*.mjs` — and those files carried the very half-swept chain the guard was built this same round to eliminate. | **Fixed** in `f1fb821`. The review named two sites; a tree-wide sweep found a **third** (`dump-artifacts.test.mjs:16`) that neither gap input nor the review had named. All three corrected and each verified to resolve four hops to the real repo root, **and** the scan widened via `enumeratedSkillScriptFiles()` so the guard can see that half of the corpus at all. Fixing only the three sites would have left the guard blind to the next one. Proven RED-then-GREEN by planting the chain back into a skill script the old guard could not see. |
+
+**A note on the widened guard flagging itself.** Adding the skill-scripts half made the guard
+report its own new documentation comment, which quoted the forbidden pattern verbatim. The
+assertion's own failure message forbids per-file exemptions, and its predicate is
+per-physical-line, so the comment was reworded so no single line carries the full shape —
+the same property `repo-root.test.ts` already relies on. No exemption was added.
+
+**Orchestrator-level correction also made this round.** `deferred-items.md`'s `16-08` entry
+predicted that its two out-of-scope test failures would be closed by plan `16-11`. That
+attribution was wrong: both cascaded from then-undispositioned `16-REVIEW.md` findings and
+so were closed by `16-09` and `16-10` dispositioning those findings, before `16-11` ran.
+`16-11`'s executor spotted the misattribution but correctly declined to edit a file outside
+its declared `files_modified`; the orchestrator corrected it in commit `2d579e6`.
