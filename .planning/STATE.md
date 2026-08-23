@@ -8,7 +8,7 @@ status: executing
 stopped_at: Completed 17-04-PLAN.md
 last_updated: "2026-08-23T11:28:30.909Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 17 gap-closure plan 17-04 executed (G-17-1)
+last_activity_desc: Phase 17 re-verified after G-17-1 gap closure — human_needed, awaiting UAT
 state_head: 939515821a68c568018f3b2c6bcbf37e4675fe48
 progress:
   total_phases: 6
@@ -58,7 +58,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 Phase: 17 (Project Identity and Ledger Close) — EXECUTING
 Plan: 4 of 4
-Status: All plans executed — phase verification pending
+Status: All plans executed; re-verified after G-17-1 (human_needed, 20/21) — awaiting UAT
 
 **Phase 17 — Project Identity and Ledger Close — all 4 plans executed
 (2026-08-23), phase verification pending.** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
