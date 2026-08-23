@@ -6,10 +6,10 @@ current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: executing
 stopped_at: Phase 16 complete, ready to plan Phase 17
-last_updated: "2026-08-23T08:13:59.868Z"
+last_updated: "2026-08-23T08:19:08.910Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
-state_head: b362dac1ae9f9fd4981caffca00c47d47e0a600a
+last_activity_desc: Phase 17 execution started
+state_head: 4e30825399771fde0309a74eeef93b903c377709
 progress:
   total_phases: 6
   completed_phases: 5
@@ -43,7 +43,7 @@ deleted.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 16 — Packaging and Repo Shape
+**Current focus:** Phase 17 — Project Identity and Ledger Close
 2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
 becomes a fix or a dated decision, and the fork-backend and Core Value questions
 get answered deliberately rather than by default. Requirements are being defined
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 17 (Project Identity and Ledger Close) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
+Phase: 17 (Project Identity and Ledger Close) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 17
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's
@@ -166,7 +166,7 @@ flipped the four requirements Complete with closure notes, and reconciled
 the ledger to 2 pending todos with zero UAT gaps. Next session should read:
 ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
 which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-23 — Phase 16 complete, transitioned to Phase 17
+Last activity: 2026-08-23 — Phase 17 execution started
 
 ## Performance Metrics
 
