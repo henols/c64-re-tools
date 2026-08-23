@@ -465,8 +465,14 @@ ledger is then measured at the **true** close — after Phase 16 has discharged
 pending todo any phase of this milestone removes — and is smaller than the 19
 items inherited. Sequenced last for exactly that reason: DEBT-04 says "at the
 close", and a count taken before Phase 16 would go stale the moment Phase 16
-landed. This phase edits planning documents only and touches no source, so
-placing it after Phase 16 does not disturb the sweep-once rationale above.
+landed. **This Goal originally claimed the phase edits planning documents only
+— that claim was false and is corrected here, refuted by a live failing test
+run rather than by inference.** Plan 17-01's tracer found
+`docs-deferred-ledger.test.ts`'s non-vacuity floor could not express the
+zero-pending state this phase's own measurement produces (1 pass / 3 fail
+before the fix); fixing the guard's floor was real source work under
+`src/mcp/vice/`, not a planning-document edit. Placing this phase after Phase
+16 does not disturb the sweep-once rationale above.
 **Depends on**: Phases 15 and 16 (the ledger measurement requires every
 disposition *and* PKG-01's todo to have already left `.planning/todos/pending/`)
 
@@ -481,6 +487,11 @@ relocation work outstanding (including `warp-over-resource_set`'s remaining
 fix and PKG-01's own relocation todo) that will move the count further
 before this phase's measurement is taken.
 
+This chain is now closed to its terminus **(resolved 2026-08-23, Phase 17
+plan 17-01)**: 21 (Phase 14 open) → 20 (14-05) → 2 (Phase 15 close) → 0
+(measured Phase 17 plan 17-01, after Phase 16 discharged `PKG-01` and
+`PKG-03`).
+
 **Planning note**: plan this phase with **worktree mode off**. Its deliverables
 are `STATE.md` and `PROJECT.md` content, and worktree mode strips those files
 from commits — a plan of this shape silently cannot deliver.
@@ -491,7 +502,7 @@ from commits — a plan of this shape silently cannot deliver.
   2. `STATE.md` → Deferred Items, still derived from `.planning/todos/pending/` and guarded in both directions by `docs-deferred-ledger.test.ts`, reports a count strictly lower than 19
   3. The count is taken with no phase of this milestone left to run — nothing remaining that could remove another item from the pending set after the measurement
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans executed
 
 Plans:
 **Wave 1**
@@ -504,7 +515,42 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 17-03-PLAN.md — Closer: tick DEBT-04 and CORE-01 with closure notes, flip both Traceability rows, correct this section's own stale claims, re-take the pending measurement after every edit, and run the full suite (DEBT-04, CORE-01)
+- [x] 17-03-PLAN.md — Closer: tick DEBT-04 and CORE-01 with closure notes, flip both Traceability rows, correct this section's own stale claims, re-take the pending measurement after every edit, and run the full suite (DEBT-04, CORE-01)
+
+**Notes (Phase 17 complete, 2026-08-23)**: Criterion-by-criterion outcome —
+
+  1. **Satisfied.** PROJECT.md → Core Value carries a dated (2026-08-23), evidence-citing
+     `CORE-01` entry. Verdict **keep-dated**: the leading statement is unchanged, and the
+     new paragraph records that the evidence — Phase 11's two-session sealed-question test
+     (`R2000-10`), the symbol round trip (`R2000-14`/`R2000-15`), and `R2000-01`'s
+     structural argument that regenerator2000 is never launched with `--vice` — was weighed
+     and the statement deliberately kept, not edited in passing. The verdict was reached at
+     plan 17-02 task 1's `gate="blocking-human"` checkpoint: a human saw the full evidence
+     and responded to it, but explicitly delegated the choice between the two options to
+     the orchestrating session, which then selected `keep-dated` — recorded precisely in
+     both PROJECT.md and `17-02-SUMMARY.md`, not overstated as a literal human selection.
+     Pinned by `src/mcp/vice/docs-core-value-decision.test.ts` (5/5 passing).
+
+  2. **Satisfied.** `STATE.md` → Deferred Items reports 0, down from the 19 items inherited
+     at the v0.3.0 close, still derived from `.planning/todos/pending/` and guarded in both
+     directions by `docs-deferred-ledger.test.ts`. Reaching 0 required plan 17-01's tracer
+     to first drop the guard's non-vacuity floor (previously `pending.length >= 2`, which
+     could not express a genuinely empty tree) — the Goal's corrected claim above records
+     that this was real source work, not a planning-document edit.
+
+  3. **Satisfied.** The 0-pending measurement was re-taken in this plan's own task 3, after
+     every edit this phase made to `REQUIREMENTS.md`, `ROADMAP.md` and `STATE.md` — not
+     carried over from plan 17-01's earlier measurement. Because Phase 17 is the last phase
+     of v0.4.0 and `code_review` runs after this plan's own SUMMARY with no Phase 18 to
+     inherit a late finding, the residual post-count window is named explicitly in
+     `STATE.md` → Operator Next Steps, with `/gsd-audit-milestone` (itself gated by
+     `GATE-01` while any `docs-*.test.ts` guard is red) as the backstop.
+
+  **The one correction worth carrying forward**: this section's own Goal claimed the phase
+  "edits planning documents only and touches no source." That was false — plan 17-01's
+  tracer found a doc guard's non-vacuity floor could not express zero pending and fixed it
+  as real source work under `src/mcp/vice/` — and is corrected in the Goal itself above, not
+  only contradicted here.
 
 ## Progress
 
@@ -529,7 +575,7 @@ Plans:
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete    | 2026-08-23 |
-| 17. Project Identity and Ledger Close | v0.4.0 | 2/3 | In Progress|  |
+| 17. Project Identity and Ledger Close | v0.4.0 | 3/3 | Complete    | 2026-08-23 |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
@@ -551,11 +597,11 @@ in both directions).
 0 orphaned. `GATE-01` (Phase 12) is sequenced first so every later phase in this
 milestone runs under its own audit-integrity guard. `FORK-01`/`FORK-02` (Phase
 14) are sequenced early, ahead of the bulk disposition work (Phase 15) and the
-packaging move (Phase 17), so neither builds on a backend that might be about to
-be deleted. `PKG-01` (Phase 17) is sequenced last rather than first, because it
+packaging move (Phase 16), so neither builds on a backend that might be about to
+be deleted. `PKG-01` (Phase 16) is sequenced last rather than first, because it
 touches nearly every file the milestone's other phases also touch — see Phase
-17's Goal for the full rationale. `DEBT-04`'s ledger measurement and `CORE-01`
-(Phase 16) are sequenced after Phase 15 specifically so the ledger count and the
+16's Goal for the full rationale. `DEBT-04`'s ledger measurement and `CORE-01`
+(Phase 17) are sequenced after Phase 15 specifically so the ledger count and the
 Core Value evidence both reflect this milestone's actual disposition work, not a
 projection of it.
 
