@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: executing
-stopped_at: Phase 16 complete, ready to plan Phase 17
-last_updated: "2026-08-23T08:19:08.910Z"
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-08-23T08:29:42.465Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 execution started
-state_head: 4e30825399771fde0309a74eeef93b903c377709
+state_head: 56dac650d3eb1a740c08c173d83e14ca2b04f8d6
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 43
-  completed_plans: 40
+  completed_plans: 41
   percent: 83
 ---
 
@@ -57,8 +57,8 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 17 (Project Identity and Ledger Close) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 17
+Plan: 2 of 3
+Status: Ready to execute
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's
@@ -264,6 +264,7 @@ Last activity: 2026-08-23 — Phase 17 execution started
 | Phase 16 P09 | 35min | 2 tasks | 5 files |
 | Phase 16 P10 | ~70min | 3 tasks | 8 files |
 | Phase 16 P11 | 30min | 2 tasks | 2 files |
+| Phase 17 P01 | 20min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -394,6 +395,8 @@ Recent decisions affecting current work:
 - [Phase 16]: 16-10: Reverted CR-01 consumer-path regression (renderLedger/anchor-search/renderLoading/template.a/SKILL.md), shipped skill-consumer-paths.test.ts as a frozen four-entry registry guard against the class recurring; docs-review-disposition.test.ts and audit-integrity.test.ts confirmed fully green (2386/2342/0/39/5) for the first time this phase
 - [Phase 16]: [Phase 16-11]: PKG-04 flipped to checked/Complete in REQUIREMENTS.md with a closure note citing PROJECT.md's dated accepted-risk row and 16-PKG04-EVIDENCE.md, explicitly preserving the open Control-Plane Bind Follow-on; PKG-01 given a companion closure note naming plans 16-08/16-10
 - [Phase 16]: [Phase 16-11]: New decision register 16-GAP-CLOSURE-DECISIONS.md records five deliberate non-reversals with owners/reversal triggers (four SKILL.md quick-references, recovery-schema.mjs, project-paths.mjs, repo-root.test.ts, and 16-REVIEW.md's IN-01 recorded as renamed-not-left by plan 16-09), the spec-less probe's four-item accounting (two authored, two flagged unresolved), the three recalled prohibitions, and five newly-found sites with their closing plans
+- [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
+- [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
 
 ### Pending Todos
 
@@ -814,8 +817,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T03:09:58.614Z
-Stopped at: Phase 16 complete, ready to plan Phase 17
+Last session: 2026-08-23T08:29:42.267Z
+Stopped at: Completed 17-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

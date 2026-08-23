@@ -491,12 +491,12 @@ from commits — a plan of this shape silently cannot deliver.
   2. `STATE.md` → Deferred Items, still derived from `.planning/todos/pending/` and guarded in both directions by `docs-deferred-ledger.test.ts`, reports a count strictly lower than 19
   3. The count is taken with no phase of this milestone left to run — nothing remaining that could remove another item from the pending set after the measurement
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 17-01-PLAN.md — Tracer: make `docs-deferred-ledger.test.ts` able to express a zero-pending tree, then bring STATE.md's Deferred Items ledger and Pending Todos prose to the true close count of 0 in one edit (DEBT-04)
+- [x] 17-01-PLAN.md — Tracer: make `docs-deferred-ledger.test.ts` able to express a zero-pending tree, then bring STATE.md's Deferred Items ledger and Pending Todos prose to the true close count of 0 in one edit (DEBT-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -529,7 +529,7 @@ Plans:
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete    | 2026-08-23 |
-| 17. Project Identity and Ledger Close | v0.4.0 | 0/3 | Not started | - |
+| 17. Project Identity and Ledger Close | v0.4.0 | 1/3 | In Progress|  |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
 17 requirements were cut wholesale on 2026-08-17 and remain in
