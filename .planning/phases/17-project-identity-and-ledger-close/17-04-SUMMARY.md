@@ -265,3 +265,13 @@ passed`.
 ---
 *Phase: 17-project-identity-and-ledger-close*
 *Completed: 2026-08-23*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`
+- FOUND: `17-02-SUMMARY.md`, `17-03-SUMMARY.md`, `17-VERIFICATION.md`, `17-04-SUMMARY.md`
+- FOUND commit: `2fcecf6` (Task 1), `2c0c1be` (Task 2), `bde3fb8` (Task 3), `b48b2d4` (this SUMMARY)
+- Re-ran absence gate live: 0 matches across all seven documents
+- Re-ran presence gate live: PASS in all seven documents
+- Re-ran all six `docs-*.test.ts` guards individually: 6/6, 8/8, 6/6, 6/6, 3/3, 7/7 — all green
+- Re-ran full `cd src/mcp/vice && npm test`: 2395 total, 2351 pass, 0 fail, 39 skipped, 5 todo, 24 suites
