@@ -51,6 +51,25 @@ function todoStems(dir: string): string[] {
     .map((f) => f.slice(0, -3));
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** WR-02 (17-REVIEW.md): true if `stem` appears as its OWN Markdown table
+ * cell -- `| <stem> |`, tolerating surrounding whitespace -- rather than as
+ * a bare, unanchored substring anywhere in `sectionText`. Bare
+ * `String.prototype.includes(stem)` risks both false positives (a longer
+ * stem's row containing a shorter stem as a literal substring wrongly
+ * counts as a match for the shorter one) and false negatives (a different
+ * stem's occurrence coincidentally supplies the substring a search for it
+ * was looking for) the moment two todo stems share a prefix/suffix
+ * relationship. Currently inert only because the pending tree is empty; a
+ * live risk the moment a new pending todo is added. */
+function stemHasOwnTableCell(stem: string, sectionText: string): boolean {
+  const re = new RegExp(`\\|\\s*${escapeRe(stem)}\\s*\\|`);
+  return re.test(sectionText);
+}
+
 /** Extracts the body of STATE.md's `## Deferred Items` section: everything
  * from that heading up to (not including) the next `## ` heading. Returns
  * `null` if the heading cannot be found at all -- a renamed heading or a
@@ -66,7 +85,7 @@ function deferredItemsSection(stateMd: string): string | null {
  * that do NOT appear -- empty means the guard is satisfied. Shared verbatim
  * by the real-source test and the planted-violation test below. */
 function missingPendingStems(pendingStems: readonly string[], sectionText: string): string[] {
-  return pendingStems.filter((stem) => !sectionText.includes(stem));
+  return pendingStems.filter((stem) => !stemHasOwnTableCell(stem, sectionText));
 }
 
 /** Predicate 2 (AUDIT-04, direction B): no completed todo's stem may still
@@ -76,7 +95,7 @@ function missingPendingStems(pendingStems: readonly string[], sectionText: strin
  * means the guard is satisfied. Shared verbatim by the real-source test and
  * the planted-violation test below. */
 function wronglyListedCompletedStems(completedStems: readonly string[], sectionText: string): string[] {
-  return completedStems.filter((stem) => sectionText.includes(stem));
+  return completedStems.filter((stem) => stemHasOwnTableCell(stem, sectionText));
 }
 
 test("every pending todo has a row in STATE.md's Deferred Items section (AUDIT-04, direction A)", () => {
@@ -210,4 +229,48 @@ test("planted violation: both predicates fire on synthetic input, and the real, 
   const realStale = wronglyListedCompletedStems(todoStems(COMPLETED_DIR), realSection!);
   assert.deepEqual(realMissing, [], "the real, corrected STATE.md must not be flagged by predicate 1");
   assert.deepEqual(realStale, [], "the real, corrected STATE.md must not be flagged by predicate 2");
+});
+
+// WR-02 (17-REVIEW.md): proves the anchored-match fix directly. Pre-fix,
+// both predicates keyed on bare `String.prototype.includes(stem)`, so a
+// SHORTER stem that happens to be a literal substring of a LONGER stem's
+// row would falsely be reported as present. This is currently inert (the
+// real pending tree is empty) but becomes live the moment two todo stems
+// share a prefix/suffix relationship.
+test("substring-safety: a stem that is only a literal substring of a different stem's row is not falsely matched (WR-02)", () => {
+  const shortStem = "2026-08-12-vice-broker-tests-stall";
+  const longStem = "2026-08-12-vice-broker-tests-stall-outside-devcontainer";
+  const sectionWithOnlyTheLongStemsRow = `
+| Category | Item | Priority | Status |
+|----------|------|----------|--------|
+| todo | ${longStem} | low | Pending |
+`;
+  // The short stem is NOT itself a row -- it must still be reported missing
+  // even though it is a substring of the long stem's row. A pre-fix
+  // includes()-based match would have found the short stem as a substring
+  // of the long stem's text and wrongly reported it present.
+  assert.deepEqual(
+    missingPendingStems([shortStem], sectionWithOnlyTheLongStemsRow),
+    [shortStem],
+    "a stem that is only a substring of a different stem's row must still be reported missing, not falsely matched",
+  );
+  // The long stem's own row IS found by the anchored match.
+  assert.deepEqual(
+    missingPendingStems([longStem], sectionWithOnlyTheLongStemsRow),
+    [],
+    "the long stem's own table row must still be found by the anchored match",
+  );
+  // Direction B (wronglyListedCompletedStems) is the same predicate function
+  // by construction, but exercised explicitly for clarity: the short stem
+  // must not be reported as a stale completed row either.
+  assert.deepEqual(
+    wronglyListedCompletedStems([shortStem], sectionWithOnlyTheLongStemsRow),
+    [],
+    "the short stem must not be reported stale merely because it is a substring of the long stem's row",
+  );
+  assert.deepEqual(
+    wronglyListedCompletedStems([longStem], sectionWithOnlyTheLongStemsRow),
+    [longStem],
+    "the long stem's own row must still be reported stale when it genuinely appears",
+  );
 });
