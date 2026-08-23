@@ -75,7 +75,7 @@ statement) get answered deliberately.
 - [x] **Phase 13: External Verification** - The three highest-value carried items (fixtures, `--help` discriminator, Phase 3 wire details) are proven against real stock/fork VICE binaries instead of internal proxies (completed 2026-08-22)
 - [x] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route (completed 2026-08-22)
 - [x] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed (completed 2026-08-22, 12/12 plans; pending-todo tree reduced 21 → 2, both remaining items promoted to Phase 16 with named owners)
-- [ ] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed
+- [x] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed (completed 2026-08-23)
 - [ ] **Phase 17: Project Identity and Ledger Close** - Core Value is restated or explicitly confirmed, and the deferred-items ledger measurably shrinks below 19 — measured at the true close, after every phase that can change the pending set
 
 ## Phase Details
@@ -515,7 +515,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
-| 16. Packaging and Repo Shape | v0.4.0 | 11/11 | In Progress|  |
+| 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete    | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.

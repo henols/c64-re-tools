@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 16
-current_phase_name: Packaging and Repo Shape
-status: executing
-stopped_at: Completed 16-11-PLAN.md
-last_updated: "2026-08-23T03:09:58.744Z"
+current_phase: 17
+current_phase_name: Project Identity and Ledger Close
+status: planning
+stopped_at: Phase 16 complete, ready to plan Phase 17
+last_updated: "2026-08-23T03:40:00.116Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 16 execution started
-state_head: 649814e155217a1f2fd7bc8e252a6017d0fa141f
+last_activity_desc: Phase 16 complete, transitioned to Phase 17
+state_head: d2e4cb403691d483cb1784906b780d799da05e1a
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 40
   completed_plans: 40
-  percent: 67
+  percent: 83
 ---
 
 # Project State
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 16 (Packaging and Repo Shape) — EXECUTING (gap closure)
-Plan: 11 of 11 executed — 16-10 just completed (wave 2 of 3); 16-11 (ledger close) remains
-Status: Ready to execute
+Phase: 17 — Project Identity and Ledger Close
+Plan: Not started
+Status: Ready to plan
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's
@@ -166,13 +166,13 @@ flipped the four requirements Complete with closure notes, and reconciled
 the ledger to 2 pending todos with zero UAT gaps. Next session should read:
 ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
 which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-23 — Phase 16 execution started
+Last activity: 2026-08-23 — Phase 16 complete, transitioned to Phase 17
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 145
+- Total plans completed: 156
 - Average duration: —
 - Total execution time: —
 
@@ -196,6 +196,7 @@ Last activity: 2026-08-23 — Phase 16 execution started
 | 12 | 7 | - | - |
 | 14 | 5 | - | - |
 | 15 | 12 | - | - |
+| 16 | 11 | - | - |
 
 **Recent Trend:**
 
@@ -785,7 +786,7 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 ## Session Continuity
 
 Last session: 2026-08-23T03:09:58.614Z
-Stopped at: Completed 16-11-PLAN.md
+Stopped at: Phase 16 complete, ready to plan Phase 17
 Resume file: None
 
 ## Operator Next Steps
