@@ -75,6 +75,7 @@ interface GateJsonResult {
   redGuards: string[];
   gatedAudits: { file: string; status: string }[];
   guardFiles: string[];
+  expectedGuardNames: string[];
   auditFiles: string[];
   statusCounts: Record<string, number>;
   structuralErrors: string[];
@@ -128,8 +129,13 @@ function plantedGuardBody(name: string, assertTruth: boolean): string {
 
 interface SyntheticTreeOptions {
   /** How many of the EXPECTED_GUARD_NAMES_FOR_ASSERTION-shaped guard
-   * files to plant. Defaults to 4 (satisfies the floor). Set lower to
-   * exercise the structural-failure path (test 11). */
+   * files to plant. Defaults to EXPECTED_GUARD_NAMES_FOR_ASSERTION.length
+   * (6, satisfies DOCS_GUARD_FLOOR) -- CR-02 (17-REVIEW.md) raised the real
+   * floor from 4 to 6 alongside the registry; a synthetic tree planting
+   * only 4 guards would now itself be a structural failure by construction,
+   * which would silently break every test below that expects a normal
+   * red-guard/gated-audit scenario rather than a floor violation. Set lower
+   * to exercise the structural-failure path on purpose (test 11 / WR-02). */
   guardCount?: number;
   /** Index (0-based) of the planted guard that asserts falsely. `null`
    * plants an all-green guard set. */
@@ -154,7 +160,13 @@ interface SyntheticTreeOptions {
  * this repo's established synthetic-tree idiom (`install-resources.test.ts`).
  */
 function buildSyntheticTree(opts: SyntheticTreeOptions = {}): { root: string; cleanup: () => void } {
-  const { guardCount = 4, redGuardIndex = 0, auditStatus = "passed", auditBody = "", auditRelPath } = opts;
+  const {
+    guardCount = EXPECTED_GUARD_NAMES_FOR_ASSERTION.length,
+    redGuardIndex = 0,
+    auditStatus = "passed",
+    auditBody = "",
+    auditRelPath,
+  } = opts;
 
   const root = mkdtempSync(join(tmpdir(), "audit-gate-planted-"));
   const viceDir = join(root, "src", "mcp", "vice");
@@ -213,6 +225,38 @@ test("no milestone audit declares a gated status while any docs guard is red (D-
   const { status, json } = runGate(ROOT);
   assert.equal(status, 0, `expected exit 0 on the real tree; reason: ${json.reason}`);
   assert.equal(json.allowed, true, `expected allowed=true on the real tree; reason: ${json.reason}`);
+});
+
+// CR-02 (17-REVIEW.md): the test above ("the docs guard set is derived from
+// disk...") only ever compared its own LOCAL EXPECTED_GUARD_NAMES_FOR_ASSERTION
+// array against json.guardFiles -- itself derived live from disk on every
+// run -- so it provided no signal at all about whether audit-gate.mjs's OWN
+// internal completeness registry (EXPECTED_DOCS_GUARD_NAMES, the mechanism
+// that is actually supposed to catch "a specific named guard went missing")
+// had been kept in sync. It had not: neither `docs-fork-decision.test.ts`
+// nor `docs-core-value-decision.test.ts` was ever added to it, despite that
+// array's own comment instructing exactly that "the day a fifth guard is
+// added" -- and deleting the latter from the real tree produced
+// `allowed: true, structuralErrors: []`.
+//
+// This test closes that hole by comparing the RUNTIME registry itself
+// (json.expectedGuardNames, read off audit-gate.mjs's own --json contract --
+// see that field's header comment) against the disk-derived set
+// (json.guardFiles), rather than against this test file's own local copy.
+// A future guard file added to disk without a matching entry in
+// EXPECTED_DOCS_GUARD_NAMES now fails HERE, by name, the moment it is added
+// -- it does not depend on this test file's own local array staying in sync
+// too (that would just be a second copy of the same failure mode).
+test("the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)", () => {
+  const { json } = runGate(ROOT);
+  assert.deepEqual(
+    [...json.expectedGuardNames].sort(),
+    [...json.guardFiles].sort(),
+    "scripts/audit-gate.mjs's own EXPECTED_DOCS_GUARD_NAMES registry has drifted from the disk-derived " +
+      "docs-*.test.ts set -- extend EXPECTED_DOCS_GUARD_NAMES (and DOCS_GUARD_FLOOR) in the same commit " +
+      `that adds or removes a docs-*.test.ts guard file (see that array's own comment); ` +
+      `registry=${JSON.stringify(json.expectedGuardNames)} disk=${JSON.stringify(json.guardFiles)}`,
+  );
 });
 
 test("the frontmatter scan reads only the frontmatter, not prose (T-12-04)", () => {

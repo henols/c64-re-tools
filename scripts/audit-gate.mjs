@@ -97,19 +97,38 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** The non-vacuity floor for the derived docs-guard set (D-12-08). A glob
  * that silently matches almost nothing must become a structural failure,
  * never a vacuous green -- raise this only if a guard is legitimately
- * retired in the same commit that lowers it. */
-export const DOCS_GUARD_FLOOR = 4;
+ * retired in the same commit that lowers it. Raised from 4 to 6 (17-REVIEW.md
+ * CR-02) alongside `EXPECTED_DOCS_GUARD_NAMES` below, when it was discovered
+ * neither `docs-fork-decision.test.ts` (Phase 14) nor
+ * `docs-core-value-decision.test.ts` (17-02) had ever been added to either
+ * constant, despite this array's own comment instructing exactly that. */
+export const DOCS_GUARD_FLOOR = 6;
 
-/** The four current docs-*.test.ts guard basenames, frozen. Used only as an
+/** The current docs-*.test.ts guard basenames, frozen. Used only as an
  * exact-membership check against the DERIVED set from `docsGuardFiles()` --
  * never as the set itself. Extend this array (in a commit, alongside the
- * new guard file) the day a fifth guard is added; do not create a second,
- * competing list anywhere else. */
+ * new guard file) the day a seventh guard is added; do not create a second,
+ * competing list anywhere else.
+ *
+ * CR-02 (17-REVIEW.md): this array was frozen at its original Phase-12
+ * four-item list for two full guard additions (`docs-fork-decision.test.ts`
+ * in Phase 14, `docs-core-value-decision.test.ts` in 17-02) despite the
+ * instruction directly above. Reproduced against the real tree: deleting
+ * `docs-core-value-decision.test.ts` left `checkAuditGate()` reporting
+ * `allowed: true, structuralErrors: []` -- the floor (then 4) was still
+ * cleared by the remaining five files, and the membership loop below never
+ * checked for the missing name because it was never added here. See
+ * `audit-integrity.test.ts`'s "the runtime registry names every guard the
+ * disk-derived set carries" test for the mechanism that now catches this
+ * class of drift automatically, rather than relying on a maintainer to
+ * remember this comment. */
 export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   "docs-linerefs.test.ts",
   "docs-dangling-refs.test.ts",
   "docs-deferred-ledger.test.ts",
   "docs-review-disposition.test.ts",
+  "docs-fork-decision.test.ts",
+  "docs-core-value-decision.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from
@@ -1124,6 +1143,7 @@ function main() {
         redGuards: [],
         gatedAudits: [],
         guardFiles: [],
+        expectedGuardNames: [...EXPECTED_DOCS_GUARD_NAMES],
         auditFiles: [],
         statusCounts: {},
         structuralErrors: [message],
@@ -1144,6 +1164,14 @@ function main() {
       redGuards: result.redGuards,
       gatedAudits: result.gatedAudits,
       guardFiles,
+      // CR-02 (17-REVIEW.md): the runtime completeness registry itself,
+      // exposed on the JSON contract specifically so a Layer-1 test
+      // (audit-integrity.test.ts) can assert it against `guardFiles` (the
+      // disk-derived set) WITHOUT importing this .mjs module directly (which
+      // fails npm run typecheck, see that file's own header) and without
+      // hand-maintaining a second competing list of its own that could drift
+      // independently of this one.
+      expectedGuardNames: [...EXPECTED_DOCS_GUARD_NAMES],
       auditFiles,
       statusCounts,
       structuralErrors: result.structuralErrors,
