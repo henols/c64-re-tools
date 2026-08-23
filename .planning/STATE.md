@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source
 status: planning
-last_updated: "2026-08-23T19:41:32.907Z"
+last_updated: "2026-08-23T20:30:00.000Z"
 last_activity: 2026-08-23
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -46,24 +46,25 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** *no milestone is open.* v0.4.0 closed 2026-08-23 and its
-roadmap, requirements and audit are archived under `.planning/milestones/`.
-`.planning/REQUIREMENTS.md` was removed at this close and is recreated by
-`/gsd-new-milestone`, which is the next action. ROADMAP.md carries all three
-shipped milestones collapsed, with full detail in
+**Current focus:** **v0.5.0 is roadmapped.** `.planning/REQUIREMENTS.md` holds
+27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
+five phases in `.planning/ROADMAP.md` (Phases 18-22), and its Traceability
+table and Coverage block are filled in (27/27 mapped, 0 unmapped). No phase has
+been planned yet — the next action is `/gsd-plan-phase 18`. ROADMAP.md still
+carries all three shipped milestones collapsed, with full detail in
 `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md` and
 `milestones/v0.4.0-ROADMAP.md`.
-**Phase numbering continues from 17 — the next milestone starts at Phase 18**,
-and numbers are never reused, including the dissolved ones. The Deferred Items
-ledger below reads **0 open**: the 19 items inherited at the v0.3.0 close were
-discharged by this milestone, which is what it existed to do.
+**Phase numbering continues from 17 — v0.5.0 starts at Phase 18**, and numbers
+are never reused, including the dissolved ones. The Deferred Items ledger below
+reads **0 open**: the 19 items inherited at the v0.3.0 close were discharged by
+v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-08-23 — Milestone v0.5.0 started
+Phase: 18 - Persistent Session and Tool Surface (not started)
+Plan: — (no plans yet)
+Status: Roadmapped — 5 phases (18-22), 27/27 requirements mapped, awaiting `/gsd-plan-phase 18`
+Last activity: 2026-08-23 — Milestone v0.5.0 roadmap created (Phases 18-22)
 
 ## Performance Metrics
 
@@ -183,6 +184,18 @@ Last activity: 2026-08-23 — Milestone v0.5.0 started
 
 - Phase 11.1 inserted after Phase 11: Close v0.3.0 audit items: the stale .vsf pointer, the undocumented CLI verbs, and the guards that let them drift (URGENT)
 
+- v0.5.0 opened as Phases 18-22, continuing v0.4.0's numbering rather than
+  resetting to 1. Kept the research-proposed 5-phase shape (persistent session
+  -> absorption+coverage instrument -> decomposition -> rebuildable
+  source+hazard gate -> equivalence/modifiability) rather than fragmenting
+  further: EQUIV-01 (compare.mjs's original-vs-different-binary extension,
+  this milestone's single highest-risk requirement) stays inside Phase 22 as
+  its first, explicitly-flagged success criterion rather than becoming a
+  standalone phase — splitting it would exceed this project's "standard"
+  granularity calibration (4-6 phases) without changing what has to be built
+  or in what order. Full sequencing rationale recorded in ROADMAP.md ->
+  "Sequencing Rationale (v0.5.0)".
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
@@ -299,6 +312,7 @@ Recent decisions affecting current work:
 - [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
 - [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — The checkpoint was rendered and the operator answered 298 seconds later in free text `you decide` rather than selecting an option; attendance and delegation are on the record, comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap G-17-1); orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
 - [Quick 260823-kf6]: Flipped QUAL-01/QUAL-02/QUAL-03 to Closed in STATE.md's carried-forward ledger, naming PKG-02/PKG-03/PKG-04; reconciled STATE.md's Deferred Items prose and REQUIREMENTS.md's DEBT-04 note to the one genuinely surviving open row (UP-01/UP-02) — corrects v0.4.0-MILESTONE-AUDIT.md round-1 tech-debt cluster 1
+- Roadmap (v0.5.0): the coverage instrument (Phase 19) and the reassembly-plus-hazard-report gate (Phase 21) are both sequenced before the work they measure (Phase 20's decomposition sweep, Phase 22's equivalence/modifiability demo respectively) — mirroring v0.4.0's audit-gate-first precedent (Phase 12). EQUIV-01 (compare.mjs's original-vs-different-binary extension) is flagged as the milestone's single highest-risk requirement and sequenced as Phase 22's first success criterion rather than split into its own phase.
 
 ### Pending Todos
 
@@ -776,7 +790,15 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-23
-Stopped at: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
+Stopped at: **v0.5.0 roadmap created.** 27/27 requirements
+  (SESS-01..04, SURF-01..03, ABS-01..04, COV-01..02, DECOMP-01..04,
+  BUILD-01..06, EQUIV-01..04) mapped to five phases (18-22) in
+  `.planning/ROADMAP.md`, with per-phase Goal/Depends-on/Requirements/Success
+  Criteria plus a "Sequencing Rationale (v0.5.0)" section justifying the
+  5-phase shape and EQUIV-01's placement. `.planning/REQUIREMENTS.md`'s
+  Traceability table and Coverage block are filled in (27 mapped, 0 unmapped).
+  No phase has been planned yet. Next: `/gsd-plan-phase 18`.
+Previously stopped at: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
   archived (2026-08-23). Six phases (12-17), 44/44 plans, 119 tasks, 16/16
   requirements. Final audit round 1, `tech_debt` — zero blockers, zero open
   gaps; the 16 items the pre-close artifact audit reported were acknowledged
@@ -793,12 +815,24 @@ Resume file: None
 
 ## Operator Next Steps
 
-- **Start the next milestone: `/gsd-new-milestone`.** It writes fresh REQ-IDs
-  into a new `.planning/REQUIREMENTS.md` and restates PROJECT.md → Requirements
-  → Active against them. Phase numbering continues at **18**.
+- **Plan the first phase: `/gsd-plan-phase 18`.** The roadmap is written
+  (`.planning/ROADMAP.md`, Phases 18-22) and `.planning/REQUIREMENTS.md`'s
+  Traceability table reads 27/27 mapped, 0 unmapped. Phase 18 (Persistent
+  Session and Tool Surface) is the enabler every later phase assumes — plan it
+  first.
 
-- Two standing candidates carry into that scoping conversation, both recorded in
-  PROJECT.md → Next Milestone Goals: the two **upstream contributions**
+- Three requirements are flagged in ROADMAP.md for phase-level research rather
+  than assumed: `SURF-03` (packer-identification mechanism, Phase 19 — MEDIUM
+  confidence, no dedicated tool confirmed in the live 28-tool surface),
+  `EQUIV-01` (extending `compare.mjs` for original-vs-different-binary mode,
+  Phase 22 — this milestone's single highest-risk requirement, no existing
+  precedent), and `EQUIV-02`/`EQUIV-03` (deterministic input replay for the
+  behavioural/modifiability demos, Phase 22 — no VICE-specific tooling
+  located). See each phase's Notes in ROADMAP.md for specifics before writing
+  those phases' plans.
+
+- Two standing candidates from the v0.4.0 close remain out of this milestone's
+  scope and still need a home: the two **upstream contributions**
   (`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
   `--mcp-port`/`--mcp-bind`), which stay Out of Scope because they are pull
   requests against projects this repo does not own; and the **9 follow-on items
@@ -806,8 +840,8 @@ Resume file: None
   `milestones/v0.4.0-REQUIREMENTS.md` → `### Promoted by DEBT-01`,
   `### Fork Backend Follow-on` and `### Control-Plane Bind Follow-on`.
 
-- Two coverage TODOs the audit recorded as non-blocking, worth folding into the
-  next milestone's scope rather than rediscovering: five of six v0.4.0 phases
-  have a `VALIDATION.md` still at `status: draft` (never reconciled by
+- Two coverage TODOs the v0.4.0 audit recorded as non-blocking, still worth
+  folding in opportunistically rather than rediscovering: five of six v0.4.0
+  phases have a `VALIDATION.md` still at `status: draft` (never reconciled by
   `validate-phase`), and only Phase 17 produced a `SECURITY.md` — Phase 16's
   packaging/CI/network-bind work is the one most likely to have benefited.

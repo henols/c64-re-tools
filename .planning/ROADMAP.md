@@ -5,10 +5,11 @@
 - ✅ **v0.2.0 Switchable stock-VICE backend** — Phases 1-8, 8.1, 8.2 (shipped 2026-08-19)
 - ✅ **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-11, 11.1 (shipped 2026-08-21)
 - ✅ **v0.4.0 Debt discharged, decisions settled** — Phases 12-17 (shipped 2026-08-23)
+- **v0.5.0 The rebuild half — absorbed playbooks, modifiable source** — Phases 18-22 (in progress, opened 2026-08-23)
 
-*No milestone is open. The next one is scoped by `/gsd-new-milestone` and starts
-at Phase 18 — phase numbers are continuous across milestones and never reused,
-including the dissolved and cut ones.*
+*v0.5.0 continues phase numbering from Phase 17 — it starts at Phase 18. Phase
+numbers are continuous across milestones and never reused, including the
+dissolved and cut ones.*
 
 ## Phases
 
@@ -109,6 +110,155 @@ validation coverage. Closed as `override_closeout`: the pre-close artifact audit
 
 </details>
 
+### v0.5.0 The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
+
+**Goal:** Turn a C64 binary into rebuildable, subsystem-split, fully-symbolised
+ACME source that functions identically to the original and is *demonstrably*
+modifiable — by absorbing regenerator2000's own analyze procedures into this
+project's skills, and by holding a project open across a session instead of
+respawning the binary per tool call. Byte-identity is explicitly not the
+acceptance bar; behavioural equivalence in VICE is.
+
+- [ ] **Phase 18: Persistent Session and Tool Surface** - A regenerator2000 session survives many tool calls in one working session, and the curated surface covers what absorbed procedures need
+- [ ] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
+- [ ] **Phase 20: Decomposition to Closure** - A committed synthetic fixture is fully decomposed: nothing `Undefined`, every entry point named, every reference documented, every hardware write an enum
+- [ ] **Phase 21: Rebuildable Source and the Reassembly Gate** - Annotated projects export as symbol-only, subsystem-split ACME source, gated by clean reassembly and a hazard report before any rebuild work runs on top
+- [ ] **Phase 22: Equivalence and Modifiability** - The rebuild is proven behaviourally identical and demonstrably modifiable in VICE, via a comparator extended for a mode it has never run in
+
+## Phase Details
+
+### Phase 18: Persistent Session and Tool Surface
+
+**Goal**: A regenerator2000 project stays open across a whole working session
+instead of being respawned per tool call, and the curated `r2000_*` surface is
+aligned to what every later phase's absorbed procedures actually need — so
+nothing downstream is built against the old per-call lifecycle and has to be
+rewritten a second time.
+**Depends on**: Nothing (first phase of v0.5.0)
+**Requirements**: SESS-01, SESS-02, SESS-03, SESS-04, SURF-01, SURF-02
+**Success Criteria** (what must be TRUE):
+
+  1. A caller can issue many `r2000_*` tool calls in one working session without the underlying regenerator2000 process being respawned per call, and the `--vice` invariant stays guarded in code — `r2000-spawn-seam.test.ts`'s enumerated spawn-site set is unchanged or explicitly extended, never silently widened.
+  2. A crashed or wedged session is detected between calls and transparently restarted, so a caller sees a recoverable error rather than a hang — proven against a real kill, not only the happy path.
+  3. Annotations survive a hard kill of the session process: a planted-violation test mutates, kills the child, reopens and re-reads from disk, and asserts the mutation persisted; removing the internal save makes the same test fail.
+  4. Write-capable calls are serialised through one owner; concurrent fan-out is restricted to read-only queries, so two subagents cannot both write "no label here" and silently lose one write.
+  5. The curated tool surface includes `r2000_read_region` (so a routine can be read at a range instead of exporting the whole program), and `r2000_get_address_details`'s D-32 refusal is re-decided — fixed, worked around, or refused with a documented route — against the still-live upstream `u16` overflow, not carried unexamined into this milestone.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is the enabler.** Every later phase's skills assume a session that survives many small calls; building them against the old per-call spawn-load-mutate-save-exit lifecycle first means rewriting them a second time. Mirrors this project's own strongest precedent for sequencing an instrument/enabler first (v0.4.0 Phase 12, audit-gate-first).
+- Reuse the VICE broker's session-lifecycle patterns — single-owner acquire guard, PID/identity-verified kill, a persisted identity/lease file, a fragile no-retry liveness probe distinct from the resilient query path — rather than re-deriving lighter versions of each. Phase 9's own recorded incident generalises directly: splitting a mutate-then-read sequence across separate MCP connections produced a `.vsf` that did not contain the written bytes. A persistent session multiplies how many mutate-then-read sequences share one connection; the same discipline now has to hold for longer, not less.
+- Criterion 4 is the go/no-go answer on the concurrency question, decided here — do not let Phase 19 copy upstream's 7-way concurrent-subagent orchestration model unchanged when absorbing procedures.
+- Force `use_illegal_opcodes: true` at the start of any session this milestone's pipeline opens, not only at fresh-project synthesis time — the existing synthesiser only forces it at creation, and a session re-opening an older project would otherwise silently re-degrade every illegal opcode to an opaque `!byte` fallback.
+
+### Phase 19: Absorbed Procedures and the Coverage Instrument
+
+**Goal**: Upstream's five analyze procedures become this project's own skills —
+absorbed, attributed, and diffed against the curated surface — and a coverage
+instrument exists that resists being gamed, before any decomposition work runs
+under it.
+**Depends on**: Phase 18 — absorption and coverage measurement both assume the persistent session and the aligned tool surface
+**Requirements**: ABS-01, ABS-02, ABS-03, ABS-04, COV-01, COV-02, SURF-03
+**Success Criteria** (what must be TRUE):
+
+  1. The five upstream analyze procedures are absorbed at a pinned upstream commit into `c64-program-recon`/`c64-memory-mapping` and new skills where nothing currently owns the job (a routine-queue-walker, at minimum), with every tool call each absorbed procedure makes diffed explicitly against the curated `r2000_*` surface — no absorbed step calls a tool this project does not expose — and with zero runtime dependency on `.agent/skills/`, which the published crate excludes.
+  2. Absorbed procedure text carries a per-file attribution header naming the source repository, file path, and the pinned commit, and `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` licence for the absorbed text specifically, not only for the binary dependency.
+  3. No two skills in the whole inventory — absorbed and pre-existing — contend for the same trigger; a pairwise description check runs clean across all of them, because descriptions are the trigger mechanism.
+  4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
+  5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
+
+**Plans**: TBD
+
+Notes:
+
+- **Needs research at plan-time (research flag).** The packer-identification mechanism is only MEDIUM confidence — no dedicated read-only "identify packer" tool was confirmed in the live 28-tool surface; resolve with a live-source spike against 0.9.20's `packer_signatures.rs` before committing to an approach.
+- **Needs research at plan-time (research flag).** The exact upstream commit/tag to pin for the five absorbed procedures, and whether their tool-call surface matches the curated list, must be diffed explicitly during absorption rather than assumed compatible.
+- Coverage-instrument design constraint: walk the raw byte range and instruction stream independently of what regenerator2000's own block-type table already claims — a derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen it specifically to cover what `follow_indirect_jumps` does not walk (multi-entry indexed dispatch tables) — Phase 21's hazard report needs this same widened scan.
+- Do not copy upstream's 7-way concurrent-subagent orchestration unchanged (decided in Phase 18, criterion 4) — absorb the procedures' sequencing, not their concurrency model.
+- Validate the coverage instrument against a real, previously-unseen fixture before trusting it, not only against the fixture the same pass wrote it against.
+
+### Phase 20: Decomposition to Closure
+
+**Goal**: A committed synthetic C64 binary is fully decomposed and documented —
+nothing left ambiguous, every entry point and reference named, every hardware
+write self-explanatory — with coverage measured by Phase 19's instrument
+throughout, not asserted at the end.
+**Depends on**: Phase 19 — both the absorbed procedures doing the work and the coverage instrument measuring it must exist first
+**Requirements**: DECOMP-01, DECOMP-02, DECOMP-03, DECOMP-04
+**Success Criteria** (what must be TRUE):
+
+  1. On the committed synthetic fixtures, nothing remains typed `Undefined` — every byte is code, byte, word, address, PETSCII, screencode or table.
+  2. Every code entry point carries a user-set name and a purpose comment stating function, inputs, outputs and side effects — no `p_XXXX`/`l_XXXX` name is left.
+  3. Every referenced non-hardware address is named and documented.
+  4. Every hardware register write renders as a named enum rather than a magic number.
+
+**Plans**: TBD
+
+Notes:
+
+- Run Phase 19's coverage instrument throughout this phase, not only once at the end — the whole point of building it first was to gate this sweep, not to grade it retroactively.
+- Watch for overlapping instruction streams and code/data boundaries implied only by fall-through: treat every routine-boundary claim as a checkable hypothesis — does any jump target land strictly inside an already-decoded routine's byte range, other than at its declared start? Route anything flagged through `c64-provenance-diff` before treating it as original code to decompose.
+- A `!byte` fallback line inside an otherwise densely-named region is the signature of a silently-degraded illegal opcode — grep for it; don't assume Phase 18's forced setting held across every session this phase opens.
+
+### Phase 21: Rebuildable Source and the Reassembly Gate
+
+**Goal**: An annotated project becomes rebuildable, symbol-only, subsystem-split
+ACME source with a relocation-hazard report — and clean reassembly plus a clean
+hazard report is a gate the next phase must pass through, not a claim made
+after the fact.
+**Depends on**: Phase 20 — export and hazard analysis operate on a fully decomposed project
+**Requirements**: BUILD-01, BUILD-02, BUILD-03, BUILD-04, BUILD-05, BUILD-06
+**Success Criteria** (what must be TRUE):
+
+  1. Export emits one ACME source file per regenerator2000 scope, wired by `acme-build`'s `!source`, with data tables extracted to their own files, and the whole set assembles to a single working output.
+  2. Every branch, `JSR`/`JMP` and data reference resolves through a symbol — including data byte-pairs that decode to in-range addresses with an incoming cross-reference, not only instruction operands.
+  3. A hazard report enumerates, for a real fixture, every instance of four named classes — indexed jump tables (with the index range stated from the bounding compare/mask, and the RTS-trick idiom's off-by-one bias recorded explicitly), self-modifying-code write-targets landing inside `Code` blocks, page-alignment dependence, and cycle-exact raster chains — none of which any existing tool in this stack currently detects.
+  4. `c64-provenance-diff`'s verdict is carried at the point of export; cracker-patched ranges are excluded from the rebuild rather than inherited.
+  5. Clean reassembly plus a clean hazard report is a gate this phase's own tooling enforces before Phase 22 is allowed to build on the exported source — checked mechanically, not asserted after the fact.
+
+**Plans**: TBD
+
+Notes:
+
+- Treat "reassembles clean" as a *necessary* gate, never a *sufficient* one — every hazard class in this phase's own report reassembles clean while being silently wrong at runtime.
+- The hazard report must state, for every jump table, how its length/index range was established — not merely that a table exists. This is the single most-cited failure mode for this class of report.
+- Validate the hazard detectors against a real, previously-unseen fixture, not only the one the same pass wrote them against.
+- Provenance-awareness (BUILD-05) is wiring, not new analysis: it consumes `c64-provenance-diff`'s already-existing, already-committed `recovery/RELEASES.json`/`PROVENANCE.md` artifacts.
+
+### Phase 22: Equivalence and Modifiability
+
+**Goal**: The rebuild is proven, not described — behaviourally identical to
+the original in VICE, and demonstrably modifiable — using a comparator
+extended for a mode it has never been run in.
+**Depends on**: Phase 21's gate — behavioural comparison and the modifiability demo need rebuildable source and a passing hazard report first
+**Requirements**: EQUIV-01, EQUIV-02, EQUIV-03, EQUIV-04
+**Success Criteria** (what must be TRUE):
+
+  1. **[Highest-risk requirement in this milestone.]** `compare.mjs` runs, for the first time ever, in original-versus-different-binary mode: a narrowed volatile mask (so a real `$D020`/`$D015`/`$D018` regression cannot hide behind the existing blanket `$D000-$DFFF` exclusion), an explicit allowlist for declared intentional differences, and per-binary logical checkpoints resolved from each binary's own symbol table rather than a raw literal shared across both. This is scoped, novel work — not a "just call it" integration — and must be validated against a real difference before being trusted on the modifiability demo below.
+  2. Behavioural equivalence between the original and the rebuild is demonstrated in VICE, with a committed transcript as the artifact of record rather than a described walkthrough.
+  3. Modifiability is demonstrated, not described: one behaviour removed and one added in the rebuilt source, reassembled, both observed taking effect in VICE, with a committed transcript — and criterion 1's extended comparator is run against this exact change and correctly reports it as an allowlisted intentional difference, not a failure.
+  4. The synthetic fixtures are committed to the repository and the whole pipeline — persistent session through equivalence check — runs end to end in CI, carrying no copyrighted game image.
+
+**Plans**: TBD
+
+Notes:
+
+- **Needs research at plan-time (research flag).** Extending `compare.mjs` for original-versus-different-binary comparison has no existing precedent in this project — never run in this mode before. Budget it as first-class scoped work (narrowed mask, allowlist, per-binary checkpointing, a write-trace comparison for write-only hardware ranges like SID), not as a thin wrapper call.
+- **Needs research at plan-time (research flag).** Deterministic input replay for the behavioural-equivalence and modifiability demos has no VICE-specific tooling located; TASVideos-style movie replay is the nearest precedent, not a confirmed solution.
+- Pin or verify VICE's power-on RAM-fill pattern and force a clean machine (fresh launch or verified reset, never a reused warm-floor instance) for both sides of any equivalence run — an unpinned nondeterminism source or carried-over broker state produces a false PASS or FAIL with no error surfaced.
+- Compare screen content (`$0400-$07E7`/`$D800-$DBFF`) as its own named check — it is the actual user-visible surface and can diverge without any underlying data table changing.
+- This phase **is** the first real, non-synthetic exercise of the coverage and hazard instruments built in Phases 19 and 21 — record whether they caught the right things during this phase's own work, not only whether the demo worked.
+
+## Sequencing Rationale (v0.5.0)
+
+- **Phase 18 (persistent session) precedes everything else.** Every later phase's skills assume a session that survives many small calls; building them against the old per-call lifecycle first means rewriting them a second time.
+- **Both verification instruments precede the substantial work they measure.** Coverage (Phase 19) precedes the decomposition sweep (Phase 20); the hazard-report-plus-reassembly gate (Phase 21) precedes the equivalence/modifiability demo (Phase 22). This mirrors this project's own strongest precedent: v0.4.0 built its audit-gate as Phase 12, first, so every later phase ran under it.
+- **EQUIV-01 stays inside Phase 22 rather than becoming its own phase.** It is this milestone's single highest-risk requirement — `compare.mjs` has never been run in original-versus-different-binary mode, and its current design would produce both a false PASS (a real `$D020`/`$D015`/`$D018` regression hidden by the blanket `$D000-$DFFF` mask) and a false FAIL (the modifiability demo's own intentional change, with no allowlist). But it has no independent value outside the equivalence/modifiability work it exists to verify, and a standalone one-requirement phase would fragment the milestone past this project's "standard" granularity calibration (4-6 phases) without changing what has to be built or in what order. It is instead sequenced as Phase 22's first success criterion and explicitly flagged, so planning treats it as that phase's own internal gate rather than an afterthought bolted onto the demo.
+- **Provenance-awareness (BUILD-05) is folded into the export phase (21)** rather than given its own phase, since it consumes an already-existing, already-committed artifact (`c64-provenance-diff`'s `RELEASES.json`/`PROVENANCE.md`) — wiring, not new analysis.
+- This is a considered adoption of the research's proposed 5-phase shape (18-22), not a default carry-over: the alternative considered — splitting Phase 22 into a standalone comparator-extension phase plus a demo phase — was rejected for the granularity reason above, and the alternative of a standalone coverage-instrument phase (mirroring Phase 12 more literally) was rejected because, unlike Phase 12's audit-gate, Phase 19's coverage instrument gates only one downstream phase (20), not the whole milestone, and pairs naturally with the absorption work it has no dependency conflict with.
+
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -142,6 +292,11 @@ in a milestone archive.
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
+| 18. Persistent Session and Tool Surface | v0.5.0 | TBD | Not started | - |
+| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | TBD | Not started | - |
+| 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
+| 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |
+| 22. Equivalence and Modifiability | v0.5.0 | TBD | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
@@ -149,9 +304,11 @@ v0.3.0 — 4 phases, 36 plans, 101 tasks, 12/12 in-scope requirements, shipped
 2026-08-21 (audit round 2 `passed`, zero gaps; 19 deferred items at close).
 v0.4.0 — 6 phases, 44 plans, 119 tasks, 16/16 requirements, shipped 2026-08-23
 (audit round 1 `tech_debt`, zero blockers and zero open gaps; **0** pending
-todos at close, 16 bookkeeping items acknowledged). Requirements cut in earlier
-milestones stay in their own `milestones/v*-REQUIREMENTS.md` marked `CUT` with
-rationale, so restoring one is a scope decision rather than archaeology.
+todos at close, 16 bookkeeping items acknowledged). v0.5.0 — opened 2026-08-23,
+Phases 18-22, 27/27 requirements mapped, not yet shipped. Requirements cut in
+earlier milestones stay in their own `milestones/v*-REQUIREMENTS.md` marked
+`CUT` with rationale, so restoring one is a scope decision rather than
+archaeology.
 
 **Phase directories are not archived.** Unlike the roadmap and requirements,
 `.planning/phases/` accumulates across milestones by design.
@@ -166,4 +323,5 @@ passes `--no-archive-phases`.
 *v0.2.0 shipped and collapsed 2026-08-19 → `milestones/v0.2.0-ROADMAP.md`*
 *v0.3.0 shipped and collapsed 2026-08-21 → `milestones/v0.3.0-ROADMAP.md`*
 *v0.4.0 shipped and collapsed 2026-08-23 → `milestones/v0.4.0-ROADMAP.md`*
-*Phase numbering is continuous across milestones and never reused. Next: `/gsd-new-milestone` (Phase 18 onward).*
+*v0.5.0 roadmap created 2026-08-23 — Phases 18-22, continuing numbering from Phase 17, 27/27 requirements mapped.*
+*Phase numbering is continuous across milestones and never reused.*

@@ -105,17 +105,46 @@ Explicitly excluded, with reasoning, to prevent scope creep and re-adding.
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated by roadmap creation (`/gsd-new-project` → roadmapper, 2026-08-23).
+Every v0.5.0 requirement maps to exactly one phase; none are orphaned or
+duplicated. Full phase Goals/Depends-on/Success-Criteria live in
+`.planning/ROADMAP.md` → "Phase Details".
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| SESS-01 | Phase 18 | Pending |
+| SESS-02 | Phase 18 | Pending |
+| SESS-03 | Phase 18 | Pending |
+| SESS-04 | Phase 18 | Pending |
+| SURF-01 | Phase 18 | Pending |
+| SURF-02 | Phase 18 | Pending |
+| SURF-03 | Phase 19 | Pending |
+| ABS-01 | Phase 19 | Pending |
+| ABS-02 | Phase 19 | Pending |
+| ABS-03 | Phase 19 | Pending |
+| ABS-04 | Phase 19 | Pending |
+| COV-01 | Phase 19 | Pending |
+| COV-02 | Phase 19 | Pending |
+| DECOMP-01 | Phase 20 | Pending |
+| DECOMP-02 | Phase 20 | Pending |
+| DECOMP-03 | Phase 20 | Pending |
+| DECOMP-04 | Phase 20 | Pending |
+| BUILD-01 | Phase 21 | Pending |
+| BUILD-02 | Phase 21 | Pending |
+| BUILD-03 | Phase 21 | Pending |
+| BUILD-04 | Phase 21 | Pending |
+| BUILD-05 | Phase 21 | Pending |
+| BUILD-06 | Phase 21 | Pending |
+| EQUIV-01 | Phase 22 | Pending |
+| EQUIV-02 | Phase 22 | Pending |
+| EQUIV-03 | Phase 22 | Pending |
+| EQUIV-04 | Phase 22 | Pending |
 
 **Coverage:**
 - v0.5.0 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-08-23*
-*Last updated: 2026-08-23 at milestone v0.5.0 definition*
+*Last updated: 2026-08-23 — roadmap created, all 27 requirements mapped to Phases 18-22*
