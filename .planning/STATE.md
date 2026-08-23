@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
 status: executing
-stopped_at: Completed 16-08-PLAN.md
-last_updated: "2026-08-23T02:09:47.654Z"
+stopped_at: Completed 16-09-PLAN.md
+last_updated: "2026-08-23T02:32:14.923Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 16 execution started
-state_head: 8fd8b5e229fab99f6e91197036a8cf9f6f771871
+state_head: 3d0b9e94579683a142e5d356b289fdde400d93bf
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 40
-  completed_plans: 37
+  completed_plans: 38
   percent: 67
 ---
 
@@ -57,7 +57,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 ## Current Position
 
 Phase: 16 (Packaging and Repo Shape) — EXECUTING (gap closure)
-Plan: 8 of 11 executed — 16-08 just completed (wave 1 of 3); 16-09..16-11 remain
+Plan: 9 of 11 executed — 16-09 just completed (wave 1 of 3); 16-10..16-11 remain
 Status: Executing Phase 16 gap closure
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
@@ -250,6 +250,7 @@ Last activity: 2026-08-23 — Phase 16 execution started
 | Phase 16 P07 | ~90min | 3 tasks | 15 files |
 | Phase 16 P05 | 40min | 3 tasks | 6 files |
 | Phase 16 P08 | 40min | 3 tasks | 6 files |
+| Phase 16 P09 | 35min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -376,6 +377,7 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-08]: Leak assertions promoted into assertLeanTarball(), invoked from inside packFiles() so no packed package skips the check; the packed-package name set is pinned to exactly two names so a third package cannot be packed unchecked.
 - [Phase 16]: [Phase 16-08]: ci-suite-coverage.test.ts fixed a self-inflicted regression in ci-guardrails.test.mjs (its npm-test-step assertion assumed exactly one such step existed repo-wide); scoped to working-directory: src/mcp/vice.
 - [Phase 16]: [Phase 16-08]: Two pre-existing npm-test failures (docs-review-disposition.test.ts, audit-integrity.test.ts) tripping on 16-REVIEW.md's own undispositioned findings, confirmed via git stash to predate this plan; logged to deferred-items.md as out of scope, expected closure at 16-11.
+- [Phase 16]: [Phase 16-09]: hop-chain-comments.test.ts built as a fixture-pinned, per-line structural guard against WR-02's defect class (a comment splicing a current path-chain segment onto pre-relocation intermediate segments); demonstrated RED against both real violations before fixing them. r2000-regbits.test.ts's two scratch-tree segment lists and .gitignore's canonical-source comment renamed to the current src/mcp/vice / src/skills shape (behaviour-neutral, proven by the drift guard's own unequal digests). SUMMARY deliberately avoids naming 16-REVIEW.md's OTHER open finding by its literal id token, since docs-review-disposition.test.ts's disposition check is a bare-word presence scan that would otherwise falsely close it -- that finding stays open, owned by plan 16-10.
 
 ### Pending Todos
 
@@ -767,8 +769,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T02:09:47.472Z
-Stopped at: Completed 16-08-PLAN.md
+Last session: 2026-08-23T02:32:14.786Z
+Stopped at: Completed 16-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

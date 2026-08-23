@@ -418,7 +418,7 @@ source rather than re-swept after every source-editing plan (this phase's own se
 rationale, above). Same convention as Phase 15, where wave order also differed from plan
 order.
 
-**Plans**: 8/11 plans executed
+**Plans**: 9/11 plans executed
 
 Plans:
 **Wave 1**
@@ -445,7 +445,7 @@ Plans:
 **Gap-closure wave 1**
 
 - [x] 16-08-PLAN.md — Success Criterion 1: filter the installer copy seam, promote the tarball leak assertion into the single packing seam so both packages are checked by one code path, and make CI's `build` job run every committed test suite behind a coverage guard (PKG-01, PKG-02)
-- [ ] 16-09-PLAN.md — WR-02/IN-01: correct the two half-swept repo-root chain comments and the two synthetic scratch shapes, and add a calibrated hop-chain guard with a committed fixture (PKG-03)
+- [x] 16-09-PLAN.md — WR-02/IN-01: correct the two half-swept repo-root chain comments and the two synthetic scratch shapes, and add a calibrated hop-chain guard with a committed fixture (PKG-03)
 
 **Gap-closure wave 2** *(blocked on gap-closure wave 1)*
 
@@ -515,7 +515,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
-| 16. Packaging and Repo Shape | v0.4.0 | 8/11 | In Progress|  |
+| 16. Packaging and Repo Shape | v0.4.0 | 9/11 | In Progress|  |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
