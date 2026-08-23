@@ -144,13 +144,23 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 
 ### Active
 
-<!-- v0.4.0 closed 2026-08-23 with all 16 requirements Complete and every target
-     feature above moved to Validated. No milestone is open: the next scope is
-     chosen by `/gsd-new-milestone`, which writes fresh REQ-IDs into
-     `.planning/REQUIREMENTS.md` and restates this list against them. See
-     "Next Milestone Goals" below for the standing candidates. -->
+<!-- v0.5.0 scope, opened 2026-08-23. REQ-IDs live in `.planning/REQUIREMENTS.md`;
+     this list is the human-readable restatement and moves to Validated at the
+     v0.5.0 close. -->
 
-- *(none — v0.4.0 closed; awaiting the next milestone's scope)*
+- [ ] A regenerator2000 project stays open across a whole working session instead of being respawned per tool call
+- [ ] The curated `r2000_*` surface covers what the absorbed analyze procedures actually call, starting with `r2000_read_region`
+- [ ] `r2000_get_address_details`'s D-32 refusal is re-decided against the upstream 64K `OutOfRange` defect rather than carried
+- [ ] Upstream's five analyze procedures are absorbed into this project's skills — folded into `c64-program-recon` / `c64-memory-mapping` where they fit, new skills where nothing owns the job — with no dependency on `.agent/skills/`
+- [ ] A binary is fully decomposed: nothing left `Undefined`, no unnamed entry point, every referenced non-hardware address documented, hardware writes as named enums — with coverage **measured**, not asserted
+- [ ] The export is rebuildable source: one file per subsystem off r2000 scopes wired by `acme-build`'s `!source`, data tables in their own files
+- [ ] Every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move
+- [ ] A relocation-hazard report enumerates what blocks movement — jump tables, self-modifying code, page alignment, cycle-exact raster code
+- [ ] The rebuild is provenance-aware: `c64-provenance-diff`'s verdict carried at point of use, cracker patches excluded rather than inherited
+- [ ] Modifiability is demonstrated — one behaviour removed and one added, reassembled, both observed taking effect in VICE
+- [ ] Reassembly plus a clean hazard report gates every phase; behavioural equivalence in VICE via `compare.mjs` is the milestone's final bar
+- [ ] Which packer a binary used is surfaced as a recon finding
+- [ ] Absorbed procedure text is attributed in `THIRD-PARTY-NOTICES.md` under regenerator2000's dual `MIT OR Apache-2.0` licence
 
 ### Out of Scope
 
@@ -448,14 +458,107 @@ provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 (VICE 3.9) through the real broker. Archived at
 [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
 
-## Current Milestone
+## Current Milestone: v0.5.0 The rebuild half — absorbed playbooks, modifiable source
 
-**None open.** v0.4.0 closed 2026-08-23 and is recorded under "Current State"
-above. `.planning/REQUIREMENTS.md` was removed at that close and is recreated by
-`/gsd-new-milestone`, which is the next action; Requirements → Active is
-deliberately empty until it runs. **Phase numbering continues from 17 — the next
-milestone starts at Phase 18**, and numbers are never reused, including the
-dissolved and cut ones.
+**Goal:** Turn a C64 binary into rebuildable, subsystem-split, fully-symbolised
+ACME source that functions identically to the original and is *demonstrably*
+modifiable — by absorbing regenerator2000's own analyze procedures into this
+project's skills, and by holding a project open across a session instead of
+respawning the binary per tool call.
+
+**Opened:** 2026-08-23, immediately after the v0.4.0 close.
+**Phase numbering continues from 17 — this milestone starts at Phase 18**, and
+numbers are never reused, including the dissolved and cut ones.
+
+**Why now.** This document's own "What This Is" has said "reverse-engineer **and
+rebuild**" since v0.1.x, and the rebuild half has never shipped. v0.3.0 made
+findings queryable instead of prose; v0.4.0 cleared the ledger that was blocking
+new capability. What is missing is the step from *annotated binary* to *source a
+person can change*. Three things measured live this session make it both
+tractable and overdue:
+
+- regenerator2000 0.9.20's MCP surface exposes **28 tools**; this project curates
+  **17** (pinned by `r2000-tools.test.ts:66`). That gap is not surplus — it
+  contains `r2000_read_region`, the tool every upstream analyze procedure uses to
+  read disassembly at all.
+- Upstream ships **five agent skills** (`r2000-analyze-program`, `-blocks`,
+  `-routine`, `-symbol`, `-basic`) that overlap `c64-program-recon` and
+  `c64-memory-mapping` directly — but they live only in the GitHub repository's
+  `.agent/skills/`, **not** in the published crate. `cargo install
+  regenerator2000` yields the MCP server and none of the skills, which is why
+  they are absorbed here rather than wrapped.
+- The overlap's root cause is a **session-model mismatch**, not skill text. This
+  project spawns a fresh `--mcp-server-stdio` per tool call (`spawnSync`,
+  `r2000-launch.ts`); upstream's procedures assume a persistent `--mcp-server`
+  session with live cursor state, under which `r2000_get_disassembly_cursor`,
+  `r2000_jump_to_address` and `r2000_read_selected` are meaningful and under
+  per-call spawn are not. `c64-program-recon`'s own text already concedes the
+  cost: batching "is what makes that affordable under the per-call
+  spawn-load-mutate-save-exit lifecycle".
+
+**Target features:**
+
+- **A persistent regenerator2000 session** replacing the per-call
+  spawn-load-mutate-save-exit lifecycle — the enabler for everything below, and a
+  deliberate reversal of D-17/D-18. It must answer Phase 9's recorded
+  session-model gotcha (three separate MCP client connections produced a `.vsf`
+  that did **not** contain a written label) and keep the `--vice` invariant
+  guarded in code, not merely documented.
+- **A tool surface aligned to the absorbed procedures' actual needs**, starting
+  with `r2000_read_region`, and with `r2000_get_address_details`'s D-32 refusal
+  re-decided against the upstream 64K `OutOfRange` defect rather than carried a
+  second milestone.
+- **Upstream's analyze procedures absorbed, not wrapped** — read for how they
+  sequence the work, then folded into `c64-program-recon` and
+  `c64-memory-mapping` where they fit, with new skills created where nothing
+  currently owns the job. Two jobs have no owner among the six shipped skills:
+  walking a routine queue and documenting each routine, and the rebuild itself.
+  Absorption removes any dependency on `.agent/skills/`, so the crate/repo split
+  stops mattering — at the price of snapshotting upstream's procedure at 0.9.20.
+- **Full decomposition and documentation with *measured* coverage** — nothing
+  left `Undefined`, no `p_XXXX`/`l_XXXX` entry point left unnamed, every
+  referenced non-hardware address named and documented, hardware writes rendered
+  as named enums. Coverage is computed and reported, never asserted.
+- **Rebuildable source** — one file per subsystem off r2000 scopes, wired by
+  `acme-build`'s `!source`; data tables extracted to their own files so graphics,
+  levels and music can be swapped; every branch, `JSR`/`JMP` and data reference
+  through a symbol so code can move.
+- **A relocation-hazard report** enumerating what blocks movement — jump tables
+  with baked-in addresses, self-modifying code, page-alignment assumptions,
+  cycle-exact raster code — rather than letting an inserted byte silently break
+  everything downstream.
+- **A provenance-aware rebuild** — `c64-provenance-diff`'s verdict carried at
+  point of use, with cracker patches deliberately excluded rather than inherited.
+  A rebuild of the game, not of somebody's crack.
+- **Modifiability demonstrated, not described** — one behaviour removed and one
+  added in the rebuilt source, reassembled, both observed taking effect in VICE.
+  This is the only acceptance criterion here that can *fail* in a way the
+  structural ones cannot: split-by-subsystem, no-raw-addresses and
+  provenance-aware can all be satisfied by source that is still miserable to
+  change, because none of them forces anyone to try.
+- **Staged equivalence** — reassembly plus a clean hazard report gates every
+  phase; behavioural comparison in VICE via `c64-ram-capture`'s `compare.mjs`
+  classification and its documented drift floor is the milestone's final bar.
+  **Byte-identity is explicitly not the bar**, in the user's own words: "byte
+  identical is nothing I care about but the function of it be identical."
+- **Packer identification** surfaced as a recon finding, from 0.9.20's packer
+  signature database (Exomizer, ByteBoozer, Dali, TinyCrunch, MC-Cracken, TBC
+  Multicompactor, ECA), so provenance work can use it as evidence rather than
+  only as a depack step.
+
+**Proving ground: synthetic fixtures only.** The pipeline is built and
+regression-tested against committed synthetic `.prg` fixtures, so CI can run it
+end to end and this repository carries no copyrighted game image. Applying it to
+a real title — `bruce_lee`, where two independently-cracked releases,
+reproducibility-verified game-entry captures and a generated provenance ledger
+already exist — is downstream use, not this milestone's evidence.
+
+**Explicitly not in this milestone:** the two upstream contributions
+(`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
+`--mcp-port`/`--mcp-bind`), unchanged from v0.4.0 and still pull requests against
+projects this repo does not own; BASIC token decoding (upstream's
+`r2000-analyze-basic`, deliberately not absorbed); and any claim of
+byte-identical output.
 
 <details>
 <summary>Previous milestone detail — v0.4.0 phase-by-phase narrative (archived 2026-08-23)</summary>
@@ -965,22 +1068,22 @@ written).
 
 ---
 
-*Last updated: 2026-08-23 at the **v0.4.0 milestone close**. Full evolution
-review: Current State now records v0.4.0 as shipped with its `tech_debt`
-(zero-blocker, zero-gap) audit verdict and its `override_closeout` disclosure;
-Current Milestone reads "None open" with v0.4.0's execution narrative collapsed
-into a `<details>` block beside v0.3.0's and v0.2.0's; Context is rewritten
-against the v0.4.0 close — codebase state, the six document guards now gating the
-audit itself, the six-times-taught external-vs-internal-check lesson plus its
-sharper stale-premise variant, the zero-pending ledger with what carries forward
-instead, and the phase-directory archival constraint; Next Milestone Goals now
-enumerates the 9 owned promotions, the two coverage TODOs and the ~15
-dispositioned-not-fixed findings; five v0.4.0 decisions added to Key Decisions.
-`## Core Value` and its `*Provenance.*` paragraph, Requirements → Validated /
-Active, Out of Scope, Constraints and Engineering Governance were reviewed and
-left as Phase 17 wrote them — Validated already carries all seven v0.4.0 target
-features, Active is correctly empty pending `/gsd-new-milestone`, and the Core
-Value section is pinned by `docs-core-value-decision.test.ts`. Previously:
+*Last updated: 2026-08-23 at the **start of milestone v0.5.0**. Current Milestone
+replaced "None open" with v0.5.0 "The rebuild half — absorbed playbooks,
+modifiable source", carrying the three live measurements that motivate it
+(regenerator2000 0.9.20's 28-tool MCP surface against this project's curated 17;
+upstream's five `.agent/skills/` analyze procedures present in the GitHub
+repository but absent from the published crate; the per-call-spawn vs
+persistent-session mismatch that is the overlap's actual root cause), the
+synthetic-fixtures-only proving ground, and the explicit non-goals. Requirements
+→ Active replaced the empty v0.4.0-close placeholder with v0.5.0's thirteen
+items. v0.4.0's execution narrative is unchanged in its `<details>` block beside
+v0.3.0's and v0.2.0's. Not touched at this write: `## Core Value` and its
+`*Provenance.*` paragraph (pinned by `docs-core-value-decision.test.ts`),
+Requirements → Validated, Out of Scope, Context, Constraints, Engineering
+Governance, Key Decisions, Current State and Next Milestone Goals — all still
+accurate as of the v0.4.0 close, and the sections this milestone's own decisions
+will amend as it runs. Previously: 2026-08-23 at the v0.4.0 milestone close;
 2026-08-23 after Phase 17 close; 2026-08-21 at the v0.3.0 milestone close;
 2026-08-21 after Phase 11 close; 2026-08-20 after Phase 9 close; 2026-08-19 at
 v0.2.0 milestone close.*

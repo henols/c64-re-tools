@@ -1,28 +1,23 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4.0
-milestone_name: Debt discharged, decisions settled (Phases 12-17, SHIPPED 2026-08-23)
-status: Awaiting next milestone
-stopped_at: Milestone v0.4.0 archived (roadmap, requirements and audit under .planning/milestones/)
-last_updated: "2026-08-23T13:39:56.965Z"
+milestone: v0.5.0
+milestone_name: The rebuild half — absorbed playbooks, modifiable source
+status: planning
+last_updated: "2026-08-23T19:41:32.907Z"
 last_activity: 2026-08-23
-last_activity_desc: Milestone v0.4.0 completed and archived
-state_head: c8afcb13e31ba6539a558551c8de6678602fdc01
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 44
-  completed_plans: 44
-  percent: 100
-current_phase: 17
-current_phase_name: Project Identity and Ledger Close
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-23 at the v0.4.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-08-23 at the start of milestone v0.5.0)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -65,10 +60,10 @@ discharged by this milestone, which is what it existed to do.
 
 ## Current Position
 
-Phase: Milestone v0.4.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-23 — Milestone v0.4.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-08-23 — Milestone v0.5.0 started
 
 ## Performance Metrics
 
@@ -801,6 +796,7 @@ Resume file: None
 - **Start the next milestone: `/gsd-new-milestone`.** It writes fresh REQ-IDs
   into a new `.planning/REQUIREMENTS.md` and restates PROJECT.md → Requirements
   → Active against them. Phase numbering continues at **18**.
+
 - Two standing candidates carry into that scoping conversation, both recorded in
   PROJECT.md → Next Milestone Goals: the two **upstream contributions**
   (`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
@@ -809,6 +805,7 @@ Resume file: None
   v0.4.0 promoted rather than closed**, each already carrying a named owner in
   `milestones/v0.4.0-REQUIREMENTS.md` → `### Promoted by DEBT-01`,
   `### Fork Backend Follow-on` and `### Control-Plane Bind Follow-on`.
+
 - Two coverage TODOs the audit recorded as non-blocking, worth folding into the
   next milestone's scope rather than rediscovering: five of six v0.4.0 phases
   have a `VALIDATION.md` still at `status: draft` (never reconciled by
