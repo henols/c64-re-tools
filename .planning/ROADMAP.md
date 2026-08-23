@@ -76,7 +76,7 @@ statement) get answered deliberately.
 - [x] **Phase 14: Backend Decision** - The fork-backend question gets a dated decision with named reversal criteria, and every hard-loss capability gets a real user-facing route (completed 2026-08-22)
 - [x] **Phase 15: Debt and Review Disposition** - Every open code-review finding and pending todo is fixed, dispositioned `wont-fix`, or promoted; Phase 03's UAT gap is closed (completed 2026-08-22, 12/12 plans; pending-todo tree reduced 21 → 2, both remaining items promoted to Phase 16 with named owners)
 - [x] **Phase 16: Packaging and Repo Shape** - The plugin payload moves under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed (completed 2026-08-23)
-- [ ] **Phase 17: Project Identity and Ledger Close** - Core Value is restated or explicitly confirmed, and the deferred-items ledger measurably shrinks below 19 — measured at the true close, after every phase that can change the pending set
+- [x] **Phase 17: Project Identity and Ledger Close** - Core Value carries a dated `keep-dated` verdict (`CORE-01`) decided at a `blocking-human` checkpoint, and the deferred-items ledger reads 0 at the true close, down from 19 (`DEBT-04`) (completed 2026-08-23, 3/3 plans)
 
 ## Phase Details
 
