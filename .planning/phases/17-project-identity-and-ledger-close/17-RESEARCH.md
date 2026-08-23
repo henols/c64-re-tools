@@ -680,9 +680,15 @@ factual claim above a plain reasoning/recommendation was verified by reading the
 cited file this session, running the guard live, or running `git`/`ls`/`grep`
 against the real tree this session.
 
-## Open Questions
+## Open Questions (RESOLVED by the phase plans)
 
-1. **Should CORE-01's decision get its own permanent guard
+> Both questions below were dispositioned by the plan-phase orchestrator and are
+> carried into executable plan content — neither is left open for the executor.
+> Q1 is resolved by 17-02's branch-conditional guard build (built only on the
+> keep-with-dated-confirmation branch). Q2 is resolved by 17-03 task 1's
+> low-priority backfill item. The original analysis is retained below unchanged.
+
+1. **(RESOLVED — 17-02, conditional task.)** **Should CORE-01's decision get its own permanent guard
    (`docs-core-value-decision.test.ts`), mirroring `docs-fork-decision.test.ts`?**
    - What we know: no guard exists today; none is *required* by CORE-01's wording (unlike DEBT-04, which explicitly says "guarded").
    - What's unclear: whether the project's own "documents are now guarded like
@@ -695,7 +701,7 @@ against the real tree this session.
      simple restatement (the new wording itself needs no separate guard, the way
      no other Core Value edit in this project's history has ever had one).
 
-2. **Should the two `## Resolution`-less todo closures be backfilled in this
+2. **(RESOLVED — 17-03 task 1, backfill included as a low-priority item.)** **Should the two `## Resolution`-less todo closures be backfilled in this
    phase, or left as the minor historical gap they are?**
    - What we know: no guard checks for `## Resolution`'s presence; 5 other older
      completed todos also lack one; this is purely a convention-consistency

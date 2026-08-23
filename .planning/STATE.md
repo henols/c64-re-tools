@@ -4,16 +4,16 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
-status: planning
+status: executing
 stopped_at: Phase 16 complete, ready to plan Phase 17
-last_updated: "2026-08-23T03:40:00.116Z"
+last_updated: "2026-08-23T08:13:59.868Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 16 complete, transitioned to Phase 17
-state_head: d2e4cb403691d483cb1784906b780d799da05e1a
+state_head: b362dac1ae9f9fd4981caffca00c47d47e0a600a
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 40
+  total_plans: 43
   completed_plans: 40
   percent: 83
 ---
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 17 — Project Identity and Ledger Close
+Phase: 17 (Project Identity and Ledger Close) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 
 16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
 consumer-facing path literals in generated skill output to name this repository's

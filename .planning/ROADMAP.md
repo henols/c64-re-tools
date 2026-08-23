@@ -498,11 +498,11 @@ Plans:
 
 - [ ] 17-01-PLAN.md — Tracer: make `docs-deferred-ledger.test.ts` able to express a zero-pending tree, then bring STATE.md's Deferred Items ledger and Pending Todos prose to the true close count of 0 in one edit (DEBT-04)
 
-**Wave 2**
+**Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 17-02-PLAN.md — Decide CORE-01 at a `gate="blocking-human"` checkpoint, record the dated verdict with its evidence inside PROJECT.md's Core Value, and pin it with a guard only on the keep-as-is branch (CORE-01)
 
-**Wave 3**
+**Wave 3** *(blocked on Wave 2 completion)*
 
 - [ ] 17-03-PLAN.md — Closer: tick DEBT-04 and CORE-01 with closure notes, flip both Traceability rows, correct this section's own stale claims, re-take the pending measurement after every edit, and run the full suite (DEBT-04, CORE-01)
 
