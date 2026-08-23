@@ -7,8 +7,8 @@ behavior_unverified: 0
 overrides_applied: 0
 human_verification:
   - test: "Confirm whether CORE-01's must_have truth 3 (\"The verdict recorded in `## Core Value` is the option a human selected at this plan's `gate=\\\"blocking-human\\\"` checkpoint, not one an executor picked while unattended\") is satisfied by what actually happened."
-    expected: "A human either (a) confirms that an attended, informed delegation of the choice (\"you decide\") to the orchestrating session — after being shown the full evidence at the gate=\"blocking-human\" checkpoint — satisfies the intent of this must-have and the sibling prohibition (\"MUST NOT let an executor choose ... unilaterally\"), or (b) determines that the literal wording (\"the option a human selected\") was not met and requires either a corrected must-have/prohibition wording for future phases, or treats this as an accepted, disclosed deviation via an override."
-    why_human: "This is a judgment call about provenance and intent, not a mechanically checkable fact. The record (17-02-SUMMARY.md, PROJECT.md's Core Value entry, and REQUIREMENTS.md's CORE-01 closure note) is unusually transparent about the exact shape of what happened: a human read the full evidence at the blocking-human checkpoint and explicitly said 'you decide' rather than picking `restate` or `keep-dated` themselves; the orchestrating session then selected `keep-dated`. This satisfies the *anti-auto-approval* half of the prohibition (a human genuinely attended and responded; auto-mode's default-first-option resolution was bypassed) but does not satisfy the *literal* half of must_have truth 3 (a human did not personally select the option word). The project's own user memory records 'you decide' as a standing delegation preference for this user, which is relevant context but does not by itself resolve whether the plan's own stricter must-have wording was met."
+    expected: "A human either (a) confirms that an attended delegation of the choice (\"you decide\") to the orchestrating session — a gate=\"blocking-human\" checkpoint rendered and answered 298 seconds later, comprehension not evidenced by any artifact and not claimed — satisfies the intent of this must-have and the sibling prohibition (\"MUST NOT let an executor choose ... unilaterally\"), or (b) determines that the literal wording (\"the option a human selected\") was not met and requires either a corrected must-have/prohibition wording for future phases, or treats this as an accepted, disclosed deviation via an override."
+    why_human: "This is a judgment call about provenance and intent, not a mechanically checkable fact. The record (17-02-SUMMARY.md, PROJECT.md's Core Value entry, and REQUIREMENTS.md's CORE-01 closure note) is unusually transparent about the exact shape of what happened: the gate=\"blocking-human\" checkpoint was rendered and the operator answered 298 seconds later in free text 'you decide' rather than picking `restate` or `keep-dated` themselves; the orchestrating session then selected `keep-dated`. Attendance and delegation are on the record; comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap G-17-1). This satisfies the *anti-auto-approval* half of the prohibition (a human genuinely attended and responded; auto-mode's default-first-option resolution was bypassed) but does not satisfy the *literal* half of must_have truth 3 (a human did not personally select the option word). The project's own user memory records 'you decide' as a standing delegation preference for this user, which is relevant context but does not by itself resolve whether the plan's own stricter must-have wording was met."
   - test: "Read PROJECT.md's `## Core Value` entry end to end (task 2's harvested `<human-check>` from 17-02-PLAN.md, deferred to end-of-phase per `workflow.human_verify_mode: end-of-phase`) and confirm it reads as evidence weighed rather than a conclusion asserted."
     expected: "(a) names the verdict actually chosen at the checkpoint; (b) cites at least one piece of evidence by name rather than gesturing at 'the evidence'; (c) engages with the case against the verdict it reached; (d) the reversal condition is specific enough that a future reader could tell whether it has been met."
     why_human: "17-02-PLAN.md's task 2 `<verify>` block explicitly defers this check to a human at end-of-phase; it is the one check that reaches the 'weighed, not bookkeeping' half of CORE-01's criterion. The verifier's own direct reading of the entry (reproduced in full in this report below) found it satisfies all four sub-criteria, but the plan's own workflow contract requires this to be confirmed by a human rather than accepted on the verifier's reading alone."
@@ -42,7 +42,7 @@ than the 19 items inherited.
 | 6 | STATE.md's `## Deferred Items` states plainly what the 0 figure excludes | ✓ VERIFIED | Paragraph names the `### Carried forward from earlier closes` table's four still-`Deferred` rows (`UP-01`/`UP-02`, `QUAL-01`, `QUAL-02`, `QUAL-03`) and the ~15 carried WR-class findings in `v0.2.0-MILESTONE-AUDIT.md`, stating both are unchanged by this measurement. |
 | 7 | PROJECT.md's `## Core Value` carries an ISO date not present before this plan | ✓ VERIFIED | `2026-08-23` appears inside the new `**Kept as-is (CORE-01, decided 2026-08-23).**` marker. |
 | 8 | `## Core Value` names, verbatim, specific evidence actually weighed | ✓ VERIFIED | Names `R2000-01`, Phase 11's "two-session sealed-question test," `R2000-10`, the symbol round trip (`R2000-14`/`R2000-15`), and the 17 curated `r2000_*` tools, by literal string. |
-| 9 | The verdict recorded is the option **a human selected** at the `gate="blocking-human"` checkpoint, not one an executor picked while unattended | ⚠️ see Human Verification | Per 17-02-SUMMARY.md and PROJECT.md's own entry: the human read the full evidence at the checkpoint and explicitly delegated the choice ("you decide") rather than picking `restate`/`keep-dated` personally; the orchestrating session then selected `keep-dated`. The record is candid about this rather than smoothing it into "a human selected keep-dated." This satisfies the anti-auto-approval intent (attended, informed, not silently defaulted) but not the must-have's literal wording (a human did not personally choose the word). Routed to human verification rather than silently passed or failed. |
+| 9 | The verdict recorded is the option **a human selected** at the `gate="blocking-human"` checkpoint, not one an executor picked while unattended | ⚠️ see Human Verification | Per 17-02-SUMMARY.md and PROJECT.md's own entry: the checkpoint was rendered and the operator answered 298 seconds later in free text ("you decide") rather than picking `restate`/`keep-dated` personally; the orchestrating session then selected `keep-dated`. Attendance and delegation are on the record; comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap `G-17-1`). The record is candid about this rather than smoothing it into "a human selected keep-dated." This satisfies the anti-auto-approval intent (attended, not silently defaulted) but not the must-have's literal wording (a human did not personally choose the word). Routed to human verification rather than silently passed or failed. |
 | 10 | If keep-as-is, the entry names a concrete condition under which the question reopens | ✓ VERIFIED | "(a) a shipped skill or workflow demonstrably depends on cross-session recall ... checkable by emptying the annotation store" / "(b) a second milestone produces persistent-state evidence that is genuinely new." |
 | 11 | The dated entry lives inside `## Core Value`, not `## Key Decisions`; `docs-fork-decision.test.ts` stays green and untouched | ✓ VERIFIED | Entry is inside `## Core Value` (confirmed by direct read). `node --test docs-fork-decision.test.ts` → 6/6 pass. `git log` shows no content edit to the FORK-01 Key Decisions row in this phase's commits. |
 | 12 | (backstop) The entry reads as evidence weighed, engaging the case against the verdict reached | ✓ VERIFIED (direct read) — also harvested to Human Verification per plan's own deferred `<human-check>` | Entry contains an explicit "*Case against this verdict, carried rather than resolved*" paragraph naming the sealed-question test as "genuinely the strongest evidence this project has produced ... left unnamed ... for a third close running. That cost is real and is not explained away." |
@@ -137,19 +137,24 @@ PLAN files originally specified, not a cosmetic disposition.
 
 **Test:** Read `17-02-SUMMARY.md`'s "Task 1 — Resolution Record" section and
 `.planning/PROJECT.md`'s `*Provenance.*` paragraph inside `## Core Value`, and
-decide whether "a human, having read the full evidence at a
-`gate="blocking-human"` checkpoint, explicitly delegates the choice between two
-options to the orchestrating session, which then selects one" satisfies
-17-02-PLAN.md's must-have truth 3 ("The verdict recorded ... is the option a
-human selected ..., not one an executor picked while unattended") and its
-sibling prohibition ("MUST NOT let an executor choose the
-restate-versus-keep verdict unilaterally").
+decide whether "a human, stopped at a `gate="blocking-human"` checkpoint and
+answering 298 seconds later in free text (`you decide`), explicitly delegates
+the choice between two options to the orchestrating session, which then
+selects one" satisfies 17-02-PLAN.md's must-have truth 3 ("The verdict
+recorded ... is the option a human selected ..., not one an executor picked
+while unattended") and its sibling prohibition ("MUST NOT let an executor
+choose the restate-versus-keep verdict unilaterally").
 **Expected:** Either (a) confirm this attended-and-delegated shape satisfies
-the intent (the executor did not act "unilaterally" or "unattended" — a human
-was present, informed, and consented to the delegation, consistent with this
-project's own documented "you decide" standing preference), or (b) determine
-the literal wording was not met and record that explicitly (an override, a
-corrected must-have for future phases, or an accepted-and-flagged deviation).
+the intent (the executor did not act "unilaterally" or "unattended" — the
+primary session transcript shows the gate was rendered and a human answered it
+298 seconds later in free text), or (b) determine the literal wording was not
+met and record that explicitly (an override, a corrected must-have for future
+phases, or an accepted-and-flagged deviation). This project's documented "you
+decide" standing preference is NOT corroboration that the operator was
+informed: a standing delegation is precisely what permits an uninformed answer,
+so it cannot evidence comprehension. Attendance and delegation are evidenced by
+transcript; comprehension is not evidenced by any artifact (corrected by plan
+17-04, gap `G-17-1`).
 **Why human:** This is a provenance/intent judgment call inherent to CORE-01's
 own audit-integrity purpose — the exact kind of question this milestone's
 guards cannot mechanically resolve (the plan's own `probe_coverage` section
