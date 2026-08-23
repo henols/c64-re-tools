@@ -117,10 +117,10 @@ halting is settled (see "Resolved" note above).
 
 ## Critical files
 
-- `.claude/mcp/vice/vice.ts` — the `call()` seam (swap HTTP-MCP → binary-monitor client)
-- `.claude/mcp/vice/vice-proxy.ts` — `forwardToVice`, per-tool translation, gap handling
-- `.claude/mcp/vice/vice-sync.ts` — checkpoint sync built on `call()`
-- `.claude/mcp/vice/broker-launch.mts`, `vice-broker.mts` — launch flags + ports
+- `src/mcp/vice/vice.ts` — the `call()` seam (swap HTTP-MCP → binary-monitor client)
+- `src/mcp/vice/vice-proxy.ts` — `forwardToVice`, per-tool translation, gap handling
+- `src/mcp/vice/vice-sync.ts` — checkpoint sync built on `call()`
+- `src/mcp/vice/broker-launch.mts`, `vice-broker.mts` — launch flags + ports
 - `resources/` (regenerated `.mjs`), `.mcp.json`, `tools-manifest.json`, `README.md`
 - **New:** `vice-binmon.ts` (protocol client) · a 6502 disassembler · framebuffer→PNG encoder
 

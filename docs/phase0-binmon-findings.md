@@ -4,7 +4,7 @@ Authoritative answers to the roadmap's open questions, read directly from VICE's
 source (`VICE-Team/svn-mirror` @ `master`): `vice/src/monitor/monitor_binary.c`
 and `vice/src/monitor/mon_register.c`. Where a point still needs to be confirmed
 against a *specific build*, it is called out as **VERIFY** and covered by the
-probe script (`.claude/mcp/vice/probe-binmon.mjs`).
+probe script (`src/mcp/vice/probe-binmon.mjs`).
 
 ## 1. Cycle stopwatch — RESOLVED: yes, via CPU history (plus a reconstructible fallback)
 
@@ -165,7 +165,7 @@ INVALID_TYPE `0x83`, CMD_FAILURE `0x8f`.
 
 **`CPUHISTORY_GET` response body (CORRECTED 2026-08-18, plan 07-12 — re-derived
 from `monitor_binary_process_cpuhistory()` and verified byte-by-byte against
-`.claude/mcp/vice/fixtures/binmon/cpuhistory-get.bin` and
+`src/mcp/vice/fixtures/binmon/cpuhistory-get.bin` and
 `cpuhistory-get-multi.bin`, both genuine captures from VICE 3.10):**
 
 ```
@@ -192,13 +192,13 @@ statement of the ordering — was **disproven live** and produced a real decode
 bug (07-VERIFICATION.md gap 1: a genuine 52-byte reply was rejected as
 "needs at least 65", which in turn killed the connect handshake). Do not
 restore it. The authoritative implementations are
-`.claude/mcp/vice/stock-protocol.ts`'s `ResponseType.CpuHistoryGet` parse branch
+`src/mcp/vice/stock-protocol.ts`'s `ResponseType.CpuHistoryGet` parse branch
 and its hostile-input regressions in `stock-protocol.test.ts`; this section and
 those must be changed together.
 
 ## The empirical probe has been run — see docs/phase1-probe-results.md
 
-`.claude/mcp/vice/probe-binmon.mjs` has been run against both a stock `x64sc
+`src/mcp/vice/probe-binmon.mjs` has been run against both a stock `x64sc
 -binarymonitor` (VICE 3.9, `/usr/bin/x64sc`) and the barryw fork's binary monitor
 (VICE 3.10, `/usr/local/bin/x64sc`, not a stock 3.10 build — see the recorded
 caveat). The full run, including raw output and per-item dispositions, is

@@ -32,9 +32,9 @@ not exist here.
 
 | Fixture | What it models | Why it needed a real emulator |
 |---|---|---|
-| `.claude/mcp/vice/fixtures/binmon/display-get.bin` | A full ~157 KB `DISPLAY_GET` (0x84) frame | Only a running C64 has a framebuffer to serialize |
-| `.claude/mcp/vice/fixtures/binmon/event-interleaved.bin` | A `0xffffffff` broadcast event landing between a request and its own reply | Only a live CPU loop actually interleaves unsolicited events with a pending reply |
-| `.claude/mcp/vice/fixtures/binmon/checkpoint-list.bin` | `CHECKPOINT_LIST` answering N+1 frames on one request id | Only a real monitor session has checkpoints to list |
+| `src/mcp/vice/fixtures/binmon/display-get.bin` | A full ~157 KB `DISPLAY_GET` (0x84) frame | Only a running C64 has a framebuffer to serialize |
+| `src/mcp/vice/fixtures/binmon/event-interleaved.bin` | A `0xffffffff` broadcast event landing between a request and its own reply | Only a live CPU loop actually interleaves unsolicited events with a pending reply |
+| `src/mcp/vice/fixtures/binmon/checkpoint-list.bin` | `CHECKPOINT_LIST` answering N+1 frames on one request id | Only a real monitor session has checkpoints to list |
 
 **What was done instead:** all three were generated from the normative
 protocol spec rather than captured:
@@ -61,7 +61,7 @@ as a complete, well-formed sequence with no trailing partial frame before
 being committed (see `binmon-fixtures.test.ts`'s `fixture:` tests).
 
 **Provenance marking (no silent downgrade):** every `.json` sidecar under
-`.claude/mcp/vice/fixtures/binmon/` carries:
+`src/mcp/vice/fixtures/binmon/` carries:
 
 ```json
 {
@@ -75,7 +75,7 @@ being committed (see `binmon-fixtures.test.ts`'s `fixture:` tests).
 }
 ```
 
-`.claude/mcp/vice/fixtures/binmon/README.md`'s provenance table names all
+`src/mcp/vice/fixtures/binmon/README.md`'s provenance table names all
 three fixtures `synthesized-fallback` — the same downgrade label plan
 02-02's own "no host build reachable" fallback path already used, chosen
 deliberately over inventing a new label, since it already carries the

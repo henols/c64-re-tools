@@ -600,7 +600,7 @@ are the sources it was built from):
   evidence apparatus, not deliverables.
 
 To re-run: install `regenerator2000` at `>= 1.90` rustc (`cargo install
-regenerator2000`), rebuild the fixture (`node .claude/skills/acme-build/scripts/acme.mjs
+regenerator2000`), rebuild the fixture (`node src/skills/acme-build/scripts/acme.mjs
 build .../fixture/probe-illegal.a`), then repeat each criterion's commands as quoted in
 its section above, against a freshly-launched broker (`tools/vice-launcher.sh`) for the
 criteria that need a live emulator.

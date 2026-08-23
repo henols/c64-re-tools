@@ -81,7 +81,7 @@ Two supported ways to exercise the payload as a consumer does:
 
 The MCP server has real npm dependencies (`@mastra/mcp`, `@mastra/core`). They
 are **not** committed. A `SessionStart` hook (`scripts/ensure-mcp-deps.sh`)
-runs `npm ci` into `.claude/mcp/vice/node_modules` on first session and after
+runs `npm ci` into `src/mcp/vice/node_modules` on first session and after
 any lockfile change, gated on a hash so normal starts are a cheap no-op. This
 needs `node` and `npm` on `PATH` and network access to the npm registry on the
 consumer's machine.
@@ -219,7 +219,7 @@ project already removed that fallback (`toacme`'s `disasm` verb).
 | Container cost, single-stage | ~1.26 GB image, ~5m39s build |
 | Container cost, multi-stage | ~251 MB image, ~4m48s build |
 | Verified against | `0.9.20`, published 2026-07-11, checked 2026-08-20 |
-| Licence | `MIT OR Apache-2.0` (dual) — see [`THIRD-PARTY-NOTICES.md`](.claude/mcp/vice/THIRD-PARTY-NOTICES.md) |
+| Licence | `MIT OR Apache-2.0` (dual) — see [`THIRD-PARTY-NOTICES.md`](src/mcp/vice/THIRD-PARTY-NOTICES.md) |
 
 Both container figures are absolute sizes with no baseline to diff them
 against.
@@ -242,7 +242,7 @@ deploys its host launcher scripts (`tools/`) under the **project you are
 working in**, not under the plugin's own install directory. It resolves that
 root from `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`.claude/mcp/vice/repo-root.ts`. The VICE emulator itself runs on the host and
+`src/mcp/vice/repo-root.ts`. The VICE emulator itself runs on the host and
 is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
 
 ## Layout
@@ -252,7 +252,7 @@ is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
   plugin.json        # manifest: skills, mcpServers, deps hook
   marketplace.json   # single-plugin marketplace, so `marketplace add` works on this repo
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
-.claude/
+src/
   mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
   skills/            # the six skills above (canonical source)
 installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
@@ -264,9 +264,12 @@ scripts/
   check-npm-packages.mjs # validates the two npm tarballs' contents
 ```
 
-The internal `.claude/mcp/vice` + `.claude/skills` layout mirrors a project
-tree on purpose: the MCP server's own test suite resolves paths relative to it,
-so the tests travel and run unchanged.
+The payload no longer sits on Claude Code's auto-discovery path — see
+"Developing this repo: no in-repo autoload" above for why that is deliberate.
+What did not change: the MCP server's own test suite resolves paths relative
+to its own module directory (`repo-root.ts`'s depth-based fallback), so
+relocating the payload under `src/` left every test's behavior unchanged even
+though the tree no longer mirrors a consumer's installed `.claude/` layout.
 
 ## Publishing (maintainers)
 
@@ -321,7 +324,7 @@ node scripts/version.mjs resolve --published X.Y.Z   # resolve against a hypothe
 node scripts/version.mjs check                   # assert all 6 derived strings are the placeholder
 ```
 
-The algorithm has exactly one implementation, `.claude/mcp/vice/version.ts` — the
+The algorithm has exactly one implementation, `src/mcp/vice/version.ts` — the
 CLI, the MCP server's advertised version, and CI all call into it. Do not re-derive
 the rules anywhere else; a test greps for that regression.
 
@@ -338,7 +341,7 @@ npm directly, and npm records provenance automatically.
 ## Developing / testing the MCP server
 
 ```
-cd .claude/mcp/vice
+cd src/mcp/vice
 npm ci
 npm run typecheck
 npm test
