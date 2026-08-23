@@ -49,15 +49,25 @@ record that the evidence was actually weighed rather than silently carried a
 third close in a row.
 
 *Provenance.* The choice was escalated to a human at plan 17-02 task 1's
-`gate="blocking-human"` checkpoint — a gate auto-mode does not bypass — where
-the full evidence (six items for restating, five against, from
-`17-RESEARCH.md`'s `## Core Value evidence`) was presented in full. The human,
-having read it, declined to select between the two options and explicitly
-delegated the call to the orchestrating session; the orchestrator then selected
-`keep-dated` on the reasoning below. Recorded precisely rather than smoothed
-over: a human saw the gate and responded to it, but the verdict word itself was
-the orchestrator's, not a literal human selection — the distinction this
-project's own audit discipline exists to keep visible.
+`gate="blocking-human"` checkpoint — a gate auto-mode does not bypass. Recorded
+to exactly what the session transcript evidences, and no further: the checkpoint
+was rendered, with the counted evidence columns (six items for restating, five
+against, compressed from `17-RESEARCH.md`'s `## Core Value evidence`) in the
+terminal output around it, while the decision prompt itself carried only the two
+option labels plus one strongest-argument line each; 298 seconds later the
+operator answered in free text — `you decide` — rather than choosing either
+label; the orchestrator then selected `keep-dated` on the reasoning below.
+Attendance and delegation are on the record; comprehension is not evidenced by
+any artifact and is not claimed here. Corrected 2026-08-23 by plan 17-04 (gap
+`G-17-1`): the original entry asserted the operator's comprehension as observed
+fact. Asked about the exchange at this phase's UAT, roughly 106 minutes after it,
+the operator did not recall it — the transcript, not recall, is what settles what
+happened, and the transcript evidence is enumerated in
+`.planning/debug/core-01-provenance-overstates-human-involvement.md`. Recorded
+precisely rather than smoothed over: a human was stopped at the gate and answered
+it, but the verdict word itself was the orchestrator's, not a literal human
+selection — the distinction this project's own audit discipline exists to keep
+visible.
 
 *Decisive reason.* The outlives-the-session property this statement would gain
 belongs to a component structurally incapable of driving VICE at all —
