@@ -39,15 +39,53 @@ state — and keep working when the emulator misbehaves.
 milestone widened *which* emulator qualifies as "a real C64 emulator" without
 changing what the session needs to do with it.
 
-**Flagged at the v0.3.0 close, deliberately not rewritten yet.** This statement
-is entirely about driving a *live* emulator, and v0.3.0's whole point is the
-opposite axis: findings that persist as queryable state *between* sessions, held
-by a tool that never touches the emulator at all. The two-session sealed-question
-test proved that value directly. One milestone of evidence is thin ground for
-restating the ONE thing, so it is recorded as the first question
-`/gsd-new-milestone` should ask rather than silently amended here. Candidate
-shape: *a Claude session can drive a real C64 emulator to reverse-engineer a
-program, and what it learns outlives the session.*
+**Kept as-is (CORE-01, decided 2026-08-23).** The flag recorded at the v0.3.0
+close — quoted here rather than left standing as its own paragraph, since
+letting it stand beside a verdict would leave this section self-contradicting:
+"[this statement] is entirely about driving a *live* emulator ... deliberately
+not rewritten yet" — is now discharged. The verdict is **keep-dated**: the
+leading statement above is left byte-identical, and this paragraph is the dated
+record that the evidence was actually weighed rather than silently carried a
+third close in a row.
+
+*Provenance.* The choice was escalated to a human at plan 17-02 task 1's
+`gate="blocking-human"` checkpoint — a gate auto-mode does not bypass — where
+the full evidence (six items for restating, five against, from
+`17-RESEARCH.md`'s `## Core Value evidence`) was presented in full. The human,
+having read it, declined to select between the two options and explicitly
+delegated the call to the orchestrating session; the orchestrator then selected
+`keep-dated` on the reasoning below. Recorded precisely rather than smoothed
+over: a human saw the gate and responded to it, but the verdict word itself was
+the orchestrator's, not a literal human selection — the distinction this
+project's own audit discipline exists to keep visible.
+
+*Decisive reason.* The outlives-the-session property this statement would gain
+belongs to a component structurally incapable of driving VICE at all —
+`R2000-01` records that regenerator2000 is never launched with `--vice`, guarded
+in code, not only documented. This statement's subject is a session driving a
+*live* emulator; folding in the persistence axis would make one sentence's
+subject two structurally separate subsystems, which is a category error, not a
+style objection. v0.4.0 also produced zero new evidence on the question: every
+item weighed for restating is Phase 11 (v0.3.0) evidence — the two-session
+sealed-question test (`R2000-10`), the symbol round trip (`R2000-14`/`R2000-15`),
+and the 17 curated `r2000_*` tools — re-weighed one milestone later, not new.
+
+*Case against this verdict, carried rather than resolved.* Phase 11's
+two-session sealed-question test is genuinely the strongest evidence this
+project has produced — this file's own Key Decisions row calls it exactly
+that — and a real, proven, falsifiably-tested capability (findings that outlive
+a session) is left unnamed in the project's identity statement for a third close
+running. That cost is real and is not explained away by the reasoning above; it
+is accepted, not dismissed.
+
+*Reversal.* This reverses if either of two conditions is met, named specifically
+so a future reader can tell whether they have been: **(a)**, the sharper
+trigger — a shipped skill or workflow in this repo demonstrably depends on
+cross-session recall to function, checkable by emptying the annotation store
+between sessions and observing the skill fail; or **(b)** a second milestone
+produces persistent-state evidence that is genuinely new rather than the Phase
+11 set re-weighed above. This trigger is manually tracked, not mechanically
+probed, the same way FORK-01's Key Decisions row states its own trigger is.
 
 ## Requirements
 
