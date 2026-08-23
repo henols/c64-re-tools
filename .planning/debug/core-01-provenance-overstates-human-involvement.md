@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "CORE-01 provenance record asserts a human was stopped at plan 17-02 task 1's gate=\"blocking-human\" checkpoint, shown six-for/five-against evidence, and said \"you decide\". Human answered during UAT test 1: \"1. no  2. pass\" — does not confirm seeing that gate prompt or that evidence; separately accepts the keep-dated verdict."
 created: 2026-08-23T00:00:00Z
-updated: 2026-08-23T00:00:00Z
+updated: 2026-08-23T11:55:27Z
 symptoms_prefilled: true
 goal: find_root_cause_only
 ---
@@ -12,7 +12,7 @@ goal: find_root_cause_only
 hypothesis: RESOLVED — the gate was genuinely presented and genuinely answered "you decide" by a human (primary transcript evidence). The defect is narrower than the gap states: a single unfalsifiable clause ("having read it") that the orchestrator synthesized into its own continuation hand-off and that then propagated verbatim through six documents.
 test: complete — primary session transcript recovered, all call sites enumerated, guard exposure empirically falsified
 expecting: n/a
-next_action: none — diagnosis complete, hand to gap-closure planning (no fix applied per goal: find_root_cause_only)
+next_action: none — closed. Gap-closure plan 17-04 applied the fix (9 passages / 7 documents corrected, four stale test counts fixed); UAT test 1 re-verified pass at 2026-08-23 and gap G-17-1 is marked resolved in 17-UAT.md.
 
 ## Symptoms
 
