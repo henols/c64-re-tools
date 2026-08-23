@@ -1,234 +1,92 @@
 ---
 phase: 16-packaging-and-repo-shape
-reviewed: 2026-08-23T00:00:00Z
+reviewed: 2026-08-23T03:18:34Z
 depth: standard
-files_reviewed: 98
+files_reviewed: 18
 files_reviewed_list:
-  - CLAUDE.md
-  - .claude-plugin/plugin.json
-  - docs/phase0-binmon-findings.md
-  - docs/phase2-backend-probe-evidence.md
-  - docs/phase9-regenerator2000-probe-findings.md
-  - docs/roadmap-stock-vice.md
   - .github/workflows/ci.yml
   - .gitignore
-  - installer/bin/cli.mjs
-  - installer/package.json
-  - installer/README.md
   - installer/scripts/sync-skills.mjs
-  - installer/wire-mcp.test.mjs
-  - .mcp.json
-  - README.md
-  - scripts/audit-gate.mjs
   - scripts/check-npm-packages.mjs
-  - scripts/check-skill-fork-honesty.mjs
-  - scripts/check-skill-tool-coverage.mjs
-  - scripts/ensure-mcp-deps.sh
-  - scripts/generate-tool-support-table.mjs
-  - scripts/lib/r2000-cli-verbs.d.mts
-  - scripts/lib/r2000-cli-verbs.mjs
-  - scripts/lib/skill-corpus.mjs
-  - scripts/lib/skill-honesty-checks.d.mts
-  - scripts/lib/skill-honesty-checks.mjs
-  - scripts/package.sh
-  - scripts/version.mjs
-  - src/mcp/vice/assumption-label-discipline.test.ts
-  - src/mcp/vice/audit-integrity.test.ts
-  - src/mcp/vice/broker-kill.test.ts
-  - src/mcp/vice/build-atomic.test.ts
-  - src/mcp/vice/build.ts
-  - src/mcp/vice/comment-phase-pointers.test.ts
-  - src/mcp/vice/disasm-decoder.ts
-  - src/mcp/vice/disasm-opcodes.ts
-  - src/mcp/vice/disasm-renderer.ts
-  - src/mcp/vice/disasm-roundtrip.test.ts
-  - src/mcp/vice/docs-dangling-refs.test.ts
-  - src/mcp/vice/fixtures/planted-phase-pointer-fixture.ts.txt
-  - src/mcp/vice/hostpath-consumers.test.ts
-  - src/mcp/vice/hostpath.ts
-  - src/mcp/vice/host-scripts.test.ts
-  - src/mcp/vice/install-resources.ts
-  - src/mcp/vice/load-order.test.ts
-  - src/mcp/vice/package.json
-  - src/mcp/vice/probe-binmon.mjs
-  - src/mcp/vice/r2000-answer-key.test.ts
-  - src/mcp/vice/r2000-cli.test.ts
-  - src/mcp/vice/r2000-cli.ts
-  - src/mcp/vice/r2000-confidence.ts
-  - src/mcp/vice/r2000-d64.ts
-  - src/mcp/vice/r2000-mcp-client.test.ts
-  - src/mcp/vice/r2000-regbits-gen.ts
-  - src/mcp/vice/r2000-regbits.json
+  - src/mcp/vice/ci-guardrails.test.mjs
+  - src/mcp/vice/ci-suite-coverage.test.ts
+  - src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt
+  - src/mcp/vice/hop-chain-comments.test.ts
   - src/mcp/vice/r2000-regbits.test.ts
   - src/mcp/vice/r2000-symbol-roundtrip.test.ts
-  - src/mcp/vice/r2000-symbols.ts
-  - src/mcp/vice/r2000-verb-coverage.test.ts
-  - src/mcp/vice/repo-root.test.ts
-  - src/mcp/vice/repo-root.ts
-  - src/mcp/vice/resources/vice-launcher.sh
   - src/mcp/vice/skill-acme-build-cli.test.ts
-  - src/mcp/vice/skill-honesty-checks.test.ts
-  - src/mcp/vice/skill-memory-mapping-cli.test.ts
-  - src/mcp/vice/skill-program-recon-cli.test.ts
-  - src/mcp/vice/stock-a4-checkpoint-flood.test.ts
-  - src/mcp/vice/stock-address.ts
-  - src/mcp/vice/stock-cia.ts
-  - src/mcp/vice/stock-condition.ts
-  - src/mcp/vice/stock-connect.test.ts
-  - src/mcp/vice/stock-dispatch.test.ts
-  - src/mcp/vice/stock-dispatch.ts
-  - src/mcp/vice/stock-input.ts
-  - src/mcp/vice/stock-machine.ts
-  - src/mcp/vice/stock-protocol.ts
-  - src/mcp/vice/stock-sprites.ts
-  - src/mcp/vice/stock-timing.ts
-  - src/mcp/vice/stock-vicii.ts
-  - src/mcp/vice/telemetry-import.test.ts
-  - src/mcp/vice/test-gate.mjs
-  - src/mcp/vice/THIRD-PARTY-NOTICES.md
-  - src/mcp/vice/version.test.ts
-  - src/mcp/vice/version.ts
-  - src/mcp/vice/vice-proxy.test.ts
-  - src/mcp/vice/vice-proxy.ts
+  - src/mcp/vice/skill-consumer-paths.test.ts
   - src/skills/acme-build/SKILL.md
   - src/skills/acme-build/template.a
-  - src/skills/c64-memory-mapping/SKILL.md
-  - src/skills/c64-program-recon/SKILL.md
-  - src/skills/c64-program-recon/templates/memory-map.template.md
   - src/skills/c64-provenance-diff/scripts/diff-images.mjs
-  - src/skills/c64-provenance-diff/scripts/recovery-schema.mjs
-  - src/skills/c64-provenance-diff/SKILL.md
-  - src/skills/c64-ram-capture/scripts/project-paths.mjs
+  - src/skills/c64-provenance-diff/scripts/diff-images.test.mjs
   - src/skills/c64-ram-capture/scripts/watch-loads.mjs
-  - src/skills/c64-ram-capture/SKILL.md
-  - THIRD-PARTY-NOTICES.md
+  - src/skills/c64-ram-capture/scripts/watch-loads.test.mjs
 findings:
-  critical: 1
-  warning: 4
-  info: 1
-  total: 6
+  critical: 0
+  warning: 2
+  info: 0
+  total: 2
 status: issues_found
 ---
 
-# Phase 16: Code Review Report
+# Phase 16: Code Review Report (round 2, gap-closure delta)
 
-**Reviewed:** 2026-08-23T00:00:00Z
+**Reviewed:** 2026-08-23T03:18:34Z
 **Depth:** standard
-**Files Reviewed:** 98 (of 276 total files touched; 179 pure byte-identical `R100` renames excluded per the workflow's own scope note)
+**Files Reviewed:** 18
 **Status:** issues_found
 
 ## Summary
 
-Phase 16 relocates the plugin payload (`.claude/mcp/vice` → `src/mcp/vice`, `.claude/skills` → `src/skills`) and does the mechanical work of repointing every functional consumer: manifests, CI working directories, packaging validators, skill-corpus CI gates, and hop-count-sensitive path resolvers (`repo-root.ts`, `resources/vice-launcher.sh`, `r2000-regbits-gen.ts`). The mechanical core of the move is solid: I ran the full `node --test '*.test.*'` suite in `src/mcp/vice` (2312 pass / 0 fail / 39 skip / 5 todo) and every hop-count-dependent resolver I traced (`repo-root.ts`'s branch 4, `vice-launcher.sh`'s `resolve_repo_root()`, `install-resources.ts`'s `RESOURCES_DIR`, `r2000-regbits-gen.ts`'s `MEMMAP_PATH`) lands on the correct depth. The new guard test (`comment-phase-pointers.test.ts` + its fixture) is a real, independently-verified mechanism, not vacuous scaffolding — I ran it standalone and traced its regex families against the fixture by hand.
+This is a round-2 review of the 18-file delta produced by gap-closure plans 16-08..16-11, which closed round 1's CR-01/WR-01..04/IN-01 findings (tarball leaks, unwired CI suites, consumer-path literal regressions, stale repo-root hop-chain comments). I re-derived and ran every new guard directly rather than trusting the SUMMARYs:
 
-The defect this review found is exactly the class the scope note asked me to hunt for: a **consumer-installed path** that the plan explicitly, by name, instructed the executor to leave untouched (because it names where the skill lives once installed via `npx @henols/c64-re-tools`, not where it lives in this source tree) was blindly rewritten by the same `.claude/skills` → `src/skills` sweep that correctly updated every source-tree-only reference. The plan's own verification command for this exact spot was a substring grep too weak to distinguish the two path forms, so it "passed" while shipping the regression. I also found a CI coverage gap adjacent to the known `check-npm-packages.mjs` asymmetry: a brand-new, real regression suite for the installer's `wireMcp()` merge logic is committed but never executed by CI.
+- `installer/scripts/sync-skills.mjs` + `scripts/check-npm-packages.mjs`: ran `node scripts/check-npm-packages.mjs` and inspected the generated `installer/skills/` tree by hand. The filter genuinely excludes `*.test.mjs`, `test-corpus.mjs` and any `fixtures/` directory while retaining `template.a` and all real skill assets; `assertLeanTarball()` genuinely runs from inside `packFiles()` for both packages, so a third package or a per-package special case cannot skip it. No leak found in either published tarball.
+- `.github/workflows/ci.yml` + `ci-suite-coverage.test.ts` + `ci-guardrails.test.mjs`: confirmed `installer/wire-mcp.test.mjs` (18/18) and `src/skills/*/scripts/*.test.mjs` (89 pass / 8 skip) are now genuinely reachable from the `build` job (ran both invocations exactly as CI would), and that the guard suites pass against the real `ci.yml`. One weakness found in the new coverage guard's own proof-matching (WR-05 below).
+- The four consumer-path literal sites (`diff-images.mjs`, `watch-loads.mjs`, `template.a`, `acme-build/SKILL.md`) plus their two guards (`skill-consumer-paths.test.ts`, plus the assertions embedded in `diff-images.test.mjs`/`watch-loads.test.mjs`): verified every required/forbidden substring against the actual file contents by hand (not just by reading the registry) and cross-checked the region-anchoring for `acme-build/SKILL.md`'s dual-route block. All four are correctly fixed and the presence+absence pairing is real, not vacuous.
+- `hop-chain-comments.test.ts` + its fixture + `r2000-symbol-roundtrip.test.ts`/`r2000-regbits.test.ts`: ran the guard directly; its scan is correctly scoped to `*.ts`/`*.mts` files directly under `src/mcp/vice/`, the fixture drives both a positive and negative control, and `r2000-symbol-roundtrip.test.ts`'s own hop-count comment is now correct (3 hops, `src/mcp/vice -> src/mcp -> src -> repo root`). However, this guard's directory scope is too narrow to see an identical defect class that still exists in two of the skill-script test files this same phase touched — see WR-06.
 
-## Critical Issues
-
-### CR-01: Generated `recovery/PROVENANCE.md` embeds a path that does not exist in a consumer's installed project
-
-**File:** `src/skills/c64-provenance-diff/scripts/diff-images.mjs:696-699, 711-714, 786-789`
-
-**Issue:** `renderLedger()` writes three consumer-facing strings into the generated `recovery/PROVENANCE.md` ledger every time this skill runs — a "Regenerate with: `node <path> ledger ...`" comment (line 699), a prose pointer to the same script (line 714), and a `method:` provenance field naming the same script (line 789). All three now read `src/skills/c64-provenance-diff/scripts/diff-images.mjs`.
-
-That path is this **repository's own source-tree location**. It is not where the file lives once a real consumer installs it: `installer/bin/cli.mjs`'s `installSkills()` deploys the bundled skills into `<target>/.claude/skills/`, so the actual runnable path in every consumer's project is `.claude/skills/c64-provenance-diff/scripts/diff-images.mjs`. A user or agent who follows the embedded "Regenerate with" instruction in their own generated ledger will run a command against a file that is not there.
-
-This is not merely an inference — the phase's own plan explicitly named these three sites and instructed the opposite of what shipped:
-
-> "Leave these consumer-facing paths exactly as they are, because they name where the skills live once installed into somebody else's project, not where they live here: ... `src/skills/c64-provenance-diff/scripts/diff-images.mjs` :696, :711, :786 ... Add a one-line comment at the `diff-images.mjs` :696 generation site recording that the embedded invocation path is deliberately the consumer's installed location, so a future sweep does not 'fix' it." (`16-01-PLAN.md`)
-
-The comment was added (lines 693-696: "the embedded invocation path below is deliberately the CONSUMER's installed location (`src/skills/...`), not this repository's source-tree location (`src/skills/...`)") — but both halves of that sentence now name the *same* string, because the literal itself was rewritten by the blind sweep the comment exists to prevent. The comment is now self-contradictory in place, which is itself the tell.
-
-The plan's own verification step for this exact spot (`16-01-PLAN.md` line 176) was `grep -c 'c64-provenance-diff/scripts/diff-images.mjs' src/skills/c64-provenance-diff/scripts/diff-images.mjs` returning at least 3 — a substring match that is satisfied identically by `.claude/skills/c64-provenance-diff/scripts/diff-images.mjs` and `src/skills/c64-provenance-diff/scripts/diff-images.mjs`, so it could never have caught this regression. No test in `diff-images.test.mjs` asserts on the literal generated string either (confirmed by inspection and a live run — 41/42 pass, 1 skip, with no assertion touching this text).
-
-**Fix:**
-```js
-// diff-images.mjs, all three sites (696-699, 711-714, 786-789):
-// revert the embedded literal back to the consumer-installed path
-let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
-...
-    `\`.claude/skills/c64-provenance-diff/scripts/diff-images.mjs\`'s \`renderLedger\` and is regenerable at any time from the committed ` +
-...
-          method: "anchor-proven via .claude/skills/c64-provenance-diff/scripts/diff-images.mjs anchor-search -- see NOTES.md for the full narrative",
-```
-Also fix the now-nonsensical comment at lines 693-696 so it once again contrasts two *different* paths, and add a regression test in `diff-images.test.mjs` that asserts `renderLedger(...)` output contains the literal substring `.claude/skills/c64-provenance-diff/scripts/diff-images.mjs` and does **not** contain `src/skills/c64-provenance-diff` — the missing guard that let this ship.
+Two warnings, no blockers. Both are real, provable weaknesses in the new guard/test code itself (exactly the defect class this round-2 review was asked to scrutinise), not in the production skill scripts' behaviour.
 
 ## Warnings
 
-### WR-01: New `wireMcp()` regression suite is committed but never run by CI
+### WR-05: `ci-suite-coverage.test.ts`'s FROZEN_REGISTRY proof match is an unanchored substring, not a real command check
 
-**File:** `installer/wire-mcp.test.mjs` (381 lines, 18 tests, new this phase); `installer/package.json:52`; `.github/workflows/ci.yml`
+**File:** `src/mcp/vice/ci-suite-coverage.test.ts:213-217`
+**Issue:** `checkCoverage()` proves a `FROZEN_REGISTRY` directory ("src/mcp/vice", "installer") is covered by checking `step.includes(\`run: ${proof}\`)` where `proof` is the literal string `"npm test"`. This is a plain substring test with no word boundary or line-anchoring on either side. Confirmed live:
 
-**Issue:** This phase adds `installer/package.json`'s `"test": "node --test '*.test.mjs'"` script and a genuinely thorough 18-test regression suite for `wireMcp()` — the installer's only code that reads/edits/rewrites a file it does not own (a consumer's `.mcp.json`). Its own header states the motivation directly: "Before this file, PKG-01's merge half had zero automated coverage." I ran it (`cd installer && node --test wire-mcp.test.mjs`): 18/18 pass.
-
-But `.github/workflows/ci.yml` never invokes it. The only two `working-directory: installer` steps in the whole workflow (lines 255 and 329) run `npm version` / `npm pkg set` / `npm publish` inside the `publish-npm` and `release-on-merge` jobs — neither runs `npm test`, `npm ci`, or `node --test`. There is no "Test installer" step anywhere in the `build` job (the job that runs on every PR and every push). This is the exact asymmetry class already identified for `check-npm-packages.mjs`'s two tarball-assertion blocks (installer checked less than vice-mcp) — here it recurs one level up: the installer package has a real, passing test suite that nothing in CI ever executes, so a future regression in `wireMcp()` (the exact class of bug WR-01... err CR-01 above demonstrates this phase is capable of introducing) would ship silently.
-
-**Fix:** Add a step to the `build` job in `.github/workflows/ci.yml`, e.g.:
-```yaml
-- name: Test the installer
-  working-directory: installer
-  run: npm test
+```
+$ node -e '
+const step = "      - name: Test\n        working-directory: src/mcp/vice\n        run: npm test -- --test-name-pattern=smoke\n";
+console.log(step.includes("run: npm test"));   // true
+'
+true
 ```
 
-### WR-02: Self-contradictory relocation comments describing the repo-root hop count in `r2000-symbol-roundtrip.test.ts`
-
-**File:** `src/mcp/vice/r2000-symbol-roundtrip.test.ts:55, 467`
-
-**Issue:** Both occurrences of the hop-count comment read:
+Any step whose `run:` line is `npm test` *followed by anything* (extra flags after `--`, a name-pattern filter, a piped/chained command such as `npm test && echo done`) still satisfies this "proof", because `.includes()` only checks that the substring occurs somewhere in the step text — it does not anchor to end-of-line or word-boundary. A future edit that appends `-- --test-name-pattern=...` to the vice-mcp or installer `Test` step (a realistic way to silently narrow which tests actually run, since `node --test` forwards args after `--` to its own filter) would still report `unproven: []` / "covered" from this guard, exactly the "verification that cannot fail" defect class this gap-closure round exists to close. (For the specific `src/mcp/vice` full-glob-vs-`test:automated` narrowing this phase already worried about, `ci-guardrails.test.mjs`'s own `findRunStepBlocksForNpmTest`/`findRunStepBlocksForNarrowedGate` regexes are properly `\b`-anchored and would still catch it — but there is no equivalent narrowing guard for the `installer` entry, so for that directory this is the *only* guard, and it is vacuous against a suffix-appended narrowing.)
+**Fix:** Anchor the proof check to the whole `run:` line, not a bare substring, e.g.:
+```ts
+const covered = steps.some((step) => {
+  if (!step.includes(`working-directory: ${workingDirectory}`)) return false;
+  return step.split("\n").some((line) => /^\s*run:\s*npm test\s*$/.test(line));
+});
 ```
-// `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
-```
-This mixes the new starting segment (`src/mcp/vice`) with the *old* intermediate segments (`.claude/mcp`, `.claude`) from before this phase's move. The actual code (`join(HERE, "..", "..", "..")`, three `".."` hops) is correct — the hop *count* didn't change because `src/mcp/vice` and `.claude/mcp/vice` are both three segments below the repo root — but the comment now describes a resolution chain that does not exist on disk in either the pre- or post-move tree. In a codebase whose own `repo-root.ts` treats exactly this class of comment (documenting *why* a hop count is what it is) as load-bearing enough to warrant paragraph-length headers on every past move, a stale intermediate-segment name is a real quality regression, not a nitpick — a future reader tracing this comment literally would go looking for a `.claude/mcp` directory that hasn't existed since this phase.
+so an appended flag, filter, or chained command fails the proof instead of satisfying it by substring inclusion.
 
-**Fix:**
+### WR-06: Two skill-script test files still carry the exact stale repo-root hop-chain comment `hop-chain-comments.test.ts` was written to eliminate — outside that guard's scan scope
+
+**File:** `src/skills/c64-provenance-diff/scripts/diff-images.test.mjs:31`, `src/skills/c64-ram-capture/scripts/watch-loads.test.mjs:29`
+**Issue:** Both files contain, verbatim:
 ```js
-// `src/mcp/vice` -> `src/mcp` -> `src` -> repo root.
+const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> .claude -> repo root
 ```
-at both sites (lines 55 and 467).
+This is precisely the defect class `hop-chain-comments.test.ts` (added this same round) exists to catch: a chain-arrow comment naming the repository root that still carries the pre-relocation intermediate segment (`.claude`) phase 16-04 moved away from. The code itself is correct (4 `".."` hops from `<skill>/scripts/` to the repo root is unchanged whether the parent is `.claude/skills/` or `src/skills/`), but the comment's third hop should read `src`, not `.claude` — it currently sends a reader looking for `.claude/skills/...` on disk to a directory that has not existed since phase 16-04.
 
-### WR-03: Generic reuse advice in `acme-build/SKILL.md` now points outside Claude Code's skill-discovery path
-
-**File:** `src/skills/acme-build/SKILL.md:173-174`
-
-**Issue:**
-```
-Copy `acme.mjs` into any project's `src/skills/acme-build/scripts/`, and
-`template.a` into `src/skills/acme-build/`, to use this elsewhere.
-```
-This is generic advice aimed at a reader who wants to reuse `acme.mjs` standalone in an unrelated project, outside this repo's own installer/plugin routes. Before this phase it correctly said `.claude/skills/acme-build/scripts/` — the actual Claude Code skill-discovery convention, and the same path `installer/bin/cli.mjs`'s `installSkills()` deploys real consumers to (`<target>/.claude/skills/`). This project's own new README section (added in this same phase) states explicitly that `src/skills/` "is not a path Claude Code auto-discovers." Recommending `src/skills/acme-build/scripts/` as the destination for "any project" wanting Claude Code to pick this skill up is now factually wrong — it recommends this repository's own idiosyncratic internal layout instead of the convention that makes a skill discoverable.
-
-**Fix:**
-```
-Copy `acme.mjs` into any project's `.claude/skills/acme-build/scripts/`, and
-`template.a` into `.claude/skills/acme-build/`, to use this elsewhere.
-```
-
-### WR-04: `check-npm-packages.mjs`'s installer tarball assertion block has no test-file or fixture-leak check (structural, confirmed adjacent to the known finding)
-
-**File:** `scripts/check-npm-packages.mjs:194-200`
-
-**Issue:** Named as the pre-confirmed defect in the review brief, included here for completeness of the written record: the `@henols/c64-re-tools` block (lines 194-200) asserts only `name`, `bin/cli.mjs` presence, exactly 6 `SKILL.md` files, and no `node_modules/` — it has no equivalent of the vice-mcp block's `!vice.files.some((f) => /\.test\.(ts|mts|mjs|js)$/.test(f))` or `!vice.files.some((f) => f.startsWith("fixtures/"))` assertions. Because `installer/scripts/sync-skills.mjs` does an unfiltered recursive `cpSync(join(SRC, name), join(DEST, name), { recursive: true })` for every skill directory, and four skill directories under `src/skills/` carry colocated `*.test.mjs` files (`c64-provenance-diff/scripts/diff-images.test.mjs`, `c64-ram-capture/scripts/{d64-parse,dump-artifacts,watch-loads}.test.mjs`), those four test files are copied unfiltered into `installer/skills/` and ship in the published `@henols/c64-re-tools` tarball with nothing in CI catching it.
-
-I checked for other one-sided validator asymmetries this phase might have introduced and found none: `scripts/package.sh`'s new `mustNotExist` list (`.claude/skills`, `.claude/mcp/vice`) is symmetric across both payload halves; `scripts/check-skill-tool-coverage.mjs` and `scripts/check-skill-fork-honesty.mjs` both correctly repoint to `src/skills/` with their non-vacuity floors intact (I ran both live: exit 0, floors unchanged); `installer/scripts/sync-skills.mjs` itself copies nothing extra beyond what already lived under `src/skills/`.
-
-**Fix:** Add to the installer block in `scripts/check-npm-packages.mjs`:
-```js
-need(
-  !inst.files.some((f) => /\.test\.(mjs|js)$/.test(f)),
-  "installer: test files leaked into tarball"
-);
-```
-
-## Info
-
-### IN-01: `r2000-regbits.test.ts`'s synthetic scratch directory keeps a stale `claude/mcp/vice` segment name
-
-**File:** `src/mcp/vice/r2000-regbits.test.ts:91, 220`
-
-**Issue:** Two tests build a synthetic tree to exercise the drift guard, e.g. `const mcpDir = path.join(tmpDir, "claude", "mcp", "vice");`. This is harmless — only the *depth* (3 segments) matters for the copied generator's own `MEMMAP_PATH` hop-count formula to resolve correctly against the sibling `tmpDir/src/skills/...` directory, and the depth is correct — but the segment name is a leftover from the pre-move `.claude/mcp/vice` shape rather than the new `src/mcp/vice` shape the adjacent comment explicitly describes ("Mirror the real repo shape 3 levels deep"). Purely cosmetic; verified functionally correct by running the file (all tests pass). No fix required, but a future editor renaming this scratch path to `src`/`mcp`/`vice` for consistency with the comment above it would remove the last trace of the pre-move name from this file.
+Grep confirms these are the only two occurrences and that `hop-chain-comments.test.ts`'s own `readdirSync(HERE)`-based scan (scoped to `*.ts`/`*.mts` files directly in `src/mcp/vice/`) is structurally unable to reach either file: both live under `src/skills/*/scripts/` as `.mjs`, two directory levels and a different extension away from that guard's corpus. This is not a bug in the guard (its scan-set decision is explicitly documented and deliberate for its own directory), but it means the exact regression class this phase spent a whole guard closing still has two live instances the guard cannot see, in files this same phase touched (both files gained new `skill-consumer-paths`-related assertions in this round).
+**Fix:** Correct both comments to read `// scripts -> skill -> skills -> src -> repo root`. Optionally, extend `hop-chain-comments.test.ts`'s corpus (or add a sibling guard) to also scan `src/skills/**/*.mjs`, since this same half-swept-chain-comment defect class is not unique to `src/mcp/vice/`.
 
 ---
 
-_Reviewed: 2026-08-23T00:00:00Z_
+_Reviewed: 2026-08-23T03:18:34Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
