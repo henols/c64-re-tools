@@ -144,6 +144,28 @@ jobs:
         working-directory: src/mcp/vice
         run: npm run smoke
 
+      # Phase 16 gap closure (16-08, code review WR-01): installer/wire-mcp.test.mjs
+      # (18 tests) pins wireMcp(), the installer's only code that reads, edits and
+      # rewrites a file it does not own (a consumer's .mcp.json), and was committed
+      # this phase with nothing in CI executing it. No `npm ci` step is needed here
+      # -- installer/bin/cli.mjs imports only node: builtins, so the suite runs
+      # against a bare checkout.
+      - name: Test the installer
+        working-directory: installer
+        run: npm test
+
+      # Phase 16 gap closure (16-08, code review WR-01): the four skill suites under
+      # src/skills/*/scripts/ (diff-images.test.mjs, d64-parse.test.mjs,
+      # dump-artifacts.test.mjs, watch-loads.test.mjs; 95 tests, 87 pass, 8 skipped,
+      # 0 fail measured at plan time) were likewise committed and executed by
+      # nothing in CI -- the vice-mcp `npm test` glob above is cwd-only and
+      # non-recursive, so it structurally cannot reach a suite outside its own
+      # directory. These suites need no ACME and no emulator, so they add roughly
+      # half a second to the job. The glob is quoted so Node receives the pattern
+      # rather than a shell expansion.
+      - name: Test the skills
+        run: node --test 'src/skills/*/scripts/*.test.mjs'
+
       - name: Validate npm package contents
         run: node scripts/check-npm-packages.mjs
 
