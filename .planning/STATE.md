@@ -5,11 +5,11 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
 status: completed
-stopped_at: Phase 17 complete — all phases complete
-last_updated: "2026-08-23T11:55:54.449Z"
+stopped_at: Completed quick 260823-kf6 (STATE.md carried-forward ledger correction)
+last_updated: "2026-08-23T13:01:52.195Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 complete
-state_head: 64acd37d1d86e619cff82d19dc9d8f5263050946
+state_head: 8205ef964c5ab1a577ef99291718a2800e9d3893
 progress:
   total_phases: 6
   completed_phases: 6
@@ -438,6 +438,7 @@ Recent decisions affecting current work:
 - [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion, and made the positive control conditional on pending.length > 0 (selecting its stem from the live pending array instead of a hard-coded filename) — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
 - [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
 - [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — The checkpoint was rendered and the operator answered 298 seconds later in free text `you decide` rather than selecting an option; attendance and delegation are on the record, comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap G-17-1); orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
+- [Quick 260823-kf6]: Flipped QUAL-01/QUAL-02/QUAL-03 to Closed in STATE.md's carried-forward ledger, naming PKG-02/PKG-03/PKG-04; reconciled STATE.md's Deferred Items prose and REQUIREMENTS.md's DEBT-04 note to the one genuinely surviving open row (UP-01/UP-02) — corrects v0.4.0-MILESTONE-AUDIT.md round-1 tech-debt cluster 1
 
 ### Pending Todos
 
@@ -859,8 +860,9 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23
-Stopped at: Phase 17 verified and closed (UAT 2/2 pass, verification `passed`,
+Last session: 2026-08-23T13:01:01.247Z
+Stopped at: Completed quick 260823-kf6 (STATE.md carried-forward ledger correction);
+  Phase 17 previously verified and closed (UAT 2/2 pass, verification `passed`,
   `17-SECURITY.md` `threats_open: 0`); v0.4.0 is 100% complete — all 6 phases,
   44/44 plans. Ready to run `/gsd-audit-milestone`, then `/gsd-complete-milestone`.
 Resume file: None
