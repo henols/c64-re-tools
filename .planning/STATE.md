@@ -397,7 +397,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-2 pending (2 files in `.planning/todos/pending/` + 0 UAT-gap rows = 2) — see
+0 pending (0 files in `.planning/todos/pending/` + 0 UAT-gap rows = 0) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -474,8 +474,8 @@ Items` below for the current, itemised list — this prose figure must always
 equal that section's table row count, which has gone stale twice before and
 is not itself guarded.
 
-**As of phase 15 plan 15-12 Task 1 (2026-08-22), only two todos remain pending
-— both promoted, neither fixed or closed here.** Plan 15-12 Task 1 closed the
+**As of phase 15 plan 15-12 Task 1 (2026-08-22), only two todos remained pending
+— both promoted, neither fixed nor closed at that point.** Plan 15-12 Task 1 closed the
 four todos that used to fill this paragraph's "newest pending" slot —
 `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned` (ten
 Phase 08 findings, transcribed with resolvable commits from plans 15-02/15-03),
@@ -487,14 +487,24 @@ within-bounded-poll` (promoted with a named owner — plan 15-08's live
 evidence bore on neither of the two closing conditions) — see
 `.planning/todos/completed/` for all four Resolutions.
 
-The two todos that remain pending are `2026-08-20-relocate-plugin-payload-
+The two todos that had remained pending were `2026-08-20-relocate-plugin-payload-
 under-src-and-merge-mcp-json` and `2026-08-21-stale-phase-pointers-in-stock-
 cia-and-stock-dispatch-comments`, both promoted to named Phase 16
 requirements (`PKG-01` and `PKG-03` respectively — both todos already carried
 `resolves_phase: 16` in their own frontmatter, confirmed against
 `REQUIREMENTS.md`'s Phase 16 goal text before promoting) rather than fixed in
-this phase. Neither is carried silently: both are recorded with named owners
+Phase 15. Neither was carried silently: both were recorded with named owners
 in `REQUIREMENTS.md` → Future Requirements → `### Promoted by DEBT-01`.
+
+**Phase 16 then closed both** (2026-08-23): `PKG-01` and `PKG-03` both read
+`Complete` in `REQUIREMENTS.md`'s Traceability table, and
+`.planning/todos/pending/` is empty for the first time in this project's
+history. Phase 17 plan 17-01 Task 2 (2026-08-23) is the terminus of this
+history — it measured the true count and found it 0, updating this section's
+opening figure from 2 to 0. This section's opening figure above (`0 pending`)
+is derived from, and must always equal, `## Deferred Items`'s table row count
+below — a discipline that has gone stale twice before and is not itself
+guarded.
 
 ### Quick Tasks Completed
 
@@ -614,7 +624,9 @@ for the Resolution. 4 of the 18 were
 opened during v0.3.0 (the fork-backend-removal question — resolved 2026-08-22
 by Phase 14 plan 14-05, see `.planning/todos/completed/` for the Resolution
 section;
-`2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json`,
+the plugin-payload relocation under `src/` with the `.mcp.json` merge
+(resolved 2026-08-23 by Phase 16 as `PKG-01`, see `.planning/todos/completed/`
+for the closed todo),
 the `.vsf`-as-a-regenerator2000-bootstrap-input backlog item (resolved
 `wont-fix` 2026-08-22 by Phase 15 plan 15-12, quoting `REQUIREMENTS.md`'s own
 Out of Scope line — see `.planning/todos/completed/` for the Resolution), and
@@ -626,7 +638,9 @@ building Task 4's completeness guard, which caught undispositioned findings
 outside Phase 10/11 too
 (the hand-copied ACME/regenerator2000 gate migration — resolved 2026-08-22 by
 Phase 15 plan 15-07, see `.planning/todos/completed/` for the Resolution;
-`2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments`;
+the stale phase pointers in `stock-cia.ts` and `stock-dispatch.ts` comments
+(resolved 2026-08-23 by Phase 16 as `PKG-03`, see `.planning/todos/completed/`
+for the closed todo);
 the Phase 08 review-disposition backlog item, v0.2.0's `08-REVIEW.md`
 `WR-04`..`WR-13`, resolved 2026-08-22 by Phase 15 plans 15-02/15-03/15-12 —
 see `.planning/todos/completed/` for the Resolution).
@@ -722,22 +736,37 @@ suites pass cleanly on the runner in under two minutes, so `npm test` stays
 in CI (deliberately wider than the local `npm run test:automated` gate),
 documented in a comment above `ci.yml`'s `Test` step citing the run id — and
 closed the todo — pending 7 → 6, total 8 → 7.
-**Current, as of phase 15 plan 15-12 Task 3, the phase's final reconciliation
-(2026-08-22): 2 items — 2 pending todos, zero UAT gaps.** The `uat_gap` row
-present since the v0.2.0 close is removed here: `03-HUMAN-UAT.md` now records
-zero `result: [pending]` rows (scenario 1 pass, scenario 2 partial — an
-honest joystick negative result, not a pending one — scenario 3 pass, all
-closed live by plans 15-08/15-10), so per this table's own accounting rule
-(pending todo files plus any UAT-gap row still open) there is nothing left
-to carry as a `uat_gap` row. The count in this paragraph is derived from,
-and must equal, the row count of the table immediately below it — this is
-also, for the first time, the arithmetic in full: 2 pending todo files in
-`.planning/todos/pending/` + 0 UAT-gap rows = 2.
+**Current, as of Phase 17 plan 17-01 Task 2 (2026-08-23): 0 items — 0 pending
+todos, zero UAT gaps.** This is the first time the pending-todo tree has read
+empty in this project's history. Phase 16 discharged both todos that were
+still pending at the Phase 15 close — `PKG-01` (the plugin-payload relocation
+under `src/` with the `.mcp.json` merge) and `PKG-03` (the stale phase
+pointers in `stock-cia.ts`/`stock-dispatch.ts` comments) — moving this count
+**2 → 0**. The count in this paragraph is derived from
+`.planning/todos/pending/` and guarded in both directions by
+`docs-deferred-ledger.test.ts`, whose non-vacuity floor this phase's own plan
+17-01 task 1 lowered from `pending.length >= 2` to no floor at all: the
+previous floor of two could not express a genuinely empty tree, and the
+guard's own prior-author comment named this exact phase as the one that might
+need to lower it further. The arithmetic in full: 0 pending todo files in `.planning/todos/pending/` + 0 UAT-gap rows = 0.
+This 0 excludes, and does not
+resolve, two categories this table's own accounting rule (pending todo files
+plus any open UAT-gap row) never covered and still does not scan — the
+guard's own header comment records both scoping exclusions explicitly, and
+this paragraph states them rather than leaving a reader to infer zero known
+debt: the `### Carried forward from earlier closes` table below, which still
+carries four `Deferred` rows naming five items (`UP-01`/`UP-02` share one row;
+then `QUAL-01`, `QUAL-02`, `QUAL-03`), and the roughly fifteen carried
+WR-class code-review findings enumerated in
+`milestones/v0.2.0-MILESTONE-AUDIT.md`. Both are unchanged by this
+measurement.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
-| todo | 2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json | — | Pending — promoted to `PKG-01` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
-| todo | 2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments | — | Pending — promoted to `PKG-03` (Phase 16), named owner recorded in `REQUIREMENTS.md` → Future Requirements by plan 15-12 |
+
+*The ledger is empty at the v0.4.0 close. The header row above is retained
+deliberately, so a reader can see the table was emptied rather than
+truncated.*
 
 Not counted above, because they are complete on disk: all nine
 `.planning/quick/` tasks the v0.3.0 pre-close audit reported as `[missing]`
