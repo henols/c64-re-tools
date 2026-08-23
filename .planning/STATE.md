@@ -4,17 +4,17 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
-status: executing
-stopped_at: Completed 16-07-PLAN.md
-last_updated: "2026-08-22T23:52:55.472Z"
+status: verifying
+stopped_at: Completed 16-05-PLAN.md
+last_updated: "2026-08-23T00:16:22.561Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 16 execution started
-state_head: 1941bc271a2bc876ce4dc46c76bc079775caf8fe
+state_head: 1afa62e9350742bed9f3af7ea59873aa092d8a7e
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 36
-  completed_plans: 35
+  completed_plans: 36
   percent: 67
 ---
 
@@ -58,7 +58,7 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 Phase: 16 (Packaging and Repo Shape) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
 `passed` 4/4. It ran as nine waves but sequentially on the main checkout
@@ -248,6 +248,7 @@ Last activity: 2026-08-22 — Phase 16 execution started
 | Phase 16 P04 | ~55min | 3 tasks | 238 files |
 | Phase 16 P06 | 55min | 3 tasks | 3 files |
 | Phase 16 P07 | ~90min | 3 tasks | 15 files |
+| Phase 16 P05 | 40min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -370,6 +371,7 @@ Recent decisions affecting current work:
 - [Phase 16]: Phase 16 plan 04: relocated the MCP server package (@henols/vice-mcp) from .claude/mcp/vice/ to src/mcp/vice/ in one atomic git mv; repoRoot()'s branch-4 hop count reviewed and left unchanged (same 3-segment depth); found and fixed 3 functional literals plus ~22 stale .claude/skills self-references that plan 16-01's own sweep missed; published tarball proven byte-identical to the pre-move baseline — PKG-01's second, larger half -- the same relocation machinery plan 16-01 proved on the skills tree, driven through the ~180-file vice-mcp package
 - [Phase 16]: Phase 16 plan 16-06: PKG-02 closed -- all three previously-untested skill CLI scripts (acme.mjs, driver.mjs, derive.mjs) now have committed, discovered test coverage (47 new tests: 16+17+14); a driver.mjs .d.mts declaration file was tried and reverted after it leaked into the installer npm tarball, replaced with a scoped @ts-expect-error on the one import line instead; parseAddr()'s null-address branch confirmed unreachable through the shipped (unexported) surface, pinned to its nearest reachable observed proxy rather than invented or fixed by editing the script.
 - [Phase 16]: PKG-03: comment-scoped orphaned-phase-pointer guard built; 15 sites + 2 test decision-id strings repointed at existing permanent records; fixture + gate-proof committed — Cut-phase citations must name the phase, not its number (re-tripping risk); matching is per-physical-line, not per-span, to avoid cross-line false positives measured in the real corpus
+- [Phase 16]: Phase 16 plan 05: swept CLAUDE.md/README.md/docs/*.md path references to relocated src/ trees; re-verified all four vice-proxy.ts line citations unchanged; fixed a pre-existing acme-build Project Skills table description drift; left one 2026-08-12 command transcript in docs/phase1-probe-results.md untouched as historical record
 
 ### Pending Todos
 
@@ -761,8 +763,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-22T23:52:55.305Z
-Stopped at: Completed 16-07-PLAN.md
+Last session: 2026-08-23T00:16:22.429Z
+Stopped at: Completed 16-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

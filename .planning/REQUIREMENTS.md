@@ -201,7 +201,7 @@ red.
 
 ### Packaging and Repo Shape
 
-- [ ] **PKG-01**: The plugin payload lives under `src/` with `.mcp.json` merged, and both published tarballs still contain exactly the right files (`scripts/check-npm-packages.mjs` green, no `node_modules/`, no tests, no fixtures leaked, skills present)
+- [x] **PKG-01**: The plugin payload lives under `src/` with `.mcp.json` merged, and both published tarballs still contain exactly the right files (`scripts/check-npm-packages.mjs` green, no `node_modules/`, no tests, no fixtures leaked, skills present)
 - [x] **PKG-02**: `acme.mjs`, `driver.mjs` and `derive.mjs` have tests (`QUAL-01`)
 - [x] **PKG-03**: Orphaned planning references in source comments are removed or repointed (`QUAL-02`), guarded against reintroduction
 - [ ] **PKG-04**: The emulator control-plane network exposure (`QUAL-03`) is either narrowed or recorded as accepted with rationale
@@ -352,7 +352,7 @@ Populated during roadmap creation.
 | DEBT-03 | 15 | Complete |
 | DEBT-04 | 17 | Pending |
 | CORE-01 | 17 | Pending |
-| PKG-01 | 16 | Pending |
+| PKG-01 | 16 | Complete |
 | PKG-02 | 16 | Complete |
 | PKG-03 | 16 | Complete |
 | PKG-04 | 16 | Pending |

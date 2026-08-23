@@ -418,7 +418,7 @@ source rather than re-swept after every source-editing plan (this phase's own se
 rationale, above). Same convention as Phase 15, where wave order also differed from plan
 order.
 
-**Plans**: 6/7 plans executed
+**Plans**: 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -438,7 +438,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
+- [x] 16-05-PLAN.md — Single documentation sweep: `CLAUDE.md` (52 references) plus README and `docs/*.md`, and re-verify the architectural line citations against final source
 
 ### Phase 17: Project Identity and Ledger Close
 
@@ -500,7 +500,7 @@ from commits — a plan of this shape silently cannot deliver.
 | 13. External Verification | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 14. Backend Decision | v0.4.0 | 5/5 | Complete    | 2026-08-22 |
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete    | 2026-08-22 |
-| 16. Packaging and Repo Shape | v0.4.0 | 6/7 | In Progress|  |
+| 16. Packaging and Repo Shape | v0.4.0 | 7/7 | In Progress|  |
 | 17. Project Identity and Ledger Close | v0.4.0 | 0/TBD | Not started | - |
 
 **v0.2.0 final state:** 9 phases, 87 plans, 51/51 in-scope requirements satisfied.
