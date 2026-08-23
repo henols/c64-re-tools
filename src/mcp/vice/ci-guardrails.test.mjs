@@ -106,10 +106,22 @@ function blockHasContinueOnError(block) {
 /** Finds step blocks whose `run:` line invokes the bare full-glob command
  * `npm test` (package.json's `test` script, `node --test '*.test.*'`) -- word
  * boundary after `test` so this cannot cross-match `npm test:automated` or
- * a hypothetical `npm testX`. */
+ * a hypothetical `npm testX`.
+ *
+ * Scoped to `working-directory: src/mcp/vice` (Phase 16 gap closure, 16-08):
+ * this guard exists specifically to catch the vice-mcp package's own `Test`
+ * step being narrowed away from the full glob, dropping BACK-05's wire proof
+ * (`vice-proxy.test.ts`). 16-08 added a second, LEGITIMATE `run: npm test`
+ * step ("Test the installer", `working-directory: installer`) covering an
+ * entirely different package with its own `test` script -- an unscoped match
+ * would find both and report a spurious "found 2, expected 1" failure. The
+ * working-directory pairing is what BACK-05's own step actually carries, so
+ * this disambiguates the same way ci-suite-coverage.test.ts's FROZEN_REGISTRY
+ * does for the installer/vice-mcp `npm test` ambiguity there. */
 function findRunStepBlocksForNpmTest(blocks) {
   const re = /run:\s*npm test\b/;
-  return blocks.filter((b) => re.test(b));
+  const scopeRe = /working-directory:\s*src\/mcp\/vice\b/;
+  return blocks.filter((b) => re.test(b) && scopeRe.test(b));
 }
 
 /** Finds step blocks whose `run:` line invokes either spelling of the
