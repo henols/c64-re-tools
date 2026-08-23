@@ -129,3 +129,12 @@ None - no external service configuration required.
 ---
 *Phase: 17-project-identity-and-ledger-close*
 *Completed: 2026-08-23*
+
+## Self-Check: PASSED
+
+- `src/mcp/vice/docs-deferred-ledger.test.ts` exists on disk — FOUND.
+- `.planning/STATE.md` exists on disk — FOUND.
+- Commit `09c097f` (Task 1) present in `git log --oneline --all` — FOUND.
+- Commit `e8df776` (Task 2) present in `git log --oneline --all` — FOUND.
+- `cd src/mcp/vice && node --test docs-deferred-ledger.test.ts` — re-run after all commits: 4 pass, 0 fail.
+- `find .planning/todos/pending -name '*.md' | wc -l` — 0.
