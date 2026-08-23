@@ -170,8 +170,8 @@ the shipped scaffold on every build with `$ACME` cleared (the "Assemble the
 acme-build scaffold (library-free)" step in `.github/workflows/ci.yml`), so
 this claim is re-checkable rather than a one-machine observation.
 
-Copy `acme.mjs` into any project's `src/skills/acme-build/scripts/`, and
-`template.a` into `src/skills/acme-build/`, to use this elsewhere.
+Copy `acme.mjs` into any project's `.claude/skills/acme-build/scripts/`, and
+`template.a` into `.claude/skills/acme-build/`, to use this elsewhere (the path Claude Code auto-discovers and `installSkills()` deploys to).
 
 ## Which skill does what
 

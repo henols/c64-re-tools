@@ -130,6 +130,25 @@ test("the scaffold verb writes a source file at the requested path; run twice ag
   });
 });
 
+test("the scaffold verb writes a `; Build:` line naming the consumer's installed location, never this repository's source-tree location (16-REVIEW.md CR-01 class)", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "game.a");
+    const r = runAcme(["new", target], { libraryFree: true });
+    assert.equal(r.status, 0);
+    const content = readFileSync(target, "utf8");
+    assert.match(
+      content,
+      /; Build:.*\.claude\/skills\/acme-build\/scripts\/acme\.mjs/,
+      "the scaffold's Build: line must name the consumer-installed script path"
+    );
+    assert.doesNotMatch(
+      content,
+      /src\/skills\/acme-build\/scripts\/acme\.mjs/,
+      "the scaffold must never name this repository's source-tree script path"
+    );
+  });
+});
+
 test("the scaffold verb with a missing path argument: exits 1 with the documented usage message", () => {
   const r = runAcme(["new"]);
   assert.equal(r.status, 1);
