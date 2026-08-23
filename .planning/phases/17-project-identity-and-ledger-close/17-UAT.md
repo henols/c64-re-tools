@@ -3,7 +3,7 @@ status: diagnosed
 phase: 17-project-identity-and-ledger-close
 source: [17-VERIFICATION.md]
 started: 2026-08-23T10:00:00Z
-updated: 2026-08-23T13:05:00Z
+updated: 2026-08-23T13:15:00Z
 ---
 
 ## Current Test
@@ -16,8 +16,9 @@ updated: 2026-08-23T13:05:00Z
 
 expected: A human confirms that attended, informed delegation ("you decide") after being shown the full evidence at the `gate="blocking-human"` checkpoint satisfies the intent of must_have truth 3 and its sibling prohibition — or determines the literal wording ("the option a human selected") was not met, and either corrects the wording for future phases or accepts it as a disclosed deviation.
 result: issue
-reported: "Asked (1) whether the recorded Provenance account is true — that a human was stopped at the blocking-human gate, shown the six-for/five-against evidence, and replied \"you decide\" — and (2) whether the session deciding on their behalf was acceptable. Answered: \"1. no  2. pass\". The human does not confirm ever seeing that gate prompt; the `keep-dated` verdict itself is accepted."
-severity: major
+severity_revised_from: major
+reported: "Asked (1) whether the recorded Provenance account is true — that a human was stopped at the blocking-human gate, shown the six-for/five-against evidence, and replied \"you decide\" — and (2) whether the session deciding on their behalf was acceptable. Answered: \"1. no  2. pass\". The human does not confirm ever seeing that gate prompt; the `keep-dated` verdict itself is accepted. POST-DIAGNOSIS: the transcript disproves the premise of this answer — the gate was rendered and answered \"you decide \" after 298s. The answer is non-recall, elicited by a badly-framed memory question. At disposition the human chose \"Fix the wording\": correct the unverifiable \"having read it\" clause across all 9 passages, severity minor."
+severity: minor
 
 **Context.** The record is unusually transparent about the exact shape of what
 happened, in `17-02-SUMMARY.md`, PROJECT.md's `*Provenance.*` paragraph, and
@@ -60,8 +61,21 @@ blocked: 0
   truth: "The provenance recorded for CORE-01's verdict accurately describes how the verdict was reached — specifically, that a human was shown the full evidence at plan 17-02 task 1's gate=\"blocking-human\" checkpoint and explicitly delegated the choice to the orchestrating session."
   status: failed
   reason: "User reported: asked whether that account is true, the human answered no — they do not confirm ever seeing the gate prompt or the six-for/five-against evidence, and did not say \"you decide\" in response to it. The human separately accepted the `keep-dated` verdict itself (answer 2 = pass), so the defect is the provenance record, not the decision."
-  severity: major
+  severity: minor
+  severity_was: major
   test: 1
+  disposition: |
+    Human disposition at 2026-08-23 (post-diagnosis, options presented with the
+    transcript evidence in hand): "Fix the wording" — keep this a gap at minor,
+    correct the unverifiable comprehension clause across all 9 passages in 6
+    documents, fix the four stale "5 tests" counts, and record that the
+    transcript rather than operator recall is what settles the provenance
+    question. CORE-01 stays [x], reported as intent-satisfied with a disclosed
+    deviation (must_have truth 3 literally unmet: delegated, not selected).
+    Explicitly NOT chosen: adding a provenance predicate to
+    docs-core-value-decision.test.ts (offered, declined — the guard needs no
+    change for correctness); PROJECT.md-only minimal fix; and passing test 1
+    with no fix.
   scope: |
     Three artifacts assert the delegation as fact and would all be wrong together:
       1. .planning/PROJECT.md → `## Core Value` → the `*Provenance.*` paragraph
