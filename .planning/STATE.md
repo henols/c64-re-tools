@@ -4,16 +4,16 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
-status: verifying
+status: executing
 stopped_at: Completed 16-05-PLAN.md
-last_updated: "2026-08-23T00:16:22.561Z"
+last_updated: "2026-08-23T01:32:50.583Z"
 last_activity: 2026-08-22
 last_activity_desc: Phase 16 execution started
-state_head: 1afa62e9350742bed9f3af7ea59873aa092d8a7e
+state_head: 011e2db947f24fa269fe3d550f876f0c476d5eb8
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 36
+  total_plans: 40
   completed_plans: 36
   percent: 67
 ---
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 16 (Packaging and Repo Shape) — EXECUTING
-Plan: 7 of 7
-Status: Phase complete — ready for verification
+Phase: 16 (Packaging and Repo Shape) — READY TO EXECUTE (gap closure)
+Plan: 7 of 11 executed — 4 gap-closure plans (16-08..16-11) ready
+Status: Ready to execute gap closure
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
 `passed` 4/4. It ran as nine waves but sequentially on the main checkout
