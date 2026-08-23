@@ -52,7 +52,7 @@ import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+// `src/mcp/vice` -> `src/mcp` -> `src` -> repo root.
 const FIXTURE_PATH = join(
   HERE,
   "..",
@@ -464,7 +464,7 @@ function walkFiles(dir: string): string[] {
   return results;
 }
 
-// `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+// `src/mcp/vice` -> `src/mcp` -> `src` -> repo root.
 const REPO_ROOT = join(HERE, "..", "..", "..");
 const SKILLS_DIR = join(REPO_ROOT, "src", "skills");
 const SCRIPTS_DIR = join(REPO_ROOT, "scripts");

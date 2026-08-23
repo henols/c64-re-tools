@@ -1,0 +1,27 @@
+// planted-hop-chain-fixture.ts.txt
+//
+// THIS FILE EXISTS ONLY TO PROVE hop-chain-comments.test.ts's detector FLAGS
+// a half-swept repo-root chain comment and does NOT flag legitimate
+// historical narration that names both the old and new roots on one line
+// without the repository-root phrase. It is read directly, by path, only
+// from within hop-chain-comments.test.ts -- it is never executed, never
+// typechecked, and never imported. THIS FILE IS NOT REAL SOURCE, and it
+// must keep a non-source (`.txt`) extension so the guard's own
+// `readdirSync(HERE)`-derived scan can never pick it up.
+//
+// WHY THE .ts.txt EXTENSION: hop-chain-comments.test.ts enumerates every
+// `*.ts`/`*.mts` file in this module directory via `readdirSync(HERE)`; this
+// file's name ends in `.txt`, so it can never match that filter and can
+// never be picked up by the real corpus scan -- the same "outside the scan
+// by construction" mechanism `fixtures/planted-phase-pointer-fixture.ts.txt`
+// already uses for the sibling `comment-phase-pointers.test.ts` guard. Do
+// not rename this file to end in `.ts` or `.mts`.
+//
+// Both demonstration lines below are kept to ONE PHYSICAL LINE deliberately
+// -- the real guard matches per physical line (never a multi-line join), so
+// a planted example wrapped across two lines the way real prose is would
+// test line-wrapping behaviour instead of the pattern itself.
+
+// [violation] `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+
+// [legitimate-narration] what a past move did: `.claude/mcp/vice/` -> `src/mcp/vice/`, still three segments below the root.
