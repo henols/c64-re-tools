@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 17-project-identity-and-ledger-close
-source: [17-VERIFICATION.md]
+source: [17-VERIFICATION.md, 17-04-SUMMARY.md]
 started: 2026-08-23T10:00:00Z
-updated: 2026-08-23T13:15:00Z
+updated: 2026-08-23T11:51:44Z
 ---
 
 ## Current Test
@@ -12,27 +12,36 @@ updated: 2026-08-23T13:15:00Z
 
 ## Tests
 
-### 1. Confirm whether CORE-01's must_have truth 3 is satisfied by what actually happened at the blocking-human gate
+### 1. Re-verify the corrected CORE-01 provenance record after G-17-1 closure
 
-expected: A human confirms that attended, informed delegation ("you decide") after being shown the full evidence at the `gate="blocking-human"` checkpoint satisfies the intent of must_have truth 3 and its sibling prohibition — or determines the literal wording ("the option a human selected") was not met, and either corrects the wording for future phases or accepts it as a disclosed deviation.
-result: issue
-severity_revised_from: major
-reported: "Asked (1) whether the recorded Provenance account is true — that a human was stopped at the blocking-human gate, shown the six-for/five-against evidence, and replied \"you decide\" — and (2) whether the session deciding on their behalf was acceptable. Answered: \"1. no  2. pass\". The human does not confirm ever seeing that gate prompt; the `keep-dated` verdict itself is accepted. POST-DIAGNOSIS: the transcript disproves the premise of this answer — the gate was rendered and answered \"you decide \" after 298s. The answer is non-recall, elicited by a badly-framed memory question. At disposition the human chose \"Fix the wording\": correct the unverifiable \"having read it\" clause across all 9 passages, severity minor."
-severity: minor
+expected: Reading PROJECT.md's `## Core Value` → `*Provenance.*` paragraph as it stands now, it asserts only what an artifact can evidence — that the `gate="blocking-human"` checkpoint was rendered, that a free-text `you decide` came back 298 seconds later, and that the orchestrator then selected `keep-dated` — and states plainly that comprehension is not evidenced. The disclosed deviation (must_have truth 3 literally unmet: delegated, not personally selected) is stated rather than smoothed over. Nothing in it requires the reader to recall the exchange.
+result: pass
+round_2_reported: "pass"
 
-**Context.** The record is unusually transparent about the exact shape of what
-happened, in `17-02-SUMMARY.md`, PROJECT.md's `*Provenance.*` paragraph, and
-REQUIREMENTS.md's CORE-01 closure note: a human read the full evidence at the
-blocking-human checkpoint and explicitly said "you decide" rather than picking
-`restate` or `keep-dated` themselves; the orchestrating session then selected
-`keep-dated`.
+round_1_result: issue
+round_1_reported: "Asked (1) whether the recorded Provenance account is true — that a human was stopped at the blocking-human gate, shown the six-for/five-against evidence, and replied \"you decide\" — and (2) whether the session deciding on their behalf was acceptable. Answered: \"1. no  2. pass\". The human does not confirm ever seeing that gate prompt; the `keep-dated` verdict itself is accepted. POST-DIAGNOSIS: the transcript disproves the premise of this answer — the gate was rendered and answered \"you decide \" after 298s. The answer is non-recall, elicited by a badly-framed memory question. At disposition the human chose \"Fix the wording\": correct the unverifiable \"having read it\" clause across all 9 passages, severity minor."
+round_1_severity: minor
+round_1_gap: G-17-1 (resolved by 17-04-PLAN.md / 17-04-SUMMARY.md)
 
-This satisfies the **anti-auto-approval** half of the prohibition — a human
-genuinely attended and responded, and auto-mode's default-first-option
-resolution was bypassed. It does not satisfy the **literal** half of must_have
-truth 3, since a human did not personally select the option word. This is a
-judgment call about provenance and intent, not a mechanically checkable fact,
-which is why it was not resolved in the phase's favour by the verifier.
+**Context (round 2).** Round 1 asked the operator to recall the exchange; they
+could not, and the answer was recorded as gap `G-17-1`. Diagnosis recovered the
+primary transcript, which shows the gate WAS rendered (08:32:48Z) and answered
+`you decide ` 298 seconds later (08:37:46Z) — so the round-1 "no" was non-recall,
+not a denial. The residual, real defect was narrower: the record asserted the
+operator's **comprehension** ("having read it"), which no artifact can evidence.
+Plan 17-04 corrected that clause and its propagation across 9 passages in 7
+documents, and corrected the second over-claim ("shown the full evidence") to
+distinguish the terminal render from the two-label decision modal.
+
+This round therefore asks nothing about memory. It asks only whether the
+corrected paragraph, read as text, now claims exactly what the evidence
+supports and no more.
+
+Round 1's judgment call still stands and is unchanged by the fix: attendance and
+delegation satisfy the **anti-auto-approval** half of the prohibition, but the
+**literal** half of must_have truth 3 ("the option a human selected") is unmet,
+since the verdict word was the orchestrator's. That is recorded as a disclosed
+deviation, which the operator accepted at round 1 Q2.
 
 ### 2. Read PROJECT.md's `## Core Value` entry end to end and confirm it reads as evidence weighed rather than a conclusion asserted
 
@@ -49,8 +58,8 @@ rather than accepting the verifier's reading alone.
 ## Summary
 
 total: 2
-passed: 1
-issues: 1
+passed: 2
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
@@ -58,8 +67,10 @@ blocked: 0
 ## Gaps
 
 - gap_id: G-17-1
+  status: resolved
+  resolved_by: 17-04-PLAN.md
+  resolved_at: 2026-08-23
   truth: "The provenance recorded for CORE-01's verdict accurately describes how the verdict was reached — specifically, that a human was shown the full evidence at plan 17-02 task 1's gate=\"blocking-human\" checkpoint and explicitly delegated the choice to the orchestrating session."
-  status: failed
   reason: "User reported: asked whether that account is true, the human answered no — they do not confirm ever seeing the gate prompt or the six-for/five-against evidence, and did not say \"you decide\" in response to it. The human separately accepted the `keep-dated` verdict itself (answer 2 = pass), so the defect is the provenance record, not the decision."
   severity: minor
   severity_was: major
