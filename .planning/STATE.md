@@ -793,17 +793,18 @@ pointers in `stock-cia.ts`/`stock-dispatch.ts` comments) — moving this count
 previous floor of two could not express a genuinely empty tree, and the
 guard's own prior-author comment named this exact phase as the one that might
 need to lower it further. The arithmetic in full: 0 pending todo files in `.planning/todos/pending/` + 0 UAT-gap rows = 0.
-This 0 excludes, and does not
-resolve, two categories this table's own accounting rule (pending todo files
-plus any open UAT-gap row) never covered and still does not scan — the
-guard's own header comment records both scoping exclusions explicitly, and
-this paragraph states them rather than leaving a reader to infer zero known
-debt: the `### Carried forward from earlier closes` table below, which still
-carries four `Deferred` rows naming five items (`UP-01`/`UP-02` share one row;
-then `QUAL-01`, `QUAL-02`, `QUAL-03`), and the roughly fifteen carried
-WR-class code-review findings enumerated in
-`milestones/v0.2.0-MILESTONE-AUDIT.md`. Both are unchanged by this
-measurement.
+This 0 excludes, and does not resolve, two categories this table's own accounting rule
+(pending todo files plus any open UAT-gap row) never covered and still does not scan — the
+guard's own header comment records both scoping exclusions explicitly, and this paragraph
+states them rather than leaving a reader to infer zero known debt: the `### Carried forward
+from earlier closes` table below, which now carries a single still-open row (`UP-01`/`UP-02`
+— one row, two items, genuinely still open upstream), and the roughly fifteen carried
+WR-class code-review findings enumerated in `milestones/v0.2.0-MILESTONE-AUDIT.md`. Neither
+category is changed by this measurement. The three `QUAL-01`..`QUAL-03` rows this paragraph
+counted among the exclusions until 2026-08-23 were **not** open: this milestone's own Phase 16
+closed all three (`PKG-02`/`PKG-03`/`PKG-04`), and `v0.4.0-MILESTONE-AUDIT.md`'s round-1
+tech-debt cluster 1 caught the stale rows at the milestone audit. Corrected, with the table,
+by `.planning/quick/260823-kf6`.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -852,9 +853,9 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 |----------|------|--------|-------------|
 | Defect | `Drive8Type=0` default on stock broker launch blocked all program loads (`.d64` and bare `.prg` alike) via `c64-ram-capture` (FINDING-C1); fix `-drive8type 1541` at launch | **Fixed** — Phase 8.2 plans 02-04 landed the fix, proved it live, and re-ran the walkthrough to a recorded `pass` | v0.2.0 Phase 8.1 (2026-08-19), fixed in Phase 8.2 (2026-08-19) |
 | Upstream | UP-01/UP-02 — `KEYBOARD_MATRIX_SET` opcode upstream to VICE | Deferred | v0.2.0 scoping |
-| Quality | QUAL-01 — tests for `acme.mjs`, `driver.mjs`, `derive.mjs` | Deferred | v0.2.0 scoping |
-| Quality | QUAL-02 — orphaned planning references in source comments | Deferred | v0.2.0 scoping |
-| Quality | QUAL-03 — emulator control-plane network exposure | Deferred | v0.2.0 scoping |
+| Quality | QUAL-01 — tests for `acme.mjs`, `driver.mjs`, `derive.mjs` | **Closed** — v0.4.0 Phase 16 `PKG-02` gave all three scripts tests; `16-VERIFICATION.md` marks it ✓ SATISFIED | v0.2.0 scoping, closed in v0.4.0 Phase 16 (2026-08-23) as `PKG-02` |
+| Quality | QUAL-02 — orphaned planning references in source comments | **Closed** — v0.4.0 Phase 16 `PKG-03` removed or repointed them and guarded against reintroduction; `16-VERIFICATION.md` marks it ✓ SATISFIED | v0.2.0 scoping, closed in v0.4.0 Phase 16 (2026-08-23) as `PKG-03` |
+| Quality | QUAL-03 — emulator control-plane network exposure | **Closed as accepted risk, not narrowed** — v0.4.0 Phase 16 `PKG-04` (plans 16-02/16-11) recorded disposition `accept`: `PROJECT.md` → Key Decisions carries the dated (2026-08-22) row and `16-PKG04-EVIDENCE.md` grounds it in file:line citations plus a live observed bind (`0.0.0.0:19510`). The exposure itself still exists; REQUIREMENTS.md → `### Control-Plane Bind Follow-on` stays open owned work | v0.2.0 scoping, disposition recorded in v0.4.0 Phase 16 (2026-08-22), bookkeeping closed 2026-08-23 as `PKG-04` |
 
 ## Session Continuity
 
