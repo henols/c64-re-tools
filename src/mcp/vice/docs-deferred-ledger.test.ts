@@ -151,6 +151,28 @@ test("non-vacuity: the Deferred Items section is located, non-empty, and the sca
   }
 });
 
+// WR-01 (17-REVIEW.md): with the pending tree now genuinely empty,
+// missingPendingStems([], section) is vacuously [] regardless of what
+// `section` actually contains, and the positive control above is gated on
+// `pending.length > 0` so it does not run either -- the only place
+// predicate 1 was exercised meaningfully was the fully-synthetic
+// planted-violation test below, which proves the predicate FUNCTION works
+// but proves nothing about whether deferredItemsSection()'s own
+// heading-boundary regex is still correctly bounding the real STATE.md
+// file. This test closes that gap: it asserts the extracted section's raw
+// text against a known constant substring from the section's own prose,
+// independent of the pending count, so a boundary regression (e.g. a
+// heading reordering that shifted the captured slice) is still caught even
+// while the pending tree reads empty.
+test("non-vacuity: the located section is provably the real Deferred Items table, independent of pending count (WR-01)", () => {
+  const section = deferredItemsSection(readFileSync(STATE_MD, "utf8"));
+  assert.ok(section !== null, "could not locate STATE.md's '## Deferred Items' heading");
+  assert.ok(
+    section!.includes("derived from `.planning/todos/pending/`"),
+    "the located section does not contain STATE.md's own known Deferred Items prose -- possible heading-boundary regression",
+  );
+});
+
 test("planted violation: both predicates fire on synthetic input, and the real, corrected text is reported by neither", () => {
   // A Deferred Items section missing a known pending stem.
   const sectionMissingAPendingStem = `
