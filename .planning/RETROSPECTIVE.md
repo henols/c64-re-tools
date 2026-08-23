@@ -2,6 +2,140 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v0.4.0 — Debt discharged, decisions settled
+
+**Shipped:** 2026-08-23
+**Phases:** 6 (12, 13, 14, 15, 16, 17 — no inserted decimals) | **Plans:** 44 | **Tasks:** 119
+**Timeline:** 2 days (2026-08-21 → 2026-08-23) | **Commits:** 292 since `v0.3.0`
+**Final audit:** round 1 — `tech_debt`, **zero blockers and zero open gaps** (16/16 requirements, 6/6 phases, 12/12 integration, 4/4 flows)
+**Closeout:** `override_closeout` — 16 bookkeeping items acknowledged, 0 carried forward
+
+### What Was Built
+
+The first milestone whose deliverable is *the absence of something*: the ledger
+this project had carried across three closes.
+
+- **`scripts/audit-gate.mjs` plus a real `PreToolUse` hook** (Phase 12,
+  sequenced first). A milestone audit cannot record a gated status while any of
+  six `docs-*.test.ts` guards is red — enforced at the moment of writing, not
+  reviewed afterward. Claude Code's own dispatch was observed refusing all four
+  write routes (Write, Edit in two payload shapes, a Bash heredoc, a subagent's
+  Write) against a genuinely red guard, then allowing them after a verified
+  revert, with `gaps_found` passing through unobstructed throughout.
+- **Real binaries replacing internal proxies** (Phase 13). `VERIF-02`'s three
+  synthetic binmon fixtures are now hardware captures; the `--help` backend
+  discriminator is confirmed against genuine stock *and* fork `x64sc` with both
+  transcripts committed; all four spec-driven Phase 3 wire details were run.
+  Two confirmed, one inconclusive, one **refuted** — `vice_disk_attach`'s
+  advertised no-side-effect promise is false, corrected at source.
+- **Two dated decisions where there had been two defaults** (Phases 14, 17).
+  `FORK-01` = **retain**, with the upstream `KEYBOARD_MATRIX_SET` coupling named
+  as the reversal criterion and its caveats carried rather than resolved;
+  `CORE-01` = **keep-dated**, taken at a `gate="blocking-human"` checkpoint. Each
+  is read out of the live PROJECT.md by its own new guard.
+- **19 inherited items → 0 pending** (Phases 15, 17). Every one fixed,
+  dispositioned `wont-fix` with rationale, or promoted with a **named owner** (9
+  of them). Widening `docs-review-disposition.test.ts`'s parser surfaced 150
+  findings where 119 had been visible; all 9 newly exposed were dispositioned.
+- **The repo's shipping shape** (Phase 16). Payload under `src/` in two atomic
+  `git mv`s with ~30 consumers repointed and the tarball proven byte-identical;
+  `installer/`'s `wireMcp()` went from never-tested to 18 cases; `QUAL-01..03`
+  closed, the last as a dated accepted risk with its residual exposure stated
+  without softening.
+
+### What Worked
+
+- **Building the gate before the work it gates.** Phase 12 first was the single
+  highest-leverage sequencing choice in the milestone. Every later phase ran
+  under its own audit-integrity guard, which is precisely what v0.3.0's close
+  lacked when `4f048bb` shipped with a red guard nobody was forced to read.
+- **Promotion with a named owner as a third option.** "Fixed or carried" is a
+  false binary that produced three milestones of silent inheritance. Nine items
+  are now in named buckets with owners, and the ledger reads 0 *honestly* rather
+  than by redefinition. Making `docs-deferred-ledger.test.ts` able to *express*
+  zero (its non-vacuity floor asserted `pending.length >= 2`) was part of the
+  work, not a footnote.
+- **Widening a guard rather than trusting its green run.** The review-disposition
+  guard keyed on level-3-colon-only headings — a property of how findings
+  happened to be written, not of what a finding is. Widening it found 31 more.
+- **Two days for six phases.** The fastest milestone yet, on the largest phase
+  count outside v0.2.0, because almost every phase was closing a known item
+  rather than discovering scope.
+
+### What Was Inefficient
+
+- **A census assertion nobody could satisfy at a close.**
+  `audit-integrity.test.ts` pinned exact per-status audit totals (`tech_debt: 3`,
+  `gatedAudits: 4`). Those are a function of how many milestones have shipped, so
+  writing v0.4.0's own audit file turned the test red on a correct tree — *while
+  `/gsd-audit-milestone` was recording a green suite in the same document.* It
+  went unnoticed because the file is deliberately not a `docs-*.test.ts` member
+  (a correct recursion fence), so `audit-gate.mjs` reported `allowed: true`
+  throughout. Found and fixed during this close.
+- **The close procedure fights the guards it installed.** Default-on phase
+  archival would have turned `docs-review-disposition.test.ts` and
+  `r2000-answer-key.test.ts` red, because both read `.planning/phases/` directly
+  and one explicitly excludes `.planning/milestones/`. Three consecutive closes
+  have now had to pass `--no-archive-phases`. The guards are right and the
+  archival is right; nobody taught them about each other.
+- **Two closure plans had to reverse their own premises.** Plan 15-04 was told
+  two findings were "superseded" and found both still open on direct inspection.
+  Plan 16-08's deferred entry predicted the wrong closing plan. Both cost a
+  re-derivation that a citation would have made unnecessary.
+- **Validation and security coverage was left behind.** Five of six phases ended
+  with a `VALIDATION.md` at `status: draft`, and only Phase 17 produced a
+  `SECURITY.md` — in a milestone that moved every file in the repo and accepted a
+  network-bind risk.
+
+### Patterns Established
+
+- **Gate-first sequencing.** When a milestone's job is to stop a failure mode,
+  the instrument that detects it is phase 1, not a success criterion inside a
+  later phase.
+- **Promote-with-owner as a first-class disposition**, alongside fix and
+  `wont-fix`. An item without an owner is carried, whatever the ledger says.
+- **A guard's scope is itself a claim to be checked.** A green guard whose
+  parser is narrower than its subject reports clean for the wrong reason.
+- **Assertions must not encode a census.** Any expected value that grows with
+  project history is a scheduled false failure. Assert the *relation* (one status
+  per file) rather than the total.
+- **Acknowledgment as a disclosed, self-invalidating state.** Sixteen bookkeeping
+  items were acknowledged rather than resolved, itemised in STATE.md, and each
+  suppression lapses automatically if its artifact changes — so it cannot hide a
+  *new* problem while still declining to claim the old one was fixed.
+
+### Key Lessons
+
+1. **An artifact that gates nothing is not evidence — and neither is a gate
+   nobody can pass.** v0.3.0 taught the first half. v0.4.0 taught the second:
+   two mechanisms this project built to enforce correctness (the census
+   assertion, default-on phase archival) were themselves obstacles to a correct
+   close. Enforcement needs a maintenance story.
+2. **The sixth instance of the external-check lesson was the most expensive one
+   to have skipped.** Four wire details written spec-driven and never run: one
+   was simply false, and had been advertised to users in a tool's own response
+   string for two milestones.
+3. **Restating a stale claim confidently is the same defect one level up.** Twice
+   a closure plan asserted a premise it had been handed rather than re-derived,
+   and both times the premise was wrong. "Dispositioned" and "fixed" are also
+   this: ~15 WR-class findings carry citations, not fixes, and the closure note
+   correctly declines to blur them.
+4. **Zero is reachable, and the number was never the point.** 19 → 0 took one
+   milestone once the disposition options were honest. What made it possible was
+   admitting that some items would be promoted, not closed.
+
+### Cost Observations
+
+- Sessions: multiple across 2 days; six phases, 44 plans, 292 commits.
+- Notable: the highest plan-per-day rate of any milestone (22/day vs v0.3.0's 12
+  and v0.2.0's 11), on work that was almost entirely *closing* known items. Scope
+  discovery, not execution, is this project's cost centre.
+- Notable: zero new npm dependencies again — third milestone running.
+- Notable: the two most valuable findings of the milestone (the refuted
+  `vice_disk_attach` promise, the red census assertion) both came from running
+  something rather than reading it.
+---
+
 ## Milestone: v0.3.0 — regenerator2000 static-analysis backend
 
 **Shipped:** 2026-08-21
@@ -278,6 +412,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.1.x | — | — | Pre-GSD; fork-only tool surface, released through `v0.1.10` |
 | v0.2.0 | 9 | 87 | First GSD milestone. Introduced measured scope cuts, decimal-phase insertion on audit gaps, and live-evidence gates as first-class artifacts |
 | v0.3.0 | 4 | 36 | First `passed` audit. Introduced the recorded-verdict go/no-go phase, guard-proven-non-vacuous as an acceptance bar, bidirectional and derived-not-enumerated guards, and mechanical guarding of *planning* documents |
+| v0.4.0 | 6 | 44 | First milestone with zero inherited debt at close. Introduced gate-first phase sequencing, promote-with-named-owner as a third disposition, dated decisions pinned by live-file guards, and acknowledgment as a disclosed self-invalidating state |
 
 ### Cumulative Quality
 
@@ -285,11 +420,13 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 |-----------|-----------------------|----------------------|--------------------|
 | v0.2.0 | ~1400+ | 3 (`stock-live`, `stock-live-triage`, `stock-broker-live`) | disassembler, PETSCII table, all derived tools — 0 new npm deps |
 | v0.3.0 | ~2066 | 3 carried + r2000 live gates (real `regenerator2000 0.9.20` + genuine stock `x64sc`) | `.regen2000proj` synthesiser, `.d64` reader, NDJSON JSON-RPC client, ACME-ident seam — 0 new npm deps |
+| v0.4.0 | **2351** (0 fail, 39 skipped, 5 todo, 24 suites) | 4 carried + `fork-live.test.ts` (the fork's `-mcpserver` HTTP transport exercised live for the first time, 6/6) | `audit-gate.mjs`, `hop-chain-comments` + `comment-phase-pointers` guards, `skill-corpus.mjs`, 18 `wireMcp()` cases — 0 new npm deps |
 
 | Milestone | Audit verdict | Rounds | Open gaps at close | Deferred at close |
 |-----------|---------------|--------|--------------------|-------------------|
 | v0.2.0 | `tech_debt` | 4 | 0 blocking | 13 (hand-counted) |
 | v0.3.0 | **`passed`** | 2 | 0 | 19 (derived + guarded both directions) |
+| v0.4.0 | `tech_debt` | 1 | **0** | **0** pending todos (+ 9 promoted with named owners; 16 bookkeeping items acknowledged) |
 
 The deferred count rising 13 → 19 while the verdict improved is not a
 contradiction: v0.3.0 is the first milestone whose ledger is *derived* from
@@ -297,35 +434,74 @@ contradiction: v0.3.0 is the first milestone whose ledger is *derived* from
 were surfaced by a guard that did not previously exist. The v0.2.0 figure should
 be read as a floor, not a measurement.
 
+Reading 19 → 0 requires the same care in the other direction. It is a real
+result — the pending tree is genuinely empty and guarded in both directions — but
+"0" is not the whole disposition. Nine items were **promoted with named owners**
+rather than fixed, ~15 WR-class review findings are **dispositioned rather than
+fixed**, and 16 bookkeeping items were **acknowledged rather than resolved** at
+the close. All three sets are written down and pointed at. The claim v0.4.0 can
+defend is "nothing is carried silently", not "nothing is carried".
+
+v0.4.0's `tech_debt` after v0.3.0's `passed` is likewise not a regression: it is
+`tech_debt` on bookkeeping and coverage only (draft `VALIDATION.md` files, a
+missing `SECURITY.md`), with zero blockers and zero gaps across requirements,
+phases, integration and flows. It closed in **one** audit round, against v0.3.0's
+two and v0.2.0's four — the sharpest signal in this table.
+
 ### Top Lessons (Verified Across Milestones)
 
 1. **An internal check does not substitute for an external one.** *Verified across
-   both milestones — promote to a standing rule.* v0.2.0 met it four times as
+   all three milestones — standing rule.* v0.2.0 met it four times as
    self-written tests validating understanding rather than code (green suites
    hiding 7 defects; fixtures stubbing the code's own assumption; an
    independently-derived opcode table still shipping 14 wrong entries; a registry
    that could not defend against a wrong bank address). v0.3.0 met it three more
-   times in new disguises: a pre-measurement done by reading found 8 where
-   measuring found 27; three research inputs treated as settled were wrong under a
-   real build; and the three highest-value carried debt items are *still* exactly
-   this — synthetic wire fixtures, an unconfirmed discriminator, four spec-driven
-   wire details. Seven instances, two milestones, zero counterexamples.
+   times: a pre-measurement done by reading found 8 where measuring found 27;
+   three research inputs treated as settled were wrong under a real build; and the
+   three highest-value carried debt items were themselves exactly this. v0.4.0
+   discharged those three against real binaries and one came back **refuted** — an
+   advertised no-side-effect promise that had been false, and shipped in a tool's
+   own response string, for two milestones. Eight instances, three milestones,
+   zero counterexamples.
 
-2. **Coverage without a consuming gate produces false confidence.** *New in
-   v0.3.0, watch for recurrence.* The completeness guard was correct, committed,
-   running, and red under a commit asserting "all findings closed". The v0.2.0
-   analogue is visible in hindsight: `08-REVIEW.md`'s `WR-04`..`WR-12` sat
-   undispositioned for a whole milestone because nothing scanned for them. An
-   artifact that exists but gates nothing is not evidence.
+2. **Coverage without a consuming gate produces false confidence — and a gate
+   without a maintenance story becomes the next obstacle.** *First half verified
+   across all three; second half new in v0.4.0.* v0.3.0's completeness guard was
+   correct, committed, running, and red under a commit asserting "all findings
+   closed". v0.4.0 made a green guard run a *precondition* of the audit status,
+   which is the fix — and then met the inverse twice in its own close: a census
+   assertion that goes red every time a milestone ships, and default-on phase
+   archival that would turn two guards red because both read `.planning/phases/`
+   directly. Enforcement mechanisms need owners too.
 
-3. **Honour a gate the first time it fires.** *New in v0.3.0, one instance,
-   recorded now because the counterfactual is unrecoverable later.* The `degrade`
-   verdict was accepted and the milestone shipped smaller. Had it been overridden,
-   nothing observable would have changed in v0.3.0 — the cost would have landed on
-   every subsequent gate.
+3. **Restating a stale claim confidently is the same defect one level up.** *New
+   in v0.4.0, two instances, plus one retroactively visible in v0.3.0.* Plan
+   15-04 was handed two findings marked "superseded" and direct source inspection
+   found both still open. Plan 16-08's deferred entry named the wrong closing
+   plan and was corrected mid-close. The v0.3.0 analogue: a pre-measurement done
+   by reading. Re-derive a premise before building on it, or cite where it was
+   derived.
+
+4. **Honour a gate the first time it fires.** *v0.3.0, one instance; no
+   counterexample since.* The `degrade` verdict was accepted and the milestone
+   shipped smaller. Had it been overridden, nothing observable would have changed
+   in v0.3.0 — the cost would have landed on every subsequent gate. v0.4.0's
+   `blocking-human` `CORE-01` checkpoint is the same discipline in a different
+   shape: the operator delegated the choice, and the record says so rather than
+   claiming a comprehension no artifact evidences.
+
+5. **"Fixed or carried" is a false binary.** *New in v0.4.0.* Three milestones of
+   silent inheritance came from having only two dispositions. Adding
+   promote-with-a-named-owner took the ledger from 19 to 0 in one milestone. The
+   number moved because the vocabulary did.
 
 ---
 *Created 2026-08-19 at v0.2.0 milestone close. Updated 2026-08-21 at v0.3.0
 milestone close — v0.3.0 section added, all three cross-milestone trend tables
 extended, and Top Lessons promoted from one awaiting-cross-validation candidate
-to three, the first now verified across both milestones with seven instances.*
+to three. Updated 2026-08-23 at v0.4.0 milestone close — v0.4.0 section added,
+all three trend tables extended with a caveat on how to read 19 → 0 and why
+`tech_debt` after `passed` is not a regression, and Top Lessons grown to five:
+lesson 1 now verified across three milestones with eight instances, lesson 2
+gained its inverse half, and two new lessons recorded (stale-premise restatement,
+and the false fixed-or-carried binary).*
