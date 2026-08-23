@@ -28,7 +28,7 @@ import {
 import { registryPath } from "../../c64-ram-capture/scripts/releases.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> .claude -> repo root
+const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> src -> repo root
 
 // ------------------------------------------------------------ anchorSearch
 

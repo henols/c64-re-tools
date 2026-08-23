@@ -13,7 +13,7 @@ import { assembleImage, sha256Buffer, buildChipState, vicBank, screenBase, build
 import { allDumpArtifacts, skipUnless } from "./test-corpus.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> .claude -> repo root
+const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> src -> repo root
 
 function chunkOf(address, byte, length) {
   // `byte` is a 2-hex-char octet (e.g. "00"); repeating it `length` times

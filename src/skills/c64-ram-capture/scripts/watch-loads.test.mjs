@@ -26,7 +26,7 @@ import { buildChipState, buildRangeManifest } from "./dump-artifacts.mjs";
 import { firstDumpArtifact, skipUnless } from "./test-corpus.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> .claude -> repo root
+const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");  // scripts -> skill -> skills -> src -> repo root
 
 // ----------------------------------------------------------------- addrNum
 

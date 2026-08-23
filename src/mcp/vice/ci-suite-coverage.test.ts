@@ -198,6 +198,27 @@ interface CoverageResult {
   unproven: string[];
 }
 
+/** True when `step` carries a `run:` line whose command is EXACTLY `proof`,
+ * not merely one that STARTS with it.
+ *
+ * WHY THIS IS NOT `step.includes(\`run: ${proof}\`)` (16-REVIEW.md round 2,
+ * WR-05): a bare substring is satisfied by any command that merely begins
+ * with the proof, so `run: npm test -- --test-name-pattern=foo` -- a
+ * realistic way to silently narrow what CI actually executes -- still
+ * counted as proof that the full suite runs. That is this phase's recurring
+ * defect class: a verification that cannot fail. Demonstrated live against
+ * this repository's own ci.yml before the fix.
+ *
+ * The shape is borrowed from the already-correct sibling check in
+ * `ci-guardrails.test.mjs` (`/run:\s*npm test\b/`), generalized so it
+ * cannot be satisfied by a trailing-argument variant: the command must be
+ * the whole rest of its physical line. `proof` is regex-escaped because it
+ * is registry data, not a pattern. */
+function runsExactly(step: string, proof: string): boolean {
+  const escaped = proof.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*run:\\s*${escaped}\\s*$`, "m").test(step);
+}
+
 /** Checks every directory in `directories` against the registry and the
  * extracted `build`-job step chunks. Never passes vacuously: a directory
  * neither in FROZEN_REGISTRY nor matching SKILLS_SCRIPTS_DIR_RE is reported
@@ -211,7 +232,7 @@ function checkCoverage(directories: string[], buildBlock: string): CoverageResul
     if (dir in FROZEN_REGISTRY) {
       const { workingDirectory, proof } = FROZEN_REGISTRY[dir];
       const covered = steps.some(
-        (step) => step.includes(`working-directory: ${workingDirectory}`) && step.includes(`run: ${proof}`)
+        (step) => step.includes(`working-directory: ${workingDirectory}`) && runsExactly(step, proof)
       );
       if (!covered) unproven.push(dir);
       continue;

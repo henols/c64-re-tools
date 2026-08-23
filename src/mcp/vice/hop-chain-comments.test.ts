@@ -261,10 +261,63 @@ function enumeratedModuleFiles(): string[] {
     .sort();
 }
 
+/** The skill-scripts half of the corpus: every `*.mjs` under
+ * `src/skills/<skill>/scripts/`.
+ *
+ * WHY THIS SET EXISTS (16-REVIEW.md round 2, WR-06): the guard originally
+ * scanned only `*.ts`/`*.mts` directly under `src/mcp/vice/`, so it was
+ * structurally blind to the skill scripts -- and three of them
+ * (`diff-images.test.mjs`, `watch-loads.test.mjs`,
+ * `dump-artifacts.test.mjs`) each carried a half-swept chain naming the
+ * pre-relocation root segment as an intermediate hop, which is precisely
+ * what this guard was built in the same gap-closure round to eliminate. A
+ * guard that cannot see the files carrying the defect it forbids is this
+ * phase's recurring failure mode, so the scan is widened rather than the
+ * three sites being hand-fixed.
+ *
+ * (The offending shape is deliberately NOT written out verbatim on any one
+ * line here: this guard's predicate is per-physical-line, so spelling the
+ * full pattern in its own documentation would make the guard flag itself.
+ * `repo-root.test.ts` relies on the same line-splitting property. Adding a
+ * per-file exemption instead is explicitly forbidden by the assertion's
+ * own failure message.)
+ *
+ * These files sit four hops below the repo root
+ * (`scripts -> skill -> skills -> src`), which is exactly the shape whose
+ * narration goes stale on a relocation -- the same reason the module-tree
+ * half is scanned at all. Returned as repo-root-relative paths so a
+ * violation message names the file unambiguously across both halves. */
+function enumeratedSkillScriptFiles(): string[] {
+  const skillsRoot = join(HERE, "..", "..", "skills");
+  if (!existsSync(skillsRoot)) return [];
+  const out: string[] = [];
+  for (const skill of readdirSync(skillsRoot).sort()) {
+    const scriptsDir = join(skillsRoot, skill, "scripts");
+    if (!existsSync(scriptsDir)) continue;
+    for (const f of readdirSync(scriptsDir).sort()) {
+      if (/\.mjs$/.test(f)) out.push(`src/skills/${skill}/scripts/${f}`);
+    }
+  }
+  return out;
+}
+
+/** The full scanned corpus: `{ file, absPath }` for both halves. `file` is
+ * the display name a violation message carries -- a bare basename for the
+ * module-tree half (preserving the existing exemption comparisons, which
+ * match on basename) and a repo-root-relative path for the skill half. */
+function corpusEntries(): { file: string; absPath: string }[] {
+  const entries = enumeratedModuleFiles().map((f) => ({ file: f, absPath: join(HERE, f) }));
+  const repoRoot = join(HERE, "..", "..", "..");
+  for (const rel of enumeratedSkillScriptFiles()) {
+    entries.push({ file: rel, absPath: join(repoRoot, rel) });
+  }
+  return entries;
+}
+
 function repoRootChainLinesInCorpus(): LineHit[] {
   const hits: LineHit[] = [];
-  for (const file of enumeratedModuleFiles()) {
-    const src = readFileSync(join(HERE, file), "utf8");
+  for (const { file, absPath } of corpusEntries()) {
+    const src = readFileSync(absPath, "utf8");
     for (const { line, text } of commentLinesForSource(src)) {
       if (isRepoRootChainLine(text)) hits.push({ file, line, text });
     }
