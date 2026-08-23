@@ -202,9 +202,29 @@ red.
 ### Packaging and Repo Shape
 
 - [x] **PKG-01**: The plugin payload lives under `src/` with `.mcp.json` merged, and both published tarballs still contain exactly the right files (`scripts/check-npm-packages.mjs` green, no `node_modules/`, no tests, no fixtures leaked, skills present)
+
+  > **Closure note (Phase 16, plans 16-08/16-10).** The relocation and `.mcp.json`-merge
+  > halves were verified TRUE at phase verification. The tarball-correctness sub-clause
+  > ("no tests, no fixtures leaked") was FALSE for the `@henols/c64-re-tools` package at
+  > that point: `installer/scripts/sync-skills.mjs`'s unfiltered copier leaked a class of
+  > four colocated `*.test.mjs` files (plus a shared `test-corpus.mjs` helper) into the
+  > published tarball. Plan 16-08 fixed the copy seam and promoted the leak assertion into
+  > the single `packFiles()` packing seam so both packages are checked by the same code
+  > path. Plan 16-10 closed the consumer-installed-path regression (`16-REVIEW.md` CR-01)
+  > the same relocation sweep introduced. `16-VERIFICATION.md`'s `⚠️ PARTIAL` verdict for
+  > PKG-01 describes this pre-closure state.
+
 - [x] **PKG-02**: `acme.mjs`, `driver.mjs` and `derive.mjs` have tests (`QUAL-01`)
 - [x] **PKG-03**: Orphaned planning references in source comments are removed or repointed (`QUAL-02`), guarded against reintroduction
-- [ ] **PKG-04**: The emulator control-plane network exposure (`QUAL-03`) is either narrowed or recorded as accepted with rationale
+- [x] **PKG-04**: The emulator control-plane network exposure (`QUAL-03`) is either narrowed or recorded as accepted with rationale
+
+  > **Closure note (Phase 16, plans 16-02/16-11).** Disposition: `accept`, not `narrow`.
+  > `PROJECT.md` → Key Decisions carries the dated (2026-08-22) PKG-04 row, and
+  > `16-PKG04-EVIDENCE.md` grounds every claim in that row in file:line citations plus a
+  > live observed bind (`0.0.0.0:19510`) captured against a real broker start. Plan 16-02
+  > recorded the disposition and deferred only this checkbox/Traceability bookkeeping to
+  > phase 16's close-out; plan 16-11 performed it. The `Control-Plane Bind Follow-on`
+  > section below remains open owned follow-on work — this completion does not close it.
 
 ## Future Requirements
 
@@ -355,7 +375,7 @@ Populated during roadmap creation.
 | PKG-01 | 16 | Complete |
 | PKG-02 | 16 | Complete |
 | PKG-03 | 16 | Complete |
-| PKG-04 | 16 | Pending |
+| PKG-04 | 16 | Complete |
 
 **Coverage:**
 
