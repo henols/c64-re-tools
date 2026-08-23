@@ -5,16 +5,16 @@ milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 16
 current_phase_name: Packaging and Repo Shape
 status: executing
-stopped_at: Completed 16-05-PLAN.md
-last_updated: "2026-08-23T01:32:50.583Z"
-last_activity: 2026-08-22
+stopped_at: Completed 16-08-PLAN.md
+last_updated: "2026-08-23T02:09:47.654Z"
+last_activity: 2026-08-23
 last_activity_desc: Phase 16 execution started
-state_head: 011e2db947f24fa269fe3d550f876f0c476d5eb8
+state_head: 8fd8b5e229fab99f6e91197036a8cf9f6f771871
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 40
-  completed_plans: 36
+  completed_plans: 37
   percent: 67
 ---
 
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 16 (Packaging and Repo Shape) — READY TO EXECUTE (gap closure)
-Plan: 7 of 11 executed — 4 gap-closure plans (16-08..16-11) ready
-Status: Ready to execute gap closure
+Phase: 16 (Packaging and Repo Shape) — EXECUTING (gap closure)
+Plan: 8 of 11 executed — 16-08 just completed (wave 1 of 3); 16-09..16-11 remain
+Status: Executing Phase 16 gap closure
 
 Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
 `passed` 4/4. It ran as nine waves but sequentially on the main checkout
@@ -156,7 +156,7 @@ flipped the four requirements Complete with closure notes, and reconciled
 the ledger to 2 pending todos with zero UAT gaps. Next session should read:
 ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
 which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-22 — Phase 16 execution started
+Last activity: 2026-08-23 — Phase 16 execution started
 
 ## Performance Metrics
 
@@ -249,6 +249,7 @@ Last activity: 2026-08-22 — Phase 16 execution started
 | Phase 16 P06 | 55min | 3 tasks | 3 files |
 | Phase 16 P07 | ~90min | 3 tasks | 15 files |
 | Phase 16 P05 | 40min | 3 tasks | 6 files |
+| Phase 16 P08 | 40min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -372,6 +373,9 @@ Recent decisions affecting current work:
 - [Phase 16]: Phase 16 plan 16-06: PKG-02 closed -- all three previously-untested skill CLI scripts (acme.mjs, driver.mjs, derive.mjs) now have committed, discovered test coverage (47 new tests: 16+17+14); a driver.mjs .d.mts declaration file was tried and reverted after it leaked into the installer npm tarball, replaced with a scoped @ts-expect-error on the one import line instead; parseAddr()'s null-address branch confirmed unreachable through the shipped (unexported) surface, pinned to its nearest reachable observed proxy rather than invented or fixed by editing the script.
 - [Phase 16]: PKG-03: comment-scoped orphaned-phase-pointer guard built; 15 sites + 2 test decision-id strings repointed at existing permanent records; fixture + gate-proof committed — Cut-phase citations must name the phase, not its number (re-tripping risk); matching is per-physical-line, not per-span, to avoid cross-line false positives measured in the real corpus
 - [Phase 16]: Phase 16 plan 05: swept CLAUDE.md/README.md/docs/*.md path references to relocated src/ trees; re-verified all four vice-proxy.ts line citations unchanged; fixed a pre-existing acme-build Project Skills table description drift; left one 2026-08-12 command transcript in docs/phase1-probe-results.md untouched as historical record
+- [Phase 16]: [Phase 16-08]: Leak assertions promoted into assertLeanTarball(), invoked from inside packFiles() so no packed package skips the check; the packed-package name set is pinned to exactly two names so a third package cannot be packed unchecked.
+- [Phase 16]: [Phase 16-08]: ci-suite-coverage.test.ts fixed a self-inflicted regression in ci-guardrails.test.mjs (its npm-test-step assertion assumed exactly one such step existed repo-wide); scoped to working-directory: src/mcp/vice.
+- [Phase 16]: [Phase 16-08]: Two pre-existing npm-test failures (docs-review-disposition.test.ts, audit-integrity.test.ts) tripping on 16-REVIEW.md's own undispositioned findings, confirmed via git stash to predate this plan; logged to deferred-items.md as out of scope, expected closure at 16-11.
 
 ### Pending Todos
 
@@ -763,8 +767,8 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T00:16:22.429Z
-Stopped at: Completed 16-05-PLAN.md
+Last session: 2026-08-23T02:09:47.472Z
+Stopped at: Completed 16-08-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
