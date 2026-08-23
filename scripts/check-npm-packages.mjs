@@ -26,6 +26,21 @@
 // below) is the repo-root THIRD-PARTY-NOTICES.md pointer check further down
 // -- that pointer is a repo-page artefact, deliberately never packed, so
 // there is no tarball list to check it against.
+//
+// Phase 16 gap closure (16-08): the leak assertions (no node_modules/, no
+// test files, no fixtures/, no test-only helper) used to live ONLY in the
+// vice-mcp block below. Phase 16's verification found the installer tarball
+// shipping four committed skill test files (*.test.mjs) while this script
+// still exited 0, because nothing ever checked the installer's file list for
+// the same class of leak -- the assertion was remembered per package, not
+// enforced structurally. `assertLeanTarball()` now runs from INSIDE
+// `packFiles()`, immediately before it returns, so every packed package is
+// checked by construction: a per-package block can be forgotten, a check
+// inside the one packing seam cannot be skipped without deleting the seam
+// itself. The companion `need()` after both packs pins the packed-package
+// set to exactly the two named packages, so a third package added later
+// cannot be packed unchecked either -- it has to touch this expectation
+// deliberately.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,15 +52,40 @@ const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
 
+// The packed package names, recorded by packFiles() in call order. Checked
+// after both packs against the expected two-package set (see below).
+const packedNames = [];
+
+// Shared per-package leak assertion, invoked from inside packFiles() so no
+// packed package can skip it. Every message is prefixed with the package
+// name so a failure says which tarball leaked.
+function assertLeanTarball(packed) {
+  const { name, files } = packed;
+  const nodeModulesHits = files.filter((f) => f.includes("node_modules/"));
+  need(nodeModulesHits.length === 0, `${name}: node_modules/ leaked into tarball -- ${nodeModulesHits.join(", ")}`);
+  const testFileHits = files.filter((f) => /\.test\.(ts|mts|mjs|js)$/.test(f));
+  need(testFileHits.length === 0, `${name}: test files leaked into tarball -- ${testFileHits.join(", ")}`);
+  const fixturesHits = files.filter((f) => f.startsWith("fixtures/"));
+  need(fixturesHits.length === 0, `${name}: fixtures/ leaked into tarball -- ${fixturesHits.join(", ")}`);
+  const testCorpusHits = files.filter((f) => f.split("/").pop() === "test-corpus.mjs");
+  need(
+    testCorpusHits.length === 0,
+    `${name}: test-corpus.mjs (test-only helper) leaked into tarball -- ${testCorpusHits.join(", ")}`
+  );
+}
+
 function packFiles(dir) {
   const out = execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: dir, encoding: "utf8" });
   const parsed = JSON.parse(out);
   const entry = Array.isArray(parsed) ? parsed[0] : parsed;
-  return {
+  const packed = {
     name: entry.name,
     version: entry.version,
     files: (entry.files ?? []).map((f) => f.path),
   };
+  assertLeanTarball(packed);
+  packedNames.push(packed.name);
+  return packed;
 }
 
 // --- @henols/vice-mcp -------------------------------------------------------
@@ -55,12 +95,8 @@ need(vice.files.includes("vice-proxy.ts"), "vice-mcp: missing vice-proxy.ts (bin
 need(vice.files.includes("tools-manifest.json"), "vice-mcp: missing tools-manifest.json");
 need(vice.files.includes("container-guard.mts"), "vice-mcp: missing container-guard.mts (imported by vice.ts)");
 need(vice.files.some((f) => f.startsWith("resources/")), "vice-mcp: missing resources/");
-need(!vice.files.some((f) => f.includes("node_modules/")), "vice-mcp: node_modules/ leaked into tarball");
-need(
-  !vice.files.some((f) => /\.test\.(ts|mts|mjs|js)$/.test(f)),
-  "vice-mcp: test files leaked into tarball"
-);
-need(!vice.files.some((f) => f.startsWith("fixtures/")), "vice-mcp: fixtures/ leaked into tarball");
+// node_modules/, test-file, fixtures/ and test-corpus.mjs leak checks are
+// asserted structurally by assertLeanTarball() from inside packFiles() above.
 
 // --- quick-260819-tsz: the version-resolution script and template must ----
 // never ship. scripts/version.mjs is a repo-maintenance CLI (reads npm
@@ -197,7 +233,22 @@ need(inst.name === "@henols/c64-re-tools", `installer: name is "${inst.name}", e
 need(inst.files.includes("bin/cli.mjs"), "installer: missing bin/cli.mjs (bin entry)");
 const skillMds = inst.files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f));
 need(skillMds.length === 6, `installer: expected 6 skills with SKILL.md, found ${skillMds.length}`);
-need(!inst.files.some((f) => f.includes("node_modules/")), "installer: node_modules/ leaked into tarball");
+// node_modules/ (and the other leak classes) are asserted structurally by
+// assertLeanTarball() from inside packFiles() above.
+
+// --- companion invariant: the packed-package set is pinned -----------------
+// A promote decision (Phase 16 gap closure): the leak assertions became
+// package-agnostic, so the set of packages actually packed must be pinned
+// too, or a third package could be added later and packed unchecked simply
+// by never calling packFiles() on it from this file's own review. If this
+// fails, a third package must be added to `expectedPackedNames` deliberately.
+const expectedPackedNames = ["@henols/vice-mcp", "@henols/c64-re-tools"];
+need(
+  packedNames.length === expectedPackedNames.length &&
+    expectedPackedNames.every((n) => packedNames.includes(n)) &&
+    packedNames.every((n) => expectedPackedNames.includes(n)),
+  `check-npm-packages: packed package set is [${packedNames.join(", ")}], expected exactly [${expectedPackedNames.join(", ")}] -- a third package must be added to this expectation deliberately, it cannot be packed unchecked`
+);
 
 if (errors.length) {
   console.error("check-npm-packages: FAIL");
