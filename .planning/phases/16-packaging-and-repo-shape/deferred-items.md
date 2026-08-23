@@ -48,3 +48,12 @@ before 16-11 ran. Measured after 16-10: 2386 tests / 2342 pass / 0 fail / 39 ski
 / 5 todo / 24 suites. Corrected here rather than left standing, because an
 inaccurate ledger entry is the same class of documentation-consistency gap this
 round exists to close.
+
+- **Status:** acknowledged
+- **Acknowledged at:** v0.4.0 milestone close (2026-08-23) — recorded in
+  `.planning/STATE.md` → `## Deferred Items`. Written by hand because
+  `query audit-open acknowledge` refuses this file's heading-delimited
+  (#3457) entry shape (`unsupported_heading_shape`); the marker is the
+  per-entry `status:` field itself, so it is self-invalidating in the
+  usual way — edit the field away and the entry resurfaces at the next
+  `audit-open` scan.

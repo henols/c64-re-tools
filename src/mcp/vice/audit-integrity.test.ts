@@ -261,14 +261,60 @@ test("the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the dis
 
 test("the frontmatter scan reads only the frontmatter, not prose (T-12-04)", () => {
   const { json } = runGate(ROOT);
-  // v0.2.0-MILESTONE-AUDIT.md contains 9 status: occurrences and
-  // v0.3.0-MILESTONE-AUDIT.md contains 4, exactly one frontmatter key
-  // each -- these counts are the direct proof the scan is frontmatter-only.
+  // WHAT THIS PROVES, and why it is no longer a census. The original form of
+  // this test pinned exact per-status totals (`passed: 1`, `tech_debt: 3`,
+  // `gatedAudits.length: 4`). Those numbers are a function of HOW MANY
+  // MILESTONES HAVE SHIPPED, so every milestone close moved them by one and
+  // the test went red on a correct tree -- and it did: writing v0.4.0's own
+  // audit file (`status: tech_debt`) took tech_debt from 3 to 4 while
+  // `/gsd-audit-milestone` was recording a green suite, and because this file
+  // is deliberately NOT a `docs-*.test.ts` member (see the recursion fence in
+  // the header), `audit-gate.mjs` still reported `allowed: true`. A guard that
+  // must be hand-edited at every close is a guard that gets switched off.
+  //
+  // The property actually under test is that the scan reads ONE `status:` per
+  // audit file -- the frontmatter key -- and never the many `status:`
+  // occurrences in each file's prose. That is expressible without a census:
+  // the total number of classified audits must equal the number of audit files
+  // found. If the scan ever read prose, the total would exceed the file count.
+  const totalClassified = Object.values(json.statusCounts).reduce((a, n) => a + n, 0);
   assert.ok(json.auditFiles.length >= 6, `expected >= 6 milestone audit files, got ${json.auditFiles.length}`);
-  assert.equal(json.statusCounts.passed, 1, `statusCounts: ${JSON.stringify(json.statusCounts)}`);
-  assert.equal(json.statusCounts.tech_debt, 3, `statusCounts: ${JSON.stringify(json.statusCounts)}`);
-  assert.equal(json.statusCounts.gaps_found, 2, `statusCounts: ${JSON.stringify(json.statusCounts)}`);
-  assert.equal(json.gatedAudits.length, 4, `gatedAudits: ${JSON.stringify(json.gatedAudits)}`);
+  assert.equal(
+    totalClassified,
+    json.auditFiles.length,
+    "the scan must classify exactly one status per audit file -- a total above the file count means " +
+      `it read prose 'status:' occurrences too; statusCounts=${JSON.stringify(json.statusCounts)} ` +
+      `auditFiles=${json.auditFiles.length}`,
+  );
+
+  // Direct, census-free proof of the same property against a specific file:
+  // v0.2.0-MILESTONE-AUDIT.md carries many `status:` occurrences in its prose
+  // and exactly one in its frontmatter, and must contribute exactly 1.
+  const v020 = json.auditFiles.find((f) => basename(f) === "v0.2.0-MILESTONE-AUDIT.md");
+  assert.ok(v020, `expected v0.2.0-MILESTONE-AUDIT.md among auditFiles: ${JSON.stringify(json.auditFiles)}`);
+  const v020Occurrences = (readFileSync(v020!, "utf8").match(/status:/g) ?? []).length;
+  assert.ok(
+    v020Occurrences > 1,
+    `v0.2.0-MILESTONE-AUDIT.md must contain more than one 'status:' occurrence for this to prove ` +
+      `anything (it is the prose-vs-frontmatter fixture); found ${v020Occurrences}`,
+  );
+
+  // `gatedAudits` is exactly the passed + tech_debt subset -- a relation
+  // between the gate's own outputs, invariant across any number of milestones.
+  assert.equal(
+    json.gatedAudits.length,
+    (json.statusCounts.passed ?? 0) + (json.statusCounts.tech_debt ?? 0),
+    `gatedAudits must be the passed+tech_debt subset; gatedAudits=${JSON.stringify(json.gatedAudits)} ` +
+      `statusCounts=${JSON.stringify(json.statusCounts)}`,
+  );
+
+  // Non-vacuity floors only -- "the scan found each kind at all", never a total.
+  for (const status of ["passed", "tech_debt", "gaps_found"] as const) {
+    assert.ok(
+      (json.statusCounts[status] ?? 0) >= 1,
+      `expected at least one '${status}' audit for non-vacuity; statusCounts=${JSON.stringify(json.statusCounts)}`,
+    );
+  }
 });
 
 test("planted violation: a synthetic tree with a red guard and an audit declaring status: passed is refused (D-12-16)", () => {

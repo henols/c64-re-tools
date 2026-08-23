@@ -5,22 +5,27 @@ subsystem: r2000
 tags: [regenerator2000, cli, input-validation, security, wr-08]
 
 requires:
+
   - phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal
     provides: the r2000-cli.ts CLI ergonomics layer (parseArgs(), bootstrapProject(),
       cmdBootstrap/cmdExportAsm/cmdVerify) this task patches
 provides:
+
   - "parseArgs() refuses a missing or flag-shaped --entry/--out value instead of silently taking it"
   - "10-SECURITY.md flipped to threats_open: 0 / status: verified (T-10-19 assigned to WR-08)"
+
 affects: [r2000-cli, phase-10-security]
 
 tech-stack:
   added: []
   patterns:
+
     - "Reused parseExportLblArgs()'s existing missing/flag-shaped-value guard shape for parseArgs(), rather than inventing a third convention in the same file"
 
 key-files:
   created: []
   modified:
+
     - .claude/mcp/vice/r2000-cli.ts
     - .claude/mcp/vice/r2000-cli.test.ts
     - .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-SECURITY.md
@@ -28,6 +33,7 @@ key-files:
     - .planning/STATE.md
 
 key-decisions:
+
   - "parseArgs() gained entryMissingValue/outMissingValue boolean flags (mirroring parseExportLblArgs()'s outMissingValue) rather than throwing or returning a discriminated union, keeping the same destructuring shape every existing caller already uses"
   - "Refusal checks were placed in each of the three cmd* functions (cmdBootstrap, cmdExportAsm, cmdVerify) immediately after destructuring parseArgs()'s result, before any filesystem access, so bootstrapProject()'s never-throw contract is never at risk"
   - "verify's --out case was NOT given a dedicated test, since checkAcceptedOptions() already refuses --out for verify (it is not in VERB_OPTIONS.verify) before parseArgs() is ever reached — that path is already pinned by the pre-existing IN-06 'verify: --out is refused' test; testing it again here would just re-prove IN-06, not WR-08"
@@ -36,6 +42,10 @@ requirements-completed: []
 
 duration: ~40min (commit span 3541886 -> d007d68)
 completed: 2026-08-21
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: unknown
 ---
 
 # Quick Task 260821-jd8: Close WR-08 — Flag-Shaped and Missing Option Values Summary
@@ -103,9 +113,13 @@ not ok 61 - export-asm: --entry followed by a flag-shaped token is refused ...
 not ok 62 - export-asm: --out with no following token is refused ...
 not ok 63 - verify: --entry with no following token is refused ...
 not ok 64 - verify: --entry followed by a flag-shaped token is refused ...
+
 # tests 64
+
 # pass 54
+
 # fail 10
+
 ```
 
 Test 55's failure detail: `error: 'Expected "actual" to be strictly unequal to: 0' ... expected: 0, actual: 0` — the reverted parser returns exit code `0` (silent "success") for the review's own literal reproduction, exactly the defect being closed. **A real `--entry` file was written into this repo's own `.claude/mcp/vice/` working directory during this run** (confirmed by `git status --short` showing `?? --entry` immediately after), which is the exact hazard WR-08 describes — the test's own `finally`-block cleanup subsequently removed it during the corrected re-run.
@@ -117,9 +131,13 @@ $ diff <backup> r2000-cli.ts && echo "BYTE-IDENTICAL after restore"
 BYTE-IDENTICAL after restore
 $ npx tsc --noEmit          # exit 0
 $ node --test r2000-cli.test.ts
+
 # tests 64
+
 # pass 64
+
 # fail 0
+
 ```
 
 ## Live Before/After Transcript

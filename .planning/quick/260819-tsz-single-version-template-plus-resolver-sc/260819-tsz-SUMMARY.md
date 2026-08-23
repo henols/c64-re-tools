@@ -6,26 +6,31 @@ tags: [semver, npm-publish, ci, version-resolution, mcp-server]
 
 requires: []
 provides:
+
   - "VERSION -- the single hand-edited version template (0.2.-)"
   - ".claude/mcp/vice/version.ts -- the one resolver seam (parseTemplate, resolveVersion, compareVersions, readTemplate, runtimeVersion)"
   - "scripts/version.mjs -- resolve/stamp/check CLI over the seam"
   - "release-on-merge and release CI jobs wired to the seam"
+
 affects: [release-mechanics, npm-publish, ci]
 
 tech-stack:
   added: []
   patterns:
+
     - "Template-resolution algorithm: 3-component VERSION template with '-' auto-managed slots, four rules (pinned/no-published/prefix-differs/prefix-matches)"
     - "Single-seam pattern applied to version resolution (D-5): CLI, MCP server, and CI all call into .claude/mcp/vice/version.ts, none re-derive it"
     - "Self-evident dev placeholder (0.0.0-dev) for all publishable-but-not-yet-published version fields, pinned by a test"
 
 key-files:
   created:
+
     - VERSION
     - .claude/mcp/vice/version.ts
     - .claude/mcp/vice/version.test.ts
     - scripts/version.mjs
   modified:
+
     - .claude/mcp/vice/vice-proxy.ts
     - .claude/mcp/vice/package.json
     - installer/package.json
@@ -36,6 +41,7 @@ key-files:
     - scripts/check-npm-packages.mjs
 
 key-decisions:
+
   - "R-1: VERSION stays a template forever; release-on-merge resolves in its ephemeral checkout and commits nothing back to main"
   - "R-2: the six derived, publishable version strings become the self-evident placeholder 0.0.0-dev, not a number"
   - "R-3: the pending v0.2.0 release goes through release-on-merge (push main only); the local unpushed v0.2.0 tag has no role and must not be pushed"
@@ -44,6 +50,10 @@ requirements-completed: [D-1, D-2, D-3, D-4, D-5]
 
 duration: ~25min
 completed: 2026-08-19
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: completed
 ---
 
 # Quick 260819-tsz: Single VERSION template + resolver seam Summary

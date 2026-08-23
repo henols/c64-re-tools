@@ -136,3 +136,12 @@ regression it was downstream of. See `07-VALIDATION.md`'s Manual-Only
 Verifications table for the updated "Route A stopwatch on a ≥ 3.10 build"
 row (now a full PASS) and `docs/stock-vice-parity.md`'s corrected §A entry
 for the full corrected history.
+
+- **Status:** acknowledged
+- **Acknowledged at:** v0.4.0 milestone close (2026-08-23) — recorded in
+  `.planning/STATE.md` → `## Deferred Items`. Written by hand because
+  `query audit-open acknowledge` refuses this file's heading-delimited
+  (#3457) entry shape (`unsupported_heading_shape`); the marker is the
+  per-entry `status:` field itself, so it is self-invalidating in the
+  usual way — edit the field away and the entry resurfaces at the next
+  `audit-open` scan.

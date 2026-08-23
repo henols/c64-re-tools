@@ -1,28 +1,28 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.4.0
-milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
-current_phase: 17
-current_phase_name: Project Identity and Ledger Close
-status: completed
-stopped_at: Completed quick 260823-kf6 (STATE.md carried-forward ledger correction)
-last_updated: "2026-08-23T13:01:52.195Z"
+milestone_name: Debt discharged, decisions settled (Phases 12-17, SHIPPED 2026-08-23)
+status: Awaiting next milestone
+stopped_at: Milestone v0.4.0 archived (roadmap, requirements and audit under .planning/milestones/)
+last_updated: "2026-08-23T13:39:56.965Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 17 complete
-state_head: 8205ef964c5ab1a577ef99291718a2800e9d3893
+last_activity_desc: Milestone v0.4.0 completed and archived
+state_head: c8afcb13e31ba6539a558551c8de6678602fdc01
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 44
   completed_plans: 44
   percent: 100
+current_phase: 17
+current_phase_name: Project Identity and Ledger Close
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-23 after the Phase 17 close)
+See: .planning/PROJECT.md (updated 2026-08-23 at the v0.4.0 milestone close)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -34,176 +34,41 @@ the verdict, and a specific reversal condition. Pinned by
 `docs-core-value-decision.test.ts`. It still says nothing about findings that
 outlive the session; that omission is now a decision rather than a default.*
 
-**Shipped:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
-phases, 36 plans, 101 tasks, 12/12 in-scope requirements, audit round 2
-`passed`). Recon findings are queryable state: 17 curated `r2000_*` tools and 7
-`vice-mcp r2000` CLI verbs over a persistent annotation store, container-side and
-structurally incapable of touching VICE; generated register bit-name enums; the
-symbol round trip closed live against genuine stock `x64sc`; the `toacme` decoder
-deleted.
-**Previously:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
+**Shipped:** v0.4.0 Debt discharged, decisions settled — 2026-08-23 (6 phases,
+44 plans, 119 tasks, 16/16 requirements, audit round 1 `tech_debt` with zero
+blockers and zero open gaps). The inherited ledger drained from 19 items to
+**0**; `FORK-01` (**retain**) and `CORE-01` (**keep-dated**) are dated decisions
+pinned by their own guards; `scripts/audit-gate.mjs` makes a clean audit status
+impossible over a red docs guard, and was observed refusing all four write
+routes; and the plugin payload now lives under `src/` with both tarballs still
+validated.
+**Previously:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
+phases, 36 plans, 12/12 in-scope requirements, audit round 2 `passed`). Recon
+findings are queryable state: 17 curated `r2000_*` tools and 7 `vice-mcp r2000`
+CLI verbs over a persistent annotation store, container-side and structurally
+incapable of touching VICE.
+**Before that:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 17 — Project Identity and Ledger Close
-2026-08-21. Goal: stop inheriting the same ledger a third time; every carried item
-becomes a fix or a dated decision, and the fork-backend and Core Value questions
-get answered deliberately rather than by default. Requirements are being defined
-(`.planning/REQUIREMENTS.md` was removed at the v0.3.0 close and is recreated by
-`/gsd-new-milestone`). ROADMAP.md carries both shipped milestones collapsed, with
-full detail in `milestones/v0.2.0-ROADMAP.md` and `milestones/v0.3.0-ROADMAP.md`.
-**Phase numbering continues from 11.1 — this milestone starts at Phase 12**, and
-numbers are never reused, including the dissolved ones. The 19 items in Deferred
-Items below are no longer inherited context: discharging them *is* the milestone.
+**Current focus:** *no milestone is open.* v0.4.0 closed 2026-08-23 and its
+roadmap, requirements and audit are archived under `.planning/milestones/`.
+`.planning/REQUIREMENTS.md` was removed at this close and is recreated by
+`/gsd-new-milestone`, which is the next action. ROADMAP.md carries all three
+shipped milestones collapsed, with full detail in
+`milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md` and
+`milestones/v0.4.0-ROADMAP.md`.
+**Phase numbering continues from 17 — the next milestone starts at Phase 18**,
+and numbers are never reused, including the dissolved ones. The Deferred Items
+ledger below reads **0 open**: the 19 items inherited at the v0.3.0 close were
+discharged by this milestone, which is what it existed to do.
 
 ## Current Position
 
-Phase: 17 (Project Identity and Ledger Close) — COMPLETE
-Plan: 4 of 4 executed
-Status: Phase 17 verified and closed (2026-08-23) — UAT 2/2 pass, verification passed,
-security threats_open 0. Milestone v0.4.0 is 100% complete: all 6 phases (12-17), 44/44
-plans. Next action is `/gsd-complete-milestone v0.4.0`.
-
-**Phase 17 — Project Identity and Ledger Close — all 4 plans executed and the
-phase closed (2026-08-23): UAT 2/2 pass, `17-VERIFICATION.md` status `passed`,
-`17-SECURITY.md` `threats_open: 0`.** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
-non-vacuity floor could not express a genuinely empty pending-todo tree — it
-asserted `pending.length >= 2`, a floor written when 0 pending seemed
-theoretical, and was red 1 pass / 3 fail the moment Phase 16 discharged the
-last two survivors (`PKG-01`, `PKG-03`). Fixing that floor to no floor at all
-(not a smaller nonzero number) was real source work under `src/mcp/vice/`,
-not a planning-document edit — the phase's own Goal claim to the contrary is
-corrected in ROADMAP.md. With the guard able to express zero, plan 17-01 then
-brought the `## Deferred Items` ledger below to the true v0.4.0-close count:
-**0** (0 pending todo files + 0 UAT-gap rows), down from the 19 items
-inherited at the v0.3.0 close. Plan 17-02 decided `CORE-01` at a
-`gate="blocking-human"` checkpoint: the checkpoint was rendered and the
-operator answered 298 seconds later in free text `you decide` rather than
-selecting `restate`/`keep-dated`, and the orchestrator then selected
-**keep-dated** on `R2000-01`'s structural argument that regenerator2000 is
-never launched with `--vice`. Attendance and delegation are on the record;
-comprehension is not evidenced by any artifact and is not claimed (corrected
-2026-08-23 by plan 17-04, gap `G-17-1`). Recorded precisely in PROJECT.md →
-Core Value (dated 2026-08-23) and pinned by
-`src/mcp/vice/docs-core-value-decision.test.ts` (6/6). Plan 17-03 (this
-closer) ticked both requirements Complete in REQUIREMENTS.md with closure
-notes, closed ROADMAP.md's Phase 17 section to its real plan list and
-outcome, re-took the pending-todo measurement after every one of this
-phase's own edits (still 0), and confirmed the full `npm test` suite green
-with every `docs-*.test.ts` guard passing. Plan 17-04 (gap closure for
-`17-UAT.md`'s `G-17-1`) then retracted the unevidenced comprehension claim
-from all seven documents that carried it — 16 matching lines to 0 — while
-keeping the transcript-backed attendance and delegation positively stated,
-and corrected four stale `docs-core-value-decision.test.ts` counts to the
-measured 6. Full `npm test` re-confirmed green (2395 tests, 0 fail).
-
-16-10 reverted the phase's own CR-01 regression (16-04's sweep had rewritten four
-consumer-facing path literals in generated skill output to name this repository's
-source tree instead of a consumer's installed `.claude/skills/` directory) and
-closed the sole remaining `16-REVIEW.md` finding (WR-03). Shipped
-`skill-consumer-paths.test.ts`, a frozen four-entry registry guard against the
-class recurring, each entry demonstrated live to bite on a planted regression.
-`docs-review-disposition.test.ts` and `audit-integrity.test.ts` are both
-confirmed green for the first time this phase (full baseline: 2386 tests, 2342
-pass, 0 fail, 39 skipped, 5 todo, 24 suites).
-
-Phase 15 (Debt and Review Disposition) closed 2026-08-22, 12/12 plans, verification
-`passed` 4/4. It ran as nine waves but sequentially on the main checkout
-(`workflow.use_worktrees=false`), so plan order was wave order, not 01..12:
-08 depends only on 15-01 and ran ahead of 06/07; 09 on 15-03/15-07; 10 on 15-08/15-09;
-11 on 15-09/15-10; 12 (the designated closer) on all eleven prior plans. Note for future
-phases: `state.advance-plan`'s sequential "N of 12" counter does not fit a wave-parallel
-phase and had to be corrected by hand three times during execution — do not trust its
-blind increment as the completed set.
-
-Phase 15 outcome: GATE-02, DEBT-01, DEBT-02 and DEBT-03 all Complete in REQUIREMENTS.md
-with closure notes; pending-todo tree reduced 21 → 2, both survivors promoted to Phase 16
-with named owners (`PKG-01`, `PKG-03`); `docs-review-disposition.test.ts` green
-(150 findings, 0 undispositioned); `docs-deferred-ledger.test.ts` green in both
-directions; ROADMAP.md's Phase 15 section carries the real 12-plan list and outcome Notes.
-A post-execution code review found one CI-breaking blocker the plans' own gate could not
-see (`test:automated` excludes `vice-proxy.test.ts`); fixed in `c340a61`, and the
-verifier's one DEBT-01 gap fixed in `7c6d55d`.
-
-**Phase 12 — Audit Integrity Instrument — is COMPLETE (2026-08-22, 7/7 plans,
-verification `passed` 11/11).** The record disagreement flagged here earlier is
-resolved, and it was a bookkeeping gap, not missing work: plan 12-07's three
-tasks were executed and committed on 2026-08-21 (`f81abd6`, `6ca1785`) but its
-SUMMARY was never written, so every plan index reported 12-07 incomplete and
-the phase never closed. `/gsd-execute-phase 12`'s safe-resume gate caught the
-mismatch, stopped before dispatching a duplicate executor, and the SUMMARY was
-reconstructed from the two commits with every acceptance criterion re-run live
-rather than assumed (`f9729fb`). Re-verification then re-derived all 11 truths
-from the tree instead of copying the prior report forward, and corrected three
-drifted `audit-gate.mjs` line citations (`checkAuditGate()`:353,
-`hookGuardVerdict()`:836, `hookMain()`:944). ROADMAP's superseded
-"gaps_found, 6/11" verdict is replaced.
-
-Both `GATE-01` layers are now proven. Layer 1 is `checkAuditGate()` under
-`npm test` and CI; Layer 2 is the committed `Write|Edit|Bash` PreToolUse hook,
-observed live refusing all four write routes — Write, Edit in two payload
-shapes, a Bash heredoc, and a subagent's Write — against a genuinely red guard,
-then allowing the same Write after the revert. Standing, disclosed limitation:
-that evidence is session-observed rather than independently human-reproduced,
-covering Claude Code 2.1.238 on this host; `12-GATE-PROOF.md` §"Provenance of
-these observations" says so and names what it does not establish.
-
-Phase 13 — External Verification — is COMPLETE (2026-08-22, 5/5 plans,
-verification `passed` 9/9 after one gap-closure round). It verified the
-milestone's three highest-value carried items against real binaries instead
-of internal proxies. Plans 13-01/13-02 re-recorded the three `VERIF-02`
-binmon fixtures (captured from fork `/usr/local/bin/x64sc` 3.10, labelled
-truthfully as such per D-13-02's dynamic resolution) and confirmed the
-`--help` backend discriminator against real stock (VICE 3.9) and fork (VICE
-3.10) binaries. Plan 13-03 live-probed Phase 3's four wire assumptions
-against fork VICE 3.10 (A1/A2 CONFIRMED, A3 INCONCLUSIVE, A5 CONTRADICTED);
-A4 was deliberately excluded (D-13-05) and remains the sole open item in its
-probe-debt todo. Plan 13-04 removed the A1/A2 `[ASSUMED]` labels, left A3/A5
-labelled, and shipped a permanent label-discipline guard
-(`assumption-label-discipline.test.ts`). Plan 13-05 closed the phase's
-record: both retired verdicts in `docs/phase2-backend-probe-evidence.md`
-resolved with artifact citations, two finished todos moved to
-`.planning/todos/completed/`, the third trimmed to A4, two new findings
-filed, and the Deferred Items ledger below reconciled.
-
-Post-phase, at the tail gates: A5's contradiction is an advertised
-*tool-contract* defect (`vice_disk_attach`'s D-14 promise), so per D-13-04's
-escape hatch it became a high-priority todo rather than a source fix, and
-EXTV-03 now carries a closure note in REQUIREMENTS.md recording that
-carve-out explicitly. `13-REVIEW.md`'s four findings were dispositioned into
-a pending todo (WR-01 fixed at source: `checkCommandAvailable()` no longer
-interpolates into a shell command line); that todo also records the
-structural cause worth fixing — the code-review gate runs *after* the last
-plan's SUMMARY, so no plan can ever disposition its own phase's findings,
-which is why phases 08, 09 and 13 each filed the same todo.
-Phase 14 — Backend Decision — all 5 plans executed (2026-08-22). FORK-01
-decided `retain` at 14-01's blocking-human checkpoint; FORK-02 verified true
-with zero rewrite (14-02) and exercised live for the first time against a
-real fork binary (14-03, 6/6 passing); 14-04 confirmed a clean retain-branch
-recorded zero; 14-05 closed the record — the fork-removal todo moved to
-`.planning/todos/completed/` with a Resolution section, FORK-01/FORK-02
-ticked Complete in REQUIREMENTS.md, and ROADMAP's Phase 14 Notes plus Phase
-15/16/17 dependency notes resolved against the decision.
-
-**Phase 15 — Debt and Review Disposition — is COMPLETE (2026-08-22, 12/12
-plans).** The milestone's bulk workload: every open code-review finding
-across all phases dispositioned (`GATE-02`), the pending-todo tree reduced
-from 21 to 2 with every remaining item promoted to a named Phase 16 owner
-(`DEBT-01`), all five undocumented behaviours documented at point of use
-(`DEBT-02`), and Phase 03's three UAT scenarios executed live with evidence
-(`DEBT-03`, scenario 2's joystick half an honest negative result). Plan
-15-01 widened `docs-review-disposition.test.ts`'s parser first, as the
-phase's tracer, discovering 150 findings where the guard had only ever seen
-119 — the same guard that had reported green at the v0.3.0 close while blind
-to 31 findings across three phases. Plan 15-12 (wave 9, the phase's
-designated closer) transcribed Phase 08's ten-finding verdict table from
-plans 15-02/15-03's landed commits, closed the three remaining
-`wont-fix`/promoted todos, filled in every `### Promoted by DEBT-01` owner,
-flipped the four requirements Complete with closure notes, and reconciled
-the ledger to 2 pending todos with zero UAT gaps. Next session should read:
-ROADMAP's Phase 16 section (Packaging and Repo Shape — `PKG-01`..`PKG-04`,
-which owns both remaining pending todos) and `## Deferred Items` below.
-Last activity: 2026-08-23 - Completed quick task 260823-kf6: Correct STATE.md's carried-forward ledger: QUAL-01/02/03 closed by PKG-02/03/04, plus DEBT-04's closure note
+Phase: Milestone v0.4.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-23 — Milestone v0.4.0 completed and archived
 
 ## Performance Metrics
 
@@ -849,6 +714,60 @@ named the wrong function) is no longer carried here — Phase 15 plan 15-05
 fixed it at source (commit `9849224`) and pinned it with a derived test; see
 `.planning/todos/completed/` for the Resolution.
 
+### Acknowledged at the v0.4.0 close (2026-08-23)
+
+The pre-close artifact audit reported **16** open items. None is a requirement
+gap, an integration gap, or an unverified phase — the v0.4.0 milestone audit
+scored 16/16 requirements, 6/6 phases, 12/12 integration and 4/4 flows with zero
+blockers. All 16 are bookkeeping: `status:` fields never flipped after the work
+they describe landed, and quick-task directories left in `.planning/quick/` from
+this and earlier milestones. They were **acknowledged, not resolved**, which sets
+`closeout_type=override_closeout` for this close.
+
+Acknowledgment is verdict-preserving and self-invalidating: it never rewrites an
+artifact's own verdict, and the suppression lapses automatically the moment the
+artifact's observed state changes again — an edited UAT gap or a reopened item
+resurfaces at the next `audit-open` scan and must be acknowledged again.
+
+**Counts:** 16 newly acknowledged, 0 carried forward from a prior close.
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| uat_gaps | 03/03-HUMAN-UAT.md | partial (0 pending scenarios) | 2026-08-23 | v0.4.0 |
+| uat_gaps | 08/08-HUMAN-UAT.md | passed (0 pending scenarios) | 2026-08-23 | v0.4.0 |
+| uat_gaps | 08.1/08.1-HUMAN-UAT.md | passed (0 pending scenarios) | 2026-08-23 | v0.4.0 |
+| uat_gaps | 15/15-UAT-EVIDENCE.md | unknown (0 pending scenarios) | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260817-n6p-fix-wr-01-bound-startaddress-to-0xffff-i | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260818-nh5-close-phase-07-uat-gap-fix-stale-evidenc | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260818-obc-live-prove-the-broker-mediated-monitor-h | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260819-rop-fix-d4-2-and-new-1-from-v0-2-0-milestone | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260819-tsz-single-version-template-plus-resolver-sc | completed | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260819-vie-extract-release-stamp-zip-upload-into-on | completed | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260820-jwb-post-phase-9-repo-hygiene-ci-acme-timeou | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260821-a86-fix-phase-11-security-md-open-findings-w | unknown | 2026-08-23 | v0.4.0 |
+| quick_tasks | 260821-jd8-close-wr-08-flag-shaped-option-values | unknown | 2026-08-23 | v0.4.0 |
+| deferred_items | 07/deferred-items.md: `07-10` Route A `CPUHISTORY_GET` decode mismatch → its own Resolution entry records the corrected wire layout, the classification guard and the live 511,061-cycle proof, and states "Nothing from this entry remains open" | acknowledged | 2026-08-23 | v0.4.0 |
+| deferred_items | 08.2/deferred-items.md: `D-1` `repo-root.test.ts`'s "not under .claude" assertion false-fails when the suite runs from inside a Claude Code worktree | acknowledged | 2026-08-23 | v0.4.0 |
+| deferred_items | 16/deferred-items.md: `16-08` pre-existing `npm test` failures → both cascading guards went green when plan 16-10 landed (2386 tests / 0 fail), corrected in the entry itself | acknowledged | 2026-08-23 | v0.4.0 |
+
+**On the three `deferred_items` rows.** Two of the three read as genuinely closed
+in their own text (07's Resolution and 16's orchestrator correction); they are
+recorded `acknowledged` rather than `resolved` because promoting a verdict is a
+stronger claim than this close is entitled to make on their behalf, and
+`acknowledged` keeps them visible on this ledger. 08.2's `D-1` is a real standing
+limitation, scoped and understood: `repoRoot()`'s `.git`-walk resolves a worktree
+checkout under `.claude/worktrees/agent-*`, so the assertion trips only when the
+suite is executed from inside a nested worktree — never in CI (`actions/checkout`
+uses a plain path) and never in the main checkout. Hardening the test against
+worktree execution remains new scope.
+
+**Writer note.** The three `deferred_items` markers were written by hand rather
+than by `query audit-open acknowledge`, which refuses this file shape with
+`unsupported_heading_shape` (#3457) — the heading-delimited entry form, where the
+CLI cannot map an entry back to an exact source span safely. The marker is the
+per-entry `status:` field itself, so it self-invalidates identically. The other
+13 were written by the CLI.
+
 ### Carried forward from earlier closes
 
 | Category | Item | Status | Deferred At |
@@ -861,49 +780,37 @@ fixed it at source (commit `9849224`) and pinned it with a derived test; see
 
 ## Session Continuity
 
-Last session: 2026-08-23T13:01:01.247Z
-Stopped at: Completed quick 260823-kf6 (STATE.md carried-forward ledger correction);
-  Phase 17 previously verified and closed (UAT 2/2 pass, verification `passed`,
-  `17-SECURITY.md` `threats_open: 0`); v0.4.0 is 100% complete — all 6 phases,
-  44/44 plans. Ready to run `/gsd-audit-milestone`, then `/gsd-complete-milestone`.
+Last session: 2026-08-23
+Stopped at: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
+  archived (2026-08-23). Six phases (12-17), 44/44 plans, 119 tasks, 16/16
+  requirements. Final audit round 1, `tech_debt` — zero blockers, zero open
+  gaps; the 16 items the pre-close artifact audit reported were acknowledged
+  (see `### Acknowledged at the v0.4.0 close` above), making this an
+  `override_closeout`. Roadmap, requirements and audit archived to
+  `.planning/milestones/v0.4.0-*`; `.planning/REQUIREMENTS.md` removed via
+  `git rm` and recreated by the next milestone. Phase directories were
+  deliberately **not** archived: `docs-review-disposition.test.ts` asserts ≥150
+  findings read out of `.planning/phases/` (and excludes
+  `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
+  `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
+  red. Tagged `v0.4.0`.
 Resume file: None
 
 ## Operator Next Steps
 
-**Phase 17 (Project Identity and Ledger Close) is complete, and with it every
-v0.4.0 requirement (16/16, no open Traceability row).** `DEBT-04` and `CORE-01`
-are both ticked Complete in `REQUIREMENTS.md` with closure notes; the
-deferred-items ledger reads 0 (down from the 19 inherited at the v0.3.0
-close); ROADMAP.md's Phase 17 section carries its real plan list and
-outcome (4 plans — 17-04 closed UAT gap `G-17-1` after the first three); the full `npm test` suite is green with every `docs-*.test.ts` guard
-passing. Milestone-close work itself (rewriting ROADMAP's `**v0.4.0 in
-progress:[██████████] 100%
-deliberately out of scope for Phase 17 — that belongs to the two commands
-below.
-
-**Read this before running either command below:** Phase 17 is the *last*
-phase of v0.4.0, and `code_review` is enabled — this phase's own
-post-execution review runs *after* this SUMMARY, with no Phase 18 in this
-milestone to inherit or disposition anything it files. If that review (or any
-later check) files a new todo into `.planning/todos/pending/`, the ledger
-count this phase recorded as 0 is stale by exactly that much, and nothing
-downstream in *this* milestone catches it structurally. **The backstop is
-`/gsd-audit-milestone`**, which runs next and is itself gated by `GATE-01`
-(blocks recording `status: passed` while any `docs-*.test.ts` guard is red) —
-so a reader who later finds a Phase 17 todo in `pending/` should read that as
-anticipated by this record, not missed by it.
-
-The two next steps, in order:
-
-1. **`/gsd-audit-milestone`** — audits v0.4.0's completion against its
-   original intent before anything is archived. Run this first; it is the
-   named backstop for any post-count finding above.
-
-2. **`/gsd-complete-milestone`** — archives the completed milestone and
-   prepares `PROJECT.md`/`ROADMAP.md`/`REQUIREMENTS.md` for the next cycle,
-   once the audit above is clean.
-
-**Optional, non-blocking:** `/gsd-cleanup` to archive completed v0.4.0 phase
-directories, left until last — the same deliberate-non-archival convention
-prior milestone closes used (none of v0.4.0's phase directories are archived
-yet; all left in place).
+- **Start the next milestone: `/gsd-new-milestone`.** It writes fresh REQ-IDs
+  into a new `.planning/REQUIREMENTS.md` and restates PROJECT.md → Requirements
+  → Active against them. Phase numbering continues at **18**.
+- Two standing candidates carry into that scoping conversation, both recorded in
+  PROJECT.md → Next Milestone Goals: the two **upstream contributions**
+  (`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
+  `--mcp-port`/`--mcp-bind`), which stay Out of Scope because they are pull
+  requests against projects this repo does not own; and the **9 follow-on items
+  v0.4.0 promoted rather than closed**, each already carrying a named owner in
+  `milestones/v0.4.0-REQUIREMENTS.md` → `### Promoted by DEBT-01`,
+  `### Fork Backend Follow-on` and `### Control-Plane Bind Follow-on`.
+- Two coverage TODOs the audit recorded as non-blocking, worth folding into the
+  next milestone's scope rather than rediscovering: five of six v0.4.0 phases
+  have a `VALIDATION.md` still at `status: draft` (never reconciled by
+  `validate-phase`), and only Phase 17 produced a `SECURITY.md` — Phase 16's
+  packaging/CI/network-bind work is the one most likely to have benefited.

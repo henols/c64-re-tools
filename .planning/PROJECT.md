@@ -171,64 +171,95 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 
 ## Context
 
-**Where this stands.** v0.3.0 shipped 2026-08-21: 4 phases, 36 plans, 101 tasks,
-12/12 in-scope requirements, 3 days. Two axes are now built. **Live:** a user
-with an apt-installed VICE can run the six shipped skills, and is told plainly
-where they must reach for the fork instead (v0.2.0, audit round 4 `tech_debt`).
+**Where this stands.** v0.4.0 shipped 2026-08-23: 6 phases, 44 plans, 119 tasks,
+16/16 requirements, 2 days, audit round 1 `tech_debt` with **zero blockers and
+zero open gaps**. Three axes are now built and one is now *maintained*.
+**Live:** a user with an apt-installed VICE can run the six shipped skills, and
+is told plainly where they must reach for the fork instead (v0.2.0).
 **Static:** what a recon session learns is written into a queryable annotation
 store instead of prose, and the symbol round trip between the two closes
-(v0.3.0, audit round 2 **`passed`** — the first `passed` verdict this project has
-recorded, with zero open gaps across requirements, phases, integration and
-flows).
+(v0.3.0, the first `passed` audit). **Honest:** the ledger this project carried
+across three closes is discharged, the two questions it kept answering by
+default are dated decisions, and the audit that checks all of it can no longer
+declare itself clean over a red guard (v0.4.0).
 
-**Current codebase state.** ~18k lines added outside `.planning/` across 72 files
-this milestone (~54k across 151 files in v0.2.0). Node ≥ 22.18, TypeScript run
-directly via native type-stripping (no build step for the shipped server). Stock
-backend: 38 tools, 9 derived client-side. Fork backend: 62 tools, unchanged.
-Static-analysis surface: 17 curated `r2000_*` tools plus 7 `vice-mcp r2000` CLI
-verbs, all container-side. Two generated-and-guarded markdown artifacts now —
-`docs/tool-support.md` and the store-rendered memory map, each with a
-digest/byte-identity drift guard.
+**Current codebase state.** ~14.6k lines added outside `.planning/` across 290
+files this milestone (~18k / 72 files in v0.3.0; ~54k / 151 files in v0.2.0).
+The payload now lives under `src/` — `src/mcp/vice/` for `@henols/vice-mcp`,
+`src/skills/` for the six skills — deliberately outside Claude Code's in-repo
+autoload path, with a `mustNotExist` CI gate proving the old locations cannot
+silently reappear. Node ≥ 22.18, TypeScript run directly via native
+type-stripping (no build step for the shipped server). Stock backend: 38 tools,
+9 derived client-side. Fork backend: 62 tools, unchanged. Static-analysis
+surface: 17 curated `r2000_*` tools plus 7 `vice-mcp r2000` CLI verbs, all
+container-side. Test suite at close: **2395 tests / 2351 pass / 0 fail** / 39
+skipped / 5 todo / 24 suites — the full `npm test` glob, not `test:automated`,
+which skips `MANUAL_ONLY_TESTS`.
 
-**Documents are now guarded like code.** This milestone's most transferable
-output is not a feature: it is that planning-document claims got mechanical
-guards. `docs-linerefs.test.ts` pins CLAUDE.md's `rewriteArguments()` citations;
+**Documents are guarded like code, and the guards now gate the audit itself.**
+Six `docs-*.test.ts` guards fail CI on planning-document drift:
+`docs-linerefs.test.ts` pins CLAUDE.md's `rewriteArguments()` citations;
 `docs-dangling-refs.test.ts` is a hand-written character state machine that fails
 if any shipped string literal names a phase number; `docs-deferred-ledger.test.ts`
 derives `STATE.md`'s deferred ledger from `.planning/todos/pending/` and fails in
 *both* directions; `docs-review-disposition.test.ts` fails if any phase's review
-finding lacks a cited disposition. That last one, on its first run, found **27**
-undispositioned findings across five phases against a pre-measured estimate of 8
-— the process risk was real and 3× larger than predicted.
+finding lacks a cited disposition; and v0.4.0 added `docs-fork-decision.test.ts`
+and `docs-core-value-decision.test.ts`, each reading its decision out of the live
+PROJECT.md. `scripts/audit-gate.mjs` makes a green run of all six a
+**precondition** of recording a gated milestone-audit status, enforced by a real
+`PreToolUse` hook rather than by convention — and observed refusing all four
+write routes against a genuinely red guard.
 
-**The lesson this milestone taught, four times, in escalating forms.** A test
-written by the same pass that wrote the code proves less than it looks like it
-does. Phase 2's green suites hid 7 critical defects. Phase 3's fixtures stubbed
-the same bits-vs-bytes assumption the code made. Phase 4's opcode table was pinned
-by an independent bit-pattern derivation and *still* shipped 14 wrong entries —
-caught only by running output through a real ACME. Phase 5's registry could mark
-fields unavailable but could not defend against a wrong *bank address*, so every
-chip read returned plausible values decoded from RAM underneath the I/O area. In
-every case the external check — a real assembler, a real emulator, a real
-container, a real broker launch — found what the internal one could not. Phase 8.1
-is the cleanest instance: running the one unwitnessed claim *falsified* it.
+**The lesson this project has now been taught six times, in escalating forms.**
+A test written by the same pass that wrote the code proves less than it looks
+like it does. Phase 2's green suites hid 7 critical defects. Phase 3's fixtures
+stubbed the same bits-vs-bytes assumption the code made. Phase 4's opcode table
+was pinned by an independent bit-pattern derivation and *still* shipped 14 wrong
+entries — caught only by running output through a real ACME. Phase 5's registry
+could mark fields unavailable but could not defend against a wrong *bank
+address*, so every chip read returned plausible values decoded from RAM
+underneath the I/O area. Phase 8.1 is the cleanest instance: running the one
+unwitnessed claim *falsified* it. And Phase 13 is the sixth: of four wire details
+finally run against a real binary, one was refuted outright. In every case the
+external check — a real assembler, a real emulator, a real container, a real
+broker launch, a real `--help` — found what the internal one could not.
 
-**Known debt carried out of v0.3.0.** 19 items acknowledged at close, up from
-v0.2.0's 13: 18 tracked pending todos plus Phase 03's three open human-UAT
-scenarios. The ledger is no longer hand-maintained — it is derived from
-`.planning/todos/pending/` and guarded both directions (`STATE.md` → Deferred
-Items). **The debt grew while being counted honestly for the first time**, which
-is the more useful reading than the raw delta: 4 items were opened during v0.3.0
-as real scope decisions, **4 were filed by the new completeness guard** (3 by plan
-11.1-07 and a 4th at this close), and 3 were retired to `completed/`. The highest-value three are unchanged from v0.2.0 and
-all name the same failure mode — an internal check standing in for an external
-one: the synthetic `VERIF-02` wire fixtures, the unconfirmed `--help` backend
-discriminator, and the four Phase 3 wire details written spec-driven and never
-exercised against a real binary. Newly notable: Phase 08's `WR-04`..`WR-12`, 9
-v0.2.0 review findings that were never dispositioned and only surfaced because
-the guard was built. Separately: `vice-proxy.ts` remains large and is the sole
-tool-surface seam — client-side derivations go in sibling modules, never appended
-to it.
+**A newer, sharper form of the same lesson.** Twice this milestone, a *closure
+plan re-read its own premise and found it false.* Plan 15-04 was told two
+findings were "superseded" and direct source inspection found both still open.
+Plan 16-08's deferred entry predicted which plan would close its cascading test
+failures and named the wrong one; the entry was corrected mid-close rather than
+left standing. Restating a stale claim confidently is the same defect class as
+an internal check standing in for an external one, one level up.
+
+**Known debt carried out of v0.4.0.** **Zero pending todos** — the ledger is
+derived from `.planning/todos/pending/` and guarded in both directions
+(`STATE.md` → Deferred Items), and it reads 0 for the first time, down from 19
+at the v0.3.0 close and 13 at v0.2.0's. What carries forward instead is
+*explicit and owned*: 9 follow-on items promoted with named owners (5 under
+`### Promoted by DEBT-01`, 3 under `### Fork Backend Follow-on`, 1 under
+`### Control-Plane Bind Follow-on` in `milestones/v0.4.0-REQUIREMENTS.md`), plus
+`UP-01`/`UP-02`, which stay Out of Scope as pull requests against projects this
+repo does not own. Two coverage TODOs the audit recorded as non-blocking: five
+of six phases left a `VALIDATION.md` at `status: draft`, and only Phase 17
+produced a `SECURITY.md` — Phase 16's packaging/CI/network-bind work being the
+one most likely to have benefited. Sixteen bookkeeping items were acknowledged
+rather than resolved at the close (`override_closeout`); each is itemised in
+`STATE.md` → `### Acknowledged at the v0.4.0 close` and each self-invalidates if
+its artifact changes. Separately, and unchanged: `vice-proxy.ts` remains large
+and is the sole tool-surface seam — client-side derivations go in sibling
+modules, never appended to it. Also unchanged: `~15` carried WR-class
+code-review findings are **dispositioned, not fixed**, and `DEBT-04`'s closure
+note correctly declines to claim otherwise.
+
+**A structural gap worth naming.** Phase directories are deliberately *not*
+archived out of `.planning/phases/` at milestone close, unlike the roadmap and
+requirements. Two committed guards read them directly:
+`docs-review-disposition.test.ts` asserts at least 150 review findings found
+there and explicitly excludes `.planning/milestones/`, and
+`r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
+existence guard. Archiving them would turn both red. `.planning/phases/`
+therefore accumulates across milestones by design, not by omission.
 
 **Existing planning context (do not re-derive).** `.planning/codebase/` holds the
 codebase map. `.planning/intel/` holds the ingested doc set: decisions,
@@ -236,7 +267,7 @@ constraints, `CAND-*` scope items, and resolutions. `.planning/INGEST-CONFLICTS.
 records two user-resolved precedence warnings (W1, W2).
 `.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
-**Shipping history.** Newest tag `v0.3.0`; the version number resolves from a
+**Shipping history.** Newest tag `v0.4.0`; the version number resolves from a
 single `VERSION` template rather than being hand-maintained in six places
 (quick task `260819-tsz`), and release assets are stamped/zipped/attached by one
 seam both CI release paths call (`260819-vie` — v0.2.0 had shipped with none,
@@ -328,6 +359,11 @@ ceiling is explicitly recorded.
 | Extend document guarding from source claims to planning claims | v0.2.0's audits kept finding stale planning-document assertions by hand, repeatedly | ✓ Good — four `docs-*.test.ts` guards now fail CI on line-reference drift, dangling phase pointers, an undelegated deferred ledger, and undispositioned review findings. This close found two more stale counts *because* the guards exist |
 | Retain the forked VICE MCP backend as the default hedge (FORK-01, decided 2026-08-22) | Both hard losses this branch hedges — SID read-back (write-only in hardware, unrecoverable by any opcode) and RESTORE/NMI (no client-side substitute exists) — have no route except the fork, and retention's steady-state cost is already sunk and running in CI; the one unpaid cost, the first live exercise of the fork's own `-mcpserver` HTTP transport, is paid by 14-03 on this branch. This decision reverses if UP-01 lands: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any()`) that closes stock's hardest loss for everyone. As of VICE 3.10 that opcode has NOT landed — confirmed against the 3.10 manual's binary-monitor command list, whose only keyboard-related command is `0x72` buffer-text feed — and Debian/Ubuntu's `apt` path already lags a release behind, so a landed opcode needs a further release cycle to reach this project's documented primary install path. Landing it would close the matrix-keyboard loss specifically; its effect on RESTORE/NMI is unconfirmed, not assumed closed; it closes SID read-back not at all, since that is a write-only-hardware fact no opcode changes. This trigger is manually tracked, not mechanically probed, since a version probe for an opcode with zero wire presence today is out of scope. Caveats carried, not resolved: the fork maintainer's current activity was not checked this session, so retain's near-zero carrying cost dates from 2026-08-11 (A2); no evidence establishes whether any consumer runs the fork transport in production today (A3). | ⚠️ Revisit — pinned by the committed guard `docs-fork-decision.test.ts`. The adequacy evidence now exists: plan 14-03 exercised the fork's own `-mcpserver` HTTP transport live against a real fork binary (`/usr/local/bin/x64sc`, VICE 3.10) for the first time in this repository's history — 6/6 passing, including `vice_sid_get_state` end to end, so the SID read-back route this decision retains is proven followable rather than merely documented. Observed payloads in `.planning/phases/14-backend-decision/14-CRITERION3-EVIDENCE.md`; repeatable via the default-skipped `fork-live.test.ts` (opt in with `VICE_LIVE_FORK_BIN`). Still `Revisit` rather than `✓ Good` because the reversal trigger is manually tracked, not probed. |
 | Accept the broker control-plane listener's `0.0.0.0` bind default as a documented risk rather than narrowing it (PKG-04, decided 2026-08-22) | The broker's own TCP control-plane listener (acquire/release/recycle/status/host_state/monitor_claim/monitor_release) defaults its bind to `0.0.0.0` at five sites — two authored code sites (`vice-broker.mts`'s `controlHost`, `broker-control.mts`'s `startControlListener()` fallback), one authored doc-comment site recording the same rule, and two compiled `resources/*.mjs` twins that carry it forward mechanically. This is deliberate, not an oversight: a containerised consumer dials `host.docker.internal`, which on Linux resolves to the Docker bridge gateway address rather than the loopback interface, so a `127.0.0.1`-bound listener would be structurally unreachable from exactly the topology this project's container-detection code exists to serve. The decision was taken at a blocking `checkpoint:decision` on 2026-08-03, `as-specified`, no amendments. The listener is not unauthenticated: every request is gated by a 256-bit CSPRNG capability token, minted once per broker boot, compared with `timingSafeEqual` over equal-length buffers before any state read or write, and persisted for the broker's entire running lifetime in a mode-`0600` `broker.json` — never logged, never placed in an error message. Residual risk, stated without softening: any host reachable on the same local network segment can open a connection to the control port; without a valid token every operation returns `unauthorized` and nothing is read or written; with a leaked token, an attacker on that segment can acquire, release and recycle emulator instances — materially smaller than arbitrary code execution, but a real tampering and availability exposure on an untrusted segment such as public Wi-Fi or a shared lab network. The narrow branch (bind `127.0.0.1` by default) was considered and rejected: it reverses the 2026-08-03 checkpoint decision without the live container-reachability evidence that decision rests on, and the only non-regressive form of narrowing — binding loopback unless a container topology is detected — is new behaviour this milestone's Out of Scope table excludes ("Any new tool on either backend ... This milestone adds no capability"). Reverses if a future milestone ships a loopback default with an opt-in widen, mirroring the existing binary-monitor host pattern that already warns once on widening, gated on `container-guard.mts`'s detector actually being consulted at the control-plane bind decision — which it is not today. | ⚠️ Revisit — accepted rather than removed; the reversal trigger is a design decision a future milestone takes, not something probed mechanically. Live-confirmed this session: the control listener bound `0.0.0.0:19510` on a real broker start (`16-PKG04-EVIDENCE.md`); the corresponding stock binary-monitor default (`127.0.0.1`) is source-cited in the same document, not independently live-observed this session since this host's `x64sc` resolved to the fork build. |
+| Build the audit-integrity instrument first, as Phase 12, before any disposition work (v0.4.0, 2026-08-21) | `4f048bb` closed v0.3.0 with `docs-review-disposition.test.ts` already red and nothing forced anyone to notice. An instrument built *after* the work it is meant to gate has never gated anything | ✓ Good — every later v0.4.0 phase ran under its own gate, and the mechanism was **watched refusing**: Claude Code's own `PreToolUse` dispatch blocked all four write routes (Write, Edit in two payload shapes, Bash heredoc, a subagent's Write) against a genuinely red guard, then allowed them after a verified revert. The instrument's own review then found a live super-linear-regex denial of service and a single-line Bash-append bypass that plan 12-02 had *claimed* to close but did not |
+| Promote unclosable items with a **named owner** rather than closing or carrying them (DEBT-01, v0.4.0) | "Every item is fixed" is unachievable and invites a dishonest ledger; "every item is carried" is what this project did for three closes. A promotion with an owner is checkable and neither | ✓ Good — 19 inherited items → 0 pending, with 9 promoted into named buckets in `milestones/v0.4.0-REQUIREMENTS.md`. The ledger reads 0 honestly rather than by redefinition, and `docs-deferred-ledger.test.ts` was fixed to be *able* to express zero (its non-vacuity floor had asserted `pending.length >= 2`) |
+| Widen `docs-review-disposition.test.ts`'s parser rather than trust its green run (v0.4.0 Phase 15) | The guard keyed on level-3-colon-only headings, which is a property of how findings happened to be written, not of what a finding is | ✓ Good — 119 visible findings became 150, and the 9 the widening exposed were dispositioned back to green. A guard whose scope is narrower than its subject reports clean for the wrong reason |
+| Acknowledge the pre-close artifact audit's 16 items rather than resolve them (v0.4.0 close, 2026-08-23) | All 16 are bookkeeping — `status:` fields never flipped after their work landed, plus quick-task directories from this and earlier milestones. None is a requirement gap, an integration gap, or an unverified phase; the milestone audit scored 16/16, 6/6, 12/12, 4/4 with zero blockers | — Pending — recorded as `closeout_type=override_closeout` and itemised in `STATE.md` → `### Acknowledged at the v0.4.0 close`. Acknowledgment is verdict-preserving and self-invalidating: each suppression lapses the moment its artifact's observed state changes, so none of it can hide a *new* problem. Revisit at the next close, where a still-acknowledged item is evidence the bookkeeping never got fixed |
+| Do **not** archive phase directories at milestone close, unlike the roadmap and requirements (v0.4.0 close, 2026-08-23) | Two committed guards read `.planning/phases/` directly: `docs-review-disposition.test.ts` asserts ≥150 review findings found there and explicitly *excludes* `.planning/milestones/`, and `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard. The default-on archival would turn both red | ⚠️ Revisit — `--no-archive-phases` passed at this close (and effectively at the two before it). `.planning/phases/` accumulates across milestones by design, not omission. The clean fix is to teach both guards to read the archive too; until then this is a standing constraint on the close procedure, not a preference |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -348,43 +384,62 @@ This document evolves at phase transitions and milestone boundaries.
 
 ## Current State
 
-**In flight: v0.4.0 Debt discharged, decisions settled** — all six phases complete
-2026-08-23 (44/44 plans, 16/16 requirements), milestone audit not yet run. See
-"Current Milestone" below. The shipped-milestone entry with its audit verdict is
-written here by `/gsd-complete-milestone`.
-
-**Shipped: v0.3.0 regenerator2000 static-analysis backend** — 2026-08-21.
-4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks, 12/12 in-scope
-requirements, 3 days, 268 commits.
+**Shipped: v0.4.0 Debt discharged, decisions settled** — 2026-08-23.
+6 phases (12, 13, 14, 15, 16, 17 — no inserted decimals), 44 plans, 119 tasks,
+16/16 requirements, 2 days, 292 commits.
 Full record: [`MILESTONES.md`](MILESTONES.md) ·
-[`milestones/v0.3.0-ROADMAP.md`](milestones/v0.3.0-ROADMAP.md) ·
-[`milestones/v0.3.0-REQUIREMENTS.md`](milestones/v0.3.0-REQUIREMENTS.md) ·
-[`milestones/v0.3.0-MILESTONE-AUDIT.md`](milestones/v0.3.0-MILESTONE-AUDIT.md)
+[`milestones/v0.4.0-ROADMAP.md`](milestones/v0.4.0-ROADMAP.md) ·
+[`milestones/v0.4.0-REQUIREMENTS.md`](milestones/v0.4.0-REQUIREMENTS.md) ·
+[`milestones/v0.4.0-MILESTONE-AUDIT.md`](milestones/v0.4.0-MILESTONE-AUDIT.md)
 
-Recon findings stop being prose. regenerator2000 is a required, container-side,
-static-analysis-only prerequisite reached through 17 curated `r2000_*` tools and
-7 `vice-mcp r2000` CLI verbs, structurally incapable of touching VICE. A raw
-binary becomes an analysed project with no human in the loop; register writes
-render as generated bit-name enums (`sta $d011` → `lda
-#D011_YSCROLL3_ROW25_SCREENON_TEXT`, reassembling byte-identical under real
-ACME); symbols flow both ways between the store and a live emulator; and the
-flat linear `toacme` decoder this replaced is deleted, grep-gated gone.
+The project stops inheriting the same ledger. The pending-todo tree reads
+genuinely empty for the first time in this project's history — **19 inherited
+items → 0** — with every one of them fixed, dispositioned `wont-fix` with
+rationale, or promoted with a named owner. The two questions this project had
+been answering *by default* each milestone are now dated decisions pinned by
+their own guards: `FORK-01` **retain** (with the upstream `KEYBOARD_MATRIX_SET`
+coupling as the named reversal criterion) and `CORE-01` **keep-dated**. The
+plugin payload lives under `src/` with both published tarballs still validated.
 
-**Audit verdict: `passed`.** Round 2, zero open gaps — 12/12 requirements, 4/4
-phases, 12/12 integration, 4/4 flows. The first `passed` this project has
-recorded (v0.2.0 closed `tech_debt`). Round 1's findings were closed by inserted
-Phase 11.1, each behind a guard proven non-vacuous rather than merely fixed. Both
-`SECURITY.md` ledgers read `threats_open: 0` / `status: verified`. Nyquist
-compliant across all four phases, including a retroactive Phase 10 ledger and a
-Phase 11.1 ledger the closure phase had initially created a gap in itself.
+**Audit verdict: `tech_debt`, round 1 — zero blockers, zero open gaps.**
+16/16 requirements, 6/6 phases, 12/12 integration, 4/4 flows, no orphaned or
+missing connections. `tech_debt` rather than `passed` on bookkeeping and coverage
+only: five of six phases left a `VALIDATION.md` at `status: draft`, and only
+Phase 17 produced a `SECURITY.md`. Four of the six phases needed a second
+verification round, and in every case the gap was closed by real work rather
+than by re-reading the same evidence — which is the pattern the audit instrument
+was built to force.
 
-**Two things the milestone proved beyond its requirements.** The go/no-go gate
-fired for real and was honoured — the milestone shipped *smaller* than proposed
-because criterion 3(4) came back `partial`. And planning documents got mechanical
-guards; the completeness guard's first run found 27 undispositioned review
-findings against a pre-measured 8.
+**Closed as `override_closeout`.** The pre-close artifact audit reported 16 open
+items — all bookkeeping (`status:` fields never flipped after their work landed,
+plus quick-task directories from this and earlier milestones). They were
+acknowledged rather than resolved; see `STATE.md` →
+`### Acknowledged at the v0.4.0 close` for the itemised disclosure. 0 items were
+carried forward from a prior close.
 
-**Prior milestone — v0.2.0 Switchable stock-VICE backend**, 2026-08-19: 9 phases,
+**What the milestone proved beyond its requirements.** The audit gate is not a
+document: Claude Code's own PreToolUse dispatch was watched refusing all four
+write routes — Write, Edit in two payload shapes, a Bash heredoc, and a
+subagent's Write — against a genuinely red guard, then allowing them after a
+verified revert. And external checking beat internal checking a sixth time: of
+the four spec-driven Phase 3 wire details finally run against a real binary, one
+came back **refuted** — `vice_disk_attach`'s advertised no-side-effect promise
+is false, and was corrected at source rather than annotated.
+
+**Prior milestone — v0.3.0 regenerator2000 static-analysis backend**, 2026-08-21:
+4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks, 12/12 in-scope
+requirements, 3 days, 268 commits, audit round 2 **`passed`** — the first
+`passed` this project recorded. Recon findings stop being prose: 17 curated
+`r2000_*` tools and 7 `vice-mcp r2000` CLI verbs over a persistent annotation
+store, container-side and structurally incapable of touching VICE; register
+writes render as generated bit-name enums; symbols flow both ways between the
+store and a live emulator; the flat linear `toacme` decoder is deleted,
+grep-gated gone. The go/no-go gate fired for real and was honoured — the
+milestone shipped *smaller* than proposed because criterion 3(4) came back
+`partial`. Archived at
+[`milestones/v0.3.0-ROADMAP.md`](milestones/v0.3.0-ROADMAP.md).
+
+**Before that — v0.2.0 Switchable stock-VICE backend**, 2026-08-19: 9 phases,
 87 plans, 218 tasks, 51/51 in-scope requirements, 8 days, audit round 4
 `tech_debt`. The plugin no longer requires a custom VICE build. Stock upstream
 `x64sc` is a first-class, project-selectable backend with 38 tools; the fork
@@ -393,23 +448,29 @@ provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 (VICE 3.9) through the real broker. Archived at
 [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
 
-## Current Milestone: v0.4.0 Debt discharged, decisions settled
+## Current Milestone
+
+**None open.** v0.4.0 closed 2026-08-23 and is recorded under "Current State"
+above. `.planning/REQUIREMENTS.md` was removed at that close and is recreated by
+`/gsd-new-milestone`, which is the next action; Requirements → Active is
+deliberately empty until it runs. **Phase numbering continues from 17 — the next
+milestone starts at Phase 18**, and numbers are never reused, including the
+dissolved and cut ones.
+
+<details>
+<summary>Previous milestone detail — v0.4.0 phase-by-phase narrative (archived 2026-08-23)</summary>
+
+**v0.4.0 Debt discharged, decisions settled — as it was tracked during execution:**
 
 **Opened:** 2026-08-21, immediately after the v0.3.0 close.
-
-**All phases complete: 2026-08-23.** Six phases (12, 13, 14, 15, 16, 17), 44/44
-plans, 16/16 requirements Complete, 0 open. Every target feature below shipped and
-has moved to Requirements → Validated. The milestone is not yet *closed* — the
-remaining step is `/gsd-complete-milestone v0.4.0`, which runs the milestone audit
-and archives the roadmap. Until that runs, the audit verdict for v0.4.0 is
-unrecorded, and this section rather than `## Current State` is the authoritative
-statement of where the milestone stands.
+**All phases complete:** 2026-08-23. Six phases (12, 13, 14, 15, 16, 17), 44/44
+plans, 16/16 requirements.
 
 **Goal:** Stop inheriting the same ledger a third time — every carried item
 becomes a fix or a dated decision, and the two questions this project has
 answered *by default* each milestone get answered deliberately.
 
-**Target features:**
+**Target features (all delivered):**
 
 - **External verification replaces the internal proxies.** The three
   highest-value carried items are one failure mode this project has now been
@@ -419,73 +480,110 @@ answered *by default* each milestone get answered deliberately.
   fork binaries; exercise the four Phase 3 behavioural/spelling wire details
   written spec-driven and never run. All three are live-testable in this
   environment: genuine unpatched stock VICE is at `/usr/bin/x64sc`, with the fork
-  shadowing it earlier on `PATH`.
+  shadowing it earlier on `PATH`. *Delivered by Phase 13 — and the sixth
+  instance of the lesson: one of the four details came back refuted.*
 - **An audit cannot record `passed` over a red guard.** Require a green run of the
-  four `docs-*.test.ts` guards as a precondition of `status: passed`. The
+  `docs-*.test.ts` guards as a precondition of `status: passed`. The
   instrument already exists and nothing forces anyone to read it — which is how
   Phase 08's `WR-04`..`WR-12` and Phase 09's `IN-01`..`IN-03` stayed invisible
   until the completeness guard was built, and how `4f048bb` closed with that
-  guard already red.
+  guard already red. *Delivered by Phase 12, sequenced first so every later
+  phase ran under its own gate.*
 - **The fork-backend decision, actually made.** Remove it, or record a dated
   decision naming the criteria that would reverse it. It is the largest single
   simplification available and has been retained by default across two closes.
   The criteria are coupled to the upstream work below, not independent of it.
+  *Delivered by Phase 14: `FORK-01` decided **retain**.*
 - **Every remaining pending todo dispositioned.** Each of the other ~14 becomes
   fixed, filed `wont-fix` with rationale, or explicitly promoted into scope.
+  *Delivered by Phase 15 (21 → 2) and Phase 17 (2 → 0).*
 - **Phase 03's UAT gap closed** — `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load`
   against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a
   running program; the hot non-stopping-checkpoint auto-disable guard under
-  sustained 20+/sec hit pressure.
+  sustained 20+/sec hit pressure. *Delivered by Phase 15 — the last scenario by
+  a real checkpoint flood on the KERNAL IRQ entry against stock VICE 3.9.*
 - **Core Value restated or confirmed** on two milestones of evidence, resolving
-  the flag deliberately left under Core Value at the v0.3.0 close.
+  the flag deliberately left under Core Value at the v0.3.0 close. *Delivered by
+  Phase 17: `CORE-01` decided **keep-dated**.*
 - **Packaging and repo shape** — relocate the plugin payload under `src/`, merge
   `.mcp.json`, and close `QUAL-01..03` (tests for `acme.mjs`/`driver.mjs`/`derive.mjs`,
   orphaned planning references in source comments, the control-plane exposure).
-
-**Phase numbering continues from 11.1 — this milestone starts at Phase 12.**
-Numbers are never reused, including the dissolved ones.
+  *Delivered by Phase 16.*
 
 **Explicitly not in this milestone:** the two upstream contributions
 (`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
 `--mcp-port`/`--mcp-bind`). Both are pull requests against third-party projects,
 already recorded under Out of Scope, and neither is a deliverable of this repo.
-The coupling is real and must be named rather than ignored: if
-`KEYBOARD_MATRIX_SET` ever lands upstream, one of the three standing reasons to
-keep the fork backend disappears — so the fork decision above should cite that as
-a reversal criterion instead of treating the two as independent.
+The coupling is real and was named rather than ignored: if `KEYBOARD_MATRIX_SET`
+ever lands upstream, one of the three standing reasons to keep the fork backend
+disappears — so `FORK-01` cites it as a reversal criterion instead of treating
+the two as independent.
+
+</details>
 
 ## Next Milestone Goals
 
-**Four of the five standing candidates were scoped into v0.4.0 on 2026-08-21** —
-the carried debt (1), the fork-backend decision (2), the Core Value restatement
-(4), and packaging and repo shape (5). See "Current Milestone" above for what each
-became. This section now records only what v0.4.0 deliberately did *not* take.
+**v0.4.0 took four of the five candidates standing at the v0.3.0 close** — the
+carried debt, the fork-backend decision, the Core Value restatement, and
+packaging and repo shape — and closed all four. See "Current State" above. What
+follows is what carries into the next scoping conversation, all of it explicit
+and owned rather than inherited silently.
 
 **Standing, not scoped:**
 
-1. **The upstream contributions.** Recorded under Out of Scope here and left there
-   by v0.4.0, because both are pull requests against projects this repo does not
-   own: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60 lines in
-   `monitor_binary.c` calling `keyboard_set_keyarr_any`, closing stock's hardest
-   loss for everyone, not just this plugin), and regenerator2000's
+1. **The upstream contributions.** Recorded under Out of Scope here and left
+   there by v0.4.0, because both are pull requests against projects this repo
+   does not own: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60
+   lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`, closing stock's
+   hardest loss for everyone, not just this plugin), and regenerator2000's
    `--mcp-port` / `--mcp-bind` (~5 lines, unblocking two projects at once and a
    host-side TUI — currently a *stated* limit in this project's install
    documentation precisely because it cannot be fixed downstream). Neither is a
    deliverable of this repo; both would change what this repo can promise.
-   **The first one is coupled to v0.4.0's fork decision** — if it lands upstream,
-   one of the three reasons to keep the fork backend disappears.
+   **The first is coupled to `FORK-01`** — if it lands upstream, one of the three
+   reasons to keep the fork backend disappears. The trigger is tracked *manually*,
+   because a version probe for an opcode with zero wire presence today would be
+   speculative engineering against an unlanded upstream change.
 
-2. **Whatever v0.4.0's disposition pass promotes rather than closes.** The
-   milestone's own scope is to make every carried item a fix or a dated decision;
-   any item it promotes instead of closing lands here by construction, with its
-   rationale already written.
+2. **The 9 follow-on items v0.4.0 promoted rather than closed**, each already
+   carrying a named owner in `milestones/v0.4.0-REQUIREMENTS.md`. This is the
+   list `DEBT-01` exists to produce: promoting with an owner instead of carrying
+   silently is the outcome, not a shortfall.
+   - `### Promoted by DEBT-01` (5): `vice_disk_attach`'s contract-redesign
+     question (the A5 refutation's *behavioural* half — `fileIndex` when
+     `runAfter=false` — deliberately not resolved by the string fix);
+     `code-review.md`'s file-list scoping omission (owner: GSD toolkit
+     upstream); measuring `InitialWarpMode`'s actual runtime effect; deriving
+     the `cpuhistory-get*` fixtures' `capturedFrom` automatically;
+     `c64-ram-capture`'s keyboard-typed-`LOAD` fallback stall.
+   - `### Fork Backend Follow-on` (3, `FORK-01` = `retain`): the 24
+     fork-only-tool disposition; how a breaking tool-surface change is released;
+     tracking the `KEYBOARD_MATRIX_SET` reversal trigger (manual — no version
+     probe is possible).
+   - `### Control-Plane Bind Follow-on` (1, `PKG-04` = `accept`): the smart
+     loopback-unless-container bind default. Explicitly *not* a narrowing of the
+     current `0.0.0.0` default — it is new behaviour, and reversing the
+     2026-08-03 checkpoint decision needs live container-reachability evidence.
 
-**Shipped since this section was last written:** v0.3.0, 2026-08-21 (see Current
-State). Every release-plumbing gap v0.2.0 exposed is closed — one `VERSION`
+3. **Two coverage TODOs the v0.4.0 audit recorded as non-blocking**, worth
+   folding into scope rather than rediscovering at the next close: five of six
+   phases left a `VALIDATION.md` at `status: draft` (seeded by `plan-phase`,
+   never reconciled by `validate-phase`), and only Phase 17 produced a
+   `SECURITY.md` — Phase 16's packaging/CI/network-bind work, including
+   `PKG-04`'s accepted `0.0.0.0` bind, is the one most likely to have benefited.
+
+4. **The `~15` dispositioned-but-unfixed WR-class review findings.** Enumerated
+   in `milestones/v0.2.0-MILESTONE-AUDIT.md`; all carry a cited disposition
+   (`docs-review-disposition.test.ts` is green over 150 findings with 0
+   undispositioned), which is not the same as fixed. `DEBT-04`'s closure note
+   correctly declines to claim otherwise. Whether any of them is worth fixing is
+   a scope decision, not debt discovery.
+
+**Shipped since this section was last written:** v0.4.0, 2026-08-23 (see Current
+State). The release plumbing v0.2.0 exposed remains closed — one `VERSION`
 template with a resolver seam replaced six hand-maintained strings, and one
 `scripts/release-assets.sh` seam is called by both CI release paths, since
 `release-on-merge`'s `GITHUB_TOKEN` tag cannot re-trigger the tag-gated job.
-v0.2.0's missing plugin zip was attached retroactively.
 
 <details>
 <summary>Previous milestone detail — v0.3.0 phase-by-phase narrative (archived 2026-08-21)</summary>
@@ -867,12 +965,22 @@ written).
 
 ---
 
-*Last updated: 2026-08-23 after Phase 17 close (v0.4.0's final phase). All seven
-v0.4.0 target features moved from Active to Validated with their closing phases and
-requirement ids; Active is now empty pending the next milestone's scope. Current
-State and Current Milestone record that all six phases are complete and the
-milestone audit is the one remaining step. `## Core Value`'s CORE-01 verdict and
-its corrected `*Provenance.*` paragraph were written in Phase 17 itself (plans
-17-02 and 17-04) and are unchanged here. Previously: 2026-08-21 at the v0.3.0
-milestone close; 2026-08-21 after Phase 11 close; 2026-08-20 after Phase 9 close;
-2026-08-19 at v0.2.0 milestone close.*
+*Last updated: 2026-08-23 at the **v0.4.0 milestone close**. Full evolution
+review: Current State now records v0.4.0 as shipped with its `tech_debt`
+(zero-blocker, zero-gap) audit verdict and its `override_closeout` disclosure;
+Current Milestone reads "None open" with v0.4.0's execution narrative collapsed
+into a `<details>` block beside v0.3.0's and v0.2.0's; Context is rewritten
+against the v0.4.0 close — codebase state, the six document guards now gating the
+audit itself, the six-times-taught external-vs-internal-check lesson plus its
+sharper stale-premise variant, the zero-pending ledger with what carries forward
+instead, and the phase-directory archival constraint; Next Milestone Goals now
+enumerates the 9 owned promotions, the two coverage TODOs and the ~15
+dispositioned-not-fixed findings; five v0.4.0 decisions added to Key Decisions.
+`## Core Value` and its `*Provenance.*` paragraph, Requirements → Validated /
+Active, Out of Scope, Constraints and Engineering Governance were reviewed and
+left as Phase 17 wrote them — Validated already carries all seven v0.4.0 target
+features, Active is correctly empty pending `/gsd-new-milestone`, and the Core
+Value section is pinned by `docs-core-value-decision.test.ts`. Previously:
+2026-08-23 after Phase 17 close; 2026-08-21 at the v0.3.0 milestone close;
+2026-08-21 after Phase 11 close; 2026-08-20 after Phase 9 close; 2026-08-19 at
+v0.2.0 milestone close.*

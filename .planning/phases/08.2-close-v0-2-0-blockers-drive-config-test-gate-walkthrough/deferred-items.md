@@ -59,3 +59,12 @@ reached the same root cause from different entry points. Recorded once here.
   08.2-02's worktree reported 2 (this artifact plus the still-unmerged
   `08.1-d-checklist.sh` tracked-shell-script drift that is I-3/plan 01's
   territory). Both resolve on merge — to be confirmed by the follow-up above.
+
+- **Status:** acknowledged
+- **Acknowledged at:** v0.4.0 milestone close (2026-08-23) — recorded in
+  `.planning/STATE.md` → `## Deferred Items`. Written by hand because
+  `query audit-open acknowledge` refuses this file's heading-delimited
+  (#3457) entry shape (`unsupported_heading_shape`); the marker is the
+  per-entry `status:` field itself, so it is self-invalidating in the
+  usual way — edit the field away and the entry resurfaces at the next
+  `audit-open` scan.

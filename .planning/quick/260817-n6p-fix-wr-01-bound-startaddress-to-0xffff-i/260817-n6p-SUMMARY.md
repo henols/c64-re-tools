@@ -5,29 +5,37 @@ subsystem: testing
 tags: [typescript, disassembler, input-validation, code-review-followup]
 
 # Dependency graph
+
 requires:
+
   - phase: 04-client-side-tool-seam-and-6510-disassembler
     provides: disasm-decoder.ts's decode() function and its 04-REVIEW.md code review
 provides:
+
   - "isValidStartAddress() guard in decode(), rejecting startAddress > 0xffff instead of wrapping it"
   - "04-REVIEW.md Resolution Status section covering WR-01/IN-01/IN-02/IN-03"
+
 affects: [phase-05-derivations-and-screenshots]
 
 # Tech tracking
+
 tech-stack:
   added: []
   patterns:
+
     - "Separate narrowing predicate per argument when one argument (startAddress) needs a stricter bound than siblings (opts.count/opts.end) that must stay unbounded by design"
 
 key-files:
   created: []
   modified:
+
     - .claude/mcp/vice/disasm-decoder.ts
     - .claude/mcp/vice/disasm-decoder.test.ts
     - .planning/phases/04-client-side-tool-seam-and-6510-disassembler/04-REVIEW.md
     - .planning/phases/04-client-side-tool-seam-and-6510-disassembler/deferred-items.md
 
 key-decisions:
+
   - "WR-01 is hardening on a currently unreachable path, not a bug fix for a reachable defect -- both named future consumers (DERIV-02, GAIN-01) were cut from v0.2.0 scope on 2026-08-17, so this is defense-in-depth, not a live fix"
   - "isNonNegativeSafeInteger() was left completely untouched; a new, separate isValidStartAddress() was added instead, so opts.count/opts.end (IN-03) stay unbounded by design"
   - "04-REVIEW.md front-matter status left as issues_found (not changed to resolved) because IN-02 is still a live, if scoped, Info for Phase 5"
@@ -38,8 +46,13 @@ patterns-established: []
 requirements-completed: [WR-01, DISASM-05, DISASM-07]
 
 # Metrics
+
 duration: ~30min
 completed: 2026-08-17
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: unknown
 ---
 
 # Phase quick: Bound decode()'s startAddress to 0..0xffff Summary

@@ -10,6 +10,10 @@ tested_artifact_sha: 2d76867d0eb4bbb3592da99656f18389146af09b
 tested_artifact_route: local-checkout-HEAD
 vice_version: "x64sc (VICE 3.9)"
 evidence: 08.2-WALKTHROUGH-EVIDENCE.md
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  gap_snapshot: "passed::scenarios=0"
 ---
 
 ## Current Test
@@ -51,6 +55,7 @@ full test — see `why_human` above):
 
 - Spun up a fresh, unmodified `debian:trixie` Docker container (no pre-existing
   VICE, no pre-existing project state).
+
 - `sudo apt install vice` **FAILED** on the container's default sources
   ("Unable to locate package vice") — discovered live that Debian ships `vice`
   in the `contrib` component, not `main` (confirmed against
@@ -59,9 +64,11 @@ full test — see `why_human` above):
   Task 1 — now fixed (commit `69e9092`, this plan) by naming the `contrib`
   requirement in the Debian trixie/forky rows, matching the Ubuntu row's
   existing `multiverse` note.
+
 - After enabling `contrib`, `apt install vice` succeeded and delivered
   `3.9+dfsg-1` — exactly matching README's per-ecosystem table claim for
   trixie.
+
 - Separately, on the host (not the container, since installing a second VICE
   build in the container was unnecessary for this check): the exact launch
   command README publishes,
@@ -172,9 +179,11 @@ machine's `$PATH` resolves to the fork build. Literal before/after JSON in
 identity evidence. The authoritative proof is the broker's own `epoch.json` plus a live
 `ps -o args=` read, repeated across four independently-captured live instances during this
 run, every one identical:
+
 ```
 /usr/bin/x64sc -default -drive8type 1541 -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6604 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6605
 ```
+
 `-drive8type` immediately followed by `1541`; `-default` at a lower argv index than
 `-binarymonitor`; `/usr/bin/x64sc` by absolute path. Each captured instance's
 `XDG_CONFIG_HOME` (read from `/proc/<pid>/environ`) was its own distinct scratch
@@ -233,6 +242,7 @@ blocked: 0
   (`-drive8type 1541` at launch). The VICE-install half remains live-verified from before,
   with its one real gap (Debian's `contrib` requirement) fixed in `README.md`
   (commit `69e9092`).
+
 - **Closed (Phase 8.2, plan 08.2-04): the `Drive8Type=0` defect above is fixed and the
   walkthrough re-run reached a full, verified 65536-byte RAM capture** through a
   broker-launched genuine stock instance carrying both the `-drive8type 1541` fix and a

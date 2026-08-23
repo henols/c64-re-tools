@@ -5,26 +5,33 @@ subsystem: testing
 tags: [vice-mcp, stock-vice, node-test, test-gate, evidence-shape, uat-gap-closure]
 
 # Dependency graph
+
 requires:
+
   - phase: 07-cycle-timing-and-wedge-triage
     provides: "vice_diagnose's five-verdict/non-verdict diagnosis surface, including the restarted verdict's evidence shape (baselineEpoch/currentEpoch, plus WR-04's jamObserved on every verdict)"
 provides:
+
   - "A restarted-evidence live assertion in stock-live-triage.test.ts that tolerates additive evidence widening while still proving zero emulator cost against all eleven cost-bearing keys"
   - "An automated unit shape-oracle in stock-diagnose.test.ts pinning the restarted verdict's exact evidence key set for both call sites, runnable under node test-gate.mjs with no emulator"
   - "A standing rule in test-gate.mjs's header comment: every payload shape a manual-only live suite depends on must have a mirror assertion in the automated set"
   - "07-VERIFICATION.md corrected to attribute its 12:29:43Z live-evidence claim to a pre-88b9a15 measurement and cite a freshly re-measured 2026-08-18T15:08:51Z 3/3-per-binary (6/6 total) result"
+
 affects: [07-cycle-timing-and-wedge-triage, vice-wedge-triage-skill, any-future-additive-evidence-change-to-handleDiagnoseStock]
 
 # Tech tracking
+
 tech-stack:
   added: []
   patterns:
+
     - "Additively-tolerant live assertions: assert presence of load-bearing keys and absence of a named cost-bearing key set, instead of an exact sorted-key-set string match, so a live proof survives future additive (never removed) evidence fields"
     - "Shape oracle pairing: when a manual-only live test's assumption cannot itself run under the automated gate, mirror the exact assumption in a zero-cost unit test so drift reds automatically before it silently breaks the live suite"
 
 key-files:
   created: []
   modified:
+
     - ".claude/mcp/vice/stock-live-triage.test.ts"
     - ".claude/mcp/vice/stock-diagnose.test.ts"
     - ".claude/mcp/vice/test-gate.mjs"
@@ -32,14 +39,20 @@ key-files:
     - ".planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md"
 
 key-decisions:
+
   - "D-01 (from PLAN.md, executed as resolved): jamObserved STAYS on the restarted branch's evidence. stock-diagnose.ts is NOT modified by this plan -- confirmed by git diff --stat showing zero changes to it, stock-runstate.ts, or any .mts/resources file."
   - "Relaxed the live test's assertion rather than reverting or excluding jamObserved: the restarted verdict's evidence is allowed to grow additively; the live proof now asserts only what a real emulator run can prove (verdict reached, zero emulator cost) and defers exact-shape pinning to an automated unit oracle."
 
 requirements-completed: [UAT-07-T8]
 
 # Metrics
+
 duration: ~25min
 completed: 2026-08-18
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: unknown
 ---
 
 # Phase quick-260818-nh5: Close Phase 07 UAT Gap (stale restarted-evidence assertion) Summary
@@ -55,6 +68,7 @@ completed: 2026-08-18
 - **Files modified:** 5 (3 code/test files, 2 phase docs)
 
 ## Accomplishments
+
 - `stock-live-triage.test.ts`'s restarted-is-live-proven test now tolerates additive evidence widening (asserts presence of `baselineEpoch`/`currentEpoch`, absence of all eleven cost-bearing keys via a named `EMULATOR_COST_EVIDENCE_KEYS` array) instead of an exact sorted-key-set string match.
 - `stock-diagnose.test.ts` gained a shape-oracle unit test exercising both restarted call sites (session-null thrown `MachineRestartedError`, and session-non-null on-disk epoch bump) and pinning the exact evidence key set `{baselineEpoch, currentEpoch, jamObserved}` for each — runs under `node test-gate.mjs` at zero emulator cost.
 - `test-gate.mjs`'s header comment now states the standing rule this oracle exemplifies, without touching the frozen `MANUAL_ONLY_TESTS` array.
@@ -72,6 +86,7 @@ Each task was committed atomically:
 _No TDD gating applied to this plan (`type: execute`, no `tdd="true"` tasks)._
 
 ## Files Created/Modified
+
 - `.claude/mcp/vice/stock-live-triage.test.ts` - restarted-evidence assertion relaxed to presence + cost-key-absence checks; new `EMULATOR_COST_EVIDENCE_KEYS` module-scope constant
 - `.claude/mcp/vice/stock-diagnose.test.ts` - new shape-oracle test pinning the exact restarted evidence key set for both call sites
 - `.claude/mcp/vice/test-gate.mjs` - header comment extended with the standing rule and the 2026-08-18 incident as its worked example; `MANUAL_ONLY_TESTS` array itself untouched (still exactly five entries)
@@ -79,6 +94,7 @@ _No TDD gating applied to this plan (`type: execute`, no `tdd="true"` tasks)._
 - `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md` - logged the recurrence of the pre-existing, unrelated `repo-root.test.ts` worktree-path failure
 
 ## Decisions Made
+
 - Followed D-01 from PLAN.md exactly: `jamObserved` stays on the restarted branch; `stock-diagnose.ts` untouched. No re-litigation of that decision.
 - Kept Task 2's shape oracle as a single `test()` call exercising both branches (per the plan's explicit "add ONE new test" instruction) rather than splitting into two separate top-level tests, even though the plan's own done-criterion language ("total test count at least 2 higher") implied a delta of 2. The actual delta is +1 (1623 pass -> 1624 pass in this environment, matching the exact figure named as the "previous 1624 pass baseline" in the plan). Followed the more specific/authoritative task action text over the looser done-criterion wording; documented here for transparency rather than silently picking one.
 
@@ -112,6 +128,7 @@ Regression sanity: `git diff --stat f2d6bd0..HEAD -- .claude/mcp/vice/stock-diag
 No stray `x64sc` processes remained after either live run (`ps aux | grep x64sc`, empty).
 
 ## Next Phase Readiness
+
 - Phase 07's UAT test-8 gap (stale restarted-evidence assertion) is closed: `stock-live-triage.test.ts` is green on both real stock binaries, and the drift that broke it is now covered automatically at zero emulator cost.
 - No new gaps introduced. The pre-existing `repo-root.test.ts` worktree-path artifact remains open (tracked in `deferred-items.md`, unrelated to this plan) and does not block phase completion.
 

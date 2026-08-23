@@ -5,29 +5,36 @@ subsystem: ci-release
 tags: [github-actions, release-automation, bash, gh-cli]
 
 requires:
+
   - quick: 260819-tsz
     provides: scripts/version.mjs (VERSION template resolver, stamp/check/resolve subcommands), scripts/package.sh
 provides:
+
   - scripts/release-assets.sh — the one seam that stamps manifests, builds the zip, and attaches release assets
   - Both release paths (release job, release-on-merge job) wired to the seam
   - v0.2.0's missing GitHub Release assets attached retroactively
+
 affects: [ci.yml, future release-cutting quick tasks]
 
 tech-stack:
   added: []
   patterns:
+
     - "Ephemeral detached git worktree + EXIT trap for isolated stamp-and-build, never touching caller's working tree"
     - "sha256 byte-identity proof of an extracted CI step block, not a regex presence test"
 
 key-files:
   created:
+
     - scripts/release-assets.sh
   modified:
+
     - .github/workflows/ci.yml
     - .claude/mcp/vice/host-scripts.test.ts
     - .claude/mcp/vice/ci-guardrails.test.mjs
 
 key-decisions:
+
   - "One bash seam (scripts/release-assets.sh) owns stamp->zip->attach; both release paths call it with the version as an explicit argument (D-1, D-2)"
   - "Isolation via a throwaway detached git worktree + EXIT trap, not stash-and-restore, so the caller's HEAD/index/working tree are never touched even mid-failure"
   - "D-3's create-or-upload branch kept verbatim, no new branching added"
@@ -37,6 +44,10 @@ requirements-completed: [D-1, D-2, D-3, D-4, D-5]
 
 duration: ~20min
 completed: 2026-08-19
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: completed
 ---
 
 # Quick Task 260819-vie: Extract release stamp/zip/upload into one seam Summary
@@ -88,11 +99,13 @@ None beyond the mandatory plan corrections specified in the execution context (a
 ## Verification Evidence
 
 **D-4 sha256 hashes (gate step, content-anchored, before vs. after):**
+
 ```
 gate base 1635ef80f739f55866b7110782889e12747a69c04769f3cda023df95daecbc8f
 gate cur  1635ef80f739f55866b7110782889e12747a69c04769f3cda023df95daecbc8f
 D-4 OK: gate step byte-identical
 ```
+
 `build` and `publish-npm` jobs also confirmed byte-identical (hashes `cdab0c83f3d2660b224367ad3a30207a8a8b29429778fcd86a1b9fdc6cd5cf03` and `0863e0c837a2e4d21984650ca40606f2ad3ed5f7a990851ddb91637a69fb0f23` respectively, matched exactly against `v0.2.0`'s copy).
 
 **ci.yml parses as YAML**, four jobs unchanged: `build`, `publish-npm`, `release`, `release-on-merge`.
@@ -102,14 +115,17 @@ D-4 OK: gate step byte-identical
 **host-scripts.test.ts:** 4/4 pass with the grown 4-entry frozen script set.
 
 **Completion gates (`.claude/mcp/vice`):**
+
 - `npm run typecheck` — clean, no errors.
 - `npm run test:automated` — **1699 pass / 0 fail / 5 todo** (1704 total across 21 suites), up from the 1693-pass baseline by the 6 new `ci-guardrails` cases, zero regressions.
 
 **Repo-root gates:**
+
 - `bash scripts/package.sh` — succeeded, built `c64-re-tools-0.0.0-dev.zip` (594 files) from the working tree's own placeholder version.
 - `node scripts/check-npm-packages.mjs` — OK; `@henols/vice-mcp@0.0.0-dev` (59 files), `@henols/c64-re-tools@0.0.0-dev` (35 files, 6 skills). Confirmed via a direct `npm pack --dry-run --json` file-list check: `scripts/release-assets.sh` appears in **zero** files of either tarball.
 
 **D-5 retroactive attach (real, permitted network write):**
+
 - Preflight: `gh release view v0.2.0 --json assets,tagName,targetCommitish` → `{"assets":[],"tagName":"v0.2.0","targetCommitish":"089127ad963aa91ad49e69c4a4dea22bfbbb869f"}`; `git ls-remote origin refs/tags/v0.2.0` → `089127ad963aa91ad49e69c4a4dea22bfbbb869f`. Both matched before uploading.
 - Ran: `bash scripts/release-assets.sh 0.2.0 v0.2.0`
 - Seam's own output line, confirming D-3's upload branch (not create) fired: `release-assets: attaching to existing release v0.2.0`
@@ -118,11 +134,13 @@ D-4 OK: gate step byte-identical
 - Post-upload: `git status --porcelain` clean (only the pre-existing untracked `.claude/settings.json`, `.vscode/`); `git worktree list` shows exactly one entry; `node scripts/version.mjs check` still passes (all 6 derived strings at the dev placeholder in the real working tree); tag `v0.2.0` still resolves to `089127ad963aa91ad49e69c4a4dea22bfbbb869f` both locally and on the remote.
 
 **`[skip release]` marker sweep:** all three local commits ahead of `origin/main` carry the marker in their subject:
+
 ```
 refactor(quick-260819-vie): one release-assets seam for both release paths [skip release]
 feat(quick-260819-vie): add scripts/release-assets.sh, the one stamp->zip->attach seam [skip release]
 docs(quick-260819-vie): plan the one release-assets seam [skip release]
 ```
+
 `git log origin/main..HEAD --pretty=%s | grep -cvF '[skip release]'` → `0`.
 
 **Nothing pushed, tagged, or published.** No `git push`, `git tag`, `npm publish`, `npm version`, or `gh release create` was executed at any point — only the one permitted `gh release upload --clobber` against the pre-existing `v0.2.0` release.

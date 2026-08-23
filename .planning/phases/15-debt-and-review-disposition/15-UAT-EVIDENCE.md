@@ -11,6 +11,10 @@ driven_by: agent (this plan's own executor, live opt-in node --test run plus one
 date: 2026-08-22
 scenario_1_verdict: pass
 scenario_2_verdict: partial
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  gap_snapshot: "unknown::scenarios=0"
 ---
 
 # Phase 15 Plan 08 — Scenario 1 and Scenario 2 Live Evidence
@@ -100,18 +104,23 @@ test case. The verdict rests on two byte comparisons, never on the absence of an
 1. **Baseline** (before any perturbation), read from `$C000` (RAM under BASIC ROM in bank 0,
    always plain RAM regardless of banking, and outside the loaded program's own `$0801`-`$0812`
    region): `[255,255,0,0]`.
+
 2. **`vice_snapshot_save`** raw payload:
    ```json
    {"name":"brokerlive_roundtrip","path":"<repoRoot>/.vice-snapshots/brokerlive_roundtrip.vsf","sentPath":"<repoRoot>/.vice-snapshots/brokerlive_roundtrip.vsf","includeRoms":false,"includeDisks":false,"metadataWritten":true,"metadataPath":"<repoRoot>/.vice-snapshots/brokerlive_roundtrip.json","runState":"stopped"}
    ```
+
 3. **Perturbation**: `vice_memory_write` wrote `[222,173,190,239]` (`0xDE 0xAD 0xBE 0xEF`) to
    `$C000`; a read immediately after confirmed it stuck: `[222,173,190,239]`.
+
 4. **`vice_snapshot_load`** raw payload:
    ```json
    {"name":"brokerlive_roundtrip","path":"<repoRoot>/.vice-snapshots/brokerlive_roundtrip.vsf","sentPath":"<repoRoot>/.vice-snapshots/brokerlive_roundtrip.vsf","programCounter":58836,"metadata":{"description":null,"createdAt":"2026-08-22T15:21:55.292Z"},"runState":"stopped"}
    ```
+
 5. **Half 1 (restore proof):** `$C000` read back **after** the load: `[255,255,0,0]` -- exactly
    the pre-perturbation baseline, **not** the perturbed pattern. The load restored state.
+
 6. **Half 2 (identity proof):** the program's own verified payload region (`$0803`-`$0812`) read
    back after the load: `[234,234,234,234,234,234,234,234,234,234,234,234,234,234,234,96]` --
    still byte-identical to what it was before the save/perturb/load cycle. The load restored
@@ -176,6 +185,7 @@ the ad-hoc joystick probe below):
 
 ```asm
 !cpu 6510
+
 * = $0801
 
         !word .eol, 10

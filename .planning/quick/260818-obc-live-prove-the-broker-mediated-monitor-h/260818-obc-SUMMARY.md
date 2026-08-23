@@ -5,29 +5,37 @@ subsystem: testing
 tags: [vice-mcp, stock-vice, vice-broker, node-test, monitor-held-elsewhere, live-proof, time-04]
 
 # Dependency graph
+
 requires:
+
   - phase: 07-cycle-timing-and-wedge-triage
     provides: "vice_diagnose's five-verdict/non-verdict diagnosis surface, the broker control plane's claimMonitor()/monitor_owned refusal wire, and stock-dispatch.ts's ensureStockSession() lease-to-session seam"
 provides:
+
   - "A real, opt-in live proof (stock-live-broker-monitor.test.ts) that a genuine host broker daemon refuses a second real claimMonitor() with the monitor_held_elsewhere verdict, naming the other real grant's id, on both genuine stock VICE 3.9 and 3.10"
   - "The same run also proves the broker-supervised (not test-performed) restarted respawn -- TIME-04's other named residual"
   - "A fix to a live-discovered, pre-existing bug in defaultBinmonProbe() (broker-launch.mts) that could never observe a crash-respawned instance as ready on the stock backend"
   - "An automated unit shape-oracle for the monitor_held_elsewhere evidence key set (stock-diagnose.test.ts), mirroring the standing rule test-gate.mjs's header already documents"
   - "TIME-04 closed to Complete; 07-VALIDATION.md's nyquist_compliant flipped to true; 07-VERIFICATION.md's human_verification item closed"
+
 affects: [07-cycle-timing-and-wedge-triage, vice-wedge-triage-skill, any-future-broker-warm-floor-or-crash-supervision-change]
 
 # Tech tracking
+
 tech-stack:
   added: []
   patterns:
+
     - "clearHeldStockSession() as a deliberate module-singleton detach: stock-dispatch.ts's ensureStockSession() holds exactly one live session per process, and switching targetId tears down the previous one via stockDisconnect() BEFORE the new claim -- calling clearHeldStockSession() between two real sessions detaches the module's pointer without touching the broker, letting a genuinely fresh claimMonitor() attempt race against the OTHER session's still-live claim instead of silently releasing it first"
     - "Raw wire-level status polling alongside the typed BrokerControlSession: the typed client's status() narrows StatusInstanceEntry down to {port,url,state,reason,epoch}, dropping hasMonitorClient even though the wire carries it -- a small test-local rawControlRequest()/rawStatus() helper reads it directly, mirroring broker-e2e.test.ts's own rawAcquire()/makeRawSession() precedent"
     - "Binmon readiness probes must demux by request-id, never by arrival order: a fresh binmon connection always emits an unsolicited REGISTER_INFO (0x31) event at request-id 0xffffffff before any command reply, so a probe that assumes the first N bytes on the wire are its own reply is structurally wrong"
 
 key-files:
   created:
+
     - ".claude/mcp/vice/stock-live-broker-monitor.test.ts"
   modified:
+
     - ".claude/mcp/vice/broker-launch.mts"
     - ".claude/mcp/vice/resources/broker-launch.mjs"
     - ".claude/mcp/vice/test-gate.mjs"
@@ -43,6 +51,7 @@ key-files:
     - ".planning/STATE.md"
 
 key-decisions:
+
   - "Rule 1 auto-fix applied to defaultBinmonProbe() (broker-launch.mts): live-discovered that it never handled the unsolicited REGISTER_INFO event every fresh binmon connection emits, so a real crash-respawned stock instance could never be observed as 'ready' -- this is a genuine, pre-existing product bug with zero prior test coverage (broker-launch.test.ts only ever stubs binmonProbe), not a harness mistake. Fixed to walk frame boundaries and demux by request-id."
   - "Harness iteration (permitted by the plan's own Task 2 instruction): added a bounded waitForPortOpen() before the FIRST claim, because handleAcquire()'s cold-launch arm marks a fresh record 'granted' the instant the process is spawned, without ever waiting for a readiness probe -- dialling the binmon port immediately races ECONNREFUSED against x64sc's own boot time. No assertion was weakened; this closes a genuine harness-vs-reality timing gap."
   - "07-REVIEW.md's status correction (unconditional, per the plan) is independent of this quick task's own live proof: 07-REVIEW-FIX.md had already fixed all 20 findings before this task started, but 07-REVIEW.md itself was never updated to say so. Corrected as a record-hygiene fix."
@@ -50,8 +59,13 @@ key-decisions:
 requirements-completed: [TIME-04]
 
 # Metrics
+
 duration: ~2h30m
 completed: 2026-08-18
+audit_acknowledged:
+  milestone: v0.4.0
+  at: 2026-08-23
+  status: unknown
 ---
 
 # Phase quick-260818-obc: Live-Prove the Broker-Mediated monitor_held_elsewhere Verdict Summary
@@ -109,6 +123,7 @@ completed: 2026-08-18
 ### Auto-fixed Issues
 
 **1. [Rule 1 - Bug] `defaultBinmonProbe()` never demuxed the wire by request-id**
+
 - **Found during:** Task 2 (running the live proof against `/usr/bin/x64sc`)
 - **Issue:** A fresh binmon connection always emits an unsolicited `REGISTER_INFO` (0x31) event at request-id `0xffffffff` before any command reply arrives. `defaultBinmonProbe()` (`broker-launch.mts`) assumed the first `BINMON_RESPONSE_HEADER_LEN` bytes on the wire were its own PING reply, read that event's own response-type byte, found it did not match `BINMON_CMD_PING`, and answered `false` -- forever. Since `maintainWarmFloor()`'s promotion pass (`"launching" -> "ready"`) is the ONLY thing that can ever mark a crash-respawned record grantable to a second session, and it relies entirely on this probe for the stock backend, a real crash-respawned instance could never be observed as ready, though the emulator was genuinely up and answering fine underneath.
 - **Fix:** Rewrote the probe's `data` handler to walk complete frames off the buffer using each frame's own body-length field, discarding any frame whose request-id is not this probe's own (`BINMON_PROBE_REQUEST_ID`) rather than assuming the first frame on the wire is the reply.

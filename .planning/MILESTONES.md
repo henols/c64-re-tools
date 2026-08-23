@@ -1,5 +1,97 @@
 # Milestones
 
+## v0.4.0 Debt discharged, decisions settled (Shipped: 2026-08-23)
+
+**Phases completed:** 6 phases (12, 13, 14, 15, 16, 17), 44 plans, 119 tasks
+**Requirements:** 16/16 satisfied, zero cut, zero deferred
+**Git range:** `8b1beee` → `c8afcb1` (292 commits since `v0.3.0`)
+**Changed:** 482 files, +59,739 / −1,512 lines (290 files / +14,621 outside `.planning/`)
+**Timeline:** 2 days (2026-08-21 → 2026-08-23)
+**Final audit:** round 1, status `tech_debt` — 16/16 requirements, 6/6 phases, 12/12 integration, 4/4 flows, **zero blockers and zero open gaps**; what remains is bookkeeping debt and validation coverage
+**Closeout type:** `override_closeout`
+**Known verification overrides:** 16 newly acknowledged, 0 carried forward from a prior close (see STATE.md → Deferred Items)
+
+**Delivered:** the project stops inheriting the same ledger. Every carried item
+became a fix or a dated decision, the two questions this project had been
+answering *by default* each milestone were answered deliberately, and the
+instrument that makes all of it checkable was built first — and has been
+observed refusing a write. The pending-todo tree reads genuinely empty for the
+first time in this project's history: **19 inherited → 0**.
+
+**Key accomplishments:**
+
+- **An audit can no longer declare a clean status over a red guard — and the
+  mechanism was watched refusing.** `scripts/audit-gate.mjs` is now the single
+  answer to "would a milestone audit's declared status be allowed right now",
+  wired as a real `Write|Edit|Bash` PreToolUse hook. Claude Code's own dispatch
+  was observed refusing all four write routes — Write, Edit in two payload
+  shapes, a Bash heredoc, and a subagent's Write — against a genuinely red
+  `docs-linerefs.test.ts`, then allowing them again after a mechanically
+  verified revert, with `gaps_found` passing through unobstructed throughout.
+  The instrument was built first, then hardened against its own review: a live
+  super-linear-regex denial of service and a single-line Bash-append bypass that
+  plan 12-02 had *claimed* to close but did not.
+
+- **External verification replaced the internal proxies, and the binaries
+  contradicted us.** The three highest-value carried items — one failure mode
+  this project has now been taught six times — were each run against real
+  hardware rather than a fixture written by the same pass. `VERIF-02`'s three
+  synthetic binmon fixtures are real captures; the `--help` backend
+  discriminator is confirmed against genuine stock *and* fork `x64sc` with both
+  transcripts committed; all four spec-driven Phase 3 wire details were
+  live-probed. Two came back confirmed, one inconclusive, and one **refuted** —
+  `vice_disk_attach`'s advertised no-side-effect promise is empirically false
+  (it resets the machine and loads a program with the run flag clear), and was
+  corrected at source rather than annotated.
+
+- **Both default answers became dated decisions, each pinned by its own guard.**
+  `FORK-01` decided **retain**: the forked backend stays the hedge, with the
+  upstream `KEYBOARD_MATRIX_SET` coupling named as the reversal criterion and
+  the caveats carried rather than resolved — and plan 14-03 exercised the fork's
+  own `-mcpserver` HTTP transport live for the first time in this repository's
+  history (6/6, `vice_sid_get_state` end to end), so the route the decision
+  retains is proven followable. `CORE-01` decided **keep-dated** at a
+  `gate="blocking-human"` checkpoint. Both are read out of the live file by
+  `docs-fork-decision.test.ts` and `docs-core-value-decision.test.ts`.
+
+- **The inherited ledger drained to zero, honestly.** Every one of the 19
+  carried items is fixed, dispositioned `wont-fix` with recorded rationale, or
+  explicitly promoted with a **named owner**. Widening
+  `docs-review-disposition.test.ts`'s parser from level-3-colon-only headings to
+  any level 2–6 id surfaced 150 findings where 119 had been visible, and all 9
+  newly exposed ones were dispositioned back to green. Phase 03's last partial
+  UAT scenario closed with a real experiment, not a re-reading: a non-stopping
+  checkpoint armed on the KERNAL IRQ entry ($EA31) against genuine stock VICE
+  3.9, with the D-11 rate-limit guard's auto-disable observed firing under a
+  sustained ~21-hits/second flood and the emulator still progressing afterward.
+
+- **The repo took its shipping shape.** The plugin payload moved out of Claude
+  Code's auto-discovery path into `src/` in two atomic `git mv`s with roughly 30
+  functional consumers repointed and the published tarball proven
+  byte-identical; `installer/`'s `wireMcp()` — the one function in this repo
+  that rewrites a file it does not own — went from never-tested to 18 cases
+  driving the shipped `cli.mjs`; the three untested skill scripts got tests
+  (`QUAL-01`); a new comment-scoped guard found and fixed **15** pre-existing
+  orphaned phase pointers across nine shipped modules (`QUAL-02`); and the
+  broker control-plane's `0.0.0.0` bind was recorded as a dated accepted risk
+  with its residual exposure stated without softening (`QUAL-03`/`PKG-04`).
+
+**What this milestone proved beyond its requirements.** Two of the closure
+plans reversed their own stale premises after re-reading source — plan 15-04
+found two findings it had been told were "superseded" still false, and plan
+16-08's deferred entry was corrected mid-close when its predicted closure plan
+turned out to be the wrong one. Both corrections were made rather than left
+standing, which is the same documentation-consistency discipline the milestone
+was built to install.
+
+**Regression evidence at close:** `npm test` in `src/mcp/vice` — 2395 tests /
+2351 pass / **0 fail** / 39 skipped / 5 todo / 24 suites (the full glob, not
+`test:automated`, which skips `MANUAL_ONLY_TESTS`).
+`node scripts/audit-gate.mjs --json` → `allowed:true`, `redGuards:[]`, 6/6
+guards discovered. `node scripts/check-npm-packages.mjs` → OK, 0 leaks.
+
+---
+
 ## v0.3.0 regenerator2000 static-analysis backend (Shipped: 2026-08-21)
 
 **Phases completed:** 4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks
@@ -92,6 +184,7 @@ linear `toacme` decoder it makes obsolete is deleted.
   read `threats_open: 0` / `status: verified`.
 
 **Archived:**
+
 - [`milestones/v0.3.0-ROADMAP.md`](milestones/v0.3.0-ROADMAP.md)
 - [`milestones/v0.3.0-REQUIREMENTS.md`](milestones/v0.3.0-REQUIREMENTS.md)
 - [`milestones/v0.3.0-MILESTONE-AUDIT.md`](milestones/v0.3.0-MILESTONE-AUDIT.md) (round 2, plus round 1 verbatim)
