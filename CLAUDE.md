@@ -53,28 +53,28 @@ state — and keep working when the emulator misbehaves.
 
 ## Project Type
 ## Languages
-- TypeScript (ES2022, NodeNext modules) - MCP server implementation, `.claude/mcp/vice/*.ts` and `*.mts`
-- JavaScript (ESM, `.mjs`) - installer CLI (`installer/bin/cli.mjs`), skill scripts (`.claude/skills/*/scripts/*.mjs`), compiled host launcher resources (`.claude/mcp/vice/resources/*.mjs`)
-- Bash - host launcher script (`.claude/mcp/vice/resources/vice-launcher.sh`), release/packaging scripts (`scripts/package.sh`, `scripts/ensure-mcp-deps.sh`)
-- 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `.claude/skills/acme-build/template.a`
+- TypeScript (ES2022, NodeNext modules) - MCP server implementation, `src/mcp/vice/*.ts` and `*.mts`
+- JavaScript (ESM, `.mjs`) - installer CLI (`installer/bin/cli.mjs`), skill scripts (`src/skills/*/scripts/*.mjs`), compiled host launcher resources (`src/mcp/vice/resources/*.mjs`)
+- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`), release/packaging scripts (`scripts/package.sh`, `scripts/ensure-mcp-deps.sh`)
+- 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `src/skills/acme-build/template.a`
 - Markdown - all skill documentation (`SKILL.md` files), project docs (`docs/`, `README.md`)
 ## Runtime
-- Node.js. The MCP server (`@henols/vice-mcp`) requires **Node >= 22.18** (or >= 23.6) because it runs TypeScript directly via Node's native type-stripping (no build/transpile step at runtime). See `engines` in `.claude/mcp/vice/package.json:29`.
+- Node.js. The MCP server (`@henols/vice-mcp`) requires **Node >= 22.18** (or >= 23.6) because it runs TypeScript directly via Node's native type-stripping (no build/transpile step at runtime). See `engines` in `src/mcp/vice/package.json:29`.
 - The installer package (`@henols/c64-re-tools`) only requires **Node >= 18** (`installer/package.json:11`) since it is plain `.mjs`.
 - `type: "module"` (ESM) throughout — both packages and all skill scripts.
-- npm. Lockfiles present: `.claude/mcp/vice/package-lock.json` (committed). The `installer/` package has no committed lockfile.
+- npm. Lockfiles present: `src/mcp/vice/package-lock.json` (committed). The `installer/` package has no committed lockfile.
 - `node_modules/` for the MCP server is **never committed** (`.gitignore`); it is provisioned on first use by a `SessionStart` hook (`scripts/ensure-mcp-deps.sh`), which gates `npm ci` behind a sha256 hash of the lockfile so normal session starts are a no-op.
 ## Frameworks / Key Runtime Dependencies
-- `@mastra/mcp` `1.15.0` - MCP server/tooling framework (`.claude/mcp/vice/package.json:64`)
+- `@mastra/mcp` `1.15.0` - MCP server/tooling framework (`src/mcp/vice/package.json:64`)
 - `@mastra/core` `1.55.0` - underlying Mastra runtime the MCP package depends on
 - `@modelcontextprotocol/sdk` `1.30.0` (transitive, via `@mastra/mcp`) - the official MCP TypeScript SDK
 - `MASTRA_TELEMETRY_DISABLED=1` is set everywhere the server is launched (`.mcp.json`, installer-generated `.mcp.json` entries) to disable Mastra's own telemetry.
-- Node's built-in test runner (`node --test`), no separate test framework. Run via `npm test` in `.claude/mcp/vice` (`package.json:58`: `node --test '*.test.*'`).
-- Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `vice.ts` / no direct test file shown, but `vice-broker.mts` / `vice-broker.test.ts` pattern... see `.claude/mcp/vice/*.test.ts`).
+- Node's built-in test runner (`node --test`), no separate test framework. Run via `npm test` in `src/mcp/vice` (`package.json:58`: `node --test '*.test.*'`).
+- Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `vice.ts` / no direct test file shown, but `vice-broker.mts` / `vice-broker.test.ts` pattern... see `src/mcp/vice/*.test.ts`).
 - TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`); no emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly).
-- `.claude/mcp/vice/build.ts` - a custom build step that compiles the host-bound `.mts` launcher modules (`broker-control.mts`, `broker-epoch.mts`, `broker-kill.mts`, `broker-launch.mts`, `broker-state.mts`, `container-guard.mts`, `vice-broker.mts`) into plain `.mjs` files under `resources/`, since the **host** side (outside any container) cannot rely on Node's type-stripping the same way.
+- `src/mcp/vice/build.ts` - a custom build step that compiles the host-bound `.mts` launcher modules (`broker-control.mts`, `broker-epoch.mts`, `broker-kill.mts`, `broker-launch.mts`, `broker-state.mts`, `container-guard.mts`, `vice-broker.mts`) into plain `.mjs` files under `resources/`, since the **host** side (outside any container) cannot rely on Node's type-stripping the same way.
 - `@types/node` `24.13.3` - Node type definitions for the TypeScript build.
-- ACME cross-assembler (external, not an npm package) - required on `$PATH` for the `acme-build` skill; the skill probes `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme` (`.claude/skills/acme-build/SKILL.md:181-186`). Verified locally against ACME release 0.97 "Zem".
+- ACME cross-assembler (external, not an npm package) - required on `$PATH` for the `acme-build` skill; the skill probes `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme` (`src/skills/acme-build/SKILL.md:181-186`). Verified locally against ACME release 0.97 "Zem".
 ## Key Dependencies (transitive, via package-lock.json)
 - `@a2a-js/sdk` `0.3.14`
 - `@ai-sdk/provider` (multiple versions: `2.0.3`, `3.0.14`, `4.0.3`) and `@ai-sdk/provider-utils` (`3.0.30`, `4.0.40`, `5.0.11`) - AI SDK provider abstractions Mastra depends on
@@ -84,11 +84,11 @@ state — and keep working when the emulator misbehaves.
 - `@isaacs/ttlcache`, `@lukeed/csprng`, `@lukeed/uuid`, `@sindresorhus/slugify` / `transliterate` - small utility libs
 - `x64sc` - a **custom/patched build** of the VICE emulator that exposes a non-upstream `-mcpserver` flag (`-mcpserver -mcpserverhost <ip> -mcpserverport <port>`) serving HTTP JSON-RPC at `/mcp`. This is the load-bearing external dependency the whole `vice` MCP tool surface is built on. See `docs/roadmap-stock-vice.md` for a documented plan to migrate off this custom build onto stock VICE's binary monitor protocol (`-binarymonitor`).
 ## Configuration
-- `.mcp.json` (repo root) - declares the `vice` MCP server, launched via `node ${CLAUDE_PLUGIN_ROOT}/.claude/mcp/vice/vice-proxy.ts`, `timeout: 150000`, `env.MASTRA_TELEMETRY_DISABLED=1`.
-- `.claude-plugin/plugin.json` - plugin manifest: points at `./.claude/skills/` and `./.mcp.json`, registers a `SessionStart` hook running `scripts/ensure-mcp-deps.sh`, `defaultEnabled: false`.
+- `.mcp.json` (repo root) - declares the `vice` MCP server, launched via `node ${CLAUDE_PLUGIN_ROOT}/src/mcp/vice/vice-proxy.ts`, `timeout: 150000`, `env.MASTRA_TELEMETRY_DISABLED=1`.
+- `.claude-plugin/plugin.json` - plugin manifest: points at `./src/skills/` and `./.mcp.json`, registers a `SessionStart` hook running `scripts/ensure-mcp-deps.sh`, `defaultEnabled: false`.
 - `.claude-plugin/marketplace.json` - single-plugin marketplace manifest so `/plugin marketplace add` works directly against this repo.
-- `.claude/mcp/vice/tsconfig.json` - typecheck-only config: `target: es2022`, `module`/`moduleResolution: nodenext`, `strict: true`, `isolatedModules`, `verbatimModuleSyntax`, `noEmit: true`, `allowImportingTsExtensions: true`.
-- `.claude/mcp/vice/tsconfig.build.json` - separate config used by `build.ts` to compile the host-bound `.mts` launchers into `resources/*.mjs`.
+- `src/mcp/vice/tsconfig.json` - typecheck-only config: `target: es2022`, `module`/`moduleResolution: nodenext`, `strict: true`, `isolatedModules`, `verbatimModuleSyntax`, `noEmit: true`, `allowImportingTsExtensions: true`.
+- `src/mcp/vice/tsconfig.build.json` - separate config used by `build.ts` to compile the host-bound `.mts` launchers into `resources/*.mjs`.
 - `VICE_MCP_URL` - full host MCP endpoint override.
 - `VICE_MCP_HOST` - host to reach the VICE MCP server on (container vs. host detection otherwise picks `host.docker.internal` or `127.0.0.1`).
 - `VICE_MCP_TIMEOUT_MS` - per-RPC client timeout (default 30000).
@@ -96,7 +96,7 @@ state — and keep working when the emulator misbehaves.
 - `VICE_POOL_DIR` / `VICE_EPOCH_FILE` / `VICE_SUPERVISOR_DIR` - override the `.vice-supervisor/` state directory location.
 - `VICE_BROKER_STALE_MS`, `VICE_BROKER_ACQUIRE_TIMEOUT_MS`, `VICE_BROKER_RECYCLE_TIMEOUT_MS`, `VICE_BROKER_CONTROL_DIAL_HOST`, `VICE_BROKER_CONTROL_HOST` - broker/control-plane tuning.
 - `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` - Claude Code-provided plugin paths, consumed by `scripts/ensure-mcp-deps.sh` and `.mcp.json`.
-- `CLAUDE_PROJECT_DIR`, `CONTAINER_WORKSPACE_PATH`, `HOST_WORKSPACE_PATH` - project-root resolution (`.claude/mcp/vice/repo-root.ts`) and host/container path translation.
+- `CLAUDE_PROJECT_DIR`, `CONTAINER_WORKSPACE_PATH`, `HOST_WORKSPACE_PATH` - project-root resolution (`src/mcp/vice/repo-root.ts`) and host/container path translation.
 - `MASTRA_TELEMETRY_DISABLED` - disables Mastra's telemetry.
 - `.env` files: none detected in the repository.
 - `scripts/package.sh` - builds the installable plugin release zip (used by CI).
@@ -105,7 +105,7 @@ state — and keep working when the emulator misbehaves.
 - Node.js >= 22.18 (or >= 23.6) to run/test the MCP server; Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill.
 - A reachable host running VICE (`x64sc`, custom `-mcpserver` build) for any live emulator interaction — the MCP server itself has no in-process emulator.
-- Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`.claude/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
+- Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
 - Published to the public npm registry as `@henols/vice-mcp` and `@henols/c64-re-tools`, installed via `npx` into consumer projects, or as a Claude Code plugin via `/plugin marketplace add`.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) — typecheck, test, smoke-test, package validation, artifact build, GitHub Release creation on `v*` tags, and npm publishing via OIDC Trusted Publishing (no `NPM_TOKEN` secret required for release; a manual `check-npm-token.yml` workflow exists purely as a diagnostic).
 - Every merge to `main` auto-publishes a new patch version (unless the commit subject contains `[skip release]`).
@@ -119,7 +119,7 @@ state — and keep working when the emulator misbehaves.
 - Lowercase, hyphen-separated: `repo-root.ts`, `container-guard.mts`, `broker-launch.mts`,
 - Test files are co-located, same basename plus `.test.ts` / `.test.mjs`:
 - `.mts` is used specifically for modules that get compiled to a build artifact under
-- Compiled/deployed output lives under `.claude/mcp/vice/resources/*.mjs` — generated by
+- Compiled/deployed output lives under `src/mcp/vice/resources/*.mjs` — generated by
 - `camelCase`, verb-first, descriptive of the single thing they do: `repoRoot()`, `containerPath()`,
 - Boolean-returning functions read as predicates: `isInside()`, `isLoopbackHostname()`,
 - Internal/private helpers are declared `function` (not exported); public API is `export function`.
@@ -143,7 +143,7 @@ state — and keep working when the emulator misbehaves.
 - Every relative import to a local TS/MTS module includes its real extension
 - One documented cross-extension constraint: same-module-to-sibling-module imports inside files
 ## Error Handling
-- Base: `class ViceError extends Error` (`.claude/mcp/vice/vice.ts:250`) carries an optional
+- Base: `class ViceError extends Error` (`src/mcp/vice/vice.ts:250`) carries an optional
 - Specialized subclasses extend `ViceError` and add domain fields as plain public properties
 - Other one-off error classes are declared minimally, `class PathOutOfWorkspaceError extends
 - Constructor pattern: `constructor(message: string, { ...fields }: XOptions = {}) { super(message);
@@ -168,22 +168,22 @@ state — and keep working when the emulator misbehaves.
 ## Component Responsibilities
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Stdio MCP entry point | Speaks MCP JSON-RPC to Claude Code over stdin/stdout; answers `initialize`/`tools/list` locally from the manifest, forwards `tools/call` | `.claude/mcp/vice/vice-proxy.ts` |
-| Transport seam | The one place that speaks HTTP/MCP to the host VICE server; owns retry ladder, SSE parsing, deny-list enforcement, epoch/restart detection | `.claude/mcp/vice/vice.ts` |
-| Liveness probe | Deliberately fragile, no-retry 1500ms liveness check (distinct from `vice.ts`'s resilient path) | `.claude/mcp/vice/vice-probe.ts` |
-| Broker client | Container-side half of the on-demand broker protocol: acquire/release/recycle over a TCP control session | `.claude/mcp/vice/vice-broker-client.ts` |
-| Repo root resolution | The one shared resolver for "where is the project root" / "where is `.vice-supervisor`" | `.claude/mcp/vice/repo-root.ts` |
-| Resource deployment | Deploys host launcher scripts (`tools/`) into the *consuming* project on first use | `.claude/mcp/vice/install-resources.ts` |
-| Container detection | Five-signal container-vs-host detector, checked at broker process startup | `.claude/mcp/vice/container-guard.mts` |
-| Host/container path translation | Rewrites container paths (bind-mount) to host-reachable paths, and the inverse | `.claude/mcp/vice/hostpath.ts`, `.claude/mcp/vice/containerpath.ts` |
-| Incident capture | Writes a pre-kill incident record (snapshot/screenshot metadata) before any recycle/kill | `.claude/mcp/vice/incident-record.ts` |
-| Host broker daemon | Long-lived pool manager: port allocation, warm floor, crash supervision, TCP control listener | `.claude/mcp/vice/vice-broker.mts` (+ `broker-*.mts` siblings) |
-| Build step | Compiles host-bound `.mts` sources into committed, banner-marked `.mjs` under `resources/` | `.claude/mcp/vice/build.ts` |
-| Manifest refresh | Regenerates `tools-manifest.json` from the live host server's `tools/list` | `.claude/mcp/vice/refresh-manifest.ts` |
+| Stdio MCP entry point | Speaks MCP JSON-RPC to Claude Code over stdin/stdout; answers `initialize`/`tools/list` locally from the manifest, forwards `tools/call` | `src/mcp/vice/vice-proxy.ts` |
+| Transport seam | The one place that speaks HTTP/MCP to the host VICE server; owns retry ladder, SSE parsing, deny-list enforcement, epoch/restart detection | `src/mcp/vice/vice.ts` |
+| Liveness probe | Deliberately fragile, no-retry 1500ms liveness check (distinct from `vice.ts`'s resilient path) | `src/mcp/vice/vice-probe.ts` |
+| Broker client | Container-side half of the on-demand broker protocol: acquire/release/recycle over a TCP control session | `src/mcp/vice/vice-broker-client.ts` |
+| Repo root resolution | The one shared resolver for "where is the project root" / "where is `.vice-supervisor`" | `src/mcp/vice/repo-root.ts` |
+| Resource deployment | Deploys host launcher scripts (`tools/`) into the *consuming* project on first use | `src/mcp/vice/install-resources.ts` |
+| Container detection | Five-signal container-vs-host detector, checked at broker process startup | `src/mcp/vice/container-guard.mts` |
+| Host/container path translation | Rewrites container paths (bind-mount) to host-reachable paths, and the inverse | `src/mcp/vice/hostpath.ts`, `src/mcp/vice/containerpath.ts` |
+| Incident capture | Writes a pre-kill incident record (snapshot/screenshot metadata) before any recycle/kill | `src/mcp/vice/incident-record.ts` |
+| Host broker daemon | Long-lived pool manager: port allocation, warm floor, crash supervision, TCP control listener | `src/mcp/vice/vice-broker.mts` (+ `broker-*.mts` siblings) |
+| Build step | Compiles host-bound `.mts` sources into committed, banner-marked `.mjs` under `resources/` | `src/mcp/vice/build.ts` |
+| Manifest refresh | Regenerates `tools-manifest.json` from the live host server's `tools/list` | `src/mcp/vice/refresh-manifest.ts` |
 | Plugin manifest | Declares skills dir, mcpServers file, SessionStart hook | `.claude-plugin/plugin.json` |
 | MCP server wiring | The `vice` server entry Claude Code launches | `.mcp.json` |
 | npm installer | Non-plugin install path: copies skills + wires `.mcp.json` into any project | `installer/bin/cli.mjs` |
-| Skills (six) | Markdown playbooks + Node scripts driving the MCP tools or working offline on files | `.claude/skills/*/SKILL.md`, `.claude/skills/*/scripts/*.mjs` |
+| Skills (six) | Markdown playbooks + Node scripts driving the MCP tools or working offline on files | `src/skills/*/SKILL.md`, `src/skills/*/scripts/*.mjs` |
 ## Pattern Overview
 - **Container-in / host-out split**: the MCP proxy and skills run inside the
 - **Single seam per concern**: one file owns each cross-cutting responsibility
@@ -193,23 +193,23 @@ state — and keep working when the emulator misbehaves.
 - **Never-throw boundary**: the stdio server registers global handlers before
 ## Layers
 - Purpose: Domain playbooks for C64 reverse-engineering tasks (build,
-- Location: `.claude/skills/<skill-name>/`
+- Location: `src/skills/<skill-name>/`
 - Contains: `SKILL.md` (playbook, YAML frontmatter + prose), `scripts/*.mjs`
 - Depends on: the `vice` MCP tool surface (for skills that touch the
 - Used by: Claude Code directly, matched by `SKILL.md` frontmatter
 - Purpose: Presents a stable `vice_*` tool surface over stdio to Claude Code,
-- Location: `.claude/mcp/vice/*.ts` (authored TypeScript, no build step)
+- Location: `src/mcp/vice/*.ts` (authored TypeScript, no build step)
 - Contains: wire protocol (`vice-proxy.ts`), transport/deny-list
 - Depends on: `@mastra/mcp` / `@mastra/core` for stdio JSON-RPC framing,
 - Used by: Claude Code's MCP client, per `.mcp.json`.
 - Purpose: On-demand pool of `x64sc` instances; owns launch, warm floor,
-- Location authored: `.claude/mcp/vice/vice-broker.mts` +
-- Location deployed (compiled): `.claude/mcp/vice/resources/*.mjs` (and
+- Location authored: `src/mcp/vice/vice-broker.mts` +
+- Location deployed (compiled): `src/mcp/vice/resources/*.mjs` (and
 - Depends on: Node builtins only (`node:child_process`, `node:fs`,
 - Used by: the container-side `vice-broker-client.ts`, over a TCP control
 - Purpose: Non-plugin distribution path — `npx @henols/c64-re-tools` copies
 - Location: `installer/bin/cli.mjs`, `installer/scripts/sync-skills.mjs`
-- Depends on: the canonical skills under `.claude/skills/` (synced into
+- Depends on: the canonical skills under `src/skills/` (synced into
 - Used by: end users installing outside the Claude Code plugin marketplace.
 ## Data Flow
 ### Primary tool-call path (emulator control)
@@ -219,32 +219,32 @@ state — and keep working when the emulator misbehaves.
 - The MCP transport seam (`vice.ts`) holds mutable module-level state
 ## Key Abstractions
 - Purpose: Single definition of "where is the project this MCP instance is
-- Examples: `.claude/mcp/vice/repo-root.ts` (`repoRoot()`, `supervisorDir()`)
+- Examples: `src/mcp/vice/repo-root.ts` (`repoRoot()`, `supervisorDir()`)
 - Pattern: Ordered fallback ladder — `CLAUDE_PROJECT_DIR` env →
 - Purpose: Hard-blocks specific tool names known to crash or bypass the
 - Examples: `DENY_LIST` and `denyListRefusalMessage()` in
 - Pattern: One array, checked at every dispatch seam — never re-derived
 - Purpose: Translate a bind-mounted path between the container's view and
-- Examples: `.claude/mcp/vice/hostpath.ts` (container → host, via
+- Examples: `src/mcp/vice/hostpath.ts` (container → host, via
 - Pattern: Both take the workspace root as an explicit argument rather than
 - Purpose: On-demand pool of emulator instances, acquired/released/recycled
-- Examples: `.claude/mcp/vice/vice-broker-client.ts`
+- Examples: `src/mcp/vice/vice-broker-client.ts`
 - Pattern: The connection itself IS the lease — no separate TTL/heartbeat
 - Purpose: Host-bound `.mjs` scripts that must run on a bare host Node with
-- Examples: `.claude/mcp/vice/resources/*.mjs`, each prefixed with a
+- Examples: `src/mcp/vice/resources/*.mjs`, each prefixed with a
 - Pattern: `build.ts` asserts the emitted file set exactly matches
 ## Entry Points
-- Location: `.claude/mcp/vice/vice-proxy.ts` (declared as `bin.vice-mcp` and
+- Location: `src/mcp/vice/vice-proxy.ts` (declared as `bin.vice-mcp` and
 - Triggers: Claude Code spawning the configured `vice` MCP server once per
 - Responsibilities: JSON-RPC framing (delegated to `@mastra/mcp`
-- Location: `.claude/mcp/vice/vice-broker.mts` (authored) /
+- Location: `src/mcp/vice/vice-broker.mts` (authored) /
 - Triggers: First on-demand acquire request from the container side, or a
 - Responsibilities: parse CLI args (`--repo-root`, `--state-dir`,
 - Location: `installer/bin/cli.mjs` (`npx @henols/c64-re-tools [targetDir]`)
 - Triggers: A user running the installer against their own project.
 - Responsibilities: copy `installer/skills/` into `<target>/.claude/skills/`,
-- `.claude/mcp/vice/build.ts` — `node build.ts`, recompiles `.mts` →
-- `.claude/mcp/vice/refresh-manifest.ts` — regenerates `tools-manifest.json`
+- `src/mcp/vice/build.ts` — `node build.ts`, recompiles `.mts` →
+- `src/mcp/vice/refresh-manifest.ts` — regenerates `tools-manifest.json`
 - `scripts/package.sh` — validates manifests and builds the plugin release
 - `scripts/ensure-mcp-deps.sh` — SessionStart hook that runs `npm ci` for
 ## Architectural Constraints
@@ -270,12 +270,12 @@ state — and keep working when the emulator misbehaves.
 
 | Skill | Description | Path |
 |-------|-------------|------|
-| acme-build | Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, list the symbols a program uses, or turn a .prg back into ACME source. | `.claude/skills/acme-build/SKILL.md` |
-| c64-memory-mapping | Look up what any C64 address means and turn raw 6502 disassembly into documented assembly, by resolving every address against the C64 memory map, KERNAL ROM routine list, canonical assembler symbols, and per-bit VIC-II/SID/CIA register tables. Use when asked to annotate or comment assembly, document a disassembly listing, or look up an address like $D020, $EA24 or $FFD2. | `.claude/skills/c64-memory-mapping/SKILL.md` |
-| c64-program-recon | Work out how an unknown C64 program is structured at runtime — entry point, interrupt handlers, main loop, game states, graphics and sound — in a fixed order, before disassembling anything. Use when asked to reverse engineer a C64 game, find the main loop, entry point or IRQ handler, locate the player sprite, charset or music player, identify a game state machine, work out which memory regions are code versus data, or decide where to start on a depacked image. | `.claude/skills/c64-program-recon/SKILL.md` |
-| c64-provenance-diff | Decide whether a byte in a cracked C64 release is original game code or something a cracker changed, by diffing two or more independently-cracked releases at an anchor-proven offset. Use when asked to diff two releases or disk images, work out which bytes the cracker patched, tell loader or cracktro code from game code, prove a byte is original, establish provenance or confidence for a memory range, regenerate the provenance ledger, or run anchor-search, count-patches or diff-images. Also use when asked whether a crack added a trainer or cheat, whether a patch changes gameplay rather than loading, whether a rebuild would inherit a cracker's gameplay alteration, or whether two releases are genuinely independent rather than sharing an ancestor. | `.claude/skills/c64-provenance-diff/SKILL.md` |
-| c64-ram-capture | Capture a running C64's full 64K RAM as a verified flat image, and prove two captures are equivalent. Use when asked to dump RAM, depack a program by running it, capture a memory image at a checkpoint, or compare two captures for reproducibility. | `.claude/skills/c64-ram-capture/SKILL.md` |
-| vice-wedge-triage | Decide whether a VICE emulator that has stopped responding is genuinely wedged, stopped itself at your own checkpoint, crashed and respawned, or merely paused — and what is safe to do about each. Use when asked why the emulator is stuck, frozen, hung, wedged, dead or not advancing, when a cycle bracket reads zero, when vice_ping says running but nothing happens, when a checkpoint never fires, when deciding whether to recycle or restart VICE, or when a run has to be voided and its evidence recorded. | `.claude/skills/vice-wedge-triage/SKILL.md` |
+| acme-build | Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, or list the symbols a program uses. | `src/skills/acme-build/SKILL.md` |
+| c64-memory-mapping | Look up what any C64 address means and turn raw 6502 disassembly into documented assembly, by resolving every address against the C64 memory map, KERNAL ROM routine list, canonical assembler symbols, and per-bit VIC-II/SID/CIA register tables. Use when asked to annotate or comment assembly, document a disassembly listing, or look up an address like $D020, $EA24 or $FFD2. | `src/skills/c64-memory-mapping/SKILL.md` |
+| c64-program-recon | Work out how an unknown C64 program is structured at runtime — entry point, interrupt handlers, main loop, game states, graphics and sound — in a fixed order, before disassembling anything. Use when asked to reverse engineer a C64 game, find the main loop, entry point or IRQ handler, locate the player sprite, charset or music player, identify a game state machine, work out which memory regions are code versus data, or decide where to start on a depacked image. | `src/skills/c64-program-recon/SKILL.md` |
+| c64-provenance-diff | Decide whether a byte in a cracked C64 release is original game code or something a cracker changed, by diffing two or more independently-cracked releases at an anchor-proven offset. Use when asked to diff two releases or disk images, work out which bytes the cracker patched, tell loader or cracktro code from game code, prove a byte is original, establish provenance or confidence for a memory range, regenerate the provenance ledger, or run anchor-search, count-patches or diff-images. Also use when asked whether a crack added a trainer or cheat, whether a patch changes gameplay rather than loading, whether a rebuild would inherit a cracker's gameplay alteration, or whether two releases are genuinely independent rather than sharing an ancestor. | `src/skills/c64-provenance-diff/SKILL.md` |
+| c64-ram-capture | Capture a running C64's full 64K RAM as a verified flat image, and prove two captures are equivalent. Use when asked to dump RAM, depack a program by running it, capture a memory image at a checkpoint, or compare two captures for reproducibility. | `src/skills/c64-ram-capture/SKILL.md` |
+| vice-wedge-triage | Decide whether a VICE emulator that has stopped responding is genuinely wedged, stopped itself at your own checkpoint, crashed and respawned, or merely paused — and what is safe to do about each. Use when asked why the emulator is stuck, frozen, hung, wedged, dead or not advancing, when a cycle bracket reads zero, when vice_ping says running but nothing happens, when a checkpoint never fires, when deciding whether to recycle or restart VICE, or when a run has to be voided and its evidence recorded. | `src/skills/vice-wedge-triage/SKILL.md` |
 <!-- GSD:skills-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->
