@@ -29,7 +29,7 @@
 // documentation, not runtime behaviour shipped in the tarball.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -38,23 +38,64 @@ import { repoRoot } from "./repo-root.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
 
-/** The normative, forward-looking document set. A future session reads these
- * to learn where work lives; a dangling phase pointer in any of them sends
- * that session to a phase that never claimed the work. Paths are relative to
- * the repo root and are all expected to exist -- a missing one FAILS rather
- * than silently shrinking the scanned set. */
-const NORMATIVE_DOCS = Object.freeze([
+/** The normative, forward-looking document set that exists at ALL times. A
+ * future session reads these to learn where work lives; a dangling phase
+ * pointer in any of them sends that session to a phase that never claimed the
+ * work. Paths are relative to the repo root and are all expected to exist -- a
+ * missing one FAILS rather than silently shrinking the scanned set.
+ *
+ * `.planning/REQUIREMENTS.md` is deliberately NOT here: it is lifecycle-bound,
+ * not permanent. See `requirementsDocForScan()`. */
+const ALWAYS_PRESENT_NORMATIVE_DOCS = Object.freeze([
   ".planning/ROADMAP.md",
-  ".planning/REQUIREMENTS.md",
   "CLAUDE.md",
   "README.md",
   "docs/roadmap-stock-vice.md",
   "docs/stock-vice-parity.md",
 ]);
 
+/** The requirements document a reader would actually consult, which MOVES
+ * across the milestone lifecycle rather than always sitting at one path.
+ *
+ * WHY THIS IS NOT JUST `.planning/REQUIREMENTS.md` (found at the v0.4.0
+ * close): `/gsd-complete-milestone` archives that file to
+ * `.planning/milestones/v<X.Y>-REQUIREMENTS.md` and then `git rm`s the live
+ * copy, so between a milestone close and the next `/gsd-new-milestone` there
+ * IS no `.planning/REQUIREMENTS.md`. That is a designed state of the workflow,
+ * not drift -- but this guard read the path unconditionally, so every close
+ * made it throw ENOENT. Because `audit-gate.mjs` runs all six `docs-*.test.ts`
+ * guards in ONE subprocess, that single throw reported all six as red, which
+ * is how a routine close turned the whole gate from `allowed: true` to
+ * `allowed: false` with no real assertion failure anywhere.
+ *
+ * Resolution order, and why: the LIVE file when it exists (a milestone is open
+ * and it is the forward-looking document), else the newest archived one (no
+ * milestone is open, and the archive is what a reader consults). Returns
+ * `null` only if neither exists -- a repo with no requirements document in
+ * either place, which the non-vacuity test below treats as a real failure. */
+function requirementsDocForScan(): string | null {
+  const live = ".planning/REQUIREMENTS.md";
+  if (existsSync(join(ROOT, live))) return live;
+  const archiveDir = join(ROOT, ".planning/milestones");
+  if (!existsSync(archiveDir)) return null;
+  const archived = readdirSync(archiveDir)
+    .filter((f) => /^v[\d.]+-REQUIREMENTS\.md$/.test(f))
+    .sort(); // vN.N ASCII sort is version order for this project's single-digit components
+  const newest = archived.at(-1);
+  return newest ? join(".planning/milestones", newest) : null;
+}
+
+/** The full scanned set for this run: the permanent documents plus whichever
+ * requirements document is current. Derived per call rather than frozen at
+ * module load so the lifecycle state is read at test time. */
+function normativeDocs(): string[] {
+  const req = requirementsDocForScan();
+  return req ? [...ALWAYS_PRESENT_NORMATIVE_DOCS, req] : [...ALWAYS_PRESENT_NORMATIVE_DOCS];
+}
+
 /** The backlog item `.vsf` was filed as. It IS `.vsf`'s recorded home, so it
  * must keep existing -- if it is deleted, the corrected pointers in
- * NORMATIVE_DOCS all become dangling again in the other direction. */
+ * the normative docs all become dangling again in the other direction. */
 const VSF_BACKLOG_ITEM = ".planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md";
 
 /** Splits prose into sentence-ish units. Markdown wraps mid-sentence, so
@@ -89,9 +130,9 @@ function isPhaseAssignment(sentence: string): boolean {
  * message names the file to edit. */
 function danglingVsfPointers(): { doc: string; sentence: string }[] {
   const hits: { doc: string; sentence: string }[] = [];
-  for (const doc of NORMATIVE_DOCS) {
+  for (const doc of normativeDocs()) {
     const path = join(ROOT, doc);
-    assert.ok(existsSync(path), `${doc} is in NORMATIVE_DOCS but does not exist -- update the list rather than letting the scanned set shrink silently`);
+    assert.ok(existsSync(path), `${doc} is in the normative set but does not exist -- update ALWAYS_PRESENT_NORMATIVE_DOCS/requirementsDocForScan() rather than letting the scanned set shrink silently`);
     for (const sentence of sentences(readFileSync(path, "utf8"))) {
       if (!/\bvsf\b/i.test(sentence)) continue;
       if (isPhaseAssignment(sentence)) hits.push({ doc, sentence });
@@ -113,7 +154,7 @@ test("no normative document points at a numbered phase as `.vsf`'s home (T-11-DO
 
 test("the `.vsf` backlog item still exists and still records why it is deferred", () => {
   const path = join(ROOT, VSF_BACKLOG_ITEM);
-  assert.ok(existsSync(path), `${VSF_BACKLOG_ITEM} is missing -- it is where the corrected pointers in ${NORMATIVE_DOCS.join(", ")} send the reader. Deleting it re-creates the dangling reference in the other direction.`);
+  assert.ok(existsSync(path), `${VSF_BACKLOG_ITEM} is missing -- it is where the corrected pointers in ${normativeDocs().join(", ")} send the reader. Deleting it re-creates the dangling reference in the other direction.`);
   const body = readFileSync(path, "utf8");
   assert.match(body, /vsf/i, "the backlog item must still be about `.vsf`");
   assert.match(body, /R2000-\d+/, "the backlog item must still name the requirement IDs it establishes do NOT cover `.vsf` -- that is the reason it is backlog and not a phase");
@@ -124,8 +165,17 @@ test("non-vacuity: the scanned document set is non-empty and `.vsf` is actually 
   // would make the guard above pass by finding nothing to check -- the
   // vacuity WR-02 and T-11-VACUOUS exist to catch. Assert there is real
   // subject matter being scanned.
-  assert.ok(NORMATIVE_DOCS.length >= 4, `expected a meaningful normative document set, got ${NORMATIVE_DOCS.length}`);
-  const mentioning = NORMATIVE_DOCS.filter((doc) => /\bvsf\b/i.test(readFileSync(join(ROOT, doc), "utf8")));
+  const docs = normativeDocs();
+  assert.ok(docs.length >= 4, `expected a meaningful normative document set, got ${docs.length}`);
+  // The requirements document must resolve to SOMETHING -- live or archived.
+  // A null here means neither exists, which is a real gap rather than a
+  // lifecycle state, and would silently shrink the scanned set by one.
+  assert.ok(
+    requirementsDocForScan() !== null,
+    "no requirements document found at .planning/REQUIREMENTS.md or .planning/milestones/v*-REQUIREMENTS.md -- " +
+      "the scanned set must always include one; see requirementsDocForScan()",
+  );
+  const mentioning = docs.filter((doc) => /\bvsf\b/i.test(readFileSync(join(ROOT, doc), "utf8")));
   assert.ok(mentioning.length >= 2, `expected at least two normative documents to discuss \`.vsf\` (so the guard has something to check); only ${mentioning.length} do: ${mentioning.join(", ")}`);
 });
 
