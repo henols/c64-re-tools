@@ -125,18 +125,30 @@ test("non-vacuity: the Deferred Items section is located, non-empty, and the sca
   // pending todos in one task, leaving exactly 2. Lower again, rather than
   // raise, if it ever trips for the same reason -- DEBT-04 (Phase 17) may
   // shrink this further still.
-  assert.ok(pending.length >= 2, `expected at least 2 pending todos, got ${pending.length}`);
+  // Phase 17 plan 17-01 task 1 (DEBT-04): the pending tree reached genuinely
+  // empty for the first time in this project's history, so the >= 2 floor
+  // below is dropped entirely -- zero pending todos is an earned, intended
+  // state, not a scan-found-nothing failure, and the positive control just
+  // below is now conditional on `pending.length > 0` as a direct consequence.
   assert.ok(completed.length >= 5, `expected at least 5 completed todos, got ${completed.length}`);
 
-  // Positive control: a specific, known-present pending stem must actually
-  // be found by predicate 1's own matcher -- without this, the two tests
-  // above could both pass by scanning nothing. Was
-  // "2026-08-20-vsf-as-a-bootstrap-input" until phase 15 plan 15-12 closed
-  // that todo wont-fix; switched to a todo plan 15-12 deliberately leaves
-  // pending (promoted to PKG-01 with a named owner, not moved to completed/).
-  const knownStem = "2026-08-20-relocate-plugin-payload-under-src-and-merge-mcp-json";
-  assert.ok(pending.includes(knownStem), `expected ${knownStem} to be a real pending todo -- update the control if it has been resolved`);
-  assert.deepEqual(missingPendingStems([knownStem], section!), [], `the positive-control stem ${knownStem} was not found by missingPendingStems() against the real section text`);
+  // Positive control: when at least one pending todo exists, a specific,
+  // known-present stem must actually be found by predicate 1's own matcher --
+  // without this, the two tests above could both pass by scanning nothing.
+  // Was "2026-08-20-vsf-as-a-bootstrap-input" until phase 15 plan 15-12 closed
+  // that todo wont-fix; then switched to a todo plan 15-12 deliberately left
+  // pending (promoted to PKG-01 with a named owner, not moved to completed/);
+  // that todo itself was closed by Phase 16, so the pending tree is now
+  // genuinely empty and there is nothing left to positively control against.
+  // Selecting the control stem from the live `pending` array (rather than a
+  // hard-coded filename) keeps this control from going stale in the same way
+  // a third time -- it is skipped only when there is truly nothing pending,
+  // never manufactured against a synthetic stem (the planted-violation test
+  // below already owns that proof).
+  if (pending.length > 0) {
+    const knownStem = pending[0];
+    assert.deepEqual(missingPendingStems([knownStem], section!), [], `the positive-control stem ${knownStem} was not found by missingPendingStems() against the real section text`);
+  }
 });
 
 test("planted violation: both predicates fire on synthetic input, and the real, corrected text is reported by neither", () => {
