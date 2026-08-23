@@ -531,11 +531,14 @@ Plans:
      (`R2000-10`), the symbol round trip (`R2000-14`/`R2000-15`), and `R2000-01`'s
      structural argument that regenerator2000 is never launched with `--vice` — was weighed
      and the statement deliberately kept, not edited in passing. The verdict was reached at
-     plan 17-02 task 1's `gate="blocking-human"` checkpoint: a human saw the full evidence
-     and responded to it, but explicitly delegated the choice between the two options to
-     the orchestrating session, which then selected `keep-dated` — recorded precisely in
-     both PROJECT.md and `17-02-SUMMARY.md`, not overstated as a literal human selection.
-     Pinned by `src/mcp/vice/docs-core-value-decision.test.ts` (5/5 passing).
+     plan 17-02 task 1's `gate="blocking-human"` checkpoint: the checkpoint was rendered
+     and the operator answered 298 seconds later in free text `you decide` rather than
+     selecting either option, and the orchestrating session then selected `keep-dated`.
+     Attendance and delegation are on the record; comprehension is not evidenced by any
+     artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap `G-17-1`) —
+     recorded precisely in both PROJECT.md and `17-02-SUMMARY.md`, not overstated as a
+     literal human selection. Pinned by `src/mcp/vice/docs-core-value-decision.test.ts`
+     (6/6 passing).
 
   2. **Satisfied.** `STATE.md` → Deferred Items reports 0, down from the 19 items inherited
      at the v0.3.0 close, still derived from `.planning/todos/pending/` and guarded in both

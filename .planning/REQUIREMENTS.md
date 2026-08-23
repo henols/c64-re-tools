@@ -219,17 +219,21 @@ red.
 
 - [x] **CORE-01**: PROJECT.md's Core Value either states what v0.3.0 proved — that what a session learns outlives it — or records a dated confirmation that it should not, with the evidence weighed either way
 
-  > **Closure note (Phase 17, plans 17-02/17-03).** CORE-01 decided **keep-dated**:
-  > PROJECT.md's Core Value leading statement is left byte-identical, and a new dated
-  > paragraph records that the evidence was actually weighed rather than silently carried
-  > a third close. The choice was escalated to a human at plan 17-02 task 1's
-  > `gate="blocking-human"` checkpoint — not inferred, not auto-approved — where the full
-  > evidence (six items for restating, five against, from `17-RESEARCH.md`'s `## Core
-  > Value evidence`) was presented in full. The human, having read it, declined to select
-  > between the two options and explicitly delegated the call to the orchestrating
-  > session; the orchestrator then selected `keep-dated`. Recorded precisely rather than
-  > smoothed over: a human saw the gate and responded to it, but the verdict word itself
-  > was the orchestrator's, not a literal human selection. Recorded in `.planning/PROJECT.md`
+  > **Closure note (Phase 17, plans 17-02/17-03; corrected by plan 17-04, gap `G-17-1`).**
+  > CORE-01 decided **keep-dated**: PROJECT.md's Core Value leading statement is left
+  > byte-identical, and a new dated paragraph records that the evidence was actually
+  > weighed rather than silently carried a third close. The choice was escalated to a
+  > human at plan 17-02 task 1's `gate="blocking-human"` checkpoint — not inferred, not
+  > auto-approved. Recorded to exactly what the session transcript evidences: the
+  > checkpoint was rendered, with the counted evidence columns (six items for restating,
+  > five against, from `17-RESEARCH.md`'s `## Core Value evidence`) in the terminal output
+  > around it, while the decision prompt itself carried only the two option labels plus
+  > one strongest-argument line each; 298 seconds later the operator answered in free text
+  > — `you decide` — rather than choosing either label; the orchestrator then selected
+  > `keep-dated`. Attendance and delegation are on the record; comprehension is not evidenced
+  > by any artifact and is not claimed. Asked about the exchange at this phase's UAT,
+  > roughly 106 minutes later, the operator did not recall it — the transcript, not
+  > recall, is what settles what happened. Recorded in `.planning/PROJECT.md`
   > → `## Core Value`, dated 2026-08-23. Evidence weighed: `R2000-01`'s structural
   > argument that regenerator2000 is never launched with `--vice` and is guarded in code,
   > so the outlives-the-session property belongs to a component structurally incapable of
@@ -237,8 +241,8 @@ red.
   > symbol round trip (`R2000-14`/`R2000-15`) — this project's strongest persistence
   > evidence, named as such and weighed against restating rather than left unweighed. What
   > pins it mechanically: `src/mcp/vice/docs-core-value-decision.test.ts`, built by plan
-  > 17-02 task 3 because the keep-dated branch requires a guard (5 tests: non-vacuity, ISO
-  > date, named evidence, reversal condition, planted violation).
+  > 17-02 task 3 because the keep-dated branch requires a guard (6 tests: non-vacuity,
+  > verdict marker, ISO date, named evidence, reversal condition, planted violation).
 
 ### Packaging and Repo Shape
 

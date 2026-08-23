@@ -4,18 +4,18 @@ milestone: v0.4.0
 milestone_name: Debt discharged, decisions settled (Phases 12-17, in progress)
 current_phase: 17
 current_phase_name: Project Identity and Ledger Close
-status: verifying
+status: executing
 stopped_at: Completed 17-03-PLAN.md
-last_updated: "2026-08-23T09:06:45.903Z"
+last_updated: "2026-08-23T11:09:16.447Z"
 last_activity: 2026-08-23
 last_activity_desc: Phase 17 execution started
-state_head: 1070b97495b707a46431d9471b3b59ec31386601
+state_head: ba885a59f1bd55de1544a83cf27e263167bc09ab
 progress:
   total_phases: 6
-  completed_phases: 6
-  total_plans: 43
+  completed_phases: 5
+  total_plans: 44
   completed_plans: 43
-  percent: 100
+  percent: 83
 ---
 
 # Project State
@@ -56,9 +56,9 @@ Items below are no longer inherited context: discharging them *is* the milestone
 
 ## Current Position
 
-Phase: 17 (Project Identity and Ledger Close) — COMPLETE
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 17 (Project Identity and Ledger Close) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 17
 
 **Phase 17 — Project Identity and Ledger Close — is COMPLETE (2026-08-23, 3/3
 plans).** Plan 17-01 (the phase's tracer) found `docs-deferred-ledger.test.ts`'s
@@ -72,13 +72,15 @@ corrected in ROADMAP.md. With the guard able to express zero, plan 17-01 then
 brought the `## Deferred Items` ledger below to the true v0.4.0-close count:
 **0** (0 pending todo files + 0 UAT-gap rows), down from the 19 items
 inherited at the v0.3.0 close. Plan 17-02 decided `CORE-01` at a
-`gate="blocking-human"` checkpoint: the full evidence was presented to a
-human, who read it, declined to select between `restate`/`keep-dated`, and
-explicitly delegated the call to the orchestrating session — the orchestrator
-then selected **keep-dated** on `R2000-01`'s structural argument that
-regenerator2000 is never launched with `--vice`. Recorded precisely in
-PROJECT.md → Core Value (dated 2026-08-23) and pinned by
-`src/mcp/vice/docs-core-value-decision.test.ts` (5/5). Plan 17-03 (this
+`gate="blocking-human"` checkpoint: the checkpoint was rendered and the
+operator answered 298 seconds later in free text `you decide` rather than
+selecting `restate`/`keep-dated`, and the orchestrator then selected
+**keep-dated** on `R2000-01`'s structural argument that regenerator2000 is
+never launched with `--vice`. Attendance and delegation are on the record;
+comprehension is not evidenced by any artifact and is not claimed (corrected
+2026-08-23 by plan 17-04, gap `G-17-1`). Recorded precisely in PROJECT.md →
+Core Value (dated 2026-08-23) and pinned by
+`src/mcp/vice/docs-core-value-decision.test.ts` (6/6). Plan 17-03 (this
 closer) ticked both requirements Complete in REQUIREMENTS.md with closure
 notes, closed ROADMAP.md's Phase 17 section to its real plan list and
 outcome, re-took the pending-todo measurement after every one of this
@@ -424,7 +426,7 @@ Recent decisions affecting current work:
 - [Phase 16]: [Phase 16-11]: New decision register 16-GAP-CLOSURE-DECISIONS.md records five deliberate non-reversals with owners/reversal triggers (four SKILL.md quick-references, recovery-schema.mjs, project-paths.mjs, repo-root.test.ts, and 16-REVIEW.md's IN-01 recorded as renamed-not-left by plan 16-09), the spec-less probe's four-item accounting (two authored, two flagged unresolved), the three recalled prohibitions, and five newly-found sites with their closing plans
 - [Phase 17]: Dropped docs-deferred-ledger.test.ts's non-vacuity pending floor to no floor at all (not a smaller nonzero number), since 0 pending is DEBT-04's own success criterion, and made the positive control conditional on pending.length > 0 (selecting its stem from the live pending array instead of a hard-coded filename) — The previous floor of 2 could not express a genuinely empty pending tree; the guard's own prior-author comment named this exact phase as the one that might need to lower it further
 - [Phase 17]: STATE.md's Deferred Items ledger now reads the true v0.4.0-close count of 0, derived from and agreeing with the empty .planning/todos/pending/ tree — Phase 16 discharged both remaining pending todos (PKG-01, PKG-03); the ledger text was stale by exactly those two rows until this plan's Task 2
-- [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — Full evidence presented at the checkpoint; human declined to select and delegated the call; orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
+- [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — The checkpoint was rendered and the operator answered 298 seconds later in free text `you decide` rather than selecting an option; attendance and delegation are on the record, comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap G-17-1); orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
 
 ### Pending Todos
 
