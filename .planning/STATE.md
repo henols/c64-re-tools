@@ -1,10 +1,14 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.5.0
-milestone_name: The rebuild half — absorbed playbooks, modifiable source
+milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
+current_phase: 18
 status: planning
-last_updated: "2026-08-23T20:30:00.000Z"
+stopped_at: Phase 18 context gathered
+last_updated: "2026-08-23T21:35:23.606Z"
 last_activity: 2026-08-23
+last_activity_desc: Phase 18 context gathered (36 decisions, 7 gray areas)
+state_head: ce1439389339e0da0492c2bbeaeb2fe88ab8bfdb
 progress:
   total_phases: 5
   completed_phases: 0
@@ -789,16 +793,31 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-23
-Stopped at: **v0.5.0 roadmap created.** 27/27 requirements
+Last session: 2026-08-23T21:35:23.589Z
+Stopped at: **Phase 18 context gathered.** `/gsd-discuss-phase 18` ran all
+  seven identified gray areas (session lifecycle & keying, crash-restart
+  visibility, write serialisation, orphan & lease discipline, the D-32
+  re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
+  producing 36 phase-local decisions in
+  `.planning/phases/18-persistent-session-and-tool-surface/18-CONTEXT.md`.
+  Load-bearing outcomes: the session is in-proxy, lazily opened, single-slot,
+  invisible to callers, with no third spawn site; save-per-mutation is
+  preserved byte-for-byte (the D-17/D-18 reversal changes process lifetime,
+  not the durability contract); a coarse mutex serialises the whole
+  mutate+save pair; `r2000_get_address_details` is composed client-side from
+  the four curated reads and never calls upstream's defective tool, superseding
+  D-32 with an issue-#42 reversal trigger; curated count moves 17 → 19. Three
+  planted-violation gates are mandated (save-survives-SIGKILL, lost-update,
+  settings-no-revert). Phase 18's plans are not written yet.
+  Next: `/gsd-plan-phase 18`.
+Previously stopped at: **v0.5.0 roadmap created.** 27/27 requirements
   (SESS-01..04, SURF-01..03, ABS-01..04, COV-01..02, DECOMP-01..04,
   BUILD-01..06, EQUIV-01..04) mapped to five phases (18-22) in
   `.planning/ROADMAP.md`, with per-phase Goal/Depends-on/Requirements/Success
   Criteria plus a "Sequencing Rationale (v0.5.0)" section justifying the
   5-phase shape and EQUIV-01's placement. `.planning/REQUIREMENTS.md`'s
   Traceability table and Coverage block are filled in (27 mapped, 0 unmapped).
-  No phase has been planned yet. Next: `/gsd-plan-phase 18`.
-Previously stopped at: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
+Before that: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
   archived (2026-08-23). Six phases (12-17), 44/44 plans, 119 tasks, 16/16
   requirements. Final audit round 1, `tech_debt` — zero blockers, zero open
   gaps; the 16 items the pre-close artifact audit reported were acknowledged
@@ -811,7 +830,7 @@ Previously stopped at: Milestone **v0.4.0 Debt discharged, decisions settled** c
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: None
+Resume file: .planning/phases/18-persistent-session-and-tool-surface/18-CONTEXT.md
 
 ## Operator Next Steps
 
