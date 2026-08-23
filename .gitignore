@@ -59,3 +59,6 @@ dist/
 # also covered by many users' global gitignore, but this repo-level rule
 # makes the guarantee local and explicit rather than relying on that.
 /.claude/settings.local.json
+
+# GSD research scratch cache (subagent working files, not artifacts)
+.planning/research/.cache/
