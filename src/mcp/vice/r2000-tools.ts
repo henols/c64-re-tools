@@ -156,11 +156,38 @@ const ADDRESS_DETAILS_REFUSAL =
   "working on a 64K project.";
 
 // ---------------------------------------------------------------------------
-// The 17 curated tool definitions (D-18's objective table). Each argument
-// shape below was obtained by driving `tools/list` against a real
-// `regenerator2000 --mcp-server-stdio 0.9.20` child and copying its own
-// argument shapes verbatim (never transcribed from a document), with
-// `project` (D-19) prepended to every one.
+// r2000_read_region's documented range cap (D18-25, SURF-01, plan 18-05). A
+// full-64K disassembly view dumped into an LLM's context is the hazard this
+// cap exists to prevent -- this tool's purpose is reading a routine, not
+// exporting the whole program. 4096 is one sixteenth of the address space
+// and far above any realistic single routine; the disassembly view at the
+// cap is the worst case (the hexdump view at the same byte count renders far
+// less text), and that is deliberate: ONE cap, both views, so there is no
+// per-view rule to get subtly wrong.
+// ---------------------------------------------------------------------------
+
+export const R2000_READ_REGION_MAX_BYTES = 4096;
+
+/** Reads the `R2000_READ_REGION_MAX_BYTES` override AT CALL TIME (never
+ * frozen at module load) -- the same read-at-call-time convention
+ * `r2000-session.ts`'s `currentRestartBudget()` uses for
+ * `R2000_RESTART_BUDGET`, so one `node --test` process can point several
+ * different caps at the same code within a single run. Falls back to the
+ * named default on an absent, non-finite, or non-positive override. */
+function currentReadRegionMaxBytes(): number {
+  const raw = process.env.R2000_READ_REGION_MAX_BYTES;
+  if (raw === undefined) return R2000_READ_REGION_MAX_BYTES;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : R2000_READ_REGION_MAX_BYTES;
+}
+
+// ---------------------------------------------------------------------------
+// The 19 curated tool definitions (D-18's objective table, extended by
+// SURF-01/SURF-02, plan 18-05). Each argument shape below was obtained by
+// driving `tools/list` against a real `regenerator2000 --mcp-server-stdio
+// 0.9.20` child and copying its own argument shapes verbatim (never
+// transcribed from a document), with `project` (D-19) prepended to every
+// one.
 // ---------------------------------------------------------------------------
 
 export const R2000_TOOL_DEFINITIONS: readonly R2000ToolDefinition[] = [
@@ -503,6 +530,38 @@ export const R2000_TOOL_DEFINITIONS: readonly R2000ToolDefinition[] = [
       required: ["project", "calls"],
     },
   },
+  {
+    name: "r2000_read_region",
+    description:
+      "Reads a routine at an address range instead of exporting the whole program (SURF-01, plan " +
+      "18-05): returns disassembly or hexdump text for start_address..end_address (inclusive on both " +
+      "ends). Both views are one enum parameter: 'hexdump' is what data-table classification and " +
+      "table extraction want; 'disasm' is what routine documentation wants. Observed live against " +
+      "the real regenerator2000 0.9.20 binary: when 'view' is omitted, the response is IDENTICAL to " +
+      `view: 'disasm' (upstream's own schema states its default is 'disasm', confirmed by direct ` +
+      `call). The combined byte count (end_address - start_address + 1) is capped at ` +
+      `${R2000_READ_REGION_MAX_BYTES} bytes by default (R2000_READ_REGION_MAX_BYTES, overridable via ` +
+      "that environment variable) -- a request above the cap is refused by name " +
+      "(R2000ReadRegionRangeError) rather than silently truncated, naming the requested size and the " +
+      "valid range.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...PROJECT_PROPERTY,
+        start_address: { type: "integer", description: "Start of the memory range (inclusive), decimal." },
+        end_address: { type: "integer", description: "End of the memory range (inclusive), decimal." },
+        view: {
+          type: "string",
+          enum: ["disasm", "hexdump"],
+          description:
+            "'disasm' = control-flow disassembly text (routine documentation). 'hexdump' = raw hex " +
+            "bytes (data-table classification/extraction). Omitted defaults to 'disasm' (regenerator2000's " +
+            "own default, confirmed live).",
+        },
+      },
+      required: ["project", "start_address", "end_address"],
+    },
+  },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -560,6 +619,84 @@ export class R2000LabelNameError extends Error {
     this.name = "R2000LabelNameError";
     this.labelName = labelName;
     this.batchIndex = batchIndex;
+  }
+}
+
+export interface R2000ReadRegionRangeErrorOptions {
+  start: number;
+  end: number;
+  requestedBytes: number;
+  batchIndex?: number;
+}
+
+/** Thrown by the `assertReadRegionArgs` validator (called from
+ * `assertCuratedTool()` and `assertCuratedBatch()`) when an
+ * `r2000_read_region` call's range is
+ * inverted, falls outside the 0..65535 address space, or exceeds
+ * `R2000_READ_REGION_MAX_BYTES` (D18-25) -- never silently truncated: a
+ * full-64K disassembly view dumped into an LLM's context is exactly the
+ * hazard this cap exists to prevent. `start`/`end`/`requestedBytes` name the
+ * offending values (never this class's own `.name`, matching this module's
+ * `R2000LabelNameError` convention); `batchIndex` is set only for a refusal
+ * discovered while walking a batch's `calls` array. */
+export class R2000ReadRegionRangeError extends Error {
+  start: number;
+  end: number;
+  requestedBytes: number;
+  batchIndex?: number;
+
+  constructor(message: string, { start, end, requestedBytes, batchIndex }: R2000ReadRegionRangeErrorOptions) {
+    super(message);
+    this.name = "R2000ReadRegionRangeError";
+    this.start = start;
+    this.end = end;
+    this.requestedBytes = requestedBytes;
+    this.batchIndex = batchIndex;
+  }
+}
+
+/** Validates an `r2000_read_region` call's `start_address`/`end_address`
+ * pair against the 0..65535 address space, inversion, and
+ * `R2000_READ_REGION_MAX_BYTES`'s cap (D18-25) -- BEFORE any spawn, the same
+ * pre-spawn posture `assertLegalLabelArg()` already takes. A no-op when
+ * `args` is not a plain object carrying numeric `start_address`/
+ * `end_address` -- that shape is a different concern (a missing/malformed
+ * required argument), not this function's. Called from BOTH
+ * `assertCuratedTool()` and `assertCuratedBatch()`, mirroring exactly how
+ * `assertLegalLabelArg()` is already called from both, so the cap fires
+ * identically whether `r2000_read_region` is called directly or smuggled
+ * inside an `r2000_batch_execute` payload. */
+function assertReadRegionArgs(args: unknown, batchIndex?: number): void {
+  if (!isPlainObject(args)) return;
+  const { start_address, end_address } = args;
+  if (typeof start_address !== "number" || typeof end_address !== "number") return;
+
+  const suffix = batchIndex !== undefined ? ` (calls[${batchIndex}])` : "";
+  const requestedBytes = end_address - start_address + 1;
+
+  if (start_address < 0 || start_address > 0xffff || end_address < 0 || end_address > 0xffff) {
+    throw new R2000ReadRegionRangeError(
+      `r2000_read_region refused${suffix}: start_address (${start_address}) and end_address ` +
+        `(${end_address}) must both be within the valid address range 0..65535`,
+      { start: start_address, end: end_address, requestedBytes, batchIndex },
+    );
+  }
+  if (end_address < start_address) {
+    throw new R2000ReadRegionRangeError(
+      `r2000_read_region refused${suffix}: end_address (${end_address}) is less than start_address ` +
+        `(${start_address}) -- the range is inclusive at both ends and must not be inverted`,
+      { start: start_address, end: end_address, requestedBytes, batchIndex },
+    );
+  }
+  const cap = currentReadRegionMaxBytes();
+  if (requestedBytes > cap) {
+    throw new R2000ReadRegionRangeError(
+      `r2000_read_region refused${suffix}: requested ${requestedBytes} bytes ` +
+        `(${start_address}..${end_address} inclusive), which exceeds the R2000_READ_REGION_MAX_BYTES ` +
+        `cap of ${cap} -- valid range is 1..${cap} bytes. This tool reads a routine at a range, not the ` +
+        "whole program; set R2000_READ_REGION_MAX_BYTES to override.",
+      { start: start_address, end: end_address, requestedBytes, batchIndex },
+    );
   }
 }
 
@@ -634,6 +771,9 @@ function assertCuratedBatch(args: unknown): void {
     if (call.name === "r2000_set_label_name") {
       assertLegalLabelArg(call.arguments, i);
     }
+    if (call.name === "r2000_read_region") {
+      assertReadRegionArgs(call.arguments, i);
+    }
     if (call.name === "r2000_batch_execute") {
       assertCuratedBatch(call.arguments);
     }
@@ -666,6 +806,9 @@ export function assertCuratedTool(name: string, args?: unknown): void {
   }
   if (name === "r2000_set_label_name") {
     assertLegalLabelArg(args);
+  }
+  if (name === "r2000_read_region") {
+    assertReadRegionArgs(args);
   }
   if (name === "r2000_batch_execute") {
     assertCuratedBatch(args);
@@ -848,13 +991,16 @@ export function resolveStorePath(project: unknown): string {
 // OUTER tool a caller invoked by name.
 // ---------------------------------------------------------------------------
 
-const READ_ONLY_R2000_TOOLS: ReadonlySet<string> = new Set([
+// Exported (not merely module-local) so r2000-tools.test.ts can assert its
+// exact membership directly, rather than only inferring it from behaviour.
+export const READ_ONLY_R2000_TOOLS: ReadonlySet<string> = new Set([
   "r2000_get_symbols",
   "r2000_get_comments",
   "r2000_get_blocks",
   "r2000_get_cross_references",
   "r2000_search_disassembly",
   "r2000_get_binary_info",
+  "r2000_read_region", // SURF-01, plan 18-05: a plain read at a range, never a save target.
 ]);
 
 // ---------------------------------------------------------------------------

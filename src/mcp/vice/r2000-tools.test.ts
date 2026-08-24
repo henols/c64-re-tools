@@ -23,12 +23,15 @@ import { fileURLToPath } from "node:url";
 import {
   R2000_TOOL_DEFINITIONS,
   CURATED_R2000_TOOLS,
+  READ_ONLY_R2000_TOOLS,
   assertCuratedTool,
   resolveStorePath,
   runR2000Tool,
   R2000UncuratedToolError,
   R2000StorePathError,
   R2000LabelNameError,
+  R2000ReadRegionRangeError,
+  R2000_READ_REGION_MAX_BYTES,
 } from "./r2000-tools.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
@@ -60,16 +63,48 @@ const EXPECTED_CURATED_NAMES = [
   "r2000_apply_enum_usage",
   "r2000_save_project",
   "r2000_batch_execute",
+  "r2000_read_region",
 ];
 
-test("CURATED_R2000_TOOLS has exactly 17 members, matching the plan's objective table (set-equality, both directions)", () => {
-  assert.equal(CURATED_R2000_TOOLS.length, 17, `expected exactly 17 curated tools, got ${CURATED_R2000_TOOLS.length}`);
+// The pre-SURF-01/SURF-02 17-member ordering, kept verbatim so a future
+// reorder of the ORIGINAL 17 is caught separately from a count change (task
+// 1's own ordering criterion, plan 18-05).
+const EXPECTED_FIRST_17_NAMES = [
+  "r2000_set_label_name",
+  "r2000_set_comment",
+  "r2000_set_data_type",
+  "r2000_add_scope",
+  "r2000_get_symbols",
+  "r2000_get_comments",
+  "r2000_get_blocks",
+  "r2000_get_cross_references",
+  "r2000_search_disassembly",
+  "r2000_disassemble",
+  "r2000_get_binary_info",
+  "r2000_create_project_enum",
+  "r2000_update_project_enum",
+  "r2000_delete_project_enum",
+  "r2000_apply_enum_usage",
+  "r2000_save_project",
+  "r2000_batch_execute",
+];
+
+test("CURATED_R2000_TOOLS has exactly 18 members, matching the plan's objective table (set-equality, both directions)", () => {
+  assert.equal(CURATED_R2000_TOOLS.length, 18, `expected exactly 18 curated tools, got ${CURATED_R2000_TOOLS.length}`);
   const actual = new Set(CURATED_R2000_TOOLS);
   const expected = new Set(EXPECTED_CURATED_NAMES);
   const missing = [...expected].filter((n) => !actual.has(n));
   const extra = [...actual].filter((n) => !expected.has(n));
   assert.deepEqual(missing, [], `expected curated but missing: ${missing.join(", ")}`);
   assert.deepEqual(extra, [], `curated but not in the plan's objective table (missing a criterion?): ${extra.join(", ")}`);
+});
+
+test("CURATED_R2000_TOOLS's first 17 members are unchanged, in the same order, after SURF-01/SURF-02 additions (plan 18-05)", () => {
+  assert.deepEqual(
+    CURATED_R2000_TOOLS.slice(0, 17),
+    EXPECTED_FIRST_17_NAMES,
+    "the original 17 curated entries must keep their exact relative order -- new entries are appended, never inserted",
+  );
 });
 
 test("every CURATED_R2000_TOOLS name has a matching R2000_TOOL_DEFINITIONS entry, and vice versa", () => {
@@ -262,6 +297,118 @@ test("assertCuratedTool refuses a batch smuggling an illegal r2000_set_label_nam
       assert.ok(err instanceof R2000LabelNameError);
       assert.equal((err as R2000LabelNameError).batchIndex, 1);
       assert.match((err as Error).message, /bad-name/);
+      return true;
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// SURF-01 (D18-24/D18-25, plan 18-05): r2000_read_region's documented range
+// cap, enforced pre-spawn by assertReadRegionArgs(), called from BOTH
+// assertCuratedTool() and assertCuratedBatch() -- the same dual-call-site
+// shape assertLegalLabelArg() already established above.
+// ---------------------------------------------------------------------------
+
+test("r2000_read_region is curated with the live schema {start_address, end_address, view}, required [project, start_address, end_address]", () => {
+  const def = R2000_TOOL_DEFINITIONS.find((d) => d.name === "r2000_read_region");
+  assert.ok(def, "r2000_read_region must be a curated tool");
+  assert.deepEqual(
+    Object.keys(def!.inputSchema.properties).sort(),
+    ["end_address", "project", "start_address", "view"].sort(),
+  );
+  assert.deepEqual(def!.inputSchema.required, ["project", "start_address", "end_address"]);
+  const view = def!.inputSchema.properties.view as { enum: string[] };
+  assert.deepEqual(view.enum, ["disasm", "hexdump"]);
+});
+
+test("r2000_read_region is a member of READ_ONLY_R2000_TOOLS (no save issued after a read)", () => {
+  assert.ok(READ_ONLY_R2000_TOOLS.has("r2000_read_region"));
+});
+
+test("assertCuratedTool refuses an r2000_read_region request one byte over R2000_READ_REGION_MAX_BYTES, naming the requested size and the valid range, before any spawn", () => {
+  const start = 0;
+  const end = start + R2000_READ_REGION_MAX_BYTES; // inclusive size = MAX_BYTES + 1
+  assert.throws(
+    () => assertCuratedTool("r2000_read_region", { project: "x.regen2000proj", start_address: start, end_address: end }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ReadRegionRangeError);
+      assert.equal((err as R2000ReadRegionRangeError).requestedBytes, R2000_READ_REGION_MAX_BYTES + 1);
+      assert.match((err as Error).message, new RegExp(`${R2000_READ_REGION_MAX_BYTES + 1}`));
+      assert.match((err as Error).message, new RegExp(`${R2000_READ_REGION_MAX_BYTES}`));
+      return true;
+    },
+  );
+});
+
+test("assertCuratedTool accepts an r2000_read_region request whose inclusive size equals R2000_READ_REGION_MAX_BYTES exactly", () => {
+  assert.doesNotThrow(() =>
+    assertCuratedTool("r2000_read_region", {
+      project: "x.regen2000proj",
+      start_address: 0,
+      end_address: R2000_READ_REGION_MAX_BYTES - 1,
+    }),
+  );
+});
+
+test("assertCuratedTool accepts start_address === end_address (a single address is a valid, inclusive, one-byte range)", () => {
+  assert.doesNotThrow(() =>
+    assertCuratedTool("r2000_read_region", { project: "x.regen2000proj", start_address: 4096, end_address: 4096 }),
+  );
+});
+
+test("assertCuratedTool refuses an r2000_read_region request with end_address < start_address, naming both values", () => {
+  assert.throws(
+    () => assertCuratedTool("r2000_read_region", { project: "x.regen2000proj", start_address: 100, end_address: 50 }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ReadRegionRangeError);
+      assert.match((err as Error).message, /100/);
+      assert.match((err as Error).message, /50/);
+      assert.match((err as Error).message, /inverted/);
+      return true;
+    },
+  );
+});
+
+test("assertCuratedTool refuses an r2000_read_region request with an address outside 0..65535, naming the offending value", () => {
+  assert.throws(
+    () => assertCuratedTool("r2000_read_region", { project: "x.regen2000proj", start_address: -1, end_address: 10 }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ReadRegionRangeError);
+      assert.match((err as Error).message, /-1/);
+      assert.match((err as Error).message, /0\.\.65535/);
+      return true;
+    },
+  );
+  assert.throws(
+    () => assertCuratedTool("r2000_read_region", { project: "x.regen2000proj", start_address: 0, end_address: 65536 }),
+    R2000ReadRegionRangeError,
+  );
+});
+
+test("assertReadRegionArgs is wired into BOTH assertCuratedTool() and assertCuratedBatch() (source assertion: 1 definition + 2 call sites)", () => {
+  const source = readFileSync(join(HERE, "r2000-tools.ts"), "utf8");
+  const occurrences = source.match(/assertReadRegionArgs\(/g) ?? [];
+  assert.equal(
+    occurrences.length,
+    3,
+    `expected exactly 3 occurrences of "assertReadRegionArgs(" (1 function definition + 2 call sites), got ${occurrences.length}`,
+  );
+});
+
+test("assertCuratedTool refuses an over-cap r2000_read_region request nested inside r2000_batch_execute, refusing the WHOLE batch and naming calls[1]", () => {
+  const over = R2000_READ_REGION_MAX_BYTES; // inclusive size = MAX_BYTES + 1
+  assert.throws(
+    () =>
+      assertCuratedTool("r2000_batch_execute", {
+        calls: [
+          { name: "r2000_get_symbols", arguments: {} },
+          { name: "r2000_read_region", arguments: { start_address: 0, end_address: over } },
+        ],
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof R2000ReadRegionRangeError);
+      assert.equal((err as R2000ReadRegionRangeError).batchIndex, 1);
+      assert.match((err as Error).message, /calls\[1\]/);
       return true;
     },
   );
@@ -555,5 +702,101 @@ test(
     const redundantSave = await runR2000Tool("r2000_save_project", { project: projectPath });
     assert.equal(redundantSave.isError, true, "a standalone r2000_save_project with nothing pending is expected to report an unchanged-hash failure");
     assert.match(redundantSave.content[0]!.text, /content hash on disk is unchanged/);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Gated integration: r2000_read_region (SURF-01, D18-24/D18-25, plan 18-05)
+// against a real regenerator2000 child -- both views, the omitted-view
+// default, a single-address (size-1) request, and a cap-sized request.
+// ---------------------------------------------------------------------------
+
+let readRegionWorkDir: string | undefined;
+
+after(() => {
+  if (readRegionWorkDir) rmSync(readRegionWorkDir, { recursive: true, force: true });
+});
+
+test(
+  "gated: r2000_read_region against a real regenerator2000 child -- both views resolve, 'view' omitted matches 'disasm' verbatim, a single address returns non-empty, and a cap-sized request returns a result",
+  { skip: SKIP_REASON },
+  async () => {
+    readRegionWorkDir = mkdtempSync(join(HERE, ".r2000-tools-test-read-region-"));
+
+    const fixturePath = join(
+      HERE,
+      "..",
+      "..",
+      "..",
+      ".planning",
+      "phases",
+      "09-the-assumption-probe-go-no-go",
+      "evidence",
+      "fixture",
+      "probe-illegal.prg",
+    );
+    const prgBytes = readFileSync(fixturePath);
+    const origin = prgBytes.readUInt16LE(0);
+    const body = prgBytes.subarray(2);
+    const projectJson = synthesizeProject(body, { origin });
+    const projectPath = join(readRegionWorkDir, "read-region.regen2000proj");
+    writeFileSync(projectPath, projectJson);
+
+    // A single address (inclusive size 1) returns a non-empty result.
+    const single = await runR2000Tool("r2000_read_region", { project: projectPath, start_address: origin, end_address: origin });
+    assert.equal(single.isError, false, `r2000_read_region (single address) failed: ${JSON.stringify(single)}`);
+    assert.ok(single.content[0]!.text.length > 0, "expected a non-empty result for a one-byte inclusive range");
+
+    // Both views resolve.
+    const hexdump = await runR2000Tool("r2000_read_region", {
+      project: projectPath,
+      start_address: origin,
+      end_address: origin + 15,
+      view: "hexdump",
+    });
+    assert.equal(hexdump.isError, false, `r2000_read_region (hexdump) failed: ${JSON.stringify(hexdump)}`);
+    assert.match(hexdump.content[0]!.text, /^\$[0-9A-F]{4}:/, "expected hexdump-shaped output ($ADDR: bytes)");
+
+    const disasm = await runR2000Tool("r2000_read_region", {
+      project: projectPath,
+      start_address: origin,
+      end_address: origin + 15,
+      view: "disasm",
+    });
+    assert.equal(disasm.isError, false, `r2000_read_region (disasm) failed: ${JSON.stringify(disasm)}`);
+
+    // 'view' omitted must be IDENTICAL to view: 'disasm' -- the exact
+    // observation this curated tool's own description records verbatim.
+    const omitted = await runR2000Tool("r2000_read_region", { project: projectPath, start_address: origin, end_address: origin + 15 });
+    assert.equal(omitted.isError, false, `r2000_read_region (view omitted) failed: ${JSON.stringify(omitted)}`);
+    assert.equal(
+      omitted.content[0]!.text,
+      disasm.content[0]!.text,
+      "'view' omitted must match view: 'disasm' verbatim -- this is the exact live-observed behaviour the curated description states",
+    );
+
+    // A cap-sized request (inclusive size === R2000_READ_REGION_MAX_BYTES)
+    // still returns a result (not an error), even though most of that range
+    // is undefined memory outside this tiny fixture's own data.
+    const capSized = await runR2000Tool("r2000_read_region", {
+      project: projectPath,
+      start_address: origin,
+      end_address: origin + R2000_READ_REGION_MAX_BYTES - 1,
+      view: "hexdump",
+    });
+    assert.equal(capSized.isError, false, `r2000_read_region (cap-sized) failed: ${JSON.stringify(capSized)}`);
+
+    // An invalid 'view' value is refused BY NAME (upstream's own schema
+    // validation, forwarded through unmodified) rather than silently
+    // defaulting -- the live-observed behaviour this curated tool's
+    // description implicitly relies on for its enum semantics.
+    const badView = await runR2000Tool("r2000_read_region", {
+      project: projectPath,
+      start_address: origin,
+      end_address: origin + 5,
+      view: "bogus",
+    });
+    assert.equal(badView.isError, true, "an unrecognised 'view' value must be refused, never silently defaulted");
+    assert.match(badView.content[0]!.text, /disasm|hexdump/i);
   },
 );
