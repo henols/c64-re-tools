@@ -184,6 +184,16 @@ jobs:
       - name: Validate skill playbook and README backend-honesty (Phase 8)
         run: node scripts/check-skill-fork-honesty.mjs
 
+      # Blocking: a skill's `description:` IS Claude Code's dispatch input,
+      # so two descriptions contending for the same trigger fires the wrong
+      # playbook and never the right one -- silently, with no error anywhere
+      # (Phase 19, ABS-03). No other gate in this repository looks for it:
+      # the two above ask whether a named tool exists and whether a fork
+      # requirement is stated nearby, and neither has any opinion about two
+      # skills competing for the same caller.
+      - name: Validate skill description trigger uniqueness (Phase 19, ABS-03)
+        run: node scripts/check-skill-description-overlap.mjs
+
       - name: Build installable package
         run: bash scripts/package.sh
 

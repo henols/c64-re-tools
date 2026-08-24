@@ -54,15 +54,23 @@ function findRepoRoot(from) {
 const REPO_ROOT = findRepoRoot(HERE);
 const CI_YAML_PATH = join(REPO_ROOT, ".github/workflows/ci.yml");
 
-/** The exact three repo-root guard scripts SKILL-01/DIST-02/DIST-03's CI
- * enforcement depends on. Frozen list, matched against ci.yml's `run:`
- * lines below -- if a fourth guard script is added, extend this array (and
- * expect the "exactly 3 discovered" non-vacuity assertion to be updated
- * deliberately, not silently). */
+/** The exact repo-root guard scripts whose CI enforcement this file holds
+ * open: SKILL-01/DIST-02/DIST-03's three, plus ABS-03's description-overlap
+ * gate (Phase 19, plan 19-05). Frozen list, matched against ci.yml's `run:`
+ * lines below -- if a fifth guard script is added, extend this array (and
+ * expect the "exactly N discovered" non-vacuity assertion to be updated
+ * deliberately, not silently; it is derived from this array's own length so
+ * the two cannot disagree, but the count in the failure message is what a
+ * reader checks against the workflow).
+ *
+ * ABS-03's gate was added here in the same commit that added its ci.yml
+ * step, for the reason this whole file exists: a guard script that CI does
+ * not run as a BLOCKING step is not a control, it is a file. */
 const GUARD_SCRIPTS = [
   "scripts/check-npm-packages.mjs",
   "scripts/check-skill-tool-coverage.mjs",
   "scripts/check-skill-fork-honesty.mjs",
+  "scripts/check-skill-description-overlap.mjs",
 ];
 
 /** Splits a GitHub Actions workflow YAML source into step blocks, using the
@@ -278,7 +286,7 @@ test("ci-guardrails: .github/workflows/ci.yml exists and is non-trivially long (
   );
 });
 
-test("ci-guardrails: exactly 3 guard scripts are discovered as run: steps in ci.yml (non-vacuity)", () => {
+test(`ci-guardrails: exactly ${GUARD_SCRIPTS.length} guard scripts are discovered as run: steps in ci.yml (non-vacuity)`, () => {
   const source = readFileSync(CI_YAML_PATH, "utf8");
   const blocks = splitIntoStepBlocks(source);
   assert.ok(blocks.length >= 10, `expected at least 10 step blocks in ci.yml, found ${blocks.length} -- the step splitter may be broken`);
@@ -290,9 +298,13 @@ test("ci-guardrails: exactly 3 guard scripts are discovered as run: steps in ci.
   }
   assert.equal(
     discovered,
-    3,
-    `expected exactly 3 of the 3 known guard scripts to be discovered as run: steps in ci.yml, found ${discovered} -- ` +
+    GUARD_SCRIPTS.length,
+    `expected exactly ${GUARD_SCRIPTS.length} of the ${GUARD_SCRIPTS.length} known guard scripts to be discovered as run: steps in ci.yml, found ${discovered} -- ` +
       "a broken regex or a genuinely missing step must not pass this check vacuously",
+  );
+  assert.ok(
+    GUARD_SCRIPTS.length >= 4,
+    `non-vacuity: the frozen guard-script list holds ${GUARD_SCRIPTS.length} entries -- if it ever shrinks below 4, a gate was deleted rather than added`,
   );
 });
 
