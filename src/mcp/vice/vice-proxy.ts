@@ -192,6 +192,12 @@ import { capabilityRefusalMessage } from "./capability-registry.ts";
 // stays behind r2000-tools.ts's own `await import("./r2000-mcp-client.ts")`
 // inside runR2000Tool() itself, reached only when a tool is actually called.
 import { R2000_TOOL_DEFINITIONS, runR2000Tool } from "./r2000-tools.ts";
+// Plan 18-04 (D18-22): a STATIC import, deliberately -- the teardown region
+// below cannot `await` a dynamic import, and this costs no child process
+// either way. `r2000-session.ts` itself keeps its OWN import of
+// `r2000-mcp-client.ts` (the actual spawn seam) dynamic; importing this one
+// function reference here spawns nothing at module load.
+import { closeR2000SessionSync } from "./r2000-session.ts";
 
 // ------------------------------------------------------------ r2000 subcommand
 //
@@ -3153,6 +3159,17 @@ async function forwardToVice(name: string, args: Record<string, unknown>): Promi
 // and asserts that slice contains no promise-awaiting construct and calls
 // the control session's release function exactly once. Do not move either
 // marker away from the code each one bounds.
+//
+// Plan 18-04 (D18-22): this region ALSO kills a live regenerator2000
+// session, if one is held, via `r2000-session.ts`'s own synchronous close
+// function (see its one call site inside onTeardown() below) -- synchronous
+// by construction (it signals a retained `ChildProcess` handle directly,
+// mirroring `r2000-mcp-client.ts`'s own `killAfter()` kill), so it fits this
+// region's existing structural constraints (see this region's own opening
+// paragraph, above) without widening them. No save is attempted here on the
+// way out: a save cannot be meaningfully performed synchronously on a
+// process about to die, and D18-08's per-call save discipline has already
+// flushed everything a caller is owed before this point is ever reached.
 let teardownRan = false;
 
 function releaseLeaseNow(trigger: string): void {
@@ -3166,6 +3183,7 @@ function onTeardown(trigger: string): void {
   if (teardownRan) return; // idempotent -- SIGINT then SIGTERM ~100ms later both call in
   teardownRan = true;
   releaseLeaseNow(trigger);
+  closeR2000SessionSync(trigger);
 }
 
 process.stdin.on("end", () => onTeardown("stdin_end"));

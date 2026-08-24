@@ -679,3 +679,29 @@ test(
     assert.equal(s3.crashCount, 1, "expected the crash counter to still read 1 after a successful real respawn");
   },
 );
+
+// ===========================================================================
+// Plan 18-04 task 3(a) (D18-22): the clean-exit hook. Deliberately asserted
+// HERE, in this module's own test file, rather than in vice-proxy.test.ts --
+// that file's own structural test slices the SAME region for a DIFFERENT
+// property (no promise-awaiting construct, exactly one
+// controlSession.release() call) and is explicitly required by this plan to
+// stay byte-for-byte unmodified (`git diff --stat` empty is one of this
+// plan's own acceptance criteria), so plan 18-05 (which DOES edit
+// vice-proxy.test.ts) and this plan never contend for the same file.
+// ===========================================================================
+
+test("structural: vice-proxy.ts's teardown region calls r2000-session.ts's own synchronous close function exactly once (D18-22)", () => {
+  const proxyPath = join(HERE, "vice-proxy.ts");
+  const source = readFileSync(proxyPath, "utf8");
+  const beginIdx = source.indexOf("TEARDOWN-REGION-BEGIN");
+  const endIdx = source.indexOf("TEARDOWN-REGION-END");
+  assert.ok(beginIdx !== -1, "TEARDOWN-REGION-BEGIN marker must be present in vice-proxy.ts");
+  assert.ok(endIdx !== -1 && endIdx > beginIdx, "TEARDOWN-REGION-END marker must be present after the begin marker");
+  const region = source.slice(beginIdx, endIdx);
+  const calls = region.match(/closeR2000SessionSync\(/g) || [];
+  assert.equal(calls.length, 1, "expected the teardown region to call closeR2000SessionSync() exactly once");
+
+  const staticImports = (source.match(/from "\.\/r2000-session\.ts"/g) || []).length;
+  assert.equal(staticImports, 1, "expected exactly one static import of r2000-session.ts in vice-proxy.ts");
+});
