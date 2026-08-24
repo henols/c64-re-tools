@@ -1,0 +1,23 @@
+; The VIC pointers are what LOCATE the graphics. Nothing else references them:
+; the VIC fetches charset/screen/bitmap by DMA, so there is often NO CPU xref.
+        * = $0801
+        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+        * = $0810
+start:
+        sei
+        lda $dd02
+        ora #$03
+        sta $dd02
+        lda $dd00
+        and #$fc
+        ora #$02                ; %10 -> VIC bank 1 = $4000-$7FFF
+        sta $dd00
+
+        lda #$18                ; %0001 1000 : screen = bank+$0400, charset = bank+$2000
+        sta $d018
+
+        lda $d011
+        and #$df                ; BMM off -> text mode
+        sta $d011
+        cli
+        rts

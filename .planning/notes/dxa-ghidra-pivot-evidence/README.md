@@ -19,6 +19,8 @@ lived in `/tmp`, which is tmpfs on this host.
 | `bank.txt` | Ghidra output **without** volatile I/O — shows the silent dead-store deletion of hardware writes |
 | `bank3.txt` | Ghidra output **with** volatile I/O — every `$01` literal preserved in program order |
 | `BankProbe3.java` | The pre-script that sets the volatile blocks (note the `getBlock()`-first guard against `MemoryConflictException`) |
+| `vic.a` / `vic.txt` | VIC-pointer fixture and Ghidra's recovery of `$DD00`/`$D018`/`$D011` including read-modify-write arithmetic |
+| `vicderive.mjs` | Derives the graphics memory map (bank, screen, charset/bitmap, sprite pointers) from those recovered values |
 | `autoannotate2.mjs` | The annotation join: `ghidra3.txt` xrefs x `memmap.json`. Run from anywhere: `node autoannotate2.mjs` (paths are absolute). Implements both selection rules. |
 
 Ghidra was installed to `~/dev/_ghidra-probe` (1.4 GB) purely for this probe and

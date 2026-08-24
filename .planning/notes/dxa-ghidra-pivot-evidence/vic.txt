@@ -1,0 +1,17 @@
+
+byte start(void)
+
+{
+  byte bVar1;
+  
+  bVar1 = DAT_dd02;
+  DAT_dd02 = bVar1 | 3;
+  bVar1 = DAT_dd00;
+  DAT_dd00 = bVar1 & 0xfc | 2;
+  DAT_d018 = 0x18;
+  bVar1 = DAT_d011;
+  DAT_d011 = bVar1 & 0xdf;
+  return bVar1 & 0xdf;
+}
+
+
