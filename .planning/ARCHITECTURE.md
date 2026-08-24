@@ -226,6 +226,16 @@ Static-analysis symbols exported to VICE and live-discovered symbols imported ba
 annotation model must flow through explicit conversion/adapter code. Do not make either side parse
 the other's internal representation directly.
 
+### Rule A21 — One long-lived regenerator2000 child per project path, per proxy process
+
+At most one live regenerator2000 child exists per `vice-proxy.ts` process,
+keyed on `resolveStorePath()`'s output (D18-04). It is opened lazily on the
+first `r2000_*` call that needs it and never at tool-registration time
+(D18-03). It is killed only through the retained `ChildProcess` handle, never
+by a stored pid (D18-21). It is never spawned from a module other than
+`r2000-mcp-client.ts` (D18-02). Rule A18's `--vice` prohibition is unchanged
+and unaffected by this rule.
+
 ## Dependency Direction
 
 The intended dependency direction is:
@@ -267,3 +277,81 @@ If a plan requires violating one of these rules:
 6. only then implement the change.
 
 A convenience-driven violation is not sufficient justification.
+
+## Architecture Change Record
+
+**Dated 2026-08-24 — Phase 18 reverses D-17 and D-18.** This record executes the
+six-step Architecture Change Procedure above for that reversal.
+
+1. **Identify the decisions by id.** `D-17` and `D-18` (Phase 11,
+   `.planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/11-CONTEXT.md`)
+   are reversed by Phase 18. D-17 fixed regenerator2000's lifecycle as
+   **per-call**: spawn, load, mutate, `r2000_save_project`, exit — no
+   long-lived child, no process supervision, no second wedge class. D-18
+   built the curated tool surface on top of that assumption. `r2000-mcp-client.ts`'s
+   own header states the reversed lifecycle: this repo must spawn
+   `regenerator2000 --mcp-server-stdio`, send it JSON-RPC requests, and trust
+   (or refuse to trust) its answers, once per `withR2000Session()` call, with
+   no long-lived child and no supervision. Phase 18 reverses that: one
+   `regenerator2000 --mcp-server-stdio` child now stays alive across many
+   `r2000_*` tool calls inside the already-running `vice-proxy.ts` process.
+
+2. **Why the existing architecture cannot support the requirement.** SESS-01
+   requires a regenerator2000 project to stay open across a whole working
+   session instead of being respawned per tool call — a session-model
+   mismatch the per-call lifecycle cannot serve. Cursor-shaped tools
+   (`jump_to_address`, `get_disassembly_cursor`, `read_selected`) are
+   meaningless under a per-call spawn: there is no cursor to hold between
+   calls when the process holding it exits after every one. The project's
+   own text already concedes the respawn cost: `src/skills/c64-program-recon/SKILL.md`
+   states, for `r2000_batch_execute`, that "batching is what makes that
+   affordable under the per-call spawn-load-mutate-save-exit lifecycle" —
+   an admission that anything short of batching is not affordable under
+   D-17 as written.
+
+3. **The alternative that preserves the original safety property.** The
+   safety property D-17/D-18 existed to protect is **durability** — no
+   annotation is lost to a crashed or wedged child. The alternative that
+   preserves it unchanged, without preserving the per-call lifecycle itself,
+   is D18-08's save-per-mutation invariant: every mutating `r2000_*` call
+   still calls `r2000_save_project` inside the same session before that tool
+   call resolves to its caller, identically to today, byte-for-byte. The
+   internal auto-save stays a plain `save_project`, never `saveAndVerify()` —
+   `saveAndVerify()` remains reserved for `r2000_save_project` invoked as the
+   outer tool by name, since an idempotent mutation legitimately produces an
+   unchanged hash and `saveAndVerify()`'s contract is to throw when the hash
+   does not change. Persistence changes process **lifetime**, not the
+   durability **contract**.
+
+4. **Record the change in decision history.** The full decision record for
+   this reversal is
+   `.planning/phases/18-persistent-session-and-tool-surface/18-CONTEXT.md`,
+   decisions D18-01 through D18-36 — session placement (D18-01–D18-07), save
+   discipline (D18-08–D18-09), crash detection and restart (D18-10–D18-14),
+   concurrency (D18-15–D18-19), process ownership (D18-20–D18-23), the tool
+   surface (D18-24–D18-31), project settings at session open
+   (D18-32–D18-35), and this reversal record itself (D18-36). The
+   project-wide decision rows live in `.planning/PROJECT.md`'s Key Decisions
+   table, including `D-36` (allocated by this same plan, superseding `D-32`).
+
+5. **Regression guards this phase lands, and what each catches.**
+   `src/mcp/vice/r2000-session.test.ts` is D18-09's three-scenario
+   planted-violation save-discipline gate (plan 18-03 task 2) — proving a
+   mutation survives a direct `SIGKILL` of the child immediately after the
+   mutating call resolves, that short-circuiting the internal save makes the
+   same test fail (non-vacuity), and that a mid-window crash between the
+   mutating call and its own save surfaces a named error with the file on
+   disk left unchanged — and D18-19's lost-update planted-violation gate
+   (plan 18-06), proving two concurrent mutating calls against the same
+   address both land under the seam's lock and that removing the lock makes
+   the same test go red. `src/mcp/vice/r2000-spawn-seam.test.ts` keeps its
+   existing two-entry spawn-site set unchanged in shape and gains a new
+   session-reuse fixture (plan 18-03 task 3) proving the long-lived path
+   still calls `assertNoViceFlag()` before spawning. Step 5 of this procedure
+   is satisfied by those guards being landed and proven non-vacuous by
+   planted violation, not by this document asserting they exist.
+
+6. **Only then implement.** Plan 18-03 is the first implementing plan of this
+   reversal — it lands `r2000-session.ts`, the long-lived session primitive,
+   and the D18-09 save-discipline gate before anything else in this phase
+   depends on the session.
