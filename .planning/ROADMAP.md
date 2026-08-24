@@ -144,7 +144,7 @@ rewritten a second time.
   4. Write-capable calls are serialised through one owner; concurrent fan-out is restricted to read-only queries, so two subagents cannot both write "no label here" and silently lose one write.
   5. The curated tool surface includes `r2000_read_region` (so a routine can be read at a range instead of exporting the whole program), and `r2000_get_address_details`'s D-32 refusal is re-decided — fixed, worked around, or refused with a documented route — against the still-live upstream `u16` overflow, not carried unexamined into this milestone.
 
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 
 Plans:
 **Wave 1**
@@ -154,7 +154,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 18-03-PLAN.md — TRACER: one held regenerator2000 child answers many `r2000_*` calls end to end, plus the three-scenario save-discipline gate and the spawn-seam proof
+- [x] 18-03-PLAN.md — TRACER: one held regenerator2000 child answers many `r2000_*` calls end to end, plus the three-scenario save-discipline gate and the spawn-seam proof
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -315,7 +315,7 @@ in a milestone archive.
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
-| 18. Persistent Session and Tool Surface | v0.5.0 | 2/7 | In Progress|  |
+| 18. Persistent Session and Tool Surface | v0.5.0 | 3/7 | In Progress|  |
 | 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | TBD | Not started | - |
 | 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |

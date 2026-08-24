@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 18
 current_phase_name: Persistent Session and Tool Surface
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-08-24T08:35:17.883Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-08-24T09:45:34.140Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 18 execution started
-state_head: cd80cc6388396ff5b499bdbeb0be5de927a35783
+state_head: 011c4de455fcaf52a36cec50e7f3f962d420ec43
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -67,7 +67,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 18 (Persistent Session and Tool Surface) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-08-24 — Phase 18 execution started
 
@@ -173,6 +173,7 @@ Last activity: 2026-08-24 — Phase 18 execution started
 | Phase 17 P03 | 35min | 3 tasks | 5 files |
 | Phase 18 P01 | 40min | 3 tasks | 5 files |
 | Phase 18 P02 | 30min | 2 tasks | 2 files |
+| Phase 18 P03 | 105min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -322,6 +323,7 @@ Recent decisions affecting current work:
 - Roadmap (v0.5.0): the coverage instrument (Phase 19) and the reassembly-plus-hazard-report gate (Phase 21) are both sequenced before the work they measure (Phase 20's decomposition sweep, Phase 22's equivalence/modifiability demo respectively) — mirroring v0.4.0's audit-gate-first precedent (Phase 12). EQUIV-01 (compare.mjs's original-vs-different-binary extension) is flagged as the milestone's single highest-risk requirement and sequenced as Phase 22's first success criterion rather than split into its own phase.
 - [Phase 18]: 18-01: Ran the Architecture Change Procedure's six steps for the D-17/D-18 reversal in ARCHITECTURE.md; allocated D-36 superseding D-32; pinned both with docs-r2000-decisions.test.ts, proven non-vacuous by three live planted-violation probes
 - [Phase 18]: ensureProjectSettings() shares R2000_SYSTEM_C64 with synthesizeProject() (D18-33); forces use_illegal_opcodes silently but refuses by name on a settings.system mismatch (D18-34).
+- [Phase 18]: [Phase 18-03]: Promoted openR2000Session()/R2000Session (r2000-mcp-client.ts) and built r2000-session.ts's single-slot lifecycle owner; runR2000Tool() rewired through runInR2000Session() with its call-then-save body byte-identical; D18-09's three-scenario save-discipline gate landed live and watched red-then-green against real production code — While proving this plan's own npm test full-suite acceptance criterion, found and fixed a real cross-session staleness bug: a held session could answer from stale in-memory state after r2000-symbols.ts's importLabels() (a deliberately separate one-shot session per D18-07) saved to the same project file -- fixed via a project-file mtimeMs comparison before every reuse. Also diagnosed (but did not fix, per scope-boundary) a pre-existing, unrelated npm test hang affecting r2000-cli.test.ts and three siblings when regenerator2000 is installed locally -- logged to deferred-items.md and WINDOWS.md.
 
 ### Pending Todos
 
@@ -798,8 +800,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T08:35:17.863Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-08-24T09:44:54.461Z
+Stopped at: Completed 18-03-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
