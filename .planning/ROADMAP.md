@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 5/5 plans executed
+**Plans**: 5/5 plans executed, plus 4 gap-closure plans (0/4 executed)
 
 **Wave 1**
 
@@ -210,6 +210,21 @@ under it.
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 19-05-PLAN.md — inventory-wide trigger uniqueness, the five dated decisions, and the phase gate
+
+**Gap closure** *(verification 2026-08-24 returned `gaps_found`, 3/5 must-haves; waves renumbered from 1 for this run)*
+
+**Gap-closure wave 1**
+
+- [ ] 19-06-PLAN.md — tracer: anchor the multi-caller rule on a hex-token boundary so a colliding `$8106` no longer buys a clean verdict, with the adversarial control run through the real report path
+- [ ] 19-07-PLAN.md — reproduce the upstream MIT permission notice verbatim in all three notices files, delete the claim the same commit falsifies, and guard the class
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 19-08-PLAN.md — gate the split lo/hi table scan on real dispatch context, seed the descent only from proven targets, and give the heuristic the negative control it never had
+
+**Gap-closure wave 3** *(blocked on gap-closure wave 2)*
+
+- [ ] 19-09-PLAN.md — the committed false-positive census control pair, the corrected fixture counts, and the extended validation record
 
 Notes:
 
