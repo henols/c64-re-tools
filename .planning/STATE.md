@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-08-24T17:06:30.603Z"
+stopped_at: Completed 19-04-PLAN.md
+last_updated: "2026-08-24T17:39:11.082Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 19 execution started
-state_head: d13862f2632563b86818bacf7304480643d795da
+state_head: 451ae3e8ef5c7a1d788cc08eb5a0f31718daf235
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
   percent: 20
 ---
 
@@ -69,7 +69,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-08-24 — Phase 19 execution started
 
@@ -182,6 +182,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 19 P01 | 45min | 3 tasks | 11 files |
 | Phase 19 P02 | 38 min | 2 tasks | 7 files |
 | Phase 19 P03 | 19 min | 2 tasks | 20 files |
+| Phase 19 P04 | 25 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -343,6 +344,13 @@ Recent decisions affecting current work:
 - [Phase 19]: Coverage report schema pinned as flat sibling measure objects (checkpoint option flat-three, auto-selected under yolo mode): each measure addressable by a stable top-level key, schema test is a plain key-set assertion, and no aggregate is one reduce away — COVERAGE_SCHEMA_VERSION = 1 with nine top-level keys is the contract Phase 20 reads throughout its sweep and Phase 21 reuses for its hazard report; a rename must bump the version deliberately
 - [Phase 19]: COV-01 reproducibility uses a bytes-versus-store independence axis, not a second agent session — Nested headless agent sessions stall indefinitely in this environment, so the runnable independence is that neither route reads the other route input; the committed sha256 seal is what prevents retrofit, and a live test recomputes both routes from the fixture on every run
 - [Phase 19]: The census reads regenerator2000 own block table at exactly one call site, the divergence sub-report, and never as a measure of completeness — Upstream follow_indirect_jumps walks only bytes already classified Code through pointers already classified Address, so on an under-classified binary it finds nothing; a store-derived census would report nothing-left-to-do on an untouched binary
+- [Phase 19]: The coverage verb reuses runR2000Tool() rather than opening its own session: reads share the one held regenerator2000 child, and the curated-tool assertion plus resolveStorePath() stay on the path. No new child-process site (T-19-25).
+- [Phase 19]: Coverage exits 0 for any report it could build, however poor the numbers; non-zero is reserved for a caller error, an unreadable store, or an undecodable payload. A bad score is a result, not a failure.
+- [Phase 19]: Cross-reference lookups are bounded at 512 non-System labels and the bound's effect is PRINTED whenever it bites, so a partial population never reports as the whole one (COV-02).
+- [Phase 19]: Packer identity ships as a project-owned skill script, never an r2000_-prefixed tool: that prefix asserts regenerator2000 serves it, and no such tool exists upstream at the pin.
+- [Phase 19]: The packer name has exactly one assignment site in the module, inside the external-oracle branch; the high confidence level likewise. Both counts are asserted at source level by the colocated test.
+- [Phase 19]: An absent packer oracle is a VISIBLE skip by default and a hard failure under VICE_REQUIRE_UNP64 (demonstrated: exit 1). Absence never reads as a passing SURF-03.
+- [Phase 19]: An eighth r2000 CLI verb moves FOUR counts, not three: the dispatch switch, R2000_CLI_VERB_FLOOR, REAL_VERBS, and r2000-cli.test.ts's VERB_OPTIONS length assertion. All four now carry comments saying so.
 
 ### Pending Todos
 
@@ -835,8 +843,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T17:06:03.368Z
-Stopped at: Completed 19-03-PLAN.md
+Last session: 2026-08-24T17:37:50.105Z
+Stopped at: Completed 19-04-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

@@ -38,7 +38,7 @@ milestone starts at **Phase 18**.
 
 - [x] **SURF-01**: The curated `r2000_*` surface covers what the absorbed procedures actually call — starting with `r2000_read_region`, so a routine can be read at a range instead of exporting the whole program — and the tool-count pin and generated `docs/tool-support.md` move with it without drift
 - [x] **SURF-02**: `r2000_get_address_details`'s D-32 refusal is re-decided against the still-live upstream `u16` overflow at `handler.rs:1894` — fixed, worked around, or refused with a documented route, but not carried unexamined a second milestone
-- [ ] **SURF-03**: Which packer a binary used is surfaced as a recon finding, so provenance work can use it as evidence and not only as a depack step
+- [x] **SURF-03**: Which packer a binary used is surfaced as a recon finding, so provenance work can use it as evidence and not only as a depack step
 
 ### Absorbed Procedures
 
@@ -49,7 +49,7 @@ milestone starts at **Phase 18**.
 
 ### Coverage Instrument
 
-- [ ] **COV-01**: Coverage is computed from the annotation store and reported as three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility check — never collapsed into one aggregate percentage
+- [x] **COV-01**: Coverage is computed from the annotation store and reported as three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility check — never collapsed into one aggregate percentage
 - [x] **COV-02**: A vacuous pass is detectable: mechanically auto-labelling everything, or commenting every routine "handles data", does not produce a clean report, and multi-caller labels require cross-reference-backed documentation
 
 ### Decomposition
@@ -119,12 +119,12 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 | SESS-04 | Phase 18 | Complete |
 | SURF-01 | Phase 18 | Complete |
 | SURF-02 | Phase 18 | Complete |
-| SURF-03 | Phase 19 | Pending |
+| SURF-03 | Phase 19 | Complete |
 | ABS-01 | Phase 19 | Complete |
 | ABS-02 | Phase 19 | Complete |
 | ABS-03 | Phase 19 | Pending |
 | ABS-04 | Phase 19 | Complete |
-| COV-01 | Phase 19 | Pending |
+| COV-01 | Phase 19 | Complete |
 | COV-02 | Phase 19 | Complete |
 | DECOMP-01 | Phase 20 | Pending |
 | DECOMP-02 | Phase 20 | Pending |

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 4
 waived_count: 0
 fixed_count: 1
-total_count: 3
-last_updated: 2026-08-24T16:17:20.435Z
+total_count: 5
+last_updated: 2026-08-24T17:39:41.840Z
 ---
 
 # Broken Windows Ledger
@@ -18,6 +18,8 @@ last_updated: 2026-08-24T16:17:20.435Z
 | 1 | quick-260823-kf6 | deviation | src/mcp/vice/audit-integrity.test.ts | 262 | Pre-existing failure (T-12-04 hardcoded tech_debt=3 count), predates this task's commit 76f7b15; out of scope, see quick task's deferred-items.md | open |  | 2026-08-23T12:59:39.120Z |  |
 | 2 | 18 | deviation | src/mcp/vice/r2000-mcp-client.ts |  | npm test (no flags) never exited when regenerator2000 is installed locally. RESOLVED at phase 18 wave 2's post-merge gate: NOT pre-existing -- plan 18-03's rewire of runR2000Tool() through r2000-session.ts's HELD slot left every non-vice-proxy host pinned open by the child's ref'd stdio handles (r2000-cli.test.ts:1303 calls runR2000Tool once). Disproven by direct measurement: the same file exits in 2s at the wave-1 tip ebe90f8 and hung at f6a5b03. Fixed by unref'ing the child and its three stdio pipes in openR2000Session(); plain npm test now exits 0. | fixed | Root-caused and fixed at the wave-2 post-merge gate; the "pre-existing" attribution was inferred from the import chain, never measured against an unmodified checkout. | 2026-08-24T09:42:05.932Z | 2026-08-24T10:06:33.000Z |
 | 3 | 19 | deviation | src/mcp/vice |  | Unreproduced single-test flake: the first full npm test after plan 19-01 reported 1 failure (2470 tests); three consecutive re-runs reported 0. The failing subtest name was not captured. Capture it with tee if it recurs. | open |  | 2026-08-24T16:17:20.435Z |  |
+| 4 | 19 | unrun-verify | src/skills/c64-program-recon/scripts/packer-finding.test.mjs |  | The oracle-route test for the packer finding SKIPS (visibly) because no external packer identifier is installed, so parseUnp64Stdout()'s accepted marker set is an unmeasured assumption and SURF-03's positive branch has never executed. Re-open trigger: install the identifier, build a genuinely packed fixture, confirm the name and the HIGH confidence. | open |  | 2026-08-24T17:39:41.733Z |  |
+| 5 | 19 | deviation | .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-04-PLAN.md |  | Task 1 acceptance criterion invokes 'node src/mcp/vice/r2000-cli.ts coverage --nonsense-flag', which cannot exit non-zero: r2000-cli.ts has no main guard by design. Satisfied through the real entry point (vice-proxy.ts r2000 coverage --nonsense-flag, exit 1); recorded so a later re-run of the plan text does not read as a regression. | open |  | 2026-08-24T17:39:41.840Z |  |
 
 ````json
 [
@@ -55,6 +57,30 @@ last_updated: 2026-08-24T16:17:20.435Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-24T16:17:20.435Z",
+    "resolved_at": null
+  },
+  {
+    "id": 4,
+    "kind": "unrun-verify",
+    "phase": "19",
+    "file": "src/skills/c64-program-recon/scripts/packer-finding.test.mjs",
+    "line": null,
+    "description": "The oracle-route test for the packer finding SKIPS (visibly) because no external packer identifier is installed, so parseUnp64Stdout()'s accepted marker set is an unmeasured assumption and SURF-03's positive branch has never executed. Re-open trigger: install the identifier, build a genuinely packed fixture, confirm the name and the HIGH confidence.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-24T17:39:41.733Z",
+    "resolved_at": null
+  },
+  {
+    "id": 5,
+    "kind": "deviation",
+    "phase": "19",
+    "file": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-04-PLAN.md",
+    "line": null,
+    "description": "Task 1 acceptance criterion invokes 'node src/mcp/vice/r2000-cli.ts coverage --nonsense-flag', which cannot exit non-zero: r2000-cli.ts has no main guard by design. Satisfied through the real entry point (vice-proxy.ts r2000 coverage --nonsense-flag, exit 1); recorded so a later re-run of the plan text does not read as a regression.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-24T17:39:41.840Z",
     "resolved_at": null
   }
 ]
