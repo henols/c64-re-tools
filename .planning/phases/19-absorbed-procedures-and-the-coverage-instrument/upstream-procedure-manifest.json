@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/ricardoquesada/regenerator2000",
+  "commit": "493f840",
+  "resync_trigger": "Review the upstream procedure diff before upgrading regenerator2000 from 0.9.20.",
+  "procedures": [
+    {"path":".agent/skills/r2000-analyze-basic/SKILL.md","sha256":"8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2","destination":"src/skills/c64-program-recon","tools":{"r2000_read_region":"curated","r2000_set_comment":"curated","r2000_set_data_type":"curated","r2000_batch_execute":"curated","r2000_save_project":"curated"}},
+    {"path":".agent/skills/r2000-analyze-blocks/SKILL.md","sha256":"3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b","destination":"src/skills/c64-memory-mapping","tools":{"r2000_disassemble":"curated","r2000_get_binary_info":"curated","r2000_get_blocks":"curated","r2000_get_cross_references":"curated","r2000_read_region":"curated","r2000_set_comment":"curated","r2000_set_data_type":"curated","r2000_set_label_name":"curated","r2000_batch_execute":"curated","r2000_save_project":"curated","r2000_toggle_splitter":"omit","r2000_undo":"omit"}},
+    {"path":".agent/skills/r2000-analyze-program/SKILL.md","sha256":"2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955","destination":"src/skills/routine-queue-walker","tools":{"r2000_get_binary_info":"curated","r2000_get_comments":"curated","r2000_get_symbols":"curated","r2000_save_project":"curated","r2000_set_immediate_format":"omit","r2000_unpack_binary":"omit"}},
+    {"path":".agent/skills/r2000-analyze-routine/SKILL.md","sha256":"6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730","destination":"src/skills/c64-program-recon","tools":{"r2000_apply_enum_usage":"curated","r2000_create_project_enum":"curated","r2000_get_binary_info":"curated","r2000_get_cross_references":"curated","r2000_read_region":"curated","r2000_set_comment":"curated","r2000_set_label_name":"curated","r2000_get_disassembly_cursor":"adapt-to-address-input","r2000_set_immediate_format":"omit"}},
+    {"path":".agent/skills/r2000-analyze-symbol/SKILL.md","sha256":"d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8","destination":"src/skills/c64-memory-mapping","tools":{"r2000_apply_enum_usage":"curated","r2000_create_project_enum":"curated","r2000_get_address_details":"curated","r2000_get_binary_info":"curated","r2000_get_cross_references":"curated","r2000_set_comment":"curated","r2000_set_label_name":"curated","r2000_get_disassembly_cursor":"adapt-to-address-input","r2000_set_immediate_format":"omit"}}
+  ]
+}
