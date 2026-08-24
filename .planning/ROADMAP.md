@@ -144,7 +144,16 @@ rewritten a second time.
   4. Write-capable calls are serialised through one owner; concurrent fan-out is restricted to read-only queries, so two subagents cannot both write "no label here" and silently lose one write.
   5. The curated tool surface includes `r2000_read_region` (so a routine can be read at a range instead of exporting the whole program), and `r2000_get_address_details`'s D-32 refusal is re-decided — fixed, worked around, or refused with a documented route — against the still-live upstream `u16` overflow, not carried unexamined into this milestone.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 18-01-PLAN.md — Run the Architecture Change Procedure for the D-17/D-18 reversal; allocate D-36 superseding D-32; pin both with a committed guard
+- [ ] 18-02-PLAN.md — `ensureProjectSettings()`: force `use_illegal_opcodes` on an existing project, refuse on a `system` mismatch, with a planted-violation control
+- [ ] 18-03-PLAN.md — TRACER: one held regenerator2000 child answers many `r2000_*` calls end to end, plus the three-scenario save-discipline gate and the spawn-seam proof
+- [ ] 18-04-PLAN.md — Crash detection, transparent between-call respawn, loud mid-call failure, bounded restart budget, teardown hook, and the measured stdin-EOF orphan answer
+- [ ] 18-05-PLAN.md — Curate `r2000_read_region` with a documented cap; compose `r2000_get_address_details` client-side under D-36; move every count pin and prose mention with no drift
+- [ ] 18-06-PLAN.md — The coarse FIFO mutex with a bounded wait, the lost-update planted violation, and the concurrency answer Phase 19 inherits
+- [ ] 18-07-PLAN.md — The settings no-revert round trip through a live session, and the phase gate run for real with committed evidence
 
 Notes:
 
