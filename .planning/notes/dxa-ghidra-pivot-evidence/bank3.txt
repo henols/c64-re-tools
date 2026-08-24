@@ -1,0 +1,23 @@
+
+undefined1 start(void)
+
+{
+  undefined1 uVar1;
+  byte bVar2;
+  
+  DAT_0001 = 0x37;
+  DAT_d020 = 5;
+  DAT_0001 = 0x34;
+  DAT_d020 = 0xaa;
+  uVar1 = DAT_d020;
+  DAT_0001 = 0x33;
+  bVar2 = 0;
+  do {
+    *(undefined1 *)(bVar2 + 0x3000) = (&DAT_d000)[bVar2];
+    bVar2 = bVar2 + 1;
+  } while (bVar2 != 0);
+  DAT_0001 = 0x37;
+  return 0x37;
+}
+
+

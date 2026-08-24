@@ -43,6 +43,13 @@ range. Otherwise in-program branch targets land inside the "Default BASIC area
 (38911 bytes)" entry and get annotated as if they were machine features — the
 first attempt annotated two ordinary loop-back branches this way.
 
+**3. Resolve the bank state before resolving the address.** Added 2026-08-24
+after testing -- see [[ghidra-volatile-io-and-banking]]. `$d020` under `$01 = $34`
+is RAM, not the border colour; `$d000` under `$01 = $33` is Character ROM, not
+sprite-0-X. Ghidra recovers every `$01` value as a literal in program order,
+*provided* the I/O ranges are marked volatile. Without rule 3 the join emits
+confident, wrong comments on any program that banks.
+
 ## Why this matters for the pivot
 
 This is `DECOMP-03` ("every referenced non-hardware address is named and
@@ -66,4 +73,4 @@ It annotates *machine* addresses. It says nothing about what `$1173` does in thi
 program — that remains a finding a human or agent produces, and remains the
 reason an annotation store has to exist at all.
 
-Related: [[dxa-ghidra-pivot]]
+Related: [[dxa-ghidra-pivot]], [[ghidra-volatile-io-and-banking]]

@@ -57,6 +57,11 @@ param_1 = param_1 + 5;  if (param_1 == 0x19) return; // record stride 5
 Write `ExportAnalysis.java` against `DecompInterface`. This is the single most
 expensive mistake available in this design.
 
+**And mark `$0000-$0001` and `$D000-$DFFF` as volatile memory blocks before
+`analyzeAll()`, or the decompiler deletes hardware writes as dead stores** --
+silently, with no warning. See [[ghidra-volatile-io-and-banking]]. This is a
+hard requirement of the pre-script, not a tuning option.
+
 ## Division of labour
 
 dxa owns discovery: it is the only tool that produces a code/data map from
@@ -134,4 +139,4 @@ table is friendlier than a demo coder's. Re-run against a real cracked release
 before anything load-bearing is built on these numbers. See
 [[dxa-ghidra-real-fixture-question]].
 
-Related: [[auto-annotation-from-ghidra-xrefs]], [[regenerator2000-integration]]
+Related: [[auto-annotation-from-ghidra-xrefs]], [[ghidra-volatile-io-and-banking]], [[regenerator2000-integration]]

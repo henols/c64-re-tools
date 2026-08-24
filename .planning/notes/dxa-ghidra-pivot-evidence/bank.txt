@@ -1,0 +1,26 @@
+## XREFS_TO_01_AND_D000_BLOCK
+0812 -> 0001 WRITE
+0816 -> d020 WRITE
+081c -> 0001 WRITE
+0820 -> d020 WRITE
+0823 -> d020 READ
+0828 -> 0001 WRITE
+0837 -> 0001 WRITE
+## DECOMPILED
+
+void start(void)
+
+{
+  byte bVar1;
+  
+  DAT_d020 = 0xaa;
+  bVar1 = 0;
+  do {
+    *(undefined1 *)(bVar1 + 0x3000) = *(undefined1 *)(bVar1 + 0xd000);
+    bVar1 = bVar1 + 1;
+  } while (bVar1 != 0);
+  DAT_0001 = 0x37;
+  return;
+}
+
+
