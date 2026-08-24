@@ -192,7 +192,12 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+- [ ] 19-01-PLAN.md — pin the five upstream procedures, audit their tool surface, and establish packer evidence
+- [ ] 19-02-PLAN.md — adapt attributed skills and prove inventory-wide trigger uniqueness
+- [ ] 19-03-PLAN.md — implement non-vacuous coverage measures and the packer finding route
+- [ ] 19-04-PLAN.md — execute live integration, packaging, and phase-gate evidence
 
 Notes:
 
