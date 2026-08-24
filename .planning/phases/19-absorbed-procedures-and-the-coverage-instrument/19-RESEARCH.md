@@ -1282,26 +1282,59 @@ Probed this session.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All five questions below were locked in executable plan content during Phase 19 planning
+(2026-08-24). None reaches execution unresolved; each carries its `RESOLVED:` line naming the
+plan and task, or the dated decision, that fixes it. Marker added in the planning revision pass
+so the resolution is visible from this file rather than only from the plan set.
 
 1. **Is SURF-03's acceptance bar "a route exists" or "a name is reported here"?**
+   - **RESOLVED: 19-04 Task 2 + 19-05 Task 3 decision 3.** The bar is "a project-owned route
+     exists, is exercised end to end, and never guesses" — NOT "a name is reported on this
+     machine". 19-04 Task 2 implements the ordered oracle chain with a structurally-enforced hard
+     unknown and live-gates the oracle branch (skip by default with a visible reason, hard fail
+     under the opt-in env var); 19-05 Task 3 decision 3 dates the acceptance bar, records that
+     installing `unp64` is explicitly out of scope, and names the experiment that would raise it
+     to a positive result as the re-open trigger.
    - What we know: no read-only route exists at 0.9.20 (HIGH, four proofs). The only oracle that can name a packer (`unp64`) is not installed. The finding can honestly report `packed`/`unpacked`/`unknown` today.
    - What's unclear: whether the phase closes with `verdict: "unknown"` on every fixture, or whether installing `unp64` is in scope.
    - Recommendation: **decide this explicitly in the plan, not at verification.** Cheapest satisfying answer: implement the finding with the oracle chain, live-gate the oracle branch, and record a dated decision that the *named* identity is unavailable through the pinned surface with §1.7's trigger 2 as the watch. If the user wants a name reported, installing `unp64` becomes an explicit prerequisite task.
 
 2. **Should `r2000_toggle_splitter` and `r2000_set_immediate_format` be added in Phase 19 or Phase 20/21?**
+   - **RESOLVED: 19-05 Task 3 decision 2.** Both are PROPOSED in Phase 19 as a dated decision
+     naming the requirement each serves (`r2000_toggle_splitter` → DECOMP-01 and BUILD-02;
+     `r2000_set_immediate_format` → BUILD-03) and implemented at the start of Phase 20, with a
+     pointer written into ROADMAP Phase 20's and Phase 21's Notes. Neither is added to the
+     curated surface in Phase 19.
    - What we know: both acquired criteria from this diff (DECOMP-01/BUILD-02 and BUILD-03). Both are mutating. Both are additive under SURF-01's precedent.
    - What's unclear: adding them here widens Phase 19; deferring them means Phase 20 opens with a surface change.
    - Recommendation: **propose in Phase 19 (a dated decision naming the requirement each serves), implement at the start of Phase 20.** Phase 19's job is the diff; acting on it is the next phase's. But the *decision* must be dated here so it is not "a consequence discovered at the next milestone close" — the exact failure ABS-04 exists to prevent.
 
 3. **How is ABS-01's "five procedures absorbed" reconciled with FUT-01's deferral of BASIC decoding?**
+   - **RESOLVED: 19-02 Task 1(b).** All five are absorbed as attributed text; `analyze-basic`
+     lands as a clearly headed REFERENCE-ONLY section whose first line states the capability is
+     deferred and names `FUT-01`, and every one of its trigger phrases is kept out of every
+     `description:` frontmatter so the section can be read but can never fire. 19-02 Task 1(e)
+     pins that with a named non-empty phrase set asserted absent from every description.
    - Recommendation in §1.6: absorb all five as attributed text; mark `analyze-basic` as reference-only with its trigger phrases kept out of every `description:`. **The planner should lock this, not leave it implicit** — it is the difference between ABS-01 reading complete and reading fudged.
 
 4. **Which dual-licence option does this project elect for the absorbed text?**
+   - **RESOLVED: 19-01 Task 1(d) + 19-05 Task 3 decision 4.** MIT is elected. 19-01 Task 1(d)
+     writes the election into `src/mcp/vice/THIRD-PARTY-NOTICES.md` and into every per-file
+     attribution header (19-02 Task 2(a) carries it into `installer/THIRD-PARTY-NOTICES.md`);
+     19-05 Task 3 decision 4 dates the election and records that the other option's
+     modification-notice obligation is discharged regardless by the adaptation statement each
+     header carries, so the election loses nothing and the header is honest under either.
    - What we know: `MIT OR Apache-2.0`, at the user's option; this repo is MIT.
    - Recommendation: elect **MIT** (matches the repo, simplest notice) and say so explicitly in both the per-file header and the notices file. Note that Apache-2.0 §4(b)'s modification-notice obligation is satisfied anyway by the "ADAPTED, NOT VERBATIM" block, so electing MIT loses nothing and the header is honest under either.
 
 5. **Does the coverage report get a stable machine-readable schema now, or later?**
+   - **RESOLVED: 19-03, at its `checkpoint:decision`.** The schema is defined and pinned in Phase
+     19: `COVERAGE_SCHEMA_VERSION` is exported and a schema test asserts the exact top-level key
+     set so a silent field rename fails. The choice is routed through a `checkpoint:decision`
+     because the schema is a one-way commitment once Phase 20 starts reading it — which is why
+     19-03 carries `autonomous: false`.
    - Phase 20 runs the instrument "throughout this phase, not only once at the end" (ROADMAP §20 note), and Phase 21's hazard report reuses the widened scan.
    - Recommendation: define and pin the JSON schema in Phase 19, with a schema test — two downstream consumers already exist. Retrofitting a schema after Phase 20 has been reading it is the expensive order.
 
