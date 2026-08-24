@@ -1,6 +1,5 @@
 {
-  "runtime": "codex",
-  "model_profile": "balanced",
+  "model_profile": "inherit",
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
