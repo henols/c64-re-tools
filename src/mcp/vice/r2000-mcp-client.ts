@@ -305,25 +305,39 @@ interface PendingRequest {
 }
 
 /**
+ * A long-lived regenerator2000 session -- the primitive `r2000-session.ts`'s
+ * single-slot lifecycle owner (D18-01) holds across many `r2000_*` tool
+ * calls, promoted out of what used to be `withR2000Session()`'s own
+ * one-shot-only setup. `call` may be invoked any number of times before
+ * `close()`; `pid`/`exited` are live getters over the underlying child, not
+ * snapshots taken at open time.
+ */
+export interface R2000Session {
+  readonly projectPath: string;
+  readonly pid: number | undefined;
+  call: R2000Call;
+  readonly exited: boolean;
+  close(): Promise<void>;
+  killSync(): void;
+}
+
+/**
  * Spawns `regenerator2000 --mcp-server-stdio <projectPath>` (via
  * `buildMcpServerStdioArgs()`, so `assertNoViceFlag()`'s guard applies here
  * too, defense in depth even though this builder can never itself emit
- * `--vice`), performs the `initialize` handshake, invokes `fn` with a
- * `call(name, args)` function bound to this one session, then closes stdin
- * (ending the child's read loop per `mcp/stdio.rs:72`,
- * `while reader.read_line(...) > 0`), waits for exit, and resolves ONLY
- * after the exit code and captured stderr have been inspected (D-17: one
- * session per logical operation, never a long-lived child).
+ * `--vice`), performs the `initialize` handshake, and returns a long-lived
+ * `R2000Session` a caller may issue many `tools/call`s against before
+ * eventually calling `close()`.
  *
- * Every failure mode below is a distinct named error class -- see the
- * class definitions above for what each one means and how it differs from
- * its neighbours.
+ * Every failure mode below is a distinct named error class -- see the class
+ * definitions above for what each one means and how it differs from its
+ * neighbours. A failure during `initialize` tears the spawned child down
+ * before rethrowing -- there is no half-open session to leak.
  */
-export async function withR2000Session<T>(
+export async function openR2000Session(
   projectPath: string,
-  fn: (call: R2000Call) => Promise<T>,
   opts: WithR2000SessionOptions = {}
-): Promise<T> {
+): Promise<R2000Session> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_R2000_CALL_TIMEOUT_MS;
   const bin = opts.bin ?? process.env.R2000_BIN ?? "regenerator2000";
   const argv = opts.argv ?? buildMcpServerStdioArgs({ projectPath });
@@ -427,6 +441,22 @@ export async function withR2000Session<T>(
     });
   }
 
+  /** Ends the child's read loop (mcp/stdio.rs:72), waits for it to exit (or
+   * force-kills it after `timeoutMs`), and closes the readline interface.
+   * Safe to call whether or not the child has already exited -- `stdin.end()`
+   * is guarded, and racing an already-resolved `exitPromise` settles
+   * immediately. Used by both the initialize-failure path below and by
+   * `close()`. */
+  async function teardown(): Promise<void> {
+    try {
+      child.stdin.end();
+    } catch {
+      /* already closed */
+    }
+    await Promise.race([exitPromise, killAfter(child, timeoutMs)]);
+    rl.close();
+  }
+
   try {
     await request("initialize", {
       protocolVersion: R2000_PROTOCOL_VERSION,
@@ -435,55 +465,86 @@ export async function withR2000Session<T>(
     });
     // A notification, per MCP spec -- no id, no response expected.
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  } catch (err) {
+    await teardown();
+    throw err;
+  }
 
-    const call: R2000Call = async (name, args = {}) => {
-      const result = (await request("tools/call", { name, arguments: args })) as CallToolResultShape;
-      if (result && result.isError) {
-        throw new R2000ProtocolError(
-          `r2000 tool "${name}" reported isError: true -- ${JSON.stringify(result.content ?? null)}`,
-          { code: -1 }
-        );
-      }
-      return result;
-    };
-
-    let fnResult: T;
-    try {
-      fnResult = await fn(call);
-    } finally {
-      // Ends the child's read loop (mcp/stdio.rs:72) regardless of whether
-      // fn() threw -- a session always tries to close cleanly.
-      child.stdin.end();
-      await Promise.race([exitPromise, killAfter(child, timeoutMs)]);
-      rl.close();
+  const call: R2000Call = async (name, args = {}) => {
+    const result = (await request("tools/call", { name, arguments: args })) as CallToolResultShape;
+    if (result && result.isError) {
+      throw new R2000ProtocolError(
+        `r2000 tool "${name}" reported isError: true -- ${JSON.stringify(result.content ?? null)}`,
+        { code: -1 }
+      );
     }
+    return result;
+  };
 
-    // T-11-FALSESUCCESS's mirror image (D-17): every call succeeded, but if
-    // the FINAL exit was non-zero, the whole session still fails.
+  async function close(): Promise<void> {
+    await teardown();
+    // T-11-FALSESUCCESS's mirror image (D18-08, formerly D-17): every call
+    // may have succeeded, but if the FINAL exit was non-zero, the whole
+    // session still fails.
     if (exitCode !== 0 && exitCode !== null) {
       throw new R2000SessionFailedError(
         `regenerator2000 exited ${exitCode} after an otherwise-successful call sequence -- stderr: ${stderrBuf || "(empty)"}`,
         { exitCode, stderr: stderrBuf }
       );
     }
+  }
 
-    return fnResult;
+  /** Kills only through this retained `ChildProcess` handle -- never a
+   * bare pid (D18-21). Synchronous, takes no arguments, awaits nothing,
+   * mirroring `killAfter()`'s own kill call. */
+  function killSync(): void {
+    if (!child.killed) child.kill("SIGKILL");
+  }
+
+  return {
+    projectPath,
+    get pid() {
+      return child.pid;
+    },
+    call,
+    get exited() {
+      return childExited;
+    },
+    close,
+    killSync,
+  };
+}
+
+/**
+ * The one-shot contract every CLI-verb caller still uses (D18-07:
+ * `r2000-cli.ts`, the enum generator, the memory-map renderer). A thin
+ * wrapper over `openR2000Session()`: open, run `fn(session.call)`, and on
+ * the success path `close()` the session so a non-zero final exit still
+ * surfaces exactly as it always has; on the throwing path, close without
+ * letting a close failure mask the original error, then rethrow. Its
+ * exported signature, generic parameter, options type and observable
+ * failure modes are unchanged from before this module gained a second,
+ * long-lived primitive.
+ */
+export async function withR2000Session<T>(
+  projectPath: string,
+  fn: (call: R2000Call) => Promise<T>,
+  opts: WithR2000SessionOptions = {}
+): Promise<T> {
+  const session = await openR2000Session(projectPath, opts);
+  let result: T;
+  try {
+    result = await fn(session.call);
   } catch (err) {
-    // Make sure a thrown fn()/request() error still closes stdin and reaps
-    // the child rather than leaking it -- the try/finally above already
-    // covers the "fn() itself threw" path; this covers "initialize itself
-    // threw", where the inner try/finally never ran.
-    if (!childExited) {
-      try {
-        child.stdin.end();
-      } catch {
-        /* already closed */
-      }
-      await Promise.race([exitPromise, killAfter(child, timeoutMs)]);
+    try {
+      await session.close();
+    } catch {
+      // Never let a close failure mask fn()'s own error.
     }
-    rl.close();
     throw err;
   }
+  await session.close();
+  return result;
 }
 
 /** Waits for either a successful spawn (`"spawn"` event, Node >= 15) or a

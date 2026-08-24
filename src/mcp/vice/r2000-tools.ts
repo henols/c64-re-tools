@@ -881,28 +881,29 @@ export async function runR2000Tool(name: string, args: unknown): Promise<ToolCal
   assertCuratedTool(name, args);
   const projectPath = resolveStorePath(isPlainObject(args) ? args.project : undefined);
 
-  const { withR2000Session, saveAndVerify } = await import("./r2000-mcp-client.ts");
+  const { saveAndVerify } = await import("./r2000-mcp-client.ts");
+  const { runInR2000Session } = await import("./r2000-session.ts");
 
   const rest: Record<string, unknown> = isPlainObject(args) ? { ...args } : {};
   delete rest.project;
 
   try {
     if (name === "r2000_save_project") {
-      const result = await withR2000Session(projectPath, (call) => saveAndVerify(projectPath, call));
+      const result = await runInR2000Session(projectPath, (call) => saveAndVerify(projectPath, call));
       return okText(JSON.stringify(result));
     }
 
     if (READ_ONLY_R2000_TOOLS.has(name)) {
-      const result = await withR2000Session(projectPath, (call) => call(name, rest));
+      const result = await runInR2000Session(projectPath, (call) => call(name, rest));
       return toToolCallResult(result);
     }
 
     // A mutating tool (including r2000_batch_execute, whose own inner calls
     // all run inside this SAME session per regenerator2000's own
     // batch_execute implementation): call, then save PLAINLY (no hash
-    // verification -- see the block comment above), before the session
-    // exits.
-    const result = await withR2000Session(projectPath, async (call) => {
+    // verification -- see the block comment above), before the tool call
+    // resolves to its caller.
+    const result = await runInR2000Session(projectPath, async (call) => {
       const callResult = await call(name, rest);
       await call("r2000_save_project", {});
       return callResult;
