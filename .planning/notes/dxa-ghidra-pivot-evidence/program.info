@@ -1,0 +1,43 @@
+GLOBAL {
+    INPUTNAME  "image.bin";
+    INPUTOFFS  0;
+    STARTADDR  $0801;
+    CPU        "6502x";
+    OUTPUTNAME "da65_full.s";
+    COMMENTS   4;
+};
+
+# ---- BASIC stub is data, not code ----
+RANGE { START $0801; END $080C; TYPE ByteTable; NAME "basic_stub"; };
+
+# ---- code ----
+RANGE { START $0810; END $08A4; TYPE Code; };
+RANGE { START $08A5; END $08AA; TYPE Code; };
+
+# ---- split pointer tables ----
+RANGE { START $08AB; END $08AD; TYPE ByteTable; NAME "disp_lo"; };
+RANGE { START $08AE; END $08B0; TYPE ByteTable; NAME "disp_hi"; };
+RANGE { START $08B1; END $08B3; TYPE ByteTable; NAME "rts_lo"; };
+RANGE { START $08B4; END $08B6; TYPE ByteTable; NAME "rts_hi"; };
+
+# ---- full address table ----
+RANGE { START $08B7; END $08BE; TYPE AddrTable; NAME "addrtab"; };
+
+# ---- arrays ----
+RANGE { START $08BF; END $08DE; TYPE ByteTable; NAME "arr_src"; };
+RANGE { START $08DF; END $08FE; TYPE ByteTable; NAME "arr_dst"; };
+RANGE { START $08FF; END $0917; TYPE ByteTable; NAME "objs"; };
+
+# ---- labels ----
+LABEL { NAME "start";        ADDR $0810; };
+LABEL { NAME "rts_dispatch"; ADDR $0831; };
+LABEL { NAME "obj_update";   ADDR $083C; };
+LABEL { NAME "print";        ADDR $0871; };
+LABEL { NAME "handler0";     ADDR $0892; };
+LABEL { NAME "handler1";     ADDR $0896; };
+LABEL { NAME "handler2";     ADDR $089A; };
+LABEL { NAME "smc_setup";    ADDR $08A0; };
+LABEL { NAME "smc_target";   ADDR $08A5; };
+LABEL { NAME "VIC_BORDER";   ADDR $D020; };
+LABEL { NAME "VIC_BG0";      ADDR $D021; };
+LABEL { NAME "CHROUT";       ADDR $FFD2; };

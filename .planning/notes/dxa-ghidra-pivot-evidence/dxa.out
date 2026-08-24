@@ -1,0 +1,163 @@
+     	.word $0801
+     	* = $0801
+
+; 12 byte BASIC header.
+0801 	.byt $0b,$08,$0a
+0804 	.byt $00,$9e,$32
+0807 	.byt $30,$36,$34
+080a 	.byt $00,$00,$00
+080d 	.byt $00,$00,$00
+0810 l810:
+0810 	lda #$00
+0812 	sta $d020
+0815 	ldx #$00
+0817 l817:
+0817 	lda l8bf,x
+081a 	sta l8df,x
+081d 	inx
+081e 	cpx #$20
+0820 	bne l817
+0822 	ldx #$02
+0824 	lda l8ab,x
+0827 	sta $fb
+0829 	lda l8ae,x
+082c 	sta $fc
+082e 	jmp ($00fb)
+0831 l831:
+0831 	ldx #$01
+0833 	lda l8b4,x
+0836 	pha
+0837 	lda l8b1,x
+083a 	pha
+083b 	rts
+083c l83c:
+083c 	ldx #$00
+083e l83e:
+083e 	lda l8ff,x
+0841 	beq l856
+0843 l843:
+0843 	lda l900,x
+0846 	clc
+0847 	adc l902,x
+084a 	sta l900,x
+084d 	lda l901,x
+0850 	adc l903,x
+0853 	sta l901,x
+0856 l856:
+0856 	txa
+0857 	clc
+0858 	adc #$05
+085a 	tax
+085b 	cpx #$19
+085d 	bne l83e
+085f l85f:
+085f 	rts
+0860 l860:
+0860 	jsr l871
+0863 	pha
+0864 	eor $4c
+0866 	jmp $004f
+0869 	.byt $20,$71,$08
+086c 	.byt $42
+086d l86d:
+086d 	eor !$0045,y
+0870 	rts
+0871 l871:
+0871 	pla
+0872 	sta $fd
+0874 	pla
+0875 	sta $fe
+0877 	ldy #$01
+0879 l879:
+0879 	lda ($fd),y
+087b 	beq l883
+087d l87d:
+087d 	jsr $ffd2
+0880 	iny
+0881 	bne l879
+0883 l883:
+0883 	tya
+0884 	clc
+0885 	adc $fd
+0887 	sta $fd
+0889 	lda $fe
+088b 	adc #$00
+088d 	pha
+088e 	lda $fd
+0890 	pha
+0891 	rts
+0892 l892:
+0892 	inc $d021
+0895 	rts
+0896 l896:
+0896 	dec $d021
+0899 	rts
+089a l89a:
+089a 	lda #$07
+089c 	sta $d021
+089f 	rts
+08a0 l8a0:
+08a0 	lda #$aa
+08a2 	sta l8a6
+	08a6 l8a6 = * + 1
+08a5 	lda #$00
+08a7 	sta $0400
+08aa 	rts
+08ab l8ab:
+08ab 	.byt $92,$96,$9a
+08ae l8ae:
+08ae 	.byt $08,$08,$08
+08b1 l8b1:
+08b1 	.byt $91,$95,$99
+08b4 l8b4:
+08b4 	.byt $08,$08,$08
+08b7   .word l892
+08b9   .word l896
+08bb   .word l89a
+08bd   .word l871
+08bf l8bf:
+08bf 	.byt $00
+08c0 l8c0:
+08c0 	ora ($02,x)
+08c2 	slor ($04,x)
+08c4 	ora $06
+08c6 	slor $08
+08c8 	ora #$0a
+08ca 	anc #$0c
+08cc 	ora $0f0e
+08cf 	bpl l8e2
+08d1 	.byt $12,$13,$14
+08d4 	.byt $15,$16,$17
+08d7 	.byt $18,$19,$1a
+08da 	.byt $1b,$1c,$1d
+08df l8df = * + 2
+08dd 	.byt $1e,$1f,$00
+08e2 l8e2 = * + 2
+08e0 	.byt $00,$00,$00
+08e3 	.byt $00,$00,$00
+08e6 	.byt $00,$00,$00
+08e9 	.byt $00,$00,$00
+08ec 	.byt $00,$00,$00
+08ef 	.byt $00,$00,$00
+08f2 	.byt $00,$00,$00
+08f5 	.byt $00,$00,$00
+08f8 	.byt $00,$00,$00
+08fb 	.byt $00,$00,$00
+08ff l8ff = * + 1
+08fe 	.byt $00,$01
+0900 l900:
+	0901 l901 = * + 1
+0900 	bpl l902
+0902 l902:
+	0903 l903 = * + 1
+0902 	ora ($00,x)
+0904 	ora ($20,x)
+0906 	.byt $00
+0907 l907:
+0907 	isbc $01ff,x
+090a 	bmi l90c
+090c l90c:
+090c 	.byt $02,$00,$00
+090f 	.byt $00,$00,$00
+0912 	.byt $00,$00,$00
+0915 	.byt $00,$00,$00
