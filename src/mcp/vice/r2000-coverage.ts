@@ -744,10 +744,15 @@ export function computeLabelRatio(symbols: readonly R2000Symbol[], opts: LabelRa
   }
 
   const denominator = user + auto;
+  // WR-02: the count is a count OF the list printed beside it. Deduped ONCE
+  // into a local, then both fields read from that local -- two symbols at one
+  // address must not report "2 label name(s) ... at $1000", a sentence that
+  // contradicts itself.
+  const autoPrefixAddresses = sortedUniqueNumbers(autoPrefixNameAddresses);
   return {
     kindRatio: { user, auto, userFraction: denominator === 0 ? null : user / denominator },
-    autoPrefixNamesRemaining: autoPrefixNameAddresses.length,
-    autoPrefixNameAddresses: sortedUniqueNumbers(autoPrefixNameAddresses),
+    autoPrefixNamesRemaining: autoPrefixAddresses.length,
+    autoPrefixNameAddresses: autoPrefixAddresses,
     systemExcluded,
     excludedByMultiCallerRule: sortedUniqueNumbers(reallyExcluded),
   };
@@ -1079,6 +1084,11 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
     }
   }
   const undocumented = new Set(multiCallerUndocumented);
+  // WR-02, again: ONE deduped list, and every number reported beside it is
+  // derived from it. Same rule as `computeLabelRatio` above -- a count printed
+  // in the same sentence as a list must be a count of that list, or the
+  // finding text contradicts itself.
+  const multiCallerAddresses = sortedUniqueNumbers(multiCallerUndocumented);
 
   // --- The deterministic sample: documented labels sorted ascending by
   // address, take every Nth where N = ceil(population / sampleSize).
@@ -1097,7 +1107,7 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
       sampleRule: "no documented labels -- nothing to sample",
       addresses: [],
       comparisons: [],
-      multiCallerUndocumented: { count: multiCallerUndocumented.length, addresses: sortedUniqueNumbers(multiCallerUndocumented) },
+      multiCallerUndocumented: { count: multiCallerAddresses.length, addresses: multiCallerAddresses },
       reason: "no label carries a non-vacuous line comment, so reproducibility is UNKNOWN rather than clean",
     };
   }
@@ -1126,7 +1136,7 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
     sampleRule,
     addresses,
     comparisons,
-    multiCallerUndocumented: { count: multiCallerUndocumented.length, addresses: sortedUniqueNumbers(multiCallerUndocumented) },
+    multiCallerUndocumented: { count: multiCallerAddresses.length, addresses: multiCallerAddresses },
     reason: null,
   };
 }

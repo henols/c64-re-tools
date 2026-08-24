@@ -543,6 +543,59 @@ test("ANCHORING: a caller's label name satisfies the rule only on an identifier 
   );
 });
 
+test("every reported count is a count of the deduped list printed beside it", () => {
+  // WR-02. `coverageFindings()` prints a count and an address list in ONE
+  // sentence ("N label name(s) still carry an auto-name prefix at $..."), so a
+  // count taken pre-dedup beside a post-dedup list makes the finding text
+  // contradict itself. The invariant is asserted over the whole committed
+  // fixture set so it cannot be satisfied by one hand-picked case.
+  for (const dir of fixtureDirs()) {
+    const report = reportFor(dir);
+    assert.equal(
+      report.labels.autoPrefixNamesRemaining,
+      report.labels.autoPrefixNameAddresses.length,
+      `${dir}: a count printed beside a list must be a count OF that list, or the finding text contradicts itself`,
+    );
+    assert.equal(
+      report.reproducibility.multiCallerUndocumented.count,
+      report.reproducibility.multiCallerUndocumented.addresses.length,
+      `${dir}: a count printed beside a list must be a count OF that list, or the finding text contradicts itself`,
+    );
+  }
+});
+
+test("two symbols at one address produce a count of one, not two", () => {
+  // The fixture-wide invariant above would pass VACUOUSLY against the pre-fix
+  // code, because no committed fixture carries two symbols at one address.
+  // This is the direct probe that shows the fix bites: pre-fix these inputs
+  // reported 2 beside a one-element list on both measures.
+  const dup = computeLabelRatio([
+    { address: 0x1000, name: "s_1000", kind: "Auto", type: "Subroutine" },
+    { address: 0x1000, name: "j_1000", kind: "Auto", type: "Jump" },
+  ]);
+  assert.equal(dup.autoPrefixNamesRemaining, 1, "two auto-prefixed names at ONE address are one address still carrying an auto name");
+  assert.equal(dup.autoPrefixNameAddresses.length, 1);
+
+  const census = computeStructuralCensus(new Uint8Array(0), 0x1000, []);
+  const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x1000);
+  const repro = computeReproducibility({
+    census,
+    dispatch,
+    symbols: [
+      { address: 0x1000, name: "first_name", kind: "User", type: "Subroutine" },
+      { address: 0x1000, name: "second_name", kind: "User", type: "Subroutine" },
+    ],
+    comments: [],
+    blocks: [],
+    crossReferences: [{ address: 0x1000, callers: [0x0810, 0x0816] }],
+  });
+  assert.deepEqual(
+    repro.multiCallerUndocumented,
+    { count: 1, addresses: [0x1000] },
+    "the multi-caller measure's count must agree with its own address list under a duplicate address",
+  );
+});
+
 test("the kind figure is over non-System labels only, and reports a null fraction rather than a divide when there are none", () => {
   const ratio = computeLabelRatio([
     { address: 0xffd2, name: "CHROUT", kind: "System", type: "Predefined" },
