@@ -2,20 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
-current_phase: 18
-current_phase_name: Persistent Session and Tool Surface
 status: executing
-stopped_at: Completed 18-05-PLAN.md
-last_updated: "2026-08-24T11:30:26.847Z"
-last_activity: 2026-08-24
-last_activity_desc: Phase 18 execution started
-state_head: ed142bac98121f82aec65d152473a9bcc9a71aad
+last_updated: "2026-08-24T13:30:39.938Z"
+last_activity: 2026-08-24 -- Phase 19 execution started
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 7
-  completed_plans: 5
-  percent: 0
+  completed_phases: 1
+  total_plans: 11
+  completed_plans: 7
+  percent: 20
 ---
 
 # Project State
@@ -51,12 +46,12 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 18 — Persistent Session and Tool Surface
+**Current focus:** Phase 19 — absorbed-procedures-and-the-coverage-instrument
 27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
-five phases in `.planning/ROADMAP.md` (Phases 18-22), and its Traceability
-table and Coverage block are filled in (27/27 mapped, 0 unmapped). No phase has
-been planned yet — the next action is `/gsd-plan-phase 18`. ROADMAP.md still
-carries all three shipped milestones collapsed, with full detail in
+five phases in `.planning/ROADMAP.md` (Phases 18-22). Phase 18 is verified and
+complete; Phase 19 has four plans, and Plan 19-01 has begun with its pinned
+upstream-procedure audit committed. ROADMAP.md still carries all three shipped
+milestones collapsed, with full detail in
 `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md` and
 `milestones/v0.4.0-ROADMAP.md`.
 **Phase numbering continues from 17 — v0.5.0 starts at Phase 18**, and numbers
@@ -66,16 +61,16 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 18 (Persistent Session and Tool Surface) — EXECUTING
-Plan: 6 of 7
-Status: Ready to execute
-Last activity: 2026-08-24 — Phase 18 execution started
+Phase: 19 (absorbed-procedures-and-the-coverage-instrument) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 19
+Last activity: 2026-08-24 -- Phase 19 execution started
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 160
+- Total plans completed: 174
 - Average duration: —
 - Total execution time: —
 
@@ -101,6 +96,7 @@ Last activity: 2026-08-24 — Phase 18 execution started
 | 15 | 12 | - | - |
 | 16 | 11 | - | - |
 | 17 | 4 | 2026-08-23 | Ledger closed to 0; CORE-01 decided keep-dated; G-17-1 provenance correction |
+| 18 | 7 | - | - |
 
 **Recent Trend:**
 

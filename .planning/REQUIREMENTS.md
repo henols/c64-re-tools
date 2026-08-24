@@ -28,15 +28,15 @@ milestone starts at **Phase 18**.
 
 ### Persistent Session
 
-- [ ] **SESS-01**: A regenerator2000 project stays open across many tool calls in one working session instead of being respawned per call, without adding an unguarded spawn site — `r2000-spawn-seam.test.ts`'s enumerated set stays intact and the `--vice` invariant stays guarded in code
-- [ ] **SESS-02**: A crashed or wedged session is detected between calls and transparently restarted, so a caller sees a recoverable error rather than a hang
-- [ ] **SESS-03**: Annotations survive a hard kill — every mutating call saves before it returns, proven by a planted-violation test (mutate → kill the child → reopen and re-read from disk → assert persisted; then remove the internal save and prove the same test goes red)
-- [ ] **SESS-04**: Write-capable calls are serialised through one owner, with concurrent fan-out restricted to read-only queries, so parallel subagents cannot corrupt one session
+- [x] **SESS-01**: A regenerator2000 project stays open across many tool calls in one working session instead of being respawned per call, without adding an unguarded spawn site — `r2000-spawn-seam.test.ts`'s enumerated set stays intact and the `--vice` invariant stays guarded in code
+- [x] **SESS-02**: A crashed or wedged session is detected between calls and transparently restarted, so a caller sees a recoverable error rather than a hang
+- [x] **SESS-03**: Annotations survive a hard kill — every mutating call saves before it returns, proven by a planted-violation test (mutate → kill the child → reopen and re-read from disk → assert persisted; then remove the internal save and prove the same test goes red)
+- [x] **SESS-04**: Write-capable calls are serialised through one owner, with concurrent fan-out restricted to read-only queries, so parallel subagents cannot corrupt one session
 
 ### Tool Surface
 
-- [ ] **SURF-01**: The curated `r2000_*` surface covers what the absorbed procedures actually call — starting with `r2000_read_region`, so a routine can be read at a range instead of exporting the whole program — and the tool-count pin and generated `docs/tool-support.md` move with it without drift
-- [ ] **SURF-02**: `r2000_get_address_details`'s D-32 refusal is re-decided against the still-live upstream `u16` overflow at `handler.rs:1894` — fixed, worked around, or refused with a documented route, but not carried unexamined a second milestone
+- [x] **SURF-01**: The curated `r2000_*` surface covers what the absorbed procedures actually call — starting with `r2000_read_region`, so a routine can be read at a range instead of exporting the whole program — and the tool-count pin and generated `docs/tool-support.md` move with it without drift
+- [x] **SURF-02**: `r2000_get_address_details`'s D-32 refusal is re-decided against the still-live upstream `u16` overflow at `handler.rs:1894` — fixed, worked around, or refused with a documented route, but not carried unexamined a second milestone
 - [ ] **SURF-03**: Which packer a binary used is surfaced as a recon finding, so provenance work can use it as evidence and not only as a depack step
 
 ### Absorbed Procedures
@@ -112,12 +112,12 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SESS-01 | Phase 18 | Pending |
-| SESS-02 | Phase 18 | Pending |
-| SESS-03 | Phase 18 | Pending |
-| SESS-04 | Phase 18 | Pending |
-| SURF-01 | Phase 18 | Pending |
-| SURF-02 | Phase 18 | Pending |
+| SESS-01 | Phase 18 | Complete |
+| SESS-02 | Phase 18 | Complete |
+| SESS-03 | Phase 18 | Complete |
+| SESS-04 | Phase 18 | Complete |
+| SURF-01 | Phase 18 | Complete |
+| SURF-02 | Phase 18 | Complete |
 | SURF-03 | Phase 19 | Pending |
 | ABS-01 | Phase 19 | Pending |
 | ABS-02 | Phase 19 | Pending |

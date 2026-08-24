@@ -1,20 +1,16 @@
 ---
 phase: 18-persistent-session-and-tool-surface
 verified: 2026-08-24T13:23:31Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
-human_verification:
-  - test: "Review the Phase 18 gate evidence for live-test, requirement-map, and stdin-EOF consistency"
-    expected: "No live r2000 test is skipped; each of the six requirement rows names a test that ran; the stdin-EOF verdict matches its transcript and any follow-up has an owner."
-    why_human: "Plan 18-07 explicitly deferred this evidence review to an end-of-phase human check."
 ---
 
 # Phase 18: Persistent Session and Tool Surface Verification Report
 
 **Phase Goal:** A regenerator2000 project stays open across a whole working session.
 **Verified:** 2026-08-24T13:23:31Z
-**Status:** human_needed
+**Status:** passed
 **Re-verification:** No - initial verification
 
 ## Goal Achievement
@@ -79,17 +75,15 @@ No Phase 18 requirement is orphaned.
 
 No untracked `TBD`, `FIXME`, or `XXX` marker was found in the Phase 18 implementation files. Existing planning-document TODO prose refers to previously recorded milestone coverage debt and is not a Phase 18 implementation stub.
 
-### Human Verification Required
+### Human Verification
 
-Review `18-PHASE-GATE-EVIDENCE.md` and confirm by eye:
-
-1. Its skipped-test census contains no live-gated r2000 test.
-2. Every SESS/SURF requirement row names a test that actually ran.
-3. Its stdin-EOF verdict agrees with `18-STDIN-EOF-EVIDENCE.md`, and any required follow-up is assigned rather than merely mentioned.
+Approved by the user on 2026-08-24 after reviewing the live-test census,
+requirement mappings, and stdin-EOF conclusion. The result is persisted in
+`18-HUMAN-UAT.md`.
 
 ### Gaps Summary
 
-No implementation gaps were found. Automated verification passes; only Plan 18-07's explicit end-of-phase human evidence review remains.
+No implementation or verification gaps remain.
 
 ---
 
