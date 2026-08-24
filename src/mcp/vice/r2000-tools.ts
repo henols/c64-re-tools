@@ -17,15 +17,28 @@
 // TUI-shaped cursor trio (`get_disassembly_cursor`, `jump_to_address`,
 // `read_selected`) is HELD, not merely unproven (D18-26) -- `r2000_read_region`
 // now answers "read this routine" directly by range, making the trio largely
-// redundant; a real caller appearing in Phase 19's absorption diff is what
-// would justify adding one, additively. `toggle_splitter` has no criterion.
+// redundant. ANSWERED, 2026-08-24 (Phase 19, plan 19-05, decision 5 in
+// 19-DECISIONS.md): a real caller DID appear in Phase 19's absorption diff,
+// and it does NOT justify adding one -- the upstream procedure that calls
+// the cursor tool is itself the text telling a reader not to rely on it, so
+// absorbing that procedure imported the caller and its own prohibition
+// together. The trio stays held, and the invitation this comment used to
+// carry is closed rather than left standing: the condition it named has now
+// occurred and been decided, so a future reader must not re-read it as an
+// open offer. Reopening requires a NEW caller that is not upstream's own
+// cursor-avoiding prose. `toggle_splitter` has no criterion in THIS phase but
+// acquired one from the same diff (DECOMP-01 and BUILD-02) and is PROPOSED
+// for the start of Phase 20 -- see 19-DECISIONS.md decision 2.
 // `undo`/`redo` earn no place under this surface's own discipline -- a
 // curated tool must serve a named criterion, and neither does; their
 // original justification (useless under D-17's per-call lifecycle, since
 // history died with the spawned process) no longer applies now that a
 // session persists across calls (Rule A21), but persistence alone is not by
-// itself a reason to curate them. `unpack_binary`, `search_memory`,
-// `set_immediate_format` have no criterion in this phase.
+// itself a reason to curate them. `unpack_binary` and `search_memory` have
+// no criterion in this phase. `set_immediate_format` likewise has none here,
+// and likewise acquired one from this phase's diff -- it IS BUILD-03's
+// low/high-byte step -- and is PROPOSED for the start of Phase 20 under the
+// same decision.
 // `r2000_read_region` IS curated (SURF-01, D18-24/D18-25): a routine read at
 // an address range with a documented cap, instead of exporting the whole
 // program. `r2000_get_address_details` IS curated (SURF-02, D-36

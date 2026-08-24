@@ -120,7 +120,7 @@ respawning the binary per tool call. Byte-identity is explicitly not the
 acceptance bar; behavioural equivalence in VICE is.
 
 - [x] **Phase 18: Persistent Session and Tool Surface** - A regenerator2000 session survives many tool calls in one working session, and the curated surface covers what absorbed procedures need
-- [ ] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
+- [x] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
 - [ ] **Phase 20: Decomposition to Closure** - A committed synthetic fixture is fully decomposed: nothing `Undefined`, every entry point named, every reference documented, every hardware write an enum
 - [ ] **Phase 21: Rebuildable Source and the Reassembly Gate** - Annotated projects export as symbol-only, subsystem-split ACME source, gated by clean reassembly and a hazard report before any rebuild work runs on top
 - [ ] **Phase 22: Equivalence and Modifiability** - The rebuild is proven behaviourally identical and demonstrably modifiable in VICE, via a comparator extended for a mode it has never run in
@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 **Wave 1**
 
@@ -209,17 +209,19 @@ under it.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 19-05-PLAN.md — inventory-wide trigger uniqueness, the five dated decisions, and the phase gate
+- [x] 19-05-PLAN.md — inventory-wide trigger uniqueness, the five dated decisions, and the phase gate
 
 Notes:
 
-- **Needs research at plan-time (research flag).** The packer-identification mechanism is only MEDIUM confidence — no dedicated read-only "identify packer" tool was confirmed in the live 28-tool surface; resolve with a live-source spike against 0.9.20's `packer_signatures.rs` before committing to an approach.
-- **Needs research at plan-time (research flag).** The exact upstream commit/tag to pin for the five absorbed procedures, and whether their tool-call surface matches the curated list, must be diffed explicitly during absorption rather than assumed compatible.
+- **RESOLVED 2026-08-24 (was: research flag).** The packer-identification mechanism was resolved by a live-source spike against 0.9.20 — see `19-RESEARCH.md` §2. The answer is negative and established four independent ways: **no read-only route to packer identity exists** on the pinned surface (`handler.rs:798-826`'s seven-field `json!` block; `UnpackResult` not serialised; `LoadedProjectData.detected_packer` TUI-only; `detect_packer`'s consumer set internal), corroborated by a live `--help` and a live `tools/call`. What ships instead is a project-owned recon finding with a hard unknown (19-04). Acceptance bar and reopen trigger: `19-DECISIONS.md` decision 3.
+- **RESOLVED 2026-08-24 (was: research flag).** The pin is `493f840418f1450a342bb220c2fe3d2585dd0525` (v0.9.20), corroborated two independent ways — the clone at that commit and the installed crate's own `.cargo_vcs_info.json` — see `19-RESEARCH.md` §1.1-§1.2. The tool-call surface was diffed explicitly, not assumed: every absorbed step calls only curated `r2000_*` tools, and every omitted upstream call carries a cited justification in `upstream-procedure-manifest.json`. Two of those omissions turned out to have acquired criteria from the diff — see decision 2 below.
 - **2026-08-24 (inherited from Phase 18 / plan 18-06):** The concurrency model is a coarse mutex at the `r2000-session.ts` seam: exactly one logical operation per session is in flight at a time, and contention is answered by a bounded FIFO wait rather than a refuse-while-busy error. Phase 19 must not copy upstream's 7-way concurrent-subagent orchestration unchanged; read-only fan-out is the sanctioned orchestration pattern, while the seam quietly queues whatever reaches it.
-- **2026-08-24 (deferred, not rejected):** A reader-writer upgrade remains deferred pending measurement of whether regenerator2000's stdio handler actually multiplexes concurrent requests rather than reading stdin serially. Before considering any concurrent-read / exclusive-write lock, Phase 19 must run and record that measurement as evidence, the same way Phase 18 recorded the stdin-EOF measurement; see `18-06-SUMMARY.md` for the observed outcome of the lock-bypassed lost-update proof that motivated the current answer.
+- **CLOSED 2026-08-24 by measurement (was: deferred, not rejected).** The reader-writer upgrade's own named precondition has been met and answered. Evidence: `19-STDIO-MULTIPLEXING-EVIDENCE.md` — three runs against the real binary, all `serial-one-request-at-a-time`, with a negative control, corroborated at source by `stdio.rs:67-98` (`handle_request` called synchronously on `&mut AppState`, spawning nothing). Outcome: the child does not multiplex, so a reader-writer upgrade would buy **zero** parallelism and the coarse FIFO mutex is an exact model of the child's own behaviour rather than a compromise. Read-only fan-out remains the sanctioned orchestration pattern, and its value is agent reasoning concurrency — explicitly **not** throughput at the session. CLOSED, not re-deferred; what would reopen it is named in `19-DECISIONS.md` decision 5.
 - Coverage-instrument design constraint: walk the raw byte range and instruction stream independently of what regenerator2000's own block-type table already claims — a derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen it specifically to cover what `follow_indirect_jumps` does not walk (multi-entry indexed dispatch tables) — Phase 21's hazard report needs this same widened scan.
 - Do not copy upstream's 7-way concurrent-subagent orchestration unchanged (decided in Phase 18, criterion 4) — absorb the procedures' sequencing, not their concurrency model.
 - Validate the coverage instrument against a real, previously-unseen fixture before trusting it, not only against the fixture the same pass wrote it against.
+- **2026-08-24 — two future-surface tool proposals came out of the absorption diff.** `r2000_toggle_splitter` (serves DECOMP-01 and BUILD-02) and `r2000_set_immediate_format` (**is** BUILD-03's low/high-byte step) were previously recorded as having no criterion and acquired one from this phase's diff. Both are PROPOSED here and implemented at the **start of Phase 20**; both are mutating, so both go through the existing session seam. Full record, including what would withdraw either proposal: `19-DECISIONS.md` decision 2.
+- **2026-08-24 — the phase's five dated decisions live in `19-DECISIONS.md`**, each with its evidence, the alternatives weighed, and a named, checkable reversal or re-sync condition (ABS-04). The executed validation record — every requirement beside a command that actually ran, plus the fourteen planted-violation demonstrations and the full phase gate — is `19-VALIDATION.md`.
 
 ### Phase 20: Decomposition to Closure
 
@@ -241,6 +243,8 @@ throughout, not asserted at the end.
 Notes:
 
 - Run Phase 19's coverage instrument throughout this phase, not only once at the end — the whole point of building it first was to gate this sweep, not to grade it retroactively.
+- **Open this phase by implementing the two tools Phase 19 proposed** (`19-DECISIONS.md` decision 2): `r2000_toggle_splitter` serves DECOMP-01 — without it two adjacent tables merge into one block and there is no boundary to cut on — and `r2000_set_immediate_format` serves BUILD-03. Both are mutating and must go through `r2000-session.ts`'s existing seam; neither may add a second child-launch site. If DECOMP-01 is reached on the fixtures without ever needing a table boundary, the splitter proposal is withdrawn rather than implemented.
+- The coverage report's `flat-three` schema was auto-selected under `yolo` mode and never reviewed by a human (`19-DECISIONS.md`, closing note). This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment.
 - Watch for overlapping instruction streams and code/data boundaries implied only by fall-through: treat every routine-boundary claim as a checkable hypothesis — does any jump target land strictly inside an already-decoded routine's byte range, other than at its declared start? Route anything flagged through `c64-provenance-diff` before treating it as original code to decompose.
 - A `!byte` fallback line inside an otherwise densely-named region is the signature of a silently-degraded illegal opcode — grep for it; don't assume Phase 18's forced setting held across every session this phase opens.
 
@@ -268,6 +272,7 @@ Notes:
 - The hazard report must state, for every jump table, how its length/index range was established — not merely that a table exists. This is the single most-cited failure mode for this class of report.
 - Validate the hazard detectors against a real, previously-unseen fixture, not only the one the same pass wrote them against.
 - Provenance-awareness (BUILD-05) is wiring, not new analysis: it consumes `c64-provenance-diff`'s already-existing, already-committed `recovery/RELEASES.json`/`PROVENANCE.md` artifacts.
+- **BUILD-02 and BUILD-03 both depend on a tool Phase 19 proposed and Phase 20 implements** (`19-DECISIONS.md` decision 2): `r2000_toggle_splitter` is what supplies the boundary BUILD-02's table extraction cuts on, and `r2000_set_immediate_format` **is** BUILD-03's low/high-byte mechanism — a 16-bit address loaded as two immediate bytes is the one construct where a reference cannot go through a symbol without it. If Phase 20 withdrew either proposal, re-open the question here rather than discovering it mid-rebuild.
 
 ### Phase 22: Equivalence and Modifiability
 
