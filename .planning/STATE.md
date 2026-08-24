@@ -327,7 +327,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-0 pending (0 files in `.planning/todos/pending/` + 0 UAT-gap rows = 0) — see
+1 pending (1 file in `.planning/todos/pending/` + 0 UAT-gap rows = 1) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -429,10 +429,20 @@ in `REQUIREMENTS.md` → Future Requirements → `### Promoted by DEBT-01`.
 **Phase 16 then closed both** (2026-08-23): `PKG-01` and `PKG-03` both read
 `Complete` in `REQUIREMENTS.md`'s Traceability table, and
 `.planning/todos/pending/` is empty for the first time in this project's
-history. Phase 17 plan 17-01 Task 2 (2026-08-23) is the terminus of this
-history — it measured the true count and found it 0, updating this section's
-opening figure from 2 to 0. This section's opening figure above (`0 pending`)
-is derived from, and must always equal, `## Deferred Items`'s table row count
+history. Phase 17 plan 17-01 Task 2 (2026-08-23) measured the true count and
+found it 0, updating this section's opening figure from 2 to 0.
+
+**The tree is no longer empty (2026-08-24).** One todo was filed outside phase
+work — `2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path`,
+capturing the per-launch `vice-broker-vicerc-*` scratch-dir leak at
+`broker-launch.mts:329` and naming the broker kill/recycle path as its owner,
+exactly as that file's own header comment specifies. It was deferred out of
+Phase 18 deliberately: reaping is a change to broker lifetime semantics, not
+part of Phase 18's goal. Filing it re-armed
+`docs-deferred-ledger.test.ts` direction A, which had been inert for as long as
+the tree was empty — hence the matching row added to `## Deferred Items` below
+in the same change. This section's opening figure above (`1 pending`) is
+derived from, and must always equal, `## Deferred Items`'s table row count
 below — a discipline that has gone stale twice before and is not itself
 guarded.
 
@@ -695,10 +705,16 @@ by `.planning/quick/260823-kf6`.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
+| broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
 
-*The ledger is empty at the v0.4.0 close. The header row above is retained
-deliberately, so a reader can see the table was emptied rather than
-truncated.*
+*The ledger was empty at the v0.4.0 close; the one row above was filed
+2026-08-24, after that close, and is the first pending todo since Phase 17
+plan 17-01 emptied the tree. It is not optional bookkeeping:
+`docs-deferred-ledger.test.ts` direction A requires an own-table-cell row here
+for every file in `.planning/todos/pending/`, and that guard's own comment
+recorded itself as "inert only because the pending tree is empty; a live risk
+the moment a new pending todo is added". This row is what keeps it green now
+that the tree is no longer empty.*
 
 Not counted above, because they are complete on disk: all nine
 `.planning/quick/` tasks the v0.3.0 pre-close audit reported as `[missing]`
