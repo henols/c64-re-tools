@@ -147,12 +147,26 @@ rewritten a second time.
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 18-01-PLAN.md — Run the Architecture Change Procedure for the D-17/D-18 reversal; allocate D-36 superseding D-32; pin both with a committed guard
 - [ ] 18-02-PLAN.md — `ensureProjectSettings()`: force `use_illegal_opcodes` on an existing project, refuse on a `system` mismatch, with a planted-violation control
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 18-03-PLAN.md — TRACER: one held regenerator2000 child answers many `r2000_*` calls end to end, plus the three-scenario save-discipline gate and the spawn-seam proof
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 18-04-PLAN.md — Crash detection, transparent between-call respawn, loud mid-call failure, bounded restart budget, teardown hook, and the measured stdin-EOF orphan answer
 - [ ] 18-05-PLAN.md — Curate `r2000_read_region` with a documented cap; compose `r2000_get_address_details` client-side under D-36; move every count pin and prose mention with no drift
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 18-06-PLAN.md — The coarse FIFO mutex with a bounded wait, the lost-update planted violation, and the concurrency answer Phase 19 inherits
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 18-07-PLAN.md — The settings no-revert round trip through a live session, and the phase gate run for real with committed evidence
 
 Notes:
