@@ -68,6 +68,7 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   "docs-review-disposition.test.ts",
   "docs-fork-decision.test.ts",
   "docs-core-value-decision.test.ts",
+  "docs-r2000-decisions.test.ts",
 ];
 
 interface GateJsonResult {

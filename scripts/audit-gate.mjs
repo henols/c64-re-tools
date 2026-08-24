@@ -101,8 +101,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * CR-02) alongside `EXPECTED_DOCS_GUARD_NAMES` below, when it was discovered
  * neither `docs-fork-decision.test.ts` (Phase 14) nor
  * `docs-core-value-decision.test.ts` (17-02) had ever been added to either
- * constant, despite this array's own comment instructing exactly that. */
-export const DOCS_GUARD_FLOOR = 6;
+ * constant, despite this array's own comment instructing exactly that. Raised
+ * from 6 to 7 (Phase 18 plan 18-01) alongside `EXPECTED_DOCS_GUARD_NAMES`
+ * below, when `docs-r2000-decisions.test.ts` was added -- in the SAME commit
+ * this time, per CR-02's own instruction and the registry-drift detector it
+ * added to `audit-integrity.test.ts`. */
+export const DOCS_GUARD_FLOOR = 7;
 
 /** The current docs-*.test.ts guard basenames, frozen. Used only as an
  * exact-membership check against the DERIVED set from `docsGuardFiles()` --
@@ -129,6 +133,7 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   "docs-review-disposition.test.ts",
   "docs-fork-decision.test.ts",
   "docs-core-value-decision.test.ts",
+  "docs-r2000-decisions.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from
