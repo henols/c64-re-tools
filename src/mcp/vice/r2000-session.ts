@@ -64,6 +64,31 @@
 // discarded (best-effort `killSync()`, slot cleared) and the error
 // propagates UNCHANGED -- no respawn, no retry, no restart budget. Those
 // come from a later plan; this module never pretends to recover.
+//
+// EXTERNAL-WRITE STALENESS (found live by this plan's own full-suite run,
+// r2000-symbol-roundtrip.test.ts's criterion-4 closed-symbol-loop test --
+// R2000-15): D18-07 deliberately keeps `r2000-symbols.ts`'s `importLabels()`
+// on the one-shot `withR2000Session()` contract, a SEPARATE regenerator2000
+// process from whatever this module holds open for the same project path
+// (in production, a genuinely separate OS process -- `vice-mcp r2000
+// import-lbl`, invoked by a skill's Bash call, has no access to this
+// module's in-memory state at all). That import saves through its own
+// session, mutating the SAME `.regen2000proj` file on disk; a HELD session
+// for that path has no way to know, and would otherwise answer a later
+// `r2000_get_symbols` from its now-stale in-memory copy, silently missing
+// the import -- the exact "several independent connections, no single place
+// enforcing observe-after-mutate" shape Phase 9's incident generalises,
+// reintroduced here across TWO deliberately-separate session kinds rather
+// than across multiple one-shot connections. Detected cheaply, before every
+// reuse, by comparing the project file's on-disk `mtimeMs` against the value
+// observed right after this module's own last open/call -- never by
+// re-reading the file's content. A mismatch evicts and reopens exactly like
+// D18-04's project-path-change eviction (lossless by construction, D18-08:
+// nothing THIS module's own held session did is ever lost by discarding the
+// handle). This is an extension of D18-04's reuse-vs-evict decision, not a
+// new mechanism: "the same project path" now means "the same project path
+// AND the file this module last observed is still the file on disk."
+import { statSync } from "node:fs";
 import { ensureProjectSettings } from "./r2000-project.ts";
 import type { R2000Call, R2000Session } from "./r2000-mcp-client.ts";
 
@@ -71,6 +96,11 @@ import type { R2000Call, R2000Session } from "./r2000-mcp-client.ts";
 
 let currentSession: R2000Session | null = null;
 let currentProjectPath: string | null = null;
+/** The project file's `mtimeMs` as last observed by THIS module, right
+ * after opening or after a call against the held session returns. `null`
+ * only when no session is held. See the EXTERNAL-WRITE STALENESS note
+ * above for why this exists. */
+let currentProjectMtimeMs: number | null = null;
 let inFlight = false;
 
 /** Test-seam-only counters -- never read by production code. See
@@ -78,12 +108,45 @@ let inFlight = false;
 let openCount = 0;
 let killCount = 0;
 
+/** The project file's current `mtimeMs`, or `null` if it cannot be stat'd
+ * (e.g. deleted out from under a held session) -- never thrown, since a
+ * stat failure here is a staleness SIGNAL, not a reason to abort the call
+ * that triggered it (the call itself will fail on its own, distinctly, if
+ * the file is genuinely gone). */
+function projectMtimeMsOrNull(projectPath: string): number | null {
+  try {
+    return statSync(projectPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** Discards the currently-held session (if any), best effort, and clears
+ * every piece of module state that describes it. Shared by the
+ * project-path-change eviction (D18-04) and the external-write staleness
+ * eviction above -- one discard path, not two. */
+async function discardCurrentSession(): Promise<void> {
+  const stale = currentSession;
+  currentSession = null;
+  currentProjectPath = null;
+  currentProjectMtimeMs = null;
+  if (!stale) return;
+  try {
+    await stale.close();
+  } catch {
+    // Best effort -- D18-08's save-per-mutation invariant already
+    // persisted everything this session ever mutated, so a close failure
+    // here carries no data-loss risk. The eviction proceeds regardless.
+  }
+}
+
 /**
  * Runs `fn` against the held regenerator2000 session for `projectPath`,
  * opening a fresh one when none is held, reusing the held one when its
- * `projectPath` strictly equals the requested path, or evicting-then-
- * respawning when a different project path is requested (D18-04: single
- * slot, evict-and-respawn -- lossless by construction because every
+ * `projectPath` strictly equals the requested path AND the project file is
+ * still the one this module last observed (see the EXTERNAL-WRITE
+ * STALENESS note above), or evicting-then-respawning otherwise (D18-04:
+ * single slot, evict-and-respawn -- lossless by construction because every
  * mutating call already saved before it resolved, D18-08).
  *
  * Deliberately signature-compatible with `withR2000Session(projectPath, fn)`
@@ -93,17 +156,13 @@ export async function runInR2000Session<T>(
   projectPath: string,
   fn: (call: R2000Call) => Promise<T>
 ): Promise<T> {
-  if (currentSession && currentProjectPath !== projectPath) {
-    const stale = currentSession;
-    currentSession = null;
-    currentProjectPath = null;
-    try {
-      await stale.close();
-    } catch {
-      // Best effort -- D18-08's save-per-mutation invariant already
-      // persisted everything this session ever mutated, so a close failure
-      // here carries no data-loss risk. The eviction proceeds regardless.
+  if (currentSession && currentProjectPath === projectPath) {
+    const observedMtime = projectMtimeMsOrNull(projectPath);
+    if (observedMtime !== null && observedMtime !== currentProjectMtimeMs) {
+      await discardCurrentSession();
     }
+  } else if (currentSession && currentProjectPath !== projectPath) {
+    await discardCurrentSession();
   }
 
   if (!currentSession) {
@@ -130,6 +189,7 @@ export async function runInR2000Session<T>(
       const { openR2000Session } = await import("./r2000-mcp-client.ts");
       currentSession = await openR2000Session(projectPath);
       currentProjectPath = projectPath;
+      currentProjectMtimeMs = projectMtimeMsOrNull(projectPath);
       openCount++;
     } finally {
       inFlight = false;
@@ -138,11 +198,21 @@ export async function runInR2000Session<T>(
 
   const session = currentSession;
   try {
-    return await fn(session.call);
+    const result = await fn(session.call);
+    if (currentSession === session) {
+      // Refresh the observed mtime after a successful call -- covers this
+      // session's own internal save (r2000-tools.ts) equally with a
+      // read-only no-op, so the NEXT call's staleness check compares
+      // against what THIS module actually saw most recently, not a
+      // snapshot from session-open time.
+      currentProjectMtimeMs = projectMtimeMsOrNull(projectPath);
+    }
+    return result;
   } catch (err) {
     if (currentSession === session) {
       currentSession = null;
       currentProjectPath = null;
+      currentProjectMtimeMs = null;
       try {
         session.killSync();
         killCount++;
@@ -171,6 +241,7 @@ export function closeR2000SessionSync(trigger: string): boolean {
   const path = currentProjectPath;
   currentSession = null;
   currentProjectPath = null;
+  currentProjectMtimeMs = null;
   session.killSync();
   killCount++;
   console.error(`r2000-session: closed the held session for "${path}" (trigger: ${trigger})`);
@@ -200,16 +271,7 @@ export function __r2000SessionStateForTest(): {
  * in sequence without a child leaking between them. Never imported by
  * production code. */
 export async function __resetR2000SessionForTest(): Promise<void> {
-  if (currentSession) {
-    const session = currentSession;
-    currentSession = null;
-    currentProjectPath = null;
-    try {
-      await session.close();
-    } catch {
-      // Best effort -- this is test cleanup, not a durability claim.
-    }
-  }
+  await discardCurrentSession();
   inFlight = false;
   openCount = 0;
   killCount = 0;

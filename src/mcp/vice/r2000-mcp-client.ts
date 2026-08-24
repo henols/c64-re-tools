@@ -39,11 +39,22 @@
 // never repeat it.
 //
 // WHAT NOT TO DO, named concretely:
-//   - Never keep a child alive between logical operations (D-17). The
-//     lifecycle is spawn -> initialize -> call(s) -> (optional save) ->
-//     stdin close -> exit, once per `withR2000Session()` call. There is no
-//     long-lived child, no supervision, and no second wedge class to add to
-//     this project's existing stock-VICE one.
+//   - Never keep a child alive outside these two sanctioned primitives. This
+//     module exposes exactly two: the one-shot `withR2000Session()` (CLI
+//     verbs -- `r2000-cli.ts`, the enum generator, the memory-map renderer)
+//     and the long-lived `openR2000Session()` (the `r2000_*` MCP tool
+//     surface, via `r2000-session.ts`'s single-slot lifecycle owner). The
+//     PRIOR rule -- exactly one session per logical operation, no long-lived
+//     child at all, spawn -> initialize -> call(s) -> (optional save) ->
+//     stdin close -> exit every time -- was `D-17`/`D-18` (Phase 11) and was
+//     REVERSED by Phase 18; see `.planning/ARCHITECTURE.md`'s "## Architecture
+//     Change Record" for the full six-step justification rather than
+//     restating it here. The rule that SURVIVES the reversal, unchanged:
+//     this module remains the ONLY place in this repo that spawns the
+//     stdio server or parses a JSON-RPC frame, and the durability contract
+//     -- every mutating call is still followed by its own save, over the
+//     SAME session, before that call resolves to its caller (D18-08) -- is
+//     unchanged and owned by `r2000-tools.ts`, never by this module.
 //   - Never import the underlying MCP TypeScript SDK package directly. It
 //     is reachable today only as an undeclared transitive dependency of
 //     `@mastra/mcp` (hoisted into this project's own `node_modules` by

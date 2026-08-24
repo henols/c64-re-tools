@@ -42,9 +42,15 @@
 // closed, not merely asserts they are.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+import { runR2000Tool } from "./r2000-tools.ts";
+import { __r2000SessionStateForTest, __resetR2000SessionForTest } from "./r2000-session.ts";
+import { buildMcpServerStdioArgs, assertNoViceFlag as launchAssertNoViceFlag } from "./r2000-launch.ts";
+import { synthesizeProject } from "./r2000-project.ts";
+import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -301,7 +307,10 @@ function discoverR2000SpawnSites(): R2000SpawnSiteReport[] {
  * derives the real set independently). */
 const EXPECTED_R2000_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({
   "r2000-launch.ts": "sync CLI seam -- runR2000()'s blocking spawnSync",
-  "r2000-mcp-client.ts": "async MCP session -- withR2000Session()'s long-lived spawn",
+  "r2000-mcp-client.ts":
+    "async MCP session -- the one spawn() statement in openR2000Session() now serves both " +
+    "withR2000Session()'s one-shot wrapper (CLI verbs) and the long-lived session r2000-session.ts holds " +
+    "open across many r2000_* calls (D18-02/D18-07); r2000-session.ts itself never spawns",
 });
 
 // -- 1. Set equality, both directions ---------------------------------------
@@ -440,4 +449,179 @@ test("r2000-mcp-client.ts's withR2000Session() spawn(bin, argv, ...) call is dis
   const report = scanModuleForR2000SpawnSites(src, "r2000-mcp-client.ts");
   assert.ok(report, "r2000-mcp-client.ts must be discovered as a regenerator2000 spawn site");
   assert.equal(report!.guardsBeforeEverySpawn, true);
+});
+
+// -- 6. D18-02: r2000-session.ts is IN the scanned set, and contributes -----
+// -- zero discovered spawn sites -- proving the guard is demonstrably ------
+// -- looking at the new module, not merely silent about it. ----------------
+
+test("shippedTsModules() now includes r2000-session.ts (plan 18-03), and it contributes zero discovered regenerator2000 spawn sites (D18-02)", () => {
+  const modules = shippedTsModules();
+  assert.ok(
+    modules.includes("r2000-session.ts"),
+    "expected r2000-session.ts to be inside package.json's files[] -- without this entry the guard below " +
+      "would be scanning a set that never included the new module, making its own proof vacuous"
+  );
+
+  const src = readFileSync(join(HERE, "r2000-session.ts"), "utf8");
+  const report = scanModuleForR2000SpawnSites(src, "r2000-session.ts");
+  assert.equal(
+    report,
+    undefined,
+    "r2000-session.ts must never contribute a discovered regenerator2000 spawn site -- it calls INTO " +
+      "r2000-mcp-client.ts's openR2000Session() (dynamically), and never spawns itself (D18-02)"
+  );
+
+  const discovered = discoverR2000SpawnSites().map((r) => r.file);
+  assert.equal(
+    discovered.includes("r2000-session.ts"),
+    false,
+    "r2000-session.ts must not appear in the real discovered spawn-site set either"
+  );
+});
+
+// -- 7. The one-spawn-site invariant (the assumption-delta companion test) -
+// -- promoting r2000-mcp-client.ts to serve TWO session kinds must still --
+// -- leave exactly ONE spawn statement, guarded before it. -----------------
+
+/** After `codeOnly()` stripping, counts every regenerator2000-shaped spawn
+ * call in `src` and reports whether `assertNoViceFlag(` precedes ALL of
+ * them. Reuses this file's own `findSpawnCalls()`/`isR2000SpawnCall()`/
+ * `firstAssertNoViceFlagCallIndex()` helpers rather than a second parallel
+ * implementation. */
+function oneSpawnSiteReport(src: string): { count: number; guardOffset: number; guardsBeforeAll: boolean } {
+  const codeOnlySrc = codeOnly(src);
+  const spawnCalls = findSpawnCalls(codeOnlySrc).filter((s) => isR2000SpawnCall(s, codeOnlySrc, src));
+  const guardOffset = firstAssertNoViceFlagCallIndex(codeOnlySrc);
+  const guardsBeforeAll = guardOffset !== -1 && spawnCalls.every((s) => guardOffset < s.index);
+  return { count: spawnCalls.length, guardOffset, guardsBeforeAll };
+}
+
+test("the one-spawn-site invariant: r2000-mcp-client.ts contains exactly ONE regenerator2000 spawn call, guarded by assertNoViceFlag( before it -- a second path means a third session kind was added without re-running D18-02's decision", () => {
+  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
+  const result = oneSpawnSiteReport(src);
+  assert.equal(
+    result.count,
+    1,
+    `expected exactly ONE regenerator2000 spawn call in r2000-mcp-client.ts -- the promote left one spawn ` +
+      `statement serving both openR2000Session()'s long-lived session and withR2000Session()'s one-shot ` +
+      `wrapper (which itself now calls openR2000Session() rather than spawning separately); found ` +
+      `${result.count}. A second spawn path appearing means a third session kind was added without ` +
+      `re-running D18-02's decision.`
+  );
+  assert.ok(
+    result.guardsBeforeAll,
+    "expected assertNoViceFlag( to precede the (single) regenerator2000 spawn call in r2000-mcp-client.ts"
+  );
+});
+
+test("planted violation: duplicating r2000-mcp-client.ts's spawn statement into a second function makes the one-spawn-site invariant fail", () => {
+  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
+  // Reuses the SAME local identifier name ("bin") the real spawn call uses,
+  // so isR2000SpawnCall()'s identNamesR2000Binary() resolves it exactly the
+  // way it resolves the real call's own `bin` -- a faithful duplicate, not
+  // a decoy the detector would ignore for an unrelated reason.
+  const duplicated =
+    src +
+    `\nexport function __scratchSecondSpawnPath(bin: string, argv: string[]) {\n` +
+    `  return spawn(bin, [...argv], { stdio: ["pipe", "pipe", "pipe"] });\n` +
+    `}\n`;
+  const before = oneSpawnSiteReport(src);
+  const after = oneSpawnSiteReport(duplicated);
+  assert.equal(before.count, 1, "sanity: the real file must report exactly one spawn call before duplication");
+  assert.notEqual(
+    after.count,
+    1,
+    "expected the duplicated spawn statement to be discovered as a SECOND regenerator2000 spawn site, " +
+      "flipping the one-spawn-site invariant to fail -- if this assertion itself fails, the test above is vacuous"
+  );
+});
+
+// -- 8. D18-02 live session-reuse transcript (gated, real binary) ----------
+// -- captures a committed artifact proving assertNoViceFlag ran against ----
+// -- the fixed builder's argv before any child existed, and that a second -
+// -- call reached the SAME held child. -------------------------------------
+
+const LIVE_SKIP_REASON = skipReasonFor("r2000-spawn-seam.test.ts");
+
+test("regenerator2000 availability gate (D-11)", () => {
+  assertR2000RequiredIfEnvSet(assert);
+});
+
+const EVIDENCE_DIR = join(
+  HERE,
+  "..",
+  "..",
+  "..",
+  ".planning",
+  "phases",
+  "18-persistent-session-and-tool-surface",
+  "evidence",
+);
+const EVIDENCE_PATH = join(EVIDENCE_DIR, "18-session-reuse-transcript.json");
+
+test(
+  "gated: session-reuse transcript (D18-02) -- assertNoViceFlag runs against the fixed builder's argv before any child exists, and a second call reaches the same held child",
+  { skip: LIVE_SKIP_REASON },
+  async () => {
+    const workDir = mkdtempSync(join(HERE, ".r2000-spawn-seam-test-live-"));
+    try {
+      await __resetR2000SessionForTest();
+
+      const projectPath = join(workDir, "session-reuse.regen2000proj");
+      writeFileSync(projectPath, synthesizeProject(new Uint8Array([0xea]), { origin: 0xc000 }));
+
+      // The SAME fixed builder r2000-mcp-client.ts's openR2000Session() calls
+      // internally -- asserted here, independently, against the argv this
+      // test then drives the real session with.
+      const argv = buildMcpServerStdioArgs({ projectPath });
+
+      // Runs before any child exists for this project path (no session has
+      // been opened yet -- confirmed by __resetR2000SessionForTest() above).
+      // Throws if it ever finds --vice; reaching the next line proves it ran
+      // and passed.
+      launchAssertNoViceFlag(argv);
+      const guardRanBeforeChildExisted = true;
+
+      const call1 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
+      assert.equal(call1.isError, false, `first call failed: ${JSON.stringify(call1)}`);
+      const pid1 = __r2000SessionStateForTest().pid;
+      assert.ok(pid1 !== undefined, "expected a real pid after the first call");
+
+      const call2 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
+      assert.equal(call2.isError, false, `second call failed: ${JSON.stringify(call2)}`);
+      const pid2 = __r2000SessionStateForTest().pid;
+
+      assert.equal(pid2, pid1, "expected the second call to reach the SAME held child (same pid) as the first");
+
+      const transcript = {
+        recordedAt: new Date().toISOString(),
+        r2000Bin: process.env.R2000_BIN ?? "regenerator2000",
+        argv,
+        assertNoViceFlagRanBeforeChildExisted: guardRanBeforeChildExisted,
+        pidAfterCall1: pid1,
+        pidAfterCall2: pid2,
+        samePid: pid1 === pid2,
+        note:
+          "D18-02 proof, captured live: assertNoViceFlag(argv) ran against buildMcpServerStdioArgs()'s " +
+          "output before any child existed for this project path, and a second r2000_get_binary_info call " +
+          "reached the same held child (same pid) as the first -- driven by r2000-spawn-seam.test.ts " +
+          "against a real regenerator2000 binary.",
+      };
+      mkdirSync(EVIDENCE_DIR, { recursive: true });
+      writeFileSync(EVIDENCE_PATH, JSON.stringify(transcript, null, 2) + "\n");
+    } finally {
+      await __resetR2000SessionForTest();
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  }
+);
+
+test("a committed session-reuse transcript fixture exists under the phase's evidence directory (D18-02)", () => {
+  assert.ok(
+    existsSync(EVIDENCE_PATH),
+    `expected a committed transcript fixture at ${EVIDENCE_PATH} -- the live test above (re)writes it when ` +
+      `regenerator2000 is available; it must also be committed so the proof survives a CI run where the ` +
+      `live test is skipped`
+  );
 });
