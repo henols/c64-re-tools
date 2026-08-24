@@ -345,6 +345,17 @@ export interface R2000Session {
  * neighbours. A failure during `initialize` tears the spawned child down
  * before rethrowing -- there is no half-open session to leak.
  */
+/** Drops a child stdio pipe's standing claim on the event loop. With
+ * `stdio: ["pipe","pipe","pipe"]` these are `net.Socket`s at runtime and do
+ * have `unref()`, but `ChildProcessWithoutNullStreams` types them as the
+ * narrower `Writable`/`Readable`, which do not declare it. Narrowed to the
+ * one method actually needed rather than asserting a whole `Socket` type, so
+ * this degrades to a no-op instead of throwing if Node ever changes the
+ * stdio stream type. */
+function unrefStream(stream: unknown): void {
+  (stream as { unref?: () => void }).unref?.();
+}
+
 export async function openR2000Session(
   projectPath: string,
   opts: WithR2000SessionOptions = {}
@@ -480,6 +491,43 @@ export async function openR2000Session(
     await teardown();
     throw err;
   }
+
+  // A HELD SESSION MUST NEVER BE THE REASON ITS HOST PROCESS STAYS ALIVE.
+  //
+  // WHY (found by plan 18-03's own post-wave gate, not by reasoning): once
+  // `r2000-tools.ts`'s `runR2000Tool()` was rewired through
+  // `r2000-session.ts`'s HELD single slot, the child handle and its three
+  // stdio pipes -- all ref'd libuv handles -- kept the event loop alive in
+  // every host that is not `vice-proxy.ts`. `r2000-cli.test.ts`'s WR-09 test
+  // calls `runR2000Tool("r2000_disassemble", ...)` once, and its `node --test`
+  // worker then printed all 64 `ok` lines and hung forever, never reaching the
+  // `1..64` summary. Three sibling test files hung the same way. The hazard is
+  // NOT test-only: any CLI verb or one-shot host that reaches `runR2000Tool()`
+  // once would likewise never exit, because nothing outside `vice-proxy.ts`
+  // owns a teardown hook that calls `closeR2000SessionSync()`.
+  //
+  // WHY UNREF IS SAFE, not a race: every `request()` above arms a ref'd
+  // `setTimeout(timer, timeoutMs)` and clears it only on answer/timeout, and
+  // `teardown()` races `exitPromise` against `killAfter()`'s own timer. So
+  // for the whole duration of any in-flight call or close, a ref'd timer --
+  // not the child handle -- is what holds the loop open, and events still
+  // arrive normally. Unref only removes the child's standing claim on the
+  // loop BETWEEN calls, which is exactly the claim that must not exist.
+  //
+  // WHAT THIS DOES NOT DO: it does not close the child, shorten the session,
+  // or add an idle timeout (D18-05's deliberate absence stands). A host that
+  // exits with a session still held orphans that child until it observes
+  // stdin EOF -- measuring and bounding that is plan 18-04's charter
+  // (`18-STDIN-EOF-EVIDENCE.md`, plus the synchronous `vice-proxy.ts`
+  // teardown region that calls `closeR2000SessionSync()`). This unref is the
+  // complement that keeps every OTHER host exitable, not a substitute for it.
+  // All four are load-bearing, verified by removing them: `child.unref()`
+  // ALONE still hung `r2000-cli.test.ts` (the three pipes are separate ref'd
+  // libuv handles), so this is not defensive over-unreffing.
+  child.unref();
+  unrefStream(child.stdin);
+  unrefStream(child.stdout);
+  unrefStream(child.stderr);
 
   const call: R2000Call = async (name, args = {}) => {
     const result = (await request("tools/call", { name, arguments: args })) as CallToolResultShape;

@@ -1,53 +1,63 @@
 # Phase 18 — Deferred Items (out-of-scope discoveries)
 
 Logged per the executor's scope-boundary rule: discovered during plan 18-03's
-execution, confirmed unrelated to this plan's own file changes, not fixed.
+execution, judged unrelated to this plan's own file changes, not fixed.
 
-## 1. A literal `npm test` (no flags) never exits when regenerator2000 is
-   installed locally — pre-existing, not caused by plan 18-03
+**Item 1 was subsequently disproven and fixed** at phase 18 wave 2's
+post-merge gate — see its own entry. Item 2 stands as recorded.
 
-**Symptom:** `cd src/mcp/vice && npm test` (i.e. `node --test '*.test.*'`)
-hangs indefinitely after printing every individual test result, never
-printing the final `1..N` / pass-fail summary line or exiting. Reproduced in
-isolation against `r2000-cli.test.ts` alone (deterministic: 64/64 tests print
-`ok`, then the process never exits — confirmed 3 times).
+## 1. ~~A literal `npm test` never exits when regenerator2000 is installed~~
+   — RESOLVED at wave 2's post-merge gate; the "pre-existing" attribution
+   was WRONG
 
-**Confirmed unrelated to plan 18-03:** `r2000-cli.test.ts` and its production
-dependency (`r2000-cli.ts`) import neither `r2000-mcp-client.ts` nor the new
-`r2000-session.ts` — traced the full import chain (`r2000-launch.ts`,
-`r2000-project.ts`, `r2000-d64.ts`, `r2000-verify.ts`, `r2000-enum-gen.ts`,
-`r2000-symbols.ts`, `r2000-memmap-render.ts`). None of plan 18-03's edits
-touch any file in that chain. The same hang is therefore present against an
-unmodified HEAD checkout too — this is not a regression this plan introduced.
+**Status: fixed, not deferred.** Left in place as a correction record, because
+the original entry's reasoning is the instructive part.
 
-**Root cause (not investigated further — out of scope):** almost certainly a
-lingering open handle (an un-`unref()`'d timer, an un-closed child process,
-or similar) somewhere in the `r2000-cli.test.ts`/`r2000-enum-gen.test.ts`/
-`r2000-memmap-render.test.ts`/`r2000-symbol-roundtrip.test.ts` cluster,
-keeping Node's event loop alive past the point every individual test has
-already completed. Node's `--test-force-exit` flag (Node >= 22.16/23) works
-around it cleanly: `node --test-force-exit --test '*.test.*'` completes the
-full suite in ~2-3 minutes with the correct pass/fail accounting.
+**What was recorded:** that `cd src/mcp/vice && npm test` hangs after printing
+every result, that it was pre-existing, that it was unrelated to plan 18-03,
+and that `--test-force-exit` was an acceptable local workaround.
 
-**Why this was not fixed under plan 18-03:** the scope-boundary rule
-("Only auto-fix issues DIRECTLY caused by the current task's changes") — this
-predates the plan, and diagnosing/fixing a lingering-handle leak in four
-unrelated test files is a distinct piece of work deserving its own plan/task.
+**What was actually true:** plan 18-03 introduced it. Rewiring
+`runR2000Tool()` through `r2000-session.ts`'s HELD single slot means the
+retained `regenerator2000` child — and its three `stdio: "pipe"` sockets, all
+ref'd libuv handles — keep the event loop alive in every host that is not
+`vice-proxy.ts`. `r2000-cli.test.ts:1303` calls `runR2000Tool(...)` exactly
+once and never closes the session (only `r2000-session.test.ts` has the
+`__resetR2000SessionForTest()` seam), so its `node --test` worker printed all
+64 `ok` lines and then hung forever. Three sibling files hung for the same
+reason. The hazard was never test-only: any CLI verb or one-shot host reaching
+`runR2000Tool()` once would also never exit.
 
-**Why it never surfaces in CI:** `.github/workflows/ci.yml` never installs
-regenerator2000 (D-11's own documented design: a 5-minute Rust build on every
-merge would contradict "cheapest by far"). Every regenerator2000-gated test
-in the affected files reads `{ skip: SKIP_REASON }` in CI, so the hang is
-provably a **local-development-only** symptom, on a machine with
-regenerator2000 installed — exactly this plan's own execution environment.
+**How the original conclusion went wrong — the transferable lesson:** it was
+reached by *inspecting the import chain* (`r2000-cli.ts` imports neither
+`r2000-mcp-client.ts` nor `r2000-session.ts`, therefore not caused by this
+plan) and never by *running the suite against an unmodified checkout*. The
+import chain was read correctly and the inference from it was still false: the
+coupling runs through a dynamic `await import("./r2000-tools.ts")` inside the
+test body, which a static chain walk does not see. A single measurement
+settled it — the same file exits in 2s at the wave-1 tip `ebe90f8` and hung at
+`f6a5b03`. **An "it predates me" claim about a suite is cheap to measure and
+must be measured, never inferred.**
 
-**Recommended fix (for whoever picks this up):** either instrument the four
-affected test files to find and close the leaked handle (e.g.
-`node --test --test-reporter=... --experimental-detect-open-handles`-style
-diagnostics, or bisecting `after()`/`before()` blocks), or add
-`--test-force-exit` to `package.json`'s own `"test"` script — the latter is a
-one-line, low-risk fix but changes CI's own test invocation and was judged
-out of scope for a session-persistence plan to decide unilaterally.
+**The fix (commit at the wave-2 gate):** `openR2000Session()` now calls
+`child.unref()` plus an `unrefStream()` on each of `stdin`/`stdout`/`stderr`,
+immediately after a successful handshake. A held session stops being a reason
+for its host process to live, while staying fully usable — every `request()`
+arms a ref'd `setTimeout` that holds the loop open for the duration of any
+in-flight call or teardown, so no event is ever missed. All four unrefs are
+load-bearing: `child.unref()` alone still hung (verified by removing the
+other three). Plain `npm test` now exits 0 in ~88s: 2425 tests, 2381 pass,
+0 fail, 39 skipped, 5 todo. `--test-force-exit` is no longer needed and
+`package.json`'s `test` script is unchanged.
+
+**Consequence handed to plan 18-04, deliberately:** a host that exits while a
+session is still held now orphans that child until it observes stdin EOF.
+Bounding that is 18-04's own charter (`18-STDIN-EOF-EVIDENCE.md` and the
+synchronous `vice-proxy.ts` teardown calling `closeR2000SessionSync()`). The
+unref is the complement that keeps every *other* host exitable, not a
+substitute for that teardown. Measured at this gate: no
+`regenerator2000 --mcp-server-stdio` process survived any of the seven test
+files run individually, nor the full suite.
 
 ## 2. Two flaky (non-reproducible) failures observed during a full-suite run
    under heavy concurrent load — not real regressions
