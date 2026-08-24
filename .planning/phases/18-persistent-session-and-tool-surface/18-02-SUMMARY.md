@@ -189,3 +189,12 @@ None - no external service configuration required.
 ---
 *Phase: 18-persistent-session-and-tool-surface*
 *Completed: 2026-08-24*
+
+## Self-Check: PASSED
+
+- `src/mcp/vice/r2000-project.ts` — FOUND
+- `src/mcp/vice/r2000-project.test.ts` — FOUND
+- `.planning/phases/18-persistent-session-and-tool-surface/18-02-SUMMARY.md` — FOUND
+- Commit `e789ffd` (feat: ensureProjectSettings()) — FOUND in `git log --all`
+- Commit `8baae6e` (test: planted-violation coverage) — FOUND in `git log --all`
+- Commit `5922eae` (docs: this SUMMARY) — FOUND in `git log --all`
