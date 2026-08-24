@@ -1,6 +1,6 @@
 ---
 name: acme-build
-description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, or list the symbols a program uses.
+description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. Use when asked to assemble, build, compile or link .a/.asm 6502/6510 source, produce a C64 .prg, scaffold a new C64 program, or list which symbols an assembled build actually used from its symbol file.
 ---
 
 # Assembling C64 source with ACME

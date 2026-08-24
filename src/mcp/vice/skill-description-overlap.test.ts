@@ -35,6 +35,7 @@ import {
   DESCRIPTION_OVERLAP_THRESHOLD,
   allowlistAudit,
   clauseTokens,
+  copyDisagreements,
   descriptionCollisions,
   entryCoversCollision,
   expectedPairCount,
@@ -42,6 +43,7 @@ import {
   normaliseClause,
   pairScores,
   parseSkillFrontmatter,
+  skillTableDescriptions,
   skillsWithNoComparableClauses,
   splitTriggerClauses,
 } from "../../../scripts/lib/skill-descriptions.mjs";
@@ -337,6 +339,46 @@ test("the observed maximum over the real corpus sits strictly below the threshol
 });
 
 // ---------------------------------------------------------------------------
+// The one hand-maintained VERBATIM copy (19-RESEARCH.md section 4.6)
+// ---------------------------------------------------------------------------
+
+test("skillTableDescriptions(): extracts every row of CLAUDE.md's real project-skills table", () => {
+  const table = skillTableDescriptions(readFileSync(join(ROOT, "CLAUDE.md"), "utf8"));
+  assert.ok(
+    Object.keys(table).length >= 6,
+    `expected at least 6 rows in CLAUDE.md's project-skills table, extracted ${Object.keys(table).length} -- the row pattern may be broken`
+  );
+});
+
+test("CLAUDE.md's project-skills table is byte-identical to every SKILL.md frontmatter description", () => {
+  const table = skillTableDescriptions(readFileSync(join(ROOT, "CLAUDE.md"), "utf8"));
+  assert.deepEqual(copyDisagreements(realCorpus(), table), []);
+});
+
+test("planted violation: a single changed character in the copy is reported as a disagreement", () => {
+  const canonical = realCorpus();
+  const drifted = { ...canonical };
+  const first = Object.keys(drifted).sort()[0];
+  drifted[first] = drifted[first] + ".";
+  const found = copyDisagreements(canonical, drifted);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].name, first);
+  assert.equal(found[0].kind, "text-differs");
+});
+
+test("planted violation: a skill missing from the copy, and a stale row naming no skill, are both reported", () => {
+  const canonical = { alpha: "A", beta: "B" };
+  const found = copyDisagreements(canonical, { alpha: "A", gamma: "G" });
+  assert.deepEqual(
+    found.map((d) => [d.name, d.kind]).sort(),
+    [
+      ["beta", "missing-from-copy"],
+      ["gamma", "unknown-skill-in-copy"],
+    ]
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Live-execution control
 // ---------------------------------------------------------------------------
 
@@ -348,4 +390,5 @@ test("live-execution control: check-skill-description-overlap.mjs exits 0 with i
   assert.match(result.stdout, /observed maximum score/);
   assert.match(result.stdout, /threshold/);
   assert.match(result.stdout, /allowlist size/);
+  assert.match(result.stdout, /CLAUDE\.md project-skills table/);
 });

@@ -31,7 +31,12 @@
 //      unmeasured description is not a clean one;
 //   5. pairs compared not equal to n*(n-1)/2 -- proof the traversal
 //      actually happened;
-//   6. fewer skills scanned than the floor.
+//   6. fewer skills scanned than the floor;
+//   7. a hand-maintained VERBATIM copy of a description disagreeing with
+//      its SKILL.md (19-RESEARCH.md section 4.6 -- CLAUDE.md's
+//      project-skills table is the one place a description is duplicated
+//      byte-for-byte; README paraphrases and the plugin manifest points at
+//      the tree, so neither can drift this way).
 //
 // WHY (6) IS A FLOOR AND NEVER AN EQUALITY: a census assertion pinned to an
 // exact count goes red on a correct tree the day a skill is added, and this
@@ -55,10 +60,12 @@ import {
   COLLISION_ALLOWLIST,
   DESCRIPTION_OVERLAP_THRESHOLD,
   allowlistAudit,
+  copyDisagreements,
   descriptionCollisions,
   expectedPairCount,
   pairScores,
   parseSkillFrontmatter,
+  skillTableDescriptions,
   skillsWithNoComparableClauses,
 } from "./lib/skill-descriptions.mjs";
 
@@ -164,6 +171,31 @@ for (const e of malformed) {
   );
 }
 
+// --- 7. The one hand-maintained VERBATIM copy ------------------------------
+// Live-gated in the D-11 style: a checkout without the table (a consumer
+// repository, or a CLAUDE.md that never carried one) is a clean SKIP with a
+// visible reason, never a silent pass and never a failure. What is NOT
+// tolerated is a table that exists and disagrees.
+const CLAUDE_MD = join(ROOT, "CLAUDE.md");
+let copyStatus = "SKIPPED (no CLAUDE.md project-skills table found)";
+if (existsSync(CLAUDE_MD)) {
+  const table = skillTableDescriptions(readFileSync(CLAUDE_MD, "utf8"));
+  if (Object.keys(table).length > 0) {
+    const disagreements = copyDisagreements(descriptions, table);
+    for (const d of disagreements) {
+      need(
+        false,
+        `CLAUDE.md project-skills table disagrees with src/skills/ for "${d.name}" (${d.kind}):\n` +
+          `      SKILL.md:  "${d.canonical}"\n` +
+          `      CLAUDE.md: "${d.copy}"\n` +
+          `      A verbatim copy that drifts is a description a reader trusts and the dispatcher never sees. ` +
+          `Update the table row to match the SKILL.md frontmatter byte-for-byte.`
+      );
+    }
+    copyStatus = `${Object.keys(table).length} rows, all byte-identical to their SKILL.md`;
+  }
+}
+
 // --- Report ----------------------------------------------------------------
 if (errors.length) {
   console.error("check-skill-description-overlap: FAIL");
@@ -177,5 +209,6 @@ console.log(
     `${pairsCompared} pairs compared (n*(n-1)/2 for n=${names.length}); ` +
     `observed maximum score ${top.score.toFixed(3)} from ${top.a} :: ${top.b}; ` +
     `threshold ${DESCRIPTION_OVERLAP_THRESHOLD} (inclusive); ` +
-    `allowlist size ${COLLISION_ALLOWLIST.length}.`
+    `allowlist size ${COLLISION_ALLOWLIST.length}; ` +
+    `CLAUDE.md project-skills table: ${copyStatus}.`
 );

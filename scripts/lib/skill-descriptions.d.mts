@@ -60,3 +60,16 @@ export declare function allowlistAudit(
   allowlist?: AllowlistEntry[]
 ): AllowlistAudit;
 export declare function expectedPairCount(n: number): number;
+
+export interface CopyDisagreement {
+  name: string;
+  kind: "missing-from-copy" | "text-differs" | "unknown-skill-in-copy";
+  canonical: string;
+  copy: string;
+}
+
+export declare function skillTableDescriptions(markdown: string): Record<string, string>;
+export declare function copyDisagreements(
+  canonical: Record<string, string>,
+  copy: Record<string, string>
+): CopyDisagreement[];

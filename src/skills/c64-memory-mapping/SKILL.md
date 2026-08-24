@@ -1,6 +1,6 @@
 ---
 name: c64-memory-mapping
-description: Look up what any C64 address means and turn raw 6502 disassembly into documented assembly, by resolving every address against the C64 memory map, KERNAL ROM routine list, canonical assembler symbols, and per-bit VIC-II/SID/CIA register tables. Use when asked to annotate or comment assembly, document a disassembly listing, or look up an address like $D020, $EA24 or $FFD2.
+description: Look up what any C64 address means and turn raw 6502 disassembly into documented assembly, by resolving every address against the C64 memory map, KERNAL ROM routine list, canonical assembler symbols, and per-bit VIC-II/SID/CIA register tables. Use when asked to annotate or comment assembly against the published memory map, document a disassembly listing by resolving every address it touches, or look up an address like $D020, $EA24 or $FFD2.
 ---
 
 # C64 memory mapping & annotated disassembly

@@ -481,6 +481,61 @@ export function allowlistAudit(collisions, allowlist = COLLISION_ALLOWLIST) {
   return { uncovered, stale, malformed };
 }
 
+// ---------------------------------------------------------------------------
+// Hand-maintained copies
+// ---------------------------------------------------------------------------
+
+/**
+ * Extracts skill-name -> description from a markdown table of the shape
+ * `| <name> | <description> | \`src/skills/<dir>/SKILL.md\` |`.
+ *
+ * WHY THIS IS A PREDICATE AND NOT A ONE-OFF DIFF: 19-RESEARCH.md section 4.6
+ * names three places a description is duplicated BY HAND and can drift --
+ * CLAUDE.md's project-skills table, README.md, and whatever the plugin
+ * manifest surfaces. Of those three, only CLAUDE.md carries the description
+ * VERBATIM (README paraphrases in half a line; the plugin manifest points at
+ * `./src/skills/` and copies nothing). A verbatim copy that nothing compares
+ * is a copy that silently drifts, and a drifted copy is a description a
+ * reader trusts and the dispatcher never sees. Proving they agreed once, on
+ * the day the descriptions were sharpened, proves nothing about tomorrow.
+ *
+ * @param {string} markdown Document source as a STRING.
+ * @returns {Record<string,string>} name -> description, for rows that match.
+ */
+export function skillTableDescriptions(markdown) {
+  const out = {};
+  if (typeof markdown !== "string") return out;
+  for (const line of markdown.split("\n")) {
+    const m = /^\| ([a-z0-9-]+) \| (.+) \| `src\/skills\/[^`]+` \|$/.exec(line);
+    if (m) out[m[1]] = m[2];
+  }
+  return out;
+}
+
+/**
+ * Compares a hand-maintained copy against the canonical descriptions.
+ * Returns one record per disagreement: a name the table carries with
+ * different text, and a name the table omits entirely. A name the TABLE
+ * carries that no skill directory has is also a disagreement -- it is a
+ * skill that was renamed or deleted with the copy left behind.
+ */
+export function copyDisagreements(canonical, copy) {
+  const out = [];
+  for (const name of Object.keys(canonical).sort()) {
+    if (!(name in copy)) {
+      out.push({ name, kind: "missing-from-copy", canonical: canonical[name], copy: "" });
+    } else if (copy[name] !== canonical[name]) {
+      out.push({ name, kind: "text-differs", canonical: canonical[name], copy: copy[name] });
+    }
+  }
+  for (const name of Object.keys(copy).sort()) {
+    if (!(name in canonical)) {
+      out.push({ name, kind: "unknown-skill-in-copy", canonical: "", copy: copy[name] });
+    }
+  }
+  return out;
+}
+
 /** n*(n-1)/2 -- the number of unordered pairs for `n` skills. Exported so
  * the runner asserts a RELATION against its own scanned count rather than a
  * literal (project memory: census assertions pinned to an exact number go
