@@ -1,0 +1,93 @@
+{
+  "control": "NC1b",
+  "purpose": "every label flipped to kind User with its auto name UNCHANGED -- the kind figure looks perfect, the name figure does not",
+  "origin": 2064,
+  "size": 64,
+  "expect_clean": false,
+  "expect_measure": "labels",
+  "symbols": [
+    {
+      "address": 2064,
+      "name": "s_0810",
+      "kind": "User",
+      "type": "Subroutine"
+    },
+    {
+      "address": 2080,
+      "name": "s_0820",
+      "kind": "User",
+      "type": "Subroutine"
+    },
+    {
+      "address": 2088,
+      "name": "s_0828",
+      "kind": "User",
+      "type": "Subroutine"
+    },
+    {
+      "address": 2096,
+      "name": "s_0830",
+      "kind": "User",
+      "type": "Jump"
+    }
+  ],
+  "comments": [
+    {
+      "address": 2064,
+      "type": "line",
+      "comment": "[confirmed-code] entry point: calls set_flag, then read_table, then tails into tail_call"
+    },
+    {
+      "address": 2080,
+      "type": "line",
+      "comment": "[confirmed-code] sets the mode flag; reached from $0810 and from $0816"
+    },
+    {
+      "address": 2088,
+      "type": "line",
+      "comment": "[probable-code] reads the sixteen-byte value table at $0840 indexed by X"
+    },
+    {
+      "address": 2096,
+      "type": "line",
+      "comment": "[confirmed-code] tail: loads the final mode byte and returns to the caller"
+    }
+  ],
+  "blocks": [
+    {
+      "start_address": 2064,
+      "end_address": 2111,
+      "type": "Code"
+    },
+    {
+      "start_address": 2112,
+      "end_address": 2127,
+      "type": "Byte"
+    }
+  ],
+  "cross_references": [
+    {
+      "address": 2064,
+      "callers": []
+    },
+    {
+      "address": 2080,
+      "callers": [
+        2064,
+        2070
+      ]
+    },
+    {
+      "address": 2088,
+      "callers": [
+        2067
+      ]
+    },
+    {
+      "address": 2096,
+      "callers": [
+        2076
+      ]
+    }
+  ]
+}
