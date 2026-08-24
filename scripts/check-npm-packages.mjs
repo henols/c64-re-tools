@@ -22,10 +22,25 @@
 // A fourth assertion reads package.json's own `dependencies` (via
 // `readFileSync`, not `vice.files`) to enforce DISASM-07: this package's
 // runtime dependency set must stay exactly `@mastra/mcp` + `@mastra/core`.
-// The one legitimate filesystem check against a repo path (see the import
-// below) is the repo-root THIRD-PARTY-NOTICES.md pointer check further down
-// -- that pointer is a repo-page artefact, deliberately never packed, so
-// there is no tarball list to check it against.
+// There are exactly TWO legitimate filesystem checks against a repo path in
+// this file, and both are legitimate for the same reason -- there is no
+// tarball list that could answer them:
+//   1. The repo-root THIRD-PARTY-NOTICES.md pointer check further down --
+//      that pointer is a repo-page artefact, deliberately never packed.
+//   2. The installer skill-count RELATION (Phase 19, 19-01/ABS-01). Until
+//      that plan this file pinned the packed skill count to the literal six
+//      with an exact equality -- an equality
+//      against a census that legitimately grows: adding the seventh skill
+//      directory turned CI red on a correct tree. The project rule it now
+//      satisfies is "assert relations, not counts" -- the installer tarball
+//      must carry exactly as many `skills/<name>/SKILL.md` entries as
+//      `src/skills/` has immediate subdirectories carrying a SKILL.md.
+//      That relation CANNOT be derived from a tarball listing alone: the
+//      tarball is one side of the equation and the repo tree is the other,
+//      and it is precisely a producer that drops a skill on the way into the
+//      tarball that this assertion exists to catch. A floor accompanies it so
+//      a broken directory read cannot make the equality vacuously true on
+//      two zeros.
 //
 // Phase 16 gap closure (16-08): the leak assertions (no node_modules/, no
 // test files, no fixtures/, no test-only helper) used to live ONLY in the
@@ -45,6 +60,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const errors = [];
@@ -232,7 +248,26 @@ const inst = packFiles(join(ROOT, "installer"));
 need(inst.name === "@henols/c64-re-tools", `installer: name is "${inst.name}", expected "@henols/c64-re-tools"`);
 need(inst.files.includes("bin/cli.mjs"), "installer: missing bin/cli.mjs (bin entry)");
 const skillMds = inst.files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f));
-need(skillMds.length === 6, `installer: expected 6 skills with SKILL.md, found ${skillMds.length}`);
+// The relation side: `src/skills/` immediate subdirectories that carry a
+// SKILL.md. `topLevelSkillDirs()` is the shared corpus primitive (WR-12) --
+// do not write a second walker here. See this file's header for why this is
+// one of only two legitimate repo-path filesystem checks in this script.
+const SRC_SKILLS_DIR = join(ROOT, "src/skills");
+const srcSkillDirs = topLevelSkillDirs(SRC_SKILLS_DIR).filter((name) =>
+  existsSync(join(SRC_SKILLS_DIR, name, "SKILL.md"))
+);
+// Non-vacuity floor, deliberately a floor and not an equality: a broken or
+// empty directory read must FAIL here rather than make the equality below
+// trivially true on 0 === 0.
+need(
+  srcSkillDirs.length >= 6,
+  `installer: only ${srcSkillDirs.length} directories under src/skills/ carry a SKILL.md -- at least 6 expected; the relation below would be vacuous`
+);
+need(
+  skillMds.length === srcSkillDirs.length,
+  `installer: tarball carries ${skillMds.length} skills with SKILL.md but src/skills/ has ${srcSkillDirs.length} ` +
+    `(${srcSkillDirs.join(", ")}) -- every canonical skill must reach the published tarball`
+);
 // node_modules/ (and the other leak classes) are asserted structurally by
 // assertLeanTarball() from inside packFiles() above.
 
