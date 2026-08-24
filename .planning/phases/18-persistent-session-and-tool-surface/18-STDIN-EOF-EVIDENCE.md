@@ -59,7 +59,7 @@ detached child, then `process.kill(parentPid, "SIGKILL")`.)
 
 ## Observed outcome
 
-Run three times in immediate succession for reproducibility:
+Run four times in immediate succession for reproducibility:
 
 | Run | Parent pid | Child pid | Self-terminated? | Elapsed until child exit |
 |-----|-----------|-----------|-------------------|---------------------------|
