@@ -253,6 +253,315 @@ two lines are the part you cannot afford to load lazily.
   `ping` still reporting `running`, an identical PC — because the machine genuinely never moved.
   Two cheap reads settle it, and neither needs `vice_execution_run`.
 
+<!--
+ATTRIBUTION (ABS-02)
+Adapted from regenerator2000.
+  Source repository: https://github.com/ricardoquesada/regenerator2000
+  Source path:       r2000-analyze-routine/SKILL.md — held under the upstream
+                     repository's excluded agent-skills directory, which the
+                     published crate does not ship. The full upstream path is
+                     recorded once, in
+                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
+  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
+  Source sha256:     6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730
+  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
+  This project elects: MIT
+
+  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
+  upstream text instructs:
+    - Upstream's "if no address is given, ask the disassembly cursor where we
+      are" step is replaced by explicit address input plus a range read.
+      Upstream's own text forbids relying on the cursor in exactly this
+      situation, and this project has no editor cursor at all.
+    - The range read names this project's own 4096-byte ceiling and the
+      consecutive-ranges route around it, which upstream has no equivalent of.
+    - Upstream's three low/high-byte immediate-formatting steps are NOT
+      carried as instructions — the underlying call is not exposed here. They
+      are named by bare verb, with the requirement that would supply their
+      criterion, under "The pointer-formatting step this project does not
+      have" below.
+    - Upstream is silent on where this procedure sits relative to a whole-
+      program pass. This project states it: the queue is
+      `routine-queue-walker`'s job and this is the per-entry procedure it
+      calls into.
+
+  Re-sync trigger: see ABS-04's dated decision and the manifest's
+  `resync_triggers`.
+  See THIRD-PARTY-NOTICES.md.
+-->
+
+## Documenting one routine, end to end
+
+The table at the top of this page finds *where* the structure is. This section
+is what you do once you have picked one routine out of it and want it
+documented properly in the annotation store.
+
+**Scope, so three skills do not fight over the same job.** This procedure
+handles **one routine, at one explicit address**. Building the backlog of every
+undocumented routine in a project and draining it to closure is
+`routine-queue-walker`'s job — it calls into this procedure once per queue
+entry. Classifying the *regions* around the routine, and naming the data
+symbols it touches, is the absorbed pair in `c64-memory-mapping`.
+
+### 1. Context first
+
+`r2000_get_binary_info` for `system`, `filename`, `description` and
+`may_contain_undocumented_opcodes`.
+
+- `system` names the target machine and therefore which memory map, hardware
+  registers and ROM entry points are in play.
+- `filename` and `description` identify the software. This is how you recognise
+  a stock component instead of re-deriving it — a Hubbard-style music driver,
+  an Exomizer decrunch stub — and how genre informs a guess
+  (`check_collision` is a plausible routine in a shooter).
+- With `may_contain_undocumented_opcodes: true`, expect `LAX`, `SAX`, `SLO`,
+  `DCP`, `ISC`. These are real instructions, not disassembly errors; do not
+  stop reading at one.
+
+### 2. Bounds, from an explicit address
+
+**Always start from an address you were given or derived** — `$XXXX` or its
+decimal equivalent. There is no editor cursor in this project's route, and
+upstream's own text forbids relying on one in any case.
+
+Find the start (the entry point or its label) and the end (`RTS`, `RTI`, or a
+`JMP`). Two shapes to expect:
+
+- A routine ending in `JMP shared_epilogue` still **ends there** — that is a
+  tail call, and the target's body is a different routine.
+- A routine with no return at all may **fall through** into the next one. Use
+  the cross-references and the flow to decide where the boundary is, and say in
+  the comment that it falls through.
+
+### 3. Read the range
+
+`r2000_read_region` over the routine's explicit range, with `view` **omitted**
+— the disassembly view is that parameter's documented default, confirmed live
+against the real binary, so the call needs no `view` at all here.
+
+The combined byte count is capped at **4096 bytes** per call
+(`R2000_READ_REGION_MAX_BYTES`) and a request above it is refused by name
+rather than silently truncated. A routine longer than that — rare, but real in
+a decruncher or a level builder — is read as **consecutive ranges**. Read them
+in order; do not raise the cap to swallow the whole program, because the cap is
+what keeps a "read this routine" call from becoming a whole-program export.
+
+Then read the flow, not just the instructions:
+
+- Does it loop? Where does the loop terminate?
+- Does it call other routines, or ROM entry points?
+- Does it touch hardware registers?
+
+Recurring shapes worth recognising on sight:
+
+| Pattern | Almost always |
+|---|---|
+| `SEI` … `CLI` bracketing | IRQ setup or teardown |
+| `LDA`/`STA` with `DEX`/`DEY`/`BNE` | Memory copy or fill |
+| Bit shifts plus `ADC`/`SBC` chains | Maths, or a decompressor |
+| Reads an I/O address then branches | Hardware polling |
+| Writes to `$0314`/`$FFFE` | Interrupt vector installation |
+| Writes to `$D400`–`$D418` | Music or SFX driver tick |
+| Reads `$DC00`/`$DC01` | Joystick or keyboard polling |
+
+### 4. Who calls it
+
+`r2000_get_cross_references` on the entry point. The caller is often more
+decisive than the body:
+
+- Called from an init block → a setup routine, runs once.
+- Called from the main loop → a per-frame update.
+- Called from the IRQ → must be fast; likely a music tick or a raster update,
+  and its zero-page usage is IRQ-relative.
+- **No callers at all** → not necessarily dead. It may be a dispatch target
+  reached through a jump table; check the nearby data blocks for an address
+  table pointing at it.
+
+### 5. What data it touches
+
+For every address the routine reads or writes:
+
+1. `lookup` it first (see `c64-memory-mapping`). A hardware register or KERNAL
+   entry point is answered outright and needs no further work.
+2. Otherwise `r2000_get_cross_references` on that address, and read the shape:
+   - Written once, in init → a constant or a config value.
+   - Written *and* read by several routines → shared state, a global.
+   - In the zero page and used as `($addr),Y` → an indirect pointer.
+3. **Enums.** If the accessed addresses or the immediate values form a logical
+   set — state constants, joystick direction bits, colour codes — check for an
+   existing project, global or system enum that matches, and apply it with
+   `r2000_apply_enum_usage` at the accessing instruction. If none matches but
+   the set is clean, define one with `r2000_create_project_enum` (give it a
+   real `description`) and then apply it everywhere it fits. This is what turns
+   `lda #$1b` into something a reader understands.
+
+**The pointer-formatting step this project does not have.** A routine that sets
+up a pointer or a vector does it with a pair of immediate loads — `LDA #<target
+/ STA ptr`, `LDA #>target / STA ptr+1`. Upstream calls `set_immediate_format`
+on each of the two instruction addresses, with `low_byte` / `high_byte` and the
+target, so the pair renders as one symbol reference. **That call is not exposed
+on this project's surface.** `BUILD-03` ("every branch, `JSR`/`JMP` and data
+reference goes through a symbol, so code can move") is the requirement that
+supplies its criterion, and the per-call disposition sits in the manifest named
+in the attribution header above. Until then, recombine the two bytes yourself
+and put the reconstructed target in a side comment on both instructions, so the
+vector setup is readable even though the store cannot format it.
+
+### 6. Synthesise, then document
+
+Four things, and they are the four things the comment block carries: **purpose**
+(one sentence), **inputs** (registers and memory used as arguments), **outputs**
+(registers and memory modified), **side effects** (hardware, screen, sound).
+
+Rename the label with `r2000_set_label_name`, then put a multi-line `"line"`
+comment above the first instruction with `r2000_set_comment`, in this exact
+shape — the separator is both the first and the last line:
+
+```
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+<what the routine does>
+
+Inputs:  <registers or memory used as arguments, or "None">
+Outputs: <registers or memory modified, or "None">
+Side Effects: <hardware changes, screen updates, etc., or "None">
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+```
+
+Then add `"side"` comments to the instructions that carry the meaning — what a
+register holds here, why this branch is taken, what this address represents.
+This is the part that makes the listing readable for the next person, and it is
+the part most often skipped. Grade evidence comments with the confidence prefix
+documented earlier on this page.
+
+### 7. Report
+
+- **Purpose** in one sentence.
+- **Inputs / outputs / side effects** as determined above.
+- **Evidence** — the instructions or cross-references that decided it.
+- **Actions taken** — what was renamed, which line comment was added, which
+  instructions got side comments, which enums were defined or applied.
+- **Uncertain areas** — every instruction or address whose purpose is still
+  unclear, by address. A routine report with no uncertain areas on a real game
+  is usually a report that stopped looking.
+
+### What goes wrong
+
+| Symptom | What it actually is |
+|---|---|
+| No `RTS`/`JMP`/`RTI` at the apparent end | Deliberate fall-through. Check whether the next label is independently called. |
+| `JMP some_routine` as the last instruction | A tail call. This routine ends there; the target is a separate routine. |
+| Several routines converging on one `RTS` | A shared epilogue. It belongs to none of them; note it in each comment. |
+| No callers, but the routine is clearly live | Reached through a jump table. Look for an address table pointing at it. |
+| Disassembly appears to break mid-routine | Undocumented opcodes. Check the binary-info hint and keep reading. |
+| Zero-page usage contradicts the main program's | The routine runs from the IRQ. Its context is IRQ-relative. |
+
+<!--
+ATTRIBUTION (ABS-02)
+Adapted from regenerator2000.
+  Source path:       r2000-analyze-basic/SKILL.md — held under the upstream
+                     repository's excluded agent-skills directory, which the
+                     published crate does not ship. The full upstream path is
+                     recorded once, in
+                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
+  Source repository: https://github.com/ricardoquesada/regenerator2000
+  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
+  Source sha256:     8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2
+  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
+  This project elects: MIT
+
+  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
+  upstream text instructs:
+    - This is REFERENCE-ONLY material. The capability is DEFERRED under
+      FUT-01, so the section below is carried as text a reader may consult and
+      NOT as a capability this skill claims. Upstream's four trigger phrases
+      ("analyze this BASIC code", "decode basic commands from memory", "create
+      side comments for BASIC lines", "parse basic pointer address and line
+      number") are deliberately kept out of every skill's `description:`
+      frontmatter, so nothing here can fire as a trigger.
+    - Upstream's "if unspecified, prompt the user for the range" step is
+      replaced by explicit address input, consistent with every other absorbed
+      procedure in this project.
+    - The region read names this project's own 4096-byte ceiling, which
+      upstream has no equivalent of.
+
+  Re-sync trigger: see ABS-04's dated decision and the manifest's
+  `resync_triggers`.
+  See THIRD-PARTY-NOTICES.md.
+-->
+
+## REFERENCE-ONLY: decoding Commodore BASIC tokens
+
+**This capability is DEFERRED under `FUT-01` and this skill does not claim
+it.** The reason is empirical, not a shortage of effort: a commercial C64 title
+captured after its loader has run almost universally reduces to a one-line
+`SYS` stub, so a token decoder would spend its life decoding `10 SYS 2064` and
+nothing else. The material below is carried as **reference text only** — read
+it if you hit the rare program that really does carry a tokenised BASIC
+program, and note that none of its trigger phrases appear in any skill's
+`description:` frontmatter, so it cannot fire on its own.
+
+If a future milestone lifts `FUT-01`, this section is the starting point rather
+than a fresh research task.
+
+### Line anatomy
+
+A tokenised BASIC program is a linked list in memory. Each line is:
+
+1. **Bytes 0–1 — next-line pointer.** The address where the *next* line
+   begins, little-endian (`24 04` → `$0424`).
+2. **Bytes 2–3 — line number**, 16-bit little-endian (`0A 00` → `10`).
+3. **Bytes 4–N — the tokens**, running until a `$00` terminator.
+4. **End of program** when a line's next-line pointer is `$00 $00`.
+
+Read the range with `r2000_read_region`, `view: "hexdump"`, over an explicit
+start and end address — subject to the same 4096-byte ceiling as every other
+range read on this surface. Then walk the pointer chain from the first line
+until the pointer is `$00 $00`.
+
+### Keyword tokens (BASIC V2)
+
+Bytes with the high bit set, `$80` through `$CB`, are keywords:
+
+| Hex | Keyword | Hex | Keyword | Hex | Keyword | Hex | Keyword |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `$80` | `END` | `$93` | `LOAD` | `$A6` | `SPC(` | `$B9` | `POS` |
+| `$81` | `FOR` | `$94` | `SAVE` | `$A7` | `THEN` | `$BA` | `SQR` |
+| `$82` | `NEXT` | `$95` | `VERIFY` | `$A8` | `NOT` | `$BB` | `RND` |
+| `$83` | `DATA` | `$96` | `DEF` | `$A9` | `STEP` | `$BC` | `LOG` |
+| `$84` | `INPUT#` | `$97` | `POKE` | `$AA` | `+` | `$BD` | `EXP` |
+| `$85` | `INPUT` | `$98` | `PRINT#` | `$AB` | `-` | `$BE` | `COS` |
+| `$86` | `DIM` | `$99` | `PRINT` | `$AC` | `*` | `$BF` | `SIN` |
+| `$87` | `READ` | `$9A` | `CONT` | `$AD` | `/` | `$C0` | `TAN` |
+| `$88` | `LET` | `$9B` | `LIST` | `$AE` | `^` | `$C1` | `ATN` |
+| `$89` | `GOTO` | `$9C` | `CLR` | `$AF` | `AND` | `$C2` | `PEEK` |
+| `$8A` | `RUN` | `$9D` | `CMD` | `$B0` | `OR` | `$C3` | `LEN` |
+| `$8B` | `IF` | `$9E` | `SYS` | `$B1` | `>` | `$C4` | `STR$` |
+| `$8C` | `RESTORE` | `$9F` | `OPEN` | `$B2` | `=` | `$C5` | `VAL` |
+| `$8D` | `GOSUB` | `$A0` | `CLOSE` | `$B3` | `<` | `$C6` | `ASC` |
+| `$8E` | `RETURN` | `$A1` | `GET` | `$B4` | `SGN` | `$C7` | `CHR$` |
+| `$8F` | `REM` | `$A2` | `NEW` | `$B5` | `INT` | `$C8` | `LEFT$` |
+| `$90` | `STOP` | `$A3` | `TAB(` | `$B6` | `ABS` | `$C9` | `RIGHT$` |
+| `$91` | `ON` | `$A4` | `TO` | `$B7` | `USR` | `$CA` | `MID$` |
+| `$92` | `WAIT` | `$A5` | `FN` | `$B8` | `FRE` | `$CB` | `GO` |
+
+Bytes between `$20` and `$7F` are literal PETSCII characters — strings,
+variable names, numbers.
+
+### What a decoding pass would write
+
+Per line, batched through `r2000_batch_execute`:
+
+1. `r2000_set_data_type` `address` over bytes 0–1 (the next-line pointer).
+2. `r2000_set_data_type` `word` over bytes 2–3 (the line number).
+3. `r2000_set_data_type` `byte` from byte 4 through the `$00` terminator,
+   inclusive.
+4. `r2000_set_comment` `"side"` at byte 0, carrying the reconstructed line —
+   `10 REM LODE RUNNER`.
+
+Then jump to the next-line pointer and repeat until it reads `$00 $00`, and
+finally mark that `$00 $00` terminator itself as `word`. `r2000_save_project`
+persists the result.
+
 ## Which skill does what
 
 This one is the route between the stations. It does not restate what the others carry.

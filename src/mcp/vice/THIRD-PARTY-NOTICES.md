@@ -70,19 +70,27 @@ upstream bytes, and this project's destination for each:
 
 | Upstream source path (at the pin) | sha256 | Bytes | Destination in this repository | Incorporated as of this commit |
 | --- | --- | --- | --- | --- |
-| `.agent/skills/r2000-analyze-basic/SKILL.md` | `8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2` | 4457 | `src/skills/c64-program-recon/` | no — scheduled within Phase 19 |
-| `.agent/skills/r2000-analyze-blocks/SKILL.md` | `3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b` | 14674 | `src/skills/c64-memory-mapping/` | no — scheduled within Phase 19 |
+| `.agent/skills/r2000-analyze-basic/SKILL.md` | `8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2` | 4457 | `src/skills/c64-program-recon/` | **yes** |
+| `.agent/skills/r2000-analyze-blocks/SKILL.md` | `3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b` | 14674 | `src/skills/c64-memory-mapping/` | **yes** |
 | `.agent/skills/r2000-analyze-program/SKILL.md` | `2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955` | 15308 | `src/skills/routine-queue-walker/` | **yes** |
-| `.agent/skills/r2000-analyze-routine/SKILL.md` | `6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730` | 9248 | `src/skills/c64-program-recon/` | no — scheduled within Phase 19 |
-| `.agent/skills/r2000-analyze-symbol/SKILL.md` | `d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8` | 9705 | `src/skills/c64-memory-mapping/` | no — scheduled within Phase 19 |
+| `.agent/skills/r2000-analyze-routine/SKILL.md` | `6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730` | 9248 | `src/skills/c64-program-recon/` | **yes** |
+| `.agent/skills/r2000-analyze-symbol/SKILL.md` | `d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8` | 9705 | `src/skills/c64-memory-mapping/` | **yes** |
 
-**Total pinned upstream corpus: 53,392 bytes across five files.** The final
-column is maintained per absorbed file, so this section never claims
+**Total pinned upstream corpus: 53,392 bytes across five files, all five now
+incorporated** (the first by plan 19-01, the remaining four by plan 19-02).
+The final column is maintained per absorbed file, so this section never claims
 incorporation that has not happened yet; the machine-readable record — paths,
 digests, per-call dispositions and the re-sync triggers — is
 `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`,
 and `src/mcp/vice/skill-attribution.test.ts` asserts each absorbed file's own
-header agrees with it.
+header agrees with it, one registry row per source path.
+
+Two destinations appear twice in the table above, and that is not a duplicate:
+`src/skills/c64-memory-mapping/` and `src/skills/c64-program-recon/` each
+incorporate **two** upstream procedures, with two different digests. Each of
+the two therefore carries **two** attribution headers, one per source path —
+a single per-file header would have to claim one digest and be wrong about the
+other.
 
 **The incorporated text is ADAPTED, NOT VERBATIM.** Each absorbed file carries
 its own attribution header naming the source path, the pinned commit, the

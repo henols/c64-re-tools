@@ -221,6 +221,429 @@ total/paired/unpaired register-store counts plus a per-enum variant count. It ex
 the reason, when either of its two internal search passes hits its own 10000-row ceiling — pass
 `--max-results` to raise that ceiling for a program whose store exceeds it.
 
+<!--
+ATTRIBUTION (ABS-02)
+Adapted from regenerator2000.
+  Source repository: https://github.com/ricardoquesada/regenerator2000
+  Source path:       r2000-analyze-blocks/SKILL.md — held under the upstream
+                     repository's excluded agent-skills directory, which the
+                     published crate does not ship. The full upstream path is
+                     recorded once, in
+                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
+  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
+  Source sha256:     3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b
+  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
+  This project elects: MIT
+
+  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
+  upstream text instructs:
+    - Upstream's "if a conversion was wrong, undo it" step is replaced with
+      "set the correct type again". `r2000_set_data_type` is idempotent over a
+      range, so the undo call buys nothing and this project does not expose
+      it.
+    - Upstream's two instructions to insert a table boundary marker are NOT
+      carried as instructions — the underlying call is not exposed here. The
+      HAZARD they exist to prevent is carried instead, as a dated limitation
+      with a forward pointer, under "The adjacent-table limitation" below.
+    - Upstream's soft cross-reference to its own sibling procedure file is
+      replaced by a pointer to this project's own absorbed routine procedure
+      in `src/skills/c64-program-recon/SKILL.md`. The upstream file it named
+      does not exist for anyone who installed regenerator2000 from the crate.
+    - The region-read step names this project's own byte ceiling, which
+      upstream has no equivalent of.
+
+  Re-sync trigger: see ABS-04's dated decision and the manifest's
+  `resync_triggers`.
+  See THIRD-PARTY-NOTICES.md.
+-->
+
+## Classifying every region of an annotation project
+
+Everything above answers *what does this published address mean*. This section
+answers a different question over the same map: **given a loaded binary in an
+annotation project, what is each region of it — code, or one of eight kinds of
+data?**
+
+**This is the static answer, taken from bytes on disk.** `c64-program-recon`
+answers the *live* code-versus-data question — its step 5 is "what the PC
+actually visits across full coverage", and an execution trace beats every
+static heuristic on this page. Run the live pass when you have a running
+machine; run this one when all you have is a file, and treat a later trace as
+the thing that overrules it.
+
+When a binary is first loaded, the auto-analyzer traces reachable code from the
+entry point and marks it **Code**. Everything else is **Undefined** — not
+"data", just unexplored. The job here is to walk the Undefined regions, work
+out what each one actually is, and set it.
+
+### The one mistake that matters more than the rest
+
+**Never disassemble a region without concrete proof that it executes.** Random
+data routinely disassembles into plausible-looking instruction sequences, and
+that is *not* evidence of code — it is a property of the 6502's dense opcode
+map. A region earns the Code type only when at least one of these holds:
+
+- **It is a `JSR`/`JMP` target.** Already-analysed code contains `JSR $addr` or
+  `JMP $addr` landing in it. Check with `r2000_get_cross_references`.
+- **It is a branch target** of an already-analysed `BNE`/`BEQ`/`BCC`/`BCS`/
+  `BPL`/`BMI`/`BVC`/`BVS`.
+- **It is a vector or handler**: its address appears in a vector table
+  (`$FFFA`–`$FFFF`, `$0314`–`$0319`), in an `address` or split-address block,
+  or in a jump table reached by `JMP ($addr)`.
+- **A human says so explicitly.**
+
+None of those? Leave it **Undefined**, or classify it as data — even when the
+bytes disassemble cleanly. "It looked like code" is how a sprite sheet becomes
+four hundred lines of fiction.
+
+### The order of the passes
+
+Work the Undefined blocks in four passes, in this order. Do not interleave
+them; each pass makes the next one cheaper.
+
+1. **Provably-reachable code** — `r2000_disassemble` at the entry point of each
+   region that meets the proof bar above. Control-flow disassembly follows the
+   flow itself and sets the Code blocks for you.
+2. **Text** — PETSCII and screencode strings.
+3. **Tables** — byte, word, address and split (lo/hi, hi/lo) tables.
+4. **Whatever is left** — decide data, or leave it Undefined for a human.
+   **Never** speculatively disassemble in this pass; by definition nothing here
+   met the proof bar.
+
+### Scope, and reading a region
+
+1. `r2000_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
+   `description` and `may_contain_undocumented_opcodes`.
+   - `system` names the target machine. On a C64 the rest of this skill *is*
+     the memory map you need — `lookup` any address a region touches before
+     guessing at it.
+   - `filename` and `description` are the software context. A known title, a
+     known music driver or a known packer changes what a region is likely to
+     be.
+   - `may_contain_undocumented_opcodes: true` means illegal opcodes (`LAX`,
+     `SAX`, `SLO`, `DCP`, `ISC`) may appear. **Do not misclassify those as
+     data** — they are valid instructions. The flag is a human's hint, not a
+     guarantee: some programs use them with the flag false.
+2. `r2000_get_blocks` to see what is already classified, and focus on the
+   Undefined entries.
+3. Read each candidate region twice, through `r2000_read_region`: `view:
+   "hexdump"` shows the byte patterns, and **omitting `view`** gives the
+   disassembly view — its documented default, confirmed live — which shows how
+   the region would decode. The combined byte count is capped at **4096 bytes** per call
+   (`R2000_READ_REGION_MAX_BYTES`), and a request above the cap is refused by
+   name rather than truncated — so walk a large binary in consecutive ranges.
+   Chunks of **256–512 bytes** are the practical working size for
+   classification; a 4096-byte hexdump is more than can be read carefully in
+   one pass.
+
+### Applying the classification
+
+- **Code**: call `r2000_disassemble` with the entry-point address. Do **not**
+  pass `"code"` to `r2000_set_data_type` — the enum accepts the value, but
+  setting a range to code is not the same as tracing flow through it, and only
+  the trace produces correct block boundaries. After every `r2000_disassemble`,
+  call `r2000_get_blocks` again: the trace has created blocks you have not seen.
+- **Data**: batch the `r2000_set_data_type` calls through
+  `r2000_batch_execute`. A real classification pass is dozens of ranges, and
+  batching is what makes that affordable. Do not put code regions in the batch.
+- **A wrong classification is not a disaster and does not need undoing.**
+  `r2000_set_data_type` is idempotent over a range: set the correct type again
+  over the same range and the previous one is gone. (Upstream reaches for an
+  undo call here; this project does not expose one, and does not need to.)
+- Re-read `r2000_get_blocks` after each batch to confirm what actually landed.
+
+Example of a valid data-only batch, then the code regions separately:
+
+```
+r2000_batch_execute:
+  - r2000_set_data_type  start=2304  end=2367  data_type="byte"
+  - r2000_set_data_type  start=2368  end=2431  data_type="petscii"
+then: r2000_disassemble address=2049
+then: r2000_disassemble address=2432
+then: r2000_get_blocks          # refresh
+```
+
+### The block types
+
+| Block type | `data_type` | When |
+|---|---|---|
+| **Code** | *call `r2000_disassemble`* | Provably-executed instructions. Never via `r2000_set_data_type`. |
+| Byte | `byte` | Raw 8-bit data: sprites, bitmaps, charsets, lookup tables, variables, unknowns |
+| Word | `word` | 16-bit little-endian values: 16-bit variables, math constants, SID frequencies |
+| Address | `address` | 16-bit LE pointers — jump tables, vector lists. Creates cross-references |
+| PETSCII text | `petscii` | PETSCII strings: messages, prompts, anything bound for `$FFD2` |
+| Screencode text | `screencode` | Text written straight to screen RAM (`$0400`–`$07E7`) |
+| Lo/Hi address | `lo_hi_address` | Split address table, low bytes first. Even byte count required |
+| Hi/Lo address | `hi_lo_address` | Split address table, high bytes first. Even byte count required |
+| Lo/Hi word | `lo_hi_word` | Split word table, low half first — e.g. a SID frequency table |
+| Hi/Lo word | `hi_lo_word` | Split word table, high half first |
+| External file | `external_file` | Large blobs to export as-is: SID tunes, bitmaps, charsets |
+| Undefined | `undefined` | Reset to unknown. The honest answer for a region you cannot place |
+
+### Recognising each kind
+
+**Byte data** — regular patterns that form no valid instruction sequence;
+addressed by `LDA addr,X` / `LDA addr,Y` table lookups; sprite data in 63-byte
+(padded to 64) units, usually grouped; bitmap data in 8-byte character cells;
+colour data confined to `$00`–`$0F`; or random-looking bytes between two code
+blocks whose disassembly is nonsense.
+
+**Word data** — byte pairs forming meaningful 16-bit values (screen addresses,
+timer values); loaded low-then-high by adjacent `LDA addr` / `LDA addr+1`.
+
+**Address tables** — byte pairs that read as little-endian addresses landing
+*inside* the binary; reached by `JMP ($addr)` or indexed indirect reads. Jump
+tables, dispatch tables and vector lists all live here.
+
+**Split lo/hi (or hi/lo) tables** — two equal halves, one of plausible low
+bytes and one of plausible high bytes, referenced separately:
+`LDA lo,X / STA ptr / LDA hi,X / STA ptr+1 / JMP (ptr)`. Recombine the halves
+and check the addresses are real. Lo/Hi (low half first) is the commoner form
+on the 6502. **The total byte count must be even and the halves equal** — an
+odd count means the boundary is in the wrong place.
+
+**PETSCII text** — bytes in `$20`–`$7E` (unshifted) or `$C0`–`$DF` (shifted),
+often recognisably English since PETSCII shares `$20`–`$5F` with ASCII;
+terminated by `$00`, `$0D`, or a high-bit sentinel; reached by `$FFD2` (CHROUT)
+or `$AB1E` (BASIC STROUT). `GAME OVER`, `PRESS FIRE`, menus, credits.
+
+**Screencode text** — bytes in `$00`–`$3F` where `$00` is `@` and `$01` is `A`;
+copied directly to `$0400`–`$07E7`. `LDA data,X / STA $0400,X` is the
+give-away. A full screen dump is exactly 1000 bytes.
+
+**External file** — a large contiguous non-code block matching a known format:
+a `PSID`/`RSID` header, a 2048-byte charset (256 chars × 8 bytes), sprite data
+in multiples of 64, or a bitmap. Export it rather than annotate it.
+
+**PETSCII is not screencode.** If it is copied to `$0400`, it is screencode; if
+it is passed to CHROUT, it is PETSCII. Getting this backwards produces text
+that renders as garbage in exactly one of the two places.
+
+### The adjacent-table limitation
+
+**Dated limitation, recorded 2026-08-24.** Two adjacent regions of the *same*
+type auto-merge into one block, and `r2000_get_blocks` reports the merged
+result. Two byte tables side by side, or the two halves of a split table
+sitting next to each other, therefore lose their boundary in the store.
+
+Upstream's answer is a `toggle_splitter` call at the boundary, which this
+project does not expose. Until it does:
+
+- **Do not** rely on the block listing to tell two adjacent same-type tables
+  apart. It cannot.
+- **Do** record the boundary where it survives: a `r2000_set_label_name` at the
+  start of the second table, and a line comment on both naming the extent you
+  actually determined.
+- Expect a systematic **over-merge** bias in any count taken from the block
+  store, and say so when reporting one.
+
+The forward pointer: exposing the splitter is a Phase 20/21 concern, because
+`DECOMP-01` ("every byte is code, byte, word, address, PETSCII, screencode or
+table") cannot distinguish two adjacent tables without it, and `BUILD-02`
+("data tables extracted to their own files") has no boundary to cut on. The
+per-call disposition and its justification are in the manifest named in the
+attribution header above.
+
+### Labelling, and the report
+
+Name what you classified — `r2000_set_label_name` on entry points, tables and
+strings — and comment it with `r2000_set_comment` (`"line"` above,
+`"side"` beside). For the conventions to name things *by*, and for the
+comment-block format to use on a subroutine, follow the absorbed routine
+procedure in `src/skills/c64-program-recon/SKILL.md`.
+
+Then report, and mean it:
+
+- Total blocks by type.
+- Notable findings — "three PETSCII strings", "a lo/hi jump table at `$1200`".
+- **Every region still uncertain or still Undefined, by address.** This is the
+  part that makes the pass reusable. A classification report with no uncertain
+  regions on a real game is almost always a report that stopped looking.
+- Offer to `r2000_save_project`.
+
+### What goes wrong
+
+| Symptom | What it actually is |
+|---|---|
+| A region disassembles beautifully but has no incoming reference | Data. Decodability is not evidence; leave it Undefined. |
+| Disassembly full of impossible branches or `BRK` (`$00`) floods | Data misread as code. |
+| Odd-looking instructions, but real `JSR`/`JMP` cross-references land here | Probably code using undocumented opcodes. Check the `may_contain_undocumented_opcodes` hint. |
+| A split table's addresses recombine to nonsense | The half boundary is misplaced, or the table is hi/lo rather than lo/hi. |
+| Two tables you classified separately show up as one block | The adjacent-table limitation above. Not your error. |
+| Text renders as garbage on screen but fine through CHROUT | It is PETSCII, typed as screencode — or the reverse. |
+
+<!--
+ATTRIBUTION (ABS-02)
+Adapted from regenerator2000.
+  Source repository: https://github.com/ricardoquesada/regenerator2000
+  Source path:       r2000-analyze-symbol/SKILL.md — held under the upstream
+                     repository's excluded agent-skills directory, which the
+                     published crate does not ship. The full upstream path is
+                     recorded once, in
+                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
+  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
+  Source sha256:     d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8
+  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
+  This project elects: MIT
+
+  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
+  upstream text instructs:
+    - Upstream's cursor-based entry route is replaced by explicit address
+      input. Upstream's own text forbids relying on the cursor in exactly this
+      situation, and this project has no editor cursor at all; the composite
+      address lookup (`r2000_get_address_details`) takes an explicit address.
+    - Upstream's two low/high-byte immediate-formatting steps are NOT carried
+      as instructions — the underlying call is not exposed here. They are
+      named by bare verb, with the requirement that would supply their
+      criterion, under "The pointer-formatting step this project does not
+      have" below.
+    - The hardware-register and KERNAL-routine identification steps are routed
+      to this skill's own `lookup` verb and its four published tables, rather
+      than to unassisted model recall.
+
+  Re-sync trigger: see ABS-04's dated decision and the manifest's
+  `resync_triggers`.
+  See THIRD-PARTY-NOTICES.md.
+-->
+
+## What a symbol in the store actually represents
+
+`lookup` at the top of this page answers what a **published** address means —
+a hardware register, a KERNAL entry point, an OS variable. That answer comes
+from four tables and holds for every program.
+
+This section is the other half: **what a program's *own* address represents.**
+No table can tell you, because the meaning was decided by the program's code.
+When `lookup` returns a region-only answer — the dominant case for a game's own
+code and variables, as noted above — this is the procedure that gets you a
+name.
+
+### 1. Target and context
+
+- **Always start from an explicit address**, `$XXXX` or its decimal
+  equivalent. There is no editor cursor in this project's route, and upstream's
+  own text forbids relying on one anyway. `r2000_get_address_details` composes
+  the symbol, comments, block type and cross-references for one explicit
+  address in a single call.
+- `r2000_get_binary_info` for `system`, `filename`, `description` and
+  `may_contain_undocumented_opcodes`. `filename` and `description` are how a
+  symbol gets a *domain* name — `lap_counter` in a racing game, `lives` in a
+  platformer — instead of a generic one. With undocumented opcodes in play,
+  remember that `LAX`, `SAX` and `DCP` have real read/write side effects that
+  belong in the data-flow picture.
+
+### 2. Gather the usage
+
+`r2000_get_cross_references` on the address returns everywhere it is touched.
+Read the instruction at each site, because the instruction is the evidence:
+
+- **Writes**: `STA`, `STX`, `STY`
+- **Reads**: `LDA`, `LDX`, `LDY`, `BIT`, `CMP`, `CPX`, `CPY`, `ADC`, `SBC`
+- **Read-modify-write**: `INC`, `DEC`, `ASL`, `LSR`, `ROL`, `ROR`
+
+**Zero cross-references is a result, not a dead end.** Three explanations, in
+order of likelihood:
+
+1. It is reached **indirectly**. Check whether it is in the zero page
+   (`$00`–`$FF`) and whether nearby code uses `($addr),Y` or `($addr,X)`. An
+   indirect pointer's *target* has no direct reference by construction.
+2. It is a **well-known system address** the disassembler does not cross-
+   reference. Run `lookup` on it — that is exactly the case the four tables
+   above cover.
+3. It is genuinely **dead**: unused variable, or code no longer reached. Say so
+   in the report rather than inventing a purpose.
+
+### 3. Place it
+
+**A hardware register?** `lookup` it. If one of the four tables names it, take
+the published name and the per-bit breakdown with it — that reading rests on
+hardware and holds for any program.
+
+**Inside a well-known global block?** Screen RAM (`$0400`–`$07E7`), colour RAM
+(`$D800`–`$DBFF`), a sprite pointer at VM+`$03F8`. **Do not skip these as
+"obvious".** Name them systematically from the base plus the offset —
+`SCREEN_ROW03_COL12` — so contiguous structures read as structures instead of a
+field of auto-generated offsets.
+
+**An external ROM or system routine?** An `e_` prefix, or an address in KERNAL
+space (`$E000`–`$FFFF`), or a standard shadow vector. `lookup` gives the
+routine's published name; rename to the conventional form — `$FFD2` becomes
+`KERNAL_CHROUT`, `$EA31` becomes `SYSTEM_IRQ_HANDLER`.
+
+**A 16-bit pointer?** Below `$0100`, and used with indirect-indexed `($xx),Y`
+or indexed-indirect `($xx,X)`. Rename to `ptr_`/`vec_` form and comment what it
+points *to*, which is the thing the name cannot carry.
+
+**A flag or bitmask?** Only ever `$00`/`$01` or `$00`/`$FF`; tested with `BIT`
+or `LDA`/`BEQ`. Name it as a predicate — `is_active`, `has_collided`. When the
+individual bits carry separate meanings, that is an enum: define it with
+`r2000_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
+VISIBLE`) and apply it with `r2000_apply_enum_usage` so every bitmask test
+reads as words rather than hex.
+
+**A counter or index?** `INC`/`DEC` inside a loop, compared against a limit
+with `CPX`/`CPY`/`CMP`. `loop_idx`, `sprite_count`, `delay_timer`.
+
+**A state variable?** Several distinct values, often feeding a dispatch
+(`ASL` / `TAX` / `JMP (table,X)`). Name it `game_state` or `current_mode` — and
+these are the best enum candidates of all. Look for an existing enum first;
+define one (`0 = INIT`, `1 = TITLE`, `2 = GAMEPLAY`, `3 = GAME_OVER`) with a
+real `description` if none matches, then apply it to every instruction reading
+or writing the variable.
+
+### 4. Name it
+
+| Symbol kind | Convention | Example |
+|---|---|---|
+| Zero-page variable | `zp_` prefix | `zp_player_lives`, `zp_delay_timer` |
+| Zero-page pointer | `zp_ptr_` prefix | `zp_ptr_screen`, `zp_ptr_dest` |
+| RAM variable | `snake_case` | `score_hi`, `current_level` |
+| Pointer / vector | `ptr_` / `vec_` prefix | `ptr_screen`, `vec_irq` |
+| Hardware register | `UPPER_SNAKE` | `VIC_SPR0_X`, `SID_FREQ_LO1` |
+| Constant / address | `UPPER_SNAKE` | `SCREEN_RAM`, `CHR_ROM_BASE` |
+| Routine entry point | `snake_case` | `init_screen`, `draw_sprite` |
+| External ROM call | `KERNAL_` / `OS_` | `KERNAL_CHROUT`, `KERNAL_CLRCHN` |
+
+> **The zero-page rule overrides all of the above.** An address at or below
+> `$FF` **must** carry the `zp_` prefix — a zero-page pointer becomes
+> `zp_ptr_`, a zero-page flag becomes `zp_is_active`, and a zero-page OS
+> variable becomes `zp_`-prefixed too. The prefix makes the addressing mode
+> visible at every use site, which is the whole point.
+
+Apply it with `r2000_set_label_name`.
+
+### 5. Document it
+
+- `r2000_set_comment` `"line"` at the definition: the range it occupies, its
+  purpose, its bitfield layout if it has one.
+- `r2000_set_comment` `"side"` at the interesting *uses*: why this read, why
+  this write. "Reset life counter" beside a `STA` is worth more than any name.
+- Define and apply enums where the values form a set (above).
+
+**The pointer-formatting step this project does not have.** Where a pointer is
+initialised by immediate loads of a target's low and high bytes — `LDA #<target
+/ STA ptr / LDA #>target / STA ptr+1` — upstream calls `set_immediate_format`
+twice to turn both immediates into a single readable symbol reference. **That
+call is not exposed on this project's surface.** `BUILD-03` ("every branch,
+`JSR`/`JMP` and data reference goes through a symbol, so code can move") is the
+requirement that supplies its criterion, and the per-call disposition is
+recorded in the manifest named in the attribution header above. Until then,
+reconstruct the target by hand and put it in a side comment on both
+instructions — `; low byte of ptr_sprite_table ($C240)` — so the pointer is
+still readable even though the store cannot format it.
+
+### 6. Report
+
+- **Address** and its current label.
+- **Classification**: flag, counter, pointer, hardware register, state
+  variable, dead.
+- **Evidence**: the specific cross-references or usage patterns that decided
+  it. A classification with no evidence line is a guess wearing a name.
+- **Actions taken**: what was renamed, what was commented, which enums were
+  defined or applied.
+- **Uncertainty**: if `r2000_get_cross_references` returned nothing, say which
+  of the three explanations in step 2 you could and could not rule out.
+
 ## Troubleshooting
 
 | Symptom | Fix |

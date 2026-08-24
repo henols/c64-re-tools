@@ -16,10 +16,16 @@
 // A scan over `src/skills/` would say nothing, because a skill carrying NO
 // absorbed content is not required to carry an attribution header at all --
 // only a named registry can distinguish "this file must be attributed" from
-// "this file legitimately has nothing to attribute". Plan 19-01 seeds the
-// registry with the one file it lands; plans 19-02 and 19-03 ADD ROWS as they
-// absorb the remaining four procedures. Adding a row is the point of the
-// registry, not a workaround.
+// "this file legitimately has nothing to attribute". Plan 19-01 seeded the
+// registry with the one file it landed; plan 19-02 ADDED ROWS for the
+// remaining four procedures. Adding a row is the point of the registry, not a
+// workaround.
+//
+// ONE ROW PER SOURCE PATH, NOT PER FILE (plan 19-02): two destination files
+// each absorb TWO upstream procedures, with two different digests. A per-file
+// header would have to claim one digest and be silent about — or wrong about —
+// the other, so each absorbed procedure carries its own attribution block and
+// each block is matched to its row by the source it names.
 //
 // PRESENCE **AND** ABSENCE, the two halves this file's analog insists on:
 //   - PRESENCE, per registry row: all six header fields, the commit and
@@ -32,7 +38,14 @@
 //     `.agent/**/*`), so an absorbed instruction to read one is a dangling
 //     runtime dependency -- exactly what ABS-01 forbids.
 //
-// NON-VACUITY, three ways, because each covers a different way this file
+// A THIRD HALF, added by plan 19-02: the DEFERRED-CAPABILITY check. FUT-01
+// defers BASIC token decoding, and this project absorbed that procedure's
+// text as reference-only material. A `description:` IS the trigger mechanism
+// (ABS-03), so the deferral only holds mechanically if none of the deferred
+// capability's trigger vocabulary reaches one. The section body may -- must --
+// use those words; only descriptions are policed.
+//
+// NON-VACUITY, five ways, because each covers a different way this file
 // could rot into a no-op:
 //   1. The registry's own length is asserted non-zero, so an emptied registry
 //      FAILS rather than passing with nothing to check.
@@ -44,6 +57,11 @@
 //      plant-and-revert against the real tree would leave the working tree
 //      dirty between runs, and `skill-consumer-paths.test.ts` records that
 //      same reasoning for the same reason.
+//   4. The registry's length and its upstream-path SET are asserted equal to
+//      the manifest's, so absorbing a sixth procedure without adding its row
+//      FAILS instead of leaving an unattributed file unchecked.
+//   5. The deferred-BASIC phrase set is asserted non-empty AND proven to bite
+//      on a planted description, also held only in memory.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Do not replace the registry with a corpus scan for "files containing an
@@ -80,17 +98,72 @@ interface AbsorbedFile {
   readonly upstreamPath: string;
 }
 
-/** FROZEN REGISTRY. One row per file in `src/skills/` that carries absorbed
- * upstream prose. Plan 19-01 seeds it with the routine-queue-walker; plans
- * 19-02 and 19-03 add a row each as they absorb the remaining four
- * procedures into `c64-program-recon` and `c64-memory-mapping`. A skill with
- * no absorbed content does NOT belong here and is NOT required to carry an
- * attribution header. */
+/** FROZEN REGISTRY. One row per ABSORBED SOURCE PATH -- NOT one row per
+ * destination file. Plan 19-01 seeded it with the routine-queue-walker; plan
+ * 19-02 added the remaining four, and two destination files now each carry
+ * TWO absorbed procedures. That is why the row is keyed on the upstream path
+ * and why `attributionBlockFor()` below selects a file's blocks by the source
+ * they name: one attribution block per source path is the only honest shape
+ * when one file incorporates two independently-digested upstream files, and a
+ * per-file block would have to claim one of the two digests and lie about the
+ * other. A skill with no absorbed content does NOT belong here and is NOT
+ * required to carry an attribution header.
+ *
+ * The registry's LENGTH is asserted equal to the manifest's
+ * `procedures.length` below, so a forgotten row fails instead of passing
+ * silently. NOTE what that assertion is and is not: it is a RELATION against
+ * the manifest, and nothing more. "Five procedures absorbed" is an exact
+ * count fixed by ABS-01's own text and by the pinned manifest -- it is not a
+ * growing census, and the equality cannot tell a right count from a merely
+ * self-consistent one. Judging the count means reading the five destinations
+ * in the manifest, which is a human's job, not this assertion's. */
 const ABSORBED_FILES: readonly AbsorbedFile[] = [
   {
     destination: "src/skills/routine-queue-walker/SKILL.md",
     upstreamPath: ".agent/skills/r2000-analyze-program/SKILL.md",
   },
+  {
+    destination: "src/skills/c64-memory-mapping/SKILL.md",
+    upstreamPath: ".agent/skills/r2000-analyze-blocks/SKILL.md",
+  },
+  {
+    destination: "src/skills/c64-memory-mapping/SKILL.md",
+    upstreamPath: ".agent/skills/r2000-analyze-symbol/SKILL.md",
+  },
+  {
+    destination: "src/skills/c64-program-recon/SKILL.md",
+    upstreamPath: ".agent/skills/r2000-analyze-routine/SKILL.md",
+  },
+  {
+    destination: "src/skills/c64-program-recon/SKILL.md",
+    upstreamPath: ".agent/skills/r2000-analyze-basic/SKILL.md",
+  },
+];
+
+/** The BASIC-token trigger vocabulary, from upstream's own
+ * `r2000-analyze-basic` description and its four "use this skill when the
+ * user asks to" phrases. FUT-01 DEFERS that capability, and this project
+ * absorbed the procedure text as reference-only material. A description is
+ * literally the trigger mechanism (ABS-03), so the deferral only holds if
+ * none of this vocabulary reaches one -- otherwise the deferred capability
+ * fires and the skill claims something the milestone does not deliver.
+ *
+ * Matched case-insensitively against every `description:` frontmatter value
+ * under `src/skills/`, and ONLY against those: the reference-only section's
+ * BODY is allowed -- required, even -- to use these words, because a reader
+ * consulting it needs them. The set's own length is asserted non-zero so an
+ * emptied set cannot make the check vacuous. */
+const DEFERRED_BASIC_TRIGGER_PHRASES: readonly string[] = [
+  "basic token",
+  "basic command",
+  "basic line",
+  "basic code",
+  "basic pointer",
+  "decode basic",
+  "tokenised basic",
+  "tokenized basic",
+  "detokenise",
+  "detokenize",
 ];
 
 /** The six provenance fields ABS-02 requires, by their header label. Each
@@ -112,13 +185,35 @@ const REQUIRED_HEADER_FIELDS: readonly string[] = [
  * two dual-licence options a downstream reader takes this under. */
 const ADAPTATION_STATEMENT = "ADAPTED, NOT VERBATIM.";
 
-/** Isolates the attribution block: from the `ATTRIBUTION (ABS-02)` anchor up
- * to the closing HTML comment marker. CONTENT-anchored, never a line number.
- * Returns `null` when the anchor is absent, so a stripped or renamed header
- * FAILS the tests that depend on it rather than scanning an empty string. */
-function attributionBlock(text: string): string | null {
-  const m = text.match(/ATTRIBUTION \(ABS-02\)([\s\S]*?)-->/);
-  return m ? m[1] : null;
+/** Every attribution block in a file: from each `ATTRIBUTION (ABS-02)` anchor
+ * up to that block's own closing HTML comment marker. CONTENT-anchored, never
+ * a line number. */
+function attributionBlocks(text: string): string[] {
+  return [...text.matchAll(/ATTRIBUTION \(ABS-02\)([\s\S]*?)-->/g)].map((m) => m[1]);
+}
+
+/** How a header names its own upstream source: the source FILE, without the
+ * upstream repository's excluded agent-skills directory prefix. That prefix is
+ * deliberately absent from every shipped skill file (see the ABSENCE half of
+ * this file's header and the corpus test below); the full path lives once, in
+ * the manifest under `.planning/`, which is not scanned. Derived FROM the
+ * manifest path rather than hand-typed, so a re-pathed manifest entry cannot
+ * drift away from what the headers say. */
+function upstreamFileRef(upstreamPath: string): string {
+  return upstreamPath.replace(/^.*[/\\]skills[/\\]/, "");
+}
+
+/** Isolates the ONE attribution block that names this row's upstream source.
+ * Returns `null` when no block -- or more than one block -- names it, so a
+ * stripped, renamed or ambiguous header FAILS the tests that depend on it
+ * rather than being silently checked against a sibling procedure's digest.
+ * This is what makes two absorbed procedures in ONE file safe: each row is
+ * matched to its own header, and a header claiming the wrong source digest
+ * cannot pass by sitting next to a correct one. */
+function attributionBlockFor(text: string, row: AbsorbedFile): string | null {
+  const ref = upstreamFileRef(row.upstreamPath);
+  const matching = attributionBlocks(text).filter((b) => b.includes(ref));
+  return matching.length === 1 ? matching[0] : null;
 }
 
 /** The ABSENCE predicate, pulled out as a named function so it can be handed
@@ -136,10 +231,28 @@ function manifestEntryFor(row: AbsorbedFile): { path: string; sha256: string } {
   return manifest.procedures.find((p: { path: string }) => p.path === row.upstreamPath);
 }
 
-test("the absorbed-file registry is non-empty and every row resolves", () => {
+test("the absorbed-file registry covers every manifest procedure and every row resolves", () => {
   // Rot guard 1: an emptied registry must FAIL, not pass vacuously.
   assert.ok(ABSORBED_FILES.length >= 1, "ABSORBED_FILES is empty -- an emptied registry cannot be allowed to pass");
   assert.ok(REQUIRED_HEADER_FIELDS.length === 6, "ABS-02 requires exactly six provenance fields");
+  // Rot guard 4 (plan 19-02): the registry's length is a RELATION against the
+  // manifest's own procedure count, so absorbing a procedure and forgetting
+  // its row FAILS here instead of leaving an unattributed file unchecked.
+  // Deliberately not a literal 5 -- see the registry's own comment for what
+  // this equality does and does not prove.
+  assert.equal(
+    ABSORBED_FILES.length,
+    manifest.procedures.length,
+    `the registry has ${ABSORBED_FILES.length} rows but the manifest lists ${manifest.procedures.length} ` +
+      `procedures -- every absorbed source path needs its own row and its own attribution block`
+  );
+  // ... and the row set must be the manifest's path set, not merely the same
+  // size as it: two rows naming one path would satisfy a length check alone.
+  assert.deepEqual(
+    [...ABSORBED_FILES.map((r) => r.upstreamPath)].sort(),
+    manifest.procedures.map((p: { path: string }) => p.path).sort(),
+    "the registry's upstream-path set is not the manifest's procedure set"
+  );
   // Rot guard 2: a renamed file or a re-pathed manifest entry must FAIL.
   for (const row of ABSORBED_FILES) {
     assert.ok(existsSync(join(ROOT, row.destination)), `${row.destination}: registry row names a file that does not exist`);
@@ -147,12 +260,22 @@ test("the absorbed-file registry is non-empty and every row resolves", () => {
       manifestEntryFor(row),
       `${row.destination}: registry row names upstream path "${row.upstreamPath}", which the manifest does not list`
     );
+    // Rot guard 5 (plan 19-02): with two absorbed procedures in one file, a
+    // row must resolve to EXACTLY ONE block -- the one naming its own source.
+    // Zero means a missing or misnamed header; more than one means two blocks
+    // claim the same source and the digest check below would be ambiguous.
+    const blocks = attributionBlocks(readDestination(row)).filter((b) => b.includes(upstreamFileRef(row.upstreamPath)));
+    assert.equal(
+      blocks.length,
+      1,
+      `${row.destination}: ${blocks.length} attribution blocks name "${upstreamFileRef(row.upstreamPath)}", expected exactly 1`
+    );
   }
 });
 
 test("every absorbed file carries all six provenance fields", () => {
   for (const row of ABSORBED_FILES) {
-    const block = attributionBlock(readDestination(row));
+    const block = attributionBlockFor(readDestination(row), row);
     assert.ok(block, `${row.destination}: no ATTRIBUTION (ABS-02) block found`);
     for (const field of REQUIRED_HEADER_FIELDS) {
       const idx = block.indexOf(field);
@@ -166,7 +289,7 @@ test("every absorbed file carries all six provenance fields", () => {
 
 test("every absorbed file's commit and digest equal the manifest's, as lowercase hex", () => {
   for (const row of ABSORBED_FILES) {
-    const block = attributionBlock(readDestination(row));
+    const block = attributionBlockFor(readDestination(row), row);
     assert.ok(block, `${row.destination}: no ATTRIBUTION (ABS-02) block found`);
     const entry = manifestEntryFor(row);
 
@@ -200,7 +323,7 @@ test("every absorbed file's commit and digest equal the manifest's, as lowercase
 
 test("every absorbed file states that the text is adapted, not verbatim", () => {
   for (const row of ABSORBED_FILES) {
-    const block = attributionBlock(readDestination(row));
+    const block = attributionBlockFor(readDestination(row), row);
     assert.ok(block, `${row.destination}: no ATTRIBUTION (ABS-02) block found`);
     assert.ok(
       block.includes(ADAPTATION_STATEMENT),
@@ -214,6 +337,66 @@ test("every absorbed file states that the text is adapted, not verbatim", () => 
       `${row.destination}: the adaptation statement names no deviations`
     );
   }
+});
+
+/** Pulls the `description:` value out of a SKILL.md's YAML frontmatter. The
+ * frontmatter is the first `---`-delimited block and `description:` is a
+ * single logical line in this repository's skills (asserted below by the
+ * non-vacuity floor on how many descriptions were found at all). */
+function skillDescription(text: string): string | null {
+  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) return null;
+  const m = fm[1].match(/^description:[ \t]*(.*)$/m);
+  return m ? m[1].trim() : null;
+}
+
+test("the deferred BASIC capability cannot fire -- no description carries its trigger vocabulary", () => {
+  // Non-vacuity for the phrase set itself: an emptied set must FAIL rather
+  // than make the loop below check nothing.
+  assert.ok(
+    DEFERRED_BASIC_TRIGGER_PHRASES.length > 0,
+    "DEFERRED_BASIC_TRIGGER_PHRASES is empty -- an emptied phrase set cannot be allowed to pass"
+  );
+  const skillMds = walkSkills(SKILLS_DIR).filter((f) => f.endsWith("SKILL.md"));
+  // Non-vacuity for the corpus walk: a broken traversal must not read as a
+  // clean inventory. A floor, never an equality -- the skill count grows.
+  assert.ok(skillMds.length >= 6, `expected at least 6 SKILL.md files, found ${skillMds.length}`);
+  const offenders: string[] = [];
+  let described = 0;
+  for (const file of skillMds) {
+    const description = skillDescription(readFileSync(file, "utf8"));
+    assert.ok(description, `${relative(ROOT, file)}: no description: value found in frontmatter`);
+    described += 1;
+    const lower = description.toLowerCase();
+    for (const phrase of DEFERRED_BASIC_TRIGGER_PHRASES) {
+      if (lower.includes(phrase)) offenders.push(`${relative(ROOT, file)}: "${phrase}"`);
+    }
+  }
+  assert.equal(described, skillMds.length, "not every SKILL.md yielded a description to check");
+  assert.deepEqual(
+    offenders,
+    [],
+    `these descriptions carry BASIC-token trigger vocabulary for a capability FUT-01 defers, so the ` +
+      `deferred capability would fire as a trigger: ${offenders.join(", ")}`
+  );
+});
+
+test("the BASIC trigger-phrase predicate bites on a planted description", () => {
+  // Rot guard: the check above passes on a clean corpus either because the
+  // corpus is clean or because the predicate is broken. Plant the phrase in a
+  // real description, IN MEMORY, and confirm it is caught. Nothing is written
+  // under src/skills/ -- the working tree is never left dirty by this test.
+  const reconPath = join(ROOT, "src/skills/c64-program-recon/SKILL.md");
+  const clean = skillDescription(readFileSync(reconPath, "utf8"));
+  assert.ok(clean, "c64-program-recon has no description to plant into");
+  const planted = `${clean} Use when asked to decode basic commands from memory.`;
+  const hits = DEFERRED_BASIC_TRIGGER_PHRASES.filter((p) => planted.toLowerCase().includes(p));
+  assert.ok(hits.length > 0, "the planted BASIC trigger phrase was NOT reported -- this proof is vacuous");
+  assert.equal(
+    DEFERRED_BASIC_TRIGGER_PHRASES.filter((p) => clean.toLowerCase().includes(p)).length,
+    0,
+    "the real c64-program-recon description already carries BASIC trigger vocabulary"
+  );
 });
 
 test("no file under src/skills/ tells a reader to read an upstream agent-skills path", () => {
