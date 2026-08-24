@@ -194,10 +194,21 @@ under it.
 
 **Plans**: 5 plans
 
+**Wave 1**
+
 - [ ] 19-01-PLAN.md — tracer: one absorbed procedure end-to-end (seventh skill, relation-based packaging pin, truthful notices, attribution guards) plus the D18-16 stdio-multiplexing measurement
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 19-02-PLAN.md — absorb the remaining four procedures, attributed per source path, and give the installer package a notices document
 - [ ] 19-03-PLAN.md — the coverage instrument: pinned report schema, derived-from-bytes census, widened dispatch scan, three measures, six committed controls
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 19-04-PLAN.md — the coverage CLI verb run live against a previously-unseen fixture, and the packer recon finding with its never-infer-a-name proof
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 19-05-PLAN.md — inventory-wide trigger uniqueness, the five dated decisions, and the phase gate
 
 Notes:
@@ -324,7 +335,7 @@ in a milestone archive.
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
 | 18. Persistent Session and Tool Surface | v0.5.0 | 7/7 | Complete | 2026-08-24 |
-| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | TBD | Not started | - |
+| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 0/5 | Planned | - |
 | 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |
 | 22. Equivalence and Modifiability | v0.5.0 | TBD | Not started | - |
