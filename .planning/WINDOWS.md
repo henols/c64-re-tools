@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 0
 fixed_count: 1
-total_count: 2
-last_updated: 2026-08-24T10:06:33.000Z
+total_count: 3
+last_updated: 2026-08-24T16:17:20.435Z
 ---
 
 # Broken Windows Ledger
@@ -17,6 +17,7 @@ last_updated: 2026-08-24T10:06:33.000Z
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | quick-260823-kf6 | deviation | src/mcp/vice/audit-integrity.test.ts | 262 | Pre-existing failure (T-12-04 hardcoded tech_debt=3 count), predates this task's commit 76f7b15; out of scope, see quick task's deferred-items.md | open |  | 2026-08-23T12:59:39.120Z |  |
 | 2 | 18 | deviation | src/mcp/vice/r2000-mcp-client.ts |  | npm test (no flags) never exited when regenerator2000 is installed locally. RESOLVED at phase 18 wave 2's post-merge gate: NOT pre-existing -- plan 18-03's rewire of runR2000Tool() through r2000-session.ts's HELD slot left every non-vice-proxy host pinned open by the child's ref'd stdio handles (r2000-cli.test.ts:1303 calls runR2000Tool once). Disproven by direct measurement: the same file exits in 2s at the wave-1 tip ebe90f8 and hung at f6a5b03. Fixed by unref'ing the child and its three stdio pipes in openR2000Session(); plain npm test now exits 0. | fixed | Root-caused and fixed at the wave-2 post-merge gate; the "pre-existing" attribution was inferred from the import chain, never measured against an unmodified checkout. | 2026-08-24T09:42:05.932Z | 2026-08-24T10:06:33.000Z |
+| 3 | 19 | deviation | src/mcp/vice |  | Unreproduced single-test flake: the first full npm test after plan 19-01 reported 1 failure (2470 tests); three consecutive re-runs reported 0. The failing subtest name was not captured. Capture it with tee if it recurs. | open |  | 2026-08-24T16:17:20.435Z |  |
 
 ````json
 [
@@ -43,6 +44,18 @@ last_updated: 2026-08-24T10:06:33.000Z
     "reason": "Root-caused and fixed at the wave-2 post-merge gate; the \"pre-existing\" attribution was inferred from the import chain, never measured against an unmodified checkout.",
     "recorded_at": "2026-08-24T09:42:05.932Z",
     "resolved_at": "2026-08-24T10:06:33.000Z"
+  },
+  {
+    "id": 3,
+    "kind": "deviation",
+    "phase": "19",
+    "file": "src/mcp/vice",
+    "line": null,
+    "description": "Unreproduced single-test flake: the first full npm test after plan 19-01 reported 1 failure (2470 tests); three consecutive re-runs reported 0. The failing subtest name was not captured. Capture it with tee if it recurs.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-24T16:17:20.435Z",
+    "resolved_at": null
   }
 ]
 ````

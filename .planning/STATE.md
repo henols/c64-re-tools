@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Phase 19 replanned (5 plans, 0 executed)
-last_updated: "2026-08-24T15:32:12.251Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-08-24T16:15:54.904Z"
 last_activity: 2026-08-24
-last_activity_desc: Phase 19 re-researched and replanned (5 plans, 4 waves)
-state_head: ac13b14c765a1e534f091854ea21a3bff9381330
+last_activity_desc: Phase 19 execution started
+state_head: 5545800e8bc5e2ef77dce090d014ba6a83de4bcc
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
   percent: 20
 ---
 
@@ -51,7 +51,7 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 19 — absorbed-procedures-and-the-coverage-instrument
+**Current focus:** Phase 19 — Absorbed Procedures and the Coverage Instrument
 27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
 five phases in `.planning/ROADMAP.md` (Phases 18-22). Phase 18 is verified and
 complete; Phase 19 has four plans, and Plan 19-01 has begun with its pinned
@@ -66,10 +66,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
-Plan: 1 of 5
+Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-08-24 -- Phase 19 re-researched and replanned (5 plans, 4 waves)
+Last activity: 2026-08-24 — Phase 19 execution started
 
 ## Performance Metrics
 
@@ -177,6 +177,7 @@ Last activity: 2026-08-24 -- Phase 19 re-researched and replanned (5 plans, 4 wa
 | Phase 18 P03 | 105min | 3 tasks | 8 files |
 | Phase 18 P04 | 90min | 3 tasks | 8 files |
 | Phase 18 P05 | 75min | 3 tasks | 4 files |
+| Phase 19 P01 | 45min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -329,6 +330,9 @@ Recent decisions affecting current work:
 - [Phase 18]: [Phase 18-03]: Promoted openR2000Session()/R2000Session (r2000-mcp-client.ts) and built r2000-session.ts's single-slot lifecycle owner; runR2000Tool() rewired through runInR2000Session() with its call-then-save body byte-identical; D18-09's three-scenario save-discipline gate landed live and watched red-then-green against real production code — While proving this plan's own npm test full-suite acceptance criterion, found and fixed a real cross-session staleness bug: a held session could answer from stale in-memory state after r2000-symbols.ts's importLabels() (a deliberately separate one-shot session per D18-07) saved to the same project file -- fixed via a project-file mtimeMs comparison before every reuse. Also diagnosed (but did not fix, per scope-boundary) a pre-existing, unrelated npm test hang affecting r2000-cli.test.ts and three siblings when regenerator2000 is installed locally -- logged to deferred-items.md and WINDOWS.md.
 - [Phase 18]: SESS-02 restart policy: crash counter is scoped per project path, resets only on explicit test reset or project-path change (never on success), bounded by DEFAULT_R2000_RESTART_BUDGET=3 (env-overridable via R2000_RESTART_BUDGET)
 - [Phase 18]: D18-23 (SIGKILLed-proxy orphan risk) answered by measurement: regenerator2000 0.9.20 self-terminates within ~200ms of stdin EOF with no exit hook running -- no startup sweep filed
+- [Phase 19]: Phase 19 elects MIT from regenerator2000's dual MIT OR Apache-2.0 for all absorbed prose; the Apache-2.0 modification notice is discharged by each per-file ADAPTED, NOT VERBATIM header regardless
+- [Phase 19]: D18-16 CLOSED by measurement: regenerator2000 0.9.20's --mcp-server-stdio does not multiplex (3 runs + source proof), so the coarse FIFO mutex stays and a reader-writer upgrade would buy zero parallelism
+- [Phase 19]: Census assertions in packaging CI are relations against src/skills/, never literals — check-npm-packages.mjs now compares tarball skill count to topLevelSkillDirs() with a >=6 non-vacuity floor
 
 ### Pending Todos
 
@@ -821,8 +825,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T11:30:26.826Z
-Stopped at: Completed 18-05-PLAN.md
+Last session: 2026-08-24T16:15:41.929Z
+Stopped at: Completed 19-01-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
