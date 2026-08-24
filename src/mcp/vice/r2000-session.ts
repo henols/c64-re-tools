@@ -41,9 +41,11 @@
 // per-request context object to carry it in): the current live session (or
 // null), its resolved project path, an `inFlight` synchronous open-guard
 // (Rule A11's single-owner check-and-set, ported from
-// `broker-launch.mts`'s `tryLaunchOne()`), and two counters
-// (`openCount`/`killCount`) that exist ONLY for the test seam below --
-// production code never reads them.
+// `broker-launch.mts`'s `tryLaunchOne()`), a coarse FIFO mutex (D18-15
+// through D18-19, plan 18-06 -- see its own section below for the full
+// rationale) serialising the ENTIRE body of `runInR2000Session()` per
+// caller, and two counters (`openCount`/`killCount`) that exist ONLY for
+// the test seam below -- production code never reads them.
 //
 // TWO DELIBERATE ABSENCES, recorded so a later reader does not "fix" them:
 //   - NO IDLE TIMEOUT (D18-05). The held child lives until the proxy
@@ -93,6 +95,7 @@ import { ensureProjectSettings } from "./r2000-project.ts";
 import {
   R2000ChildExitError,
   R2000RestartBudgetExhaustedError,
+  R2000SessionBusyError,
   R2000TimeoutError,
   type R2000Call,
   type R2000Session,
@@ -241,6 +244,178 @@ async function discardCurrentSession(): Promise<void> {
   }
 }
 
+// -- Coarse FIFO mutex (D18-15 through D18-19, plan 18-06) -----------------
+//
+// OWNER: this module. Recorded here, not `r2000-mcp-client.ts`, because the
+// critical-section UNIT D18-18 requires is the caller's whole `fn` -- the
+// mutating call AND its own internal `r2000_save_project`, executed as one
+// unit so no second mutation can interleave between a change and its flush
+// -- and `runInR2000Session(projectPath, fn)` is the only place in this repo
+// where an `fn` boundary of that shape exists. Owning the mutex at the
+// transport layer (`r2000-mcp-client.ts`) would only ever see individual
+// `tools/call` frames, leaving exactly the window Phase 9's incident lived
+// in. SESS-04's "concurrent fan-out is restricted to read-only queries" is
+// therefore satisfied at the ORCHESTRATION level (Phase 19's playbooks fan
+// out read-only subagents by convention), not mechanically here: this seam
+// serialises everything it is handed, reads included, and answers
+// contention with a bounded queue-and-wait rather than a refusal (D18-17) --
+// an LLM-driven procedure handling a "busy, try again" error correctly is
+// not something to rely on, and it would push retry logic into every
+// absorbed procedure Phase 19 writes.
+//
+// RELATIONSHIP TO THE RETAINED `inFlight` CHECK-AND-SET ABOVE: both exist,
+// deliberately, for different reasons -- this mutex is a PROMISE structure
+// and can only ever serialise callers that actually go through it, while
+// Rule A11's `inFlight` invariant is specifically a synchronous check and a
+// set with ZERO `await` between them (ported from `broker-launch.mts`'s
+// `tryLaunchOne()`). That is the property that survives a future refactor
+// which adds a second entry point into the open path without going through
+// this mutex at all -- the queue alone could not catch that; `inFlight`
+// still would. Neither replaces the other; do not convert `inFlight` into a
+// promise-based equivalent.
+
+/**
+ * The maximum time a caller waits for ITS OWN TURN at the mutex, never the
+ * maximum time its own operation may take once granted -- once a caller
+ * holds the slot, its own `fn` may run for as long as it needs to (bounded,
+ * if at all, only by its own `RunInR2000SessionOptions.timeoutMs`). `60_000`
+ * is deliberately double `DEFAULT_R2000_CALL_TIMEOUT_MS` (`r2000-mcp-
+ * client.ts`, `30_000`) so a single legitimately-slow call ahead in the
+ * queue can never trip a waiter behind it, while a genuinely stuck holder
+ * still surfaces as a named, bounded `R2000SessionBusyError` rather than
+ * hanging forever (SESS-02's own "never a hang" floor, applied here to
+ * contention rather than to the child process itself). Overridable per
+ * process via `R2000_QUEUE_WAIT_MS`, read AT CALL TIME (never frozen at
+ * module load) -- matching `currentRestartBudget()`'s own read-at-call-time
+ * rationale above, since this repo's test files share one module cache per
+ * `node --test` process and need to point several different bounds at the
+ * same code within that one process.
+ */
+export const DEFAULT_R2000_QUEUE_WAIT_MS = 60_000;
+
+function currentQueueWaitMs(): number {
+  const raw = process.env.R2000_QUEUE_WAIT_MS;
+  if (raw === undefined) return DEFAULT_R2000_QUEUE_WAIT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_R2000_QUEUE_WAIT_MS;
+}
+
+interface MutexQueueEntry {
+  description: string;
+  enqueuedAt: number;
+  /** Reassigned by `acquireMutexSlot()` to clear the entry's own bounded-
+   * wait timer before granting its turn -- see that function's own comment
+   * for why an explicit array (not a bare `tail = tail.then(...)` chain) is
+   * required: a timed-out entry must be individually removable from the
+   * MIDDLE of arrival order, which a plain promise chain cannot express. */
+  grant: () => void;
+}
+
+/** FIFO of callers waiting for their OWN turn at the mutex -- never
+ * includes whichever caller currently holds the slot (that caller is
+ * tracked separately by `inFlightDescription` below, not by an entry in
+ * this array). */
+let mutexQueue: MutexQueueEntry[] = [];
+
+/** A short description of whichever caller currently holds the mutex's one
+ * slot, or `null` when nobody does. Surfaced verbatim as a later waiter's
+ * `R2000SessionBusyError.holder` field, and exposed on the test seam below
+ * (`__r2000SessionStateForTest().inFlightDescription`) so a test can assert
+ * on queue state directly, never on timing. */
+let inFlightDescription: string | null = null;
+
+function grantNextInMutexQueue(): void {
+  const next = mutexQueue.shift();
+  if (next) next.grant();
+}
+
+/**
+ * Acquires the coarse FIFO mutex's one slot for `description`, resolving
+ * with a `release()` function once it is this caller's turn -- strict
+ * arrival order, including several callers that call this in the same
+ * synchronous tick: each pushes onto `mutexQueue` in the exact order it
+ * reaches this function, and Node's single-threaded, run-to-completion
+ * semantics mean two calls can never race for the same queue position
+ * (mirroring `killAfter()`'s own "race a timer against the real event"
+ * shape in `r2000-mcp-client.ts`, applied here to a turn rather than to a
+ * process exit). A caller whose turn has not arrived within
+ * `currentQueueWaitMs()` (D18-17) rejects with `R2000SessionBusyError`,
+ * naming its own observed wait and `inFlightDescription` at the moment of
+ * the timeout, and is removed from `mutexQueue` so its abandoned turn is
+ * never granted late against a session this caller has already given up on
+ * -- contention is answered by a bound, never by a refusal-while-busy.
+ */
+function acquireMutexSlot(description: string): Promise<() => void> {
+  return new Promise((resolve, reject) => {
+    function grant(): void {
+      inFlightDescription = description;
+      resolve(release);
+    }
+
+    function release(): void {
+      inFlightDescription = null;
+      grantNextInMutexQueue();
+    }
+
+    if (inFlightDescription === null && mutexQueue.length === 0) {
+      // Nobody ahead and nobody holding the slot -- this caller's turn is
+      // now, granted synchronously (before this function's own caller even
+      // resumes from its `await`), so a second caller invoked in the SAME
+      // tick always observes the slot as already held.
+      grant();
+      return;
+    }
+
+    const entry: MutexQueueEntry = { description, enqueuedAt: Date.now(), grant: () => {} };
+    const waitMs = currentQueueWaitMs();
+    const timer = setTimeout(() => {
+      const idx = mutexQueue.indexOf(entry);
+      if (idx === -1) return; // already granted between the timer firing and this callback running
+      mutexQueue.splice(idx, 1);
+      const waitedMs = Date.now() - entry.enqueuedAt;
+      reject(
+        new R2000SessionBusyError(
+          `r2000-session: a caller waited ${waitedMs}ms for its turn against the coarse FIFO mutex without ` +
+            `one, exceeding the R2000_QUEUE_WAIT_MS bound of ${waitMs}ms -- currently held by: ` +
+            `"${inFlightDescription ?? "(unknown)"}". The abandoned turn has been removed from the queue and ` +
+            `will not run late.`,
+          { waitedMs, holder: inFlightDescription ?? "(unknown)" }
+        )
+      );
+    }, waitMs);
+    // Deliberately retain this timer: awaiting a Promise alone does not keep
+    // Node's event loop alive, and this timer is the bounded-wait guarantee.
+    // It is cleared as soon as the caller gets its turn, so it cannot outlive
+    // a successful queue acquisition.
+    entry.grant = () => {
+      clearTimeout(timer);
+      grant();
+    };
+    mutexQueue.push(entry);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// TEST-ONLY (D18-19's non-vacuity control). Exists SOLELY so
+// the session test can prove the mutex is what prevents two concurrent
+// `runInR2000Session()` calls' `fn`s from interleaving against the SAME held
+// session -- flipping this toggle for exactly the duration of one test skips
+// the mutex entirely (both calls proceed straight into the guarded body
+// below with no serialisation), then observes a client-side read-modify-
+// write race that survives cleanly under the mutex now losing an update.
+// MUST NEVER be set by production code -- there is no code path in this file
+// that ever mutates `.active` other than a test file importing this binding
+// and flipping it directly, matching `r2000-tools.ts`'s own
+// `__R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE` convention exactly. Defaults to
+// `false` (asserted at module load by a companion test), and this
+// identifier appears in this file ONLY here and at its one read site inside
+// `runInR2000Session()` below -- a source assertion in
+// the companion source assertion pins the exported toggle to two occurrences.
+// ---------------------------------------------------------------------------
+
+export const __R2000_TEST_ONLY_BYPASS_QUEUE: { active: boolean } = { active: false };
+const r2000TestOnlyBypassQueue = __R2000_TEST_ONLY_BYPASS_QUEUE;
+
 export interface RunInR2000SessionOptions {
   /**
    * Per-request timeout for THIS call's session, passed straight through to
@@ -254,23 +429,55 @@ export interface RunInR2000SessionOptions {
 }
 
 /**
- * Runs `fn` against the held regenerator2000 session for `projectPath`,
- * opening a fresh one when none is held, reusing the held one when its
- * `projectPath` strictly equals the requested path AND the project file is
- * still the one this module last observed (see the EXTERNAL-WRITE
- * STALENESS note above), or evicting-then-respawning otherwise (D18-04:
- * single slot, evict-and-respawn -- lossless by construction because every
- * mutating call already saved before it resolved, D18-08).
+ * The exported entry point. Acquires the coarse FIFO mutex's one slot for
+ * `projectPath` (D18-15), then runs the ENTIRE existing tracer body --
+ * `runInR2000SessionLocked()` below -- inside it: the eviction/open
+ * decision, the `fn` invocation, and the error classification are all one
+ * critical-section unit (D18-18), never merely the `fn` call alone. Releases
+ * the slot in a `finally` regardless of success or throw, so a callback that
+ * throws still frees the queue for the next caller (D18-15's own behaviour
+ * requirement) and the rejection reaches only this call's own caller.
+ *
+ * The test-only bypass toggle skips the mutex entirely -- see
+ * that toggle's own doc comment for why it exists and its safety discipline.
+ */
+export async function runInR2000Session<T>(
+  projectPath: string,
+  fn: (call: R2000Call) => Promise<T>,
+  opts: RunInR2000SessionOptions = {}
+): Promise<T> {
+  if (r2000TestOnlyBypassQueue.active) {
+    return runInR2000SessionLocked(projectPath, fn, opts);
+  }
+  const release = await acquireMutexSlot(projectPath);
+  try {
+    return await runInR2000SessionLocked(projectPath, fn, opts);
+  } finally {
+    release();
+  }
+}
+
+/**
+ * The tracer body proper (plan 18-03, extended by plans 18-04/18-06):
+ * against the held regenerator2000 session for `projectPath`, opens a fresh
+ * one when none is held, reuses the held one when its `projectPath` strictly
+ * equals the requested path AND the project file is still the one this
+ * module last observed (see the EXTERNAL-WRITE STALENESS note above), or
+ * evicts-then-respawns otherwise (D18-04: single slot, evict-and-respawn --
+ * lossless by construction because every mutating call already saved before
+ * it resolved, D18-08). Always called from inside `runInR2000Session()`'s
+ * own critical section above (or, for exactly one test, with it bypassed) --
+ * never call this function directly from production code.
  *
  * Deliberately signature-compatible with `withR2000Session(projectPath, fn)`
  * so `r2000-tools.ts`'s rewire is a one-identifier swap -- `opts` is an
  * additional, optional third parameter, so every existing call site
  * (`r2000-tools.ts`'s two-argument calls) is unaffected.
  */
-export async function runInR2000Session<T>(
+async function runInR2000SessionLocked<T>(
   projectPath: string,
   fn: (call: R2000Call) => Promise<T>,
-  opts: RunInR2000SessionOptions = {}
+  opts: RunInR2000SessionOptions
 ): Promise<T> {
   if (currentProjectPath !== null && currentProjectPath !== projectPath) {
     // Project-path change: full eviction, AND the crash counter is scoped
@@ -316,10 +523,21 @@ export async function runInR2000Session<T>(
     // Rule A11's synchronous single-owner check-and-set, ported from
     // broker-launch.mts's tryLaunchOne() (D18-20): read the flag, set it,
     // and only THEN reach the first `await` -- so two overlapping open
-    // attempts can never both spawn a child for this module's slot. The
-    // full contention-queue-and-wait behaviour (D18-17) is a later plan's
-    // mutex; this guard only protects the open path itself from a double
-    // spawn.
+    // attempts can never both spawn a child for this module's slot.
+    //
+    // RETAINED DELIBERATELY alongside plan 18-06's coarse mutex above, not
+    // deleted as redundant now that the mutex already serialises every
+    // caller that goes through `runInR2000Session()`: this flag is what
+    // still protects the open path if a FUTURE refactor ever adds a second
+    // entry point into this function's body that bypasses the mutex -- a
+    // promise-chain queue is a structure callers can be routed AROUND; a
+    // synchronous check-and-set with zero `await` between the check and the
+    // set cannot be, by construction. In today's code, with every caller
+    // routed through the mutex, this branch should never actually observe
+    // `inFlight === true` (the mutex already prevents two callers from
+    // being inside this function's body at the same time) -- its value is
+    // as a structural invariant surviving a future refactor, not as the
+    // live contention path itself (D18-17's mutex is that path now).
     if (inFlight) {
       throw new Error(
         "r2000-session: a session-open is already in flight for this proxy process -- concurrent opens " +
@@ -440,6 +658,8 @@ export function __r2000SessionStateForTest(): {
   killCount: number;
   crashCount: number;
   dead: boolean;
+  queueDepth: number;
+  inFlightDescription: string | null;
 } {
   return {
     open: currentSession !== null,
@@ -449,6 +669,8 @@ export function __r2000SessionStateForTest(): {
     killCount,
     crashCount,
     dead: sessionDead,
+    queueDepth: mutexQueue.length,
+    inFlightDescription,
   };
 }
 
@@ -461,8 +683,11 @@ export function __r2000SessionStateForTest(): {
 export async function __resetR2000SessionForTest(): Promise<void> {
   await discardCurrentSession();
   inFlight = false;
+  inFlightDescription = null;
+  mutexQueue = [];
   openCount = 0;
   killCount = 0;
   crashCount = 0;
   sessionDead = false;
+  r2000TestOnlyBypassQueue.active = false;
 }

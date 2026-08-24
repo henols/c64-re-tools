@@ -20,6 +20,8 @@ import { runR2000Tool, __R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE } from "./r2000-
 import { synthesizeProject } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 import {
+  DEFAULT_R2000_QUEUE_WAIT_MS,
+  __R2000_TEST_ONLY_BYPASS_QUEUE,
   __r2000SessionStateForTest,
   __resetR2000SessionForTest,
   closeR2000SessionSync,
@@ -27,8 +29,10 @@ import {
 } from "./r2000-session.ts";
 import {
   R2000ChildExitError,
+  R2000SessionBusyError,
   R2000TimeoutError,
   R2000RestartBudgetExhaustedError,
+  DEFAULT_R2000_CALL_TIMEOUT_MS,
 } from "./r2000-mcp-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -704,4 +708,205 @@ test("structural: vice-proxy.ts's teardown region calls r2000-session.ts's own s
 
   const staticImports = (source.match(/from "\.\/r2000-session\.ts"/g) || []).length;
   assert.equal(staticImports, 1, "expected exactly one static import of r2000-session.ts in vice-proxy.ts");
+});
+
+// ===========================================================================
+// Plan 18-06: coarse FIFO mutex, bounded wait, and the non-vacuity proof that
+// removing the queue reopens an interleaving/lost-update window.
+// ===========================================================================
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason?: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+test("plan 18-06: DEFAULT_R2000_QUEUE_WAIT_MS is strictly greater than DEFAULT_R2000_CALL_TIMEOUT_MS", () => {
+  assert.ok(
+    DEFAULT_R2000_QUEUE_WAIT_MS > DEFAULT_R2000_CALL_TIMEOUT_MS,
+    `expected DEFAULT_R2000_QUEUE_WAIT_MS (${DEFAULT_R2000_QUEUE_WAIT_MS}) to exceed DEFAULT_R2000_CALL_TIMEOUT_MS ` +
+      `(${DEFAULT_R2000_CALL_TIMEOUT_MS}) so one legitimately slow call ahead in the queue can never trip a waiter`,
+  );
+});
+
+test("plan 18-06 non-vacuity control: __R2000_TEST_ONLY_BYPASS_QUEUE defaults off at module load", () => {
+  assert.equal(
+    __R2000_TEST_ONLY_BYPASS_QUEUE.active,
+    false,
+    "expected the queue-bypass toggle to default off at module load -- it must only ever be enabled by the one non-vacuity test",
+  );
+});
+
+test("plan 18-06 non-vacuity control: __R2000_TEST_ONLY_BYPASS_QUEUE's identifier appears in r2000-session.ts only at its definition and its one read site", () => {
+  const src = readFileSync(join(HERE, "r2000-session.ts"), "utf8");
+  const matches = src.match(/__R2000_TEST_ONLY_BYPASS_QUEUE/g) ?? [];
+  assert.equal(
+    matches.length,
+    2,
+    `expected the queue-bypass toggle's identifier to appear exactly twice in r2000-session.ts (definition + one read site), ` +
+      `found ${matches.length}`,
+  );
+});
+
+test("plan 18-06: five same-tick callers begin in strict FIFO arrival order", async () => {
+  const { projectPath } = synthesizeFixtureProject("fifo");
+  const started: number[] = [];
+  const gates = Array.from({ length: 5 }, () => deferred<void>());
+  const completions = gates.map((gate, idx) =>
+    runInR2000Session(projectPath, async () => {
+      started.push(idx);
+      if (idx < gates.length - 1) gates[idx + 1]!.resolve();
+      await gate.promise;
+      return idx;
+    }),
+  );
+
+  await waitUntilSessionState((s) => s.queueDepth === 4 && s.inFlightDescription === projectPath, 2000);
+  gates[0]!.resolve();
+  await Promise.all(completions);
+  assert.deepEqual(started, [0, 1, 2, 3, 4], `expected FIFO callback start order, got ${JSON.stringify(started)}`);
+  const finalState = __r2000SessionStateForTest();
+  assert.equal(finalState.queueDepth, 0, "expected the queue to drain fully after the FIFO run");
+  assert.equal(finalState.inFlightDescription, null, "expected no holder after the FIFO run");
+});
+
+test("plan 18-06: a throwing callback releases the queue and the following entry still runs", async () => {
+  const { projectPath } = synthesizeFixtureProject("throw");
+  const order: string[] = [];
+  await assert.rejects(
+    Promise.all([
+      runInR2000Session(projectPath, async () => {
+        order.push("first");
+        throw new Error("deliberate first failure");
+      }),
+      runInR2000Session(projectPath, async () => {
+        order.push("second");
+        return "second-ok";
+      }),
+    ]),
+    /deliberate first failure/,
+  );
+
+  assert.deepEqual(order, ["first", "second"], `expected the queued follower to run after a throw, got ${JSON.stringify(order)}`);
+  const state = __r2000SessionStateForTest();
+  assert.equal(state.queueDepth, 0, "expected the queue to be empty after the throwing-callback scenario");
+  assert.equal(state.inFlightDescription, null, "expected no holder after the throwing-callback scenario");
+});
+
+test("plan 18-06: a waiting caller times out with R2000SessionBusyError and is removed from the queue before it can run late", async () => {
+  const { projectPath } = synthesizeFixtureProject("busy");
+  const holder = deferred<void>();
+  let timedOutCallbackRuns = 0;
+
+  process.env.R2000_QUEUE_WAIT_MS = "50";
+  try {
+    const first = runInR2000Session(projectPath, async () => {
+      await holder.promise;
+      return "holder-ok";
+    });
+
+    await waitUntilSessionState((s) => s.inFlightDescription === projectPath, 2000);
+
+    await assert.rejects(
+      runInR2000Session(projectPath, async () => {
+        timedOutCallbackRuns++;
+        return "should-never-run";
+      }),
+      (err: unknown) => {
+        assert.ok(err instanceof R2000SessionBusyError, `expected R2000SessionBusyError, got ${(err as Error)?.name}`);
+        assert.equal(err.holder, projectPath);
+        assert.ok(err.waitedMs >= 50, `expected waitedMs >= 50, got ${err.waitedMs}`);
+        return true;
+      },
+    );
+
+    const afterTimeout = __r2000SessionStateForTest();
+    assert.equal(afterTimeout.queueDepth, 0, "expected the timed-out waiter to have been removed from the queue");
+    assert.equal(timedOutCallbackRuns, 0, "expected the timed-out callback never to be invoked");
+
+    holder.resolve();
+    await first;
+  } finally {
+    delete process.env.R2000_QUEUE_WAIT_MS;
+  }
+});
+
+test("plan 18-06: the bounded wait applies only to waiting for the slot, not to a slow callback once it holds it", async () => {
+  const { projectPath } = synthesizeFixtureProject("slow-holder");
+  const slowGate = deferred<void>();
+  const followerReady = deferred<void>();
+
+  process.env.R2000_QUEUE_WAIT_MS = "150";
+  try {
+    const first = runInR2000Session(projectPath, async () => {
+      followerReady.resolve();
+      await slowGate.promise;
+      return "slow-ok";
+    });
+
+    await followerReady.promise;
+
+    const second = runInR2000Session(projectPath, async () => "second-ok");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    slowGate.resolve();
+
+    const [, secondResult] = await Promise.all([first, second]);
+    assert.equal(secondResult, "second-ok");
+  } finally {
+    delete process.env.R2000_QUEUE_WAIT_MS;
+  }
+});
+
+test("plan 18-06: the queue prevents a client-side lost update, and bypassing it makes the same scenario fail loud as non-exercising", async () => {
+  const { projectPath } = synthesizeFixtureProject("lost-update");
+  const shared = { value: 0 };
+  const barrier = deferred<void>();
+
+  async function readModifyWrite(delta: number): Promise<void> {
+    const observed = shared.value;
+    barrier.resolve();
+    await barrier.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    shared.value = observed + delta;
+  }
+
+  await Promise.all([
+    runInR2000Session(projectPath, () => readModifyWrite(1)),
+    runInR2000Session(projectPath, () => readModifyWrite(10)),
+  ]);
+  assert.equal(shared.value, 11, `expected the queued run to preserve both updates, got ${shared.value}`);
+
+  shared.value = 0;
+  const unlockedBarrier = deferred<void>();
+  __R2000_TEST_ONLY_BYPASS_QUEUE.active = true;
+  try {
+    await Promise.all([
+      runInR2000Session(projectPath, async () => {
+        const observed = shared.value;
+        unlockedBarrier.resolve();
+        await unlockedBarrier.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        shared.value = observed + 1;
+      }),
+      runInR2000Session(projectPath, async () => {
+        const observed = shared.value;
+        unlockedBarrier.resolve();
+        await unlockedBarrier.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        shared.value = observed + 10;
+      }),
+    ]);
+  } finally {
+    __R2000_TEST_ONLY_BYPASS_QUEUE.active = false;
+  }
+
+  assert.notEqual(
+    shared.value,
+    11,
+    "the unlocked run produced the same clean result as the locked run, so this non-vacuity control is not exercising the invariant and must be rewritten before it is trusted",
+  );
 });

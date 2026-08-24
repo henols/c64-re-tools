@@ -278,6 +278,36 @@ export class R2000RestartBudgetExhaustedError extends R2000ClientError {
   }
 }
 
+export interface R2000SessionBusyErrorOptions extends R2000ClientErrorOptions {
+  waitedMs: number;
+  holder: string;
+}
+
+/**
+ * Thrown by `r2000-session.ts`'s coarse FIFO mutex (D18-15) when a caller's
+ * turn never arrives within `DEFAULT_R2000_QUEUE_WAIT_MS` (or its
+ * `R2000_QUEUE_WAIT_MS` override) -- SESS-04 criterion 4's named answer to
+ * contention, which is a BOUNDED queue-and-wait, never a refusal-while-busy
+ * (D18-17). `waitedMs`/`holder` are dedicated PUBLIC fields -- the caller's
+ * own observed wait and a short description of whichever caller currently
+ * holds the slot -- so a caller (or a test) can read both programmatically
+ * rather than parsing this error's message text. The queued turn this error
+ * is thrown for is removed from the mutex's queue at the same moment, so it
+ * is never granted late against a session this caller has already given up
+ * on.
+ */
+export class R2000SessionBusyError extends R2000ClientError {
+  waitedMs: number;
+  holder: string;
+
+  constructor(message: string, { waitedMs, holder, ...rest }: R2000SessionBusyErrorOptions) {
+    super(message, rest);
+    this.name = "R2000SessionBusyError";
+    this.waitedMs = waitedMs;
+    this.holder = holder;
+  }
+}
+
 // -- The wire shape ---------------------------------------------------
 
 interface JsonRpcRequest {
