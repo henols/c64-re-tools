@@ -1,4 +1,5 @@
 {
+  "runtime": "codex",
   "model_profile": "balanced",
   "commit_docs": true,
   "parallelization": true,
