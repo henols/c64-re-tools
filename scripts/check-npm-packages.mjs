@@ -68,6 +68,53 @@ const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
 
+// --- ABS-02 / plan 19-07: the notices CONTENT check -------------------------
+// A THIRD legitimate filesystem check against a repo path joins the two this
+// file's header enumerates, and for the same reason: there is no tarball
+// listing that could answer it. `npm pack --dry-run --json` reports the packed
+// file NAMES, never their bytes, so "THIRD-PARTY-NOTICES.md is in files[]"
+// cannot distinguish a notices document that discharges MIT's inclusion
+// condition from one that is present and empty. Both failures ship; only one
+// of them is visible to a file-list assertion, which is exactly why the
+// content check is ADDITIONAL to the existing files[] assertions rather than a
+// replacement for them -- a file absent and a file present-but-gutted are
+// different producer bugs and both must be caught.
+//
+// Phase 19's verification found `src/mcp/vice/THIRD-PARTY-NOTICES.md` shipping
+// a sentence claiming the permission notice travelled inside every absorbed
+// header and shipped in both tarballs, while the notice text existed nowhere
+// in the repository and `@henols/vice-mcp` packed zero skill files. The claim
+// was packed to consumers; the thing it claimed was not. This assertion is the
+// packaging-side half of the guard (the repo-side half is the notices guard in
+// `src/mcp/vice/skill-attribution.test.ts`, which additionally pins the
+// notice's sha256 to the upstream digest).
+//
+// The sentence checked for is MIT's condition itself -- the operative clause,
+// not the section heading -- because a heading can survive an emptied fence.
+const MIT_INCLUSION_CONDITION =
+  "The above copyright notice and this permission notice shall be included in all " +
+  "copies or substantial portions of the Software.";
+
+// Whitespace-normalised so the check is about the notice being present, not
+// about how the fenced block happens to be wrapped in the file.
+const flattenProse = (text) => text.replace(/\s+/g, " ");
+
+/** Asserts the SOURCE notices document behind a packed `THIRD-PARTY-NOTICES.md`
+ * actually reproduces the upstream MIT permission notice. `label` names the
+ * package so a failure says which tarball ships the gutted document. */
+function needNoticesCarryPermissionNotice(label, repoRelativeNoticesPath) {
+  const full = join(ROOT, repoRelativeNoticesPath);
+  const exists = existsSync(full);
+  need(exists, `${label}: ${repoRelativeNoticesPath} does not exist -- it is packed as THIRD-PARTY-NOTICES.md`);
+  if (!exists) return;
+  need(
+    flattenProse(readFileSync(full, "utf8")).includes(flattenProse(MIT_INCLUSION_CONDITION)),
+    `${label}: ${repoRelativeNoticesPath} is packed but does not reproduce the upstream MIT permission notice -- ` +
+      `ABS-02 requires the elected licence's own inclusion condition ("${MIT_INCLUSION_CONDITION}") to be ` +
+      `discharged by the shipped document, not asserted about it`
+  );
+}
+
 // The packed package names, recorded by packFiles() in call order. Checked
 // after both packs against the expected two-package set (see below).
 const packedNames = [];
@@ -128,6 +175,7 @@ need(
   vice.files.includes("THIRD-PARTY-NOTICES.md"),
   "vice-mcp: missing THIRD-PARTY-NOTICES.md -- criterion 5 requires the opcode table's zlib provenance to ship with the package (D-07)"
 );
+needNoticesCarryPermissionNotice("vice-mcp", "src/mcp/vice/THIRD-PARTY-NOTICES.md");
 
 // --- Phase 3 Rule 2 regression guard: Phase 4 and Phase 5's derived modules -
 // These entries were added to files[] by 04-02 (stock-derived.ts), 04-05
@@ -263,6 +311,7 @@ need(
   inst.files.includes("THIRD-PARTY-NOTICES.md"),
   "installer: missing THIRD-PARTY-NOTICES.md -- ABS-02 requires the package that ships the adapted regenerator2000 procedure prose (skills/) to carry its own notices document"
 );
+needNoticesCarryPermissionNotice("installer", "installer/THIRD-PARTY-NOTICES.md");
 const skillMds = inst.files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f));
 // The relation side: `src/skills/` immediate subdirectories that carry a
 // SKILL.md. `topLevelSkillDirs()` is the shared corpus primitive (WR-12) --

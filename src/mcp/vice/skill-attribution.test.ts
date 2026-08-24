@@ -75,6 +75,7 @@
 //     as a string and matched, never executed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
@@ -229,6 +230,190 @@ function readDestination(row: AbsorbedFile): string {
 
 function manifestEntryFor(row: AbsorbedFile): { path: string; sha256: string } {
   return manifest.procedures.find((p: { path: string }) => p.path === row.upstreamPath);
+}
+
+// ===========================================================================
+// THE NOTICES GUARD (plan 19-07) -- ABS-02's OTHER mechanical half: the
+// elected licence's own inclusion condition, discharged by shipped text.
+//
+// WHY THIS EXISTS, and why it is a SEPARATE guard from everything above:
+// the per-file `ATTRIBUTION (ABS-02)` headers policed above name the licence;
+// they do not REPRODUCE it. MIT's own condition is that "the above copyright
+// notice and this permission notice shall be included in all copies or
+// substantial portions of the Software", and until 19-07 that condition was
+// discharged nowhere -- the permission-notice text appeared in no shipped
+// file. Worse, `src/mcp/vice/THIRD-PARTY-NOTICES.md` ASSERTED that the notice
+// travelled inside every absorbed header and shipped in both published
+// tarballs. Three independent falsifications: the text was absent; the
+// headers carry the licence NAME only; and `@henols/vice-mcp` packs zero
+// skill files, so no absorbed header ships in that tarball at all -- while
+// the false claim itself did, packed, to consumers.
+//
+// So the obligation now lives in prose inside two published documents, and
+// prose defects do not announce themselves. Nothing else in this repository
+// would notice that notice text being deleted, re-wrapped, paraphrased, or
+// transcribed from a secondary source. This guard is what notices.
+//
+// FOUR PROPERTIES, mirroring this file's presence-AND-absence discipline:
+//   1. PRESENCE, per named file: every notices file that CLAIMS to
+//      incorporate regenerator2000 prose reproduces the notice, and the
+//      reproduction is byte-exact against the pinned upstream digest.
+//   2. NON-VACUITY: the extraction predicate is proven to bite on planted
+//      strings held ONLY in memory -- one that claims incorporation and
+//      carries no notice, and one whose notice has a single word altered.
+//   3. ABSENCE, scoped to the notices files: the falsified sentence cannot
+//      return silently.
+//   4. NON-VACUITY for the absence half: the forbidden set is non-empty and
+//      its predicate is proven to bite on a planted string.
+//
+// EQUALITY IS BYTES, NOT PROSE. The presence check is a sha256 over the
+// extracted fence content, not a substring match. That is the deliberate
+// answer to "whose definition of equality applies": a notice that reads
+// correctly but was re-wrapped, smart-quoted, or copied from `19-REVIEW.md`
+// (whose own copy is ELIDED -- it literally contains a `... [full verbatim
+// LICENSE-MIT text] ...` placeholder) FAILS here. Transcribing from the
+// review document is the specific defect this digest catches.
+//
+// A NAMED LIST, NOT A GLOB, for the same reason the registry above is a
+// registry: a notices file that claims nothing is not required to carry a
+// notice, and only a named set can tell "must carry" from "legitimately has
+// nothing to carry".
+//
+// THE ABSENCE CHECK IS SCOPED TO `NOTICES_FILES` AND MUST STAY SO. This test
+// file necessarily contains the forbidden phrases as constants. A repo-wide
+// grep would therefore either fail on its own guard or be weakened -- with a
+// self-exclusion, a fuzzier pattern -- until it proved nothing. That
+// weakening IS the rot; scoping is what prevents it.
+//
+// CONCURRENCY: this guard performs NO WRITE. It reads three files and hashes
+// strings, so two concurrent runs cannot interleave into a false pass and an
+// interrupted run leaves no partial state. The planted violations are
+// in-memory strings, never a plant-and-revert against the real tree, so the
+// working tree is never dirty between runs (the same reasoning the absence
+// proof above records).
+
+/** The notices files that ship or point at incorporated regenerator2000
+ * prose. Repo-relative and resolved through `ROOT`, deliberately NOT a
+ * `.planning/` path (WR-11 is deferred, and this plan must not add a new
+ * instance of the archival fragility it names).
+ *   - `src/mcp/vice/THIRD-PARTY-NOTICES.md` -- packed by `@henols/vice-mcp`.
+ *   - `installer/THIRD-PARTY-NOTICES.md`    -- packed by `@henols/c64-re-tools`,
+ *     the tarball that actually carries the absorbed `skills/` prose.
+ *   - `THIRD-PARTY-NOTICES.md`              -- the repo-root pointer, never
+ *     packed, but it makes the same incorporation claim on the repo page. */
+const NOTICES_FILES: readonly string[] = [
+  "src/mcp/vice/THIRD-PARTY-NOTICES.md",
+  "installer/THIRD-PARTY-NOTICES.md",
+  "THIRD-PARTY-NOTICES.md",
+];
+
+/** sha256 of regenerator2000's `LICENSE-MIT` at the pinned commit
+ * `493f840418f1450a342bb220c2fe3d2585dd0525` -- 1072 bytes, LF line endings,
+ * trailing newline included. Independently confirmed against the upstream
+ * repository at authoring time (19-07 Task 1) by fetching the raw blob at
+ * that immutable SHA, never at a branch. This constant is the transcription
+ * check: it is what makes a paraphrased, re-wrapped or review-sourced notice
+ * FAIL rather than read plausibly. */
+const UPSTREAM_MIT_NOTICE_SHA256 = "e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b";
+
+/** The byte count that accompanies the digest. A second, independent handle
+ * on the same bytes: a truncated extraction that somehow collided on a prefix
+ * still reports the wrong length, and the failure message can say so. */
+const UPSTREAM_MIT_NOTICE_BYTES = 1072;
+
+/** The heading under which every notices file reproduces the notice, and the
+ * fence language it uses. Identical in all three files by construction, so
+ * ONE extraction rule serves all three -- which is why Task 1 was required to
+ * use the same heading and the same fence marker everywhere. */
+const NOTICE_SECTION_HEADING = "## Upstream MIT permission notice (regenerator2000)";
+const NOTICE_FENCE_OPEN = "```text";
+
+/** How a notices file DECLARES that it incorporates regenerator2000 prose.
+ *
+ * Derived from the wording the incorporated-material heading already carries
+ * (`## Incorporated material -- regenerator2000 analysis procedures (MIT OR
+ * Apache-2.0)`) rather than from a marker invented here. The repo-root
+ * pointer states the same claim as a bullet rather than a heading, so the
+ * pattern is the shared PHRASE, not the whole heading.
+ *
+ * Deliberately NOT derived from `NOTICE_SECTION_HEADING`: keying the claim on
+ * the notice section itself would make the presence test tautological -- a
+ * file would "claim incorporation" exactly when it already carried the
+ * notice, and deleting the notice would delete the obligation with it. The
+ * claim and its discharge must be independent strings or the guard proves
+ * nothing. */
+const INCORPORATION_CLAIM_PATTERN = /regenerator2000 analysis procedures/;
+
+/** Phrases from the sentence 19-07 Task 1 DELETED, transcribed from the real
+ * prior text via `git show HEAD~1:src/mcp/vice/THIRD-PARTY-NOTICES.md` and
+ * `git show HEAD~1:THIRD-PARTY-NOTICES.md`, not retyped from the plan.
+ *
+ * Each was false of the commit that shipped it. The first three come from
+ * `src/mcp/vice/THIRD-PARTY-NOTICES.md`: the permission notice did not travel
+ * inside any absorbed header (the headers name the licence, they do not
+ * reproduce it), and it did not ship in BOTH tarballs, because `@henols/
+ * vice-mcp` packs no skill file at all. The fourth is the repo-root pointer's
+ * singular, unnamed version of the same claim -- unnamed being the defect:
+ * only ONE of the two published tarballs packs the skill playbooks, and the
+ * sentence has to say which.
+ *
+ * Listing them here converts "do not reintroduce this claim" from a review
+ * comment into a test failure. Matched after whitespace normalisation so
+ * re-wrapping the paragraph cannot smuggle a claim past the check. */
+const FORBIDDEN_NOTICE_CLAIMS: readonly string[] = [
+  "The MIT permission notice and copyright above travel inside every absorbed file's header, which is what ships in both published tarballs.",
+  "travel inside every absorbed file's header",
+  "ships in both published tarballs",
+  "which travels inside the published tarball.",
+];
+
+/** Collapses every whitespace run to a single space, so a claim that is true
+ * of the prose is caught however the paragraph happens to be wrapped. Applied
+ * to the HAYSTACK and to the needles alike. */
+function normaliseProse(text: string): string {
+  return text.replace(/\s+/g, " ");
+}
+
+/** PREDICATE 1, pulled out as a named function so it can be handed a planted
+ * string. True when `text` declares that it incorporates regenerator2000
+ * analysis prose, and therefore owes the permission notice. */
+function claimsIncorporation(text: string): boolean {
+  return INCORPORATION_CLAIM_PATTERN.test(text);
+}
+
+/** PREDICATE 2. Returns the EXACT bytes of the reproduced notice -- the fence
+ * body with its trailing newline restored -- or `null` when the section or
+ * its fence is absent.
+ *
+ * CONTENT-anchored, never a line number, the same discipline
+ * `attributionBlocks()` above follows. The search is bounded to the notice
+ * section (up to the next `## ` heading) so a fence belonging to some LATER
+ * section cannot be mistaken for the notice: a file with the heading but no
+ * fence returns `null` rather than borrowing a neighbour's code block. */
+function extractPermissionNotice(text: string): string | null {
+  const headingAt = text.indexOf(NOTICE_SECTION_HEADING);
+  if (headingAt === -1) return null;
+  const after = text.slice(headingAt + NOTICE_SECTION_HEADING.length);
+  const nextHeading = after.indexOf("\n## ");
+  const section = nextHeading === -1 ? after : after.slice(0, nextHeading);
+  const fenceAt = section.indexOf(`${NOTICE_FENCE_OPEN}\n`);
+  if (fenceAt === -1) return null;
+  const body = section.slice(fenceAt + NOTICE_FENCE_OPEN.length + 1);
+  const closeAt = body.indexOf("\n```");
+  if (closeAt === -1) return null;
+  return `${body.slice(0, closeAt)}\n`;
+}
+
+/** PREDICATE 3, the absence half. Returns every forbidden claim `text`
+ * carries, so the failure message can name which one came back rather than
+ * only that one did. */
+function forbiddenClaimsIn(text: string): string[] {
+  const flat = normaliseProse(text);
+  return FORBIDDEN_NOTICE_CLAIMS.filter((claim) => flat.includes(normaliseProse(claim)));
+}
+
+function readNotices(relPath: string): string {
+  return readFileSync(join(ROOT, relPath), "utf8");
 }
 
 test("the absorbed-file registry covers every manifest procedure and every row resolves", () => {
@@ -429,4 +614,133 @@ test("the absence predicate bites on a planted re-insertion", () => {
   );
   assert.notEqual(planted, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
   assert.equal(namesUpstreamAgentSkillsPath(planted), true, "the absence predicate did NOT report a planted upstream agent-skills path");
+});
+
+// --- THE NOTICES GUARD, tests (plan 19-07) ---------------------------------
+// See the block comment beside `NOTICES_FILES` above for why this section
+// exists, why the list is named rather than globbed, why equality is bytes,
+// and why the absence half is scoped to `NOTICES_FILES` and must stay so.
+
+test("every notices file that claims incorporation reproduces the upstream MIT permission notice byte-exactly", () => {
+  // Rot guard: an emptied list must FAIL, not pass with nothing to check.
+  assert.ok(
+    NOTICES_FILES.length >= 1,
+    "NOTICES_FILES is empty -- an emptied list cannot be allowed to pass vacuously"
+  );
+
+  const claiming: string[] = [];
+  for (const relPath of NOTICES_FILES) {
+    const full = join(ROOT, relPath);
+    // A renamed or moved notices file must FAIL here, never degrade to a
+    // silently-unchecked row.
+    assert.ok(existsSync(full), `notices file ${relPath} does not exist -- the guard cannot check a missing file`);
+    const text = readNotices(relPath);
+    if (!claimsIncorporation(text)) continue;
+    claiming.push(relPath);
+
+    const notice = extractPermissionNotice(text);
+    assert.ok(
+      notice !== null,
+      `${relPath} claims to incorporate regenerator2000 analysis procedures but carries no ` +
+        `"${NOTICE_SECTION_HEADING}" section with a ${NOTICE_FENCE_OPEN} fence -- MIT's inclusion condition ` +
+        `is asserted there and discharged nowhere`
+    );
+    const bytes = Buffer.byteLength(notice, "utf8");
+    const digest = createHash("sha256").update(notice, "utf8").digest("hex");
+    assert.equal(
+      digest,
+      UPSTREAM_MIT_NOTICE_SHA256,
+      `${relPath}: the reproduced permission notice is ${bytes} bytes with sha256 ${digest}, expected ` +
+        `${UPSTREAM_MIT_NOTICE_BYTES} bytes with sha256 ${UPSTREAM_MIT_NOTICE_SHA256} -- the notice must be the ` +
+        `upstream LICENSE-MIT bytes at commit 493f840418f1450a342bb220c2fe3d2585dd0525, not a re-wrapped, ` +
+        `paraphrased or review-sourced copy (19-REVIEW.md's own copy is ELIDED -- do not transcribe from it)`
+    );
+    assert.equal(bytes, UPSTREAM_MIT_NOTICE_BYTES, `${relPath}: notice is ${bytes} bytes, expected ${UPSTREAM_MIT_NOTICE_BYTES}`);
+  }
+
+  // A notices file quietly dropping its incorporation section must FAIL here
+  // rather than remove itself from the check -- the failure mode a
+  // claim-conditioned guard would otherwise have.
+  assert.deepEqual(
+    claiming,
+    [...NOTICES_FILES],
+    `expected all ${NOTICES_FILES.length} notices files to claim incorporation, got [${claiming.join(", ")}] -- ` +
+      `a file that dropped its incorporation claim would otherwise exempt itself from the notice requirement`
+  );
+});
+
+test("the permission-notice guard bites on a planted claiming file with no notice, and on a one-word-altered notice", () => {
+  // Rot guard: both plants live ONLY in memory. Nothing is written to a real
+  // notices file, so the working tree is never left dirty between runs and a
+  // crashed run leaves no partial state to clean up.
+  const real = readNotices(NOTICES_FILES[0]);
+  assert.equal(claimsIncorporation(real), true, "the real notices file does not claim incorporation -- this proof would be vacuous");
+
+  // Plant A: claims incorporation, carries no notice section at all.
+  const withoutNotice = real.slice(0, real.indexOf(NOTICE_SECTION_HEADING));
+  assert.notEqual(withoutNotice, real, "the notice-section anchor was not found -- this proof would otherwise be vacuous");
+  assert.equal(claimsIncorporation(withoutNotice), true, "the plant must still claim incorporation, or it proves nothing");
+  assert.equal(
+    extractPermissionNotice(withoutNotice),
+    null,
+    "the extraction predicate did NOT report a claiming notices file with no permission-notice section"
+  );
+
+  // Plant B: the notice is present but ONE word differs. Byte equality is the
+  // point -- a plausible-reading paraphrase must fail exactly as a missing
+  // notice does.
+  const altered = real.replace("Permission is hereby granted, free of charge", "Permission is hereby granted, free of cost");
+  assert.notEqual(altered, real, "the one-word plant anchor was not found -- this proof would otherwise be vacuous");
+  const alteredNotice = extractPermissionNotice(altered);
+  assert.ok(alteredNotice !== null, "the altered plant should still yield a block; only its digest may differ");
+  assert.notEqual(
+    createHash("sha256").update(alteredNotice, "utf8").digest("hex"),
+    UPSTREAM_MIT_NOTICE_SHA256,
+    "a one-word-altered permission notice still matched the pinned upstream digest -- the transcription check is vacuous"
+  );
+});
+
+test("no notices file carries a claim about the notice that this commit falsifies", () => {
+  // SCOPED TO NOTICES_FILES, NEVER REPO-WIDE. This very file holds the
+  // forbidden phrases as constants; a repo-wide scan would fail on its own
+  // guard, and the reflex fix -- excluding this file, or fuzzing the pattern
+  // -- weakens the check until it proves nothing. See the section comment.
+  const offenders: string[] = [];
+  for (const relPath of NOTICES_FILES) {
+    for (const claim of forbiddenClaimsIn(readNotices(relPath))) {
+      offenders.push(`${relPath}: "${claim}"`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these notices files carry a claim about the permission notice that the repository falsifies -- the notice ` +
+      `does NOT travel inside an absorbed file's header (headers name the licence, they do not reproduce it), and ` +
+      `absorbed headers do NOT ship in both tarballs (@henols/vice-mcp packs zero skill files): ${offenders.join("; ")}`
+  );
+});
+
+test("the forbidden-claim set is non-empty and its predicate bites on a planted string", () => {
+  assert.ok(
+    FORBIDDEN_NOTICE_CLAIMS.length >= 1,
+    "FORBIDDEN_NOTICE_CLAIMS is empty -- an emptied set would make the absence test above vacuous"
+  );
+  // The plant is an in-memory string, and it is deliberately RE-WRAPPED
+  // across lines: normalisation is what stops a reflowed paragraph from
+  // smuggling the claim back in.
+  const planted =
+    "## Incorporated material -- regenerator2000 analysis procedures (MIT OR Apache-2.0)\n\n" +
+    "The MIT permission notice and copyright above travel inside every\nabsorbed file's header, which is what\nships in both published tarballs.\n";
+  const bites = forbiddenClaimsIn(planted);
+  assert.ok(
+    bites.length >= 1,
+    "the forbidden-claim predicate did NOT report a planted re-wrapped copy of the deleted sentence"
+  );
+  assert.ok(
+    bites.includes(FORBIDDEN_NOTICE_CLAIMS[0]),
+    `the planted full sentence was not matched; predicate reported [${bites.join(", ")}]`
+  );
+  // ... and it must not fire on text that carries no claim, or "no offenders"
+  // above would mean nothing.
+  assert.deepEqual(forbiddenClaimsIn("nothing forbidden here"), [], "the predicate fired on innocent text");
 });
