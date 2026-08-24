@@ -11,7 +11,7 @@
 // instead of a SKIP.
 import { test, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,17 @@ import { fileURLToPath } from "node:url";
 import { runR2000Tool, __R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE } from "./r2000-tools.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
-import { __r2000SessionStateForTest, __resetR2000SessionForTest, closeR2000SessionSync } from "./r2000-session.ts";
+import {
+  __r2000SessionStateForTest,
+  __resetR2000SessionForTest,
+  closeR2000SessionSync,
+  runInR2000Session,
+} from "./r2000-session.ts";
+import {
+  R2000ChildExitError,
+  R2000TimeoutError,
+  R2000RestartBudgetExhaustedError,
+} from "./r2000-mcp-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -344,5 +354,328 @@ test(
       "expected the project file's bytes to be hash-identical to their pre-call value -- the mutation must " +
         "be absent, not half-written",
     );
+  },
+);
+
+// ===========================================================================
+// Plan 18-04 task 2: SESS-02's proof -- stub-driven crash scenarios (D18-10
+// through D18-14) and a live kill. Every assertion below reads
+// __r2000SessionStateForTest()'s OWN counters and checks error identity by
+// `instanceof`, never message text and never wall-clock timing (`crashCount`/
+// `dead` were added to that snapshot by task 1 for exactly this purpose).
+// ===========================================================================
+
+/**
+ * One stub server body, selecting its per-child behaviour from
+ * `process.env.SESS02_STUB_MODE` (read ONCE at child startup, matching real
+ * regenerator2000's own one-shot-per-process nature -- a mode never changes
+ * mid-life for an already-spawned child). Every `tools/call` frame received
+ * is appended to `process.env.SESS02_CALL_LOG` (when set) as `<name>\n`,
+ * regardless of mode, so the no-retry assertion below can count frames by
+ * tool name directly rather than inferring it from call outcomes.
+ *
+ *   "happy"                 -- answers every tools/call normally, forever.
+ *   "exit-mid-call"         -- dies (exit 1) on the FIRST tools/call frame,
+ *                              before answering it (a mid-call death).
+ *   "die-on-second-call"    -- answers the FIRST tools/call frame normally,
+ *                              then dies (exit 1) on the SECOND, before
+ *                              answering it -- lets one test script produce
+ *                              "respawn, run (ok), then crash again" in a
+ *                              single child lifetime, for the restart-budget
+ *                              test's repeated cycles.
+ *   "exit-after-reply-delayed" -- answers the FIRST tools/call frame
+ *                              normally, then exits cleanly (code 0) on its
+ *                              own ~30ms later, with NO request pending --
+ *                              the between-calls death (D18-10).
+ *   "wedge"                 -- answers `initialize` normally, then never
+ *                              answers any `tools/call` (the wedge, D18-13).
+ */
+const SESS02_STUB_SOURCE = `
+import { createInterface } from "node:readline";
+import { appendFileSync } from "node:fs";
+const MODE = process.env.SESS02_STUB_MODE || "happy";
+const LOG = process.env.SESS02_CALL_LOG;
+const rl = createInterface({ input: process.stdin, terminal: false });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+let liveCallCount = 0;
+rl.on("line", (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.method === "initialize") {
+    send({ jsonrpc: "2.0", id: msg.id, result: {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      serverInfo: { name: "sess02-stub-" + MODE, version: "0.0.0" },
+    } });
+    return;
+  }
+  if (msg.method === "notifications/initialized") return;
+  if (msg.method === "tools/call") {
+    const name = (msg.params && msg.params.name) || "";
+    if (LOG) appendFileSync(LOG, name + "\\n");
+    liveCallCount++;
+    if (MODE === "wedge") return; // never answer any tools/call
+    if (MODE === "exit-mid-call" && liveCallCount === 1) { process.exit(1); }
+    if (MODE === "die-on-second-call" && liveCallCount >= 2) { process.exit(1); }
+    send({ jsonrpc: "2.0", id: msg.id, result: { content: [ { type: "text", text: "ok " + name } ] } });
+    if (MODE === "exit-after-reply-delayed" && liveCallCount === 1) {
+      setTimeout(() => process.exit(0), 30);
+    }
+    return;
+  }
+  if (msg.id !== undefined) {
+    send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "unhandled method " + msg.method } });
+  }
+});
+`;
+
+let sess02Dir: string | undefined;
+
+after(() => {
+  if (sess02Dir) rmSync(sess02Dir, { recursive: true, force: true });
+});
+
+/** Builds a fresh stub wrapper + a fresh, minimal `.regen2000proj` under a
+ * unique subdirectory of `sess02Dir`, so each test in this section gets its
+ * own project path (never colliding with a sibling test's own held slot). */
+function setUpSess02Fixture(name: string): { projectPath: string; wrapper: string } {
+  if (!sess02Dir) sess02Dir = mkdtempSync(join(HERE, ".r2000-session-test-sess02-"));
+  const dir = join(sess02Dir, name);
+  mkdirSync(dir);
+  const stubScript = join(dir, "stub.mjs");
+  writeFileSync(stubScript, SESS02_STUB_SOURCE);
+  const wrapper = join(dir, "wrapper.sh");
+  writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${stubScript}" "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  const projectPath = join(dir, "p.regen2000proj");
+  writeFileSync(projectPath, synthesizeProject(new Uint8Array([0]), { origin: 0xc000 }));
+  return { projectPath, wrapper };
+}
+
+/** Polls `__r2000SessionStateForTest()` until `predicate` is true or
+ * `timeoutMs` elapses -- used ONLY to wait for a stub's own scheduled exit
+ * (or a real SIGKILL's exit event) to be observed, never to wait out a
+ * fixed sleep. */
+async function waitUntilSessionState(
+  predicate: (s: ReturnType<typeof __r2000SessionStateForTest>) => boolean,
+  timeoutMs: number,
+): Promise<ReturnType<typeof __r2000SessionStateForTest>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const s = __r2000SessionStateForTest();
+    if (predicate(s)) return s;
+    if (Date.now() >= deadline) return s;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+/** Saves the named env vars, runs `fn`, then restores them exactly --
+ * `undefined` beforehand means "delete", not "set to the string
+ * 'undefined'". Shared by every test below that points `R2000_BIN` and a
+ * stub-mode var at the fixtures above. */
+async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const saved: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) saved[k] = process.env[k];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test(
+  "stub: a child that exits cleanly between two calls is invisible and lossless -- next call succeeds, openCount +1, crashCount +1, no error",
+  async () => {
+    const { projectPath, wrapper } = setUpSess02Fixture("between-calls");
+    await withEnv({ R2000_BIN: wrapper, SESS02_STUB_MODE: "exit-after-reply-delayed" }, async () => {
+      const r1 = await runInR2000Session(projectPath, (call) => call("t", {}));
+      assert.ok(r1, "expected call 1 to succeed");
+      const s1 = __r2000SessionStateForTest();
+      assert.equal(s1.openCount, 1);
+      assert.equal(s1.crashCount, 0);
+      assert.equal(s1.dead, false);
+
+      const s2 = await waitUntilSessionState((s) => s.dead === true, 2000);
+      assert.equal(s2.dead, true, "expected the stub's own scheduled exit to have landed between calls");
+      assert.equal(s2.crashCount, 1, "expected the between-calls exit to count as exactly one crash");
+
+      const r2 = await runInR2000Session(projectPath, (call) => call("t", {}));
+      assert.ok(r2, "expected call 2 to succeed transparently (D18-11) -- no error surfaced to the caller");
+      const s3 = __r2000SessionStateForTest();
+      assert.equal(s3.openCount, 2, "expected exactly one respawn");
+      assert.equal(s3.crashCount, 1, "expected the crash counter to still read 1 -- unchanged by a successful call");
+      assert.equal(s3.dead, false);
+    });
+  },
+);
+
+test(
+  "stub: a child that exits mid-call rejects with R2000ChildExitError, is never retried, and a subsequent call opens a fresh child and succeeds",
+  async () => {
+    const { projectPath, wrapper } = setUpSess02Fixture("mid-call");
+    const logPath = join(sess02Dir!, "mid-call", "calls.log");
+    await withEnv(
+      { R2000_BIN: wrapper, SESS02_STUB_MODE: "exit-mid-call", SESS02_CALL_LOG: logPath },
+      async () => {
+        await assert.rejects(
+          () => runInR2000Session(projectPath, (call) => call("r2000_probe_tool", {})),
+          (err: unknown) => {
+            assert.ok(err instanceof R2000ChildExitError, `expected R2000ChildExitError, got ${(err as Error)?.name}`);
+            return true;
+          },
+        );
+        const s1 = __r2000SessionStateForTest();
+        assert.equal(s1.open, false, "expected the slot to be cleared after a mid-call death");
+        assert.equal(s1.crashCount, 1);
+
+        const frames = readFileSync(logPath, "utf8")
+          .split("\n")
+          .filter((l) => l === "r2000_probe_tool");
+        assert.equal(frames.length, 1, "expected exactly one tools/call frame for the tool that died mid-call -- no retry");
+      },
+    );
+
+    // A subsequent call, same path, mode flipped so the freshly-spawned
+    // child does not immediately die again -- proves the mid-call failure
+    // was loud for the call that died, not sticky for the session.
+    await withEnv({ R2000_BIN: wrapper, SESS02_STUB_MODE: "happy" }, async () => {
+      const r2 = await runInR2000Session(projectPath, (call) => call("r2000_probe_tool", {}));
+      assert.ok(r2, "expected the next call to open a fresh child and succeed");
+      const s2 = __r2000SessionStateForTest();
+      assert.equal(s2.openCount, 2, "expected exactly one respawn after the mid-call death");
+    });
+  },
+);
+
+test(
+  "stub: a child that answers nothing within the call timeout rejects with R2000TimeoutError, is killed, and the crash counter increases by 1",
+  async () => {
+    const { projectPath, wrapper } = setUpSess02Fixture("wedge");
+    await withEnv({ R2000_BIN: wrapper, SESS02_STUB_MODE: "wedge" }, async () => {
+      const start = Date.now();
+      await assert.rejects(
+        () => runInR2000Session(projectPath, (call) => call("t", {}), { timeoutMs: 200 }),
+        (err: unknown) => {
+          assert.ok(err instanceof R2000TimeoutError, `expected R2000TimeoutError, got ${(err as Error)?.name}`);
+          return true;
+        },
+      );
+      assert.ok(Date.now() - start < 10_000, "expected the wedge test to complete well under 10s");
+      const s = __r2000SessionStateForTest();
+      assert.equal(s.open, false, "expected the wedged handle to be killed and the slot cleared");
+      assert.equal(s.crashCount, 1);
+    });
+  },
+);
+
+test(
+  "stub: with R2000_RESTART_BUDGET=2, two crash-then-respawn-then-succeed cycles run, and the third crash's respawn is refused with R2000RestartBudgetExhaustedError naming the count and the limit",
+  async () => {
+    const { projectPath, wrapper } = setUpSess02Fixture("budget");
+    await withEnv({ R2000_BIN: wrapper, R2000_RESTART_BUDGET: "2" }, async () => {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        process.env.SESS02_STUB_MODE = "die-on-second-call";
+        const ok = await runInR2000Session(projectPath, (call) => call("t", {}));
+        assert.ok(ok, `cycle ${cycle}: expected the (re)spawned call to succeed`);
+        await assert.rejects(
+          () => runInR2000Session(projectPath, (call) => call("t", {})),
+          (err: unknown) => {
+            assert.ok(
+              err instanceof R2000ChildExitError,
+              `cycle ${cycle}: expected R2000ChildExitError, got ${(err as Error)?.name}`,
+            );
+            return true;
+          },
+          `cycle ${cycle}: expected the second call against the same child to crash`,
+        );
+      }
+      const stateAfter3Crashes = __r2000SessionStateForTest();
+      assert.equal(stateAfter3Crashes.crashCount, 3, "expected exactly three recorded crashes");
+
+      await assert.rejects(
+        () => runInR2000Session(projectPath, (call) => call("t", {})),
+        (err: unknown) => {
+          assert.ok(
+            err instanceof R2000RestartBudgetExhaustedError,
+            `expected R2000RestartBudgetExhaustedError, got ${(err as Error)?.name}`,
+          );
+          const e = err as InstanceType<typeof R2000RestartBudgetExhaustedError>;
+          assert.equal(e.crashCount, 3, "expected the public crashCount field to read 3");
+          assert.equal(e.limit, 2, "expected the public limit field to read 2");
+          assert.match(e.message, /3/, "expected the message to contain the observed crash count");
+          assert.match(e.message, /2/, "expected the message to contain the configured limit");
+          return true;
+        },
+      );
+    });
+
+    // Restores after a refusal: an explicit test reset clears the budget
+    // gate, and the next call succeeds.
+    await __resetR2000SessionForTest();
+    await withEnv({ R2000_BIN: wrapper, SESS02_STUB_MODE: "happy" }, async () => {
+      const ok = await runInR2000Session(projectPath, (call) => call("t", {}));
+      assert.ok(ok, "expected the next call, after __resetR2000SessionForTest(), to succeed");
+      assert.equal(__r2000SessionStateForTest().crashCount, 0, "expected the reset to have zeroed the crash counter");
+    });
+  },
+);
+
+test(
+  "stub: crash counting is not reset by an intervening successful call -- crash, success, crash, success, crash still reaches the refusal at budget 2",
+  async () => {
+    const { projectPath, wrapper } = setUpSess02Fixture("alternating");
+    await withEnv({ R2000_BIN: wrapper, R2000_RESTART_BUDGET: "2" }, async () => {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        process.env.SESS02_STUB_MODE = "die-on-second-call";
+        await runInR2000Session(projectPath, (call) => call("t", {})); // success
+        await assert.rejects(() => runInR2000Session(projectPath, (call) => call("t", {}))); // crash
+      }
+      assert.equal(__r2000SessionStateForTest().crashCount, 3, "success calls between crashes must not reset the counter");
+      await assert.rejects(
+        () => runInR2000Session(projectPath, (call) => call("t", {})),
+        (err: unknown) => {
+          assert.ok(err instanceof R2000RestartBudgetExhaustedError);
+          return true;
+        },
+      );
+    });
+  },
+);
+
+test(
+  "gated (LIVE): a real regenerator2000 child killed between calls is invisible and lossless -- openCount 2, crashCount 1",
+  { skip: SKIP_REASON },
+  async () => {
+    const { projectPath } = synthesizeFixtureProject("sess02-live-kill");
+
+    const r1 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
+    assert.equal(r1.isError, false, `r2000_get_binary_info (1) failed: ${JSON.stringify(r1)}`);
+    const s1 = __r2000SessionStateForTest();
+    assert.equal(s1.openCount, 1);
+    assert.equal(s1.crashCount, 0);
+    const pid = s1.pid;
+    assert.ok(pid !== undefined, "expected a real pid after the first call");
+
+    // Kill the real child directly (bypassing closeR2000SessionSync(), which
+    // is an EXPLICIT close and deliberately does not count as a crash) so
+    // this module observes it exactly as it would observe a genuine crash.
+    process.kill(pid!, "SIGKILL");
+
+    const s2 = await waitUntilSessionState((s) => s.dead === true, 5000);
+    assert.equal(s2.dead, true, "expected the module to observe the real SIGKILL as an exit event");
+    assert.equal(s2.crashCount, 1);
+
+    const r2 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
+    assert.equal(r2.isError, false, `r2000_get_binary_info (2) failed: ${JSON.stringify(r2)}`);
+    const s3 = __r2000SessionStateForTest();
+    assert.equal(s3.openCount, 2, "expected exactly one real respawn");
+    assert.equal(s3.crashCount, 1, "expected the crash counter to still read 1 after a successful real respawn");
   },
 );

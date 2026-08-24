@@ -241,6 +241,18 @@ async function discardCurrentSession(): Promise<void> {
   }
 }
 
+export interface RunInR2000SessionOptions {
+  /**
+   * Per-request timeout for THIS call's session, passed straight through to
+   * `openR2000Session()`'s own `WithR2000SessionOptions.timeoutMs` when a
+   * fresh child is opened. Defaults to `DEFAULT_R2000_CALL_TIMEOUT_MS`
+   * (`r2000-mcp-client.ts`'s own default), never a second, locally-defined
+   * default -- added so a test can shorten a wedge test's own wait without
+   * a 30-second real-time cost, not as a caller-facing tuning knob.
+   */
+  timeoutMs?: number;
+}
+
 /**
  * Runs `fn` against the held regenerator2000 session for `projectPath`,
  * opening a fresh one when none is held, reusing the held one when its
@@ -251,11 +263,14 @@ async function discardCurrentSession(): Promise<void> {
  * mutating call already saved before it resolved, D18-08).
  *
  * Deliberately signature-compatible with `withR2000Session(projectPath, fn)`
- * so `r2000-tools.ts`'s rewire is a one-identifier swap.
+ * so `r2000-tools.ts`'s rewire is a one-identifier swap -- `opts` is an
+ * additional, optional third parameter, so every existing call site
+ * (`r2000-tools.ts`'s two-argument calls) is unaffected.
  */
 export async function runInR2000Session<T>(
   projectPath: string,
-  fn: (call: R2000Call) => Promise<T>
+  fn: (call: R2000Call) => Promise<T>,
+  opts: RunInR2000SessionOptions = {}
 ): Promise<T> {
   if (currentProjectPath !== null && currentProjectPath !== projectPath) {
     // Project-path change: full eviction, AND the crash counter is scoped
@@ -319,7 +334,7 @@ export async function runInR2000Session<T>(
       // is this call, and it always runs before any child owns the file.
       await ensureProjectSettings(projectPath);
       const { openR2000Session } = await import("./r2000-mcp-client.ts");
-      const opened = await openR2000Session(projectPath);
+      const opened = await openR2000Session(projectPath, { timeoutMs: opts.timeoutMs });
       // Bound to THIS session instance by closure -- see handleSessionExit()'s
       // own doc comment for why that binding is what keeps a later, already-
       // handled exit event from double-counting (D18-10).
