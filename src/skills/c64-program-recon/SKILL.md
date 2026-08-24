@@ -78,6 +78,42 @@ Differential experiments close the loop: patch a routine to `RTS` and see what s
 freeze and nothing else does, the routine's purpose is confirmed — far stronger evidence than
 reading the listing.
 
+## Step 0.5: is it packed, and by what?
+
+Runs **between step 0 and step 1** — after scoping, before you go looking for an entry point.
+Tracing a decruncher is the same wasted work as tracing a loader, and every label you write on a
+packed image is thrown away the moment the real image is recovered.
+
+```bash
+node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg      # from the repo root
+node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg --entropy 7.83
+```
+
+Pass `--entropy` when you already have the number from `r2000_get_binary_info`; otherwise the
+script measures it from the file. It prints one JSON object. Read the `verdict`:
+
+| Verdict | What it means | What to do |
+| --- | --- | --- |
+| `identified` | An external oracle stated the packer name, verbatim. `packer` holds it and `confidence` is `HIGH`. | Record the name as a finding. Then depack: run it in the emulator and capture RAM past the decrunch (`c64-ram-capture`). |
+| `packed-unidentified` | Entropy is at or above the 7.5 packedness threshold and **no oracle named the packer**. `packer` is `null`. | Treat the image as packed. Depack the same way. Do not annotate these bytes and do not go hunting for a name. |
+| `unpacked` | Entropy is below the threshold. Still not an identity claim — it says nothing about which packer, only that these bytes do not look compressed. | Continue to step 1 on this image. |
+| `unknown` | No route produced an answer. `unavailableReason` always says why. | Continue, but record the unknown. Never write it up as "not packed". |
+
+**A name is reported only when an external oracle stated one, and this project does not guess.**
+regenerator2000 computes packer identity on every load and throws it away before it reaches any
+machine-readable surface — that was established four independent ways at the pinned version, each
+written out in `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-RESEARCH.md`
+§2, and the dated decision that fixes the acceptance bar and its re-open trigger is recorded under
+`19-DECISIONS.md` in that same directory (SURF-03). So there is no code path here that can write a packer name from entropy, from a
+decompression address, or from a byte pattern. If you want a name and the finding does not give
+you one, install an external identifier and point `UNP64` or `UNP64_PATH` at it — do not infer it.
+
+**The entropy gate answers packedness, not identity.** High entropy tells you the bytes are
+compressed (or encrypted, or genuinely random); it does not tell you by what. And the way a packed
+image is actually opened up here is the run-and-capture route — run the program under the emulator
+and capture RAM at a checkpoint past the decrunch — not an in-place unpack, which would destroy
+the comments, labels and blocks the project already holds.
+
 ## Worked example — a real capture
 
 ```
