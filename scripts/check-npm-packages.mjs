@@ -247,6 +247,22 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 const inst = packFiles(join(ROOT, "installer"));
 need(inst.name === "@henols/c64-re-tools", `installer: name is "${inst.name}", expected "@henols/c64-re-tools"`);
 need(inst.files.includes("bin/cli.mjs"), "installer: missing bin/cli.mjs (bin entry)");
+// --- ABS-02: the package that actually SHIPS the absorbed third-party prose
+// must carry a notices document. Mirrors the vice-mcp assertion above, and
+// for the same reason it reads `inst.files` -- the installer tarball's own
+// packed file list -- rather than a repo path. A repo-path check
+// (`existsSync(join(ROOT, "installer/THIRD-PARTY-NOTICES.md"))`) passes even
+// when the published package omits the file entirely, because the file can
+// sit in the working tree while never being named in `files[]`; that is the
+// exact failure class this file's header names, and it is the whole reason
+// the two legitimate repo-path checks here are enumerated rather than
+// treated as ordinary. The absorbed prose under `skills/` travels to npm
+// consumers inside THIS tarball, not vice-mcp's, so vice-mcp's notices file
+// does not discharge the obligation for it.
+need(
+  inst.files.includes("THIRD-PARTY-NOTICES.md"),
+  "installer: missing THIRD-PARTY-NOTICES.md -- ABS-02 requires the package that ships the adapted regenerator2000 procedure prose (skills/) to carry its own notices document"
+);
 const skillMds = inst.files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f));
 // The relation side: `src/skills/` immediate subdirectories that carry a
 // SKILL.md. `topLevelSkillDirs()` is the shared corpus primitive (WR-12) --
