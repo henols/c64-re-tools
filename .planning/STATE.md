@@ -5,11 +5,11 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-08-24T16:15:54.904Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-08-24T16:37:47.546Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 19 execution started
-state_head: 5545800e8bc5e2ef77dce090d014ba6a83de4bcc
+state_head: 67637744601040dc7ffeca4f4a8bf5759cea4f00
 progress:
   total_phases: 5
   completed_phases: 1
@@ -54,8 +54,10 @@ project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 **Current focus:** Phase 19 — Absorbed Procedures and the Coverage Instrument
 27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
 five phases in `.planning/ROADMAP.md` (Phases 18-22). Phase 18 is verified and
-complete; Phase 19 has four plans, and Plan 19-01 has begun with its pinned
-upstream-procedure audit committed. ROADMAP.md still carries all three shipped
+complete; Phase 19 has five plans, of which 19-01 (the absorption tracer) and
+19-02 (the remaining four procedures plus the installer notices document) are
+executed — all five upstream analyze procedures are now absorbed and attributed,
+closing ABS-01 and ABS-02. ROADMAP.md still carries all three shipped
 milestones collapsed, with full detail in
 `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md` and
 `milestones/v0.4.0-ROADMAP.md`.
@@ -67,7 +69,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-08-24 — Phase 19 execution started
 
@@ -178,6 +180,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 18 P04 | 90min | 3 tasks | 8 files |
 | Phase 18 P05 | 75min | 3 tasks | 4 files |
 | Phase 19 P01 | 45min | 3 tasks | 11 files |
+| Phase 19 P02 | 38 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -333,6 +336,9 @@ Recent decisions affecting current work:
 - [Phase 19]: Phase 19 elects MIT from regenerator2000's dual MIT OR Apache-2.0 for all absorbed prose; the Apache-2.0 modification notice is discharged by each per-file ADAPTED, NOT VERBATIM header regardless
 - [Phase 19]: D18-16 CLOSED by measurement: regenerator2000 0.9.20's --mcp-server-stdio does not multiplex (3 runs + source proof), so the coarse FIFO mutex stays and a reader-writer upgrade would buy zero parallelism
 - [Phase 19]: Census assertions in packaging CI are relations against src/skills/, never literals — check-npm-packages.mjs now compares tarball skill count to topLevelSkillDirs() with a >=6 non-vacuity floor
+- [Phase 19]: All five upstream analyze procedures are now absorbed, so ABS-01 and ABS-02 flip to Complete, reversing 19-01's deliberate rollback
+- [Phase 19]: One attribution block per SOURCE PATH, not per file: c64-memory-mapping and c64-program-recon each absorb two procedures with two different digests, and a single per-file header could only claim one of them
+- [Phase 19]: The bare disasm token is banned corpus-wide by check-skill-fork-honesty.mjs (a removed acme verb) with its exemption count pinned at exactly 1, so absorbed read-region steps omit the view parameter and rely on its documented default rather than growing the exemption
 
 ### Pending Todos
 
@@ -825,8 +831,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T16:15:41.929Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-08-24T16:36:52.711Z
+Stopped at: Completed 19-02-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

@@ -42,8 +42,8 @@ milestone starts at **Phase 18**.
 
 ### Absorbed Procedures
 
-- [ ] **ABS-01**: The five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, with their tool calls diffed explicitly against the curated surface so no absorbed step calls a tool this project does not expose — and with no runtime dependency on `.agent/skills/`, which the published crate excludes
-- [ ] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
+- [x] **ABS-01**: The five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, with their tool calls diffed explicitly against the curated surface so no absorbed step calls a tool this project does not expose — and with no runtime dependency on `.agent/skills/`, which the published crate excludes
+- [x] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
 - [ ] **ABS-03**: No two skills contend for the same trigger — every description is checked pairwise across the whole inventory, absorbed and existing, because descriptions *are* the trigger mechanism
 - [x] **ABS-04**: The snapshot-versus-drift trade is a dated decision with a named re-sync trigger, not an unstated consequence discovered at the next close
 
@@ -120,8 +120,8 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 | SURF-01 | Phase 18 | Complete |
 | SURF-02 | Phase 18 | Complete |
 | SURF-03 | Phase 19 | Pending |
-| ABS-01 | Phase 19 | Pending |
-| ABS-02 | Phase 19 | Pending |
+| ABS-01 | Phase 19 | Complete |
+| ABS-02 | Phase 19 | Complete |
 | ABS-03 | Phase 19 | Pending |
 | ABS-04 | Phase 19 | Complete |
 | COV-01 | Phase 19 | Pending |
