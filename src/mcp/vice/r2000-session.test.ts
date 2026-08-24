@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runR2000Tool, __R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE } from "./r2000-tools.ts";
-import { synthesizeProject } from "./r2000-project.ts";
+import { R2000ProjectSettingsError, synthesizeProject } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 import {
   DEFAULT_R2000_QUEUE_WAIT_MS,
@@ -150,6 +150,60 @@ test(
     assert.notEqual(stateAfterB.pid, pidA, "expected a different pid after the project-path change");
   },
 );
+
+test(
+  "gated: D18-35 forces illegal-opcode decoding before open, retains it across an internal save, and decodes the fixture's illegal instruction",
+  { skip: SKIP_REASON },
+  async () => {
+    const { projectPath, origin } = synthesizeFixtureProject("d18-35-round-trip");
+    const project = JSON.parse(readFileSync(projectPath, "utf8")) as { settings: { use_illegal_opcodes: boolean } };
+    project.settings.use_illegal_opcodes = false;
+    writeFileSync(projectPath, JSON.stringify(project));
+
+    const opened = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
+    assert.equal(opened.isError, false, `opening the session failed: ${JSON.stringify(opened)}`);
+    const afterOpen = JSON.parse(readFileSync(projectPath, "utf8")) as { settings: { use_illegal_opcodes: unknown } };
+    assert.equal(afterOpen.settings.use_illegal_opcodes, true, "D18-35 first half: session open must force use_illegal_opcodes on disk");
+
+    const mutation = await runR2000Tool("r2000_set_label_name", {
+      project: projectPath,
+      address: origin,
+      name: "d18_35_round_trip",
+    });
+    assert.equal(mutation.isError, false, `mutating call failed: ${JSON.stringify(mutation)}`);
+    const afterSave = JSON.parse(readFileSync(projectPath, "utf8")) as { settings: { use_illegal_opcodes: unknown } };
+    assert.equal(
+      afterSave.settings.use_illegal_opcodes,
+      true,
+      "D18-35 no-revert half: the held child's r2000_save_project must not restore the pre-open false setting",
+    );
+
+    const disassembly = await runR2000Tool("r2000_disassemble", { project: projectPath, address: origin + 0x0a });
+    assert.equal(disassembly.isError, false, `r2000_disassemble failed: ${JSON.stringify(disassembly)}`);
+    assert.doesNotMatch(
+      JSON.stringify(disassembly.content),
+      /!byte/i,
+      "expected the fixture's illegal opcode to decode as an instruction, not as an opaque !byte fallback",
+    );
+  },
+);
+
+test("D18-35: a mismatched project system is refused before spawn and left byte-identical", async () => {
+  const { projectPath } = synthesizeFixtureProject("d18-35-system-mismatch");
+  const project = JSON.parse(readFileSync(projectPath, "utf8")) as { settings: { system: string } };
+  project.settings.system = "atari800";
+  writeFileSync(projectPath, JSON.stringify(project));
+  const before = createHash("sha256").update(readFileSync(projectPath)).digest("hex");
+
+  await assert.rejects(
+    runInR2000Session(projectPath, async () => "must not run"),
+    (err: unknown) => err instanceof R2000ProjectSettingsError,
+  );
+
+  assert.equal(__r2000SessionStateForTest().openCount, 0, "system mismatch must be refused before spawning a child");
+  const after = createHash("sha256").update(readFileSync(projectPath)).digest("hex");
+  assert.equal(after, before, "system mismatch refusal must not rewrite the project file");
+});
 
 // ===========================================================================
 // D18-09: the save-discipline planted-violation gate -- this phase's own
