@@ -420,13 +420,15 @@ for (const [name, files] of extractedR2000) {
     `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`
   );
 }
-// 3. Non-vacuity control (D-32): r2000_get_address_details must NEVER be
-//    curated. If it is ever re-added upstream-fix-first (issue #42 lands),
-//    this assertion is exactly what forces a deliberate edit here rather
-//    than a silent pass.
+// 3. Non-vacuity control (D-36, superseding D-32): r2000_get_address_details
+//    MUST be curated, as a client-side composition -- D-32's former
+//    exclusion no longer holds. If it is ever silently re-excluded, or
+//    silently re-pointed at upstream's own (still-defective) same-named
+//    tool, this assertion is exactly what forces a deliberate edit here
+//    rather than a silent pass.
 need(
-  !CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
-  "non-vacuity: r2000_get_address_details must be absent from CURATED_R2000_TOOLS (D-32, the 64K OutOfRange defect) -- if this fails, D-32's exclusion has been silently reversed"
+  CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
+  "non-vacuity: r2000_get_address_details must be curated (D-36, superseding D-32's exclusion, as a client-side composition) -- if this fails, D-36's composition has been silently re-excluded"
 );
 // 4. Non-vacuity FLOOR (plan 11-12): now that skill prose actually names
 //    r2000_* tools, the extraction finding none is itself a failure, exactly

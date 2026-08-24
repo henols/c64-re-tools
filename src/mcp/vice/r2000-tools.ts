@@ -70,6 +70,10 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
 import { assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
+// Type-only -- costs no child process at import time (mirrors
+// r2000-session.ts's own "class/type imports are free, the spawn primitive
+// is reached only via dynamic import" convention).
+import type { R2000Call } from "./r2000-mcp-client.ts";
 
 // ---------------------------------------------------------------------------
 // The wire shapes this module produces/consumes. Deliberately NOT imported
@@ -141,19 +145,21 @@ const PROJECT_PROPERTY = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// The 64K OutOfRange defect this surface excludes (D-32) -- shared between
-// the outer-name refusal and the batch-inner refusal so both read identically.
+// r2000_get_address_details (SURF-02, D-36 superseding D-32, plan 18-05).
+// D-32 excluded this tool outright: on a full 64K project (exactly what
+// c64-ram-capture produces) upstream's own r2000_get_address_details returns
+// {"type":"OutOfRange"} for EVERY address, because handler.rs:1894's
+// `raw_data.len() as u16` wraps 65536 to 0 (filed upstream as
+// https://github.com/ricardoquesada/regenerator2000/issues/42). D-36
+// (dated, recorded in .planning/PROJECT.md's Key Decisions table, pinned by
+// docs-r2000-decisions.test.ts) supersedes that exclusion: the tool is now
+// CURATED as a client-side composition (see composeAddressDetails() below)
+// of the four already-curated reads its answer is built from
+// (r2000_get_symbols, r2000_get_comments, r2000_get_blocks,
+// r2000_get_cross_references) and NEVER calls upstream's own same-named
+// tool -- the u16 cast is unreachable by construction, not merely detected
+// and routed around (D18-27/D18-28).
 // ---------------------------------------------------------------------------
-
-const ADDRESS_DETAILS_REFUSAL =
-  "r2000_get_address_details is not on the curated r2000_* surface (D-32): on a full 64K project " +
-  "(exactly what c64-ram-capture produces) it returns {\"type\":\"OutOfRange\"} for EVERY address, " +
-  "because handler.rs:1894's `raw_data.len() as u16` wraps 65536 to 0. Filed upstream as " +
-  "https://github.com/ricardoquesada/regenerator2000/issues/42. Its answer is a composite of " +
-  "instruction semantics, cross-references, labels, comments and block type -- all independently " +
-  "reachable through r2000_get_binary_info, r2000_get_cross_references, r2000_get_symbols, " +
-  "r2000_get_comments, r2000_get_blocks and r2000_disassemble, every one of which was measured " +
-  "working on a 64K project.";
 
 // ---------------------------------------------------------------------------
 // r2000_read_region's documented range cap (D18-25, SURF-01, plan 18-05). A
@@ -562,6 +568,28 @@ export const R2000_TOOL_DEFINITIONS: readonly R2000ToolDefinition[] = [
       required: ["project", "start_address", "end_address"],
     },
   },
+  {
+    name: "r2000_get_address_details",
+    description:
+      "Returns detailed information about a specific memory address: instruction semantics, " +
+      "cross-references, labels, comments, and block type (SURF-02, plan 18-05). This answer is " +
+      "composed client-side from four separate reads (r2000_get_symbols, r2000_get_comments, " +
+      "r2000_get_blocks, r2000_get_cross_references) -- it never invokes regenerator2000's own " +
+      "same-named tool. Why: upstream's own r2000_get_address_details returns {\"type\":\"OutOfRange\"} " +
+      "for EVERY address on a full 64K project (handler.rs:1894's `raw_data.len() as u16` wraps 65536 " +
+      "to 0), filed upstream as https://github.com/ricardoquesada/regenerator2000/issues/42 (D-36, " +
+      "superseding D-32). The returned object carries a `composed_client_side: true` marker and a " +
+      "`composed_from` list naming the four source tools, so this is never mistaken for upstream's " +
+      "native answer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...PROJECT_PROPERTY,
+        address: { type: "integer", description: "The memory address to inspect (decimal)." },
+      },
+      required: ["project", "address"],
+    },
+  },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -755,12 +783,6 @@ function assertCuratedBatch(args: unknown): void {
         { toolName: "r2000_batch_execute", batchIndex: i },
       );
     }
-    if (call.name === "r2000_get_address_details") {
-      throw new R2000UncuratedToolError(
-        `r2000_batch_execute refused WHOLE: calls[${i}].name is "r2000_get_address_details" -- ${ADDRESS_DETAILS_REFUSAL}`,
-        { toolName: call.name, batchIndex: i },
-      );
-    }
     if (!CURATED_R2000_TOOLS.includes(call.name)) {
       throw new R2000UncuratedToolError(
         `r2000_batch_execute refused WHOLE: calls[${i}].name "${call.name}" is outside the curated ` +
@@ -784,19 +806,20 @@ function assertCuratedBatch(args: unknown): void {
  * The allow-list gate. Its body's FIRST check is set membership (WHAT NOT TO
  * DO above, and the module header's own discipline mirroring `vice.ts`'s
  * `DENY_LIST` precedent inverted into an allow-list): refuses `name` outright
- * when it is not in `CURATED_R2000_TOOLS`, with a dedicated message for
- * `r2000_get_address_details` naming the 64K defect and the upstream issue
- * (D-32) rather than a generic "unknown tool" refusal. When `name` is
- * `r2000_set_label_name`, additionally validates `args.name` via
- * `assertLegalLabelArg()` (T-11-NAME-INJECT, closed). When `name` is
- * `r2000_batch_execute`, additionally walks `args.calls` via
+ * when it is not in `CURATED_R2000_TOOLS`. `r2000_get_address_details` IS a
+ * member of that set (D-36, superseding D-32's former exclusion) -- its
+ * dispatch is a client-side composition, never a passthrough to upstream's
+ * own same-named tool; see `composeAddressDetails()` and its
+ * `runR2000Tool()` special case. When `name` is `r2000_set_label_name`,
+ * additionally validates `args.name` via `assertLegalLabelArg()`
+ * (T-11-NAME-INJECT, closed). When `name` is `r2000_read_region`,
+ * additionally validates the range against the documented cap (D18-25).
+ * When `name` is `r2000_batch_execute`, additionally walks `args.calls` via
  * `assertCuratedBatch()` -- refusing the WHOLE batch if any inner name is
- * outside the set, per D-33, or carries an illegal label name.
+ * outside the set, per D-33, or carries an illegal label name or an
+ * out-of-cap read-region range.
  */
 export function assertCuratedTool(name: string, args?: unknown): void {
-  if (name === "r2000_get_address_details") {
-    throw new R2000UncuratedToolError(ADDRESS_DETAILS_REFUSAL, { toolName: name });
-  }
   if (!CURATED_R2000_TOOLS.includes(name)) {
     throw new R2000UncuratedToolError(
       `"${name}" is not part of the curated r2000_* tool surface. Resolution routes: implement it and ` +
@@ -1021,6 +1044,67 @@ export const READ_ONLY_R2000_TOOLS: ReadonlySet<string> = new Set([
 export const __R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE: { active: boolean } = { active: false };
 
 // ---------------------------------------------------------------------------
+// composeAddressDetails() -- SURF-02's client-side composition (D-36,
+// superseding D-32). Takes the SESSION'S OWN `call` function, never a
+// project path and never opening its own session: this is what guarantees
+// all four reads happen inside ONE session, sharing one connection, rather
+// than the several-independent-connections shape Phase 9's incident
+// generalises. The narrowing (matching each read's result to the requested
+// address) is deliberately client-side -- upstream has no "narrow to one
+// address" parameter for r2000_get_blocks, so containment is computed here.
+//
+// MUST NEVER be given a fifth source without updating BOTH `composed_from`
+// below AND the `r2000_get_address_details` tool description above -- the
+// description's own claim ("composed... from four named read tools") is a
+// promise made to an LLM caller, not merely an implementation detail.
+// ---------------------------------------------------------------------------
+
+interface R2000ReadRegionCallResultShape {
+  content: { type: string; text: string }[];
+}
+
+/** Calls `name` through the session's own `call`, then parses its
+ * `content[0].text` as JSON -- every one of the four composing reads
+ * returns its answer as a JSON-encoded text block (the same MCP
+ * `{content:[{type,text}]}` shape `call()` itself returns, unparsed). */
+async function callJson(call: R2000Call, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const result = (await call(name, args)) as R2000ReadRegionCallResultShape;
+  return JSON.parse(result.content[0]!.text);
+}
+
+interface R2000Block {
+  start_address: number;
+  end_address: number;
+  type: string;
+}
+
+/**
+ * Composes `r2000_get_address_details`'s answer entirely client-side from
+ * four already-curated reads, sequentially, inside the caller's OWN session
+ * (`call` is bound to that session -- this function never opens one of its
+ * own). Never calls upstream's own `r2000_get_address_details` tool -- the
+ * defect that tool carries on a full 64K project (`handler.rs:1894`) is
+ * unreachable by construction, not merely avoided by a heuristic.
+ */
+export async function composeAddressDetails(call: R2000Call, address: number): Promise<unknown> {
+  const symbols = await callJson(call, "r2000_get_symbols", { start_address: address, end_address: address });
+  const comments = await callJson(call, "r2000_get_comments", { addresses: [address] });
+  const allBlocks = (await callJson(call, "r2000_get_blocks", {})) as R2000Block[];
+  const block = allBlocks.find((b) => address >= b.start_address && address <= b.end_address) ?? null;
+  const crossReferences = await callJson(call, "r2000_get_cross_references", { address });
+
+  return {
+    address,
+    symbols,
+    comments,
+    block,
+    cross_references: crossReferences,
+    composed_client_side: true,
+    composed_from: ["r2000_get_symbols", "r2000_get_comments", "r2000_get_blocks", "r2000_get_cross_references"],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The runner. Drives r2000-mcp-client.ts via a DYNAMIC import so importing
 // R2000_TOOL_DEFINITIONS (registration, at vice-proxy.ts module scope) costs
 // no child process and no socket -- only calling a tool actually spawns one.
@@ -1053,6 +1137,18 @@ export async function runR2000Tool(name: string, args: unknown): Promise<ToolCal
   try {
     if (name === "r2000_save_project") {
       const result = await runInR2000Session(projectPath, (call) => saveAndVerify(projectPath, call));
+      return okText(JSON.stringify(result));
+    }
+
+    // r2000_get_address_details (SURF-02, D-36): a special case placed
+    // alongside r2000_save_project's, BEFORE the generic READ_ONLY_R2000_TOOLS
+    // check -- one code path, no wrap-detection heuristic, no divergence
+    // between what a small project and a 64K project get back (D18-28).
+    // Composed entirely from the four already-curated reads, inside this
+    // SAME session; never reaches upstream's own same-named tool.
+    if (name === "r2000_get_address_details") {
+      const address = isPlainObject(args) ? (args.address as number) : (undefined as unknown as number);
+      const result = await runInR2000Session(projectPath, (call) => composeAddressDetails(call, address));
       return okText(JSON.stringify(result));
     }
 

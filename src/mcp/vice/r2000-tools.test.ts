@@ -33,8 +33,9 @@ import {
   R2000ReadRegionRangeError,
   R2000_READ_REGION_MAX_BYTES,
 } from "./r2000-tools.ts";
-import { synthesizeProject } from "./r2000-project.ts";
+import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { __resetR2000SessionForTest } from "./r2000-session.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +65,7 @@ const EXPECTED_CURATED_NAMES = [
   "r2000_save_project",
   "r2000_batch_execute",
   "r2000_read_region",
+  "r2000_get_address_details",
 ];
 
 // The pre-SURF-01/SURF-02 17-member ordering, kept verbatim so a future
@@ -89,8 +91,8 @@ const EXPECTED_FIRST_17_NAMES = [
   "r2000_batch_execute",
 ];
 
-test("CURATED_R2000_TOOLS has exactly 18 members, matching the plan's objective table (set-equality, both directions)", () => {
-  assert.equal(CURATED_R2000_TOOLS.length, 18, `expected exactly 18 curated tools, got ${CURATED_R2000_TOOLS.length}`);
+test("CURATED_R2000_TOOLS has exactly 19 members, matching the plan's objective table (set-equality, both directions)", () => {
+  assert.equal(CURATED_R2000_TOOLS.length, 19, `expected exactly 19 curated tools, got ${CURATED_R2000_TOOLS.length}`);
   const actual = new Set(CURATED_R2000_TOOLS);
   const expected = new Set(EXPECTED_CURATED_NAMES);
   const missing = [...expected].filter((n) => !actual.has(n));
@@ -143,21 +145,72 @@ test("r2000_save_project's inputSchema has exactly one property: project", () =>
 });
 
 // ---------------------------------------------------------------------------
-// D-32: r2000_get_address_details is excluded by name, with a refusal
-// message naming the defect and the upstream issue rather than a generic
-// "unknown tool" message.
+// D-36 (superseding D-32, plan 18-05): r2000_get_address_details is CURATED
+// as a client-side composition -- assertCuratedTool() no longer refuses it
+// by name.
 // ---------------------------------------------------------------------------
 
-test("assertCuratedTool refuses r2000_get_address_details naming the 64K OutOfRange defect and the upstream issue", () => {
+test("assertCuratedTool no longer refuses r2000_get_address_details (D-36 supersedes D-32's exclusion; it is now curated)", () => {
+  assert.doesNotThrow(() => assertCuratedTool("r2000_get_address_details", { project: "x.regen2000proj", address: 4096 }));
+  assert.ok(CURATED_R2000_TOOLS.includes("r2000_get_address_details"));
+});
+
+test("r2000_batch_execute with r2000_get_address_details as an inner name is no longer refused for that reason (it is now curated); an uncurated inner name is still refused whole", () => {
+  assert.doesNotThrow(() =>
+    assertCuratedTool("r2000_batch_execute", {
+      calls: [{ name: "r2000_get_address_details", arguments: { address: 4096 } }],
+    }),
+  );
   assert.throws(
-    () => assertCuratedTool("r2000_get_address_details"),
-    (err: unknown) => {
-      assert.ok(err instanceof R2000UncuratedToolError);
-      assert.equal((err as R2000UncuratedToolError).toolName, "r2000_get_address_details");
-      assert.match((err as Error).message, /OutOfRange/);
-      assert.match((err as Error).message, /issue/i);
-      return true;
-    },
+    () =>
+      assertCuratedTool("r2000_batch_execute", {
+        calls: [{ name: "r2000_undo", arguments: {} }],
+      }),
+    R2000UncuratedToolError,
+  );
+});
+
+test("r2000_get_address_details's description states its composed, client-side, never-calls-upstream nature and cites the upstream issue", () => {
+  const def = R2000_TOOL_DEFINITIONS.find((d) => d.name === "r2000_get_address_details");
+  assert.ok(def, "r2000_get_address_details must be a curated tool");
+  assert.match(def!.description, /composed/i);
+  assert.match(def!.description, /client-side|client side/i);
+  assert.match(def!.description, /issues\/42/);
+  assert.deepEqual(def!.inputSchema.required, ["project", "address"]);
+});
+
+test("READ_ONLY_R2000_TOOLS has exactly 7 members and deliberately excludes r2000_get_address_details (its dispatch is read-only by construction but never reaches this generic branch)", () => {
+  assert.equal(READ_ONLY_R2000_TOOLS.size, 7, `expected exactly 7 members, got ${READ_ONLY_R2000_TOOLS.size}`);
+  assert.ok(
+    !READ_ONLY_R2000_TOOLS.has("r2000_get_address_details"),
+    "r2000_get_address_details is dispatched via its own runR2000Tool() special case (composeAddressDetails), never via the generic READ_ONLY_R2000_TOOLS branch -- membership here would document a code path that does not exist",
+  );
+});
+
+test("SURF-02 (D18-27/D18-28): r2000_get_address_details never appears as a literal tool-name argument to call( in r2000-tools.ts (source-structural)", () => {
+  const rawSource = readFileSync(join(HERE, "r2000-tools.ts"), "utf8");
+  // Comment-strip only (never string-strip): the literal we are looking FOR
+  // is itself a string, so blanking string content would make it
+  // unobservable. codeOnly()-style full stripping is the right tool when a
+  // check must ignore ALL string content (r2000-spawn-seam.test.ts's own
+  // spawn-site scan); here the opposite is true -- we must inspect exactly
+  // the literal call() receives, and comment-stripping alone is sufficient
+  // to keep a doc-comment mention of "call(...)" from producing a false
+  // positive, since no comment in this file contains that exact adjacency.
+  const codeOnly = rawSource.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const callLiteralRe = /\bcall\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g;
+  const literalNames: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = callLiteralRe.exec(codeOnly)) !== null) {
+    literalNames.push(m[2]);
+  }
+  assert.ok(
+    literalNames.length > 0,
+    "non-vacuity: expected at least one call( invocation with a literal tool-name argument (e.g. r2000_save_project) -- if this is empty, the scan regex itself is broken",
+  );
+  assert.ok(
+    !literalNames.includes("r2000_get_address_details"),
+    `call( must never receive "r2000_get_address_details" as a literal tool-name argument -- found among: ${literalNames.join(", ")}`,
   );
 });
 
@@ -203,20 +256,20 @@ test("assertCuratedTool refuses a batch containing one uncurated inner name, nam
       assertCuratedTool("r2000_batch_execute", {
         calls: [
           { name: "r2000_set_label_name", arguments: { address: 4096, name: "entry" } },
-          { name: "r2000_get_address_details", arguments: { address: 4096 } },
+          { name: "r2000_unpack_binary", arguments: {} },
         ],
       }),
     (err: unknown) => {
       assert.ok(err instanceof R2000UncuratedToolError);
       assert.equal((err as R2000UncuratedToolError).batchIndex, 1);
-      assert.match((err as Error).message, /r2000_get_address_details/);
+      assert.match((err as Error).message, /r2000_unpack_binary/);
       assert.match((err as Error).message, /calls\[1\]/);
       return true;
     },
   );
 });
 
-test("assertCuratedTool refuses a batch containing an inner name outside the curated set entirely (not just D-32's exclusion)", () => {
+test("assertCuratedTool refuses a batch containing an inner name outside the curated set entirely", () => {
   assert.throws(
     () =>
       assertCuratedTool("r2000_batch_execute", {
@@ -246,7 +299,7 @@ test("assertCuratedTool recurses into a nested r2000_batch_execute", () => {
         calls: [
           {
             name: "r2000_batch_execute",
-            arguments: { calls: [{ name: "r2000_get_address_details", arguments: { address: 1 } }] },
+            arguments: { calls: [{ name: "r2000_unpack_binary", arguments: {} }] },
           },
         ],
       }),
@@ -450,12 +503,12 @@ test("runR2000Tool refuses a smuggled batch WHOLE, before any child process is s
         project: projectPath,
         calls: [
           { name: "r2000_set_label_name", arguments: { address: 4096, name: "entry" } },
-          { name: "r2000_get_address_details", arguments: { address: 4096 } },
+          { name: "r2000_unpack_binary", arguments: {} },
         ],
       }),
       (err: unknown) => {
         assert.ok(err instanceof R2000UncuratedToolError);
-        assert.match((err as Error).message, /r2000_get_address_details/);
+        assert.match((err as Error).message, /r2000_unpack_binary/);
         assert.match((err as Error).message, /calls\[1\]/);
         return true;
       },
@@ -798,5 +851,158 @@ test(
     });
     assert.equal(badView.isError, true, "an unrecognised 'view' value must be refused, never silently defaulted");
     assert.match(badView.content[0]!.text, /disasm|hexdump/i);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// SURF-02 (D-36, plan 18-05): composeAddressDetails() -- the stub-driven
+// frame-count proof. Points R2000_BIN at a tiny stub server that logs every
+// tools/call name it receives and answers ONLY the four composing reads --
+// any other name (including r2000_get_address_details or
+// r2000_save_project) is refused with a JSON-RPC error, so an unexpected
+// fifth call fails loudly rather than silently succeeding.
+// ---------------------------------------------------------------------------
+
+const COMPOSE_STUB_SOURCE = `
+import { createInterface } from "node:readline";
+import { appendFileSync } from "node:fs";
+const rl = createInterface({ input: process.stdin, terminal: false });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+const RESPONSES = {
+  r2000_get_symbols: [{ address: 49152, name: "probe_symbol", kind: "User" }],
+  r2000_get_comments: [{ address: 49152, comment: "probe comment", type: "line" }],
+  r2000_get_blocks: [{ start_address: 49152, end_address: 49200, type: "Code" }],
+  r2000_get_cross_references: [49999],
+};
+rl.on("line", (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.method === "initialize") {
+    send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2024-11-05", capabilities: {}, serverInfo: { name: "compose-stub", version: "0" } } });
+    return;
+  }
+  if (msg.method === "notifications/initialized") return;
+  if (msg.method === "tools/call") {
+    const name = msg.params && msg.params.name;
+    appendFileSync(process.env.STUB_CALL_LOG, name + "\\n");
+    if (Object.prototype.hasOwnProperty.call(RESPONSES, name)) {
+      send({ jsonrpc: "2.0", id: msg.id, result: { content: [ { type: "text", text: JSON.stringify(RESPONSES[name]) } ] } });
+      return;
+    }
+    send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "compose-stub refuses unexpected tool call: " + name } });
+    return;
+  }
+  if (msg.id !== undefined) {
+    send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "unhandled method " + msg.method } });
+  }
+});
+`;
+
+let composeStubWorkDir: string | undefined;
+
+after(async () => {
+  await __resetR2000SessionForTest();
+  if (composeStubWorkDir) rmSync(composeStubWorkDir, { recursive: true, force: true });
+});
+
+test("composeAddressDetails issues exactly 4 tools/call frames (the four named reads), zero naming r2000_get_address_details or r2000_save_project, all inside ONE session", async () => {
+  await __resetR2000SessionForTest();
+  composeStubWorkDir = mkdtempSync(join(HERE, ".r2000-tools-test-compose-stub-"));
+  const callLog = join(composeStubWorkDir, "calls.log");
+  writeFileSync(callLog, "");
+  const stubBin = join(composeStubWorkDir, "compose-stub.mjs");
+  writeFileSync(stubBin, "#!/usr/bin/env node\n" + COMPOSE_STUB_SOURCE);
+  chmodSync(stubBin, 0o755);
+
+  const prevBin = process.env.R2000_BIN;
+  const prevLog = process.env.STUB_CALL_LOG;
+  process.env.R2000_BIN = stubBin;
+  process.env.STUB_CALL_LOG = callLog;
+  try {
+    // ensureProjectSettings() (D18-32) reads the project file BEFORE any
+    // spawn, so a real (if trivial) .regen2000proj must exist on disk --
+    // the stub server itself is never asked to load anything.
+    const projectPath = join(composeStubWorkDir, "compose-test.regen2000proj");
+    writeFileSync(projectPath, synthesizeProject(new Uint8Array(4), { origin: 49152 }));
+
+    const result = await runR2000Tool("r2000_get_address_details", { project: projectPath, address: 49152 });
+    assert.equal(result.isError, false, `r2000_get_address_details failed: ${JSON.stringify(result)}`);
+
+    const composed = JSON.parse(result.content[0]!.text) as {
+      composed_client_side: boolean;
+      composed_from: string[];
+      symbols: unknown;
+      comments: unknown;
+      block: unknown;
+      cross_references: unknown;
+    };
+    assert.equal(composed.composed_client_side, true);
+    assert.deepEqual(
+      [...composed.composed_from].sort(),
+      ["r2000_get_blocks", "r2000_get_comments", "r2000_get_cross_references", "r2000_get_symbols"].sort(),
+    );
+    assert.deepEqual(composed.symbols, [{ address: 49152, name: "probe_symbol", kind: "User" }]);
+    assert.deepEqual(composed.comments, [{ address: 49152, comment: "probe comment", type: "line" }]);
+    assert.deepEqual(composed.block, { start_address: 49152, end_address: 49200, type: "Code" });
+    assert.deepEqual(composed.cross_references, [49999]);
+
+    const loggedCalls = readFileSync(callLog, "utf8").trim().split("\n").filter(Boolean);
+    assert.equal(loggedCalls.length, 4, `expected exactly 4 tools/call frames, got ${loggedCalls.length}: ${loggedCalls.join(", ")}`);
+    assert.deepEqual(
+      [...loggedCalls].sort(),
+      ["r2000_get_blocks", "r2000_get_comments", "r2000_get_cross_references", "r2000_get_symbols"].sort(),
+    );
+    assert.ok(!loggedCalls.includes("r2000_get_address_details"), "the composed tool must never call itself by name upstream");
+    assert.ok(!loggedCalls.includes("r2000_save_project"), "a read-only composition must never trigger a save");
+  } finally {
+    if (prevBin === undefined) delete process.env.R2000_BIN;
+    else process.env.R2000_BIN = prevBin;
+    if (prevLog === undefined) delete process.env.STUB_CALL_LOG;
+    else process.env.STUB_CALL_LOG = prevLog;
+    await __resetR2000SessionForTest();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Gated integration: composeAddressDetails() against a real, full-64K
+// regenerator2000 project -- exactly the case upstream's own tool answers
+// OutOfRange for at every address -- proving a usable composed answer, and
+// that no save was issued (the project file's content is byte-identical
+// across the call).
+// ---------------------------------------------------------------------------
+
+let compose64kWorkDir: string | undefined;
+
+after(async () => {
+  await __resetR2000SessionForTest();
+  if (compose64kWorkDir) rmSync(compose64kWorkDir, { recursive: true, force: true });
+});
+
+test(
+  "gated: composeAddressDetails against a real full-64K regenerator2000 project returns a usable answer, and issues no save",
+  { skip: SKIP_REASON },
+  async () => {
+    await __resetR2000SessionForTest();
+    compose64kWorkDir = mkdtempSync(join(HERE, ".r2000-tools-test-compose-64k-"));
+    const bytes = new Uint8Array(65536);
+    const origin = flatImageOrigin(bytes);
+    const projectJson = synthesizeProject(bytes, { origin });
+    const projectPath = join(compose64kWorkDir, "flat-64k.regen2000proj");
+    writeFileSync(projectPath, projectJson);
+
+    const beforeBytes = readFileSync(projectPath);
+
+    const result = await runR2000Tool("r2000_get_address_details", { project: projectPath, address: 0 });
+    assert.equal(result.isError, false, `r2000_get_address_details (64K project) failed: ${JSON.stringify(result)}`);
+    const composed = JSON.parse(result.content[0]!.text) as { composed_client_side: boolean; composed_from: string[] };
+    assert.equal(composed.composed_client_side, true, "expected a composed answer, not an upstream OutOfRange refusal");
+    assert.equal(composed.composed_from.length, 4);
+    // The whole point of D-36: this must NEVER be upstream's own OutOfRange
+    // refusal, which is exactly what a passthrough to the native tool would
+    // return at every address on a full 64K project.
+    assert.ok(!JSON.stringify(result).includes("OutOfRange"), `expected a composed answer, got upstream's own OutOfRange text: ${JSON.stringify(result)}`);
+
+    const afterBytes = readFileSync(projectPath);
+    assert.ok(beforeBytes.equals(afterBytes), "composeAddressDetails must issue no save -- the project file's on-disk bytes must be unchanged across the call");
   },
 );
