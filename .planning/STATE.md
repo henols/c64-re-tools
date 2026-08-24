@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-08-24T16:37:47.546Z"
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-08-24T17:06:30.603Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 19 execution started
-state_head: 67637744601040dc7ffeca4f4a8bf5759cea4f00
+state_head: d13862f2632563b86818bacf7304480643d795da
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 10
   percent: 20
 ---
 
@@ -69,7 +69,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-08-24 — Phase 19 execution started
 
@@ -181,6 +181,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 18 P05 | 75min | 3 tasks | 4 files |
 | Phase 19 P01 | 45min | 3 tasks | 11 files |
 | Phase 19 P02 | 38 min | 2 tasks | 7 files |
+| Phase 19 P03 | 19 min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -339,6 +340,9 @@ Recent decisions affecting current work:
 - [Phase 19]: All five upstream analyze procedures are now absorbed, so ABS-01 and ABS-02 flip to Complete, reversing 19-01's deliberate rollback
 - [Phase 19]: One attribution block per SOURCE PATH, not per file: c64-memory-mapping and c64-program-recon each absorb two procedures with two different digests, and a single per-file header could only claim one of them
 - [Phase 19]: The bare disasm token is banned corpus-wide by check-skill-fork-honesty.mjs (a removed acme verb) with its exemption count pinned at exactly 1, so absorbed read-region steps omit the view parameter and rely on its documented default rather than growing the exemption
+- [Phase 19]: Coverage report schema pinned as flat sibling measure objects (checkpoint option flat-three, auto-selected under yolo mode): each measure addressable by a stable top-level key, schema test is a plain key-set assertion, and no aggregate is one reduce away — COVERAGE_SCHEMA_VERSION = 1 with nine top-level keys is the contract Phase 20 reads throughout its sweep and Phase 21 reuses for its hazard report; a rename must bump the version deliberately
+- [Phase 19]: COV-01 reproducibility uses a bytes-versus-store independence axis, not a second agent session — Nested headless agent sessions stall indefinitely in this environment, so the runnable independence is that neither route reads the other route input; the committed sha256 seal is what prevents retrofit, and a live test recomputes both routes from the fixture on every run
+- [Phase 19]: The census reads regenerator2000 own block table at exactly one call site, the divergence sub-report, and never as a measure of completeness — Upstream follow_indirect_jumps walks only bytes already classified Code through pointers already classified Address, so on an under-classified binary it finds nothing; a store-derived census would report nothing-left-to-do on an untouched binary
 
 ### Pending Todos
 
@@ -831,8 +835,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T16:36:52.711Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-08-24T17:06:03.368Z
+Stopped at: Completed 19-03-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

@@ -50,7 +50,7 @@ milestone starts at **Phase 18**.
 ### Coverage Instrument
 
 - [ ] **COV-01**: Coverage is computed from the annotation store and reported as three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility check — never collapsed into one aggregate percentage
-- [ ] **COV-02**: A vacuous pass is detectable: mechanically auto-labelling everything, or commenting every routine "handles data", does not produce a clean report, and multi-caller labels require cross-reference-backed documentation
+- [x] **COV-02**: A vacuous pass is detectable: mechanically auto-labelling everything, or commenting every routine "handles data", does not produce a clean report, and multi-caller labels require cross-reference-backed documentation
 
 ### Decomposition
 
@@ -125,7 +125,7 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 | ABS-03 | Phase 19 | Pending |
 | ABS-04 | Phase 19 | Complete |
 | COV-01 | Phase 19 | Pending |
-| COV-02 | Phase 19 | Pending |
+| COV-02 | Phase 19 | Complete |
 | DECOMP-01 | Phase 20 | Pending |
 | DECOMP-02 | Phase 20 | Pending |
 | DECOMP-03 | Phase 20 | Pending |
