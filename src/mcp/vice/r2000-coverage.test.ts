@@ -454,6 +454,95 @@ test("the cross-reference rule engages at strictly MORE THAN ONE caller, and not
   assert.deepEqual(excluded.excludedByMultiCallerRule, [0x0820]);
 });
 
+test("ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean", () => {
+  // A coverage instrument whose whole subject is refusing to be talked into a
+  // clean verdict must not be talkable into one by a string that merely TOUCHES
+  // a caller's short form. The adversarial input is built from the REAL
+  // committed NC4 fixture rather than a hand-typed copy, so this control cannot
+  // drift away from the fixture it claims to be about: NC4's own comment array,
+  // with a mention of $8106 -- an unrelated and entirely ordinary C64 address
+  // whose leading three digits coincide with caller $0810's bare hex form --
+  // appended to the $0820 entry. The comment still names NEITHER caller.
+  const { store } = loadFixture("nc4-multi-caller-unnamed");
+  const gamed: R2000Comment[] = store.comments.map((c) =>
+    c.address === 0x0820 ? { ...c, comment: `${c.comment}; see also the pointer table at $8106` } : c,
+  );
+  assert.equal(
+    gamed.filter((c) => c.comment.includes("$8106")).length,
+    1,
+    "the adversarial mutation must land on exactly the $0820 comment, or this control is testing something else",
+  );
+
+  const report = reportFor("nc4-multi-caller-unnamed", { comments: gamed });
+  assert.deepEqual(
+    report.reproducibility.multiCallerUndocumented,
+    { count: 1, addresses: [0x0820] },
+    "$8106 is not $0810 -- a hex token must end on a non-hex-digit boundary before it can count as naming a caller",
+  );
+
+  const findings = coverageFindings(report);
+  assert.equal(
+    findings.clean,
+    false,
+    `a gaming attempt must not buy a clean verdict (T-19-14). Findings: ${JSON.stringify(findings.findings, null, 2)}`,
+  );
+  assert.ok(
+    findings.findings.some((f) => f.measure === "reproducibility"),
+    "the refusal must be attributable to the reproducibility measure BY NAME, never to an unnamed aggregate",
+  );
+
+  // Both directions, in the same test and therefore in the same commit: the
+  // anchoring must not be a machine that now fails everything. NC5's $0820
+  // comment reaches its callers through the canonical-width form ($0810 and
+  // $0816), so the padded token is what carries it -- without this assertion
+  // an over-tightened rule would break the well-documented control and the
+  // five negative controls would not notice.
+  const good = coverageFindings(reportFor(WELL_DOCUMENTED));
+  assert.equal(
+    good.clean,
+    true,
+    `the genuinely well-documented control must stay clean under the anchored rule. Findings: ${JSON.stringify(good.findings, null, 2)}`,
+  );
+  assert.deepEqual(good.findings, []);
+});
+
+test("ANCHORING: a caller's label name satisfies the rule only on an identifier boundary", () => {
+  // Both directions are asserted here for the same reason as above: a
+  // one-directional assertion would be satisfied either by a rule that never
+  // matches a name or by one that matches any substring, and neither is the
+  // rule. `my_entry_pointer` embeds `entry_point`; it names no caller.
+  const symbols: R2000Symbol[] = [
+    { address: 0x0810, name: "entry_point", kind: "User", type: "Subroutine" },
+    { address: 0x0820, name: "two_callers", kind: "User", type: "Subroutine" },
+  ];
+  const census = computeStructuralCensus(new Uint8Array(0), 0x0810, []);
+  const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x0810);
+  const crossReferences: R2000CrossReference[] = [{ address: 0x0820, callers: [0x0810, 0x0816] }];
+  const reproFor = (comment: string) =>
+    computeReproducibility({
+      census,
+      dispatch,
+      symbols,
+      comments: [{ address: 0x0820, type: "line", comment }],
+      blocks: [],
+      crossReferences,
+    });
+
+  const embedded = reproFor("[confirmed-code] sets the mode flag; my_entry_pointer holds the vector");
+  assert.deepEqual(
+    embedded.multiCallerUndocumented.addresses,
+    [0x0820],
+    "a label name embedded in a longer identifier names no caller -- my_entry_pointer is not entry_point",
+  );
+
+  const standalone = reproFor("[confirmed-code] sets the mode flag; reached from entry_point on the cold path");
+  assert.deepEqual(
+    standalone.multiCallerUndocumented.addresses,
+    [],
+    "the caller's own label name standing alone must still satisfy the rule",
+  );
+});
+
 test("the kind figure is over non-System labels only, and reports a null fraction rather than a divide when there are none", () => {
   const ratio = computeLabelRatio([
     { address: 0xffd2, name: "CHROUT", kind: "System", type: "Predefined" },

@@ -39,8 +39,11 @@
 //     and one of which is not;
 //   - the comment-vacuity measure (`computeCommentVacuity`) and its exact
 //     normalisation rules;
-//   - the sampled reproducibility result (`computeReproducibility`) and its
-//     deterministic sample rule;
+//   - the sampled reproducibility result (`computeReproducibility`), its
+//     deterministic sample rule, and the ANCHORED multi-caller rule
+//     (`namesACaller`) -- a caller reference is a DELIMITED token, never a
+//     substring, so a comment mentioning an unrelated address whose leading
+//     digits coincide with a caller's short form buys nothing;
 //   - the pinned report schema (`COVERAGE_SCHEMA_VERSION`,
 //     `buildCoverageReport`).
 //
@@ -986,21 +989,57 @@ function classFromStore(gradeToken: string | null, blockType: string | null): De
   return "data";
 }
 
+/** Escapes `value` so it can be interpolated into a `RegExp` as a LITERAL.
+ *
+ * A label name is store data, not a literal this file controls: it arrives
+ * from a regenerator2000 project file the operator did not necessarily author
+ * (a cracked release's annotation store, a shared project). A name carrying
+ * regex metacharacters must therefore become text rather than a pattern.
+ * Same discipline `skill-attribution.test.ts` applies to manifest-sourced
+ * strings. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Does `comment` literally name at least one of `callers` -- either as a
  * hexadecimal address, or as the user label name recorded at a caller
- * address? Purely textual, exactly as the rule is specified. */
+ * address?
+ *
+ * The match is ANCHORED, not a substring test:
+ *
+ *   - a HEX reference is `$` plus the caller's address at either its bare
+ *     width or the canonical four-digit width, followed by a character that is
+ *     NOT a hexadecimal digit -- end of string counts as a boundary. So a
+ *     comment mentioning an unrelated and entirely ordinary address whose
+ *     leading digits merely coincide with a caller's short form names NO
+ *     caller: `$8106` is not `$0810`. Case-insensitive, as before.
+ *   - a NAME reference must stand on an identifier boundary on BOTH sides:
+ *     the characters either side may not be an ASCII letter, digit or
+ *     underscore. So `my_entry_pointer` does not name `entry_point`.
+ *
+ * Why anchored rather than "purely textual": this rule is the one measure
+ * whose entire subject is refusing to be talked into a clean verdict, and an
+ * unanchored `includes()` could be satisfied by a string that merely TOUCHES a
+ * caller's short form -- a falsely-clean verdict on the anti-gaming measure
+ * itself (T-19-14, T-19G-06-01). Held down in BOTH directions by two committed
+ * controls in `r2000-coverage.test.ts`: "ANCHORING: a colliding longer hex
+ * never satisfies the multi-caller rule ..." and "ANCHORING: a caller's label
+ * name satisfies the rule only on an identifier boundary". */
 function namesACaller(
   rawComment: string,
   callers: readonly number[],
   nameByAddress: ReadonlyMap<number, string>,
 ): boolean {
-  const lower = rawComment.toLowerCase();
   for (const caller of callers) {
     const hex = caller.toString(16).toLowerCase();
-    if (lower.includes(`$${hex}`)) return true;
-    if (lower.includes(`$${hex.padStart(4, "0")}`)) return true;
+    // Deduped through a Set: a caller at or above $1000 is already four digits
+    // wide, so its bare and canonical forms are the same token and testing it
+    // twice would be dead work.
+    for (const token of new Set([hex, hex.padStart(4, "0")])) {
+      if (new RegExp(`\\$${escapeRegExp(token)}(?![0-9a-f])`, "i").test(rawComment)) return true;
+    }
     const name = nameByAddress.get(caller);
-    if (name && rawComment.includes(name)) return true;
+    if (name && new RegExp(`(?<![0-9A-Za-z_])${escapeRegExp(name)}(?![0-9A-Za-z_])`).test(rawComment)) return true;
   }
   return false;
 }
