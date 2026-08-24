@@ -340,7 +340,7 @@ in a milestone archive.
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
 | 18. Persistent Session and Tool Surface | v0.5.0 | 7/7 | Complete | 2026-08-24 |
-| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 4/5 | In Progress|  |
+| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 5/5 | In Progress|  |
 | 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |
 | 22. Equivalence and Modifiability | v0.5.0 | TBD | Not started | - |

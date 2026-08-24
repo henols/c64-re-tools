@@ -4,17 +4,17 @@ milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
-status: executing
-stopped_at: Completed 19-04-PLAN.md
-last_updated: "2026-08-24T17:39:11.082Z"
+status: verifying
+stopped_at: Completed 19-05-PLAN.md
+last_updated: "2026-08-24T18:16:09.937Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 19 execution started
-state_head: 451ae3e8ef5c7a1d788cc08eb5a0f31718daf235
+state_head: a67a206fd5046fc30a19569955231d55f39e5acb
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 20
 ---
 
@@ -70,7 +70,7 @@ v0.4.0, which is what it existed to do.
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-24 — Phase 19 execution started
 
 ## Performance Metrics
@@ -183,6 +183,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 19 P02 | 38 min | 2 tasks | 7 files |
 | Phase 19 P03 | 19 min | 2 tasks | 20 files |
 | Phase 19 P04 | 25 min | 2 tasks | 9 files |
+| Phase 19 P05 | 46 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -351,6 +352,12 @@ Recent decisions affecting current work:
 - [Phase 19]: The packer name has exactly one assignment site in the module, inside the external-oracle branch; the high confidence level likewise. Both counts are asserted at source level by the colocated test.
 - [Phase 19]: An absent packer oracle is a VISIBLE skip by default and a hard failure under VICE_REQUIRE_UNP64 (demonstrated: exit 1). Absence never reads as a passing SURF-03.
 - [Phase 19]: An eighth r2000 CLI verb moves FOUR counts, not three: the dispatch switch, R2000_CLI_VERB_FLOOR, REAL_VERBS, and r2000-cli.test.ts's VERB_OPTIONS length assertion. All four now carry comments saying so.
+- [Phase 19]: ABS-03 closed on a gate green over SHARPENED descriptions, not a weakened one: threshold untouched, allowlist empty, no skill excluded; observed inventory maximum 0.250 against an inclusive 0.35
+- [Phase 19]: The absorbed procedures are a SNAPSHOT at commit 493f8404 (53,392 bytes, five paths); re-sync is a hash comparison mechanised by the manifest's resync_triggers, triggered by any move off regenerator2000 0.9.20 or any change to r2000_get_binary_info's field set
+- [Phase 19]: r2000_toggle_splitter (DECOMP-01, BUILD-02) and r2000_set_immediate_format (IS BUILD-03) are PROPOSED in Phase 19 and implemented at the start of Phase 20 -- the absorption diff acted as a requirements-discovery instrument
+- [Phase 19]: SURF-03 closes on a NEGATIVE result stated as one: the bar is a project-owned route that never guesses, not a name reported on this machine; upstream's signature table deliberately not copied and no invented name placed on the r2000_ prefix
+- [Phase 19]: D18-16's reader-writer deferral is CLOSED by measurement -- the child reads serially, so the coarse FIFO mutex is an exact model rather than a compromise; the r2000-tools.ts cursor-tool invitation is answered in the same decision and the trio stays held
+- [Phase 19]: A new blocking CI gate is wired into ci.yml in the same commit that creates it and held there by ci-guardrails.test.mjs's frozen list -- a guard script CI does not run is a file, not a control
 
 ### Pending Todos
 
@@ -843,8 +850,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T17:37:50.105Z
-Stopped at: Completed 19-04-PLAN.md
+Last session: 2026-08-24T18:15:53.018Z
+Stopped at: Completed 19-05-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
