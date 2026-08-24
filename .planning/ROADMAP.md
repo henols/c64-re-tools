@@ -119,7 +119,7 @@ project's skills, and by holding a project open across a session instead of
 respawning the binary per tool call. Byte-identity is explicitly not the
 acceptance bar; behavioural equivalence in VICE is.
 
-- [ ] **Phase 18: Persistent Session and Tool Surface** - A regenerator2000 session survives many tool calls in one working session, and the curated surface covers what absorbed procedures need
+- [x] **Phase 18: Persistent Session and Tool Surface** - A regenerator2000 session survives many tool calls in one working session, and the curated surface covers what absorbed procedures need
 - [ ] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
 - [ ] **Phase 20: Decomposition to Closure** - A committed synthetic fixture is fully decomposed: nothing `Undefined`, every entry point named, every reference documented, every hardware write an enum
 - [ ] **Phase 21: Rebuildable Source and the Reassembly Gate** - Annotated projects export as symbol-only, subsystem-split ACME source, gated by clean reassembly and a hazard report before any rebuild work runs on top
@@ -144,7 +144,7 @@ rewritten a second time.
   4. Write-capable calls are serialised through one owner; concurrent fan-out is restricted to read-only queries, so two subagents cannot both write "no label here" and silently lose one write.
   5. The curated tool surface includes `r2000_read_region` (so a routine can be read at a range instead of exporting the whole program), and `r2000_get_address_details`'s D-32 refusal is re-decided — fixed, worked around, or refused with a documented route — against the still-live upstream `u16` overflow, not carried unexamined into this milestone.
 
-**Plans**: 5/7 plans executed
+**Plans**: 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -317,7 +317,7 @@ in a milestone archive.
 | 15. Debt and Review Disposition | v0.4.0 | 12/12 | Complete | 2026-08-22 |
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
-| 18. Persistent Session and Tool Surface | v0.5.0 | 5/7 | In Progress|  |
+| 18. Persistent Session and Tool Surface | v0.5.0 | 7/7 | Complete | 2026-08-24 |
 | 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | TBD | Not started | - |
 | 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |

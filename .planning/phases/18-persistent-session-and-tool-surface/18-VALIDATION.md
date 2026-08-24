@@ -54,12 +54,12 @@ Requirement-level map seeded from RESEARCH.md. Task IDs are bound by
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | SESS-01 | — | No third spawn site; the long-lived path still guards `--vice` before spawn | unit (structural scan) | `node --test r2000-spawn-seam.test.ts` | ✅ (new fixture case, not a new file) | ⬜ pending |
-| TBD | TBD | TBD | SESS-02 | — | Crash-between-calls transparently respawns; crash-mid-call fails loud and recoverable | integration (live-preferred) | `node --test r2000-session.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | SESS-03 | — | Planted-violation save discipline across 3 scenarios under `SIGKILL` | integration (live-preferred) | `node --test r2000-session.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | SESS-04 | — | Concurrent mutating calls serialise; lost-update planted violation fails without the mutex | integration | `node --test r2000-session.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | SURF-01 | — | `r2000_read_region` curated; count and doc-drift guards hold | unit | `node --test r2000-tools.test.ts` | ✅ (literal-count edits, not a new file) | ⬜ pending |
-| TBD | TBD | TBD | SURF-02 | — | D-32 refusal retired; composed answer matches a real 64K project | unit + gated integration | `node --test r2000-tools.test.ts` | ✅ (extend the existing gated integration block) | ⬜ pending |
+| 18-03/3 | 18-03 | 2 | SESS-01 | — | No third spawn site; the long-lived path still guards `--vice` before spawn | unit (structural scan) | `node --test r2000-spawn-seam.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
+| 18-04/2 | 18-04 | 3 | SESS-02 | — | Crash-between-calls transparently respawns; crash-mid-call fails loud and recoverable | integration (live-preferred) | `node --test r2000-session.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
+| 18-03/2 | 18-03 | 2 | SESS-03 | — | Planted-violation save discipline across 3 scenarios under `SIGKILL` | integration (live-preferred) | `node --test r2000-session.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
+| 18-06/1 | 18-06 | 4 | SESS-04 | — | Concurrent mutating calls serialise; lost-update planted violation fails without the mutex | integration | `node --test r2000-session.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
+| 18-05/1 | 18-05 | 4 | SURF-01 | — | `r2000_read_region` curated; count and doc-drift guards hold | unit | `node --test r2000-tools.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
+| 18-05/2 | 18-05 | 4 | SURF-02 | — | D-32 refusal retired; composed answer matches a real 64K project | unit + gated integration | `node --test r2000-tools.test.ts` | ✅ | ✅ green — `18-PHASE-GATE-EVIDENCE.md` |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

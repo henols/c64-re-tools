@@ -75,6 +75,8 @@ let warnedNoMarkerFound = false;
 export interface RepoRootOptions {
   from?: string;
   env?: NodeJS.ProcessEnv;
+  /** Test seam for the marker walk; production uses node:fs existsSync. */
+  exists?: (path: string) => boolean;
 }
 
 /**
@@ -127,7 +129,7 @@ function isInside(child: string, parent: string): boolean {
  *      repo-root.test.ts is the only thing that would catch a wrong hop
  *      count here.
  */
-export function repoRoot({ from = HERE, env = process.env }: RepoRootOptions = {}): string {
+export function repoRoot({ from = HERE, env = process.env, exists = existsSync }: RepoRootOptions = {}): string {
   // Branch 0 (plugin-consumption signal): Claude Code sets CLAUDE_PROJECT_DIR
   // to the root of the workspace it is driving. When this module runs as an
   // installed plugin its own files sit outside that workspace, so this is the
@@ -147,7 +149,7 @@ export function repoRoot({ from = HERE, env = process.env }: RepoRootOptions = {
 
   let dir = resolve(from);
   while (true) {
-    if (existsSync(join(dir, ".git"))) {
+    if (exists(join(dir, ".git"))) {
       return dir;
     }
     const parent = dirname(dir);

@@ -124,7 +124,7 @@ test("repoRoot() last-resort fallback (quick-260731-p8a, path-anchor regression;
   const originalError = console.error;
   console.error = () => {};
   try {
-    assert.equal(repoRoot({ from: moduleDir, env: {} }), root);
+    assert.equal(repoRoot({ from: moduleDir, env: {}, exists: () => false }), root);
   } finally {
     console.error = originalError;
   }
@@ -143,7 +143,7 @@ test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth,
   const originalError = console.error;
   console.error = () => {};
   try {
-    assert.equal(repoRoot({ from: moduleDir, env: {} }), root);
+    assert.equal(repoRoot({ from: moduleDir, env: {}, exists: () => false }), root);
   } finally {
     console.error = originalError;
   }
