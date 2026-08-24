@@ -4,16 +4,16 @@ milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
-status: verifying
+status: executing
 stopped_at: Completed 19-05-PLAN.md
-last_updated: "2026-08-24T18:16:09.937Z"
+last_updated: "2026-08-24T21:11:00.367Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 19 execution started
-state_head: a67a206fd5046fc30a19569955231d55f39e5acb
+state_head: a54d6292fe7e557b5521cbada0dd1c9560fa3798
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 12
+  total_plans: 16
   completed_plans: 12
   percent: 20
 ---
@@ -68,9 +68,9 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
+Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
 Plan: 5 of 5
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-08-24 — Phase 19 execution started
 
 ## Performance Metrics
