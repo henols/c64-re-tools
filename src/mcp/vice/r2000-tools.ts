@@ -858,6 +858,23 @@ const READ_ONLY_R2000_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// TEST-ONLY (D18-09 scenario 2's non-vacuity control). Exists SOLELY so
+// r2000-session.test.ts can prove its save-discipline planted-violation
+// assertion actually distinguishes "the internal save ran" from "it didn't"
+// -- suppressing the internal auto-save below for exactly the calls a test
+// chooses to make, then observing the SAME kill-and-reread sequence that
+// passes in scenario 1 now correctly fail. MUST NEVER be set by production
+// code -- there is no code path in this file that ever mutates `.active`;
+// only a test file imports this binding and flips it directly. Defaults to
+// `false` (asserted at module load by a companion test), and this
+// identifier appears in this file ONLY here and at its one read site inside
+// runR2000Tool()'s mutating branch below -- a source assertion in
+// r2000-session.test.ts pins that count at exactly two.
+// ---------------------------------------------------------------------------
+
+export const __R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE: { active: boolean } = { active: false };
+
+// ---------------------------------------------------------------------------
 // The runner. Drives r2000-mcp-client.ts via a DYNAMIC import so importing
 // R2000_TOOL_DEFINITIONS (registration, at vice-proxy.ts module scope) costs
 // no child process and no socket -- only calling a tool actually spawns one.
@@ -905,11 +922,19 @@ export async function runR2000Tool(name: string, args: unknown): Promise<ToolCal
     // resolves to its caller.
     const result = await runInR2000Session(projectPath, async (call) => {
       const callResult = await call(name, rest);
-      await call("r2000_save_project", {});
+      if (!__R2000_TEST_ONLY_SUPPRESS_INTERNAL_SAVE.active) {
+        await call("r2000_save_project", {});
+      }
       return callResult;
     });
     return toToolCallResult(result);
   } catch (err) {
-    return errText(`${name} failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Named by class (D18-12: a mid-window crash must surface a named,
+    // distinguishable error, never a silent success) -- a caller can tell
+    // R2000ChildExitError apart from R2000SessionFailedError etc. from this
+    // text alone, without re-parsing loose message wording.
+    const errName = err instanceof Error ? err.name : "Error";
+    const errMessage = err instanceof Error ? err.message : String(err);
+    return errText(`${name} failed: [${errName}] ${errMessage}`);
   }
 }
