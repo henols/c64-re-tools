@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
 current_phase: 18
-current_phase_name: persistent-session-and-tool-surface
-status: planning
-stopped_at: Phase 18 context gathered
-last_updated: "2026-08-24T06:23:13.598Z"
-last_activity: 2026-08-23
-last_activity_desc: Phase 18 context gathered (36 decisions, 7 gray areas)
-state_head: df9d8e1421e2764ce98beddf71afa87de11dc574
+current_phase_name: Persistent Session and Tool Surface
+status: executing
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-08-24T08:24:09.960Z"
+last_activity: 2026-08-24
+last_activity_desc: Phase 18 execution started
+state_head: db1459c8d55040d2984c6babbaefa367e07a6163
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 7
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -51,7 +51,7 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** **v0.5.0 is roadmapped.** `.planning/REQUIREMENTS.md` holds
+**Current focus:** Phase 18 — Persistent Session and Tool Surface
 27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
 five phases in `.planning/ROADMAP.md` (Phases 18-22), and its Traceability
 table and Coverage block are filled in (27/27 mapped, 0 unmapped). No phase has
@@ -66,10 +66,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 18 (persistent-session-and-tool-surface) — READY TO EXECUTE
-Plan: — (no plans yet)
-Status: Roadmapped — 5 phases (18-22), 27/27 requirements mapped, awaiting `/gsd-plan-phase 18`
-Last activity: 2026-08-23 — Milestone v0.5.0 roadmap created (Phases 18-22)
+Phase: 18 (Persistent Session and Tool Surface) — EXECUTING
+Plan: 2 of 7
+Status: Ready to execute
+Last activity: 2026-08-24 — Phase 18 execution started
 
 ## Performance Metrics
 
@@ -171,6 +171,7 @@ Last activity: 2026-08-23 — Milestone v0.5.0 roadmap created (Phases 18-22)
 | Phase 17 P01 | 20min | 2 tasks | 2 files |
 | Phase 17 P02 | 25min | 2 tasks | 3 files |
 | Phase 17 P03 | 35min | 3 tasks | 5 files |
+| Phase 18 P01 | 40min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,7 @@ Recent decisions affecting current work:
 - [Phase 17]: CORE-01 decided keep-dated at plan 17-02 task 1's blocking-human checkpoint, delegated by the human to the orchestrator, recorded in PROJECT.md → Core Value dated 2026-08-23 — The checkpoint was rendered and the operator answered 298 seconds later in free text `you decide` rather than selecting an option; attendance and delegation are on the record, comprehension is not evidenced by any artifact and is not claimed (corrected 2026-08-23 by plan 17-04, gap G-17-1); orchestrator selected keep-dated on R2000-01's structural VICE-incapability argument and v0.4.0's lack of new evidence
 - [Quick 260823-kf6]: Flipped QUAL-01/QUAL-02/QUAL-03 to Closed in STATE.md's carried-forward ledger, naming PKG-02/PKG-03/PKG-04; reconciled STATE.md's Deferred Items prose and REQUIREMENTS.md's DEBT-04 note to the one genuinely surviving open row (UP-01/UP-02) — corrects v0.4.0-MILESTONE-AUDIT.md round-1 tech-debt cluster 1
 - Roadmap (v0.5.0): the coverage instrument (Phase 19) and the reassembly-plus-hazard-report gate (Phase 21) are both sequenced before the work they measure (Phase 20's decomposition sweep, Phase 22's equivalence/modifiability demo respectively) — mirroring v0.4.0's audit-gate-first precedent (Phase 12). EQUIV-01 (compare.mjs's original-vs-different-binary extension) is flagged as the milestone's single highest-risk requirement and sequenced as Phase 22's first success criterion rather than split into its own phase.
+- [Phase 18]: 18-01: Ran the Architecture Change Procedure's six steps for the D-17/D-18 reversal in ARCHITECTURE.md; allocated D-36 superseding D-32; pinned both with docs-r2000-decisions.test.ts, proven non-vacuous by three live planted-violation probes
 
 ### Pending Todos
 
@@ -794,8 +796,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-23T21:35:23.589Z
-Stopped at: **Phase 18 context gathered.** `/gsd-discuss-phase 18` ran all
+Last session: 2026-08-24T08:24:09.928Z
+Stopped at: Completed 18-01-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
@@ -831,7 +833,7 @@ Before that: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: .planning/phases/18-persistent-session-and-tool-surface/18-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 
