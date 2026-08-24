@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-06-PLAN.md
-last_updated: "2026-08-24T21:31:01.835Z"
+stopped_at: Completed 19-07-PLAN.md
+last_updated: "2026-08-24T21:55:48.023Z"
 last_activity: 2026-08-24
-last_activity_desc: Phase 19 gap closure — 19-06 anchored the multi-caller rule (COV-02)
-state_head: cbdbf978937fffbde3d8b61d2abc686f7ee4799c
+last_activity_desc: Phase 19 gap closure — 19-07 discharged MIT's inclusion condition and guarded the claim (ABS-02)
+state_head: 91aeadcb789e8e3ab6f1d794d7680fc5d564c918
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
   percent: 20
 ---
 
@@ -185,6 +185,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 19 P04 | 25 min | 2 tasks | 9 files |
 | Phase 19 P05 | 46 min | 3 tasks | 15 files |
 | Phase 19 P06 | 22 min | 2 tasks | 2 files |
+| Phase 19 P07 | 2h | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -361,6 +362,8 @@ Recent decisions affecting current work:
 - [Phase 19]: A new blocking CI gate is wired into ci.yml in the same commit that creates it and held there by ci-guardrails.test.mjs's frozen list -- a guard script CI does not run is a file, not a control
 - [Phase 19]: 19-06: the multi-caller cross-reference rule matches a DELIMITED token, never a substring — a caller's hex needs a non-hex-digit right boundary at the bare or canonical-4 width, and a caller's label name needs an identifier boundary both sides — An unanchored includes() let a mention of the unrelated address $8106 rescue NC4's undocumented $0820 label, producing a fully clean verdict with zero findings on the one measure whose whole subject is resisting being gamed (T-19-14).
 - [Phase 19]: 19-06: every count in the coverage report is derived from the deduped list printed beside it (WR-02) — coverageFindings() prints a count and an address list in one sentence; a pre-dedup count beside a post-dedup list made the finding text contradict itself (2 label name(s) ... at $1000).
+- [Phase 19]: 19-07: MIT election and corrected notices wording APPROVED by human (option id approve-wording-release-on-reverification). Release hold REMAINS; the named condition that lifts it is: "Phase 19 re-verification returns no gaps."
+- [Phase 19]: 19-07: INCORPORATION_CLAIM_PATTERN is independent of the notice section — keying the claim on its own discharge would make the presence guard tautological.
 
 ### Pending Todos
 
@@ -853,8 +856,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T21:30:26.783Z
-Stopped at: Completed 19-06-PLAN.md
+Last session: 2026-08-24T21:55:40.397Z
+Stopped at: Completed 19-07-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

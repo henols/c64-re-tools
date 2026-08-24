@@ -45,7 +45,7 @@ milestone starts at **Phase 18**.
 
 - [ ] **ABS-01**: The five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, with their tool calls diffed explicitly against the curated surface so no absorbed step calls a tool this project does not expose — and with no runtime dependency on `.agent/skills/`, which the published crate excludes
   - *Closed 2026-08-24 (19-01 tracer, 19-02 the remaining four). All five absorbed at `493f8404…`; `check-skill-tool-coverage.mjs` exits 0 with 17 distinct `r2000_*` names, all curated; zero `.agent/skills` references anywhere under `src/skills/`. `analyze-basic` is absorbed as REFERENCE-ONLY under FUT-01 with its trigger phrases mechanically kept out of every description.*
-- [ ] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
+- [x] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
   - *Closed 2026-08-24 (19-01, 19-02). Five per-file attribution blocks — one per SOURCE PATH, since two skills absorb two procedures each — with commit and digest asserted equal to the manifest's; both `THIRD-PARTY-NOTICES.md` files carry the incorporated-material section, and the installer tarball's copy is asserted against its **packed** file list. The MIT election is a **human-judgment** item, carried forward: `19-DECISIONS.md` decision 4.*
 - [ ] **ABS-03**: No two skills contend for the same trigger — every description is checked pairwise across the whole inventory, absorbed and existing, because descriptions *are* the trigger mechanism
   - *Closed 2026-08-24 (19-05). `check-skill-description-overlap.mjs` scans all seven skills, compares all 21 pairs, and exits 0 at an observed maximum of **0.250** against an inclusive threshold of **0.35**, with an **empty** allowlist. Green on **sharpened descriptions, not a weakened gate**: three descriptions were sharpened by naming their distinguishing input or output (`acme-build :: c64-memory-mapping` 0.200 → 0.100; `c64-memory-mapping :: routine-queue-walker` 0.167 → 0.111), no skill was excluded, and the threshold constant was not touched. A verbatim duplicate makes it exit 1, demonstrated and restored.*
@@ -128,7 +128,7 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 | SURF-02 | Phase 18 | Complete |
 | SURF-03 | Phase 19 | Gaps Found |
 | ABS-01 | Phase 19 | Gaps Found |
-| ABS-02 | Phase 19 | Gaps Found |
+| ABS-02 | Phase 19 | Complete |
 | ABS-03 | Phase 19 | Gaps Found |
 | ABS-04 | Phase 19 | Gaps Found |
 | COV-01 | Phase 19 | Gaps Found |
