@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-05-PLAN.md
-last_updated: "2026-08-24T21:11:00.367Z"
+stopped_at: Completed 19-06-PLAN.md
+last_updated: "2026-08-24T21:31:01.835Z"
 last_activity: 2026-08-24
-last_activity_desc: Phase 19 execution started
-state_head: a54d6292fe7e557b5521cbada0dd1c9560fa3798
+last_activity_desc: Phase 19 gap closure — 19-06 anchored the multi-caller rule (COV-02)
+state_head: cbdbf978937fffbde3d8b61d2abc686f7ee4799c
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
   percent: 20
 ---
 
@@ -70,7 +70,7 @@ v0.4.0, which is what it existed to do.
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-24 — Phase 19 execution started
 
 ## Performance Metrics
@@ -184,6 +184,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 19 P03 | 19 min | 2 tasks | 20 files |
 | Phase 19 P04 | 25 min | 2 tasks | 9 files |
 | Phase 19 P05 | 46 min | 3 tasks | 15 files |
+| Phase 19 P06 | 22 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -358,6 +359,8 @@ Recent decisions affecting current work:
 - [Phase 19]: SURF-03 closes on a NEGATIVE result stated as one: the bar is a project-owned route that never guesses, not a name reported on this machine; upstream's signature table deliberately not copied and no invented name placed on the r2000_ prefix
 - [Phase 19]: D18-16's reader-writer deferral is CLOSED by measurement -- the child reads serially, so the coarse FIFO mutex is an exact model rather than a compromise; the r2000-tools.ts cursor-tool invitation is answered in the same decision and the trio stays held
 - [Phase 19]: A new blocking CI gate is wired into ci.yml in the same commit that creates it and held there by ci-guardrails.test.mjs's frozen list -- a guard script CI does not run is a file, not a control
+- [Phase 19]: 19-06: the multi-caller cross-reference rule matches a DELIMITED token, never a substring — a caller's hex needs a non-hex-digit right boundary at the bare or canonical-4 width, and a caller's label name needs an identifier boundary both sides — An unanchored includes() let a mention of the unrelated address $8106 rescue NC4's undocumented $0820 label, producing a fully clean verdict with zero findings on the one measure whose whole subject is resisting being gamed (T-19-14).
+- [Phase 19]: 19-06: every count in the coverage report is derived from the deduped list printed beside it (WR-02) — coverageFindings() prints a count and an address list in one sentence; a pre-dedup count beside a post-dedup list made the finding text contradict itself (2 label name(s) ... at $1000).
 
 ### Pending Todos
 
@@ -850,8 +853,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T18:15:53.018Z
-Stopped at: Completed 19-05-PLAN.md
+Last session: 2026-08-24T21:30:26.783Z
+Stopped at: Completed 19-06-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

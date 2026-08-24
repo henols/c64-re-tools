@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 6
 waived_count: 0
 fixed_count: 1
-total_count: 6
-last_updated: 2026-08-24T18:13:07.770Z
+total_count: 7
+last_updated: 2026-08-24T21:28:33.217Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,7 @@ last_updated: 2026-08-24T18:13:07.770Z
 | 4 | 19 | unrun-verify | src/skills/c64-program-recon/scripts/packer-finding.test.mjs |  | The oracle-route test for the packer finding SKIPS (visibly) because no external packer identifier is installed, so parseUnp64Stdout()'s accepted marker set is an unmeasured assumption and SURF-03's positive branch has never executed. Re-open trigger: install the identifier, build a genuinely packed fixture, confirm the name and the HIGH confidence. | open |  | 2026-08-24T17:39:41.733Z |  |
 | 5 | 19 | deviation | .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-04-PLAN.md |  | Task 1 acceptance criterion invokes 'node src/mcp/vice/r2000-cli.ts coverage --nonsense-flag', which cannot exit non-zero: r2000-cli.ts has no main guard by design. Satisfied through the real entry point (vice-proxy.ts r2000 coverage --nonsense-flag, exit 1); recorded so a later re-run of the plan text does not read as a regression. | open |  | 2026-08-24T17:39:41.840Z |  |
 | 6 | 19 | deviation | .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-05-PLAN.md |  | Task 3(e) required the pre-existing failure baseline to be measured by stashing or checking out the pre-phase commit. git stash is forbidden in this project, and a checkout would have moved HEAD over committed work, so the baseline was taken in a detached worktree at a352500 with a symlinked node_modules. That run reported 7 failures, ALL of them host-path / build-staging / workspace-translation tests that assert about where the checkout is -- an artefact of the measurement location, not a baseline. Every one passes in the real tree (post-phase run: 0 fail). Recorded so a later reader does not mistake the confounded 7 for inherited failures, and so the next phase needing a baseline picks a method that does not relocate the checkout. | open |  | 2026-08-24T18:13:07.770Z |  |
+| 7 | 19 | unmet-truth | .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md |  | 17 Phase 19 review findings (CR-01, IN-01..IN-04, WR-01..WR-12) undispositioned; 19-06 discharges CR-01 and WR-02, the rest are owned by 19-07/19-08/19-09 and keep docs-review-disposition.test.ts + audit-integrity D-12-02 red until 19-09 lands | open |  | 2026-08-24T21:28:33.217Z |  |
 
 ````json
 [
@@ -94,6 +95,18 @@ last_updated: 2026-08-24T18:13:07.770Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-24T18:13:07.770Z",
+    "resolved_at": null
+  },
+  {
+    "id": 7,
+    "kind": "unmet-truth",
+    "phase": "19",
+    "file": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md",
+    "line": null,
+    "description": "17 Phase 19 review findings (CR-01, IN-01..IN-04, WR-01..WR-12) undispositioned; 19-06 discharges CR-01 and WR-02, the rest are owned by 19-07/19-08/19-09 and keep docs-review-disposition.test.ts + audit-integrity D-12-02 red until 19-09 lands",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-24T21:28:33.217Z",
     "resolved_at": null
   }
 ]
