@@ -44,6 +44,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,6 +54,8 @@ import {
   parsePrg,
   flatImageOrigin,
   decodeRawData,
+  ensureProjectSettings,
+  R2000ProjectSettingsError,
 } from "./r2000-project.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
@@ -123,6 +126,249 @@ test("flatImageOrigin: returns 0 for exactly 65536 bytes", () => {
 test("flatImageOrigin: throws otherwise, naming the actual length", () => {
   assert.throws(() => flatImageOrigin(Buffer.alloc(65535)), /65535/);
   assert.throws(() => flatImageOrigin(Buffer.alloc(0)), /0/);
+});
+
+// ---------------------------------------------------------------------------
+// ensureProjectSettings() -- unit half, always runs, no external binary.
+//
+// Mirrors r2000-spawn-seam.test.ts's planted-violation shape: reintroduce
+// the known-bad state, watch the guard catch it, restore. Every case in
+// r2000-project.ts's Task 1 <behavior> list gets its own named test below,
+// plus a committed non-vacuity pair proving the forcing assertion actually
+// distinguishes the real implementation from a "forcing step removed"
+// mutant, rather than passing regardless of whether the force ever ran.
+// ---------------------------------------------------------------------------
+
+function withTempDir<T>(fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), "r2000-project-test-unit-"));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** A full, realistic project fixture -- every top-level key `synthesizeProject()`
+ * writes, plus a couple of forward-compatible keys this module never touches
+ * (`labels`, `user_side_comments`), so the "every other key survives" test has
+ * something non-trivial to prove unchanged. */
+function makeFixture(overrides: { useIllegalOpcodes?: boolean; system?: string | undefined; noSettings?: boolean }) {
+  const fixture: Record<string, unknown> = {
+    origin: 0x0801,
+    raw_data_base64: "deadbeef==",
+    blocks: [{ kind: "code", start: 0x0801, end: 0x0810 }],
+    labels: { "0x0801": "start" },
+    user_side_comments: { "0x0801": "entry point" },
+  };
+  if (!overrides.noSettings) {
+    fixture.settings = {
+      use_illegal_opcodes: overrides.useIllegalOpcodes ?? false,
+      ...(overrides.system === undefined ? {} : { system: overrides.system }),
+    };
+  }
+  return fixture;
+}
+
+test("ensureProjectSettings: use_illegal_opcodes false -- forced to true, re-read from disk", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(makeFixture({ useIllegalOpcodes: false, system: R2000_SYSTEM_C64 })));
+
+    const result = ensureProjectSettings(path);
+    assert.equal(result.changed, true);
+
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(after.settings.use_illegal_opcodes, true);
+  });
+});
+
+test("ensureProjectSettings: use_illegal_opcodes already true -- idempotent no-op, file unchanged", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    const before = makeFixture({ useIllegalOpcodes: true, system: R2000_SYSTEM_C64 });
+    writeFileSync(path, JSON.stringify(before));
+    const beforeHash = sha256(readFileSync(path));
+
+    const result = ensureProjectSettings(path);
+    assert.equal(result.changed, false);
+
+    const afterHash = sha256(readFileSync(path));
+    assert.equal(afterHash, beforeHash, "an already-forced project must not be rewritten at all");
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), before);
+  });
+});
+
+test("ensureProjectSettings: no settings key at all -- both use_illegal_opcodes and system get set", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(makeFixture({ noSettings: true })));
+
+    const result = ensureProjectSettings(path);
+    assert.equal(result.changed, true);
+
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(after.settings.use_illegal_opcodes, true);
+    assert.equal(after.settings.system, R2000_SYSTEM_C64);
+  });
+});
+
+test("ensureProjectSettings: settings.system mismatch throws naming both values, file byte-identical after", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(makeFixture({ useIllegalOpcodes: false, system: "Commodore 128" })));
+    const beforeHash = sha256(readFileSync(path));
+
+    assert.throws(
+      () => ensureProjectSettings(path),
+      (err: unknown) => {
+        if (!(err instanceof R2000ProjectSettingsError)) return false;
+        assert.match(err.message, /Commodore 128/);
+        assert.match(err.message, new RegExp(R2000_SYSTEM_C64));
+        assert.equal(err.projectPath, path);
+        return true;
+      },
+    );
+
+    const afterHash = sha256(readFileSync(path));
+    assert.equal(afterHash, beforeHash, "a refusal must leave the file byte-identical");
+  });
+});
+
+test("ensureProjectSettings: missing path throws R2000ProjectSettingsError naming the path", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "does-not-exist.regen2000proj");
+    assert.throws(
+      () => ensureProjectSettings(path),
+      (err: unknown) => {
+        if (!(err instanceof R2000ProjectSettingsError)) return false;
+        assert.match(err.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        assert.equal(err.projectPath, path);
+        return true;
+      },
+    );
+  });
+});
+
+test("ensureProjectSettings: malformed JSON throws naming the path and parse failure, file byte-identical after", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, "{ this is not valid json ");
+    const beforeHash = sha256(readFileSync(path));
+
+    assert.throws(
+      () => ensureProjectSettings(path),
+      (err: unknown) => {
+        if (!(err instanceof R2000ProjectSettingsError)) return false;
+        assert.match(err.message, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        assert.equal(err.projectPath, path);
+        return true;
+      },
+    );
+
+    const afterHash = sha256(readFileSync(path));
+    assert.equal(afterHash, beforeHash, "a parse-refusal must leave the file byte-identical");
+  });
+});
+
+test("ensureProjectSettings: a top-level JSON array throws rather than writing settings onto it", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify([1, 2, 3]));
+    assert.throws(() => ensureProjectSettings(path), R2000ProjectSettingsError);
+  });
+});
+
+test("ensureProjectSettings: a top-level JSON primitive throws rather than writing settings onto it", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(42));
+    assert.throws(() => ensureProjectSettings(path), R2000ProjectSettingsError);
+  });
+});
+
+test("ensureProjectSettings: every other key survives the rewrite unchanged (deep equality)", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    const before = makeFixture({ useIllegalOpcodes: false, system: R2000_SYSTEM_C64 }) as {
+      settings: { use_illegal_opcodes: boolean; system: string };
+      [key: string]: unknown;
+    };
+    writeFileSync(path, JSON.stringify(before));
+
+    const result = ensureProjectSettings(path);
+    assert.equal(result.changed, true);
+
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    const expectedAfter = structuredClone(before);
+    expectedAfter.settings.use_illegal_opcodes = true;
+    assert.deepEqual(after, expectedAfter);
+  });
+});
+
+// -- Non-vacuity pair: the forcing assertion must distinguish the real
+// implementation from a "forcing step removed" mutant, not pass either way.
+
+/**
+ * A test-only mutant of `ensureProjectSettings()`: performs the IDENTICAL
+ * read-parse-rewrite pass, including the system-mismatch refusal, but
+ * deliberately omits the `use_illegal_opcodes: true` force -- it writes back
+ * whatever `use_illegal_opcodes` it found (defaulting to `false` if absent).
+ * This exists SOLELY as the non-vacuity control for the sibling test's
+ * forcing assertion below and must never be exported or called from
+ * production code.
+ */
+function ensureProjectSettingsForcingRemoved(projectPath: string, opts: { system?: string } = {}): { changed: boolean } {
+  const expectedSystem = opts.system ?? R2000_SYSTEM_C64;
+  const parsed = JSON.parse(readFileSync(projectPath, "utf8")) as Record<string, unknown>;
+  const existingSettings =
+    typeof parsed.settings === "object" && parsed.settings !== null
+      ? (parsed.settings as Record<string, unknown>)
+      : undefined;
+  const foundSystem = existingSettings?.system;
+  if (foundSystem !== undefined && foundSystem !== expectedSystem) {
+    throw new R2000ProjectSettingsError(`mutant: settings.system mismatch`, { projectPath });
+  }
+  parsed.settings = {
+    ...(existingSettings ?? {}),
+    // Deliberately NOT forced -- this is the mutant under test.
+    use_illegal_opcodes: existingSettings?.use_illegal_opcodes === true,
+    system: expectedSystem,
+  };
+  writeFileSync(projectPath, JSON.stringify(parsed));
+  return { changed: true };
+}
+
+test("non-vacuity: the REAL ensureProjectSettings() leaves use_illegal_opcodes true", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(makeFixture({ useIllegalOpcodes: false, system: R2000_SYSTEM_C64 })));
+
+    ensureProjectSettings(path);
+
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(after.settings.use_illegal_opcodes, true, "real implementation must force the setting to true");
+  });
+});
+
+test("non-vacuity: the forcing-removed MUTANT leaves use_illegal_opcodes false, proving the assertion above is non-vacuous", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "p.regen2000proj");
+    writeFileSync(path, JSON.stringify(makeFixture({ useIllegalOpcodes: false, system: R2000_SYSTEM_C64 })));
+
+    ensureProjectSettingsForcingRemoved(path);
+
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(
+      after.settings.use_illegal_opcodes,
+      false,
+      "mutant control must NOT force the setting -- if this fails, the mutant no longer differs from the real " +
+        "implementation and the pair no longer proves anything",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
