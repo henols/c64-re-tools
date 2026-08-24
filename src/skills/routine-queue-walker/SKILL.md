@@ -206,6 +206,51 @@ the reason. Never report "no uncertain areas" or "nothing left" while a single
 `f_XXXX` or `a_XXXX` label is still auto-named or a queued routine is still
 uncommented — those must be listed by name for a human to pick up.
 
+## Phase 5 — measure the pass instead of asserting it finished
+
+A report that says "all routines documented" is a claim about the report, not
+about the program. Measure it. From the repository root:
+
+```
+node src/mcp/vice/vice-proxy.ts r2000 coverage <project>.regen2000proj
+```
+
+Add `--out coverage.json` to keep the machine-readable report, `--force` to
+overwrite one, and `--sample N` to widen the reproducibility sample. The verb
+reads the store through the same session everything else in this playbook uses
+and exits **0 even when the numbers are bad** — a low measurement is a result,
+not a failure. Non-zero means it could not read the project at all.
+
+**Run it three times:** once before Phase 2, so the pass has a starting point
+to be compared against; once at Phase 2.3's refresh point; and once at the end,
+after Phase 4's final save. The last run is what goes in the report.
+
+**Read the three numbers against each other. Never quote one of them alone.**
+There is deliberately no single "percent documented" figure, because one
+combined number lets a weak measure hide behind a strong one and makes the
+claim unfalsifiable:
+
+- **A high user fraction beside a large unreached count means the wrong things
+  were named.** Every label got a human name, but most of the image was never
+  reached by the descent walk from any seed — the queue was worked over the
+  easily-visible part of the program and the rest was never entered. Go back to
+  Phase 0 and find more entry points (chained IRQ vectors, dispatch tables),
+  not more labels.
+- **A large divergence means the store and the bytes disagree about what is
+  code.** Bytes the census reached as instructions that the store does not call
+  `Code` are places where Phase 1's classification is behind the actual control
+  flow. The reverse direction (the store calls it `Code`, the census never
+  reached it) is ordinary on an image with unreachable filler — read it, do not
+  chase it.
+- **A low distinct-comment ratio means the comments are filler.** Fifty
+  addresses carrying the same sentence counts once, not fifty times. That is
+  the number that catches a pass which renamed everything and explained
+  nothing.
+
+Anything the per-measure findings list names belongs in Phase 4's leftovers
+table, by address. A finding is a named defect in one named measure — it is
+never a rating, and there is no number to report as "the coverage".
+
 ## When something fails
 
 - A failed call is not a reason to drop a queue entry. Log the address, the

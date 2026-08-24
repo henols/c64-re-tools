@@ -1381,10 +1381,15 @@ test("verify: --entry is still accepted and reaches the .d64 entry lookup, not r
   });
 });
 
-test("the verb-options map agrees with USAGE's own per-verb option lists, for all seven verbs (IN-06)", () => {
+// The verb count here is a FOURTH count site the eighth verb moves, alongside
+// `R2000_CLI_VERB_FLOOR`, `r2000-verb-coverage.test.ts`'s `REAL_VERBS` and the
+// dispatch switch itself. Raised from 7 to 8 by plan 19-04 when `coverage`
+// landed. Kept as a hand-maintained literal on purpose: deriving it from
+// `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
+test("the verb-options map agrees with USAGE's own per-verb option lists, for all eight verbs (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 7, `expected exactly 7 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 8, `expected exactly 8 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -1410,6 +1415,7 @@ test("every verb's own documented options are still accepted, one assertion per 
     "--max-results": "10",
     "--provenance": "some-provenance.json",
     "--check": "",
+    "--sample": "4",
   };
   for (const [verb, options] of Object.entries(VERB_OPTIONS)) {
     const argv: string[] = [verb, "some.regen2000proj"];

@@ -29,15 +29,18 @@
 // by git so `scripts/package.sh`'s `git archive` includes it.
 
 /**
- * The measured true count of `r2000` CLI verbs as of plan 11.1-02:
- * `bootstrap`, `export-asm`, `export-lbl`, `gen-enums`, `import-lbl`,
- * `render-memmap`, `verify`. A future phase that adds an 8th verb to
- * `r2000-cli.ts`'s dispatch switch must raise this floor to the new true
- * count when it lands -- never lower it to make a regression pass (the
- * `extractedR2000.size >= 10` floor in `check-skill-tool-coverage.mjs` is
- * the precedent this mirrors).
+ * The measured true count of `r2000` CLI verbs as of plan 19-04:
+ * `bootstrap`, `coverage`, `export-asm`, `export-lbl`, `gen-enums`,
+ * `import-lbl`, `render-memmap`, `verify`. `coverage` is the 8th, added by
+ * plan 19-04 as COV-01's delivery path (the instrument in
+ * `src/mcp/vice/r2000-coverage.ts`, which nothing could run before that
+ * verb existed). A future phase that adds a 9th verb to `r2000-cli.ts`'s
+ * dispatch switch must raise this floor to the new true count when it lands
+ * -- never lower it to make a regression pass (the `extractedR2000.size >=
+ * 10` floor in `check-skill-tool-coverage.mjs` is the precedent this
+ * mirrors).
  */
-export const R2000_CLI_VERB_FLOOR = 7;
+export const R2000_CLI_VERB_FLOOR = 8;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

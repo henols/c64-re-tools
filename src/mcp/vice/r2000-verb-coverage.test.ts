@@ -28,7 +28,31 @@ const ROOT = join(HERE, "..", "..", ".."); // <root>
 const SKILLS_DIR = join(ROOT, "src", "skills");
 const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
 
-const REAL_VERBS = ["bootstrap", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
+/**
+ * The verbs `r2000-cli.ts`'s dispatch switch really has, hand-maintained on
+ * purpose. This is a FROZEN REGISTRY, not a convenience list: the real-source
+ * parse test below compares the live parse against it with `deepEqual`, so
+ * adding a verb to the switch without adding it here FAILS -- which is the
+ * entire point. Deriving this array from `parseR2000CliVerbs()` (the very
+ * function under test) would turn every assertion below into a tautology that
+ * passes no matter what the parser does. `coverage` was added by plan 19-04
+ * alongside `R2000_CLI_VERB_FLOOR`'s rise from 7 to 8; both counts move
+ * together, deliberately, because they measure the same fact.
+ */
+const REAL_VERBS = ["bootstrap", "coverage", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
+
+/**
+ * The verbs the two SYNTHETIC sources below happen to carry. Deliberately
+ * separate from `REAL_VERBS`: those sources are fixtures with their own fixed
+ * shapes (the planted-violation one exists to prove an 8th, undocumented case
+ * is caught; the commented-out one to prove a commented case is not counted),
+ * not reflections of the real dispatch switch. Before plan 19-04 the two lists
+ * coincided at seven entries and the comment-hygiene test reused `REAL_VERBS`;
+ * adding the real 8th verb separated them, and they must stay separated --
+ * editing a fixture to chase the real switch would destroy the property the
+ * fixture was written to prove.
+ */
+const SYNTHETIC_FIXTURE_VERBS = ["bootstrap", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
 
 /** Same file-set convention as `check-skill-tool-coverage.mjs`'s own
  * `walkSkills()`: every `.md`/`.mjs` file under `src/skills/`,
@@ -115,7 +139,7 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: r2000-cli.ts's dispatch switch yields exactly the 7 known verbs, never 'default'", () => {
+test("real-source parse: r2000-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
   const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
   const verbs = parseR2000CliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
@@ -147,13 +171,13 @@ test("planted violation: an 8th, genuinely new case is parsed and reported missi
 
 test("comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb", () => {
   const verbs = parseR2000CliVerbs(COMMENTED_OUT_CASE_SRC);
-  assert.deepEqual(verbs, [...REAL_VERBS].sort());
+  assert.deepEqual(verbs, [...SYNTHETIC_FIXTURE_VERBS].sort());
   assert.ok(!verbs.includes("block-commented-ghost"));
   assert.ok(!verbs.includes("line-commented-ghost"));
 });
 
 test("non-vacuity floor: R2000_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(R2000_CLI_VERB_FLOOR, 7);
+  assert.equal(R2000_CLI_VERB_FLOOR, 8);
   const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
   const verbs = parseR2000CliVerbs(src);
   assert.ok(verbs.length >= R2000_CLI_VERB_FLOOR);

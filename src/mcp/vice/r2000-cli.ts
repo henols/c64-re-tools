@@ -59,6 +59,21 @@ import { verifyProject } from "./r2000-verify.ts";
 import { generateEnums } from "./r2000-enum-gen.ts";
 import { exportLabels, importLabels } from "./r2000-symbols.ts";
 import { renderMemoryMap, checkRenderedMemoryMap } from "./r2000-memmap-render.ts";
+// The coverage instrument (COV-01/COV-02) plus the ONE authoritative
+// project-path validator and the ONE session-backed tool runner. `coverage`
+// adds NO child-process site of its own: every store read below goes through
+// `runR2000Tool()`, which routes into `r2000-session.ts`'s single held
+// regenerator2000 child for this project path (Rule A21) -- exactly the same
+// route `r2000-memmap-render.ts` already uses, and the reason
+// the frozen two-entry child-process-site registry (the `r2000-*-seam` guard
+// suite) is untouched by this verb (T-19-25). That registry's own guard scans
+// this file, so the two verbs of the child-launch family are deliberately not
+// written out here in prose either -- an acceptance check greps this source
+// for them and a mention would trip it, exactly as `r2000-coverage.ts`'s
+// header records for the path-translation module names.
+import { buildCoverageReport, coverageFindings } from "./r2000-coverage.ts";
+import type { CoverageReport, R2000BlockEntry, R2000Comment, R2000CrossReference, R2000Symbol } from "./r2000-coverage.ts";
+import { runR2000Tool, resolveStorePath } from "./r2000-tools.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 <verb>";
@@ -171,6 +186,26 @@ verbs:
       an EXISTING .regen2000proj and an EXISTING --provenance sidecar (this
       verb does not bootstrap from a raw input).
 
+  coverage <project> [--out FILE] [--force] [--sample N]
+      Measures how far an EXISTING .regen2000proj has actually been
+      reverse-engineered (COV-01/COV-02), through r2000-coverage.ts. Reads
+      the store's symbols, comments, blocks and per-label cross-references
+      over the one held session, and the project's own payload bytes, then
+      prints three separately named measures -- the structural byte census,
+      the two label figures, and the sampled reproducibility result -- plus
+      the comment-vacuity measure, the indirect-dispatch scan and the
+      divergence sub-report, each under its own heading with its own
+      numbers. Writes the JSON report to --out when given, refusing to
+      overwrite an existing file there unless --force is passed; --sample
+      overrides the reproducibility sample size. Exits non-zero ONLY for a
+      caller error or a store it could not read -- a low measurement is a
+      RESULT, never a failure, so a bad report still exits 0.
+      This verb deliberately reports separate numbers and never a single
+      combined figure: one aggregate is precisely what makes a coverage
+      claim unfalsifiable, because any one weak measure can be hidden by
+      averaging it against a strong one. Requires an EXISTING
+      .regen2000proj (this verb does not bootstrap from a raw input).
+
 .d64 input with no --entry named prints the directory listing and exits 2 --
 this CLI never guesses which entry to use (D-02).
 
@@ -270,6 +305,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "export-lbl": ["--out"],
   "import-lbl": [],
   "render-memmap": ["--provenance", "--out", "--check"],
+  coverage: ["--out", "--force", "--sample"],
 });
 
 /**
@@ -1039,6 +1075,368 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface CoverageParsedArgs {
+  positional: string[];
+  out?: string;
+  outMissingValue?: boolean;
+  force?: boolean;
+  sample?: number;
+  sampleRaw?: string;
+  sampleMissingValue?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for coverage -- exactly `--out`, `--force` and
+ * `--sample`. Same WR-08 posture as `parseRenderMemmapArgs()` above: an
+ * unimplemented flag is refused as `unknownOption`, and `--out`/`--sample`
+ * with a missing or flag-shaped value are refused through their own
+ * `*MissingValue` fields rather than silently swallowing the next token. */
+function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
+  const positional: string[] = [];
+  let out: string | undefined;
+  let outMissingValue = false;
+  let force = false;
+  let sample: number | undefined;
+  let sampleRaw: string | undefined;
+  let sampleMissingValue = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        outMissingValue = true;
+      } else {
+        out = value;
+        i++;
+      }
+    } else if (a === "--sample") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        sampleMissingValue = true;
+      } else {
+        sampleRaw = value;
+        sample = Number.parseInt(value, 10);
+        i++;
+      }
+    } else if (a === "--force") {
+      force = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
+}
+
+/**
+ * Hard ceiling on how many per-label `r2000_get_cross_references` lookups one
+ * coverage run performs. `r2000_get_cross_references` answers ONE address per
+ * call, so an unbounded loop over a fully auto-labelled 64K image would issue
+ * thousands of round trips through the held session. The bound is explicit and
+ * its effect is PRINTED whenever it bites (COV-02: a measure computed over
+ * less than the whole population must say so, never quietly report a smaller
+ * number as if it were the whole answer).
+ */
+const MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS = 512;
+
+/** One curated read through the session runner, with its JSON answer parsed.
+ * Mirrors `r2000-memmap-render.ts`'s own `queryR2000Json()` rather than
+ * introducing a second convention -- and, like it, adds no child-launch site
+ * of its own: the child process is owned by `r2000-session.ts` alone. */
+async function queryR2000Json<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  const result = await runR2000Tool(name, args);
+  if (result.isError) {
+    throw new Error(`${name} failed: ${result.content[0]?.text ?? "(no message)"}`);
+  }
+  return JSON.parse(result.content[0]!.text) as T;
+}
+
+function hexAddr(address: number): string {
+  return `$${address.toString(16).padStart(4, "0")}`;
+}
+
+function ratio(value: number | null): string {
+  return value === null ? "UNAVAILABLE" : value.toFixed(3);
+}
+
+function addressList(addresses: readonly number[], cap = 12): string {
+  if (addresses.length === 0) return "none";
+  const shown = addresses.slice(0, cap).map(hexAddr).join(", ");
+  return addresses.length > cap ? `${shown}, ... (${addresses.length} in all)` : shown;
+}
+
+interface CrossReferenceBound {
+  requested: number;
+  performed: number;
+}
+
+/**
+ * Renders the report as separately-headed sections.
+ *
+ * THE ONE RULE THIS FUNCTION EXISTS TO HOLD (COV-01, and the reason the
+ * rendering lives here rather than being a generic pretty-printer): print
+ * every measure's own numbers under its own heading, and never compute a
+ * combined figure at the point of display. `r2000-coverage.ts`'s report
+ * object carries no aggregate -- if one ever appears, it will be because
+ * somebody averaged, summed or weighted these numbers HERE. Do not. The
+ * ratios below measure different populations (labels, comments, sampled
+ * addresses); they are not commensurable and combining them would produce a
+ * number that means nothing while reading like a verdict.
+ */
+function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound): void {
+  const s = report.structural;
+  const classSum = s.reachedAsInstruction + s.tableEntry + s.referencedAsData + s.unreached;
+
+  console.log(`coverage: ${report.project.path}`);
+  console.log(
+    `  origin ${hexAddr(report.project.origin)}, ${report.project.size} byte(s), payload ` +
+      (report.project.payloadDecoded ? "decoded" : `UNAVAILABLE -- ${report.project.reason ?? "reason not recorded"}`),
+  );
+  console.log(`  schema version ${report.schemaVersion}, generated ${report.generatedAt}`);
+  console.log("");
+
+  console.log("  MEASURE 1 of 3 -- structural byte census (raw bytes plus the seed set only; the store cannot move it)");
+  console.log(`    reached-as-instruction : ${s.reachedAsInstruction}`);
+  console.log(`    table-entry            : ${s.tableEntry}`);
+  console.log(`    referenced-as-data     : ${s.referencedAsData}`);
+  console.log(`    unreached              : ${s.unreached}`);
+  console.log(`    the four classes sum to ${classSum} of ${s.rangeBytes} censused byte(s)`);
+  console.log(
+    `    linear-sweep decodable : ${s.linearSweepDecodable} byte(s) -- reported BESIDE the census, never added to it; ` +
+      "decodability is not evidence of code",
+  );
+  console.log(`    seeds: ${s.seeds.length} (${addressList(s.seeds)}); descent steps ${s.steps}; truncated: ${s.truncated ? "YES" : "no"}`);
+  console.log("");
+
+  console.log("  MEASURE 2 of 3 -- label figures (two of them, both printed; neither is folded into the other)");
+  console.log(
+    `    kind ratio over non-System labels: ${report.labels.kindRatio.user} user / ${report.labels.kindRatio.auto} auto ` +
+      `-> user fraction ${ratio(report.labels.kindRatio.userFraction)}`,
+  );
+  console.log(
+    `    auto-prefix names remaining      : ${report.labels.autoPrefixNamesRemaining} at ${addressList(report.labels.autoPrefixNameAddresses)}`,
+  );
+  console.log(`    System labels excluded           : ${report.labels.systemExcluded}`);
+  console.log(
+    `    disqualified by the multi-caller rule: ${report.labels.excludedByMultiCallerRule.length} at ` +
+      `${addressList(report.labels.excludedByMultiCallerRule)}`,
+  );
+  console.log("");
+
+  const repro = report.reproducibility;
+  console.log("  MEASURE 3 of 3 -- sampled reproducibility (the bytes route versus the store route; neither reads the other's input)");
+  console.log(
+    `    sampled ${repro.sampled}, agreed ${repro.agreed}, disagreed ${repro.disagreed} -> agreement rate ${ratio(repro.agreementRate)}`,
+  );
+  console.log(`    sample rule: ${repro.sampleRule}`);
+  console.log(`    sampled addresses: ${addressList(repro.addresses)}`);
+  for (const c of repro.comparisons) {
+    console.log(`      ${hexAddr(c.address)}  bytes=${c.fromBytes}  store=${c.fromStore}  ${c.agreed ? "agree" : "DISAGREE"}`);
+  }
+  console.log(
+    `    multi-caller labels documented without naming a caller: ${repro.multiCallerUndocumented.count} at ` +
+      `${addressList(repro.multiCallerUndocumented.addresses)}`,
+  );
+  if (repro.reason) console.log(`    reason: ${repro.reason}`);
+  console.log("");
+
+  const vac = report.commentVacuity;
+  console.log("  comment vacuity (its own measure -- kept out of the three above, not averaged into them)");
+  console.log(`    commented addresses : ${vac.commentedAddresses}`);
+  console.log(`    distinct comments   : ${vac.distinctComments} -> distinct-comment ratio ${ratio(vac.distinctCommentRatio)}`);
+  console.log(
+    `    graded              : ${vac.gradedAddresses} graded, ${vac.unknownGradedAddresses} [unknown] -> graded fraction ${ratio(vac.gradedFraction)}`,
+  );
+  console.log(`    banned-generic      : ${vac.bannedGenericAddresses.length} at ${addressList(vac.bannedGenericAddresses)}`);
+  console.log(`    near-miss grade token: ${vac.malformedGradeAddresses.length} at ${addressList(vac.malformedGradeAddresses)}`);
+  if (vac.reason) console.log(`    reason: ${vac.reason}`);
+  console.log("");
+
+  const d = report.dispatch;
+  console.log("  indirect-dispatch scan (feeds the census its extra seeds; reported as counts, never graded)");
+  console.log(
+    `    indirect jumps ${d.indirectJumps.length}, multi-entry tables ${d.multiEntryTables.length}, ` +
+      `split lo/hi tables ${d.splitTables.length}, stack-return dispatch ${d.stackReturnDispatch.length}`,
+  );
+  console.log(
+    `    discovered targets ${d.discoveredTargets.length}, table-entry addresses ${d.tableEntryAddresses.length}, ` +
+      `truncated: ${d.truncated ? "YES" : "no"}`,
+  );
+  console.log("");
+
+  const div = report.divergence;
+  console.log("  divergence sub-report (census versus the store's own block table -- a COMPARISON, not a measure of completeness)");
+  if (!div.blocksSupplied) {
+    console.log(`    UNAVAILABLE -- ${div.reason ?? "reason not recorded"}`);
+  } else {
+    console.log(`    census reached as instructions but the store does not call Code : ${div.censusCodeStoreNotCode} byte(s)`);
+    console.log(`    the store calls Code but the census never reached             : ${div.storeCodeCensusUnreached} byte(s)`);
+    console.log(`    covered by no block entry at all                              : ${div.uncoveredByStore} byte(s)`);
+    console.log(`    compared over ${div.comparedBytes} byte(s)`);
+  }
+  console.log(`    ${div.note}`);
+  console.log("");
+
+  if (bound.performed < bound.requested) {
+    console.log(
+      `  NOTE -- cross-reference lookups were bounded at ${bound.performed} of ${bound.requested} non-System label(s) ` +
+        `(ceiling ${MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS}). The multi-caller rule saw only the lowest ${bound.performed} ` +
+        "addresses, so its count is a floor, not the whole population.",
+    );
+    console.log("");
+  }
+
+  const verdict = coverageFindings(report);
+  console.log("  per-measure findings (one named measure each -- this list is not a rating and carries no number)");
+  if (verdict.clean) {
+    console.log("    none -- every measure is above its own threshold");
+  } else {
+    for (const f of verdict.findings) console.log(`    [${f.measure}] ${f.reason}`);
+  }
+  console.log("");
+  console.log(
+    "  Read the numbers against each other, never as one figure: a high user fraction beside a large unreached count " +
+      "means the wrong things were named, and a large divergence means the store and the bytes disagree about what is code.",
+  );
+}
+
+/**
+ * `coverage <project> [--out FILE] [--force] [--sample N]` -- COV-01's
+ * delivery path: the instrument from `r2000-coverage.ts`, run against a real
+ * project through the existing session seam.
+ *
+ * Two properties this function must keep:
+ *   - NO NEW CHILD-LAUNCH SITE (T-19-25). Every store read goes through
+ *     `runR2000Tool()` and therefore through `r2000-session.ts`'s single held
+ *     child for this project path. This file must never gain a direct
+ *     child-process launch call of any kind for the coverage route.
+ *   - NO SECOND PATH VALIDATOR (T-19-22). The project argument is validated
+ *     only by `resolveStorePath()`, the one authoritative resolver, which
+ *     already enforces the `.regen2000proj` extension and workspace
+ *     containment including through symlinks.
+ *
+ * The exit code is 0 for any report it managed to build, however poor the
+ * numbers are -- a bad score is a result, not a failure. Non-zero is reserved
+ * for a caller error (bad path, bad option, refused overwrite) and for a store
+ * it could not read or a payload it could not decode.
+ */
+async function cmdCoverage(rest: string[]): Promise<number> {
+  const { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption } = parseCoverageArgs(rest);
+
+  if (unknownOption) {
+    console.error(`coverage: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("coverage: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (sampleMissingValue) {
+    console.error("coverage: --sample requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  const project = positional[0];
+  if (!project) {
+    console.error("coverage: usage: coverage <project> [--out FILE] [--force] [--sample N]");
+    return 1;
+  }
+  if (sample !== undefined && (!Number.isInteger(sample) || sample <= 0)) {
+    console.error(`coverage: --sample must be a positive integer, got "${sampleRaw}"`);
+    return 1;
+  }
+
+  // T-19-22: the ONE authoritative validator, never a second hand-rolled one.
+  let projectPath: string;
+  try {
+    projectPath = resolveStorePath(project);
+  } catch (err) {
+    console.error(`coverage: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(projectPath)) {
+    console.error(`coverage: project file not found: ${projectPath}`);
+    return 1;
+  }
+
+  if (out && !refuseOverwrite(out, force, "coverage")) {
+    return 1;
+  }
+
+  let symbols: R2000Symbol[];
+  let comments: R2000Comment[];
+  let blocks: R2000BlockEntry[];
+  const crossReferences: R2000CrossReference[] = [];
+  let bound: CrossReferenceBound;
+  try {
+    symbols = await queryR2000Json<R2000Symbol[]>("r2000_get_symbols", { project: projectPath });
+    comments = await queryR2000Json<R2000Comment[]>("r2000_get_comments", { project: projectPath });
+    blocks = await queryR2000Json<R2000BlockEntry[]>("r2000_get_blocks", { project: projectPath });
+
+    // Cross-references are per-address, so only the labels the multi-caller
+    // rule can actually act on are looked up: System labels are excluded from
+    // every label figure already, so paying a round trip for each would buy
+    // nothing.
+    const lookupAddresses = [
+      ...new Set(
+        (Array.isArray(symbols) ? symbols : [])
+          .filter((s) => s && String(s.kind ?? "") !== "System" && String(s.kind ?? "") !== "Platform")
+          .map((s) => s.address),
+      ),
+    ].sort((a, b) => a - b);
+    const performed = lookupAddresses.slice(0, MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS);
+    for (const address of performed) {
+      const callers = await queryR2000Json<number[]>("r2000_get_cross_references", { project: projectPath, address });
+      crossReferences.push({ address, callers: Array.isArray(callers) ? callers : [] });
+    }
+    bound = { requested: lookupAddresses.length, performed: performed.length };
+  } catch (err) {
+    console.error(`coverage: ${errMsg(err)}`);
+    return 1;
+  }
+
+  let report: CoverageReport;
+  try {
+    report = buildCoverageReport({
+      projectPath,
+      symbols,
+      comments,
+      blocks,
+      crossReferences,
+      ...(sample !== undefined ? { sampleSize: sample } : {}),
+    });
+  } catch (err) {
+    console.error(`coverage: ${errMsg(err)}`);
+    return 1;
+  }
+
+  printCoverageReport(report, bound);
+
+  if (out) {
+    try {
+      writeFileSync(out, JSON.stringify(report, null, 2) + "\n");
+    } catch (err) {
+      console.error(`coverage: could not write ${out}: ${errMsg(err)}`);
+      return 1;
+    }
+    console.log(`coverage: wrote ${out} (schema version ${report.schemaVersion})`);
+  }
+
+  if (!report.project.payloadDecoded) {
+    // Not a low measurement -- an unreadable payload means every byte-side
+    // measure above was computed over nothing. Reported as the caller-facing
+    // failure it is, AFTER the report, so the reason is on screen (COV-02).
+    console.error(`coverage: the project's payload was UNAVAILABLE -- ${report.project.reason ?? "reason not recorded"}`);
+    return 1;
+  }
+  return 0;
+}
+
 /**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -1083,6 +1481,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return await cmdImportLbl(rest);
       case "render-memmap":
         return await cmdRenderMemmap(rest);
+      case "coverage":
+        return await cmdCoverage(rest);
       default:
         console.error(`r2000: unknown verb "${verb}"\n`);
         console.log(USAGE);
