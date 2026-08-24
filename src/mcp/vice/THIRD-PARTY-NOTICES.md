@@ -112,9 +112,53 @@ same terms and a downstream consumer has one set of obligations rather than
 two. The Apache-2.0 §4(b) modification-notice obligation would in any case be
 discharged by the "ADAPTED, NOT VERBATIM" statement and the named deviations
 in every per-file header, so the election costs nothing in disclosure — the
-modification notice is present either way. The MIT permission notice and
-copyright above travel inside every absorbed file's header, which is what
-ships in both published tarballs.
+modification notice is present either way.
+
+MIT's own inclusion condition is discharged here by reproduction rather
+than by assertion: the upstream permission notice and copyright are
+reproduced in full, byte-for-byte, in **Upstream MIT permission notice (regenerator2000)**
+below. Each absorbed file additionally carries its own per-file
+`ATTRIBUTION (ABS-02)` header naming the source repository, the source path,
+the pinned commit, the sha256 of the upstream bytes, the upstream licence and
+this project's election — that header is what survives a consumer copying a
+single playbook out of a package. The absorbed skill files themselves are
+packed by `@henols/c64-re-tools` only: this package, `@henols/vice-mcp`, packs
+no skill file at all (compare the two `files[]` lists), which is precisely why
+the notice is reproduced in this document rather than relied on to arrive
+inside an absorbed header.
+
+## Upstream MIT permission notice (regenerator2000)
+
+Reproduced below, byte-for-byte, is `LICENSE-MIT` as it stands in the
+regenerator2000 repository at the pinned commit
+`493f840418f1450a342bb220c2fe3d2585dd0525` — 1072 bytes, sha256
+`e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b`. MIT's own
+condition is that this notice be included in all copies or substantial
+portions of the Software, so it is reproduced here rather than described.
+
+```text
+MIT License
+
+Copyright (c) 2026 Ricardo Quesada
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Reference-only cross-checks (no code or data taken)
 

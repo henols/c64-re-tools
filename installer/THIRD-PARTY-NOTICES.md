@@ -64,7 +64,44 @@ incorporated prose and its host carry identical terms and a downstream
 consumer inherits one set of obligations rather than two. The Apache-2.0
 §4(b) modification-notice obligation is discharged either way by the
 "ADAPTED, NOT VERBATIM" statement and the named deviations in every per-file
-header, so the election costs nothing in disclosure.
+header, so the election costs nothing in disclosure. MIT's inclusion condition
+is discharged by reproduction: the upstream permission notice and copyright
+appear in full in the section below. This package packs the absorbed playbooks
+themselves — `skills/` is in its `files[]` — so the notice and every per-file
+attribution header both ship inside this tarball.
+
+## Upstream MIT permission notice (regenerator2000)
+
+Reproduced below, byte-for-byte, is `LICENSE-MIT` as it stands in the
+regenerator2000 repository at the pinned commit
+`493f840418f1450a342bb220c2fe3d2585dd0525` — 1072 bytes, sha256
+`e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b`. MIT's own
+condition is that this notice be included in all copies or substantial
+portions of the Software, so it is reproduced here rather than described.
+
+```text
+MIT License
+
+Copyright (c) 2026 Ricardo Quesada
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Runtime dependency
 
