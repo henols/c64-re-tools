@@ -120,7 +120,7 @@ respawning the binary per tool call. Byte-identity is explicitly not the
 acceptance bar; behavioural equivalence in VICE is.
 
 - [x] **Phase 18: Persistent Session and Tool Surface** - A regenerator2000 session survives many tool calls in one working session, and the curated surface covers what absorbed procedures need
-- [x] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
+- [ ] **Phase 19: Absorbed Procedures and the Coverage Instrument** - Upstream's analyze procedures become this project's own skills, and coverage is measured — never asserted — before the decomposition sweep runs
 - [ ] **Phase 20: Decomposition to Closure** - A committed synthetic fixture is fully decomposed: nothing `Undefined`, every entry point named, every reference documented, every hardware write an enum
 - [ ] **Phase 21: Rebuildable Source and the Reassembly Gate** - Annotated projects export as symbol-only, subsystem-split ACME source, gated by clean reassembly and a hazard report before any rebuild work runs on top
 - [ ] **Phase 22: Equivalence and Modifiability** - The rebuild is proven behaviourally identical and demonstrably modifiable in VICE, via a comparator extended for a mode it has never run in
