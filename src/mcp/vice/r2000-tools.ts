@@ -1,32 +1,48 @@
 #!/usr/bin/env node
 // r2000-tools.ts -- the ONE authoritative place in this repo for the curated
-// r2000_* tool surface: which 17 of regenerator2000's 28 MCP tools this
-// project advertises, the allow-list gate (including its D-33 batch
-// recursion), project-path validation, and the runner that drives one
-// r2000-mcp-client.ts session per call.
+// r2000_* tool surface: which 19 curated regenerator2000 MCP tools (of the
+// 28 upstream offers) this project advertises, the allow-list gate
+// (including its D-33 batch recursion), project-path validation, and the
+// runner that drives the SHARED, long-lived regenerator2000 session
+// `r2000-session.ts`'s `runInR2000Session()` owns (Rule A21 -- the D-17/D-18
+// per-call-lifecycle reversal, plan 18-03; no longer one
+// `r2000-mcp-client.ts` session per call).
 //
 // WHY THIS MODULE EXISTS (D-16/D-18): the annotation store is reachable only
 // through a CURATED subset of regenerator2000's own tool surface, not a
-// 28-tool passthrough -- every tool here earns its place by serving one of
-// this phase's four named criteria (see 11-05-PLAN.md's objective table).
-// Excluded, each for a recorded reason: the TUI-shaped tools
-// (`jump_to_address`, `get_disassembly_cursor`, `read_selected`,
-// `toggle_splitter`) have no criterion; `undo`/`redo` are useless under
-// D-17's per-call lifecycle (history dies with the spawned process);
-// `get_address_details` is excluded by D-32 (see below); and
-// `unpack_binary`, `read_region`, `search_memory`, `set_immediate_format`
-// have no criterion in this phase.
+// 28-tool passthrough -- every tool here earns its place by serving a named
+// criterion (11-05-PLAN.md's objective table for the original four; SURF-01/
+// SURF-02, plan 18-05, for `r2000_read_region` and
+// `r2000_get_address_details`). Excluded, each for a recorded reason: the
+// TUI-shaped cursor trio (`get_disassembly_cursor`, `jump_to_address`,
+// `read_selected`) is HELD, not merely unproven (D18-26) -- `r2000_read_region`
+// now answers "read this routine" directly by range, making the trio largely
+// redundant; a real caller appearing in Phase 19's absorption diff is what
+// would justify adding one, additively. `toggle_splitter` has no criterion.
+// `undo`/`redo` earn no place under this surface's own discipline -- a
+// curated tool must serve a named criterion, and neither does; their
+// original justification (useless under D-17's per-call lifecycle, since
+// history died with the spawned process) no longer applies now that a
+// session persists across calls (Rule A21), but persistence alone is not by
+// itself a reason to curate them. `unpack_binary`, `search_memory`,
+// `set_immediate_format` have no criterion in this phase.
+// `r2000_read_region` IS curated (SURF-01, D18-24/D18-25): a routine read at
+// an address range with a documented cap, instead of exporting the whole
+// program. `r2000_get_address_details` IS curated (SURF-02, D-36
+// superseding D-32) as a client-side composition -- see
+// `composeAddressDetails()` below -- that never calls upstream's own
+// same-named, defective tool.
 //
-// WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: the 17 curated
+// WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: the 19 curated
 // `ToolDefinition`s (`R2000_TOOL_DEFINITIONS`), the allow-list
 // (`CURATED_R2000_TOOLS`) and its enforcement (`assertCuratedTool()`,
 // including the batch-recursion gate), the caller-supplied project-path
 // validation (`resolveStorePath()`), and the runner (`runR2000Tool()`) that
-// drives r2000-mcp-client.ts. No other module may hand-list a curated tool
-// name, hand-validate an r2000 project path, or call
-// `r2000-mcp-client.ts` directly -- `vice-proxy.ts` (plan 11-05 Task 2)
-// imports `R2000_TOOL_DEFINITIONS`/`runR2000Tool` from here and nothing
-// else.
+// drives `r2000-session.ts`'s shared session. No other module may hand-list
+// a curated tool name, hand-validate an r2000 project path, or call
+// `r2000-mcp-client.ts`/`r2000-session.ts` directly -- `vice-proxy.ts` (plan
+// 11-05 Task 2) imports `R2000_TOOL_DEFINITIONS`/`runR2000Tool` from here and
+// nothing else.
 //
 // MEASURED: `r2000_batch_execute`'s partial-failure semantics
 // (`handler.rs:506-542`, read at execution time against the installed

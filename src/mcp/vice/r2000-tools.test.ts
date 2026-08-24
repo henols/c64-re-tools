@@ -40,10 +40,11 @@ import { __resetR2000SessionForTest } from "./r2000-session.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// D-18: the exact 17-member curated set, pinned by a hardcoded literal list
-// so a name added to only one of CURATED_R2000_TOOLS/R2000_TOOL_DEFINITIONS
-// (or a name lost from either) fails here rather than passing vacuously
-// because the two happen to be derived from the same array today.
+// D-18, extended by SURF-01/SURF-02 (plan 18-05): the exact 19-member
+// curated set, pinned by a hardcoded literal list so a name added to only
+// one of CURATED_R2000_TOOLS/R2000_TOOL_DEFINITIONS (or a name lost from
+// either) fails here rather than passing vacuously because the two happen
+// to be derived from the same array today.
 // ---------------------------------------------------------------------------
 
 const EXPECTED_CURATED_NAMES = [
@@ -105,7 +106,7 @@ test("CURATED_R2000_TOOLS's first 17 members are unchanged, in the same order, a
   assert.deepEqual(
     CURATED_R2000_TOOLS.slice(0, 17),
     EXPECTED_FIRST_17_NAMES,
-    "the original 17 curated entries must keep their exact relative order -- new entries are appended, never inserted",
+    "the original pre-SURF-01/SURF-02 entries must keep their exact relative order -- new entries are appended, never inserted",
   );
 });
 
@@ -698,23 +699,43 @@ test(
     assert.equal(JSON.parse(before.content[0]!.text).length, 0, "expected no user labels before r2000_set_label_name");
 
     // r2000_set_label_name is a mutating tool -- it saves internally, inside
-    // its own session, before that session exits (D-17's per-call lifecycle).
-    // No separate r2000_save_project call is needed (or wanted here: since
+    // the SHARED session r2000-session.ts owns (Rule A21, D-17/D-18 reversed
+    // by plan 18-03), before this tool call resolves to its caller. No
+    // separate r2000_save_project call is needed (or wanted here: since
     // nothing else would be pending, an immediately-following standalone
     // r2000_save_project call would correctly report an unchanged hash --
     // see r2000-tools.ts's own comment above READ_ONLY_R2000_TOOLS for why).
     const setLabel = await runR2000Tool("r2000_set_label_name", { project: projectPath, address: origin, name: "entry_point" });
     assert.equal(setLabel.isError, false, `r2000_set_label_name failed: ${JSON.stringify(setLabel)}`);
 
-    // A FRESH session (runR2000Tool spawns a brand-new child per call, D-17)
-    // -- proves the internal auto-save actually persisted the label to disk,
-    // not merely to the now-exited child's own memory.
+    // Under a HELD session (plan 18-03's D-17/D-18 reversal), a SECOND
+    // runR2000Tool() call against the SAME project reuses the same live
+    // child -- it no longer proves disk persistence by itself the way a
+    // brand-new per-call child once did (that WAS this test's own reasoning
+    // before plan 18-05; corrected here rather than left stale). Disk
+    // persistence itself is proven independently by
+    // r2000-session.test.ts's D18-09 scenario 1 (a SIGKILL delivered the
+    // instant a mutating call resolves, then a straight-off-disk reread).
+    // This assertion instead reads the .regen2000proj file DIRECTLY off
+    // disk (readFileSync/JSON.parse), in addition to the tool call below, so
+    // it proves what its own name claims rather than relying on a lifecycle
+    // this phase retired.
+    const onDiskAfterSave = JSON.parse(readFileSync(projectPath, "utf8")) as {
+      labels?: Record<string, Array<{ name: string }>>;
+    };
+    const onDiskLabelsAtOrigin = onDiskAfterSave.labels?.[String(origin)] ?? [];
+    assert.ok(
+      onDiskLabelsAtOrigin.some((l) => l.name === "entry_point"),
+      `expected entry_point to be present in the on-disk .regen2000proj file at address ${origin}, got ${JSON.stringify(onDiskAfterSave.labels)}`,
+    );
+
+    // The curated surface itself must also read it back correctly.
     const afterSave = await runR2000Tool("r2000_get_symbols", { project: projectPath, kind: "user" });
     assert.equal(afterSave.isError, false, `r2000_get_symbols (after) failed: ${JSON.stringify(afterSave)}`);
     const afterSymbols = JSON.parse(afterSave.content[0]!.text) as Array<{ name: string }>;
     assert.ok(
       afterSymbols.some((s) => s.name === "entry_point"),
-      `expected entry_point to survive into a fresh session, got ${JSON.stringify(afterSymbols)}`,
+      `expected entry_point to be readable via the curated surface, got ${JSON.stringify(afterSymbols)}`,
     );
 
     // r2000_get_cross_references: this fixture's own STA $D020 (border colour) is a real reference.

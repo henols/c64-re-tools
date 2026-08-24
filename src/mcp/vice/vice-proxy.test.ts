@@ -530,7 +530,7 @@ test("tools/list reads the committed snapshot with no emulator", async () => {
     const tools = resp.result.tools;
     // Both fixture tools, PLUS the always-present synthetic
     // vice_result_continue tool (task 3), vice_recycle (plan 01.3-01),
-    // vice_diagnose (plan 01.3-02), and the 17 curated r2000_* tools (plan
+    // vice_diagnose (plan 01.3-02), and the 19 curated r2000_* tools (plan
     // 11-05, registered proxy-locally and unconditionally, independent of
     // any manifest) -- tools/list never omits any synthetic or r2000_* tool.
     assert.equal(
@@ -591,7 +591,7 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
         // "Empty tools array" means empty of MANIFEST-derived tools -- the
         // always-present synthetic tools (vice_result_continue, task 3;
         // vice_recycle, plan 01.3-01; and vice_diagnose, plan 01.3-02) and
-        // the 17 curated r2000_* tools (plan 11-05) are not sourced from the
+        // the 19 curated r2000_* tools (plan 11-05) are not sourced from the
         // manifest at all, so a broken manifest can't take any of them down
         // with it.
         assert.deepEqual(
@@ -855,7 +855,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
     assert.deepEqual(
       new Set(actualNames),
       new Set(expectedOrder),
-      "the wire tools/list name set must be exactly the manifest (minus DENY_LIST) plus the three synthetics plus the 17 curated r2000_* tools -- no tool missing, none extra"
+      "the wire tools/list name set must be exactly the manifest (minus DENY_LIST) plus the three synthetics plus the 19 curated r2000_* tools -- no tool missing, none extra"
     );
     // (a) ORDER parity -- manifest order preserved, synthetics appended next
     // in their own fixed order, then the r2000_* loop registration last,
