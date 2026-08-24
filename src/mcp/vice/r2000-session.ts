@@ -90,7 +90,63 @@
 // AND the file this module last observed is still the file on disk."
 import { statSync } from "node:fs";
 import { ensureProjectSettings } from "./r2000-project.ts";
-import type { R2000Call, R2000Session } from "./r2000-mcp-client.ts";
+import {
+  R2000ChildExitError,
+  R2000RestartBudgetExhaustedError,
+  R2000TimeoutError,
+  type R2000Call,
+  type R2000Session,
+} from "./r2000-mcp-client.ts";
+// The three imports above are error CLASSES (values, needed for `instanceof`
+// below) and light-weight type aliases -- never the spawn primitive itself.
+// This is not a violation of D18-02's "never spawn a child process itself":
+// importing r2000-mcp-client.ts's class/type declarations costs no child
+// process (its module body defines constants, classes and functions --
+// nothing runs at import time), and `openR2000Session()` -- the one call
+// that actually spawns -- remains reached exclusively through the dynamic
+// `await import("./r2000-mcp-client.ts")` further down in this file.
+
+// -- Restart policy (D18-10 through D18-14, plan 18-04) --------------------
+//
+// A crashed or wedged child must be a recoverable, attributable event, never
+// a hang. Three behaviours, layered on top of the tracer's original
+// "discard on any error" policy (see the module header's FAILURE POLICY IN
+// THIS TRACER note above -- that note now describes plan 18-03's baseline,
+// superseded by the finer-grained classification below):
+//   - A death BETWEEN two calls is invisible and lossless: the next call
+//     transparently opens a fresh child and runs (D18-11).
+//   - A death MID-CALL fails loud (R2000ChildExitError) and is never
+//     retried, for read-only or mutating calls alike (D18-12).
+//   - A wedge (no answer within the call timeout) fails loud
+//     (R2000TimeoutError), and the wedged handle is killed through its own
+//     `ChildProcess` so the NEXT call is never issued into it (D18-13).
+// Both a mid-call death and a killed wedge count as ONE crash each,
+// toward ONE counter, scoped to "this working session, this project path"
+// (D18-14). The counter is intentionally the sole gate: it is never reset
+// by a successful call (see `crashCount`'s own comment below for why), only
+// by an explicit test reset or a project-path change.
+export const DEFAULT_R2000_RESTART_BUDGET = 3;
+
+/**
+ * The number of child deaths tolerated, for one project path within one
+ * working session, before `runInR2000Session()` refuses to respawn again
+ * (throwing `R2000RestartBudgetExhaustedError`). Overridable per process via
+ * the `R2000_RESTART_BUDGET` environment variable, read AT CALL TIME (never
+ * frozen at module load) -- matching `WithR2000SessionOptions.bin`'s own
+ * read-at-call-time rationale in `r2000-mcp-client.ts`, since this repo's own
+ * test files share one module cache per `node --test` process and need to
+ * point several different budgets at the same code within that one process.
+ * `3` is chosen because a genuinely broken project or binary fails
+ * immediately and repeatably (the budget is exhausted almost at once,
+ * refusing loudly rather than retrying forever), while a healthy session
+ * that loses a child to one isolated crash should not be penalised for it.
+ */
+function currentRestartBudget(): number {
+  const raw = process.env.R2000_RESTART_BUDGET;
+  if (raw === undefined) return DEFAULT_R2000_RESTART_BUDGET;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_R2000_RESTART_BUDGET;
+}
 
 // -- Module-level mutable state -------------------------------------------
 
@@ -103,10 +159,54 @@ let currentProjectPath: string | null = null;
 let currentProjectMtimeMs: number | null = null;
 let inFlight = false;
 
+/**
+ * `true` exactly when `currentProjectPath` names a project whose held
+ * session has crashed (between calls or mid-call) and has not yet been
+ * reopened by a subsequent call. `currentSession` is `null` whenever this is
+ * `true` -- the two are never both meaningful at once -- but this flag
+ * outlives the null-out: it is what lets `runInR2000Session()` tell "no
+ * session has ever been opened for this path" apart from "a session for
+ * this path died and is awaiting the budget check", which the mere
+ * nullness of `currentSession` cannot distinguish on its own.
+ */
+let sessionDead = false;
+
+/**
+ * Counts child deaths (mid-call exits AND timeout-killed wedges alike -- see
+ * the "Restart policy" note above) for `currentProjectPath`, within this
+ * working session. Reset in EXACTLY TWO places: `__resetR2000SessionForTest()`
+ * and the project-path-change eviction branch of `runInR2000Session()` below
+ * -- deliberately NEVER on a successful call. An alternating crash-then-
+ * success pattern (crash, respawn, succeed, crash, respawn, succeed, ...)
+ * would otherwise never exhaust the budget no matter how many times it
+ * repeated, which is exactly the invisible respawn loop D18-14 exists to
+ * surface -- a project or binary that crashes every other call would read
+ * as merely slow, forever, instead of eventually refusing loudly.
+ */
+let crashCount = 0;
+
 /** Test-seam-only counters -- never read by production code. See
  * `__r2000SessionStateForTest()` below. */
 let openCount = 0;
 let killCount = 0;
+
+/**
+ * Fires when a HELD session's child exits, for any reason, at any time --
+ * between calls with nothing pending, or mid-call with a request still
+ * unanswered (D18-10). Bound to the specific `R2000Session` instance that
+ * was opened (captured by closure at the call site below), so a real exit
+ * event that arrives AFTER this module has already moved on from that
+ * instance -- e.g. `R2000TimeoutError`'s own handling below already killed
+ * and cleared it -- is a no-op rather than a double count. Never respawns
+ * from inside this listener: the respawn decision belongs to the NEXT call,
+ * so a session nobody is using never spawns a child in the background.
+ */
+function handleSessionExit(session: R2000Session): void {
+  if (currentSession !== session) return;
+  currentSession = null;
+  sessionDead = true;
+  crashCount++;
+}
 
 /** The project file's current `mtimeMs`, or `null` if it cannot be stat'd
  * (e.g. deleted out from under a held session) -- never thrown, since a
@@ -130,6 +230,7 @@ async function discardCurrentSession(): Promise<void> {
   currentSession = null;
   currentProjectPath = null;
   currentProjectMtimeMs = null;
+  sessionDead = false;
   if (!stale) return;
   try {
     await stale.close();
@@ -156,13 +257,44 @@ export async function runInR2000Session<T>(
   projectPath: string,
   fn: (call: R2000Call) => Promise<T>
 ): Promise<T> {
-  if (currentSession && currentProjectPath === projectPath) {
-    const observedMtime = projectMtimeMsOrNull(projectPath);
-    if (observedMtime !== null && observedMtime !== currentProjectMtimeMs) {
-      await discardCurrentSession();
-    }
-  } else if (currentSession && currentProjectPath !== projectPath) {
+  if (currentProjectPath !== null && currentProjectPath !== projectPath) {
+    // Project-path change: full eviction, AND the crash counter is scoped
+    // to "this project path" (D18-14) -- it resets here, one of exactly two
+    // reset sites (the other is __resetR2000SessionForTest()). Covers a
+    // dead-but-not-yet-reopened slot too (sessionDead with currentSession
+    // already null): there is nothing live to close, but the old path's
+    // crash history must not leak onto the new path either.
     await discardCurrentSession();
+    crashCount = 0;
+  } else if (currentProjectPath === projectPath) {
+    if (sessionDead) {
+      // A held session for THIS path died since the last call. Transparent
+      // respawn is lossless (D18-08: every mutating call already saved
+      // before it resolved) -- UNLESS the restart budget for this path is
+      // already exhausted, in which case respawning again would hide a
+      // genuinely broken project or binary behind what reads as slowness
+      // (D18-14).
+      const limit = currentRestartBudget();
+      if (crashCount > limit) {
+        throw new R2000RestartBudgetExhaustedError(
+          `regenerator2000 has crashed ${crashCount} time(s) for "${projectPath}" within this working ` +
+            `session, exceeding the restart budget of ${limit} -- refusing to respawn again. Set ` +
+            `R2000_RESTART_BUDGET to override, or close/reopen the session (a project-path change also ` +
+            `resets this counter).`,
+          { crashCount, limit }
+        );
+      }
+      // Discard the dead handle (already null -- the exit listener cleared
+      // it) and take the open path below, so this call runs against a
+      // fresh child (D18-11).
+      sessionDead = false;
+      currentProjectMtimeMs = null;
+    } else if (currentSession) {
+      const observedMtime = projectMtimeMsOrNull(projectPath);
+      if (observedMtime !== null && observedMtime !== currentProjectMtimeMs) {
+        await discardCurrentSession();
+      }
+    }
   }
 
   if (!currentSession) {
@@ -187,9 +319,15 @@ export async function runInR2000Session<T>(
       // is this call, and it always runs before any child owns the file.
       await ensureProjectSettings(projectPath);
       const { openR2000Session } = await import("./r2000-mcp-client.ts");
-      currentSession = await openR2000Session(projectPath);
+      const opened = await openR2000Session(projectPath);
+      // Bound to THIS session instance by closure -- see handleSessionExit()'s
+      // own doc comment for why that binding is what keeps a later, already-
+      // handled exit event from double-counting (D18-10).
+      opened.onExit(() => handleSessionExit(opened));
+      currentSession = opened;
       currentProjectPath = projectPath;
       currentProjectMtimeMs = projectMtimeMsOrNull(projectPath);
+      sessionDead = false;
       openCount++;
     } finally {
       inFlight = false;
@@ -209,10 +347,35 @@ export async function runInR2000Session<T>(
     }
     return result;
   } catch (err) {
-    if (currentSession === session) {
-      currentSession = null;
-      currentProjectPath = null;
-      currentProjectMtimeMs = null;
+    // Classified, not swallowed into a blanket "discard on any error"
+    // (plan 18-03's original tracer-only policy, superseded here). A
+    // tool-level R2000ProtocolError says nothing about the child's health --
+    // falling through this if/else chain with no branch taken leaves the
+    // session in place deliberately.
+    //
+    // NO per-call liveness probe is added anywhere in this function, by
+    // design (D18-13's own scope note): `vice-probe.ts`'s fragility exists
+    // for an HTTP-mode "accept() lies while the event loop is blocked"
+    // shape (see its own header) -- a stdio child has no accept step that
+    // can lie the same way, and probing before every call would reintroduce
+    // most of the round-trip cost the persistent session was built to
+    // remove. `R2000TimeoutError` below IS this module's liveness signal.
+    if (err instanceof R2000ChildExitError) {
+      // handleSessionExit() (this session's own onExit listener, fired
+      // synchronously inside r2000-mcp-client.ts's exit handler, BEFORE
+      // this rejection's continuation ever runs) has already cleared
+      // `currentSession`, set `sessionDead`, and incremented `crashCount`
+      // for this exact exit. Nothing left to do here except never retry
+      // (D18-12) and let the caller see the named error unchanged.
+    } else if (err instanceof R2000TimeoutError) {
+      // The child may still be alive but wedged -- no exit event will ever
+      // fire on its own, so THIS call site is the one place responsible for
+      // killing it (through its own retained handle, never a bare pid) and
+      // recording the crash, so the NEXT call is not issued into the same
+      // wedge (D18-13).
+      if (currentSession === session) {
+        currentSession = null;
+      }
       try {
         session.killSync();
         killCount++;
@@ -220,6 +383,8 @@ export async function runInR2000Session<T>(
         // Best effort -- the call already failed; a failed kill does not
         // change the outcome the caller sees.
       }
+      sessionDead = true;
+      crashCount++;
     }
     throw err;
   }
@@ -249,13 +414,17 @@ export function closeR2000SessionSync(trigger: string): boolean {
 }
 
 /** Test-only snapshot of this module's state. Never imported by production
- * code -- see the `__`-prefix convention this repo's other test seams use. */
+ * code -- see the `__`-prefix convention this repo's other test seams use.
+ * `crashCount`/`dead` added by plan 18-04 (D18-14) so tests can assert on
+ * the restart policy's own counters directly, rather than on timing. */
 export function __r2000SessionStateForTest(): {
   open: boolean;
   projectPath: string | null;
   pid: number | undefined;
   openCount: number;
   killCount: number;
+  crashCount: number;
+  dead: boolean;
 } {
   return {
     open: currentSession !== null,
@@ -263,16 +432,22 @@ export function __r2000SessionStateForTest(): {
     pid: currentSession?.pid,
     openCount,
     killCount,
+    crashCount,
+    dead: sessionDead,
   };
 }
 
 /** Test-only reset: closes any live session (best effort) and zeroes the
  * counters, so one `node --test` process can run several session scenarios
  * in sequence without a child leaking between them. Never imported by
- * production code. */
+ * production code. Also one of the restart policy's exactly two crash-
+ * counter reset sites (D18-14) -- the other is the project-path-change
+ * eviction branch inside `runInR2000Session()`. */
 export async function __resetR2000SessionForTest(): Promise<void> {
   await discardCurrentSession();
   inFlight = false;
   openCount = 0;
   killCount = 0;
+  crashCount = 0;
+  sessionDead = false;
 }

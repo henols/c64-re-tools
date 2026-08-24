@@ -250,6 +250,34 @@ export class R2000SaveNotPersistedError extends R2000ClientError {
   }
 }
 
+export interface R2000RestartBudgetExhaustedErrorOptions extends R2000ClientErrorOptions {
+  crashCount: number;
+  limit: number;
+}
+
+/**
+ * Thrown by `r2000-session.ts`'s `runInR2000Session()` when a project path's
+ * held session has crashed more times than `DEFAULT_R2000_RESTART_BUDGET` (or
+ * its `R2000_RESTART_BUDGET` override) tolerates within one working session
+ * (D18-14). `crashCount` and `limit` are dedicated PUBLIC fields precisely so
+ * a caller -- or a test -- can read the observed count and the configured
+ * bound programmatically, without parsing this error's message text. Exists
+ * to turn an invisible respawn loop (a genuinely broken project or binary
+ * that dies, is transparently respawned, dies again, forever) into a loud,
+ * attributable refusal instead of something that merely reads as slowness.
+ */
+export class R2000RestartBudgetExhaustedError extends R2000ClientError {
+  crashCount: number;
+  limit: number;
+
+  constructor(message: string, { crashCount, limit, ...rest }: R2000RestartBudgetExhaustedErrorOptions) {
+    super(message, rest);
+    this.name = "R2000RestartBudgetExhaustedError";
+    this.crashCount = crashCount;
+    this.limit = limit;
+  }
+}
+
 // -- The wire shape ---------------------------------------------------
 
 interface JsonRpcRequest {
@@ -330,6 +358,16 @@ export interface R2000Session {
   readonly exited: boolean;
   close(): Promise<void>;
   killSync(): void;
+  /**
+   * Registers `listener` to fire exactly once, whenever this session's
+   * child exits, for ANY reason -- between calls with nothing pending, or
+   * mid-call with a request still unanswered alike (D18-10). A single
+   * listener is enough: there is exactly one owner per session
+   * (`r2000-session.ts`'s single-slot lifecycle). Registering a second
+   * listener replaces the first, mirroring `EventEmitter.once()`'s own
+   * fire-at-most-once shape without pulling in a second dependency for it.
+   */
+  onExit(listener: (info: { code: number | null; stderr: string }) => void): void;
 }
 
 /**
@@ -378,6 +416,7 @@ export async function openR2000Session(
   let nextId = 1;
   let childExited = false;
   let exitCode: number | null = null;
+  let exitListener: ((info: { code: number | null; stderr: string }) => void) | null = null;
 
   const exitPromise = new Promise<void>((resolve) => {
     child.once("exit", (code) => {
@@ -395,6 +434,13 @@ export async function openR2000Session(
         );
       }
       pending.clear();
+      // Surfaced to the session owner AFTER the pending-request rejections
+      // above, so a mid-call caller's own rejection is always settled
+      // before the owner (r2000-session.ts) learns about the exit and
+      // updates its crash bookkeeping (D18-10) -- a between-calls exit has
+      // no pending requests to reject, so this is the only notification
+      // that ever fires for that case.
+      exitListener?.({ code, stderr: stderrBuf });
       resolve();
     });
   });
@@ -571,6 +617,9 @@ export async function openR2000Session(
     },
     close,
     killSync,
+    onExit(listener) {
+      exitListener = listener;
+    },
   };
 }
 
