@@ -163,11 +163,11 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 18-06-PLAN.md — The coarse FIFO mutex with a bounded wait, the lost-update planted violation, and the concurrency answer Phase 19 inherits
+- [x] 18-06-PLAN.md — The coarse FIFO mutex with a bounded wait, the lost-update planted violation, and the concurrency answer Phase 19 inherits
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 18-07-PLAN.md — The settings no-revert round trip through a live session, and the phase gate run for real with committed evidence
+- [x] 18-07-PLAN.md — The settings no-revert round trip through a live session, and the phase gate run for real with committed evidence
 
 Notes:
 

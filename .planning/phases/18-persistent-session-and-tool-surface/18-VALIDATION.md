@@ -3,9 +3,9 @@ phase: 18
 slug: persistent-session-and-tool-surface
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-24
 ---
 
@@ -67,9 +67,9 @@ Requirement-level map seeded from RESEARCH.md. Task IDs are bound by
 
 ## Wave 0 Requirements
 
-- [ ] `src/mcp/vice/r2000-session.test.ts` — new file covering SESS-02 / SESS-03 / SESS-04. Reuse `r2000-mcp-client.test.ts`'s `STUB_SOURCE` stub-server harness for protocol-shape assertions (extend its `STUB_MODE` set with the new session-reuse scenarios), and gate live scenarios through `r2000-test-gate.ts`, exactly as `r2000-tools.test.ts`'s gated integration test already does.
-- [ ] No new shared fixture files required beyond the existing `probe-illegal.prg` fixture (`.planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg`) already used by `r2000-tools.test.ts`'s gated test.
-- [ ] Framework install: none — `node --test` is already wired.
+- [x] `src/mcp/vice/r2000-session.test.ts` — new file covering SESS-02 / SESS-03 / SESS-04. Reuse `r2000-mcp-client.test.ts`'s `STUB_SOURCE` stub-server harness for protocol-shape assertions (extend its `STUB_MODE` set with the new session-reuse scenarios), and gate live scenarios through `r2000-test-gate.ts`, exactly as `r2000-tools.test.ts`'s gated integration test already does.
+- [x] No new shared fixture files required beyond the existing `probe-illegal.prg` fixture (`.planning/phases/09-the-assumption-probe-go-no-go/evidence/fixture/probe-illegal.prg`) already used by `r2000-tools.test.ts`'s gated test.
+- [x] Framework install: none — `node --test` is already wired.
 
 ---
 
@@ -85,11 +85,11 @@ Requirement-level map seeded from RESEARCH.md. Task IDs are bound by
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated by the Phase 18 gate on 2026-08-24.
