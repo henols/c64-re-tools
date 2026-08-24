@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 18
 current_phase_name: Persistent Session and Tool Surface
 status: executing
-stopped_at: Completed 18-04-PLAN.md
-last_updated: "2026-08-24T10:52:22.799Z"
+stopped_at: Completed 18-05-PLAN.md
+last_updated: "2026-08-24T11:30:26.847Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 18 execution started
-state_head: ceda5b4d169ca64fa1b561f3be11cc9e2383fde6
+state_head: ed142bac98121f82aec65d152473a9bcc9a71aad
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -67,7 +67,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 18 (Persistent Session and Tool Surface) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-08-24 — Phase 18 execution started
 
@@ -175,6 +175,7 @@ Last activity: 2026-08-24 — Phase 18 execution started
 | Phase 18 P02 | 30min | 2 tasks | 2 files |
 | Phase 18 P03 | 105min | 3 tasks | 8 files |
 | Phase 18 P04 | 90min | 3 tasks | 8 files |
+| Phase 18 P05 | 75min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -819,8 +820,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T10:52:22.779Z
-Stopped at: Completed 18-04-PLAN.md
+Last session: 2026-08-24T11:30:26.826Z
+Stopped at: Completed 18-05-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
