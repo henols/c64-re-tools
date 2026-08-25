@@ -309,3 +309,61 @@ red at `55 !== 7` against a pre-19-08 shadow tree).
 `nyquist_compliant` therefore stays `true`: every requirement still carries at least one executed
 command **and** at least one planted-violation demonstration. The two exceptions above are
 individual rows, not requirements, and both are named here rather than absorbed silently.
+
+## Round-4 gap closure → executed evidence (2026-08-25, plan 19-15)
+
+`19-VERIFICATION.md` reopened SC4 / COV-01 a third time, on a **different shape** in the same
+function. This section is an **extension**: no row above was altered, deleted or renumbered, and
+every command below was run in this working tree with the output that is quoted.
+
+The scope of this round is the **defect class** (19-CONTEXT.md D-01/D-02), not a REVIEW finding id.
+The invariant under demonstration is D-02:
+
+> A branch of `hasDispatchContext()` may return true only on a **proven data-flow link** from the
+> two reconstructed table bases to the dispatch mechanism — never on the mere presence of a shape
+> within the window.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01, COV-02 | 19-15 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the newly committed `fp3-unlinked-push-idiom` / `fp3b-immediate-push-idiom` pair, at report level through `buildCoverageReport()` | **Observed RED first**, before the predicate was touched: `not ok 60 - a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it`, **75 pass / 1 fail of 76**. Pre-fix the fixture reported `reachedAsInstruction=31`, `tableEntry=16`, `splitTables=1`, `tableEntryAddresses=16` and eight `provenDispatchTargets` at `$0840`…`$0847`, with `classAt($0840)="reached-as-instruction"`. **Post-fix: `reached=15` against the `code_size: 15` its own store declares, `splitTables=[]`, `provenDispatchTargets()=[]`, `tableEntryAddresses=[]`, `classAt($0840)="unreached"`, `splitTableCandidates=1`.** The twin reports `reached=15` and `splitTableCandidates=0`. **76 pass, 0 fail** |
+| COV-01 | 19-15 | `cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs` twice, then `git status --porcelain fixtures/coverage` | the twelve committed control fixtures | `make-coverage-fixtures: wrote 12 control fixtures` on **both** runs and the porcelain output **empty** — the generator's determinism contract still holds across the two new fixture directories |
+| COV-01 | 19-15 | `cd src/mcp/vice && npx tsc --noEmit` | the whole `src/mcp/vice` TypeScript surface | **exit 0** after the `hasDispatchContext()` signature change (`SplitOrientation`, `DispatchPairing`, the fourth `pairing` parameter, and its one class-3 call site) |
+| COV-01 | 19-15 | `node scripts/check-npm-packages.mjs` | both packed tarballs | **exit 0** — `@henols/vice-mcp` 75 files, `@henols/c64-re-tools` 34 files / 7 skills. The two new fixture directories do **not** leak into either tarball |
+
+### The gate watched FAIL — the round-4 planted violation
+
+A gate nobody has watched fail is not known to be a gate (D-07). The branch-A tightening was
+reverted **in the working tree only**, to its exact pre-fix form — presence of two `$48` bytes and
+a `$60` byte anywhere in the window, ignoring the pairing entirely — and the suite re-run.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 15 | `hasDispatchContext()` branch A (`stack-return-push-idiom`), asserted at report level by `r2000-coverage.test.ts` over `fp3-unlinked-push-idiom` | branch A reverted to `sawPha >= 2 && opcode === 0x60` scanned over the whole window, ignoring the `pairing` parameter | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 76 / # pass 75 / # fail 1`. The single red is `not ok 60 - a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it`, failing on its FIRST assertion with `actual` `[{ at: 2064, loBase: 2096, hiBase: 2104, entries: 8, orientationResolved: true, targets: [2112…2119] }]` against `expected` `[]`. Direct measurement of the planted predicate over the same fixture: `reached=31`, `tableEntry=16`, `splitTables=1`, `tableEntryAddresses=16`, `provenDispatchTargets = $0840,$0841,$0842,$0843,$0844,$0845,$0846,$0847`, `classAt($0840)="reached-as-instruction"` | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **76 pass, 0 fail**, and `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 — the demonstration left no trace in the committed source |
+
+**The observed pre-fix numbers match the round-3 verification's own measurement exactly** —
+`reachedAsInstruction=31`, `tableEntry=16`, `splitTables=1`, eight proven targets at
+`$0840`…`$0847`, `classAt($0840)="reached-as-instruction"`. There is no difference to record as a
+finding, and the fixture was not adjusted to reproduce a remembered number: it was generated from
+the blocker payload verbatim and then measured.
+
+**What the plant did NOT red is as informative as what it did.** Under the planted predicate the
+liveness positive control and the window-edge witness both still passed. That is correct and
+expected — the loose branch accepts the linked payload too, and the edge payload's `rts` sits
+outside the window under either predicate. Exactly one test discriminates the two predicates, and
+it is the one authored for that purpose.
+
+### Liveness — the half a decline-everything tightening would fail
+
+"The gate declines everything" is ruled out by measurement rather than by argument. A tightened
+branch that can never return true is dead code wearing a sufficient-shape label, which is a worse
+defect than the loose branch it replaced.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01 | 19-15 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `PUSH_IDIOM_LINKED` — `lda $0830,x : pha : sta $fb : lda $0838,x : pha : sta $fc : rts`, FP3's table and target layout with the two pushes moved to each load's own successor | **PASS.** `scan.splitTables.length === 1`, `scan.stackReturnDispatch.length === 0` (class 4 declines the window, so the class-3 route is genuinely the one under test), `provenDispatchTargets(scan)` deep-equals `[$0840…$0847]`, and `census.reachedAsInstruction` **exceeds** the payload's own derived 13-byte prologue — a relation, not a pinned count. The tightened branch fires |
+| COV-01 | 19-15 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `SPLIT_TABLE` and `STACK_RETURN`, the two pre-existing positive controls, re-asserted in the SAME test as the tightening | **PASS.** `scanOf(SPLIT_TABLE).splitTables.length === 1` with `$c00d` still in `provenDispatchTargets()`; `scanOf(STACK_RETURN).stackReturnDispatch.length === 1` with a non-empty proven-target set. The zero-page-vector shape and the class-4 pass both still PROVE |
+| COV-01 | 19-15 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the `reachesGateInterior()` witness pair | **PASS.** `reachesGateInterior(payloadOf("fp3-unlinked-push-idiom"), $0810, "stack-return-push-idiom")` is `true` while `reachesGateInterior(PUSH_IDIOM_WINDOW_EDGE, $0810, "stack-return-push-idiom")` is `false` — FP3 is inside the class-3 route and its window-edge twin is outside it, so the interior predicate is not a machine that answers true for everything |
+
+**Test-count movement:** 71 → 76 over this plan. `+2` report-level and liveness tests, `+1`
+witness-pair test, and `+2` from the data-driven per-fixture tests that iterate the fixture
+directory (10 → 12). `COMMITTED_CONTROL_FIXTURES` moved 10 → 12 with them.
