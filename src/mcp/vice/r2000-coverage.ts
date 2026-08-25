@@ -174,7 +174,12 @@ export const MAX_TABLE_ENTRIES = 64;
 
 /** How many decoded instructions a split-table pairing may span. Two indexed
  * loads further apart than this are not treated as a lo/hi pair. */
-const SPLIT_TABLE_WINDOW = 8;
+/** How many decoded instructions the class-3 pairing window spans, and the
+ * `reach` every `hasDispatchContext()` / `resolveSplitOrientation()` call is
+ * given. EXPORTED so the gate-interior witness in `r2000-coverage.test.ts` can
+ * ask its question over the same window the predicate rules on, rather than
+ * over a number typed into a test that could silently drift from this one. */
+export const SPLIT_TABLE_WINDOW = 8;
 
 // ---------------------------------------------------------------------------
 // Input shapes -- exactly what the curated read tools return

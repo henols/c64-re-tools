@@ -38,8 +38,10 @@ import {
   BANNED_GENERIC_COMMENTS,
   COVERAGE_REPORT_KEYS,
   COVERAGE_SCHEMA_VERSION,
+  DISPATCH_CONTEXT_SHAPES,
   MAX_TABLE_ENTRIES,
   R2000CoverageInputError,
+  SPLIT_TABLE_WINDOW,
   buildCoverageReport,
   classAt,
   computeCommentVacuity,
@@ -776,6 +778,26 @@ test("dispatch class 4: the stack-return dispatch idiom is found even though it 
 // `discovered=8`. Every test in this section asserts that the instrument
 // DECLINES something. A heuristic with a positive control and no negative one
 // is not evidence that it declines anything.
+//
+// THE HALF THAT WAS STILL MISSING (`19-REVIEW.md` CR-04). Asserting that the
+// instrument declines SOMETHING is not the same as asserting it declines the
+// thing it must. Every negative control this section shipped in 19-08 --
+// `ORDINARY_INDEXED_COPY`, `fp1`, `fp1b` -- carries no zero-page store at all,
+// and the positive control `SPLIT_TABLE` carries a real `jmp ($00fb)`. The two
+// bracket the gate from the OUTSIDE. Nothing exercised its INTERIOR: a vector
+// that IS genuinely built and then consumed by something other than a jump,
+// which is how every 16-bit pointer on a 6502 is built. A negative control
+// built from the outside of the predicate it constrains is not a control at
+// all, and that is why a 2517-passing suite concealed a reproduced false
+// positive that inflated the headline census from 17 to 33 bytes.
+//
+// Section 8c below turns that sentence into a mechanism: every negative
+// dispatch control DECLARES which side of the predicate it is on, the
+// declaration is CHECKED by a witness that decodes the payload rather than
+// accepted as a claim, every shape the predicate accepts must be claimed by an
+// interior declaration, and the declared shape count is tied to the predicate's
+// own source text. A future tightening therefore cannot be verified the way
+// this one was.
 // ---------------------------------------------------------------------------
 
 test("dispatch class 3 DECLINES an ordinary two-table indexed read loop", () => {
@@ -1248,6 +1270,309 @@ test("FP2b earns its place: without a committed twin, the interior control's cen
   assert.equal(indexed.size, 0x40, "the interior control is a 64-byte payload");
   assert.equal(reportFor(FP2_INTERIOR).dispatch.splitTableCandidates.length, 1, `${FP2_INTERIOR}: the ungated lo/hi pairing must still be REPORTED as advisory`);
   assert.equal(twin.dispatch.splitTableCandidates.length, 0, `${FP2_IMMEDIATE}: the immediate twin has no indexed pair at all`);
+});
+
+// ---------------------------------------------------------------------------
+// 8c. Which SIDE of the predicate each negative control is on (CR-04)
+//
+// THE ROOT CAUSE, IN ONE SENTENCE: a negative control built from the OUTSIDE of
+// the predicate it constrains is not a control, and that is why a 2517-passing
+// suite concealed CR-04 -- every negative control the dispatch gate had carried
+// no zero-page store at all, so none of them was ever inside the region the
+// gate had to rule on.
+//
+// The mechanism below makes a repeat of that fail the suite:
+//
+//   * `reachesGateInterior()` is a WITNESS. It decodes a payload with the same
+//     `decode()` the scan uses and answers whether the payload satisfies the
+//     PRE-GATE sufficient condition for a named shape -- deliberately NOT
+//     whether the gate accepts it. "Is this payload inside the region the gate
+//     must rule on?" is a different question from "does the gate accept it?",
+//     and conflating the two is how an outside-bracketing control passes for an
+//     interior one.
+//   * `GATE_INTERIOR_DECLARATIONS` records, per negative dispatch control, the
+//     shape id whose interior it reaches -- or `OUTSIDE`, explicitly.
+//   * The tests check every declaration mechanically, require every shape in
+//     `DISPATCH_CONTEXT_SHAPES` to be claimed by an interior declaration, and
+//     tie the declared shape COUNT to the predicate's own source text. A shape
+//     added without an interior control, or a sufficient branch added without a
+//     declared shape, reds the suite BY NAME.
+// ---------------------------------------------------------------------------
+
+/** The explicit value a declaration uses to record that its control brackets
+ * the predicate from the OUTSIDE rather than reaching any shape's interior.
+ * A distinguishable sentinel, never `null` or the empty string, so an omitted
+ * position cannot read as a deliberate one. */
+const OUTSIDE = "OUTSIDE-BRACKETING" as const;
+
+/**
+ * Does `bytes` satisfy the PRE-GATE sufficient condition named by `shapeId`?
+ *
+ * The question is deliberately NOT "does `hasDispatchContext()` accept this?".
+ * It is "is this payload inside the region the gate has to rule on?" -- the
+ * question an interior control must answer yes to and an outside-bracketing one
+ * no to. Both start from the class-3 pairing precondition the gate itself
+ * requires, so a payload with no same-register indexed load pair is outside
+ * every shape by construction.
+ *
+ * THROWS on a shape id it carries no predicate for, and the message names the
+ * id. Never returns a bare boolean for an unknown shape: returning `true` would
+ * make the shape-coverage test pass VACUOUSLY for any newly minted id, so the
+ * whole mechanism could be satisfied without anyone writing a real interior
+ * predicate -- the same vacuity class this section exists to prevent. Returning
+ * `false` would let a row dodge the check by declaring a shape that does not
+ * exist. Throwing is the only behaviour that makes minting a shape id without
+ * an interior predicate a test failure.
+ */
+function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string): boolean {
+  if (shapeId !== "stack-return-push-idiom" && shapeId !== "zeropage-vector-jumped-through") {
+    throw new Error(
+      `reachesGateInterior() has no interior predicate for shape id "${shapeId}". A shape listed in ` +
+        `DISPATCH_CONTEXT_SHAPES must have a predicate here that says what its INTERIOR is, or a control could be ` +
+        `declared as its interior control without anything checking the claim.`,
+    );
+  }
+
+  const insns = decode(bytes, origin);
+  const indexRegister = (i: number): "x" | "y" | null => {
+    const m = insns[i]!.mode;
+    if (m === "absolute_x" || m === "zeropage_x") return "x";
+    if (m === "absolute_y" || m === "zeropage_y") return "y";
+    return null;
+  };
+  const isIndexedLoad = (i: number): boolean => {
+    const insn = insns[i]!;
+    return !!insn.operand && insn.mnemonic.startsWith("ld") && indexRegister(i) !== null;
+  };
+
+  for (let i = 0; i < insns.length; i++) {
+    if (!isIndexedLoad(i)) continue;
+    const end = Math.min(insns.length, i + SPLIT_TABLE_WINDOW + 1);
+
+    // The class-3 pairing precondition: a SECOND indexed load through the SAME
+    // register inside the window. Without it the gate is never consulted, so
+    // the payload is outside every shape.
+    let paired = false;
+    for (let j = i + 1; j < end; j++) {
+      if (isIndexedLoad(j) && indexRegister(j) === indexRegister(i)) {
+        paired = true;
+        break;
+      }
+    }
+    if (!paired) continue;
+
+    if (shapeId === "stack-return-push-idiom") {
+      // The interior: `pha` ... `pha` ... `rts` inside the window.
+      let sawPha = 0;
+      for (let k = i; k < end; k++) {
+        if (insns[k]!.opcode === 0x48) sawPha++;
+        if (insns[k]!.opcode === 0x60 && sawPha >= 2) return true;
+      }
+      continue;
+    }
+
+    // `zeropage-vector-jumped-through`. The interior is the CONSTRUCTION alone
+    // -- two zero-page store targets differing by exactly one inside the window
+    // -- with NO requirement that anything jump through it. That is precisely
+    // the region the pre-CR-04 gate accepted wholesale and the fixed gate must
+    // now rule on case by case.
+    const zpStores: number[] = [];
+    for (let k = i; k < end; k++) {
+      const insn = insns[k]!;
+      if (!insn.operand) continue;
+      if (!["sta", "stx", "sty"].includes(insn.mnemonic)) continue;
+      if (insn.operand.role !== "zeropage") continue;
+      zpStores.push(insn.operand.value);
+    }
+    for (const a of zpStores) {
+      for (const b of zpStores) {
+        if (b - a === 1) return true;
+      }
+    }
+  }
+  return false;
+}
+
+interface GateInteriorDeclaration {
+  /** The in-suite payload constant name, or the fixture directory name. */
+  control: string;
+  /** The committed or in-suite bytes, and the origin they sit at. */
+  bytes: () => { bytes: Uint8Array; origin: number };
+  /** The shape id whose interior this control reaches, or `OUTSIDE`. */
+  position: string;
+  /** Why this control exists, in one clause. Documentary. */
+  note: string;
+}
+
+/**
+ * One row per negative dispatch control this suite carries, with its POSITION
+ * relative to the predicate it constrains. Populated honestly: three of these
+ * bracket the gate from the outside and always did, and saying so plainly is
+ * what makes the two interior rows mean something.
+ */
+const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.freeze([
+  {
+    control: "ORDINARY_INDEXED_COPY",
+    bytes: () => ({ bytes: ORDINARY_INDEXED_COPY, origin: ORDINARY_ORIGIN }),
+    position: OUTSIDE,
+    note: "an ordinary two-table indexed copy loop with NO zero-page store at all -- it never enters the region the gate rules on",
+  },
+  {
+    control: FP_INDEXED,
+    bytes: () => ({ bytes: payloadOf(FP_INDEXED), origin: loadFixture(FP_INDEXED).store.origin }),
+    position: OUTSIDE,
+    note: "the committed form of the same copy loop; no zero-page store, so outside by the same reasoning",
+  },
+  {
+    control: FP_IMMEDIATE,
+    bytes: () => ({ bytes: payloadOf(FP_IMMEDIATE), origin: loadFixture(FP_IMMEDIATE).store.origin }),
+    position: OUTSIDE,
+    note: "the immediate twin: not even an indexed load pair, so outside the class-3 pairing precondition itself",
+  },
+  {
+    control: FP2_IMMEDIATE,
+    bytes: () => ({ bytes: payloadOf(FP2_IMMEDIATE), origin: loadFixture(FP2_IMMEDIATE).store.origin }),
+    position: OUTSIDE,
+    note: "the interior control's twin. It BUILDS the same zero-page vector, but its two loads are immediate, so there is no indexed pair to rule on -- which is exactly why it is a census baseline and not a second interior control",
+  },
+  {
+    control: FP2_INTERIOR,
+    bytes: () => ({ bytes: payloadOf(FP2_INTERIOR), origin: loadFixture(FP2_INTERIOR).store.origin }),
+    position: "zeropage-vector-jumped-through",
+    note: "THE INTERIOR CONTROL. Two indexed loads through one register, two consecutive zero-page stores inside the window, a resolvable orientation, eight decodable targets -- and it dispatches nowhere (CR-04)",
+  },
+  {
+    control: "STACK_RETURN",
+    bytes: () => ({ bytes: STACK_RETURN, origin: DISPATCH_ORIGIN }),
+    position: "stack-return-push-idiom",
+    note: "reaches the push idiom's interior, and class 3 must still DECLINE it because class 4 runs first and claims the window (WR-01)",
+  },
+]);
+
+test("every gate-interior declaration is mechanically TRUE, not a claim in a table", () => {
+  for (const row of GATE_INTERIOR_DECLARATIONS) {
+    const { bytes, origin } = row.bytes();
+    if (row.position === OUTSIDE) {
+      for (const shapeId of DISPATCH_CONTEXT_SHAPES) {
+        assert.equal(
+          reachesGateInterior(bytes, origin, shapeId),
+          false,
+          `${row.control} is DECLARED as bracketing the predicate from the outside, but it reaches the interior of shape ` +
+            `"${shapeId}". Either the declaration is wrong, or this control is more useful than its row claims -- and a control ` +
+            `whose declared position is a claim rather than a fact is exactly the defect CR-04 turned on.`,
+        );
+      }
+      continue;
+    }
+    assert.ok(
+      reachesGateInterior(bytes, origin, row.position),
+      `${row.control} is DECLARED as the interior control for shape "${row.position}", but the witness says the payload does not ` +
+        `satisfy that shape's pre-gate sufficient condition. An interior control that is not actually inside the predicate ` +
+        `bracketes it from the outside, which is not a control at all.`,
+    );
+  }
+});
+
+test("every shape the dispatch predicate accepts is claimed by an interior declaration", () => {
+  // The standing mechanism. Adding a sufficient shape to DISPATCH_CONTEXT_SHAPES
+  // without a negative control that reaches its interior reds the suite BY NAME
+  // -- which is the exact failure the 19-08 tightening did not have.
+  const claimed = new Set(GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE).map((r) => r.position));
+  for (const shapeId of DISPATCH_CONTEXT_SHAPES) {
+    assert.ok(
+      claimed.has(shapeId),
+      `dispatch shape "${shapeId}" is listed in DISPATCH_CONTEXT_SHAPES but NO row of GATE_INTERIOR_DECLARATIONS claims its ` +
+        `interior. A shape listed there is the decision to treat it as proof of code; that decision needs a control that reaches ` +
+        `INSIDE it, not one that brackets it from the outside. Claimed shapes: ${[...claimed].join(", ") || "(none)"}.`,
+    );
+  }
+  // And the reverse direction, so a stale row cannot satisfy a shape that no
+  // longer exists.
+  for (const shapeId of claimed) {
+    assert.ok(
+      DISPATCH_CONTEXT_SHAPES.includes(shapeId),
+      `GATE_INTERIOR_DECLARATIONS claims the interior of shape "${shapeId}", which DISPATCH_CONTEXT_SHAPES does not list -- a ` +
+        `stale declaration standing in for a shape the predicate no longer accepts`,
+    );
+  }
+});
+
+test("NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as the zero-page vector shape's interior control", () => {
+  // Without this, the mechanism above could be satisfied by a witness that
+  // returned true for everything. Declaring the ordinary indexed copy loop as
+  // the interior control for the zero-page-vector shape is the exact mistake
+  // CR-04 describes, and the witness must reject it.
+  assert.equal(
+    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "zeropage-vector-jumped-through"),
+    false,
+    "the ordinary indexed copy loop carries no zero-page store at all, so it cannot be the zero-page-vector shape's interior control",
+  );
+  assert.equal(
+    reachesGateInterior(payloadOf(FP_INDEXED), loadFixture(FP_INDEXED).store.origin, "zeropage-vector-jumped-through"),
+    false,
+    "fp1's committed payload carries no zero-page store either",
+  );
+  // And the positive direction, so the witness is not a machine that returns
+  // false for everything.
+  assert.equal(
+    reachesGateInterior(payloadOf(FP2_INTERIOR), loadFixture(FP2_INTERIOR).store.origin, "zeropage-vector-jumped-through"),
+    true,
+    "the interior control must be recognised as interior, or the witness declines everything and proves nothing",
+  );
+});
+
+test("minting a dispatch shape id without an interior predicate THROWS, naming the id", () => {
+  const bogus = "shape-nobody-wrote-a-predicate-for";
+  assert.throws(
+    () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, bogus),
+    (err: unknown) => err instanceof Error && err.message.includes(bogus),
+    `reachesGateInterior() must THROW for a shape id it has no predicate for, with the id in the message. Returning a bare ` +
+      `boolean would let the shape-coverage test pass vacuously for any newly minted id.`,
+  );
+});
+
+test("the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source", () => {
+  // Without this assertion DISPATCH_CONTEXT_SHAPES is a hand-maintained mirror
+  // with no link to what it mirrors: a future author who adds a fourth
+  // sufficient branch to the predicate and does not touch the array leaves the
+  // suite fully green -- the root cause displaced one level up rather than
+  // removed. Same source-text idiom as the read-only-by-construction assertion
+  // in section 11 over this same module, and the same enumerated-site
+  // discipline as `r2000-spawn-seam.test.ts`'s spawn-site set: derive the real
+  // number from the source, then assert set/count equality against the frozen
+  // declaration.
+  const source = readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+  const signature = "function hasDispatchContext(";
+  const sigIdx = source.indexOf(signature);
+  assert.ok(sigIdx !== -1, "hasDispatchContext() was renamed or removed -- this assertion would otherwise pass vacuously");
+
+  const openIdx = source.indexOf("{", sigIdx);
+  assert.ok(openIdx !== -1, "hasDispatchContext()'s body brace was not found");
+  let depth = 0;
+  let closeIdx = -1;
+  for (let i = openIdx; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  assert.ok(closeIdx !== -1, "hasDispatchContext()'s body was not brace-balanced");
+
+  const body = source.slice(openIdx + 1, closeIdx);
+  const trueReturns = body.match(/\breturn\s+true\b/g) ?? [];
+  assert.ok(trueReturns.length > 0, "no true-returning site was found in hasDispatchContext()'s body -- the extraction regressed");
+  assert.equal(
+    trueReturns.length,
+    DISPATCH_CONTEXT_SHAPES.length,
+    `hasDispatchContext() has ${trueReturns.length} true-returning site(s) but DISPATCH_CONTEXT_SHAPES declares ` +
+      `${DISPATCH_CONTEXT_SHAPES.length} shape(s): a sufficient branch was added to the predicate without a matching declared ` +
+      `shape (or a shape was declared with no branch behind it). Every sufficient branch is a decision to treat something as ` +
+      `proof of code and owes the suite an interior control -- see CR-04.`,
+  );
 });
 
 // ---------------------------------------------------------------------------
