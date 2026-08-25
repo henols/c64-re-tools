@@ -2747,7 +2747,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     position: "stack-return-push-idiom",
     route: "class-3-pass",
     polarity: "negative",
-    note: "THE CLASS-3 INTERIOR CONTROL for the push idiom. A same-register indexed pairing with consecutive zero-page stores and a pha/pha/rts that class 4 DECLINES -- the region no control reached before, because all three prior push-idiom controls satisfy only the class-4 disjunct",
+    note: "THE CLASS-3 INTERIOR CONTROL for the push idiom. A same-register indexed pairing with consecutive zero-page stores and a pha/pha/rts that class 4 DECLINES -- the region no control reached before, because all three prior push-idiom controls satisfy only the class-4 route",
   },
   {
     control: "SPLIT_TABLE_INTERPOSED",
@@ -2790,6 +2790,141 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     note: "DECLARED WHERE THE WITNESS ACTUALLY PLACES IT, not where its name suggests. Its job is to be the JUST-OUTSIDE half of the push-idiom route's witness pair -- its rts sits one instruction past the pairing window -- and that job is discharged by the non-vacuity statements, not by a row. But the payload is FP3's prologue plus one nop, so it still carries FP3's two consecutive zero-page stores inside the pairing window: it is genuinely INTERIOR to the zero-page-vector shape's class-3 route, nothing jumps through the vector it builds, and `splitTables` is correctly empty. Filing it as OUTSIDE would have been a false declaration the mechanical-truth check catches",
   },
 ]);
+
+interface GateRouteReachability {
+  /** A member of `DISPATCH_CONTEXT_SHAPES`. */
+  shape: string;
+  /** A member of `DISPATCH_GATE_ROUTES`. */
+  route: string;
+  /** Can any payload be INSIDE the region this gate rules on for this shape?
+   *
+   * NOT A FREE DECLARATION on every pair. On a route whose `consultsSharedGate`
+   * is true this value is DERIVED and asserted, never trusted: that gate
+   * reaches its verdict by calling `hasDispatchContext()`, the predicate
+   * accepts exactly the shapes in `DISPATCH_CONTEXT_SHAPES`, and therefore
+   * every declared shape is reachable through it. Only a pair on a route that
+   * does NOT consult the shared gate may carry a hand-declared value, and each
+   * of those owes a source-level anchor. */
+  reachable: boolean;
+  /** One clause saying what makes the pair reachable, or what makes it not. */
+  why: string;
+}
+
+/**
+ * One row per (shape, route) pair -- the FULL cross product of
+ * `DISPATCH_CONTEXT_SHAPES` and `DISPATCH_GATE_ROUTES`, with a reachability
+ * verdict on each.
+ *
+ * WHY THE FULL CROSS PRODUCT AND NOT JUST THE INTERESTING ROWS. Adding a shape
+ * or adding a gate is exactly how the next uncontrolled route arrives, and a
+ * table that lists only the pairs somebody thought about grows a silent hole
+ * the moment either array grows. The set-equality check below fails by name in
+ * both directions, so a new shape or a new route forces a declaration rather
+ * than creating a control target nothing checks.
+ *
+ * THE OBVIOUS DODGE IS WATCHED. Marking a genuinely reachable pair unreachable
+ * would stop the coverage assertion demanding a negative control for it. Two
+ * independent checks fire on that edit: the derived-reachability equality,
+ * because a pair on a gate-consulting route cannot be unreachable while its
+ * shape is still declared; and the unreachable-pairs check, because the witness
+ * has a predicate for that pair and therefore does not throw when asked. The
+ * way to make a pair genuinely unreachable is to remove the shape -- which the
+ * branch-count pin ties to the predicate's own true-returning sites.
+ */
+const GATE_ROUTE_REACHABILITY: readonly GateRouteReachability[] = Object.freeze([
+  Object.freeze({
+    shape: "stack-return-push-idiom",
+    route: "class-3-pass",
+    reachable: true,
+    why: "the class-3 pass consults the shared gate, whose first branch accepts this shape -- the branch tightened to require each paired load to push the byte it read",
+  }),
+  Object.freeze({
+    shape: "stack-return-push-idiom",
+    route: "class-4-pass",
+    reachable: true,
+    why: "the class-4 pass's own five-instruction window IS this shape, matched without consulting the shared gate at all",
+  }),
+  Object.freeze({
+    shape: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
+    reachable: true,
+    why: "the class-3 pass consults the shared gate, whose second branch accepts this shape -- the branch tightened to compare against the pairing's own vectorLow",
+  }),
+  Object.freeze({
+    shape: "zeropage-vector-jumped-through",
+    route: "class-4-pass",
+    reachable: false,
+    why: "the class-4 window carries no zero-page-vector condition and never consults the shared gate, so no payload can be inside the region it rules on for this shape. The source-level anchor is the ordering pin: the class-4 publication site precedes the shared gate's only call site and no call to the gate precedes it",
+  }),
+]);
+
+test("the reachability matrix is exactly the cross product of the declared shapes and the declared routes", () => {
+  // The check that stops the next round's new gate from arriving uncontrolled.
+  // A shape or a route added without a reachability row fails here, and so
+  // does a stale row for a shape or a route that no longer exists. Compared as
+  // SETS in both directions, so row order carries no meaning.
+  const declared = GATE_ROUTE_REACHABILITY.map((r) => gateInteriorPairKey(r.shape, r.route));
+  assert.equal(new Set(declared).size, declared.length, `the reachability matrix declares the same pair twice: ${declared.join(" | ")}`);
+
+  const expected: string[] = [];
+  for (const shape of DISPATCH_CONTEXT_SHAPES) for (const route of DISPATCH_GATE_ROUTES) expected.push(gateInteriorPairKey(shape, route.id));
+  assert.ok(expected.length > 0, "the cross product is empty -- every assertion keyed on it would pass vacuously");
+
+  for (const pair of expected) {
+    assert.ok(
+      declared.includes(pair),
+      `the (shape, route) pair ${JSON.stringify(pair)} exists in the cross product of DISPATCH_CONTEXT_SHAPES and ` +
+        `DISPATCH_GATE_ROUTES but GATE_ROUTE_REACHABILITY does not declare it. A shape or a gate added without a reachability ` +
+        `verdict is a control target nothing checks -- which is precisely how the class-3 route into the push idiom went ` +
+        `uncontrolled. Declared pairs: ${declared.join(" | ")}.`,
+    );
+  }
+  for (const pair of declared) {
+    assert.ok(
+      expected.includes(pair),
+      `GATE_ROUTE_REACHABILITY declares the pair ${JSON.stringify(pair)}, which is not in the cross product of ` +
+        `DISPATCH_CONTEXT_SHAPES and DISPATCH_GATE_ROUTES -- a stale row standing in for a shape or a route that no longer exists`,
+    );
+  }
+});
+
+test("reachability on a route that CONSULTS the shared gate is DERIVED, not declared", () => {
+  // THE DODGE-CLOSING ASSERTION. Without it, `reachable` would be a free
+  // declaration and the cheapest way to satisfy the coverage assertion below
+  // would be to mark a pair unreachable rather than write a control for it.
+  //
+  // The derivation is not a heuristic: the gate accepts EXACTLY the shapes in
+  // DISPATCH_CONTEXT_SHAPES -- a count the branch-count pin ties to the
+  // predicate's own true-returning sites -- and a route with
+  // `consultsSharedGate` reaches its verdict by calling it. So every declared
+  // shape is reachable through every such route, and the only honest way to
+  // make a pair unreachable is to remove the shape.
+  const consulting = DISPATCH_GATE_ROUTES.filter((r) => r.consultsSharedGate);
+  assert.ok(consulting.length > 0, "no route consults the shared gate -- this derivation would pass over nothing");
+  let checked = 0;
+  for (const row of GATE_ROUTE_REACHABILITY) {
+    const route = DISPATCH_GATE_ROUTES.find((r) => r.id === row.route);
+    assert.ok(route, `the reachability matrix names route "${row.route}", which is not a member of DISPATCH_GATE_ROUTES`);
+    if (!route.consultsSharedGate) continue;
+    checked++;
+    assert.equal(
+      row.reachable,
+      true,
+      `the pair ("${row.shape}", "${row.route}") is declared reachable=${row.reachable}, but route "${row.route}" reaches its ` +
+        `verdict by calling hasDispatchContext(), and that predicate accepts exactly the shapes in DISPATCH_CONTEXT_SHAPES -- of ` +
+        `which "${row.shape}" is one. A pair on a gate-consulting route CANNOT be unreachable while its shape is still declared. ` +
+        `Marking it so is how a reachable route stops owing the suite a negative control; the honest edit is to remove the shape, ` +
+        `which the branch-count pin ties to the predicate's own true-returning sites.`,
+    );
+  }
+  assert.equal(
+    checked,
+    DISPATCH_CONTEXT_SHAPES.length * consulting.length,
+    `the derivation ran over ${checked} pair(s) but ${DISPATCH_CONTEXT_SHAPES.length} shape(s) times ${consulting.length} ` +
+      `gate-consulting route(s) is ${DISPATCH_CONTEXT_SHAPES.length * consulting.length}. A pair the loop never reached is a pair ` +
+      `this derivation does not constrain.`,
+  );
+});
 
 test("every gate-interior declaration is mechanically TRUE, not a claim in a table", () => {
   for (const row of GATE_INTERIOR_DECLARATIONS) {
@@ -2861,30 +2996,150 @@ test("a control DECLARED as positive is actually ACCEPTED by the instrument", ()
   }
 });
 
-test("every shape the dispatch predicate accepts is claimed by an interior declaration", () => {
-  // The standing mechanism. Adding a sufficient shape to DISPATCH_CONTEXT_SHAPES
-  // without a negative control that reaches its interior reds the suite BY NAME
-  // -- which is the exact failure the 19-08 tightening did not have.
-  // NEGATIVE interior rows only. A positive control proves the gate accepts
-  // something; the rule this test enforces is that every sufficient shape has
-  // a control which reaches inside it and asserts a DECLINE.
-  const claimed = new Set(GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE && r.polarity === "negative").map((r) => r.position));
-  for (const shapeId of DISPATCH_CONTEXT_SHAPES) {
+/** The declaration rows that reach inside a given (shape, route) pair, at a
+ * given polarity. One reader for every coverage check below, so "which rows
+ * cover this pair" is one notion rather than four. */
+function rowsForPair(shape: string, route: string, polarity: "negative" | "positive"): readonly GateInteriorDeclaration[] {
+  return GATE_INTERIOR_DECLARATIONS.filter((r) => r.position === shape && r.route === route && r.polarity === polarity);
+}
+
+test("every REACHABLE (shape, route) pair is claimed by a negative interior declaration", () => {
+  // THE STANDING MECHANISM, RE-KEYED. Its shape-keyed predecessor is what let
+  // round 3's defect through: one negative row per SHAPE satisfied it, and all
+  // three of the push idiom's negative rows satisfied only the class-4 route,
+  // so the class-3 route into that shape had never been entered by a control.
+  //
+  // NEGATIVE rows only. A positive control proves the gate accepts something;
+  // the rule this test enforces is that every reachable pair has a control
+  // which reaches inside it and asserts a DECLINE.
+  const claimed = new Set(
+    GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE && r.polarity === "negative").map((r) =>
+      gateInteriorPairKey(r.position, String(r.route)),
+    ),
+  );
+  const reachable = GATE_ROUTE_REACHABILITY.filter((r) => r.reachable);
+  assert.ok(reachable.length > 0, "no pair is declared reachable -- this assertion would pass vacuously");
+
+  for (const pair of reachable) {
+    const covered = DISPATCH_GATE_ROUTES.filter((r) => claimed.has(gateInteriorPairKey(pair.shape, r.id))).map((r) => r.id);
     assert.ok(
-      claimed.has(shapeId),
-      `dispatch shape "${shapeId}" is listed in DISPATCH_CONTEXT_SHAPES but NO row of GATE_INTERIOR_DECLARATIONS claims its ` +
-        `interior. A shape listed there is the decision to treat it as proof of code; that decision needs a control that reaches ` +
-        `INSIDE it, not one that brackets it from the outside. Claimed shapes: ${[...claimed].join(", ") || "(none)"}.`,
+      claimed.has(gateInteriorPairKey(pair.shape, pair.route)),
+      `the REACHABLE pair ("${pair.shape}", "${pair.route}") has NO negative interior declaration. A shape is not a control ` +
+        `target; a (shape, route) pair is, and this route is reachable because ${pair.why}. Routes of "${pair.shape}" that DO ` +
+        `have negative coverage: ${covered.join(", ") || "(none)"} -- so the missing half is "${pair.route}".`,
     );
   }
-  // And the reverse direction, so a stale row cannot satisfy a shape that no
-  // longer exists. Over EVERY interior row, either polarity: a stale positive
-  // row is as stale as a stale negative one.
-  for (const shapeId of GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE).map((r) => r.position)) {
+
+  // The reverse direction, so a stale row cannot satisfy a pair that no longer
+  // exists. Over EVERY interior row, either polarity: a stale positive row is
+  // as stale as a stale negative one.
+  const reachableKeys = new Set(reachable.map((r) => gateInteriorPairKey(r.shape, r.route)));
+  for (const row of GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE)) {
     assert.ok(
-      DISPATCH_CONTEXT_SHAPES.includes(shapeId),
-      `GATE_INTERIOR_DECLARATIONS claims the interior of shape "${shapeId}", which DISPATCH_CONTEXT_SHAPES does not list -- a ` +
-        `stale declaration standing in for a shape the predicate no longer accepts`,
+      reachableKeys.has(gateInteriorPairKey(row.position, String(row.route))),
+      `${row.control} claims the interior of the pair ("${row.position}", "${row.route}"), which GATE_ROUTE_REACHABILITY does not ` +
+        `declare reachable -- a stale declaration standing in for a shape or a route the instrument no longer has`,
+    );
+  }
+});
+
+test("every REACHABLE pair's negative controls are confirmed INSIDE it by the witness", () => {
+  // A declaration that names a reachable pair whose control the witness places
+  // elsewhere is the outside-bracketing defect with a route label on it. The
+  // mechanical-truth test checks each row against its OWN declared pair; this
+  // one walks the other way -- from the pair the coverage assertion just
+  // accepted as covered, to the controls that were counted as covering it.
+  for (const pair of GATE_ROUTE_REACHABILITY.filter((r) => r.reachable)) {
+    const negatives = rowsForPair(pair.shape, pair.route, "negative");
+    assert.ok(negatives.length > 0, `the reachable pair ("${pair.shape}", "${pair.route}") has no negative control to confirm`);
+    for (const row of negatives) {
+      const { bytes, origin } = row.bytes();
+      assert.equal(
+        reachesGateInterior(bytes, origin, pair.shape, pair.route),
+        true,
+        `${row.control} was counted as covering the pair ("${pair.shape}", "${pair.route}") but the witness places it outside ` +
+          `that pair's interior`,
+      );
+    }
+  }
+});
+
+test("every REACHABLE pair's verdicts are measured in THAT ROUTE'S own collection, never through the aggregate seam", () => {
+  // STACK_RETURN is the case that makes this necessary and it is the case that
+  // makes it non-vacuous: measured through provenDispatchTargets() it looks
+  // accepted, and measured through `splitTables` it is correctly a class-3
+  // decline. The same payload's class-4 row is measured in
+  // `stackReturnDispatch` and is correctly an acceptance. One payload, two
+  // routes, two opposite verdicts -- inexpressible under an aggregate read.
+  let measured = 0;
+  for (const pair of GATE_ROUTE_REACHABILITY.filter((r) => r.reachable)) {
+    for (const row of rowsForPair(pair.shape, pair.route, "negative")) {
+      const { bytes, origin } = row.bytes();
+      const published = routePublications(scanIndirectDispatch(decode(bytes, origin), bytes, origin), pair.route);
+      measured++;
+      assert.equal(
+        published.length,
+        0,
+        `${row.control} is a NEGATIVE control on route "${pair.route}", but that route published ${published.length} finding(s) ` +
+          `into "${DISPATCH_GATE_ROUTES.find((r) => r.id === pair.route)!.publishesInto}". A negative control that its own route ` +
+          `accepts is not a control.`,
+      );
+    }
+    for (const row of rowsForPair(pair.shape, pair.route, "positive")) {
+      const { bytes, origin } = row.bytes();
+      const published = routePublications(scanIndirectDispatch(decode(bytes, origin), bytes, origin), pair.route);
+      measured++;
+      assert.ok(
+        published.length > 0,
+        `${row.control} is a POSITIVE control on route "${pair.route}", but that route published nothing about it`,
+      );
+    }
+  }
+  assert.ok(measured > 0, "no route-scoped verdict was measured -- this assertion would pass over nothing");
+});
+
+test("every UNREACHABLE (shape, route) pair makes the witness THROW, naming the pair", () => {
+  // The other half of the dodge. A pair marked unreachable to stop owing a
+  // negative control has to make the witness lie in a way this catches: the
+  // witness carries a predicate for every genuinely reachable pair, so it does
+  // NOT throw on one, and a row that says otherwise reds here.
+  const unreachable = GATE_ROUTE_REACHABILITY.filter((r) => !r.reachable);
+  assert.ok(unreachable.length > 0, "no pair is declared unreachable -- if the cross product is ever fully reachable, delete this test rather than letting it pass over nothing");
+  for (const pair of unreachable) {
+    assert.throws(
+      () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, pair.shape, pair.route),
+      (err: unknown) => err instanceof Error && err.message.includes(pair.shape) && err.message.includes(pair.route),
+      `the pair ("${pair.shape}", "${pair.route}") is DECLARED unreachable, but the witness answered instead of throwing -- so it ` +
+        `carries an interior predicate for a pair nothing can be inside. Either the pair is actually reachable and the row is a ` +
+        `dodge around owing it a negative control, or the predicate is dead and should go. ${pair.why}`,
+    );
+  }
+});
+
+test("NON-VACUITY per route: each reachable pair has a payload inside it AND a payload outside it", () => {
+  // No route's predicate may be a machine that answers the same way for
+  // everything. ORDINARY_INDEXED_COPY is the universal outside payload -- no
+  // zero-page store, no `pha` byte anywhere. PUSH_IDIOM_WINDOW_EDGE is the
+  // JUST-outside payload for the class-3 push-idiom route: it carries the
+  // shape and misses the window by one instruction, so "FP3 is inside" is a
+  // statement something could contradict.
+  for (const pair of GATE_ROUTE_REACHABILITY.filter((r) => r.reachable)) {
+    const inside = [...rowsForPair(pair.shape, pair.route, "negative"), ...rowsForPair(pair.shape, pair.route, "positive")];
+    assert.ok(inside.length > 0, `the reachable pair ("${pair.shape}", "${pair.route}") has no control inside it at all`);
+    for (const row of inside) {
+      const { bytes, origin } = row.bytes();
+      assert.equal(reachesGateInterior(bytes, origin, pair.shape, pair.route), true, `${row.control} must be inside ("${pair.shape}", "${pair.route}")`);
+    }
+
+    const justOutside =
+      pair.shape === "stack-return-push-idiom" && pair.route === "class-3-pass"
+        ? { name: "PUSH_IDIOM_WINDOW_EDGE", bytes: PUSH_IDIOM_WINDOW_EDGE, origin: ORDINARY_ORIGIN }
+        : { name: "ORDINARY_INDEXED_COPY", bytes: ORDINARY_INDEXED_COPY, origin: ORDINARY_ORIGIN };
+    assert.equal(
+      reachesGateInterior(justOutside.bytes, justOutside.origin, pair.shape, pair.route),
+      false,
+      `${justOutside.name} must be OUTSIDE the pair ("${pair.shape}", "${pair.route}"). If the witness says true here it says true ` +
+        `for everything, and every interior declaration keyed on this pair is vacuous.`,
     );
   }
 });

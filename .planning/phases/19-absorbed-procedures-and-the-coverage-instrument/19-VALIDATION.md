@@ -550,3 +550,65 @@ had been duplicated.
 - The grammar suite JOINS the per-case controls rather than replacing them: no fixture directory, no
   committed payload constant and no gate-interior declaration was deleted, and
   `r2000-coverage.test.ts` still reports 80 pass / 0 fail unchanged.
+
+## Round-4 gap closure → executed evidence (2026-08-25, plan 19-18)
+
+The defect class this section closes is **the anti-regression mechanism's own hole**. Round 3's
+headline deliverable reds the suite by name when a sufficient shape is admitted without an interior
+negative control — and it passed over the defect it was built for, because `reachesGateInterior()`
+defined one shape's interior as a DISJUNCTION of two routes and every control declared against that
+shape satisfied only the class-4 half. This section is an **extension**: no row above was altered,
+deleted or renumbered, and every command below was run in this working tree with the output quoted.
+
+A control's declared position is now a **(shape, route) pair**. `route` is a CLOSED enumeration
+derived from source: `DISPATCH_GATE_ROUTES` is a frozen exported array in `r2000-coverage.ts` whose
+membership, call sites, publication sites and ordering are all read from that module's own text.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01 | 19-18 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the route-keyed witness, declaration table, reachability matrix and four source-derived pins | **98 pass, 0 fail** (80 before this plan; 86 after task 1, 92 after task 2, 98 after task 3). No existing fixture, payload constant or declaration row was deleted |
+| COV-01 | 19-18 | same suite, one assertion | `reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, $c000, "stack-return-push-idiom", "class-3-pass")` | **false**, and with `"class-4-pass"` **true**. This pair of assertions is the proof that the disjunction is gone rather than moved: before the re-key one call answered for both routes and the class-4 answer stood in for the class-3 one |
+| COV-01 | 19-18 | same suite, one assertion | `reachesGateInterior(payloadOf(fp3-unlinked-push-idiom), $0810, "stack-return-push-idiom", ...)` | **true** on `class-3-pass`, **false** on `class-4-pass`. FP3 carries no five-instruction window, so it is interior to exactly one route — the other direction, without which a witness that answered "class-3: no" for everything would satisfy the row above |
+| COV-01 | 19-18 | same suite | the unreachable pair and an invented route | `reachesGateInterior(…, "zeropage-vector-jumped-through", "class-4-pass")` **THROWS** naming both halves; `reachesGateInterior(…, "stack-return-push-idiom", "route-nobody-declared")` **THROWS** naming the route |
+| COV-01 | 19-18 | same suite | `GATE_INTERIOR_DECLARATIONS`, 18 rows | **`STACK_RETURN` carries TWO rows** — `class-3-pass`/`negative` and `class-4-pass`/`positive`. Its dual role (a class-3 decline and a class-4 acceptance in one payload) was inexpressible under shape-only keying and the row had to pick one. Every non-`OUTSIDE` row's route is a member of `DISPATCH_GATE_ROUTES`; every `OUTSIDE` row's route is `null` |
+| COV-01 | 19-18 | same suite | `GATE_ROUTE_REACHABILITY` | **exactly 4 rows** — the full 2 × 2 cross product — **3 reachable, 1 unreachable**, set-equality against the cross product passing in both directions |
+| COV-01 | 19-18 | same suite | the three pairs on the gate-consulting route | **3 derived-equality assertions**, one per (shape × gate-consulting route) pair, plus a count assertion that the loop reached all 3 |
+| COV-01 | 19-18 | `cd src/mcp/vice && npx tsc --noEmit` | the whole `src/mcp/vice` TypeScript surface | **exit 0** |
+| COV-01, COV-02 | 19-18 | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | plan 19-17's composed corpus | **22 pass, 0 fail** — unchanged. The route work moved no arrangement into or out of the proven set |
+| COV-01 | 19-18 | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | every shipped `.ts`/`.mts` module | **24 pass, 0 fail** — no new comment hands work to a numbered phase and no new literal names one |
+| COV-01 | 19-18 | `git status --porcelain src/mcp/vice/fixtures/coverage` | the committed fixture set | **empty** — this plan commits no fixture change |
+
+### The measurement that only route-keying makes possible
+
+`STACK_RETURN` measured three ways, in the same run:
+
+| Measured through | Observed | What it means |
+|---|---|---|
+| `provenDispatchTargets()` (the aggregate seam) | non-empty | "accepted" — and the class-3 decline is invisible |
+| `splitTables` (what `class-3-pass` publishes into) | **empty** | the class-3 route DECLINED it, because class 4 claimed the window first |
+| `stackReturnDispatch` (what `class-4-pass` publishes into) | non-empty | the class-4 route ACCEPTED it |
+
+Measuring a route-scoped verdict through the aggregate is what made this payload unrepresentable,
+and it would let a class-3 positive control pass on a class-4 finding.
+
+### The gate watched FAIL — three planted violations
+
+A gate nobody has watched fail is not known to be a gate (D-07). Each plant was applied **in the
+working tree only** and restored from a byte-exact pre-plant copy; the restored file was confirmed
+`diff`-identical and the suite re-run green after each.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 21 | the (shape × route) coverage assertion | **every** `negative` row claiming the pair (`stack-return-push-idiom`, `class-3-pass`) deleted — the `fp3-unlinked-push-idiom` row **and** `STACK_RETURN`'s class-3 row. Deleting only ONE is not the demonstration: the point is that a PAIR loses coverage, and this plan's row set gives that pair two controls | **exit 1**, `# tests 92 / # pass 90 / # fail 2`. `not ok 68 - every REACHABLE (shape, route) pair is claimed by a negative interior declaration`, message verbatim: `the REACHABLE pair ("stack-return-push-idiom", "class-3-pass") has NO negative interior declaration. … Routes of "stack-return-push-idiom" that DO have negative coverage: class-4-pass -- so the missing half is "class-3-pass".` The reader is told **which half** is missing, not that something is missing. Also red: `not ok 69 - every REACHABLE pair's negative controls are confirmed INSIDE it by the witness` (`the reachable pair … has no negative control to confirm`) | rows restored, re-run: **92 pass, 0 fail** |
+| 22 | the mechanical-truth check | one row **mis-routed**: `fp3-unlinked-push-idiom` flipped from `class-3-pass` to `class-4-pass`, changing nothing else | **exit 1**, `# tests 92 / # pass 89 / # fail 3`. `not ok 66 - every gate-interior declaration is mechanically TRUE, not a claim in a table`, message verbatim: `fp3-unlinked-push-idiom is DECLARED as the interior control for the pair ("stack-return-push-idiom", "class-4-pass"), but the witness says the payload does not satisfy that pair's pre-gate sufficient condition. … one declared against the WRONG ROUTE of a shape it does reach is the same defect wearing a route label.` FP3 carries no five-instruction window, so the witness catches the mis-routing rather than the shape. Also red: `not ok 69` and `not ok 72 - NON-VACUITY per route` | restored from the pre-plant copy, re-run: **92 pass, 0 fail**, `diff` identical |
+| 23 | the mechanism's **own dodge** | a genuinely reachable pair — (`stack-return-push-idiom`, `class-3-pass`) — flipped to `reachable: false`, which under a free declaration would stop the coverage assertion demanding a negative control for it | **exit 1**, `# tests 92 / # pass 89 / # fail 3`. **BOTH required checks fired.** `not ok 65 - reachability on a route that CONSULTS the shared gate is DERIVED, not declared`: `the pair ("stack-return-push-idiom", "class-3-pass") is declared reachable=false, but route "class-3-pass" reaches its verdict by calling hasDispatchContext(), and that predicate accepts exactly the shapes in DISPATCH_CONTEXT_SHAPES … the honest edit is to remove the shape, which the branch-count pin ties to the predicate's own true-returning sites.` And `not ok 71 - every UNREACHABLE (shape, route) pair makes the witness THROW, naming the pair`: `Missing expected exception … the witness answered instead of throwing`. A third check fired unasked — `not ok 68`, the coverage assertion's reverse-direction stale-row half: `STACK_RETURN claims the interior of the pair ("stack-return-push-idiom", "class-3-pass"), which GATE_ROUTE_REACHABILITY does not declare reachable` | restored, re-run: **92 pass, 0 fail**, `diff` identical |
+
+**The residual, recorded rather than papered over.** Plant 23 shows three independent checks on the
+dodge, but all three read the declaration layer. An author who flips the row, deletes the witness's
+predicate for that pair **and** deletes that pair's declaration rows in one coordinated edit
+produces a self-consistent declaration layer again, and every check in this section goes green.
+What stops that is **not in this section**: it is the pairing-consultation pin (plan 19-16), which
+reads `hasDispatchContext()`'s own guard text and does not consult any table here, and the composed-
+corpus property (plan 19-17), whose oracle is computed from six rules rather than declared. Both are
+independent of every table in this section. Saying so is what keeps this mechanism from being
+trusted past what it proves.
