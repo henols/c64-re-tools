@@ -421,3 +421,37 @@ everything.
 | COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `ZP_VECTOR_OWN_JUMP` — the declined payload with ONE operand byte changed, so the indirect jump names the vector the pairing's own two stores built | **PASS.** `splitTables.length === 1`, `provenDispatchTargets(scan)` deep-equals `[$0840…$0847]`, and `census.reachedAsInstruction` (33) **strictly exceeds** the declined payload's (17) — a relation, not a pinned count. The two payloads are asserted to differ at exactly one byte offset, `ZP_VECTOR_JUMP_OPERAND_INDEX`, so the verdict difference cannot be caused by anything else |
 | COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `SPLIT_TABLE`, `SPLIT_TABLE_CLEAN` and `SPLIT_TABLE_INTERPOSED`, the three pre-existing positive controls for this branch, re-asserted in the SAME test as the tightening | **PASS.** All three still report `splitTables.length === 1`. `SPLIT_TABLE_INTERPOSED` is the sharpest of the three: its orientation resolves across an interposed load through the other index register, and the vector its own two stores build is still the one the jump names |
 | COV-02 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `fp2-zeropage-data-pointer`, the CR-04 interior control, re-asserted in the same test | **PASS.** Still `dispatch.splitTables === []` — a vector that is built and then read through as DATA is still declined, and the tightening did not disturb the condition round 2 added |
+
+### D-02 turned from a sentence into an assertion — the pairing-consultation pin
+
+Until this plan, D-02 existed only as prose in plan objectives and `must_haves`. Every other guard
+this round builds is satisfiable by the SAME author who writes a loose branch: each one asks that
+author to add a declaration, and the author adds it. The pin closes that by reading
+`hasDispatchContext()`'s own body, extracting each `return true` site's DEPTH-1 GUARD CHAIN — the
+outermost `if` or `for` containing the return, comments stripped — and asserting each chain names
+the `pairing` parameter. A presence-only branch structurally cannot satisfy it.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the pin, against branch A exactly as plan 19-15 committed it | **PASS.** The extraction takes the depth-1 statement, not the nearest preceding boundary: branch A's `return true` sits inside a `for` whose immediate condition reads only `insns[k]!.opcode === 0x60`, and the `pairing` reference lives in the enclosing `if`. Chain extracted verbatim: `if (insns[pairing.firstIndex + 1]?.opcode === 0x48 && insns[pairing.secondIndex + 1]?.opcode === 0x48) { for (let k = pairing.secondIndex + 2; k < end; k++) { if (insns[k]!.opcode === 0x60)`. Branch B's chain: `if (indirectJumpPointers.includes(pairing.oriented.vectorLow))` |
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the pin's two non-vacuity guards | **PASS.** The extracted site count is asserted non-zero AND asserted equal to `DISPATCH_CONTEXT_SHAPES.length` (2), so a site the extraction misses cannot hide behind a passing pin |
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `functionBodyFromSource()`'s own failure mode, asked for a deliberately absent signature | **PASS.** It THROWS with the signature in the message. The helper never returns a bare empty string, so no pin built on it — including the four plan 19-18 adds — can pass vacuously over a renamed function |
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 17 | the pairing-consultation pin, against the FIRST true-returning site | branch A (`stack-return-push-idiom`) reverted in the working tree to its presence-only form — `let sawPha = 0; for (let k = start; ...) { if (opcode === 0x48) sawPha++; if (opcode === 0x60 && sawPha >= 2) return true; }` | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 80 / # pass 78 / # fail 2`. The reds are `not ok 60 - a push idiom that pushes bytes the two paired loads never supplied is not dispatch context…` and `not ok 72 - EVERY true-returning site of hasDispatchContext() consults the PAIRING under test, not merely the window`. The pin's message quoted the offending chain verbatim: `for (let k = start; k < end; k++) { if (insns[k]!.opcode === 0x48) sawPha++; if (insns[k]!.opcode === 0x60 && sawPha >= 2)` | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **80 pass, 0 fail** |
+| 18 | the pairing-consultation pin, against the SECOND true-returning site | branch B (`zeropage-vector-jumped-through`) reverted in the working tree to its window-wide `zpStores` scan | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 80 / # pass 77 / # fail 3`. The reds are `not ok 62`, `not ok 63` and `not ok 72`. The pin's message quoted: `for (const a of zpStores) { for (const b of zpStores) { if (b - a !== 1) continue; if (indirectJumpPointers.includes(a))` | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **80 pass, 0 fail**, `npx tsc --noEmit` exit 0, and `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 — neither revert survived |
+
+**A defect in the extraction was found BY the first demonstration and fixed, not accepted.** The
+first run of plant 17 red correctly but quoted the chain as `k++) { … }` — the backward scan had
+treated the semicolons inside a `for (init; cond; step)` header as statement boundaries and cut the
+header off. Red for the right reason, but with the wrong text, and latently worse: a CORRECT branch
+written as a depth-1 `for` whose header names `pairing` would have had that name scanned away and
+would have red. The scan now tracks parenthesis depth and accepts `;` as a boundary only outside
+parentheses; plant 17 was re-run and quoted the full header. That is the "if the demonstration
+shows nothing, fix the extraction" clause of this task discharged in the direction it was written
+for.
+
+**Test-count movement:** 76 → 80 over this plan. `+2` for the foreign-jump control and its proven
+twin, `+1` for the pairing-consultation pin, `+1` for `functionBodyFromSource()`'s own throw. No
+fixture directory was added, so `COMMITTED_CONTROL_FIXTURES` stays 12.

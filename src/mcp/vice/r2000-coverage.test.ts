@@ -2805,23 +2805,39 @@ test("minting a dispatch shape id without an interior predicate THROWS, naming t
   );
 });
 
-test("the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source", () => {
-  // Without this assertion DISPATCH_CONTEXT_SHAPES is a hand-maintained mirror
-  // with no link to what it mirrors: a future author who adds a fourth
-  // sufficient branch to the predicate and does not touch the array leaves the
-  // suite fully green -- the root cause displaced one level up rather than
-  // removed. Same source-text idiom as the read-only-by-construction assertion
-  // in section 11 over this same module, and the same enumerated-site
-  // discipline as `r2000-spawn-seam.test.ts`'s spawn-site set: derive the real
-  // number from the source, then assert set/count equality against the frozen
-  // declaration.
-  const source = readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
-  const signature = "function hasDispatchContext(";
-  const sigIdx = source.indexOf(signature);
-  assert.ok(sigIdx !== -1, "hasDispatchContext() was renamed or removed -- this assertion would otherwise pass vacuously");
+/** The module whose source text the assertions below read. */
+const COVERAGE_SIGNATURE = "function hasDispatchContext(";
 
+function coverageSource(): string {
+  return readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+}
+
+/**
+ * The text of the function named by `signature`, brace-matched out of `source`.
+ *
+ * THE ONE SOURCE READER IN THIS FILE. Two assertions below and four more that
+ * read this predicate's body need the same extraction, and a second copy of the
+ * brace matching would be a second notion of what "inside the function" means.
+ *
+ * THROWS, naming the signature, on every way the extraction can go wrong --
+ * renamed, removed, no body brace, brace-unbalanced, or an empty body. A silent
+ * empty extraction is the failure mode that matters: every pin built on this
+ * helper asserts a property of the text it returns, so an extraction that
+ * quietly returned `""` would make all of them pass VACUOUSLY, over a predicate
+ * nobody was reading. Returning a bare empty string is therefore not an option
+ * this helper has.
+ */
+function functionBodyFromSource(source: string, signature: string): string {
+  const sigIdx = source.indexOf(signature);
+  if (sigIdx === -1) {
+    throw new Error(
+      `functionBodyFromSource(): no function matching "${signature}" exists in the source read. It was renamed or removed, and ` +
+        `every assertion built on its body would otherwise pass vacuously.`,
+    );
+  }
   const openIdx = source.indexOf("{", sigIdx);
-  assert.ok(openIdx !== -1, "hasDispatchContext()'s body brace was not found");
+  if (openIdx === -1) throw new Error(`functionBodyFromSource(): "${signature}" has no body brace`);
+
   let depth = 0;
   let closeIdx = -1;
   for (let i = openIdx; i < source.length; i++) {
@@ -2834,9 +2850,110 @@ test("the declared shape count equals the number of true-returning sites in hasD
       }
     }
   }
-  assert.ok(closeIdx !== -1, "hasDispatchContext()'s body was not brace-balanced");
+  if (closeIdx === -1) throw new Error(`functionBodyFromSource(): "${signature}"'s body was not brace-balanced`);
 
   const body = source.slice(openIdx + 1, closeIdx);
+  if (body.trim().length === 0) throw new Error(`functionBodyFromSource(): "${signature}"'s extracted body is empty`);
+  return body;
+}
+
+/** `text` with its `//` and block comments removed, positions otherwise intact
+ * enough for the statement scanning below.
+ *
+ * Load-bearing rather than tidiness: the pin asserts that a guard's own
+ * CONDITION names the pairing, and every branch of this predicate carries a
+ * doc comment that explains why it does. Without stripping, a branch could
+ * satisfy the pin by describing itself. */
+function withoutComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      continue;
+    }
+    if (text[i] === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += text[i++];
+  }
+  return out;
+}
+
+/**
+ * Every `return true` site in `body`, paired with its DEPTH-1 GUARD CHAIN: the
+ * whole enclosing statement at depth 1 of the function body -- the outermost
+ * `if` or `for` that contains the return -- from that statement's first
+ * character up to the `return true` itself.
+ *
+ * THE DEPTH-1 STATEMENT IS THE RIGHT SPAN AND A NARROWER ONE IS WRONG. This is
+ * worth stating because the obvious implementation gets it wrong. In branch A
+ * the `return true` sits inside a `for` loop scanning for the `rts`, and its
+ * IMMEDIATE guard reads only an opcode -- the reference to the pairing lives in
+ * the enclosing `if` that tests the two pushes. An extraction that stopped at
+ * the nearest preceding statement boundary would red on correct code, and
+ * whoever hit that red would be tempted to weaken the pin rather than widen the
+ * window.
+ *
+ * The same brace matching `functionBodyFromSource()` performs, so there is one
+ * notion of depth in this file.
+ */
+function trueReturnGuardChains(body: string): string[] {
+  const chains: string[] = [];
+  const marker = /\breturn\s+true\b/g;
+  for (let m = marker.exec(body); m !== null; m = marker.exec(body)) {
+    const at = m.index;
+
+    // The outermost brace still open at this point, if any.
+    const open: number[] = [];
+    for (let i = 0; i < at; i++) {
+      if (body[i] === "{") open.push(i);
+      else if (body[i] === "}") open.pop();
+    }
+    const chainEnclosure = open.length > 0 ? open[0]! : at;
+
+    // Back up to the start of the depth-1 statement. Scanning backwards from a
+    // position at depth 0, the first `;`, `}` or `{` met is the end of the
+    // previous statement (or the body's own opening), so no nested block is
+    // ever entered.
+    //
+    // PARENTHESIS DEPTH IS TRACKED, and that is not a refinement. A
+    // `for (init; cond; step)` header carries two semicolons INSIDE its
+    // parentheses, so a scan that treated any `;` as a boundary would cut the
+    // chain at `k++) {` and throw away the header -- which for a depth-1 `for`
+    // guard means throwing away the very text the pin reads. The pin would then
+    // red on a correct branch, and whoever hit that red would be tempted to
+    // weaken the pin rather than widen the window.
+    let start = 0;
+    let paren = 0;
+    for (let i = chainEnclosure - 1; i >= 0; i--) {
+      const ch = body[i];
+      if (ch === ")") paren++;
+      else if (ch === "(") paren--;
+      else if (paren === 0 && (ch === ";" || ch === "}" || ch === "{")) {
+        start = i + 1;
+        break;
+      }
+    }
+    chains.push(body.slice(start, at).trim());
+  }
+  return chains;
+}
+
+test("the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source", () => {
+  // Without this assertion DISPATCH_CONTEXT_SHAPES is a hand-maintained mirror
+  // with no link to what it mirrors: a future author who adds a fourth
+  // sufficient branch to the predicate and does not touch the array leaves the
+  // suite fully green -- the root cause displaced one level up rather than
+  // removed. Same source-text idiom as the read-only-by-construction assertion
+  // in section 11 over this same module, and the same enumerated-site
+  // discipline as `r2000-spawn-seam.test.ts`'s spawn-site set: derive the real
+  // number from the source, then assert set/count equality against the frozen
+  // declaration.
+  const body = functionBodyFromSource(coverageSource(), COVERAGE_SIGNATURE);
   const trueReturns = body.match(/\breturn\s+true\b/g) ?? [];
   assert.ok(trueReturns.length > 0, "no true-returning site was found in hasDispatchContext()'s body -- the extraction regressed");
   assert.equal(
@@ -2847,6 +2964,81 @@ test("the declared shape count equals the number of true-returning sites in hasD
       `shape (or a shape was declared with no branch behind it). Every sufficient branch is a decision to treat something as ` +
       `proof of code and owes the suite an interior control -- see CR-04.`,
   );
+});
+
+test("functionBodyFromSource() THROWS naming the signature when the function it is asked for does not exist", () => {
+  // The helper's own failure mode, proved rather than assumed. Every pin below
+  // and every pin a later plan adds is only as non-vacuous as this throw: a
+  // helper that returned `""` for a renamed function would make all of them
+  // pass over nothing.
+  const absent = "function nobodyEverWroteThisPredicate(";
+  assert.throws(
+    () => functionBodyFromSource(coverageSource(), absent),
+    (err: unknown) => err instanceof Error && err.message.includes(absent),
+    "functionBodyFromSource() must THROW for a signature the source does not contain, with the signature in the message",
+  );
+});
+
+test("EVERY true-returning site of hasDispatchContext() consults the PAIRING under test, not merely the window", () => {
+  // THE PIN THAT MAKES THE INVARIANT AN ASSERTION RATHER THAN A SENTENCE.
+  //
+  // The invariant: a branch may return true only on a proven data-flow link
+  // from the two reconstructed table bases to the dispatch mechanism, never on
+  // the mere presence of a shape within the window. `pairing` is the ONLY
+  // handle a branch has on the two loads under test, so a branch that decides
+  // on presence alone structurally cannot name it.
+  //
+  // WHY THIS READS THE PREDICATE AND NOT THE DECLARATIONS. Every other guard
+  // around this gate -- the source-pinned branch count, the interior
+  // declarations, the shape-coverage assertion -- is satisfiable by the SAME
+  // author who writes a loose branch: each one asks that author to add a
+  // declaration, and the author adds it. That is self-consistency, not
+  // constraint. This pin reads the predicate's own body, so a presence-only
+  // branch reds it no matter how completely its author fills in the tables.
+  //
+  // THE SHAPE CONTRACT THIS IMPOSES, stated plainly so a future author conforms
+  // rather than deleting the pin. Every true-returning branch's depth-1 guard
+  // chain must name `pairing`, either by reading `pairing.` directly or by
+  // passing `pairing` to a predicate call inside a condition on that chain.
+  // Nesting inside the chain is fine and expected -- branch A's return sits two
+  // levels down and is reached through an `if` that reads `pairing`. What
+  // defeats the extraction is a branch that computes its verdict into a local
+  // in an EARLIER SIBLING statement and then tests the bare local, because the
+  // guard chain then names only the local. That is the one convention this pin
+  // imposes; write the pairing reference into the chain.
+  const body = withoutComments(functionBodyFromSource(coverageSource(), COVERAGE_SIGNATURE));
+  const chains = trueReturnGuardChains(body);
+
+  // Non-vacuity, in two directions, both required. The first stops a rename or
+  // a failed extraction from passing; the second ties the pin to the same
+  // declared shape set the branch-count assertion governs, so a site that
+  // escapes extraction cannot hide behind a passing pin.
+  assert.ok(
+    chains.length > 0,
+    "no true-returning site was extracted from hasDispatchContext()'s body -- the extraction regressed and this pin would pass over nothing",
+  );
+  assert.equal(
+    chains.length,
+    DISPATCH_CONTEXT_SHAPES.length,
+    `the pin extracted ${chains.length} true-returning site(s) but DISPATCH_CONTEXT_SHAPES declares ` +
+      `${DISPATCH_CONTEXT_SHAPES.length}. A site the extraction missed is a site this pin does not constrain, so the counts must ` +
+      `agree before any guard text is compared.`,
+  );
+
+  for (const chain of chains) {
+    assert.ok(
+      /\bpairing\b/.test(chain),
+      `a true-returning branch of hasDispatchContext() decides without naming the PAIRING under test. The guard chain, verbatim:\n\n` +
+        `${chain}\n\n` +
+        `THE INVARIANT: a branch may return true only on a proven data-flow link from the two reconstructed table bases to the ` +
+        `dispatch mechanism -- NEVER on the mere presence of a shape within the window. The two indexed loads being paired reach ` +
+        `this predicate as the \`pairing\` parameter and by no other route, so a guard that never names it is deciding on what the ` +
+        `window happens to contain.\n\n` +
+        `ADDING A SHAPE ID, A DECLARATION ROW AND A NEGATIVE CONTROL DOES NOT DISCHARGE THIS. Those are all written by the same ` +
+        `author as the branch, which is exactly why this assertion reads the predicate's source text instead of the declarations. ` +
+        `Two rounds of this defect shipped past a suite whose every other guard was green.`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
