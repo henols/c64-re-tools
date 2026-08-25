@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-13-PLAN.md
-last_updated: "2026-08-25T09:22:42.553Z"
+stopped_at: Completed 19-15-PLAN.md
+last_updated: "2026-08-25T11:35:07.889Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 execution started
-state_head: d79a5fafa5a9fc511da0534ff3aaa6737ff1bbf6
+state_head: 521d18020a96323e829afc99f63ef7f80713461a
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 21
-  completed_plans: 21
+  total_plans: 27
+  completed_plans: 22
   percent: 20
 ---
 
@@ -69,8 +69,8 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 6 of 14
-Status: Ready to execute
+Plan: 15 of 20 executed — next 19-16
+Status: Executing Phase 19 (third gap-closure round, 19-15 done)
 Last activity: 2026-08-25 — Phase 19 execution started
 
 ## Performance Metrics
@@ -193,6 +193,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P11 | 30 min | 2 tasks | 3 files |
 | Phase 19 P12 | 31 min | 2 tasks | 2 files |
 | Phase 19 P13 | 23 min | 3 tasks | 4 files |
+| Phase 19 P15 | 58 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -388,6 +389,9 @@ Recent decisions affecting current work:
 - [Phase 19]: A disposition ledger must cover its full id set ALONE, with every other source excluded — measured by replaying the guard predicate per source set, not asserted
 - [Phase 19]: REQUIREMENTS.md stays unwritten by the run that fixed the defect — 19-13 declined the workflow automatic requirements.mark-complete step, the third consecutive plan to do so
 - [Phase 19]: A green gate does not close an intermittent failure — the r2000-session 200ms stub flake stays open at 2 red in 6 full-suite runs, owner a plan that owns r2000-session.ts
+- [Phase 19]: hasDispatchContext() branch A is decided against the pairing under test, not against shapes in the window — A branch that never consults the two loads it is ruling on cannot say anything about them; the pairing now crosses the call boundary as a DispatchPairing (19-CONTEXT.md D-02, D-03).
+- [Phase 19]: The falsified class-4-claims-the-window rationale was replaced rather than annotated — Leaving a falsified justification beside its correction preserves the reasoning that produced the defect; class 4 claims only its exact five-instruction shape.
+- [Phase 19]: A tightening ships in the same commit as a liveness positive control — A branch that can never return true is dead code wearing a sufficient-shape label -- a worse defect than the loose branch it replaced, and invisible in a green suite.
 
 ### Pending Todos
 
@@ -882,8 +886,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T09:22:13.720Z
-Stopped at: Completed 19-13-PLAN.md
+Last session: 2026-08-25T11:34:55.222Z
+Stopped at: Completed 19-15-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
