@@ -1980,6 +1980,43 @@ const PUSH_IDIOM_LINKED_CODE_BYTES = PUSH_IDIOM_LINKED.indexOf(0x60) + 1;
  * addresses" is one fact rather than two lists that happen to agree. */
 const PUSH_IDIOM_TARGETS = [0x0840, 0x0841, 0x0842, 0x0843, 0x0844, 0x0845, 0x0846, 0x0847];
 
+/** FP3's own committed prologue with ONE `nop` inserted before its `rts`, so
+ * the `rts` lands at instruction index nine -- one past the far edge of the
+ * pairing window, which reaches indices zero through eight inclusive from the
+ * leading load.
+ *
+ * DERIVED BY INSERTION from the committed payload rather than typed out again,
+ * so "identical to FP3 except for where the `rts` sits" is true by
+ * construction and the only thing this control asserts about is the SCAN's
+ * output.
+ *
+ * WHY THIS CONTROL EXISTS NOW THAT FP3 DECLINES TOO. Its job has changed. It
+ * was authored as the payload that discriminates the window boundary -- the
+ * control half of the round-3 measurement, where FP3 inflated and this one did
+ * not. With branch A tightened, both decline, and what this payload now
+ * supplies is the OUTSIDE half of a witness pair: FP3 satisfies the class-3
+ * route's pre-gate sufficient condition and this payload does not, which is
+ * what proves the interior predicate is not a machine that answers true for
+ * everything. A witness that said yes to both would make every interior
+ * declaration below vacuous. */
+const PUSH_IDIOM_WINDOW_EDGE = (() => {
+  const prologue = [...payloadOf(FP3_INTERIOR).subarray(0, loadFixture(FP3_INTERIOR).store.code_size!)];
+  const rtsAt = prologue.lastIndexOf(0x60);
+  prologue.splice(rtsAt, 0, 0xea); // one `nop` immediately before the `rts`
+  const out = new Uint8Array(0x40).fill(0xea);
+  out.set(prologue, 0);
+  for (let k = 0; k < 8; k++) {
+    out[0x0830 - ORDINARY_ORIGIN + k] = 0x40 + k; // lo bytes -> $0840..$0847
+    out[0x0838 - ORDINARY_ORIGIN + k] = 0x08; // hi bytes
+  }
+  return out;
+})();
+
+/** The window-edge payload's own prologue length, DERIVED by reading up to and
+ * including its `rts` rather than typed, so the census bound cannot drift away
+ * from the payload it guards. */
+const PUSH_IDIOM_WINDOW_EDGE_CODE_BYTES = PUSH_IDIOM_WINDOW_EDGE.indexOf(0x60) + 1;
+
 test("a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it", () => {
   // The CLASS-3 route into `stack-return-push-idiom`, at report level. FP2
   // reaches the OTHER shape's interior; STACK_RETURN and its two twins reach
@@ -2379,6 +2416,20 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     note: "the WR-15 baseline: a genuine split table whose vector is built and then jumped through, which the gate must ACCEPT. Interior by the same construction as FP2, and POSITIVE rather than negative -- recorded plainly rather than filed under a heading it does not belong to",
   },
   {
+    control: FP3_IMMEDIATE,
+    bytes: () => ({ bytes: payloadOf(FP3_IMMEDIATE), origin: loadFixture(FP3_IMMEDIATE).store.origin }),
+    position: OUTSIDE,
+    polarity: "negative",
+    note: "the class-3 push-idiom control's twin. It builds the same zero-page vector and carries the same pha/pha/rts idiom, but its two loads are IMMEDIATE, so there is no indexed pair for the gate to rule on -- which is exactly why it is a census baseline and not a second interior control",
+  },
+  {
+    control: FP3_INTERIOR,
+    bytes: () => ({ bytes: payloadOf(FP3_INTERIOR), origin: loadFixture(FP3_INTERIOR).store.origin }),
+    position: "stack-return-push-idiom",
+    polarity: "negative",
+    note: "THE CLASS-3 INTERIOR CONTROL for the push idiom. A same-register indexed pairing with consecutive zero-page stores and a pha/pha/rts that class 4 DECLINES -- the region no control reached before, because all three prior push-idiom controls satisfy only the class-4 disjunct",
+  },
+  {
     control: "SPLIT_TABLE_INTERPOSED",
     bytes: () => ({ bytes: SPLIT_TABLE_INTERPOSED, origin: DISPATCH_ORIGIN }),
     position: "zeropage-vector-jumped-through",
@@ -2499,6 +2550,43 @@ test("NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as
     true,
     "the mismatched-register control must be recognised as INTERIOR to the class-4 window. If the witness required the register match here, the " +
       "control would be outside the predicate it constrains -- an outside-bracketing control wearing an interior label, which is CR-04's exact defect",
+  );
+});
+
+test("the window-edge twin is OUTSIDE the class-3 push-idiom route while FP3 is INSIDE it, so the interior predicate is not satisfied by everything", () => {
+  // The witness pair for the class-3 route. FP3 and this payload differ only
+  // in where the `rts` sits: one instruction earlier and the pairing window
+  // covers it, one instruction later and it does not. Both are DECLINED by the
+  // instrument now, so the report-level assertion below no longer
+  // discriminates between them -- what discriminates is the WITNESS, and that
+  // is precisely this control's job. Without an outside half, "FP3 reaches the
+  // interior" would be a claim no measurement could contradict.
+  const { scan, census } = wiredCensus(PUSH_IDIOM_WINDOW_EDGE, ORDINARY_ORIGIN);
+
+  assert.deepEqual(scan.splitTables, [], "nothing here dispatches, and the rts is outside the pairing window besides");
+  assert.deepEqual(provenDispatchTargets(scan), [], "no seed may come out of this payload");
+  assert.deepEqual(scan.tableEntryAddresses, [], "no byte of the two tables may be claimed as a table entry");
+  assert.equal(classAt(census, 0x0840), "unreached", "$0840 holds ordinary data nothing proven reaches");
+  assert.equal(
+    census.reachedAsInstruction,
+    PUSH_IDIOM_WINDOW_EDGE_CODE_BYTES,
+    `the census must reach exactly the ${PUSH_IDIOM_WINDOW_EDGE_CODE_BYTES}-byte prologue and nothing beyond it`,
+  );
+
+  // The pair, in the direction that makes the interior declarations mean
+  // something: one payload inside the pre-gate sufficient condition, one just
+  // outside it, distinguished by the witness rather than by assertion.
+  assert.equal(
+    reachesGateInterior(PUSH_IDIOM_WINDOW_EDGE, ORDINARY_ORIGIN, "stack-return-push-idiom"),
+    false,
+    "with its rts one instruction past the pairing window, this payload never enters the region the class-3 branch rules on -- if the " +
+      "witness said true here it would say true for everything, and every interior declaration keyed on it would be vacuous",
+  );
+  assert.equal(
+    reachesGateInterior(payloadOf(FP3_INTERIOR), loadFixture(FP3_INTERIOR).store.origin, "stack-return-push-idiom"),
+    true,
+    "FP3 must be recognised as INTERIOR to the class-3 push-idiom route. A control declared as an interior control while sitting " +
+      "outside the predicate it constrains is not a control at all",
   );
 });
 

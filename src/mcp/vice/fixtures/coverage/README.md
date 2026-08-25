@@ -1,6 +1,6 @@
 # Coverage control fixtures — COV-02
 
-**Ten** committed synthetic fixtures, in three groups.
+**Twelve** committed synthetic fixtures, in four groups.
 
 - **Five findings controls plus one non-vacuity control** (`nc1`…`nc5`). Five must FAIL and one
   must PASS. Without `nc5-well-documented` the whole coverage instrument would be vacuous: an
@@ -17,6 +17,17 @@
   why a 2517-passing suite concealed `19-REVIEW.md` CR-04. `fp2b-immediate-data-pointer` is its
   immediate twin, committed so FP2's census is compared against a **measured** baseline rather than
   a remembered number.
+- **The class-3 push-idiom route's INTERIOR control PAIR** (`fp3`, `fp3b`). The dispatch predicate
+  accepts two sufficient shapes, and one of them — `stack-return-push-idiom` — is ruled on by **two**
+  gates: the class-4 five-instruction pass and the class-3 pairing pass. `STACK_RETURN` and its two
+  twins all reach that shape through the class-4 window, so the class-3 route into it had no control
+  at all. `fp3-unlinked-push-idiom` takes exactly that route: class 4 declines its window outright,
+  and the class-3 pass then had to rule on a pairing whose only dispatch evidence was two `pha` bytes
+  and an `rts` somewhere in reach — pushes carrying the accumulator's leftover value and the X
+  register, **neither of them a byte either paired load supplied**. A control that brackets a branch
+  from the outside cannot hold that branch down, which is why three green push-idiom controls
+  coexisted with a live inflation route. `fp3b-immediate-push-idiom` is its immediate twin, supplying
+  the **measured** census baseline.
 
 Every fixture is generated, never hand-written:
 
@@ -43,18 +54,20 @@ writer emits rather than a hand-assembled approximation.
 | `fp1b-immediate-copy-loop` | FP1b | **nothing** — FP1 with its two loads made immediate; the only difference between the two programs | the baseline half of the pair: it reported **7** pre-gate and must still report 7, so FP1's number is compared against a *measured* value rather than a remembered one |
 | `fp2-zeropage-data-pointer` | FP2 | **nothing** — an ordinary 16-bit pointer: two indexed table reads stored into `$fb`/`$fc`, then `lda ($fb),y`. It satisfies **every** condition the pre-CR-04 dispatch gate required while dispatching nowhere at all. **This is the control that reaches the gate's interior**, which no prior control did | `dispatch.splitTables`, `provenDispatchTargets()` and `dispatch.tableEntryAddresses` must all be **empty**, `classAt($0840)` must be `unreached`, and `structural.reachedAsInstruction` must not exceed the declared `code_size` (17). Pre-fix: `splitTables=1`, eight proven targets at `$0840`…`$0847`, 16 claimed table-entry bytes, `classAt($0840)="reached-as-instruction"`, **reached=33** |
 | `fp2b-immediate-data-pointer` | FP2b | **nothing** — FP2 with its two vector-byte loads made immediate; the only difference between the two programs. The same vector is still built at `$fb`/`$fc` and still consumed by the same `lda ($fb),y` | the baseline half of the interior pair: `structural.reachedAsInstruction` must equal FP2's, must equal the declared `code_size` (17), and must be **strictly greater than zero** — otherwise the equality is satisfiable by an instrument that censused nothing. Pre-fix the pair was asymmetric, **33** against **17** |
+| `fp3-unlinked-push-idiom` | FP3 | **nothing** — an ordinary 16-bit pointer setup followed by an ordinary `pha`/`pha`/`rts` register save: `lda $0830,x : sta $fb : lda $0838,x : sta $fc : pha : txa : pha : tya : rts`, fifteen code bytes with **no `$6c` byte anywhere in the image**. **This is the control that reaches the CLASS-3 route into the push-idiom shape**, which no prior control did | `dispatch.splitTables`, `provenDispatchTargets()` and `dispatch.tableEntryAddresses` must all be **empty**, `classAt($0840)` must be `unreached`, `structural.reachedAsInstruction` must equal the declared `code_size` (15), and `dispatch.splitTableCandidates` must be exactly **1** — so the gate is seen to have examined and *declined* the pairing rather than never noticed it. Pre-fix: `splitTables=1`, eight proven targets at `$0840`…`$0847`, 16 claimed table-entry bytes, `classAt($0840)="reached-as-instruction"`, **reached=31** |
+| `fp3b-immediate-push-idiom` | FP3b | **nothing** — FP3 with its two vector-byte loads made immediate; the only difference between the two programs. The same vector is still built at `$fb`/`$fc` and the same `pha`/`txa`/`pha`/`tya`/`rts` tail is retained, so the push idiom is present in both and only the indexed pairing is gone | the baseline half of the pair: `structural.reachedAsInstruction` must equal FP3's, must equal the declared `code_size` (15), and `dispatch.splitTableCandidates` must be **0** because there is no indexed pair to rule on. Pre-fix the pair was asymmetric, **31** against **15** |
 
 ## Shape of each fixture
 
 | File | What it is |
 |---|---|
-| `project.regen2000proj` | the project file, written by `synthesizeProject()`. Identical across the **five** `nc*` fixtures — for those, only the store differs. The false-positive pair and the interior pair each carry their own program, which is the whole point of them. |
-| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `r2000-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair and the interior pair additionally carry `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
+| `project.regen2000proj` | the project file, written by `synthesizeProject()`. Identical across the **five** `nc*` fixtures — for those, only the store differs. The false-positive pair, the interior pair and the push-idiom pair each carry their own program, which is the whole point of them. |
+| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `r2000-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair, the interior pair and the push-idiom pair additionally carry `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
 
 ## The program shared by the five `nc*` fixtures
 
-The **five** `nc*` fixtures carry the same 64-byte program at `$0810`; the false-positive pair and
-the interior pair do not, and no fixture outside the `nc*` group is claimed to. It has real
+The **five** `nc*` fixtures carry the same 64-byte program at `$0810`; the false-positive pair, the
+interior pair and the push-idiom pair do not, and no fixture outside the `nc*` group is claimed to. It has real
 subroutines, one label reached from **two** call sites (which is what the cross-reference rule
 engages on), one absolute data reference, one indexed data reference, and deliberate unreachable
 filler. The filler is what makes
@@ -150,6 +163,71 @@ Two invariants are **enforced by the generator, not asserted about**:
   data rather than laid into a pre-sized array — so the identical-tail invariant is a real check an
   edit can break, and a prologue edit changes the payload *length* rather than being silently
   absorbed.
+
+## The push-idiom pair's own two programs
+
+`fp3-unlinked-push-idiom` and `fp3b-immediate-push-idiom` are two 64-byte programs at `$0810`,
+unrelated to any group above, **byte-identical apart from a 15-byte code prologue**:
+
+```
+$0810  lda $0830,x     ; lo table, indexed through X
+$0813  sta $fb         ; vector lo
+$0815  lda $0838,x     ; hi table, indexed through the SAME register
+$0818  sta $fc         ; vector hi  <- consecutive with $fb
+$081A  pha             ; pushes A -- the HI table byte, already consumed by the store
+$081B  txa
+$081C  pha             ; pushes X -- an index, not a table byte
+$081D  tya
+$081E  rts             ; the RTS trick, over bytes NEITHER paired load supplied
+$081F  ea x17          ; filler
+$0830  40 41 ... 47    ; eight ascending lo bytes
+$0838  08 x8           ; eight hi bytes
+$0840  ea x16          ; sixteen legal single-byte instructions
+```
+
+FP3b replaces the two indexed table reads with immediate constants, padded with `nop` so the
+prologue length is unchanged, and keeps the identical push tail:
+
+```
+$0810  lda #$30 : nop : sta $fb : lda #$38 : nop : sta $fc
+$081A  pha : txa : pha : tya : rts
+$081F..$084F  identical to FP3, byte for byte
+```
+
+**Why the three existing push-idiom controls could not catch this.** `stack-return-push-idiom` is
+ruled on by **two** gates. The class-4 pass matches an exact five-instruction window
+(`indexed load : pha : indexed load : pha : rts`); the class-3 pass consults
+`hasDispatchContext()` for any same-register indexed pairing. `STACK_RETURN`,
+`STACK_RETURN_MIXED_REGISTERS` and `STACK_RETURN_IMPLAUSIBLE_TARGET` all satisfy the class-4
+window, so all three sat outside the class-3 route entirely. This payload takes that route: class
+4 declines it outright because its second instruction is a `sta` rather than a `pha`, after which
+the class-3 branch accepted the mere **presence** of two `$48` bytes and a `$60` byte inside the
+window — never once consulting the pairing it was being asked to rule on.
+
+Pre-fix it reported `splitTables=1`, eight `provenDispatchTargets` at `$0840`…`$0847`, 16 claimed
+`tableEntryAddresses`, `classAt($0840)="reached-as-instruction"` and **reached=31** of 64 bytes
+against 15 bytes of real code — 47 of 64 bytes claimed as code-or-table out of a 15-byte program.
+The branch now requires each paired load's own **next** instruction to be the `pha` carrying the
+byte it just read, with the `rts` following both, so all five converge: empty, empty, empty,
+`unreached`, and 15 — the same 15 the twin reports. The pairing is still reported as exactly **one**
+advisory candidate, which is the record that the gate examined it and declined rather than never
+seeing it.
+
+Three invariants are **enforced by the generator, not asserted about**:
+
+- `assertNoIndirectJumpOpcode()` **throws** on any `$6c` (`jmp (indirect)`) byte anywhere in either
+  image, naming the offset. That is what makes "nothing here dispatches through these tables" true
+  of the whole image rather than of the prefix a decode happened to walk.
+- `assertCarriesPushIdiom()` **throws** unless the 15-byte prologue carries at least two `$48`
+  (`pha`) bytes and at least one `$60` (`rts`) byte. This pair may **not** use
+  `assertDispatchesNowhere()`, which throws on `$48` — the push idiom is the fixture's whole reason
+  for existing. Without this second throw a future edit could delete the idiom and leave a payload
+  that never enters the region the class-3 branch rules on, bracketing it from the **outside** while
+  still wearing an interior control's label.
+- The pair must be equal in length, each exactly 64 bytes, each prologue exactly `FP3_CODE_SIZE`,
+  and byte-identical from offset `FP3_CODE_SIZE` onward. Both data regions are written out in full
+  in their own literal rather than shared, and each payload is **concatenated** from prologue plus
+  data rather than laid into a pre-sized array.
 
 ## These do not ship
 
