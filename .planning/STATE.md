@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-07-PLAN.md
-last_updated: "2026-08-24T21:55:48.023Z"
-last_activity: 2026-08-24
-last_activity_desc: Phase 19 gap closure — 19-07 discharged MIT's inclusion condition and guarded the claim (ABS-02)
-state_head: 91aeadcb789e8e3ab6f1d794d7680fc5d564c918
+stopped_at: Completed 19-08-PLAN.md
+last_updated: "2026-08-25T05:02:01.703Z"
+last_activity: 2026-08-25
+last_activity_desc: Phase 19 gap closure — 19-08 gated the Class-3 split-table scan on real dispatch context and seeded the descent only from proven targets (COV-01, COV-02)
+state_head: 9c9166db16921eb116d2a6d928df9ae2573ad990
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
   percent: 20
 ---
 
@@ -68,10 +68,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-08-24 — Phase 19 execution started
+Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
+Plan: 8 of 9 complete (19-09 remaining)
+Status: Wave 2 in progress — 19-08 complete, 19-09 next
+Last activity: 2026-08-25 — 19-08 gated the split-table scan and gave it the negative control it never had (COV-01, COV-02)
 
 ## Performance Metrics
 
@@ -186,6 +186,7 @@ Last activity: 2026-08-24 — Phase 19 execution started
 | Phase 19 P05 | 46 min | 3 tasks | 15 files |
 | Phase 19 P06 | 22 min | 2 tasks | 2 files |
 | Phase 19 P07 | 2h | 3 tasks | 5 files |
+| Phase 19 P08 | 30 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -364,6 +365,9 @@ Recent decisions affecting current work:
 - [Phase 19]: 19-06: every count in the coverage report is derived from the deduped list printed beside it (WR-02) — coverageFindings() prints a count and an address list in one sentence; a pre-dedup count beside a post-dedup list made the finding text contradict itself (2 label name(s) ... at $1000).
 - [Phase 19]: 19-07: MIT election and corrected notices wording APPROVED by human (option id approve-wording-release-on-reverification). Release hold REMAINS; the named condition that lifts it is: "Phase 19 re-verification returns no gaps."
 - [Phase 19]: 19-07: INCORPORATION_CLAIM_PATTERN is independent of the notice section — keying the claim on its own discharge would make the presence guard tautological.
+- [Phase 19]: Checkpoint decision: report shape narrow-and-add-sibling — discoveredTargets narrowed to proven-only, splitTableCandidates added as advisory sibling (19-08)
+- [Phase 19]: COVERAGE_SCHEMA_VERSION bumped 1 -> 2; nine-entry COVERAGE_REPORT_KEYS top-level set unchanged (19-08)
+- [Phase 19]: A proven class-3 split table additionally requires a lo/hi orientation resolved by its own store construction; otherwise it is advisory (19-08, WR-01)
 
 ### Pending Todos
 
@@ -856,8 +860,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-24T21:55:40.397Z
-Stopped at: Completed 19-07-PLAN.md
+Last session: 2026-08-25T05:02:01.601Z
+Stopped at: Completed 19-08-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
