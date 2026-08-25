@@ -1,0 +1,13 @@
+{
+  "control": "FP3",
+  "purpose": "the CLASS-3 push-idiom route's INTERIOR control. FP2 reaches the zero-page-vector shape's interior and the three STACK_RETURN payloads reach the push idiom through the CLASS-4 five-instruction window, so the class-3 route into the push idiom had no control at all. This payload takes it: lda $0830,x : sta $fb : lda $0838,x : sta $fc : pha : txa : pha : tya : rts, fifteen bytes of code with NO $6c byte anywhere in the image. Class 4 declines the window outright because its second instruction is a store rather than a push, and the class-3 pass then ruled on the pairing with only two $48 bytes and a $60 byte somewhere in reach as its evidence -- pushes that carry the accumulator's leftover value and the X register, NEITHER of which is a byte the two paired loads supplied. The property under test is that dispatch.splitTables, provenDispatchTargets() and dispatch.tableEntryAddresses are ALL empty, classAt($0840) is unreached, the census equals the declared 15 code bytes, and the pairing is STILL reported as exactly one advisory candidate so the gate demonstrably examined and declined it. Pre-fix this reported reached=31, tableEntry=16, splitTables=1 and eight proven targets at $0840..$0847",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 15,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}

@@ -1,0 +1,13 @@
+{
+  "control": "FP3b",
+  "purpose": "the twin of FP3 whose ONLY difference is the addressing mode of its two vector-byte loads -- immediate constants instead of indexed table reads. The same zero-page vector is still built at $fb/$fc and the same pha : txa : pha : tya : rts tail is retained, so the push idiom is present in both and only the indexed pairing is gone. It is committed rather than inferred so FP3's census is compared against a LIVE, MEASURED baseline instead of against a number someone remembered: the two must report the SAME structural.reachedAsInstruction, that value must equal the 15 code bytes the twin's own store declares, and the twin must report ZERO advisory candidates because it has no indexed pair for the gate to rule on. Pre-fix the pair was asymmetric -- 31 against 15, on 15 bytes of real code in both",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 15,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// make-coverage-fixtures.mjs -- the reproducible generator for COV-02's ten
+// make-coverage-fixtures.mjs -- the reproducible generator for COV-02's twelve
 // committed control fixtures.
 //
-// WHY A GENERATOR RATHER THAN TEN HAND-COMMITTED BLOBS: the ten fixtures are
-// three groups, and each group's defining property is a SAMENESS or a CHECKED
-// NEGATIVE that only a generator can hold.
+// WHY A GENERATOR RATHER THAN TWELVE HAND-COMMITTED BLOBS: the twelve fixtures
+// are four groups, and each group's defining property is a SAMENESS or a
+// CHECKED NEGATIVE that only a generator can hold.
 //
 //   * The five findings controls (NC1..NC5) are the SAME 64-byte program with
 //     a different STORE attached. If each were hand-assembled, a change to the
@@ -28,6 +28,16 @@
 //     claim in a comment. The pair carries the same equal-length and
 //     identical-tail throws FP1/FP1b does, for the same reason: FP2's census
 //     is only meaningful against a MEASURED twin.
+//   * The CLASS-3 push-idiom route's INTERIOR control PAIR (FP3, FP3b) carries
+//     a fifth and sixth program whose defining property is a pair of CHECKED
+//     opposites: the image must carry NO `$6c` byte anywhere (nothing dispatches
+//     through the reconstructed tables) and its prologue MUST carry the
+//     `pha`/`pha`/`rts` idiom (so the payload genuinely enters the region the
+//     class-3 branch rules on). `assertDispatchesNowhere()` cannot express that
+//     -- it throws on `$48` -- so the pair carries its own two throws,
+//     `assertNoIndirectJumpOpcode()` and `assertCarriesPushIdiom()`, alongside
+//     the same equal-length, 64-byte, prologue-length and identical-tail throws
+//     the other two pairs carry.
 //
 // Every fixture's project file is produced by this repository's own real
 // `synthesizeProject()` -- never hand-assembled JSON -- so the payload format
@@ -418,6 +428,211 @@ for (let i = FP2_CODE_SIZE; i < ZEROPAGE_DATA_POINTER.length; i++) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// The class-3 push-idiom route's INTERIOR control PAIR (FP3, FP3b). Two 64-byte
+// programs at $0810 whose 15-byte code prologue builds a zero-page vector out
+// of two indexed table reads and then carries a `pha`/`pha`/`rts` stack-return
+// idiom that pushes bytes the two paired loads never produced.
+//
+// FP3 -- UNLINKED_PUSH_IDIOM:
+//
+//   $0810  lda $0830,x      ; lo table, indexed through X
+//   $0813  sta $fb          ; vector lo
+//   $0815  lda $0838,x      ; hi table, indexed through the SAME register
+//   $0818  sta $fc          ; vector hi  <- consecutive with $fb
+//   $081A  pha              ; pushes A -- the HI table byte, already consumed
+//   $081B  txa
+//   $081C  pha              ; pushes X -- an index, not a table byte
+//   $081D  tya
+//   $081E  rts              ; the RTS trick, over bytes NEITHER load supplied
+//   $081F  ea x17           ; filler up to $0830
+//   $0830  40 41 ... 47     ; eight ascending lo bytes
+//   $0838  08 x8            ; eight hi bytes
+//   $0840  ea x16           ; sixteen legal single-byte instructions
+//
+// WHY THIS PAIR EXISTS, and why FP2 could not hold the property down. The
+// dispatch-context predicate accepts two sufficient shapes. FP2 reaches the
+// interior of the zero-page-vector shape; the three stack-return controls
+// (`STACK_RETURN`, `STACK_RETURN_MIXED_REGISTERS`,
+// `STACK_RETURN_IMPLAUSIBLE_TARGET`) reach the push idiom through the CLASS-4
+// five-instruction window. Nothing reached the push idiom through the CLASS-3
+// pairing pass, which is the route this payload takes: class 4 declines the
+// window outright -- its second instruction is a `sta`, not a `pha` -- and the
+// class-3 pass then examined the pairing and promoted it on the mere presence
+// of two `pha` bytes and an `rts` somewhere in the window.
+//
+// The measured pre-fix report for this payload, at the round-3 verification:
+// `reachedAsInstruction=31`, `tableEntry=16`, `splitTables=1`, and eight
+// `provenDispatchTargets` at $0840..$0847, with `classAt($0840)` reading
+// "reached-as-instruction" over a cleared `nop` buffer. Forty-seven of 64 bytes
+// claimed as code-or-table out of a 15-byte program, silently.
+//
+// `assertNoIndirectJumpOpcode()` and `assertCarriesPushIdiom()` below are what
+// make this pair's two defining properties CHECKED FACTS rather than claims in
+// this comment: nothing in the image can dispatch through the reconstructed
+// tables, and the push idiom the gate rules on is genuinely present. The second
+// throw matters as much as the first -- a future edit that removed the `pha`
+// bytes would leave a fixture that brackets the gate from the OUTSIDE while
+// still wearing an interior control's label, which is exactly the defect an
+// interior control exists to prevent.
+//
+// FP3b is the immediate twin supplying FP3's MEASURED census baseline, for the
+// reason FP1b and FP2b exist: a lone fixture asserting `reached <= code_size`
+// is satisfied by an instrument that has quietly stopped censusing anything.
+// ---------------------------------------------------------------------------
+
+/** `lda $0830,x : sta $fb : lda $0838,x : sta $fc : pha : txa : pha : tya :
+ * rts` -- the blocker payload verbatim. Each paired load is consumed by a
+ * STORE, not by a push; the two pushes carry the accumulator's leftover value
+ * and the X register. */
+const FP3_INDEXED_PROLOGUE = [
+  0xbd, 0x30, 0x08, // $0810 lda $0830,x   (lo table)
+  0x85, 0xfb, //       $0813 sta $fb       (vector lo)
+  0xbd, 0x38, 0x08, // $0815 lda $0838,x   (hi table)
+  0x85, 0xfc, //       $0818 sta $fc       (vector hi)
+  0x48, //             $081A pha
+  0x8a, //             $081B txa
+  0x48, //             $081C pha
+  0x98, //             $081D tya
+  0x60, //             $081E rts
+];
+
+/** `lda #$30 : nop : sta $fb : lda #$38 : nop : sta $fc : pha : txa : pha :
+ * tya : rts` -- the immediate twin.
+ *
+ * The same zero-page vector is still constructed at `$fb`/`$fc` and the same
+ * `pha`/`txa`/`pha`/`tya`/`rts` tail is retained; the ONLY difference is the
+ * source of the two vector bytes, which changes from an indexed table read to
+ * an immediate constant. Padded with `nop` so the prologue length is
+ * unchanged, exactly as FP1b's and FP2b's are. */
+const FP3_IMMEDIATE_PROLOGUE = [
+  0xa9, 0x30, 0xea, // $0810 lda #$30 : nop
+  0x85, 0xfb, //       $0813 sta $fb
+  0xa9, 0x38, 0xea, // $0815 lda #$38 : nop
+  0x85, 0xfc, //       $0818 sta $fc
+  0x48, //             $081A pha
+  0x8a, //             $081B txa
+  0x48, //             $081C pha
+  0x98, //             $081D tya
+  0x60, //             $081E rts
+];
+
+/** The real code size of both push-idiom payloads, DERIVED from the prologue
+ * rather than typed as a bare number, so the non-inflation control cannot
+ * drift away from the payloads it guards. */
+const FP3_CODE_SIZE = FP3_INDEXED_PROLOGUE.length;
+
+const UNLINKED_PUSH_IDIOM = withZeroPageVectorData(FP3_INDEXED_PROLOGUE, [
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $081F filler
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0827 filler
+  0xea, //                                           $082F filler
+  0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, // $0830 lo bytes
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, // $0838 hi bytes
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0840 reconstructed targets
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0848
+]);
+
+const IMMEDIATE_PUSH_IDIOM = withZeroPageVectorData(FP3_IMMEDIATE_PROLOGUE, [
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $081F filler
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0827 filler
+  0xea, //                                           $082F filler
+  0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, // $0830 lo bytes
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, // $0838 hi bytes
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0840 reconstructed targets
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0848
+]);
+
+// The push-idiom pair's stated properties, ENFORCED, in the same order the FP2
+// pair enforces its own: pair length first, then the 64-byte size, then the
+// prologue length, then the two defining properties, then the identical tail.
+if (UNLINKED_PUSH_IDIOM.length !== IMMEDIATE_PUSH_IDIOM.length) {
+  throw new Error(
+    `the push-idiom pair must be EQUAL IN LENGTH -- UNLINKED_PUSH_IDIOM is ${UNLINKED_PUSH_IDIOM.length} bytes and ` +
+      `IMMEDIATE_PUSH_IDIOM is ${IMMEDIATE_PUSH_IDIOM.length}; comparing their censuses is meaningless unless they differ ONLY in the code prologue`,
+  );
+}
+
+for (const [name, payload] of [
+  ["UNLINKED_PUSH_IDIOM", UNLINKED_PUSH_IDIOM],
+  ["IMMEDIATE_PUSH_IDIOM", IMMEDIATE_PUSH_IDIOM],
+]) {
+  if (payload.length !== 0x40) {
+    throw new Error(`${name} must be exactly 64 bytes, got ${payload.length}`);
+  }
+}
+
+if (FP3_INDEXED_PROLOGUE.length !== FP3_CODE_SIZE || FP3_IMMEDIATE_PROLOGUE.length !== FP3_CODE_SIZE) {
+  throw new Error(
+    `both push-idiom prologues must be exactly FP3_CODE_SIZE (${FP3_CODE_SIZE}) bytes -- indexed is ` +
+      `${FP3_INDEXED_PROLOGUE.length}, immediate is ${FP3_IMMEDIATE_PROLOGUE.length}; the declared code size is what the census is ` +
+      `asserted not to exceed, so it may not be a number that is true of only one of the two`,
+  );
+}
+
+// THE PROPERTY THE BLOCKER PAYLOAD TURNS ON, made a checked fact. This pair
+// may NOT be passed to `assertDispatchesNowhere()` -- it exists precisely
+// because it CARRIES the push idiom, so a throw on `$48` would be a throw on
+// the fixture's whole reason for existing. The two properties are therefore
+// split and each is enforced on its own.
+//
+// `assertNoIndirectJumpOpcode()` is the half that says nothing in the image
+// dispatches through these tables: `$6c` is `jmp (indirect)`, and its absence
+// ANYWHERE in the image -- not merely in the decoded prefix -- is what makes
+// that statement true of the whole payload rather than of the part a decode
+// happened to walk.
+function assertNoIndirectJumpOpcode(name, payload) {
+  for (let i = 0; i < payload.length; i++) {
+    if (payload[i] === 0x6c) {
+      throw new Error(
+        `${name} must carry NO indirect-jump opcode, but has $6c at offset ${i} ($${(ORIGIN + i).toString(16)}) -- ` +
+          `$6c is jmp (indirect), and one anywhere in the image makes this fixture unable to hold down the property it exists for: ` +
+          `that a reconstructed lo/hi table pair NOTHING dispatches through is not proven dispatch`,
+      );
+    }
+  }
+}
+
+// The other half, and the INTERIOR one. Without it a future edit could delete
+// the `pha`/`pha`/`rts` idiom and leave a payload that never enters the region
+// the class-3 push-idiom branch rules on -- an outside-bracketing control
+// wearing an interior label, which is the defect this pair was authored to
+// eliminate. Checked inside the prologue rather than over the whole image, so
+// a stray data byte cannot satisfy it.
+function assertCarriesPushIdiom(name, payload, codeSize) {
+  const prologue = payload.subarray(0, codeSize);
+  let pushes = 0;
+  let returns = 0;
+  for (const byte of prologue) {
+    if (byte === 0x48) pushes++;
+    if (byte === 0x60) returns++;
+  }
+  if (pushes < 2 || returns < 1) {
+    throw new Error(
+      `${name} must CARRY the stack-return push idiom inside its ${codeSize}-byte prologue, but has ${pushes} $48 (pha) byte(s) ` +
+        `and ${returns} $60 (rts) byte(s) -- at least two pushes and one return are required. A payload without the idiom never ` +
+        `enters the region the class-3 push-idiom branch rules on, so it would bracket that branch from the OUTSIDE while still ` +
+        `being declared its interior control`,
+    );
+  }
+}
+
+assertNoIndirectJumpOpcode("UNLINKED_PUSH_IDIOM", UNLINKED_PUSH_IDIOM);
+assertNoIndirectJumpOpcode("IMMEDIATE_PUSH_IDIOM", IMMEDIATE_PUSH_IDIOM);
+assertCarriesPushIdiom("UNLINKED_PUSH_IDIOM", UNLINKED_PUSH_IDIOM, FP3_CODE_SIZE);
+assertCarriesPushIdiom("IMMEDIATE_PUSH_IDIOM", IMMEDIATE_PUSH_IDIOM, FP3_CODE_SIZE);
+
+for (let i = FP3_CODE_SIZE; i < UNLINKED_PUSH_IDIOM.length; i++) {
+  if (UNLINKED_PUSH_IDIOM[i] !== IMMEDIATE_PUSH_IDIOM[i]) {
+    throw new Error(
+      `the push-idiom pair must be BYTE-IDENTICAL from offset ${FP3_CODE_SIZE} onward -- they differ at offset ${i} ` +
+        `($${(ORIGIN + i).toString(16)}): indexed has $${UNLINKED_PUSH_IDIOM[i].toString(16).padStart(2, "0")}, immediate has ` +
+        `$${IMMEDIATE_PUSH_IDIOM[i].toString(16).padStart(2, "0")}. "Differing ONLY in addressing mode" is a CHECKED property of ` +
+        `these fixtures, not a claim in a comment`,
+    );
+  }
+}
+
 const ADDR = { entry: 0x0810, setFlag: 0x0820, readTable: 0x0828, tailCall: 0x0830 };
 
 const CROSS_REFERENCES = [
@@ -596,6 +811,34 @@ const FIXTURES = [
       "the twin of FP2 whose ONLY difference is the addressing mode of its two vector-byte loads -- immediate constants instead of indexed table reads. The same zero-page vector is still built at $fb/$fc and still consumed by the same lda ($fb),y. It is committed rather than inferred so FP2's census is compared against a LIVE, MEASURED baseline instead of against a number someone remembered: the two must report the SAME structural.reachedAsInstruction, and the twin's must be strictly greater than zero, so the equality cannot be satisfied by an instrument that quietly stopped censusing anything. Pre-fix the pair was asymmetric -- 33 against 17, on 17 bytes of real code in both",
     program: IMMEDIATE_DATA_POINTER,
     code_size: FP2_CODE_SIZE,
+    expect_clean: false,
+    expect_measure: null,
+    symbols: [],
+    comments: [],
+    blocks: [],
+    cross_references: [],
+  },
+  {
+    dir: "fp3-unlinked-push-idiom",
+    control: "FP3",
+    purpose:
+      "the CLASS-3 push-idiom route's INTERIOR control. FP2 reaches the zero-page-vector shape's interior and the three STACK_RETURN payloads reach the push idiom through the CLASS-4 five-instruction window, so the class-3 route into the push idiom had no control at all. This payload takes it: lda $0830,x : sta $fb : lda $0838,x : sta $fc : pha : txa : pha : tya : rts, fifteen bytes of code with NO $6c byte anywhere in the image. Class 4 declines the window outright because its second instruction is a store rather than a push, and the class-3 pass then ruled on the pairing with only two $48 bytes and a $60 byte somewhere in reach as its evidence -- pushes that carry the accumulator's leftover value and the X register, NEITHER of which is a byte the two paired loads supplied. The property under test is that dispatch.splitTables, provenDispatchTargets() and dispatch.tableEntryAddresses are ALL empty, classAt($0840) is unreached, the census equals the declared 15 code bytes, and the pairing is STILL reported as exactly one advisory candidate so the gate demonstrably examined and declined it. Pre-fix this reported reached=31, tableEntry=16, splitTables=1 and eight proven targets at $0840..$0847",
+    program: UNLINKED_PUSH_IDIOM,
+    code_size: FP3_CODE_SIZE,
+    expect_clean: false,
+    expect_measure: null,
+    symbols: [],
+    comments: [],
+    blocks: [],
+    cross_references: [],
+  },
+  {
+    dir: "fp3b-immediate-push-idiom",
+    control: "FP3b",
+    purpose:
+      "the twin of FP3 whose ONLY difference is the addressing mode of its two vector-byte loads -- immediate constants instead of indexed table reads. The same zero-page vector is still built at $fb/$fc and the same pha : txa : pha : tya : rts tail is retained, so the push idiom is present in both and only the indexed pairing is gone. It is committed rather than inferred so FP3's census is compared against a LIVE, MEASURED baseline instead of against a number someone remembered: the two must report the SAME structural.reachedAsInstruction, that value must equal the 15 code bytes the twin's own store declares, and the twin must report ZERO advisory candidates because it has no indexed pair for the gate to rule on. Pre-fix the pair was asymmetric -- 31 against 15, on 15 bytes of real code in both",
+    program: IMMEDIATE_PUSH_IDIOM,
+    code_size: FP3_CODE_SIZE,
     expect_clean: false,
     expect_measure: null,
     symbols: [],

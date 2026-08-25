@@ -1629,7 +1629,7 @@ test("bounded walk: the descent walker honours an explicit step bound and report
  * number lives here and in `fixtures/coverage/README.md`, and both must agree
  * with the directory count -- a stale count in either is the same defect class
  * this phase's gap closure exists to remove. */
-const COMMITTED_CONTROL_FIXTURES = 10;
+const COMMITTED_CONTROL_FIXTURES = 12;
 
 test("the committed control set is exactly the pinned size, and every fixture carries a project file and a store file", () => {
   const dirs = fixtureDirs();
@@ -1928,6 +1928,199 @@ test("FP2b earns its place: without a committed twin, the interior control's cen
   assert.equal(indexed.size, 0x40, "the interior control is a 64-byte payload");
   assert.equal(reportFor(FP2_INTERIOR).dispatch.splitTableCandidates.length, 1, `${FP2_INTERIOR}: the ungated lo/hi pairing must still be REPORTED as advisory`);
   assert.equal(twin.dispatch.splitTableCandidates.length, 0, `${FP2_IMMEDIATE}: the immediate twin has no indexed pair at all`);
+});
+
+
+const FP3_INTERIOR = "fp3-unlinked-push-idiom";
+const FP3_IMMEDIATE = "fp3b-immediate-push-idiom";
+
+/** `lda $0830,x : pha : sta $fb : lda $0838,x : pha : sta $fc : rts` -- the
+ * LIVENESS positive control for the tightened class-3 push-idiom branch.
+ *
+ * Each of the two paired loads is IMMEDIATELY followed by the push that
+ * carries the byte it just read, and the `rts` that consumes the pushed pair
+ * follows both -- the RTS trick as an actual data flow rather than as a shape
+ * seen somewhere in the window. The class-4 pass declines this window because
+ * an instruction (`sta $fb`) sits between the first push and the second load,
+ * so the route under test is unambiguously the class-3 one.
+ *
+ * This control is load-bearing. A tightened branch that can never fire is dead
+ * code wearing a sufficient-shape label -- a worse defect than the loose branch
+ * it replaced, because the suite would then be green over a predicate that
+ * measures nothing. The table and target layout is FP3's, so the only thing
+ * that differs between the declined payload and the accepted one is where the
+ * two pushes sit. */
+const PUSH_IDIOM_LINKED = (() => {
+  const out = new Uint8Array(0x40).fill(0xea);
+  out.set(
+    [
+      0xbd, 0x30, 0x08, // $0810 lda $0830,x   (lo table)
+      0x48, //             $0813 pha           <- pushes the byte just loaded
+      0x85, 0xfb, //       $0814 sta $fb
+      0xbd, 0x38, 0x08, // $0816 lda $0838,x   (hi table, SAME register)
+      0x48, //             $0819 pha           <- pushes the byte just loaded
+      0x85, 0xfc, //       $081A sta $fc
+      0x60, //             $081C rts           <- follows BOTH pushes
+    ],
+    0,
+  );
+  for (let k = 0; k < 8; k++) {
+    out[0x0830 - ORDINARY_ORIGIN + k] = 0x40 + k; // lo bytes -> $0840..$0847
+    out[0x0838 - ORDINARY_ORIGIN + k] = 0x08; // hi bytes
+  }
+  return out;
+})();
+
+/** The prologue length of `PUSH_IDIOM_LINKED`, DERIVED from the payload rather
+ * than typed, by reading up to and including its `rts`. */
+const PUSH_IDIOM_LINKED_CODE_BYTES = PUSH_IDIOM_LINKED.indexOf(0x60) + 1;
+
+/** The eight entry points FP3's table layout reconstructs. Written once and
+ * read by both the declining and the accepting control, so "the same eight
+ * addresses" is one fact rather than two lists that happen to agree. */
+const PUSH_IDIOM_TARGETS = [0x0840, 0x0841, 0x0842, 0x0843, 0x0844, 0x0845, 0x0846, 0x0847];
+
+test("a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it", () => {
+  // The CLASS-3 route into `stack-return-push-idiom`, at report level. FP2
+  // reaches the OTHER shape's interior; STACK_RETURN and its two twins reach
+  // this shape through the CLASS-4 five-instruction window. Nothing reached
+  // this shape through the class-3 pairing pass, and that is the route this
+  // payload takes: class 4 declines the window outright (its second
+  // instruction is a store, not a push), after which the class-3 pass ruled on
+  // the pairing with nothing more than two `pha` bytes and an `rts` somewhere
+  // in reach. The two pushes carry the accumulator's leftover value and the X
+  // register -- neither of them a byte either paired load supplied.
+  const store = loadFixture(FP3_INTERIOR).store;
+  assert.equal(typeof store.code_size, "number", `${FP3_INTERIOR}: the bound must be DECLARED BY THE FIXTURE, not typed into this test`);
+
+  const report = reportFor(FP3_INTERIOR);
+
+  assert.deepEqual(
+    report.dispatch.splitTables,
+    [],
+    `${FP3_INTERIOR}: a push idiom whose pushes carry bytes NEITHER paired load produced is not a PROVEN split table. ` +
+      `Pre-fix splitTables.length was 1 { loBase: $0830, hiBase: $0838 } -- the branch accepted the mere PRESENCE of two $48 ` +
+      `bytes and a $60 byte inside the window, without ever consulting the pairing it was being asked to rule on.`,
+  );
+  assert.deepEqual(
+    provenDispatchTargets(report.dispatch),
+    [],
+    `${FP3_INTERIOR}: nothing here may seed a recursive descent. Pre-fix this returned the eight values ` +
+      `$0840, $0841, $0842, $0843, $0844, $0845, $0846, $0847 -- reconstructed out of 16 bytes of ordinary pointer data.`,
+  );
+  assert.deepEqual(
+    report.dispatch.tableEntryAddresses,
+    [],
+    `${FP3_INTERIOR}: an ungated pairing must not claim a single byte as a table entry either. Pre-fix it claimed 16 addresses ` +
+      `($0830..$0837 and $0838..$083f).`,
+  );
+  assert.equal(
+    classAt(report.structural, 0x0840),
+    "unreached",
+    `${FP3_INTERIOR}: $0840 holds ordinary data that nothing proven ever reaches. Pre-fix its class was ` +
+      `"reached-as-instruction" -- the HEADLINE measure, manufactured out of data.`,
+  );
+  assert.ok(
+    report.structural.reachedAsInstruction <= store.code_size!,
+    `${FP3_INTERIOR}: the census reached ${report.structural.reachedAsInstruction} bytes of a program whose store declares ` +
+      `${store.code_size} bytes of code. reachedAsInstruction means REACHED BY RECURSIVE DESCENT FROM A SEED, so it can never ` +
+      `exceed the code that is actually there (pre-fix: 31 against a declared 15, with tableEntry=16 -- 47 of 64 bytes claimed ` +
+      `as code-or-table out of a 15-byte program).`,
+  );
+
+  // The census baseline is MEASURED, not remembered: the immediate twin is a
+  // committed fixture whose only difference is the addressing mode of the two
+  // vector-byte loads. It keeps the same push idiom, so the ONE thing removed
+  // is the indexed pairing the branch rules on.
+  const twinStore = loadFixture(FP3_IMMEDIATE).store;
+  const twin = reportFor(FP3_IMMEDIATE);
+  assert.equal(
+    report.structural.reachedAsInstruction,
+    twin.structural.reachedAsInstruction,
+    `the class-3 push-idiom control and its immediate twin carry 15 bytes of real code EACH and differ only in the addressing mode ` +
+      `of two loads, so they must report the same structural.reachedAsInstruction. Pre-fix the pair was asymmetric: 31 against the ` +
+      `twin's 15, because the indexed variant's two loads were promoted to a "proven" split table and their 16 bytes of pointer ` +
+      `data became descent seeds. A number here that is neither 15 nor 31 is a rewrite, not a regression -- read the generator first.`,
+  );
+  assert.equal(
+    twin.structural.reachedAsInstruction,
+    twinStore.code_size,
+    `${FP3_IMMEDIATE}: the immediate twin's every code byte is reached and nothing beyond it, so the equality above is measured ` +
+      `against a live baseline rather than against zero`,
+  );
+
+  // The gate must be seen to have EXAMINED the pairing and DECLINED it, not to
+  // have never noticed it. An advisory candidate is exactly that record.
+  assert.equal(
+    report.dispatch.splitTableCandidates.length,
+    1,
+    `${FP3_INTERIOR}: the declined pairing must still be REPORTED as exactly one advisory candidate. Pre-fix it was reported as ` +
+      `zero candidates for the opposite reason -- a PROVEN pairing emits none -- so a count of 0 here means the pairing was ` +
+      `promoted, and a count of 0 after the fix would mean the pairing was never examined at all.`,
+  );
+  assert.equal(
+    twin.dispatch.splitTableCandidates.length,
+    0,
+    `${FP3_IMMEDIATE}: the immediate twin has no indexed pair at all, so it has nothing to advise about`,
+  );
+
+  // Both directions, in the same test and the same commit. A tightening that
+  // declines everything measures nothing, so the two pre-existing positive
+  // controls are re-asserted here rather than left to be noticed elsewhere.
+  const provenSplit = scanOf(SPLIT_TABLE);
+  assert.equal(provenSplit.splitTables.length, 1, "a real split table with a genuine dispatch consumer must still be PROVEN");
+  assert.ok(
+    provenDispatchTargets(provenSplit).includes(0xc00d),
+    "the proven split table's reconstructed target must still reach provenDispatchTargets() -- a tightening that declines everything measures nothing",
+  );
+  const provenStackReturn = scanOf(STACK_RETURN);
+  assert.equal(
+    provenStackReturn.stackReturnDispatch.length,
+    1,
+    "the class-4 stack-return fixture must still be PROVEN through its own five-instruction pass -- this plan tightened the class-3 branch, not that one",
+  );
+  assert.ok(
+    provenDispatchTargets(provenStackReturn).length > 0,
+    "the class-4 pass must still reach provenDispatchTargets()",
+  );
+});
+
+test("the tightened class-3 push-idiom branch is LIVE: a payload whose two paired loads each push what they loaded is still PROVEN", () => {
+  // The liveness half of the tightening, and the reason it is asserted in the
+  // same commit as the tightening itself. A branch that can never return true
+  // is dead code wearing a sufficient-shape label: the suite would be green,
+  // `DISPATCH_CONTEXT_SHAPES` would still declare two shapes, and one of them
+  // would measure nothing. That is a worse defect than the loose branch this
+  // replaced, because nothing in the report would ever hint at it.
+  //
+  // `PUSH_IDIOM_LINKED` differs from the declined FP3 payload ONLY in where
+  // the two pushes sit. Class 4 declines its window -- `sta $fb` sits between
+  // the first push and the second load -- so the class-3 route is the one that
+  // rules on it.
+  const { scan, census } = wiredCensus(PUSH_IDIOM_LINKED, ORDINARY_ORIGIN);
+
+  assert.equal(
+    scan.splitTables.length,
+    1,
+    "a pairing whose two loads each immediately push the byte they read, with the rts following both, IS the RTS trick and must be PROVEN. " +
+      "If this is 0 the branch declines everything and the shape it declares is dead.",
+  );
+  assert.equal(
+    scan.stackReturnDispatch.length,
+    0,
+    "the class-4 pass must DECLINE this window, or the class-3 route would not be the thing under test here",
+  );
+  assert.deepEqual(
+    provenDispatchTargets(scan),
+    PUSH_IDIOM_TARGETS,
+    "the proven pairing's eight reconstructed entry points must reach the ONE seam that seeds a recursive descent",
+  );
+  assert.ok(
+    census.reachedAsInstruction > PUSH_IDIOM_LINKED_CODE_BYTES,
+    `a PROVEN pairing seeds a descent into its targets, so the census must exceed the ${PUSH_IDIOM_LINKED_CODE_BYTES}-byte prologue ` +
+      `(observed ${census.reachedAsInstruction}). A relation rather than a pinned count -- what matters is that the proven seeds ` +
+      `were actually followed, not the exact byte total.`,
+  );
 });
 
 // ---------------------------------------------------------------------------
