@@ -35,6 +35,15 @@
 //     multi-entry dispatch tables, split lo/hi tables, and the stack-return
 //     dispatch idiom (which contains no indirect-jump opcode at all and is
 //     therefore completely invisible to an opcode-keyed walk);
+//   - the DISPATCH-CONTEXT GATE that decides whether a Class-3 split lo/hi
+//     pairing is PROVEN or merely ADVISORY -- same index register, a dispatch
+//     consumer in evidence, every reconstructed target in-image and decodable,
+//     and a lo/hi orientation something other than address order determined.
+//     An ungated pairing is reported in `splitTableCandidates`, contributes
+//     nothing to `discoveredTargets` and nothing to `tableEntryAddresses`;
+//   - `provenDispatchTargets()` -- the ONE seam that decides what may seed a
+//     recursive descent. Every `extraSeeds:` assignment in this file reads it
+//     and reads nothing else;
 //   - the two label figures (`computeLabelRatio`), one of which is gameable
 //     and one of which is not;
 //   - the comment-vacuity measure (`computeCommentVacuity`) and its exact
@@ -88,6 +97,21 @@
 //      an undecodable one, or an empty comment set reports an explicit `null`
 //      ratio plus a stated reason -- never a silently-omitted measure and
 //      never a zero that reads like "clean".
+//   8. NEVER promote a RECONSTRUCTED value to a descent seed without evidence
+//      that something dispatches through it. Two indexed loads inside eight
+//      instructions of each other is the single most ordinary shape in C64
+//      code -- a screen-plus-colour copy loop -- and reading the bytes at
+//      their two operand bases as a lo/hi address table turns ordinary DATA
+//      into `reached-as-instruction`, which trap 2 defines as REACHED BY
+//      RECURSIVE DESCENT FROM A SEED. The census's whole meaning is that
+//      reachability was PROVEN; injecting arbitrary data into the seed set
+//      destroys that meaning by the other route, without ever touching the
+//      linear-sweep figure trap 2 guards. Reproduced at report level before
+//      the gate landed: two 64-byte programs at $0810 with 7 bytes of real
+//      code each, differing ONLY in immediate versus indexed addressing,
+//      reported reached=7 and reached=55. Adding a source to
+//      `provenDispatchTargets()` IS the decision to treat that source as
+//      proof of code -- make it deliberately or not at all.
 //
 // ---------------------------------------------------------------------------
 // NAMED DEVIATION FROM THE RESEARCH RECOMMENDATION (recorded, deliberate)
@@ -120,8 +144,21 @@ import { readFileSync } from "node:fs";
  * with `r2000-coverage.test.ts`'s exact top-level key-set assertion -- that
  * test exists so a silent field rename fails loudly rather than quietly
  * feeding two consumers `undefined`.
+ *
+ * VERSION HISTORY
+ *   1 -- the original nine top-level keys.
+ *   2 -- the top-level key set is UNCHANGED; the `dispatch` sub-object's
+ *        target vocabulary changed. `discoveredTargets` narrowed to
+ *        EVIDENCE-BACKED targets only, and the ungated split lo/hi pairings
+ *        it used to include moved to the new advisory sibling
+ *        `splitTableCandidates`. A consumer reading `discoveredTargets` gets
+ *        a smaller, honest set than it did at version 1; this bump is the
+ *        signal that a nested meaning changed. Accepted by a human at
+ *        19-08's decision checkpoint (option `narrow-and-add-sibling`),
+ *        which also discharged 19-VERIFICATION.md's `human_verification`
+ *        item 2.
  */
-export const COVERAGE_SCHEMA_VERSION = 1;
+export const COVERAGE_SCHEMA_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Bounds. Both are explicit, both surface a truncation flag rather than
@@ -339,14 +376,24 @@ export function computeStructuralCensus(
   const size = safeBytes.length;
   const maxSteps = Number.isSafeInteger(opts.maxSteps) && opts.maxSteps! > 0 ? opts.maxSteps! : MAX_WALK_STEPS;
 
+  // IN-04. The censused range is bounded at the 16-bit address space, not at
+  // `origin + size`. A payload whose origin plus length runs past $FFFF is
+  // MALFORMED INPUT -- a `.regen2000proj` file the operator did not author
+  // can claim any origin and carry any length -- and this module's contract
+  // on malformed input is to produce a well-formed census, never to wrap and
+  // never to classify an address the machine cannot address. Bytes at or
+  // beyond $10000 are not classified, not counted, and not swept.
+  const effectiveEnd = Math.min(safeOrigin + size, 0x10000);
+  const rangeSize = Math.max(0, effectiveEnd - safeOrigin);
+
   // Class codes are indices into CLASS_ORDER. A zero-initialised array would
   // mean "reached-as-instruction", which is exactly the wrong default for an
   // instrument whose entire point is that reachability must be PROVEN, so
   // fill with 3 ("unreached") explicitly.
-  const classes = new Uint8Array(size);
+  const classes = new Uint8Array(rangeSize);
   classes.fill(3);
 
-  const inRange = (addr: number): boolean => addr >= safeOrigin && addr < safeOrigin + size;
+  const inRange = (addr: number): boolean => addr >= safeOrigin && addr < effectiveEnd;
   const mark = (addr: number, klass: number): void => {
     if (!inRange(addr)) return;
     const idx = addr - safeOrigin;
@@ -413,24 +460,29 @@ export function computeStructuralCensus(
 
   for (const addr of opts.tableEntryAddresses ?? []) mark(addr, 1);
 
-  // Linear-sweep decodability -- reported, never summed. See trap 2.
+  // Linear-sweep decodability -- reported, never summed. See trap 2. Swept
+  // over the SAME bounded range as the census, so the two figures describe
+  // the same bytes (IN-04).
   let linearSweepDecodable = 0;
-  for (const insn of decode(safeBytes, safeOrigin)) {
+  for (const insn of decode(safeBytes.subarray(0, rangeSize), safeOrigin)) {
     if (insn.illegal) continue;
     if (insn.notes.includes("truncated")) continue;
     linearSweepDecodable += insn.bytes.length;
   }
 
   const counts = [0, 0, 0, 0];
-  for (let i = 0; i < size; i++) {
+  for (let i = 0; i < rangeSize; i++) {
     const code = classes[i]!;
     counts[code] = counts[code]! + 1;
   }
 
   return {
     origin: safeOrigin,
+    // `size` is the payload's own length; `rangeBytes` is how much of it lies
+    // inside the 16-bit address space and was therefore censused. The two
+    // differ only for a malformed origin/length pair (IN-04).
     size,
-    rangeBytes: size,
+    rangeBytes: rangeSize,
     seeds: seedList,
     reachedAsInstruction: counts[0]!,
     tableEntry: counts[1]!,
@@ -477,6 +529,20 @@ export interface SplitTableFinding {
   entries: number;
   targets: number[];
   truncated: boolean;
+  /** True only when something OTHER THAN ADDRESS ORDER decided which base
+   * holds the low bytes -- for Class 3 that is the pairing's own store
+   * construction (the load whose value reaches the LOWER of two consecutive
+   * zero-page addresses is the lo table).
+   *
+   * WR-01 is why this field exists: the shipped scan assigned the roles with
+   * `Math.min`/`Math.max` over the two operand addresses, which is not
+   * evidence of anything, and on the stack-return idiom it produced a
+   * byte-swapped twin of a finding the OTHER class had already reported
+   * correctly ($05c0 for $c005). When this is false the finding is ADVISORY,
+   * `loBase`/`hiBase` are recorded in ENCOUNTER order with no claim about
+   * which is which, and `targets` is EMPTY -- a byte-swapped value is not an
+   * address and must never be printed as one. */
+  orientationResolved: boolean;
 }
 
 export interface StackReturnFinding {
@@ -487,23 +553,155 @@ export interface StackReturnFinding {
   entries: number;
   targets: number[];
   truncated: boolean;
+  /** Always `true` for this class, and stated rather than implied: the 6502
+   * pushes the HIGH byte first, so the idiom's own push order -- not address
+   * order -- names which base holds which half. This is the one place a lo/hi
+   * assignment was always justified, which is why Class 4 runs first and
+   * Class 3 declines any window it claimed (WR-01). */
+  orientationResolved: true;
 }
 
 export interface IndirectDispatchScan {
   indirectJumps: IndirectJumpFinding[];
-  multiEntryTables: DispatchTableFinding[];
+  /** PROVEN Class-3 pairings only: those that passed the dispatch-context
+   * gate. An ungated pairing is in `splitTableCandidates`, never here. */
   splitTables: SplitTableFinding[];
+  multiEntryTables: DispatchTableFinding[];
   stackReturnDispatch: StackReturnFinding[];
-  /** Every target any class discovered, ascending and deduped. An ADDRESS
-   * LIST, not a figure -- the four classes stay separately addressable above
-   * so Phase 21's hazard report can consume just the one it needs. */
+  /** ADVISORY Class-3 pairings: two indexed loads that LOOK like a split
+   * lo/hi table but carry no evidence that anything dispatches through them.
+   *
+   * Reported BESIDE the proven classes and NEVER summed into them -- exactly
+   * the discipline `linearSweepDecodable` carries (header trap 2), and for
+   * exactly the same reason. An advisory pairing contributes nothing to
+   * `discoveredTargets`, nothing to `tableEntryAddresses`, and therefore
+   * moves not one byte of the census.
+   *
+   * It exists so the observation is not DISCARDED: "something indexes two
+   * tables here and we cannot prove what it dispatches to" is precisely what
+   * Phase 21's hazard report wants to see, flagged as unproven. Its findings
+   * carry `orientationResolved: false` and an empty `targets` list. */
+  splitTableCandidates: SplitTableFinding[];
+  /** Every EVIDENCE-BACKED target the scan discovered, ascending and deduped:
+   * real `jmp ($nnnn)` targets, the multi-entry tables those jumps name, the
+   * stack-return idiom's push-order-justified reconstruction, and PROVEN
+   * split tables. Reconstructed values from ungated pairings are NOT here --
+   * that narrowing is the schema-version-2 change (header trap 8).
+   *
+   * An ADDRESS LIST, not a figure -- the classes stay separately addressable
+   * above so Phase 21's hazard report can consume just the one it needs. */
   discoveredTargets: number[];
-  /** Addresses occupied by reconstructed table entries (two bytes each). */
+  /** Addresses occupied by reconstructed table entries (two bytes each).
+   * Proven classes only, for the same reason as `discoveredTargets`. */
   tableEntryAddresses: number[];
   truncated: boolean;
 }
 
 const INDEXED_LOAD_MODES = new Set(["absolute_x", "absolute_y", "zeropage_x"]);
+
+/** The index register an indexed addressing mode reads, or `null` for a mode
+ * that indexes through neither. Compared instead of mere membership in
+ * `INDEXED_LOAD_MODES`, so an `absolute_x` load paired with an `absolute_y`
+ * load is not mistaken for a lo/hi pair: two tables walked by two different
+ * registers are two tables, not one split one. */
+function indexRegisterOf(insn: Instruction): "x" | "y" | null {
+  if (insn.mode === "absolute_x" || insn.mode === "zeropage_x") return "x";
+  if (insn.mode === "absolute_y" || insn.mode === "zeropage_y") return "y";
+  return null;
+}
+
+/** True iff both instructions index through the SAME register. */
+function sameIndexRegister(a: Instruction, b: Instruction): boolean {
+  const ra = indexRegisterOf(a);
+  return ra !== null && ra === indexRegisterOf(b);
+}
+
+const STORE_MNEMONICS = new Set(["sta", "stx", "sty"]);
+
+/** True iff `insn` stores into a zero-page location. */
+function zeroPageStoreTarget(insn: Instruction): number | null {
+  if (!insn.operand) return null;
+  if (!STORE_MNEMONICS.has(insn.mnemonic)) return null;
+  if (insn.operand.role !== "zeropage") return null;
+  return insn.operand.value;
+}
+
+/**
+ * Does the instruction window starting at `start` carry evidence that
+ * something DISPATCHES through a reconstructed pair of tables?
+ *
+ * Accepts any ONE of the three shapes 19-RESEARCH §3.2 step 3 names:
+ *   - an indirect-jump opcode (`0x6c`) within reach;
+ *   - a `pha` ... `pha` ... `rts` shape within reach. After the Class-4 pass
+ *     runs FIRST and claims its windows, a pairing inside such a window is
+ *     skipped outright rather than promoted here -- the condition is kept so
+ *     this function reads as a COMPLETE statement of what counts as dispatch
+ *     context, not as a partial one whose omissions must be inferred;
+ *   - two stores into CONSECUTIVE zero-page addresses within reach, which is
+ *     the classic "build a vector in zero page, then `jmp (vector)`"
+ *     construction.
+ */
+function hasDispatchContext(insns: readonly Instruction[], start: number, reach: number): boolean {
+  const end = Math.min(insns.length, start + reach + 1);
+
+  let sawPha = 0;
+  const zpStores: number[] = [];
+  for (let k = start; k < end; k++) {
+    const insn = insns[k]!;
+    if (insn.opcode === 0x6c) return true;
+    if (insn.opcode === 0x48) sawPha++;
+    if (insn.opcode === 0x60 && sawPha >= 2) return true;
+    const zp = zeroPageStoreTarget(insn);
+    if (zp !== null) zpStores.push(zp);
+  }
+
+  for (let a = 0; a < zpStores.length; a++) {
+    for (let b = a + 1; b < zpStores.length; b++) {
+      if (Math.abs(zpStores[a]! - zpStores[b]!) === 1) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Which of two indexed loads feeds the LOW byte, decided by the pairing's own
+ * store construction rather than by address order (WR-01).
+ *
+ * For each load, the nearest FOLLOWING zero-page store within reach is the
+ * store that consumes it. When the two loads are consumed by two DIFFERENT,
+ * CONSECUTIVE zero-page addresses, the one reaching the lower address holds
+ * the low byte -- a 6502 vector is little-endian, so that is a fact about the
+ * construction, not a convention. Any other shape returns `null`, and a
+ * `null` orientation makes the pairing ADVISORY however good its other
+ * evidence is: an unresolved orientation would otherwise be resolved by
+ * `Math.min`, which is the exact defect this replaces.
+ */
+function resolveSplitOrientation(
+  insns: readonly Instruction[],
+  firstIndex: number,
+  secondIndex: number,
+  reach: number,
+): { loBase: number; hiBase: number } | null {
+  const consumerOf = (from: number): number | null => {
+    const end = Math.min(insns.length, from + reach + 1);
+    for (let k = from + 1; k < end; k++) {
+      const zp = zeroPageStoreTarget(insns[k]!);
+      if (zp !== null) return zp;
+    }
+    return null;
+  };
+
+  const firstZp = consumerOf(firstIndex);
+  const secondZp = consumerOf(secondIndex);
+  if (firstZp === null || secondZp === null) return null;
+  if (Math.abs(firstZp - secondZp) !== 1) return null;
+
+  const firstBase = insns[firstIndex]!.operand!.value;
+  const secondBase = insns[secondIndex]!.operand!.value;
+  return firstZp < secondZp
+    ? { loBase: firstBase, hiBase: secondBase }
+    : { loBase: secondBase, hiBase: firstBase };
+}
 
 /**
  * Reaches the four classes upstream's `follow_indirect_jumps()` does not.
@@ -531,6 +729,7 @@ export function scanIndirectDispatch(
   const indirectJumps: IndirectJumpFinding[] = [];
   const multiEntryTables: DispatchTableFinding[] = [];
   const splitTables: SplitTableFinding[] = [];
+  const splitTableCandidates: SplitTableFinding[] = [];
   const stackReturnDispatch: StackReturnFinding[] = [];
   const tableEntryAddresses = new Set<number>();
   const discovered = new Set<number>();
@@ -578,54 +777,20 @@ export function scanIndirectDispatch(
     }
   }
 
-  // --- Class 3: split lo/hi tables. Paired indexed loads whose two bases are
-  // a fixed distance N apart; reconstruct N targets.
-  for (let i = 0; i < insns.length; i++) {
-    const first = insns[i]!;
-    if (!first.operand || !INDEXED_LOAD_MODES.has(first.mode)) continue;
-    if (!first.mnemonic.startsWith("ld")) continue;
-    for (let j = i + 1; j < Math.min(insns.length, i + 1 + SPLIT_TABLE_WINDOW); j++) {
-      const second = insns[j]!;
-      if (!second.operand || !INDEXED_LOAD_MODES.has(second.mode)) continue;
-      if (!second.mnemonic.startsWith("ld")) continue;
-
-      const a = first.operand.value;
-      const b = second.operand.value;
-      const loBase = Math.min(a, b);
-      const hiBase = Math.max(a, b);
-      const span = hiBase - loBase;
-      if (span <= 0) continue;
-      if (!inImage(loBase) || !inImage(hiBase)) continue;
-
-      let entries = span;
-      let tableTruncated = false;
-      if (entries > MAX_TABLE_ENTRIES) {
-        entries = MAX_TABLE_ENTRIES;
-        tableTruncated = true;
-        truncated = true;
-      }
-
-      const targets: number[] = [];
-      for (let k = 0; k < entries; k++) {
-        const loIdx = loBase + k - safeOrigin;
-        const hiIdx = hiBase + k - safeOrigin;
-        if (loIdx < 0 || hiIdx < 0 || loIdx >= size || hiIdx >= size) break;
-        const value = safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8);
-        targets.push(value);
-        tableEntryAddresses.add(loBase + k);
-        tableEntryAddresses.add(hiBase + k);
-        if (value >= safeOrigin && value < safeOrigin + size) discovered.add(value);
-      }
-      if (targets.length > 0) {
-        splitTables.push({ at: first.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated });
-      }
-      break; // one pairing per leading load
-    }
-  }
-
   // --- Class 4: the stack-return dispatch idiom. `lda hi,X : pha : lda lo,X
   // : pha : rts` contains NO indirect-jump opcode, so an opcode-keyed walk
   // cannot see it at all. Sliding window over the decoded stream.
+  //
+  // THIS PASS RUNS BEFORE CLASS 3, DELIBERATELY (WR-01). The idiom's hi/lo
+  // assignment is JUSTIFIED -- the 6502 pushes the high byte first, so the
+  // first load reads the hi table -- whereas the Class-3 pass has no such
+  // evidence. Where both would match the same five instructions, the
+  // justified one must win and the other must not be reported at all;
+  // otherwise the same two instructions appear twice with contradictory
+  // roles, and the byte-swapped twin ($05c0 for $c005) is emitted as if it
+  // were an address. Every instruction of a matched window is recorded here
+  // and the Class-3 pass declines any pairing whose leading load sits in one.
+  const classFourWindow = new Set<number>();
   for (let i = 0; i + 4 < insns.length; i++) {
     const [a, b, c, d, e] = [insns[i]!, insns[i + 1]!, insns[i + 2]!, insns[i + 3]!, insns[i + 4]!];
     const isIndexedLoad = (x: Instruction): boolean => !!x.operand && INDEXED_LOAD_MODES.has(x.mode) && x.mnemonic.startsWith("ld");
@@ -634,6 +799,8 @@ export function scanIndirectDispatch(
     if (!isIndexedLoad(c)) continue;
     if (d.opcode !== 0x48) continue; // pha
     if (e.opcode !== 0x60) continue; // rts
+
+    for (const claimed of [a, b, c, d, e]) classFourWindow.add(claimed.address);
 
     // The HIGH byte is pushed first, so `a` reads the hi table and `c` the lo.
     const hiBase = a.operand!.value;
@@ -662,7 +829,98 @@ export function scanIndirectDispatch(
       if (value >= safeOrigin && value < safeOrigin + size) discovered.add(value);
     }
     if (targets.length > 0) {
-      stackReturnDispatch.push({ at: a.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated });
+      stackReturnDispatch.push({ at: a.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated, orientationResolved: true });
+    }
+  }
+
+  // --- Class 3: split lo/hi tables. Paired indexed loads whose two bases are
+  // a fixed distance N apart; reconstruct N targets.
+  //
+  // GATED (header trap 8). Two indexed loads within eight instructions of
+  // each other is the most ordinary shape in C64 code, so the pairing alone
+  // is not evidence of anything. A pairing is PROVEN only when ALL of:
+  //   (a) it is not inside a window Class 4 already claimed;
+  //   (b) both loads index through the SAME register;
+  //   (c) something in reach dispatches through the pair (`hasDispatchContext`);
+  //   (d) its lo/hi orientation is decided by the pairing's own store
+  //       construction rather than by address order (`resolveSplitOrientation`);
+  //   (e) EVERY reconstructed target lands strictly inside the image AND on a
+  //       byte that decodes as a legal, non-truncated instruction. A value
+  //       pointing at a byte that does not decode is not an entry point.
+  // Anything else is ADVISORY: recorded in `splitTableCandidates` with no
+  // orientation claim and no targets, contributing to neither `discovered`
+  // nor `tableEntryAddresses`.
+  for (let i = 0; i < insns.length; i++) {
+    const first = insns[i]!;
+    if (!first.operand || !INDEXED_LOAD_MODES.has(first.mode)) continue;
+    if (!first.mnemonic.startsWith("ld")) continue;
+    if (classFourWindow.has(first.address)) continue; // (a)
+    for (let j = i + 1; j < Math.min(insns.length, i + 1 + SPLIT_TABLE_WINDOW); j++) {
+      const second = insns[j]!;
+      if (!second.operand || !INDEXED_LOAD_MODES.has(second.mode)) continue;
+      if (!second.mnemonic.startsWith("ld")) continue;
+
+      const a = first.operand.value;
+      const b = second.operand.value;
+      if (a === b) continue;
+      if (!inImage(a) || !inImage(b)) continue;
+
+      // (b) + (d). The orientation is the ONLY thing that may name a base
+      // "lo": `Math.min` over two addresses is not evidence (WR-01).
+      const oriented = sameIndexRegister(first, second) ? resolveSplitOrientation(insns, i, j, SPLIT_TABLE_WINDOW) : null;
+      const gatedSoFar = oriented !== null && hasDispatchContext(insns, i, SPLIT_TABLE_WINDOW); // (c)
+
+      // Encounter order for the advisory case; the resolved roles otherwise.
+      const loBase = oriented ? oriented.loBase : a;
+      const hiBase = oriented ? oriented.hiBase : b;
+      const span = Math.abs(hiBase - loBase);
+      if (span <= 0) continue;
+
+      let entries = span;
+      let tableTruncated = false;
+      if (entries > MAX_TABLE_ENTRIES) {
+        entries = MAX_TABLE_ENTRIES;
+        tableTruncated = true;
+        truncated = true;
+      }
+
+      // Reconstruct WITHOUT publishing anything yet: nothing below touches
+      // `discovered` or `tableEntryAddresses` until the gate has passed.
+      const targets: number[] = [];
+      const entryAddresses: number[] = [];
+      for (let k = 0; k < entries; k++) {
+        const loIdx = loBase + k - safeOrigin;
+        const hiIdx = hiBase + k - safeOrigin;
+        if (loIdx < 0 || hiIdx < 0 || loIdx >= size || hiIdx >= size) break;
+        targets.push(safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8));
+        entryAddresses.push(loBase + k, hiBase + k);
+      }
+      if (targets.length === 0) continue;
+
+      // (e) every target in-image and decodable as a legal instruction.
+      const everyTargetIsAPlausibleEntryPoint = targets.every((value) => {
+        if (!(value >= safeOrigin && value < safeOrigin + size)) return false;
+        const decoded = decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0];
+        return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
+      });
+
+      if (gatedSoFar && everyTargetIsAPlausibleEntryPoint) {
+        for (const value of targets) discovered.add(value);
+        for (const addr of entryAddresses) tableEntryAddresses.add(addr);
+        splitTables.push({ at: first.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated, orientationResolved: true });
+      } else {
+        splitTableCandidates.push({
+          at: first.address,
+          // ENCOUNTER order, not lo/hi roles -- see `orientationResolved`.
+          loBase: a,
+          hiBase: b,
+          entries: targets.length,
+          targets: [],
+          truncated: tableTruncated,
+          orientationResolved: false,
+        });
+      }
+      break; // one pairing per leading load
     }
   }
 
@@ -670,11 +928,44 @@ export function scanIndirectDispatch(
     indirectJumps,
     multiEntryTables,
     splitTables,
+    splitTableCandidates,
     stackReturnDispatch,
     discoveredTargets: sortedUniqueNumbers(discovered),
     tableEntryAddresses: sortedUniqueNumbers(tableEntryAddresses),
     truncated,
   };
+}
+
+/**
+ * The ONE place that decides what may seed a recursive descent.
+ *
+ * Every `extraSeeds:` assignment in this module reads this function and reads
+ * nothing else. Built from real `jmp ($nnnn)` targets, the multi-entry tables
+ * those jumps name, the stack-return idiom's push-order-justified
+ * reconstruction, and PROVEN split tables -- and from nothing else.
+ *
+ * ADDING A SOURCE HERE IS THE DECISION TO TREAT THAT SOURCE AS PROOF OF CODE.
+ * `reachedAsInstruction` means REACHED BY RECURSIVE DESCENT FROM A SEED
+ * (header trap 2); a seed that is not evidence-backed turns ordinary data
+ * into headline structural coverage without ever touching the linear-sweep
+ * figure trap 2 guards. `splitTableCandidates` is deliberately NOT read here
+ * -- that is the whole point of it being advisory.
+ */
+export function provenDispatchTargets(scan: IndirectDispatchScan): number[] {
+  const proven = new Set<number>();
+  for (const jump of scan.indirectJumps) {
+    if (jump.target !== null) proven.add(jump.target);
+  }
+  for (const table of scan.multiEntryTables) {
+    for (const target of table.targets) proven.add(target);
+  }
+  for (const idiom of scan.stackReturnDispatch) {
+    for (const target of idiom.targets) proven.add(target);
+  }
+  for (const split of scan.splitTables) {
+    for (const target of split.targets) proven.add(target);
+  }
+  return sortedUniqueNumbers(proven);
 }
 
 // ---------------------------------------------------------------------------
@@ -977,8 +1268,13 @@ function storeBlockTypeAt(blocks: readonly R2000BlockEntry[], address: number): 
   return null;
 }
 
-function classFromBytes(census: StructuralCensus, dispatch: IndirectDispatchScan, address: number): DerivedClass {
-  if (dispatch.discoveredTargets.includes(address)) return "code";
+/** `provenTargets` is `provenDispatchTargets(dispatch)`, computed ONCE per
+ * report by the caller. A bare membership test against the scan's own
+ * `discoveredTargets` used to live here and inherited the ungated-pairing
+ * defect straight into the reproducibility comparison (header trap 8); the
+ * seam is passed in so there is no second, un-narrowed read of it. */
+function classFromBytes(census: StructuralCensus, provenTargets: readonly number[], address: number): DerivedClass {
+  if (provenTargets.includes(address)) return "code";
   const klass = classAt(census, address);
   if (klass === "reached-as-instruction") return "code";
   if (klass === "table-entry" || klass === "referenced-as-data") return "data";
@@ -1120,8 +1416,9 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
     `${step}${step === 1 ? "st" : "th"} (step = ceil(population / sampleSize), sampleSize ${sampleSize})`;
 
   const comparisons: ReproducibilityComparison[] = [];
+  const provenTargets = provenDispatchTargets(dispatch);
   for (const address of addresses) {
-    const fromBytes = classFromBytes(census, dispatch, address);
+    const fromBytes = classFromBytes(census, provenTargets, address);
     const entry = commentByAddress.get(address);
     const fromStore = classFromStore(entry?.gradeToken ?? null, storeBlockTypeAt(blockList, address));
     comparisons.push({ address, fromBytes, fromStore, agreed: fromBytes === fromStore });
@@ -1357,7 +1654,9 @@ export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
   const dispatch = scanIndirectDispatch(linear, loaded.bytes, loaded.origin);
   const structural = computeStructuralCensus(loaded.bytes, loaded.origin, seeds, {
     tableEntryAddresses: dispatch.tableEntryAddresses,
-    extraSeeds: dispatch.discoveredTargets,
+    // The ONE seam. Never `dispatch.discoveredTargets` and never
+    // `dispatch.splitTableCandidates` -- see `provenDispatchTargets()`.
+    extraSeeds: provenDispatchTargets(dispatch),
   });
 
   const commentVacuity = computeCommentVacuity(comments);
