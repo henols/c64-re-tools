@@ -197,3 +197,34 @@ imports nothing from that module family, and the coverage module is read-only by
 **Still open. Owner: a plan that owns `vice-proxy.ts` / `vice-proxy.test.ts`.** Do not widen a
 timeout from a plan fenced out of that file. Recorded here rather than explained away, because item
 3 exists precisely because this failure class gets re-explained once per run and never fixed.
+
+---
+
+## The same concurrency flake, observed in a SECOND file under plan 19-18
+
+`cd src/mcp/vice && npm test` at the close of plan 19-18: **2627 tests, 2581 pass, 1 fail, 40
+skipped, 5 todo**, `duration_ms 155534`. The single red was
+
+```
+not ok 905 - stub: a child that answers nothing within the call timeout rejects with
+             R2000TimeoutError, is killed, and the crash counter increases by 1
+```
+
+in `r2000-session.test.ts` — a file plan 19-18 did not touch. Standalone,
+`node --test r2000-session.test.ts` reports **25 pass, 0 fail**. The documented `vice-proxy.test.ts`
+flake above did NOT reproduce on this run; this one took its place, which is itself the signature of
+a wall-clock budget competing with 23 other suite files' children rather than of a defect in either
+file.
+
+The mechanism is the one already described above: the assertion measures a **200 ms call timeout**
+against wall clock while `node --test` runs the suite files concurrently across this host's cores.
+
+**Not caused by this plan, confirmed rather than assumed.** `git diff --name-only HEAD~3 HEAD` for
+plan 19-18 lists exactly `r2000-coverage.ts`, `r2000-coverage.test.ts` and `19-VALIDATION.md`.
+`r2000-session.test.ts` imports nothing from the coverage module family, and the coverage module is
+read-only by construction (asserted at source level).
+
+**Still open. Owner: a plan that owns `r2000-session.ts` / `r2000-session.test.ts`.** Plan 19-18 was
+explicitly fenced out of that file with a standing prohibition — *"`r2000-session.ts`'s 200 ms call
+timeout is not widened"* — so widening it here was never an option, and would have been the wrong
+fix regardless: the budget is not too small, the measurement is wall-clock under contention.
