@@ -6,14 +6,14 @@ current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
 stopped_at: Completed 19-09-PLAN.md — Phase 19 gap-closure run complete
-last_updated: "2026-08-25T05:22:49.173Z"
+last_updated: "2026-08-25T06:56:19.528Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 gap closure — 19-08 gated the Class-3 split-table scan on real dispatch context and seeded the descent only from proven targets (COV-01, COV-02)
-state_head: d8fd07907fda3a3f9a297f720091cf5190ec66e7
+state_head: 1a84f6e7211bceaf5a219aa269802bfb0a46f241
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 16
+  total_plans: 21
   completed_plans: 16
   percent: 20
 ---
@@ -68,7 +68,7 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
+Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
 Plan: 9 of 9 complete
 Status: Gap-closure run COMPLETE (19-06 … 19-09). Next: Phase 19 re-verification, which is also the named condition that lifts the `[skip release]` hold.
 Last activity: 2026-08-25 — 19-09 committed the generated false-positive census control pair, re-pinned the fixture count at 8, and extended 19-VALIDATION.md (COV-01, COV-02)
