@@ -39,6 +39,7 @@ import {
   COVERAGE_REPORT_KEYS,
   COVERAGE_SCHEMA_VERSION,
   DISPATCH_CONTEXT_SHAPES,
+  DISPATCH_GATE_ROUTES,
   MAX_TABLE_ENTRIES,
   R2000CoverageInputError,
   SPLIT_TABLE_WINDOW,
@@ -2384,36 +2385,93 @@ test("the tightened zero-page-vector branch is LIVE: the one-byte-different twin
  * position cannot read as a deliberate one. */
 const OUTSIDE = "OUTSIDE-BRACKETING" as const;
 
+/** The (shape, route) key the witness dispatches on, written once so the
+ * predicate table, the throw and every caller spell it the same way. */
+function gateInteriorPairKey(shapeId: string, route: string): string {
+  return `${shapeId} / ${route}`;
+}
+
 /**
- * Does `bytes` satisfy the PRE-GATE sufficient condition named by `shapeId`?
+ * The (shape, route) pairs `reachesGateInterior()` carries an interior
+ * predicate for -- three of the four the two arrays cross-produce.
+ *
+ * (`zeropage-vector-jumped-through`, `class-4-pass`) is absent and must stay
+ * absent: the class-4 window carries no zero-page-vector condition and never
+ * consults the shared gate, so no payload can be interior to that pair. It is
+ * a real hole in the cross product, not an oversight, and the witness THROWS
+ * when asked about it rather than answering -- see the throw below.
+ */
+const GATE_INTERIOR_PREDICATE_PAIRS: readonly string[] = Object.freeze([
+  gateInteriorPairKey("stack-return-push-idiom", "class-4-pass"),
+  gateInteriorPairKey("stack-return-push-idiom", "class-3-pass"),
+  gateInteriorPairKey("zeropage-vector-jumped-through", "class-3-pass"),
+]);
+
+/** Does the witness carry an interior predicate for this pair? Read by the
+ * declaration checks below, so "which pairs are answerable" is one fact rather
+ * than a second list that can drift from the witness's own dispatch. */
+function hasGateInteriorPredicate(shapeId: string, route: string): boolean {
+  return GATE_INTERIOR_PREDICATE_PAIRS.includes(gateInteriorPairKey(shapeId, route));
+}
+
+/**
+ * Does `bytes` satisfy the PRE-GATE sufficient condition for the (`shapeId`,
+ * `route`) PAIR?
  *
  * The question is deliberately NOT "does `hasDispatchContext()` accept this?".
- * It is "is this payload inside the region the gate has to rule on?" -- the
+ * It is "is this payload inside the region THAT GATE has to rule on?" -- the
  * question an interior control must answer yes to and an outside-bracketing one
  * no to.
  *
+ * THE FOURTH PARAMETER IS THE FIX FOR A HOLE IN THIS VERY MECHANISM, not a
+ * refinement of it. This witness used to take three arguments and define
+ * `stack-return-push-idiom`'s interior as a DISJUNCTION: the class-4 pass's own
+ * five-instruction window OR the class-3 pairing precondition followed by
+ * `pha` ... `pha` ... `rts`. Every control declared against that shape
+ * satisfied the class-4 half, the shape-keyed coverage assertion was therefore
+ * satisfied, and the class-3 route into the shape had no control at all -- the
+ * defect this section exists to catch, walking through the section itself. A
+ * shape is not a control target. A (shape, route) pair is.
+ *
  * `zeropage-vector-jumped-through` starts from the class-3 pairing precondition
  * the gate itself requires, so a payload with no same-register indexed load
- * pair is outside it by construction. `stack-return-push-idiom` is reached by
- * EITHER of the two gates that rule on it: the class-4 pass's own
- * five-instruction window (register-agnostic -- see below), or the class-3
- * pairing precondition followed by `pha` ... `pha` ... `rts` in reach.
+ * pair is outside it by construction.
  *
- * THROWS on a shape id it carries no predicate for, and the message names the
- * id. Never returns a bare boolean for an unknown shape: returning `true` would
- * make the shape-coverage test pass VACUOUSLY for any newly minted id, so the
- * whole mechanism could be satisfied without anyone writing a real interior
- * predicate -- the same vacuity class this section exists to prevent. Returning
- * `false` would let a row dodge the check by declaring a shape that does not
- * exist. Throwing is the only behaviour that makes minting a shape id without
- * an interior predicate a test failure.
+ * THROWS three ways, and each throw is load-bearing:
+ *
+ *   - on a shape id it carries no predicate for, naming the id. Returning
+ *     `true` would make the coverage test pass VACUOUSLY for any newly minted
+ *     id, so the whole mechanism could be satisfied without anyone writing a
+ *     real interior predicate; returning `false` would let a row dodge the
+ *     check by declaring a shape that does not exist.
+ *   - on a route that is not a member of `DISPATCH_GATE_ROUTES`, naming the
+ *     route. `route` is a CLOSED enumeration derived from source, never an open
+ *     string: an open string is how this defect would return, because a typo or
+ *     a newly invented route name would mint a control target nothing checks.
+ *   - on a (shape, route) pair it carries no predicate for, naming BOTH. A pair
+ *     that answers `false` for everything is a place to file a control that
+ *     nothing can ever contradict.
  */
-function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string): boolean {
+function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string, route: string): boolean {
   if (shapeId !== "stack-return-push-idiom" && shapeId !== "zeropage-vector-jumped-through") {
     throw new Error(
       `reachesGateInterior() has no interior predicate for shape id "${shapeId}". A shape listed in ` +
         `DISPATCH_CONTEXT_SHAPES must have a predicate here that says what its INTERIOR is, or a control could be ` +
         `declared as its interior control without anything checking the claim.`,
+    );
+  }
+  if (!DISPATCH_GATE_ROUTES.some((r) => r.id === route)) {
+    throw new Error(
+      `reachesGateInterior() was asked about route "${route}", which is not a member of DISPATCH_GATE_ROUTES ` +
+        `(${DISPATCH_GATE_ROUTES.map((r) => r.id).join(", ")}). A route is a CLOSED enumeration derived from this module's own ` +
+        `source, not an open string: an invented route id would mint a control target with nothing behind it.`,
+    );
+  }
+  if (!hasGateInteriorPredicate(shapeId, route)) {
+    throw new Error(
+      `reachesGateInterior() has no interior predicate for the pair ("${shapeId}", "${route}"). That pair is UNREACHABLE: the ` +
+        `route's gate carries no condition on that shape, so no payload can be inside the region it rules on. Answering false ` +
+        `would let a control be declared there and never contradicted; answering true would make every payload its control.`,
     );
   }
 
@@ -2429,12 +2487,14 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
     return !!insn.operand && insn.mnemonic.startsWith("ld") && indexRegister(i) !== null;
   };
 
-  // THE CLASS-4 ROUTE INTO `stack-return-push-idiom` (19-11, WR-14). This
-  // shape is ruled on by TWO gates, not one: `hasDispatchContext()`'s first
-  // branch (reached only after the class-3 pairing precondition below), and
-  // the class-4 pass's own five-instruction window -- which is the gate that
-  // feeds `provenDispatchTargets()` directly and which had no negative control
-  // at all until 19-11.
+  // ONE PREDICATE PER PAIR, AND NO `||` BETWEEN THEM. The disjunction that
+  // used to join these two routes is what let a class-4 control vouch for the
+  // class-3 route; joining them again under any spelling reopens it.
+
+  // (`stack-return-push-idiom`, `class-4-pass`) -- the class-4 pass's own
+  // five-instruction window (WR-14). This is the gate that feeds
+  // `provenDispatchTargets()` directly, and it does not consult the shared
+  // gate at all: its window IS its gate.
   //
   // The window shape is REGISTER-AGNOSTIC here, deliberately. The register
   // match is the CONDITION under test, so requiring it would put the
@@ -2442,7 +2502,7 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
   // exactly the outside-bracketing mistake CR-04 turned on. "Is this payload
   // inside the region the gate must rule on?" is the question, and a
   // `lda ,x : pha : lda ,y : pha : rts` window is unambiguously inside it.
-  if (shapeId === "stack-return-push-idiom") {
+  if (route === "class-4-pass") {
     for (let i = 0; i + 4 < insns.length; i++) {
       if (!isIndexedLoad(i)) continue;
       if (insns[i + 1]!.opcode !== 0x48) continue; // pha
@@ -2451,8 +2511,12 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
       if (insns[i + 4]!.opcode !== 0x60) continue; // rts
       return true;
     }
+    return false;
   }
 
+  // Both remaining pairs are on `class-3-pass`, whose gate is the shared
+  // predicate -- so both start from the pairing precondition that gate
+  // requires before it is ever consulted.
   for (let i = 0; i < insns.length; i++) {
     if (!isIndexedLoad(i)) continue;
     const end = Math.min(insns.length, i + SPLIT_TABLE_WINDOW + 1);
@@ -2470,7 +2534,10 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
     if (!paired) continue;
 
     if (shapeId === "stack-return-push-idiom") {
-      // The interior: `pha` ... `pha` ... `rts` inside the window.
+      // (`stack-return-push-idiom`, `class-3-pass`). The interior: `pha` ...
+      // `pha` ... `rts` inside the window, on top of the pairing precondition
+      // above. This is the region that had no control at all while the witness
+      // answered for both routes at once.
       let sawPha = 0;
       for (let k = i; k < end; k++) {
         if (insns[k]!.opcode === 0x48) sawPha++;
@@ -2479,7 +2546,8 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
       continue;
     }
 
-    // `zeropage-vector-jumped-through`. The interior is the CONSTRUCTION alone
+    // (`zeropage-vector-jumped-through`, `class-3-pass`). The interior is the
+    // CONSTRUCTION alone
     // -- two zero-page store targets differing by exactly one inside the window
     // -- with NO requirement that anything jump through it. That is precisely
     // the region the pre-CR-04 gate accepted wholesale and the fixed gate must
@@ -2501,6 +2569,33 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
   return false;
 }
 
+/**
+ * The findings a named ROUTE published for this scan -- the scan collection
+ * that route's record names in `publishesInto`, looked up by name.
+ *
+ * WHY A ROUTE-SCOPED READ RATHER THAN `provenDispatchTargets()`. The seam
+ * unions all four sources, so "was this control accepted?" answered through it
+ * is answered about the whole instrument rather than about the gate under
+ * test. `STACK_RETURN` is the case that forces the distinction: it is a class-3
+ * DECLINE and a class-4 ACCEPTANCE simultaneously, and only one of those two
+ * facts survives an aggregate measurement.
+ *
+ * Also a mechanical tie between `publishesInto` and the scan's real shape: a
+ * route naming a field the scan does not carry as an array fails here rather
+ * than reading as an empty collection, which would look exactly like a decline.
+ */
+function routePublications(scan: ReturnType<typeof scanIndirectDispatch>, routeId: string): readonly unknown[] {
+  const route = DISPATCH_GATE_ROUTES.find((r) => r.id === routeId);
+  assert.ok(route, `route "${routeId}" is not a member of DISPATCH_GATE_ROUTES, so it publishes nowhere this suite can read`);
+  const collection = (scan as unknown as Record<string, unknown>)[route.publishesInto];
+  assert.ok(
+    Array.isArray(collection),
+    `route "${routeId}" declares that it publishes into "${route.publishesInto}", which is not an array field of the scan. An ` +
+      `absent collection reads as an empty one, and an empty one is indistinguishable from a decline.`,
+  );
+  return collection as readonly unknown[];
+}
+
 interface GateInteriorDeclaration {
   /** The in-suite payload constant name, or the fixture directory name. */
   control: string;
@@ -2508,6 +2603,20 @@ interface GateInteriorDeclaration {
   bytes: () => { bytes: Uint8Array; origin: number };
   /** The shape id whose interior this control reaches, or `OUTSIDE`. */
   position: string;
+  /** THE SECOND HALF OF THE CONTROL TARGET'S IDENTITY: which of the gates that
+   * rule on `position` this control reaches inside.
+   *
+   * A shape ruled on by two gates needs a negative control PER GATE, and
+   * before this field one gate's control vouched for the other's -- three
+   * declared negative controls for `stack-return-push-idiom` all satisfied the
+   * class-4 route, the shape-keyed coverage assertion was satisfied, and the
+   * class-3 route into that shape had never been entered by any control.
+   *
+   * `null` is legal ONLY on an `OUTSIDE` row, because a control that brackets
+   * the predicate from the outside brackets every route at once and naming one
+   * of them would claim a position it does not hold. Every other row must name
+   * a member of `DISPATCH_GATE_ROUTES`. */
+  route: string | null;
   /** Does this control assert the instrument DECLINES the payload
    * (`negative`) or ACCEPTS it (`positive`)?
    *
@@ -2540,6 +2649,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "ORDINARY_INDEXED_COPY",
     bytes: () => ({ bytes: ORDINARY_INDEXED_COPY, origin: ORDINARY_ORIGIN }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "an ordinary two-table indexed copy loop with NO zero-page store at all -- it never enters the region the gate rules on",
   },
@@ -2547,6 +2657,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP_INDEXED,
     bytes: () => ({ bytes: payloadOf(FP_INDEXED), origin: loadFixture(FP_INDEXED).store.origin }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "the committed form of the same copy loop; no zero-page store, so outside by the same reasoning",
   },
@@ -2554,6 +2665,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP_IMMEDIATE,
     bytes: () => ({ bytes: payloadOf(FP_IMMEDIATE), origin: loadFixture(FP_IMMEDIATE).store.origin }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "the immediate twin: not even an indexed load pair, so outside the class-3 pairing precondition itself",
   },
@@ -2561,6 +2673,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP2_IMMEDIATE,
     bytes: () => ({ bytes: payloadOf(FP2_IMMEDIATE), origin: loadFixture(FP2_IMMEDIATE).store.origin }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "the interior control's twin. It BUILDS the same zero-page vector, but its two loads are immediate, so there is no indexed pair to rule on -- which is exactly why it is a census baseline and not a second interior control",
   },
@@ -2568,6 +2681,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP2_INTERIOR,
     bytes: () => ({ bytes: payloadOf(FP2_INTERIOR), origin: loadFixture(FP2_INTERIOR).store.origin }),
     position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
     polarity: "negative",
     note: "THE INTERIOR CONTROL. Two indexed loads through one register, two consecutive zero-page stores inside the window, a resolvable orientation, eight decodable targets -- and it dispatches nowhere (CR-04)",
   },
@@ -2575,13 +2689,23 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "STACK_RETURN",
     bytes: () => ({ bytes: STACK_RETURN, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    route: "class-3-pass",
     polarity: "negative",
-    note: "reaches the push idiom's interior, and class 3 must still DECLINE it because class 4 runs first and claims the window (WR-01)",
+    note: "TWO ROWS, AND THAT IS THE POINT OF KEYING ON (SHAPE, ROUTE) RATHER THAN ON SHAPE. This one: the payload reaches the class-3 route's interior and class 3 must still DECLINE it, because class 4 runs first and claims the window (WR-01), so nothing lands in `splitTables` -- which is the collection this row's verdict is measured in. Under shape-only keying the fact below was inexpressible and the row had to pick one polarity",
+  },
+  {
+    control: "STACK_RETURN",
+    bytes: () => ({ bytes: STACK_RETURN, origin: DISPATCH_ORIGIN }),
+    position: "stack-return-push-idiom",
+    route: "class-4-pass",
+    polarity: "positive",
+    note: "the same payload's other half: it is simultaneously the class-4 route's POSITIVE control, because `stackReturnDispatch` carries its finding -- the collection this row's verdict is measured in. Measured through the aggregate seam instead, the class-3 decline above would read as an acceptance",
   },
   {
     control: "STACK_RETURN_MIXED_REGISTERS",
     bytes: () => ({ bytes: STACK_RETURN_MIXED_REGISTERS, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    route: "class-4-pass",
     polarity: "negative",
     note: "THE CLASS-4 INTERIOR CONTROL for the register condition (WR-14). It matches the five-instruction window in every respect except that its two loads index through different registers, which is precisely what makes it interior rather than outside-bracketing",
   },
@@ -2589,6 +2713,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "STACK_RETURN_IMPLAUSIBLE_TARGET",
     bytes: () => ({ bytes: STACK_RETURN_IMPLAUSIBLE_TARGET, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    route: "class-4-pass",
     polarity: "negative",
     note: "THE CLASS-4 INTERIOR CONTROL for the entry-point condition (WR-14). Byte-identical to the genuine fixture apart from three data bytes, so the window matches, the reconstruction succeeds, and only the plausibility test declines it",
   },
@@ -2596,6 +2721,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "MULTIPLE_ADVISORY_PAIRINGS",
     bytes: () => ({ bytes: MULTIPLE_ADVISORY_PAIRINGS, origin: DISPATCH_ORIGIN }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "three indexed loads with no zero-page store, no indirect jump and no push idiom -- outside both shapes. It exists to make the at-most-one-advisory-candidate property non-vacuous (WR-15)",
   },
@@ -2603,6 +2729,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "SPLIT_TABLE_CLEAN",
     bytes: () => ({ bytes: SPLIT_TABLE_CLEAN, origin: DISPATCH_ORIGIN }),
     position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
     polarity: "positive",
     note: "the WR-15 baseline: a genuine split table whose vector is built and then jumped through, which the gate must ACCEPT. Interior by the same construction as FP2, and POSITIVE rather than negative -- recorded plainly rather than filed under a heading it does not belong to",
   },
@@ -2610,6 +2737,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP3_IMMEDIATE,
     bytes: () => ({ bytes: payloadOf(FP3_IMMEDIATE), origin: loadFixture(FP3_IMMEDIATE).store.origin }),
     position: OUTSIDE,
+    route: null,
     polarity: "negative",
     note: "the class-3 push-idiom control's twin. It builds the same zero-page vector and carries the same pha/pha/rts idiom, but its two loads are IMMEDIATE, so there is no indexed pair for the gate to rule on -- which is exactly why it is a census baseline and not a second interior control",
   },
@@ -2617,6 +2745,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: FP3_INTERIOR,
     bytes: () => ({ bytes: payloadOf(FP3_INTERIOR), origin: loadFixture(FP3_INTERIOR).store.origin }),
     position: "stack-return-push-idiom",
+    route: "class-3-pass",
     polarity: "negative",
     note: "THE CLASS-3 INTERIOR CONTROL for the push idiom. A same-register indexed pairing with consecutive zero-page stores and a pha/pha/rts that class 4 DECLINES -- the region no control reached before, because all three prior push-idiom controls satisfy only the class-4 disjunct",
   },
@@ -2624,6 +2753,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "SPLIT_TABLE_INTERPOSED",
     bytes: () => ({ bytes: SPLIT_TABLE_INTERPOSED, origin: DISPATCH_ORIGIN }),
     position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
     polarity: "positive",
     note: "the WR-15 twin: the same genuine split table with one unrelated indexed load between its two halves. Pre-fix that load consumed the leading load and the whole proven pairing silently vanished from the report",
   },
@@ -2631,6 +2761,7 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "ZP_VECTOR_FOREIGN_JUMP",
     bytes: () => ({ bytes: ZP_VECTOR_FOREIGN_JUMP, origin: ORDINARY_ORIGIN }),
     position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
     polarity: "negative",
     note: "THE INTERIOR CONTROL for the OWNERSHIP condition. A same-register indexed pairing, a resolvable orientation, consecutive zero-page stores inside the window and a real indirect jump -- everything the shape's interior asks for -- and the jump names a SECOND vector the two paired loads never wrote to. Interior rather than outside-bracketing precisely because the ownership of the vector is the condition under test",
   },
@@ -2638,8 +2769,25 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     control: "ZP_VECTOR_OWN_JUMP",
     bytes: () => ({ bytes: ZP_VECTOR_OWN_JUMP, origin: ORDINARY_ORIGIN }),
     position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
     polarity: "positive",
     note: "the both-directions half of the row above: the SAME payload with the jump's operand byte naming the pairing's own vector, which the gate must ACCEPT. Recorded as positive rather than filed under a heading it does not belong to",
+  },
+  {
+    control: "PUSH_IDIOM_LINKED",
+    bytes: () => ({ bytes: PUSH_IDIOM_LINKED, origin: ORDINARY_ORIGIN }),
+    position: "stack-return-push-idiom",
+    route: "class-3-pass",
+    polarity: "positive",
+    note: "THE CLASS-3 ROUTE'S POSITIVE CONTROL, and the row that makes that route's coverage two-directional. Each paired load immediately pushes the byte it read and the rts follows both, so `splitTables` -- the collection this row's verdict is measured in -- carries the finding. Class 4 declines the window outright, so the aggregate seam would attribute this acceptance to no route in particular",
+  },
+  {
+    control: "PUSH_IDIOM_WINDOW_EDGE",
+    bytes: () => ({ bytes: PUSH_IDIOM_WINDOW_EDGE, origin: ORDINARY_ORIGIN }),
+    position: "zeropage-vector-jumped-through",
+    route: "class-3-pass",
+    polarity: "negative",
+    note: "DECLARED WHERE THE WITNESS ACTUALLY PLACES IT, not where its name suggests. Its job is to be the JUST-OUTSIDE half of the push-idiom route's witness pair -- its rts sits one instruction past the pairing window -- and that job is discharged by the non-vacuity statements, not by a row. But the payload is FP3's prologue plus one nop, so it still carries FP3's two consecutive zero-page stores inside the pairing window: it is genuinely INTERIOR to the zero-page-vector shape's class-3 route, nothing jumps through the vector it builds, and `splitTables` is correctly empty. Filing it as OUTSIDE would have been a false declaration the mechanical-truth check catches",
   },
 ]);
 
@@ -2647,22 +2795,35 @@ test("every gate-interior declaration is mechanically TRUE, not a claim in a tab
   for (const row of GATE_INTERIOR_DECLARATIONS) {
     const { bytes, origin } = row.bytes();
     if (row.position === OUTSIDE) {
+      // An outside-bracketing control brackets EVERY route at once, so the
+      // claim is checked against every answerable pair rather than against
+      // every shape. The unanswerable pair is skipped because the witness
+      // throws on it by design -- see GATE_INTERIOR_PREDICATE_PAIRS.
       for (const shapeId of DISPATCH_CONTEXT_SHAPES) {
-        assert.equal(
-          reachesGateInterior(bytes, origin, shapeId),
-          false,
-          `${row.control} is DECLARED as bracketing the predicate from the outside, but it reaches the interior of shape ` +
-            `"${shapeId}". Either the declaration is wrong, or this control is more useful than its row claims -- and a control ` +
-            `whose declared position is a claim rather than a fact is exactly the defect CR-04 turned on.`,
-        );
+        for (const gateRoute of DISPATCH_GATE_ROUTES) {
+          if (!hasGateInteriorPredicate(shapeId, gateRoute.id)) continue;
+          assert.equal(
+            reachesGateInterior(bytes, origin, shapeId, gateRoute.id),
+            false,
+            `${row.control} is DECLARED as bracketing the predicate from the outside, but it reaches the interior of the pair ` +
+              `("${shapeId}", "${gateRoute.id}"). Either the declaration is wrong, or this control is more useful than its row ` +
+              `claims -- and a control whose declared position is a claim rather than a fact is exactly the defect CR-04 turned on.`,
+          );
+        }
       }
       continue;
     }
     assert.ok(
-      reachesGateInterior(bytes, origin, row.position),
-      `${row.control} is DECLARED as the interior control for shape "${row.position}", but the witness says the payload does not ` +
-        `satisfy that shape's pre-gate sufficient condition. An interior control that is not actually inside the predicate ` +
-        `bracketes it from the outside, which is not a control at all.`,
+      typeof row.route === "string",
+      `${row.control} is declared interior to shape "${row.position}" with no route. A control target is a (shape, route) pair; ` +
+        `a row naming only the shape is the exact shape of the hole that let a class-4 control vouch for the class-3 route.`,
+    );
+    assert.ok(
+      reachesGateInterior(bytes, origin, row.position, row.route!),
+      `${row.control} is DECLARED as the interior control for the pair ("${row.position}", "${row.route}"), but the witness says ` +
+        `the payload does not satisfy that pair's pre-gate sufficient condition. An interior control that is not actually inside ` +
+        `the predicate brackets it from the outside, which is not a control at all -- and one declared against the WRONG ROUTE of ` +
+        `a shape it does reach is the same defect wearing a route label.`,
     );
   }
 });
@@ -2676,15 +2837,26 @@ test("a control DECLARED as positive is actually ACCEPTED by the instrument", ()
   // because polarity there is scoped to a particular gate: STACK_RETURN is
   // negative for class 3 and simultaneously class 4's positive fixture, so a
   // blanket "negative rows prove nothing" assertion would be false about it.
+  //
+  // MEASURED THROUGH THE ROW'S OWN ROUTE, NEVER THROUGH THE AGGREGATE SEAM.
+  // `provenDispatchTargets()` unions all four sources, so a class-3 positive
+  // would pass on a class-4 finding and the STACK_RETURN payload -- a class-3
+  // decline and a class-4 acceptance at once -- becomes unrepresentable. The
+  // collection a route publishes into is the only place its own verdict is
+  // legible.
   const positives = GATE_INTERIOR_DECLARATIONS.filter((r) => r.polarity === "positive");
   assert.ok(positives.length > 0, "no positive row exists -- this assertion would pass vacuously");
   for (const row of positives) {
     const { bytes, origin } = row.bytes();
     const scan = scanIndirectDispatch(decode(bytes, origin), bytes, origin);
     assert.ok(
-      provenDispatchTargets(scan).length > 0,
-      `${row.control} is DECLARED a POSITIVE control but the instrument proves nothing about it. A positive control that is declined is ` +
-        `mislabelled, and reads as coverage it does not supply.`,
+      typeof row.route === "string",
+      `${row.control} is a POSITIVE control with no route, so there is no collection to measure its acceptance in`,
+    );
+    assert.ok(
+      routePublications(scan, row.route!).length > 0,
+      `${row.control} is DECLARED a POSITIVE control on route "${row.route}" but that route published nothing about it. A positive ` +
+        `control that is declined is mislabelled, and reads as coverage it does not supply.`,
     );
   }
 });
@@ -2723,19 +2895,19 @@ test("NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as
   // the interior control for the zero-page-vector shape is the exact mistake
   // CR-04 describes, and the witness must reject it.
   assert.equal(
-    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "zeropage-vector-jumped-through"),
+    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "zeropage-vector-jumped-through", "class-3-pass"),
     false,
     "the ordinary indexed copy loop carries no zero-page store at all, so it cannot be the zero-page-vector shape's interior control",
   );
   assert.equal(
-    reachesGateInterior(payloadOf(FP_INDEXED), loadFixture(FP_INDEXED).store.origin, "zeropage-vector-jumped-through"),
+    reachesGateInterior(payloadOf(FP_INDEXED), loadFixture(FP_INDEXED).store.origin, "zeropage-vector-jumped-through", "class-3-pass"),
     false,
     "fp1's committed payload carries no zero-page store either",
   );
   // And the positive direction, so the witness is not a machine that returns
   // false for everything.
   assert.equal(
-    reachesGateInterior(payloadOf(FP2_INTERIOR), loadFixture(FP2_INTERIOR).store.origin, "zeropage-vector-jumped-through"),
+    reachesGateInterior(payloadOf(FP2_INTERIOR), loadFixture(FP2_INTERIOR).store.origin, "zeropage-vector-jumped-through", "class-3-pass"),
     true,
     "the interior control must be recognised as interior, or the witness declines everything and proves nothing",
   );
@@ -2746,12 +2918,12 @@ test("NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as
   // otherwise that control would sit OUTSIDE the very predicate it constrains
   // -- and it must still decline a payload with no push idiom at all.
   assert.equal(
-    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "stack-return-push-idiom"),
+    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "stack-return-push-idiom", "class-4-pass"),
     false,
     "the ordinary indexed copy loop carries no `pha` byte anywhere, so it cannot be the push idiom's interior control either",
   );
   assert.equal(
-    reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN, "stack-return-push-idiom"),
+    reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN, "stack-return-push-idiom", "class-4-pass"),
     true,
     "the mismatched-register control must be recognised as INTERIOR to the class-4 window. If the witness required the register match here, the " +
       "control would be outside the predicate it constrains -- an outside-bracketing control wearing an interior label, which is CR-04's exact defect",
@@ -2782,13 +2954,13 @@ test("the window-edge twin is OUTSIDE the class-3 push-idiom route while FP3 is 
   // something: one payload inside the pre-gate sufficient condition, one just
   // outside it, distinguished by the witness rather than by assertion.
   assert.equal(
-    reachesGateInterior(PUSH_IDIOM_WINDOW_EDGE, ORDINARY_ORIGIN, "stack-return-push-idiom"),
+    reachesGateInterior(PUSH_IDIOM_WINDOW_EDGE, ORDINARY_ORIGIN, "stack-return-push-idiom", "class-3-pass"),
     false,
     "with its rts one instruction past the pairing window, this payload never enters the region the class-3 branch rules on -- if the " +
       "witness said true here it would say true for everything, and every interior declaration keyed on it would be vacuous",
   );
   assert.equal(
-    reachesGateInterior(payloadOf(FP3_INTERIOR), loadFixture(FP3_INTERIOR).store.origin, "stack-return-push-idiom"),
+    reachesGateInterior(payloadOf(FP3_INTERIOR), loadFixture(FP3_INTERIOR).store.origin, "stack-return-push-idiom", "class-3-pass"),
     true,
     "FP3 must be recognised as INTERIOR to the class-3 push-idiom route. A control declared as an interior control while sitting " +
       "outside the predicate it constrains is not a control at all",
@@ -2798,7 +2970,7 @@ test("the window-edge twin is OUTSIDE the class-3 push-idiom route while FP3 is 
 test("minting a dispatch shape id without an interior predicate THROWS, naming the id", () => {
   const bogus = "shape-nobody-wrote-a-predicate-for";
   assert.throws(
-    () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, bogus),
+    () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, bogus, "class-3-pass"),
     (err: unknown) => err instanceof Error && err.message.includes(bogus),
     `reachesGateInterior() must THROW for a shape id it has no predicate for, with the id in the message. Returning a bare ` +
       `boolean would let the shape-coverage test pass vacuously for any newly minted id.`,
