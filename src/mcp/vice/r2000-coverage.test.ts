@@ -2805,6 +2805,140 @@ test("minting a dispatch shape id without an interior predicate THROWS, naming t
   );
 });
 
+// ---------------------------------------------------------------------------
+// 8d. A control target is a (SHAPE, ROUTE) pair, not a shape
+//
+// THE ROOT CAUSE, IN ONE SENTENCE: the mechanism in section 8c was built to red
+// the suite when a sufficient shape is admitted without an interior negative
+// control, and it passed over the defect it was built for -- because
+// `reachesGateInterior()` defined one shape's interior as a DISJUNCTION of two
+// routes, every control declared against that shape satisfied only the class-4
+// half, and a coverage assertion keyed on SHAPE was therefore satisfied by
+// controls that had never entered the class-3 route at all.
+//
+// The knowledge was already in the source comment -- that shape is "ruled on by
+// TWO gates, not one" -- and nothing forced a control for the second gate. The
+// assertions below are the ones that make that impossible: a control's declared
+// position is a (shape, route) PAIR, the witness answers per route, and the
+// class-4-only control provably does not claim the class-3 route.
+// ---------------------------------------------------------------------------
+
+test("the class-4-only control does NOT claim the class-3 route: the disjunction is gone", () => {
+  // THE SINGLE ASSERTION THAT PROVES THE LEAK IS CLOSED RATHER THAN MOVED.
+  // Before the re-key, ONE call answered for both routes, and the class-4
+  // answer stood in for the class-3 one -- which is exactly how three declared
+  // negative controls covered a route none of them had ever entered.
+  assert.equal(
+    reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN, "stack-return-push-idiom", "class-3-pass"),
+    false,
+    "the mismatched-register control reaches the CLASS-4 window's interior and nothing else. If the witness says true here, the " +
+      "disjunction is still in place under a new name and one route's control still vouches for the other's",
+  );
+  assert.equal(
+    reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN, "stack-return-push-idiom", "class-4-pass"),
+    true,
+    "and it must still be INTERIOR to the class-4 window, or the control would sit outside the predicate it constrains",
+  );
+});
+
+test("FP3 is interior to the class-3 route and OUTSIDE the class-4 one, so the two routes are genuinely distinguished", () => {
+  // The other direction, and the reason a single pair of assertions is not
+  // enough: a witness that simply answered "class-3 route: no" for everything
+  // would satisfy the test above. FP3 carries no five-instruction window --
+  // `sta $fb` sits between the first push and the second load -- so it is
+  // interior to exactly one of the two routes, and to the other one it is not.
+  const fp3 = payloadOf(FP3_INTERIOR);
+  const origin = loadFixture(FP3_INTERIOR).store.origin;
+  assert.equal(
+    reachesGateInterior(fp3, origin, "stack-return-push-idiom", "class-3-pass"),
+    true,
+    "FP3 must be recognised as interior to the CLASS-3 route into the push idiom -- that is the region it was authored to reach",
+  );
+  assert.equal(
+    reachesGateInterior(fp3, origin, "stack-return-push-idiom", "class-4-pass"),
+    false,
+    "FP3 carries no five-instruction class-4 window, so the class-4 route's interior predicate must decline it. A witness that " +
+      "said true here would be answering about the shape rather than about the route",
+  );
+});
+
+test("asking the witness about an UNREACHABLE (shape, route) pair THROWS, naming both", () => {
+  // The class-4 window carries no zero-page-vector condition and never
+  // consults the shared gate, so no payload can be interior to that pair.
+  // Returning `false` would let a future author declare that pair covered by
+  // any control at all; returning `true` would make it covered by everything.
+  // Throwing is the only answer that keeps the pair from becoming a place to
+  // file a control nothing checks.
+  assert.throws(
+    () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "zeropage-vector-jumped-through", "class-4-pass"),
+    (err: unknown) =>
+      err instanceof Error && err.message.includes("zeropage-vector-jumped-through") && err.message.includes("class-4-pass"),
+    "reachesGateInterior() must THROW for a (shape, route) pair it carries no interior predicate for, naming BOTH halves -- the " +
+      "shape alone is not the control target any more",
+  );
+});
+
+test("minting a ROUTE nobody declared THROWS, naming the route", () => {
+  // `route` is a CLOSED enumeration derived from source, never an open string.
+  // An open string is how this same defect would return: a typo, or a newly
+  // invented route name, would create a control target nothing checks.
+  const bogus = "route-nobody-declared";
+  assert.throws(
+    () => reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "stack-return-push-idiom", bogus),
+    (err: unknown) => err instanceof Error && err.message.includes(bogus),
+    "reachesGateInterior() must THROW for a route id that is not a member of DISPATCH_GATE_ROUTES, with the id in the message",
+  );
+});
+
+test("every declaration row's route is a declared one, and only an OUTSIDE row may carry a null route", () => {
+  // The field's own well-formedness, asserted rather than assumed. A row that
+  // is interior with no route names half a control target; a row that brackets
+  // from the outside while naming a route claims coverage of a route it never
+  // entered. Both read as coverage they do not supply.
+  const routeIds = new Set(DISPATCH_GATE_ROUTES.map((r) => r.id));
+  assert.ok(routeIds.size > 0, "DISPATCH_GATE_ROUTES is empty -- every assertion in this section would pass vacuously");
+  for (const row of GATE_INTERIOR_DECLARATIONS) {
+    if (row.position === OUTSIDE) {
+      assert.equal(
+        row.route,
+        null,
+        `${row.control} brackets the predicate from the OUTSIDE but names route "${row.route}". An outside-bracketing control ` +
+          `brackets every route at once, so naming one of them claims a position it does not hold.`,
+      );
+      continue;
+    }
+    assert.ok(
+      typeof row.route === "string" && routeIds.has(row.route),
+      `${row.control} is declared interior to shape "${row.position}" but its route is ${JSON.stringify(row.route)}, which is not ` +
+        `a member of DISPATCH_GATE_ROUTES (${[...routeIds].join(", ")}). A control target is a (shape, route) pair; a row with ` +
+        `half of one is a control nothing can check.`,
+    );
+  }
+});
+
+test("the witness is PURE over its four arguments: two calls on one payload return the same answer", () => {
+  // Idempotency, stated as an assertion because every coverage check below
+  // calls the witness more than once on the same row. A witness that carried
+  // state between calls would make the second answer depend on the order the
+  // rows happen to sit in.
+  for (const [shape, route] of [
+    ["stack-return-push-idiom", "class-3-pass"],
+    ["stack-return-push-idiom", "class-4-pass"],
+    ["zeropage-vector-jumped-through", "class-3-pass"],
+  ] as const) {
+    for (const [name, bytes, origin] of [
+      ["STACK_RETURN_MIXED_REGISTERS", STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN],
+      ["ORDINARY_INDEXED_COPY", ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN],
+    ] as const) {
+      assert.equal(
+        reachesGateInterior(bytes, origin, shape, route),
+        reachesGateInterior(bytes, origin, shape, route),
+        `the witness answered differently on two identical calls for ${name} against ("${shape}", "${route}")`,
+      );
+    }
+  }
+});
+
 /** The module whose source text the assertions below read. */
 const COVERAGE_SIGNATURE = "function hasDispatchContext(";
 
