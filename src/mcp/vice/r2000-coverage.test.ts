@@ -177,17 +177,77 @@ const SPLIT_TABLE = Uint8Array.from([
 ]);
 
 /** `lda hi,x : pha : lda lo,x : pha : rts` -- the stack-return dispatch idiom.
- * Contains NO indirect-jump opcode, so an opcode-keyed walk cannot see it. */
+ * Contains NO indirect-jump opcode, so an opcode-keyed walk cannot see it.
+ *
+ * THE TABLE BYTES NAME REAL ENTRY POINTS, WHICH THEY DID NOT UNTIL 19-11
+ * (WR-14). As originally committed the tables held `c0 c0 c0` / `05 05 05`,
+ * reconstructing `$c006` three times -- and `$c006` is the THIRD BYTE of this
+ * payload's own second instruction, since `lda $c013,x` occupies
+ * `$c004..$c006`. A mid-instruction address is not an address a program can be
+ * entered at, so a positive control asserting it was correct was pinning a
+ * defect: the value was being handed to `provenDispatchTargets()`, whose doc
+ * comment says adding a source to it IS the decision to treat that source as
+ * proof of code.
+ *
+ * The three entries now name `$c00a`, `$c00c` and `$c00e` -- three `rts`
+ * instructions in the filler region between the idiom and its tables, each a
+ * one-byte legal instruction, none of them inside any instruction of the
+ * idiom's own five-instruction window (`$c000..$c008`). The table bytes encode
+ * `target - 1` because the idiom pushes the address `rts` will increment past,
+ * so the lo bytes read `09 0b 0d` for targets `$c00a $c00c $c00e`. Three
+ * DISTINCT targets rather than one repeated value, so the walk reading three
+ * real entries is a visible property rather than something a single value
+ * could hide. */
 const STACK_RETURN = Uint8Array.from([
   0xbd, 0x10, 0xc0, // $c000 lda $c010,x   (hi table)
   0x48, // $c003 pha
   0xbd, 0x13, 0xc0, // $c004 lda $c013,x   (lo table)
   0x48, // $c007 pha
-  0x60, // $c008 rts
-  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $c009..$c00f
+  0x60, // $c008 rts        <- end of the idiom's own window
+  0xea, // $c009 nop
+  0x60, // $c00a rts        <- entry point 1, pushed as $c009
+  0xea, // $c00b nop
+  0x60, // $c00c rts        <- entry point 2, pushed as $c00b
+  0xea, // $c00d nop
+  0x60, // $c00e rts        <- entry point 3, pushed as $c00d
+  0xea, // $c00f nop
   0xc0, 0xc0, 0xc0, // $c010 hi bytes
-  0x05, 0x05, 0x05, // $c013 lo bytes
+  0x09, 0x0b, 0x0d, // $c013 lo bytes
 ]);
+
+/** `STACK_RETURN` with ONE defect: its second load indexes through Y while the
+ * first indexes through X. Two tables walked by two different registers are
+ * two tables, not one split one -- the sentence the class-3 comment already
+ * makes, and which the class-4 pass did not make until 19-11 (WR-14).
+ *
+ * The second load MUST be `absolute_y` (`0xb9`) and no other mode. That is
+ * load-bearing rather than stylistic: `INDEXED_LOAD_MODES` is exactly
+ * `absolute_x`, `absolute_y`, `zeropage_x` and does NOT contain `zeropage_y`,
+ * so a `zeropage_y` load would fail the class-4 window's own `isIndexedLoad`
+ * check for a reason unrelated to the register mismatch. The payload would
+ * then never enter the window at all and the control would pass by
+ * construction -- an OUTSIDE-bracketing control wearing an interior control's
+ * label, which is the exact defect this run exists to eliminate. */
+const STACK_RETURN_MIXED_REGISTERS = (() => {
+  const bytes = Uint8Array.from(STACK_RETURN);
+  bytes[4] = 0xb9; // $c004 lda $c013,y   (was 0xbd, lda $c013,x)
+  return bytes;
+})();
+
+/** `STACK_RETURN` with ONE defect: every reconstructed entry point lands on a
+ * `$02` byte, which decodes as `jam` -- an illegal opcode. An address that
+ * does not decode is not an entry point, so the walk must stop there rather
+ * than publish it, and must SAY it stopped.
+ *
+ * `$02` at exactly the three target addresses, so the payload is otherwise
+ * byte-identical to the genuine fixture: the reconstruction still succeeds and
+ * still lands in-image, and the plausibility test is the only thing that
+ * declines it. */
+const STACK_RETURN_IMPLAUSIBLE_TARGET = (() => {
+  const bytes = Uint8Array.from(STACK_RETURN);
+  for (const target of [0xc00a, 0xc00c, 0xc00e]) bytes[target - DISPATCH_ORIGIN] = 0x02; // jam
+  return bytes;
+})();
 
 /** A table whose every entry resolves in-image, far longer than the bound. */
 function chainingTable(): Uint8Array {
@@ -773,7 +833,120 @@ test("dispatch class 4: the stack-return dispatch idiom is found even though it 
   assert.equal(idiom.at, 0xc000);
   assert.equal(idiom.hiBase, 0xc010);
   assert.equal(idiom.loBase, 0xc013);
-  assert.deepEqual(idiom.targets, [0xc006, 0xc006, 0xc006], "the idiom pushes target-1 because rts increments, so the scan must add one back");
+  assert.deepEqual(
+    idiom.targets,
+    [0xc00a, 0xc00c, 0xc00e],
+    "the idiom pushes target-1 because rts increments, so the scan must add one back. This assertion read [$c006, $c006, $c006] until 19-11 " +
+      "(WR-14): $c006 is the third byte of this payload's own `lda $c013,x` at $c004..$c006, so the committed positive control was pinning a " +
+      "mid-instruction address as a proven entry point. The fixture was rebuilt to name three real one-byte routines in the filler region; a " +
+      "number here that is neither triple-$c006 nor the three above is a rewrite, not a regression -- read the payload's comment first.",
+  );
+  assert.equal(idiom.truncated, false, "every one of the three entries is plausible, so nothing was cut short");
+
+  // The property the old fixture violated, asserted rather than described: a
+  // reconstructed entry point may not fall inside any instruction of the
+  // matched window. Derived from the decoded stream, so it holds for whatever
+  // the payload becomes rather than for the bytes committed today.
+  const insns = decode(STACK_RETURN, DISPATCH_ORIGIN);
+  const windowBytes = new Set<number>();
+  for (const insn of insns.slice(0, 5)) for (const [k] of insn.bytes.entries()) windowBytes.add(insn.address + k);
+  assert.deepEqual([...windowBytes].sort((x, y) => x - y), [0xc000, 0xc001, 0xc002, 0xc003, 0xc004, 0xc005, 0xc006, 0xc007, 0xc008]);
+  for (const target of idiom.targets) {
+    assert.ok(
+      !windowBytes.has(target),
+      `$${target.toString(16)} falls INSIDE the idiom's own five-instruction window ($c000..$c008), so it is a mid-instruction address rather ` +
+        `than an entry point -- and it is being handed to provenDispatchTargets(), whose doc comment says adding a source to it IS the ` +
+        `decision to treat that source as proof of code. Pre-19-11 the committed fixture reconstructed $c006 and this suite asserted it was correct.`,
+    );
+  }
+
+  assert.deepEqual(
+    provenDispatchTargets(scan),
+    [0xc00a, 0xc00c, 0xc00e],
+    "BOTH DIRECTIONS: the gate added in 19-11 must not turn class 4 into a machine that declines everything -- the genuine idiom's targets must " +
+      "still reach the ONE seam that seeds a recursive descent",
+  );
+});
+
+test("dispatch class 4 DECLINES a pha/pha/rts window whose two loads use different index registers", () => {
+  // WR-14, consequence 1. Reproduced against the shipped code at the phase's
+  // HEAD: this payload was reported as a class-4 idiom with three targets and
+  // yielded provenDispatchTargets = [$c006] (and [$c00a, $c00c, $c00e] once
+  // the fixture was rebuilt) -- from two tables walked by two DIFFERENT
+  // registers, which class 3's own comment calls "two tables, not one split
+  // one".
+  assert.equal(STACK_RETURN_MIXED_REGISTERS.length, STACK_RETURN.length, "the control must differ from the genuine fixture in ONE byte, not in its shape");
+  let differing = 0;
+  for (const [i, byte] of STACK_RETURN.entries()) if (byte !== STACK_RETURN_MIXED_REGISTERS[i]) differing++;
+  assert.equal(differing, 1, "exactly one byte -- the second load's opcode -- may differ, or the control tests more than the register mismatch");
+
+  const insns = decode(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN);
+  assert.equal(insns[2]!.mode, "absolute_y", "the second load must be absolute_y: zeropage_y is absent from INDEXED_LOAD_MODES and would fail the window check for the wrong reason");
+  assert.equal(insns[0]!.mode, "absolute_x");
+
+  const scan = scanOf(STACK_RETURN_MIXED_REGISTERS);
+  assert.deepEqual(
+    scan.stackReturnDispatch,
+    [],
+    "two indexed tables walked by two DIFFERENT registers are two tables, not one split one. Pre-gate this reported one class-4 finding with " +
+      "loBase $c013 / hiBase $c010 and three reconstructed targets.",
+  );
+  assert.deepEqual(
+    provenDispatchTargets(scan),
+    [],
+    "pre-gate this returned [$c006] against the originally-committed table bytes, and [$c00a, $c00c, $c00e] against the rebuilt ones -- either " +
+      "way a value manufactured out of two unrelated tables, seeding a recursive descent",
+  );
+  assert.deepEqual(scan.tableEntryAddresses, [], "a declined window must not claim a single byte as a table entry either");
+
+  // NOT under-reported silently: class 4 declines the window WITHOUT claiming
+  // it, so class 3 still sees the pairing and still reports it -- as an
+  // advisory candidate with no orientation and no targets, which is the honest
+  // statement "something indexes two tables here and we cannot prove what it
+  // dispatches to".
+  assert.equal(scan.splitTableCandidates.length, 1, "the pairing must still be REPORTED as advisory -- a declined window must not become silence");
+  assert.equal(scan.splitTableCandidates[0]!.orientationResolved, false);
+  assert.deepEqual(scan.splitTableCandidates[0]!.targets, []);
+  assert.deepEqual(scan.splitTables, [], "class 3 must not promote it either: its own condition (b) is the same register match");
+
+  // Both directions in one test.
+  assert.equal(scanOf(STACK_RETURN).stackReturnDispatch.length, 1, "the genuine idiom must still be found -- a gate that declines everything measures nothing");
+});
+
+test("dispatch class 4 DECLINES a window whose reconstructed entry point does not decode as a legal instruction", () => {
+  // WR-14, consequence 2. Reproduced against the shipped code at the phase's
+  // HEAD: setting the reconstructed target byte to $02 (jam) changed NOTHING
+  // -- targets, provenDispatchTargets and the descent seed were identical to
+  // the genuine fixture's.
+  const decoded = decode(STACK_RETURN_IMPLAUSIBLE_TARGET.subarray(0xc00a - DISPATCH_ORIGIN), 0xc00a, { count: 1 })[0]!;
+  assert.equal(decoded.illegal, true, "the control's target must actually be an illegal opcode, or it tests nothing");
+  assert.equal(decoded.mnemonic, "jam");
+
+  const scan = scanOf(STACK_RETURN_IMPLAUSIBLE_TARGET);
+  const finding = scan.stackReturnDispatch[0];
+  assert.ok(
+    finding === undefined || (finding.targets.length === 0 && finding.truncated),
+    `an entry point that does not decode may not be published: the finding must be absent, or carry an empty target list and a truthy truncated ` +
+      `flag. Got ${JSON.stringify(finding)}. Pre-gate it carried three targets and truncated=false.`,
+  );
+  assert.deepEqual(
+    provenDispatchTargets(scan),
+    [],
+    "pre-gate this returned [$c00a, $c00c, $c00e] -- three addresses whose bytes decode as `jam` -- and seeded a recursive descent from them",
+  );
+  assert.deepEqual(scan.tableEntryAddresses, [], "an implausible walk must not claim a single byte as a table entry either");
+
+  // NOT under-reported silently: the walk was cut short, and the scan says so.
+  assert.equal(
+    scan.truncated,
+    true,
+    "the class-4 entry count is derived from the distance between the two bases and is therefore a GUESS, so a walk stopped by the plausibility " +
+      "test must raise the scan-level truncated flag. Reporting a clean, empty result would be a silent under-report.",
+  );
+
+  // Both directions in one test.
+  assert.equal(scanOf(STACK_RETURN).stackReturnDispatch.length, 1, "the genuine idiom must still be found");
+  assert.equal(scanOf(STACK_RETURN).truncated, false, "and it must not be reported as truncated");
 });
 
 // ---------------------------------------------------------------------------
@@ -1321,9 +1494,14 @@ const OUTSIDE = "OUTSIDE-BRACKETING" as const;
  * The question is deliberately NOT "does `hasDispatchContext()` accept this?".
  * It is "is this payload inside the region the gate has to rule on?" -- the
  * question an interior control must answer yes to and an outside-bracketing one
- * no to. Both start from the class-3 pairing precondition the gate itself
- * requires, so a payload with no same-register indexed load pair is outside
- * every shape by construction.
+ * no to.
+ *
+ * `zeropage-vector-jumped-through` starts from the class-3 pairing precondition
+ * the gate itself requires, so a payload with no same-register indexed load
+ * pair is outside it by construction. `stack-return-push-idiom` is reached by
+ * EITHER of the two gates that rule on it: the class-4 pass's own
+ * five-instruction window (register-agnostic -- see below), or the class-3
+ * pairing precondition followed by `pha` ... `pha` ... `rts` in reach.
  *
  * THROWS on a shape id it carries no predicate for, and the message names the
  * id. Never returns a bare boolean for an unknown shape: returning `true` would
@@ -1354,6 +1532,30 @@ function reachesGateInterior(bytes: Uint8Array, origin: number, shapeId: string)
     const insn = insns[i]!;
     return !!insn.operand && insn.mnemonic.startsWith("ld") && indexRegister(i) !== null;
   };
+
+  // THE CLASS-4 ROUTE INTO `stack-return-push-idiom` (19-11, WR-14). This
+  // shape is ruled on by TWO gates, not one: `hasDispatchContext()`'s first
+  // branch (reached only after the class-3 pairing precondition below), and
+  // the class-4 pass's own five-instruction window -- which is the gate that
+  // feeds `provenDispatchTargets()` directly and which had no negative control
+  // at all until 19-11.
+  //
+  // The window shape is REGISTER-AGNOSTIC here, deliberately. The register
+  // match is the CONDITION under test, so requiring it would put the
+  // mismatched-register control outside the very predicate it constrains --
+  // exactly the outside-bracketing mistake CR-04 turned on. "Is this payload
+  // inside the region the gate must rule on?" is the question, and a
+  // `lda ,x : pha : lda ,y : pha : rts` window is unambiguously inside it.
+  if (shapeId === "stack-return-push-idiom") {
+    for (let i = 0; i + 4 < insns.length; i++) {
+      if (!isIndexedLoad(i)) continue;
+      if (insns[i + 1]!.opcode !== 0x48) continue; // pha
+      if (!isIndexedLoad(i + 2)) continue;
+      if (insns[i + 3]!.opcode !== 0x48) continue; // pha
+      if (insns[i + 4]!.opcode !== 0x60) continue; // rts
+      return true;
+    }
+  }
 
   for (let i = 0; i < insns.length; i++) {
     if (!isIndexedLoad(i)) continue;
@@ -1416,9 +1618,9 @@ interface GateInteriorDeclaration {
 
 /**
  * One row per negative dispatch control this suite carries, with its POSITION
- * relative to the predicate it constrains. Populated honestly: three of these
+ * relative to the predicate it constrains. Populated honestly: four of these
  * bracket the gate from the outside and always did, and saying so plainly is
- * what makes the two interior rows mean something.
+ * what makes the interior rows mean something.
  */
 const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.freeze([
   {
@@ -1456,6 +1658,18 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     bytes: () => ({ bytes: STACK_RETURN, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
     note: "reaches the push idiom's interior, and class 3 must still DECLINE it because class 4 runs first and claims the window (WR-01)",
+  },
+  {
+    control: "STACK_RETURN_MIXED_REGISTERS",
+    bytes: () => ({ bytes: STACK_RETURN_MIXED_REGISTERS, origin: DISPATCH_ORIGIN }),
+    position: "stack-return-push-idiom",
+    note: "THE CLASS-4 INTERIOR CONTROL for the register condition (WR-14). It matches the five-instruction window in every respect except that its two loads index through different registers, which is precisely what makes it interior rather than outside-bracketing",
+  },
+  {
+    control: "STACK_RETURN_IMPLAUSIBLE_TARGET",
+    bytes: () => ({ bytes: STACK_RETURN_IMPLAUSIBLE_TARGET, origin: DISPATCH_ORIGIN }),
+    position: "stack-return-push-idiom",
+    note: "THE CLASS-4 INTERIOR CONTROL for the entry-point condition (WR-14). Byte-identical to the genuine fixture apart from three data bytes, so the window matches, the reconstruction succeeds, and only the plausibility test declines it",
   },
 ]);
 
@@ -1528,6 +1742,23 @@ test("NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as
     reachesGateInterior(payloadOf(FP2_INTERIOR), loadFixture(FP2_INTERIOR).store.origin, "zeropage-vector-jumped-through"),
     true,
     "the interior control must be recognised as interior, or the witness declines everything and proves nothing",
+  );
+
+  // The same non-vacuity statement for the class-4 route into
+  // `stack-return-push-idiom` added in 19-11. The window predicate is
+  // register-agnostic, so it must accept the mismatched-register control --
+  // otherwise that control would sit OUTSIDE the very predicate it constrains
+  // -- and it must still decline a payload with no push idiom at all.
+  assert.equal(
+    reachesGateInterior(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN, "stack-return-push-idiom"),
+    false,
+    "the ordinary indexed copy loop carries no `pha` byte anywhere, so it cannot be the push idiom's interior control either",
+  );
+  assert.equal(
+    reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN, "stack-return-push-idiom"),
+    true,
+    "the mismatched-register control must be recognised as INTERIOR to the class-4 window. If the witness required the register match here, the " +
+      "control would be outside the predicate it constrains -- an outside-bracketing control wearing an interior label, which is CR-04's exact defect",
   );
 });
 

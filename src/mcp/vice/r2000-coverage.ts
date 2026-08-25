@@ -786,6 +786,25 @@ export function scanIndirectDispatch(
     return safeBytes[idx]! | (safeBytes[idx + 1]! << 8);
   };
 
+  /**
+   * Is `value` an address a program could actually be ENTERED at -- strictly
+   * inside the image, and on a byte that decodes as a legal, non-truncated
+   * instruction?
+   *
+   * The ONE predicate both gated reconstructions read: class 3's condition (e)
+   * and the class-4 walk's condition (d). Extracted rather than written twice
+   * (WR-14) because the two halves of `provenDispatchTargets()` were held to
+   * DIFFERENT standards for exactly as long as this test existed in only one
+   * of them. A value pointing at a byte that does not decode is not an entry
+   * point, and a mid-instruction address is not evidence of code however
+   * confidently it is printed.
+   */
+  const isPlausibleEntryPoint = (value: number): boolean => {
+    if (!(value >= safeOrigin && value < safeOrigin + size)) return false;
+    const decoded = decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0];
+    return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
+  };
+
   const indirectJumps: IndirectJumpFinding[] = [];
   const multiEntryTables: DispatchTableFinding[] = [];
   const splitTables: SplitTableFinding[] = [];
@@ -847,9 +866,36 @@ export function scanIndirectDispatch(
   // evidence. Where both would match the same five instructions, the
   // justified one must win and the other must not be reported at all;
   // otherwise the same two instructions appear twice with contradictory
-  // roles, and the byte-swapped twin ($05c0 for $c005) is emitted as if it
+  // roles, and the byte-swapped twin ($09c0 for $c009) is emitted as if it
   // were an address. Every instruction of a matched window is recorded here
   // and the Class-3 pass declines any pairing whose leading load sits in one.
+  //
+  // GATED TO THE SAME STANDARD AS CLASS 3 (WR-14). This pass feeds the same
+  // `provenDispatchTargets()` seam class 3 feeds, and gating one half of a
+  // seam while the other half is ungated is not a gate. A window is PROVEN
+  // only when ALL of:
+  //   (a) the five instructions match the shape: indexed load, `pha`, indexed
+  //       load, `pha`, `rts`;
+  //   (b) both loads index through the SAME register -- two tables walked by
+  //       two different registers are two tables, not one split one, which is
+  //       the sentence class 3's own comment already makes. Pre-gate,
+  //       `lda $c010,x : pha : lda $c013,y : pha : rts` yielded a proven
+  //       target;
+  //   (c) the lo/hi orientation is justified rather than assumed. This is the
+  //       ONE condition the idiom supplies for free -- the 6502 pushes the
+  //       high byte first, so the first load reads the hi table -- and it is
+  //       why this pass runs before class 3 rather than after it;
+  //   (d) EVERY published entry point is a plausible one
+  //       (`isPlausibleEntryPoint`): strictly inside the image, and on a byte
+  //       that decodes as a legal, non-truncated instruction. The entry count
+  //       is derived from the DISTANCE between the two bases and is therefore
+  //       a guess, so the walk is bounded by evidence rather than by that
+  //       arithmetic: it stops at the first implausible value, marks the
+  //       finding truncated and raises the scan-level `truncated` flag, so a
+  //       walk cut short is REPORTED rather than shown as a clean empty list.
+  // Nothing is published until (d) has been applied to it: `discovered` and
+  // `tableEntryAddresses` are written only from the surviving prefix, exactly
+  // the way class 3 reconstructs before its gate.
   const classFourWindow = new Set<number>();
   for (let i = 0; i + 4 < insns.length; i++) {
     const [a, b, c, d, e] = [insns[i]!, insns[i + 1]!, insns[i + 2]!, insns[i + 3]!, insns[i + 4]!];
@@ -859,6 +905,11 @@ export function scanIndirectDispatch(
     if (!isIndexedLoad(c)) continue;
     if (d.opcode !== 0x48) continue; // pha
     if (e.opcode !== 0x60) continue; // rts
+    // (b). Checked BEFORE the window is claimed: a mismatched-register window
+    // is not class 4's, so class 3 must still be free to report the pairing
+    // (which it will decline on its own condition (b), as an advisory
+    // candidate rather than silence).
+    if (!sameIndexRegister(a, c)) continue;
 
     for (const claimed of [a, b, c, d, e]) classFourWindow.add(claimed.address);
 
@@ -874,7 +925,10 @@ export function scanIndirectDispatch(
       truncated = true;
     }
 
+    // Reconstruct WITHOUT publishing anything yet: nothing below touches
+    // `discovered` or `tableEntryAddresses` until (d) has passed on it.
     const targets: number[] = [];
+    const entryAddresses: number[] = [];
     for (let k = 0; k < entries; k++) {
       const loIdx = loBase + k - safeOrigin;
       const hiIdx = hiBase + k - safeOrigin;
@@ -883,14 +937,21 @@ export function scanIndirectDispatch(
       // jumping. Reconstruct the real entry point.
       const pushed = safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8);
       const value = (pushed + 1) & 0xffff;
+      // (d). The entry count is a guess, so the walk stops here rather than
+      // publishing an address a program cannot be entered at -- and says it
+      // stopped.
+      if (!isPlausibleEntryPoint(value)) {
+        tableTruncated = true;
+        truncated = true;
+        break;
+      }
       targets.push(value);
-      tableEntryAddresses.add(loBase + k);
-      tableEntryAddresses.add(hiBase + k);
-      if (value >= safeOrigin && value < safeOrigin + size) discovered.add(value);
+      entryAddresses.push(loBase + k, hiBase + k);
     }
-    if (targets.length > 0) {
-      stackReturnDispatch.push({ at: a.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated, orientationResolved: true });
-    }
+    if (targets.length === 0) continue;
+    for (const value of targets) discovered.add(value);
+    for (const addr of entryAddresses) tableEntryAddresses.add(addr);
+    stackReturnDispatch.push({ at: a.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated, orientationResolved: true });
   }
 
   // --- Class 3: split lo/hi tables. Paired indexed loads whose two bases are
@@ -961,12 +1022,10 @@ export function scanIndirectDispatch(
       }
       if (targets.length === 0) continue;
 
-      // (e) every target in-image and decodable as a legal instruction.
-      const everyTargetIsAPlausibleEntryPoint = targets.every((value) => {
-        if (!(value >= safeOrigin && value < safeOrigin + size)) return false;
-        const decoded = decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0];
-        return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
-      });
+      // (e) every target in-image and decodable as a legal instruction. The
+      // predicate is shared with the class-4 walk's condition (d) -- one
+      // definition, read by both gated reconstructions (WR-14).
+      const everyTargetIsAPlausibleEntryPoint = targets.every(isPlausibleEntryPoint);
 
       if (gatedSoFar && everyTargetIsAPlausibleEntryPoint) {
         for (const value of targets) discovered.add(value);
