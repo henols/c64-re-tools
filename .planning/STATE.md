@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-18-PLAN.md
-last_updated: "2026-08-25T13:22:12.908Z"
+stopped_at: Completed 19-20-PLAN.md
+last_updated: "2026-08-25T13:49:39.464Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 execution started
-state_head: 0caa412a6c54f80811443424802996f73fb46582
+state_head: 5ad356d9ee8fa35f54da6eee05352e9d113db70e
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
   percent: 20
 ---
 
@@ -69,8 +69,8 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 18 of 20 executed — next 19-19
-Status: Executing Phase 19 (third gap-closure round, 19-18 done)
+Plan: 19 of 20 executed — next 19-19
+Status: Executing Phase 19 (fourth gap-closure round, 19-20 done; 19-19 outstanding)
 Last activity: 2026-08-25 — Phase 19 execution started
 
 ## Performance Metrics
@@ -197,6 +197,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P16 | 14 min | 3 tasks | 3 files |
 | Phase 19 P17 | 45 min | 3 tasks | 2 files |
 | Phase 19 P18 | 26 min | 3 tasks | 4 files |
+| Phase 19 P20 | 42 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -402,6 +403,8 @@ Recent decisions affecting current work:
 - [Phase 19]: A control target is a (shape, route) pair, not a shape: reachesGateInterior() takes the route and the class-4/class-3 disjunction is deleted — Round 3 shipped a mechanism built to catch exactly this defect class, and it passed over the defect: one shape is ruled on by two gates and the witness ORed them, so all three of that shape's declared negative controls satisfied only the class-4 half and the class-3 route had no control at all.
 - [Phase 19]: Reachability on a route that consults the shared gate is DERIVED and asserted, never hand-declared — Otherwise the cheapest way to satisfy the coverage assertion is to mark a reachable pair unreachable instead of writing a control for it. Flipping one was demonstrated to red three independent checks.
 - [Phase 19]: A route's verdict is measured through the collection that route publishes into, never through the aggregate provenDispatchTargets() seam — STACK_RETURN is a class-3 decline and a class-4 acceptance in one payload. Through the seam it reads as accepted and the decline is inexpressible; through splitTables and stackReturnDispatch both facts are legible.
+- [Phase 19]: The recursive descent stops at an illegal opcode; the census's three readers (descent, linear sweep, isPlausibleEntryPoint) are brought to ONE predicate, isDecodableAsInstruction() — The descent walked through illegal opcodes and claimed their bytes while the sweep beside it refused them: a 64-byte image with four bytes of code reported reachedAsInstruction=64 against linearSweepDecodable=4. Two readers already agreed on the stricter rule; the third never asked.
+- [Phase 19]: The descent moved to the sweep's standard and NOT the reverse; COVERAGE_SCHEMA_VERSION stays 2 — Loosening the sweep to walk stable undocumented opcodes would redefine what linearSweepDecodable MEANS in a report Phase 20 consumes, which owes a schema bump and a consumer review. Residual accepted and sized: 105 of 256 opcode entries are flagged illegal, only 12 of them jam, so 93 stable undocumented instructions will now stop a census and under-report it. Reversal condition named in 19-DECISIONS.md Decision 6.
 
 ### Pending Todos
 
@@ -896,8 +899,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T13:22:12.776Z
-Stopped at: Completed 19-18-PLAN.md
+Last session: 2026-08-25T13:49:30.595Z
+Stopped at: Completed 19-20-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
