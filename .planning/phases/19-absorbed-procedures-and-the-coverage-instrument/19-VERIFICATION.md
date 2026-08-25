@@ -1,158 +1,165 @@
 ---
 phase: 19-absorbed-procedures-and-the-coverage-instrument
-verified: 2026-08-25T05:55:58Z
+verified: 2026-08-25T09:47:08Z
 status: gaps_found
 score: 4/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: 2/5
-  previous_verified: 2026-08-24T18:46:48Z
+  previous_score: 4/5
+  previous_verified: 2026-08-25T05:55:58Z
   gaps_closed:
-    - "SC2 / ABS-02 — the elected MIT licence's permission notice now ships, byte-exactly, in all three notices files, and the sentence the same commit falsified is gone. Confirmed against the real upstream repository over the network, not against the project's own manifest."
-    - "SC4 clause C, route 1 — `namesACaller()` is anchored on a hex-token and identifier boundary; the NC4-plus-colliding-hex gaming attempt no longer buys a clean verdict, and a both-directions control is committed."
+    - "SC4 / CR-04 — the census-inflation route via the zero-page pointer CONSTRUCTION is closed at its root. `hasDispatchContext()` now requires the CONSUMER (a `0x6c` operand equal to the lower of two consecutive zero-page store targets); the bare-`0x6c`-within-reach branch was removed. Reproduced INDEPENDENTLY at report level against HEAD `13cb5e1` on a payload I wrote from scratch, not the committed fixture: 18 declared code bytes report `reachedAsInstruction=18, tableEntry=0, splitTables=0, provenDispatchTargets=[]`, against the prior run's measured `25 / 16 / 1 / 8`. The pairing is still REPORTED as one advisory candidate, so it demonstrably reached the gate and was declined rather than never being examined."
+    - "The workspace test suite is no longer red from this phase's own artifacts. `19-REVIEW-FIX.md` dispositions all 24 finding ids `19-REVIEW.md` declares (set equality re-derived mechanically with the guard's own regex, 24/24, zero missing). `docs-review-disposition.test.ts` 7/7 exit 0 and `audit-integrity.test.ts` 44/44 exit 0, both standalone. `19-REVIEW.md` is byte-unchanged across the whole run (0 files in `git diff --name-only a756b17..HEAD`), so finding-id continuity is preserved; `19-VALIDATION.md` and `deferred-items.md` are purely additive (93/0 and 135/0 insertions/deletions)."
   gaps_remaining:
-    - "SC4 / COV-02 — the census-inflation route. Narrowed by 19-08's gate, NOT closed: `hasDispatchContext()`'s third accepted shape is an ordinary 16-bit zero-page pointer construction, which is not dispatch evidence. Reproduced at report level against HEAD."
-  regressions:
-    - "The full test suite went RED (2 failures) at commit `80c544b` — this phase's own second code-review report added five findings (CR-04, WR-13, WR-14, WR-15, IN-05) with no recorded disposition. `docs-review-disposition.test.ts` (AUDIT-01) fails; `audit-integrity.test.ts` (D-12-02) cascades. The tree was 0-fail immediately before that commit."
+    - "SC4 / COV-01 — the structural-completeness number is still inflatable, by a DIFFERENT shape than the one just closed. `hasDispatchContext()`'s FIRST branch (`stack-return-push-idiom`) is reachable from the class-3 pass outside any class-4 window, and accepts. Reproduced at report level on a payload with 15 code bytes and no `jmp` opcode anywhere: `reachedAsInstruction=31, tableEntry=16, splitTables=1, provenDispatchTargets=8`, `classAt($0840)=reached-as-instruction` on a cleared buffer, while class 4 itself DECLINES the same window (`stackReturnDispatch=0`)."
+  regressions: []
 gaps:
-  - truth: "SC4 — Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result ... (phase goal: 'a coverage instrument ... that resists being gamed')"
+  - truth: "SC4 — the coverage instrument reports three distinct numbers and (phase goal) 'resists being gamed', before any decomposition work runs under it"
     status: partial
     reason: >-
       Clauses A (three separately-addressable numbers, never one aggregate), B (a mechanically
       auto-labelled or "handles data" binary visibly fails) and C (the multi-caller
-      cross-reference rule) now all hold — C was genuinely fixed by 19-06 and is held down by a
-      both-directions control. What does NOT hold is the goal's own qualifier: the structural
-      completeness number, which is one of the three numbers SC4 mandates, is still
-      manufacturable out of ordinary data. 19-08 gated the class-3 split-table scan, but
-      `hasDispatchContext()` (`src/mcp/vice/r2000-coverage.ts:644-662`) accepts, as one of three
-      sufficient shapes, "two stores into consecutive zero-page addresses". That is the
-      construction of ANY 16-bit pointer — `lda ($fb),y` builds the identical thing — not of a
-      dispatch. The predicate never looks at what CONSUMES the vector it saw being built.
-      REPRODUCED INDEPENDENTLY, at report level, through the shipped `buildCoverageReport()`,
-      against HEAD `80c544b`: two 64-byte payloads at `$0810` containing 17 bytes of real code and
-      47 bytes of ordinary data, identical except for the addressing mode of two loads, and
-      neither containing a `jmp ($nnnn)` opcode (`0x6c`) or a single `pha` anywhere in the image:
+      cross-reference rule) all hold and are all now held down by controls with teeth. CR-04 —
+      the route the prior run blocked on — is genuinely CLOSED, and I confirmed it by writing my
+      own payload rather than reading the committed fixture.
 
-        INDEXED  (zp vector built, consumed by `lda ($fb),y`):
-          reached=25  tableEntry=16  unreached=23  splitTables=1  splitTableCandidates=0
-        IMMEDIATE twin:
-          reached=17  tableEntry=0   unreached=47  splitTables=0  splitTableCandidates=0
+      What still does not hold is the same goal qualifier, one shape over. `DISPATCH_CONTEXT_SHAPES`
+      declares TWO sufficient shapes. 19-10 fixed the second (`zeropage-vector-jumped-through`) and
+      gave it a real interior negative control. The FIRST (`stack-return-push-idiom`) was left as
+      it was, on a documented rationale that my measurement falsifies. `r2000-coverage.ts:672-678`
+      states: "After the Class-4 pass runs FIRST and claims its windows, a pairing inside such a
+      window is skipped outright rather than promoted here; the condition is kept so this function
+      reads as a COMPLETE statement of what counts as dispatch context". That rationale covers only
+      the case where class 4 *does* claim the window. When class 4 declines — because the payload
+      is not its exact five-instruction shape — the pairing is NOT skipped, and this branch
+      promotes it.
 
-      41 of 64 bytes claimed as code-or-table on a program with 17 bytes of code, and
-      `classAt(census, 0x0840)` returns `reached-as-instruction` for what is a cleared data
-      buffer. `provenDispatchTargets()` — the module's declared single seam, whose own doc
-      comment reads "ADDING A SOURCE HERE IS THE DECISION TO TREAT THAT SOURCE AS PROOF OF CODE"
-      — returns all eight reconstructed values. That decision is being made by accident, one
-      level down, inside `hasDispatchContext`.
+      REPRODUCED at report level through the shipped `buildCoverageReport()` against HEAD
+      `13cb5e1`, on a 64-byte image at `$0810` containing 15 bytes of code, NO `jmp` opcode
+      (`0x6c`) anywhere, and a lo/hi table pair that nothing dispatches through:
 
-      The prior verification's own remediation text named exactly three admissible gates —
-      "a following indexed indirect jump, a pha/pha/rts idiom, or a corroborating
-      cross-reference". The shipped gate adds a fourth shape that is outside that enumeration and
-      is not dispatch evidence.
+        D2  lda $0830,x / sta $fb / lda $0838,x / sta $fc / pha / txa / pha / tya / rts
+              reachedAsInstruction=31  tableEntry=16  unreached=17  linearSweepDecodable=60
+              splitTables=1  stackReturnDispatch=0  provenDispatchTargets=8 ($0840..$0847)
+              classAt($0840) = "reached-as-instruction"   (a cleared nop buffer)
 
-      This also violates 19-08's and 19-09's shared prohibition, verbatim: "MUST NOT let a control
-      fixture's incidental text stand in for an enforced rule — a heuristic with a positive
-      control and no negative one is not evidence that it declines anything." The two committed
-      false-positive controls (FP1 `fp1-indexed-copy-loop`, FP1b `fp1b-immediate-copy-loop`, and
-      the in-suite `ORDINARY_INDEXED_COPY`) carry NO zero-page store at all, and the positive
-      control `SPLIT_TABLE` carries a real `jmp ($00fb)`. The two bracket the OUTSIDE of the gate.
-      Nothing exercises its interior — a vector that is built and then consumed by something
-      other than a jump — which is why a 2517-passing suite conceals it.
+        D3  the identical payload with `rts` ONE instruction further out (past the 8-instruction
+            window), which is the control proving D2 is INSIDE the predicate and not outside it:
+              reachedAsInstruction=16  tableEntry=0  splitTables=0  provenDispatchTargets=0
+              classAt($0840) = "unreached"
 
-      Blocking rather than cosmetic: the phase goal says "before any decomposition work runs under
-      it", and ROADMAP Phase 20 ("Decomposition to Closure") both depends on this instrument and
-      is instructed to "Run Phase 19's coverage instrument throughout this phase". A structural
-      completeness number that inflates on the single most ordinary 6502 idiom (indirect-indexed
-      data access) cannot gate that sweep.
+      47 of 64 bytes claimed as code-or-table on a 15-byte program, and eight fabricated "proven"
+      entry points written into the JSON Phase 20 consumes. There is no contradicting sibling
+      figure to give the reader a tell — `linearSweepDecodable=60` agrees — so this is a SILENT
+      inflation, the same character as CR-04 and unlike the loud WR-03 route below.
+
+      THE ROOT CAUSE IS THE NEW MECHANISM'S OWN HOLE, WHICH IS WHY THIS IS NOT MERELY "ONE MORE
+      BUG". 19-10's headline deliverable was a mechanism that reds the suite BY NAME when a
+      sufficient shape is admitted without a negative control reaching its interior
+      (`DISPATCH_CONTEXT_SHAPES` / `GATE_INTERIOR_DECLARATIONS` / `reachesGateInterior()`). That
+      mechanism passes over this hole because `reachesGateInterior()`
+      (`r2000-coverage.test.ts:2016-2062`) defines `stack-return-push-idiom`'s interior as a
+      DISJUNCTION — the class-4 five-instruction window OR the class-3 pairing-plus-`pha`/`pha`/`rts`
+      — and a control satisfying only the first disjunct is accepted as claiming the whole shape.
+      All three declared interior negative rows for this shape satisfy only that first disjunct:
+      `STACK_RETURN` is the exact class-4 shape (its own row says class 3 declines it "because
+      class 4 runs first and claims the window"), and `STACK_RETURN_MIXED_REGISTERS` /
+      `STACK_RETURN_IMPLAUSIBLE_TARGET` are class-4 controls that class 3 declines on a DIFFERENT
+      condition (`sameIndexRegister`), never on the push idiom. Nothing in the suite asserts that
+      class 3 declines a same-register pairing whose only dispatch evidence is a `pha`/`pha`/`rts`
+      that class 4 refused to call a dispatch. That is CR-04's exact defect shape — a control
+      built from the outside of the region the predicate is load-bearing in — displaced one shape
+      over rather than removed.
+
+      Blocking rather than cosmetic, for the reason the goal states: "before any decomposition
+      work runs under it". ROADMAP Phase 20 depends on Phase 19 by name and is instructed to "Run
+      Phase 19's coverage instrument throughout this phase, not only once at the end".
     artifacts:
       - path: "src/mcp/vice/r2000-coverage.ts"
-        issue: "`hasDispatchContext()` at :644-662 accepts two consecutive zero-page stores as proof of dispatch. Condition (c) also contributes almost nothing over (d): `resolveSplitOrientation()` at :679-712 already requires the same two consecutive zero-page store consumers, so in the ordinary tight-pointer case the very same two instructions satisfy both."
+        issue: "`hasDispatchContext()` :694-722 — the `stack-return-push-idiom` branch (`if (insn.opcode === 0x60 && sawPha >= 2) return true;`) fires for the class-3 pass whenever a `pha`/`pha`/`rts` sits within `SPLIT_TABLE_WINDOW` of the leading load, regardless of whether class 4 claimed the window. The doc comment at :672-678 asserts the opposite."
       - path: "src/mcp/vice/r2000-coverage.test.ts"
-        issue: "Test adequacy. `dispatch class 3 DECLINES an ordinary two-table indexed read loop` (:781) and `an ordinary indexed copy loop does not inflate the census over its immediate twin` (:808) are both built on payloads with no zero-page store. The gate's interior has no control."
-      - path: "src/mcp/vice/fixtures/coverage/fp1-indexed-copy-loop/store.json"
-        issue: "FP1/FP1b prove the census declines a pairing with no vector construction. They cannot prove it declines a pairing whose vector is built and then consumed by a data read."
-      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md"
-        issue: "CR-04 records this defect and has no disposition anywhere, which is itself what turns the test suite red (see the second gap)."
+        issue: "`reachesGateInterior()` :2016-2062 accepts a class-4-window-only payload as reaching `stack-return-push-idiom`'s interior, so the shape-coverage test at :2244-2256 is satisfied without any control reaching the class-3 route. `GATE_INTERIOR_DECLARATIONS` :2152-2175 — all three rows for this shape are class-4 controls."
+      - path: "src/mcp/vice/fixtures/coverage/"
+        issue: "10 committed control fixtures, none of which carries a same-register indexed pairing with consecutive zero-page stores and a `pha`/`pha`/`rts` that class 4 declines. The FP2 pair covers the other shape only."
     missing:
-      - "Require the CONSUMER, not the construction: a zero-page vector may count only when an indirect-jump opcode within reach dispatches through the vector that was actually built (match `insn.operand.value` of the `0x6c` against the lower of the two consecutive zero-page store targets). `19-REVIEW.md` CR-04 carries a ready patch."
-      - "Add the interior control the gate has never had — the payload above, asserting `splitTables === []`, `provenDispatchTargets(scan) === []` and `classAt(census, 0x0840) === \"unreached\"`; ideally as a third generated fixture (`fp2-zeropage-data-pointer`) so the statement lands at report level, where the gap is actually phrased."
-      - "Apply the same treatment to the class-4 stack-return scan (WR-14): it pours into `provenDispatchTargets()` with no index-register match, no target-decodability check and a guessed entry count, and has no negative control at all. Its committed positive fixture already proves a mid-instruction address ($c006, the third byte of `lda $c013,x`)."
-      - "Re-check REQUIREMENTS.md line 59 / line 135 — COV-02 correctly remains unchecked and `Gaps Found`; keep it that way until the gate holds."
-  - truth: "The phase's own artifacts leave the workspace test suite RED — `cd src/mcp/vice && npm test` reports 2 failures"
-    status: failed
-    reason: >-
-      Independently confirmed on the full suite (never `test:automated`): `# tests 2564,
-      # pass 2517, # fail 2`, exit 1, 95.8s.
-      (1) `docs-review-disposition.test.ts:338` — "every REVIEW.md finding id anywhere in
-      .planning/phases/ has a recorded disposition (AUDIT-01, self-applied)" fails naming five ids,
-      all in this phase's `19-REVIEW.md`: CR-04, IN-05, WR-13, WR-14, WR-15.
-      (2) `audit-integrity.test.ts:225` — D-12-02, "no milestone audit declares a gated status
-      while any docs guard is red", cascades from it while five milestone audits declare a gated
-      status. Its message names seven red guards, but six of the seven
-      (`docs-core-value-decision`, `docs-dangling-refs`, `docs-deferred-ledger`,
-      `docs-fork-decision`, `docs-linerefs`, `docs-r2000-decisions`) pass when run standalone —
-      spot-checked three, all exit 0 — so exactly one guard is genuinely red, and it is (1).
-      This is a documentation-ledger gap rather than a code regression, but the tree IS red and
-      the phase cannot be called complete over it. `deferred-items.md` declared both conditions
-      "clears when the last gap-closure plan (19-09) lands its SUMMARY"; 19-09 landed and they did
-      not clear, because the second review pass added five new undispositioned findings after it.
-    artifacts:
-      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md"
-        issue: "CR-04, WR-13, WR-14, WR-15, IN-05 have no disposition in any of the guard's five accepted sources."
-      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md"
-        issue: "Both deferred conditions are recorded as clearing when 19-09 lands. 19-09 has landed; neither cleared. The ledger now understates the state."
-    missing:
-      - "Fix CR-04 in code and cite the plan/SUMMARY that did it (it must not be dispositioned as accepted — it is the defect SC4 turns on)."
-      - "Record a disposition for WR-13, WR-14, WR-15 and IN-05 — fixed-and-cited, or a filed todo naming the reason."
-      - "Re-run the full suite to 0 failures before the phase is closed; the `[skip release]` hold's lifting condition is a no-gaps re-verification, and a red tree is a gap."
+      - "Close the class-3 route into `stack-return-push-idiom`. The cheapest correct fix is to make the branch mean what its comment already says: class 4 owns that idiom and now gates it properly (WR-14), so the class-3 pass should require class-4-window membership for this shape — or the branch should be deleted and `DISPATCH_CONTEXT_SHAPES` reduced to one entry, which the mechanical branch-count test will enforce."
+      - "Split `reachesGateInterior()`'s disjunction. A shape whose interior is reachable by two different routes needs a negative control per route, or the disjunction lets one route's control vouch for the other. Either give the shape two ids, or make the witness require the class-3 route specifically when that is the route under test."
+      - "Commit the missing interior control at report level, the way FP2 was committed: the D2 payload above, asserting `splitTables === []`, `provenDispatchTargets(scan) === []`, `tableEntryAddresses.length === 0` and `classAt(census, 0x0840) === \"unreached\"`, with the D3 window-edge twin as its measured baseline so the assertion is a bound and not a snapshot."
+      - "DECIDE ON WR-03, which is currently dispositioned `deferred-with-owner` and which I measured as a second, LOUDER inflation route on the same number: 4 bytes of code followed by 60 bytes of `0x02` (JAM) reports `reachedAsInstruction=64, unreached=0, linearSweepDecodable=4` — 100% structural completeness on a 94%-garbage image. Unlike D2 the report contradicts itself visibly (64 vs 4), and the deferral's reason (the fix is gated on `use_illegal_opcodes` and needs its own dated decision) is legitimate. This is a human call, not a defect I am re-filing: promote it into this closure round, or record that Phase 20's first use of the instrument accepts it with the contradiction as the tell."
+      - "Keep COV-01 unchecked and `Gaps Found` in REQUIREMENTS.md until the class-3 route is closed. COV-02's own text (vacuity detection + the multi-caller rule) IS now earned — see Requirements Coverage; the residual is attributable to COV-01's structural number, which is a narrower and more accurate attribution than the prior run's."
 deferred:
-  - truth: "Human review of the coverage report's `flat-three` schema (`COVERAGE_SCHEMA_VERSION`, `COVERAGE_REPORT_KEYS`) before it is depended on"
+  - truth: "Human review of the coverage report's `flat-three` schema (`COVERAGE_SCHEMA_VERSION` = 2, the nine `COVERAGE_REPORT_KEYS`) before it is depended on"
     addressed_in: "Phase 20"
-    evidence: "ROADMAP Phase 20 notes: 'The coverage report's `flat-three` schema was auto-selected under `yolo` mode and never reviewed by a human (19-DECISIONS.md, closing note). This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment.' Carried forward from the prior verification's human item 2; note the schema has since moved to version 2 (19-08) with the same nine top-level keys."
+    evidence: "ROADMAP Phase 20 notes, verbatim: 'The coverage report's `flat-three` schema was auto-selected under `yolo` mode and never reviewed by a human (19-DECISIONS.md, closing note). This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment.' Carried forward unchanged; the schema is still version 2 with the same nine top-level keys, re-read from the module at HEAD."
 coincidental_reliance_items:
   - truth: "SC2 — the notices guard proves every file that claims incorporation reproduces the permission notice"
     reason: fixture-only
-    harden: "The guard's obligation is keyed on INCORPORATION_CLAIM_PATTERN, derived from the incorporated-material heading's shared phrase. That is deliberately NOT the notice heading (19-07 records the reasoning: keying on the notice section would make the test tautological). The residual reliance is that a future notices file could incorporate the prose while phrasing its claim differently and so owe nothing. Advisory only — the claim phrase is currently identical across all three files and is itself asserted."
+    harden: "The guard's obligation is keyed on INCORPORATION_CLAIM_PATTERN, derived from the incorporated-material heading's shared phrase rather than the notice heading (19-07's reasoning: keying on the notice section would make the test tautological). The residual reliance is that a future notices file could incorporate the prose while phrasing its claim differently and so owe nothing. Advisory only, and weakened further this run: I re-fetched the upstream file over the network and the three reproduced blocks match it byte-for-byte, so the current state does not rest on the guard at all. Carried forward from the prior verification."
+  - truth: "SC1 — the five absorbed procedures are pinned at a real upstream commit with true source digests"
+    reason: fixture-only
+    harden: "`r2000-upstream-audit.test.ts` test 5 — 'live: the five source digests re-hash to the manifest's values' — SKIPS by default unless `R2000_UPSTREAM_CLONE` is set, so in every ordinary run the manifest's digests are checked only against themselves. I discharged it manually this run (all five re-fetched from GitHub at the pin; byte counts and sha256 exact, 5/5), but the suite still proves the pin only against the project's own file. Hardening: set `VICE_REQUIRE_R2000_UPSTREAM=1` in CI, or commit the five upstream files' digests to a second independent location."
 ---
 
 # Phase 19: Absorbed Procedures and the Coverage Instrument — Verification Report
 
 **Phase Goal:** Upstream's five analyze procedures become this project's own skills — absorbed, attributed, and diffed against the curated surface — and a coverage instrument exists that resists being gamed, before any decomposition work runs under it.
 
-**Verified:** 2026-08-25T05:55:58Z (HEAD `80c544b`)
+**Verified:** 2026-08-25T09:47:08Z (HEAD `13cb5e1`)
 **Status:** gaps_found
-**Re-verification:** Yes — after gap-closure plans 19-06 … 19-09
+**Re-verification:** Yes — second gap-closure round (plans 19-10 … 19-14)
 
 ## Goal Achievement
 
-The goal has two halves joined by "and". **The absorption half is now fully achieved** — the one
-outstanding defect against it (the licence-inclusion claim) was genuinely and carefully fixed, and
-I confirmed the fix against the real upstream repository over the network rather than against the
-project's own manifest. **The instrument half is still not.** The goal's qualifier is "a coverage
-instrument … that **resists being gamed**", and one of the two gaming routes the prior
-verification reproduced is still open at HEAD. It was narrowed, not closed: where the pre-19-08
-code accepted any two indexed loads, the post-19-08 code additionally requires a zero-page pointer
-construction — which is a *lower* bar than it sounds, because indirect-indexed **data** access is
-one of the most common shapes in 6502 code and builds the identical vector. I reproduced the
-inflation at report level, through `buildCoverageReport()`, before ruling on it.
+Both of the prior run's gaps are genuinely closed, and one of them was closed unusually well.
 
-The trailing clause "before any decomposition work runs under it" is what makes this blocking
-rather than cosmetic. Phase 20 is *Decomposition to Closure*, depends on this phase by name, and
-is instructed by ROADMAP to run this instrument *throughout* rather than once at the end.
+**The red tree is fixed for a real reason, not by rewriting a ledger.** `19-REVIEW-FIX.md`
+dispositions all 24 finding ids the review declares — I re-derived the id set with the guard's own
+regex and checked containment one id at a time (24/24, zero missing) rather than trusting the
+frontmatter count. `19-REVIEW.md` is byte-unchanged across the entire run, so no finding id was
+minted or orphaned, and the two documents that were extended (`19-VALIDATION.md`,
+`deferred-items.md`) are purely additive with zero deletions. The decision not to re-invoke
+`gsd-code-review` was correct: regenerating that file would have orphaned all 24 dispositions and
+re-reddened AUDIT-01, and the ledger now owns the green independently of any other document
+continuing to mention any id — which is the exact failure mode 19-13 diagnosed and closed.
 
-Separately, the phase leaves the workspace test suite red, from its own review ledger.
+**CR-04 is closed at its root.** I did not read the committed fixture and agree with it; I wrote my
+own 64-byte payload implementing the same attack and ran it through the shipped
+`buildCoverageReport()`. It reports the truthful `reachedAsInstruction=18` against 18 declared code
+bytes, with `splitTables=0` and `provenDispatchTargets=[]`, and it still surfaces the pairing as one
+advisory candidate — so the gate demonstrably examined and declined it rather than never seeing it.
+The positive control (the same payload with a real `jmp ($00fb)`) still proves, so the fix is not
+an over-tightening.
 
-### Observable Truths
+**The instrument half is still not achieved, for the same reason at a different address.** The goal
+qualifier is "resists being gamed". `DISPATCH_CONTEXT_SHAPES` declares two sufficient shapes; 19-10
+fixed and controlled the second and left the first standing on a rationale that says class 4 claims
+those windows first. I measured a payload where class 4 *declines* the window — it is not class 4's
+five-instruction shape — and the class-3 pass promoted it anyway, on the strength of a
+`pha`/`pha`/`rts` that class 4 itself refused to call a dispatch. 15 bytes of code, no `jmp` opcode
+in the image, and the report claims 31 bytes reached plus 16 table-entry bytes and eight fabricated
+proven entry points, with a cleared buffer classed `reached-as-instruction`. There is no
+contradicting sibling figure, so it is silent.
+
+What makes this blocking rather than a nitpick is that the phase's own new anti-regression mechanism
+passes over it. 19-10's stated deliverable was that admitting a shape without an interior negative
+control reds the suite BY NAME. It does not, because `reachesGateInterior()` defines this shape's
+interior as a disjunction and all three of its declared negative rows satisfy only the class-4
+disjunct. That is CR-04's defect verbatim — "a negative control built from the outside of the
+predicate it constrains is not a control" — displaced one shape over. The prior run named the root
+cause and predicted this exact recurrence: *"without it the next tightening will be verified the
+same way."*
+
+## Observable Truths
 
 | # | Truth (ROADMAP Success Criterion) | Status | Evidence |
 |---|---|---|---|
-| 1 | Five procedures absorbed at a pinned commit into `c64-program-recon`/`c64-memory-mapping` + a new routine-queue-walker; every tool call diffed against the curated `r2000_*` surface; zero runtime dependency on `.agent/skills/` | ✓ VERIFIED | Regression-clean. 5 `ATTRIBUTION (ABS-02)` blocks across exactly three destinations (routine-queue-walker ×1, c64-memory-mapping ×2, c64-program-recon ×2), each naming the pin `493f8404…` (5 occurrences). `check-skill-tool-coverage.mjs` exit 0 — 37 distinct `vice_*` names across 33 files / 7 skill dirs, 31 resolved on the stock manifest, every non-resolved one classified; `r2000_*`: 17 distinct names, **all curated**; 8/8 r2000 CLI verbs named by at least one skill file. `grep -rn "\.agent/skills" src/skills/` → **0 hits**. |
-| 2 | Per-file attribution header naming source repo, file path, pinned commit; `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` for the absorbed text specifically | ✓ VERIFIED | **Gap closed, confirmed against upstream.** Fetched `LICENSE-MIT` from `ricardoquesada/regenerator2000` at `493f840418f1450a342bb220c2fe3d2585dd0525`: 1072 bytes, sha256 `e2579ce7…4973b`. Extracted the reproduced block from each of the three notices files — root, `installer/`, `src/mcp/vice/` — all three are **1072 bytes, sha256 `e2579ce7…4973b`**: byte-exact, identical, upstream-matching. The falsified sentence at `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117` is gone, replaced by an accurate statement (":124-128") that this package "packs no skill file at all (compare the two `files[]` lists), which is precisely why the notice is reproduced in this document". Verified true: `check-npm-packages.mjs` exit 0 — `@henols/vice-mcp` 75 files, `@henols/c64-re-tools` 34 files / **7 skills**. Guard added with a planted-violation control (`skill-attribution.test.ts:624`, `:692` alters one word and asserts the digest no longer matches, `:717` forbids the deleted claim with whitespace normalisation). The legal judgement the prior verification routed to a human was taken at 19-07's checkpoint — option `approve-wording-release-on-reverification` — so it is resolved, not re-raised. |
-| 3 | No two skills contend for the same trigger; a pairwise description check runs clean across all of them | ✓ VERIFIED | Regression-clean. `check-skill-description-overlap.mjs` exit 0: 7 skills, **21 pairs** (= n(n−1)/2 for n=7), observed maximum **0.250** (`c64-program-recon` :: `c64-provenance-diff`) against an inclusive threshold of 0.35, **allowlist size 0**, and CLAUDE.md's project-skills table byte-identical to all 7 SKILL.md descriptions. No skill removed, no exemption added, threshold unchanged. |
-| 4 | Three distinct numbers, never one aggregate; a mechanically auto-labelled or "handles data" binary visibly fails; any label reached from >1 call site requires cross-reference-backed documentation to count | ✗ FAILED | Clauses A, B and C all hold — C was genuinely fixed. The **goal qualifier fails**: CR-04 reproduced at report level against HEAD. See Gaps and Behavioural Spot-Checks. |
-| 5 | Packer identity surfaced as a recon finding; the snapshot-versus-drift trade is a dated decision naming its own re-sync trigger | ✓ VERIFIED | Regression-clean. `packer-finding.mjs` present (26,302 bytes) and wired — `c64-program-recon/SKILL.md:88-89` names it from the repo root with both an ordinary and an `--entropy` invocation. `19-DECISIONS.md` Decision 1 is dated **2026-08-24**, states the snapshot trade explicitly ("no live link back to upstream and no automatic notification"), pins 53,392 bytes across five paths with per-file sha256, and names a re-sync trigger whose mechanism is a hash comparison against `manifest.resync_triggers` — checkable, not aspirational. |
+| 1 | Five procedures absorbed at a pinned commit into `c64-program-recon`/`c64-memory-mapping` + a new routine-queue-walker; every tool call diffed against the curated `r2000_*` surface; zero runtime dependency on `.agent/skills/` | ✓ VERIFIED | **Strengthened beyond the prior run by discharging the suite's skipped live oracle myself.** All five upstream files re-fetched from `ricardoquesada/regenerator2000` at `493f8404…`: byte counts `4457 / 14674 / 15308 / 9248 / 9705` and sha256 digests all EXACT against `upstream-procedure-manifest.json`. Independently diffed the tool surface at source: 20 distinct `r2000_*` names appear in the upstream text, 5 of them are outside `CURATED_R2000_TOOLS` (19 entries) — `r2000_get_disassembly_cursor`, `r2000_set_immediate_format`, `r2000_toggle_splitter`, `r2000_undo`, `r2000_unpack_binary` — each is recorded with a justification in the manifest (3–6 mentions apiece) and each appears **zero times** anywhere in `src/skills/`. 5 `ATTRIBUTION (ABS-02)` blocks across exactly three destinations (routine-queue-walker ×1, c64-memory-mapping ×2, c64-program-recon ×2), 5 occurrences of the pin. `check-skill-tool-coverage.mjs` exit 0 — 37 `vice_*` names over 33 files / 7 skill dirs, `r2000_*` 17 distinct, all curated, 8/8 CLI verbs named. `grep -rn "\.agent/skills" src/skills/` → 0 hits. |
+| 2 | Per-file attribution header naming source repo, file path, pinned commit; `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` for the absorbed text specifically | ✓ VERIFIED | Regression-clean, re-confirmed against the network rather than against the project. Fetched `LICENSE-MIT` at the pin: 1072 bytes, sha256 `e2579ce7…4973b`. Extracted the fenced block from each of the three notices files (root, `installer/`, `src/mcp/vice/`) — all three 1072 bytes, all three sha256 `e2579ce7…4973b`: four identical artefacts. Dual licence recorded for the absorbed text specifically (`THIRD-PARTY-NOTICES.md:14`, "regenerator2000 analysis procedures (`MIT OR Apache-2.0` …)"). `skill-attribution.test.ts` 12/12 exit 0; `check-npm-packages.mjs` exit 0 — `@henols/vice-mcp` 75 files, `@henols/c64-re-tools` 34 files / 7 skills, so the mcp package's claim that it packs no skill file remains true of the real tarball. |
+| 3 | No two skills contend for the same trigger; a pairwise description check runs clean across all of them | ✓ VERIFIED | Regression-clean. `check-skill-description-overlap.mjs` exit 0: 7 skills, **21 pairs** (= n(n−1)/2 for n=7), observed maximum **0.250** (`c64-program-recon` :: `c64-provenance-diff`) against an inclusive 0.35 threshold, **allowlist size 0**, and CLAUDE.md's project-skills table 7 rows all byte-identical to their SKILL.md. `skill-description-overlap.test.ts` 32/32. No skill removed, no exemption added, threshold unchanged. |
+| 4 | Three distinct numbers, never one aggregate; a mechanically auto-labelled or "handles data" binary visibly fails; any label reached from >1 call site requires cross-reference-backed documentation | ✗ FAILED | Clauses A, B and C all hold; CR-04 is closed and independently re-measured. The **goal qualifier fails**: the class-3 route into `stack-return-push-idiom` is uncontrolled and silently inflates the structural number (D2 above). See Gaps and Behavioural Spot-Checks. |
+| 5 | Packer identity surfaced as a recon finding; the snapshot-versus-drift trade is a dated decision naming its own re-sync trigger | ✓ VERIFIED | Regression-clean. `packer-finding.mjs` present (26,302 bytes) and wired — `c64-program-recon/SKILL.md:88-89` names it from the repo root with both an ordinary and an `--entropy` invocation. `19-DECISIONS.md` Decision 1 dated **2026-08-24**, states the snapshot trade explicitly, and names a re-sync trigger whose mechanism is a hash comparison against `manifest.resync_triggers`; `r2000-upstream-audit.test.ts` test 3 ("ABS-04's re-sync triggers are named and each carries a mechanism") passes. |
 
 **Score: 4/5 truths verified** (0 present-but-behaviour-unverified)
 
@@ -160,54 +167,71 @@ Separately, the phase leaves the workspace test suite red, from its own review l
 
 | # | Item | Addressed In | Evidence |
 |---|---|---|---|
-| 1 | Human review of the `flat-three` coverage report schema before it is depended on | Phase 20 | ROADMAP Phase 20 note names it verbatim: "This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment." |
+| 1 | Human review of the `flat-three` coverage report schema before it is depended on | Phase 20 | ROADMAP Phase 20 note names it verbatim: "This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment." Schema re-read at HEAD: version 2, nine keys, unchanged. |
+
+WR-03 is deliberately **not** filed here. Step 9b requires clear, specific evidence in a later
+phase's roadmap section, and Phase 20's "Run Phase 19's coverage instrument throughout" is generic;
+the "Phase 20's first use of the instrument" owner is the ledger's own assignment, not roadmap text.
+It is surfaced inside the SC4 gap as a human decision instead.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `THIRD-PARTY-NOTICES.md` (×3) | Reproduce the upstream MIT permission notice byte-exactly; record the dual licence for the absorbed text | ✓ VERIFIED | All three carry a 1072-byte block with sha256 `e2579ce7…4973b`, equal to the fetched upstream file at the pin |
-| `src/mcp/vice/skill-attribution.test.ts` | Guard the notice claim, with a planted-violation control | ✓ VERIFIED | `:624` presence-and-digest test over every file claiming incorporation; `:692` one-word-alteration control; `:717` forbidden-claim check |
-| `scripts/check-npm-packages.mjs` | Assert a packed notices file reproduces the notice | ✓ VERIFIED | `:95-112`, exit 0 on the real tree |
-| `src/mcp/vice/r2000-coverage.ts` | The dispatch-context gate, the advisory split-table class, the single proven-target seam | ⚠️ WIRED BUT DEFEATABLE | `COVERAGE_SCHEMA_VERSION` = 2; `COVERAGE_REPORT_KEYS` still the same nine keys; `splitTableCandidates` exists as an advisory sibling and is never read by `provenDispatchTargets()`; `buildCoverageReport()` seeds from `provenDispatchTargets()` only (`:1659`). The gate itself (`:644-662`) admits an ordinary data-pointer construction — see Gaps |
-| `src/mcp/vice/fixtures/coverage/fp1{,b}-*` | Generated false-positive census control pair | ⚠️ PRESENT, INSUFFICIENT | 8 fixture dirs total; generator idempotent (two consecutive regenerations leave `git status --porcelain src/mcp/vice/fixtures/coverage` empty). Neither payload carries a zero-page store, so neither reaches the gate's interior |
-| `.planning/…/19-VALIDATION.md` | Extended, not replaced | ✓ VERIFIED | `git diff` over 19-09's commit: 85 insertions, **1 deletion**, and the single deleted line is the frontmatter field `closed_by: 19-05` — zero table rows removed |
-| `.planning/…/19-REVIEW.md` | Second-pass review with dispositions | ✗ INCOMPLETE | 24 findings; 5 (CR-04, WR-13, WR-14, WR-15, IN-05) have no disposition, which fails AUDIT-01 |
+| `src/mcp/vice/r2000-coverage.ts` | Consumer-matched dispatch gate; one derived `effectiveEnd`; shared `isPlausibleEntryPoint()`; reference-demanding `citesCallerByName()` | ⚠️ WIRED, ONE BRANCH STILL DEFEATABLE | `DISPATCH_CONTEXT_SHAPES` = 2 entries; the bare-`0x6c` branch is gone and the surviving zero-page shape matches `insn.operand.value` against the lower of two consecutive zp store targets (`:717-722`) — verified by reading and by report-level repro. `effectiveEnd = Math.min(safeOrigin + size, 0x10000)` defined once at `:793` and read at `:795`, `:816`, `:860`, `:954`, `:1066`. `isPlausibleEntryPoint()` `:815-819` read by class 4's (d) at `:962` and class 3's (e) at `:1075`. `CALLER_CITATION_WORDS` frozen at `:1504`. Residual: the `stack-return-push-idiom` branch at `:707` — see Gaps |
+| `src/mcp/vice/fixtures/coverage/fp2-zeropage-data-pointer` + `fp2b-immediate-data-pointer` | The gate's first interior negative control and its measured immediate twin | ✓ VERIFIED | Both committed; `COMMITTED_CONTROL_FIXTURES = 10` matches `ls -d fixtures/coverage/*/` = 10. FP2's store declares `code_size: 17`, `expect_clean: false`, and its purpose field states the pre-fix numbers it was observed RED against. Asserted at report level through `reportFor()` at `:1820-1850`, including `classAt($0840) === "unreached"` and the advisory-candidate count of 1 |
+| `DISPATCH_CONTEXT_SHAPES` / `GATE_INTERIOR_DECLARATIONS` / `reachesGateInterior()` | A mechanism that reds the suite by name when a shape is admitted without an interior control | ⚠️ PRESENT, HOLE IN ONE SHAPE | The branch-count test (source-text parse of `hasDispatchContext()`'s true-returning sites vs the array length) is real and would catch a fourth branch. The interior-declaration witness is real and throws on an unknown id. But its `stack-return-push-idiom` predicate is a disjunction, so a class-4-only control claims the whole shape — the mechanism passes over the very region the branch is load-bearing in |
+| `.planning/…/19-REVIEW-FIX.md` | Durable disposition ledger covering every declared finding id | ✓ VERIFIED | 24 ids derived with the guard's own regex from `19-REVIEW.md`; all 24 word-matched in the ledger (0 missing). Frontmatter `fixed: 10 / rejected: 1 / deferred: 13` reconciles with the table. Records that `IN-06` is cited in the review's prose but declared nowhere, so nothing is dispositioned against a non-existent id. Names 19-09's un-honoured deferral of IN-02 against itself rather than glossing it |
+| `.planning/…/19-REVIEW.md` | Byte-unchanged, finding-id continuity preserved | ✓ VERIFIED | `git diff --name-only a756b17..HEAD -- 19-REVIEW.md` → 0 files |
+| `.planning/…/19-VALIDATION.md`, `deferred-items.md` | Extended, not replaced | ✓ VERIFIED | `git diff --numstat a756b17..HEAD` → `93 0` and `135 0`. Zero deletions in either |
+| `THIRD-PARTY-NOTICES.md` (×3) | Upstream MIT permission notice byte-exact; dual licence for the absorbed text | ✓ VERIFIED | 1072 bytes / sha256 `e2579ce7…4973b` in all three, equal to the file fetched from upstream at the pin |
+| `src/skills/routine-queue-walker/SKILL.md` | The new skill nothing previously owned | ✓ VERIFIED | Present with an `ATTRIBUTION (ABS-02)` block naming repo, upstream path, pin, source sha256 and the dual licence; the source digest re-hashes against upstream |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `buildCoverageReport()` | `computeStructuralCensus()` | `extraSeeds: provenDispatchTargets(dispatch)` | ✓ WIRED | `r2000-coverage.ts:1656-1659`; never `discoveredTargets`, never `splitTableCandidates` — confirmed by reading, and by my repro reproducing the identical numbers through the public entry point |
-| `hasDispatchContext()` | `provenDispatchTargets()` | gate at `:871`, `:907-911` deciding `splitTables` membership | ⚠️ WIRED, WRONG PREDICATE | The link exists and functions; the predicate admits non-dispatch evidence, so the seam's stated contract ("proof of code") is not upheld |
-| `c64-program-recon/SKILL.md` | `packer-finding.mjs` | named script path from the repo root | ✓ WIRED | `:88-89` |
-| notices files | absorbed skill prose | `INCORPORATION_CLAIM_PATTERN` on the shared claim phrase | ✓ WIRED | Deliberately not keyed on the notice heading, so the presence test is not tautological |
+| `buildCoverageReport()` | `computeStructuralCensus()` | `extraSeeds: provenDispatchTargets(dispatch)` | ✓ WIRED | `r2000-coverage.ts:1934-1938`; never `discoveredTargets`, never `splitTableCandidates`. Confirmed by reading and by my repro reproducing seed sets through the public entry point |
+| `hasDispatchContext()` | `provenDispatchTargets()` | class-3 gate condition (c) at `:1042`, deciding `splitTables` membership at `:1077-1084` | ⚠️ WIRED, ONE BRANCH ADMITS NON-DISPATCH EVIDENCE | The zero-page shape now upholds the seam's "proof of code" contract. The push-idiom shape does not, when class 4 has declined the window |
+| `isPlausibleEntryPoint()` | class 4 (d) and class 3 (e) | one closure at `:815`, called at `:962` and `:1075` | ✓ WIRED | WR-14's "two halves of one seam held to different standards" is genuinely resolved — one definition, two readers, verified by grep and by the class-4 negative controls |
+| `citesCallerByName()` | `reproducibility.multiCallerUndocumented` | `:1622` inside the documented-label test | ✓ WIRED | `CALLER_CITATION_WORDS` frozen at `:1504`; `nc4` still caught by name, `nc5` still clean, in the green 71/71 run |
+| `c64-program-recon/SKILL.md` | `packer-finding.mjs` | named script path from the repo root | ✓ WIRED | `:88-89`, both invocations |
+| shipped skill prose | `.planning/phases/19-…/*` | provenance citations | ⚠️ PRESENT, DANGLING AT ARCHIVAL | 7 citations across 3 SKILL.md files. Inspected in context: all are provenance statements inside attribution blocks ("The full upstream path is recorded once, in …"), **not** runtime read instructions, so SC1's no-runtime-dependency clause is unaffected. They will dangle once GSD archives the phase directory — WR-11, deferred with a named owner |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| `buildCoverageReport()` | `structural.reachedAsInstruction` | recursive descent from `seeds` ∪ `provenDispatchTargets(dispatch)` | Yes, but **over-produces** | ⚠️ INFLATED — 25 reported on a 17-byte-code payload |
-| `buildCoverageReport()` | `structural.tableEntry` | `dispatch.tableEntryAddresses` | Yes, but over-produces | ⚠️ INFLATED — 16 bytes claimed from an unproven pairing |
-| `buildCoverageReport()` | `labels.kindRatio` | `computeLabelRatio(symbols, …)` over the store | Yes | ✓ FLOWING |
-| `buildCoverageReport()` | `reproducibility.multiCallerUndocumented` | `crossReferences` + anchored `namesACaller()` | Yes | ✓ FLOWING |
+| `buildCoverageReport()` | `structural.reachedAsInstruction` | recursive descent from `seeds` ∪ `provenDispatchTargets(dispatch)` | Yes, and now truthful on the CR-04 shape — but still **over-produces** on the push-idiom shape and on illegal-opcode runs | ⚠️ INFLATED — 31 reported on a 15-byte-code payload (D2); 64 reported on a 4-byte-code payload (WR-03) |
+| `buildCoverageReport()` | `structural.tableEntry` | `dispatch.tableEntryAddresses` | Yes, over-produces on the same shape | ⚠️ INFLATED — 16 bytes claimed from an unproven pairing (D2); correctly 0 on the CR-04 shape |
+| `buildCoverageReport()` | `labels.kindRatio` | `computeLabelRatio(symbols, …)` over the store, excluding multi-caller addresses | Yes | ✓ FLOWING |
+| `buildCoverageReport()` | `reproducibility.multiCallerUndocumented` | `crossReferences` + anchored `namesACaller()` + `citesCallerByName()` | Yes | ✓ FLOWING |
 | `buildCoverageReport()` | `commentVacuity` / `divergence` | store comments / blocks | Yes | ✓ FLOWING |
+| `buildCoverageReport()` | `reproducibility` cross-reference bound | `MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS` = 512 | Applied, but **never recorded in the JSON** | ⚠️ UNREPORTED — WR-04, deferred. The review's own words: "precisely COV-02's 'a measure computed over less than the whole population must say so', violated on the machine-readable side" — and Phase 20 consumes the JSON, not the printed NOTE |
 
 ### Behavioural Spot-Checks
 
 | Behaviour | Command | Result | Status |
 |---|---|---|---|
-| Full workspace suite (once, never `test:automated`) | `cd src/mcp/vice && npm test` | `# tests 2564  # pass 2517  # fail 2`, exit 1, 95.8s | ✗ FAIL |
-| Are the six cascaded guards genuinely red? | `node --test docs-core-value-decision.test.ts` etc. | 3/3 spot-checked PASS standalone | ✓ PASS (cascade confirmed spurious; the seventh is real) |
-| Upstream MIT licence matches the reproduced notice | `curl …/493f8404…/LICENSE-MIT \| sha256sum` vs the block in each of 3 notices files | 1072 bytes / `e2579ce7…4973b` — all four identical | ✓ PASS |
-| Package contents match the notices claim | `node scripts/check-npm-packages.mjs` | exit 0; `@henols/vice-mcp` 75 files (0 skills), `@henols/c64-re-tools` 34 files / 7 skills | ✓ PASS |
+| Full workspace suite, run **once** (never `test:automated`) | `cd src/mcp/vice && npm test` | `# tests 2580  # pass 2534  # fail 1`, exit 1, 219s. The single failure is `not ok 858 — stub: a child that answers nothing within the call timeout …`, i.e. deferred item 3's known load-sensitive flake, at the same test index it was last observed at | ⚠️ ONE KNOWN FLAKE (see Warnings) |
+| Is that failure the documented flake and not a regression? | `node --test r2000-session.test.ts` standalone | `# tests 25  # pass 25  # fail 0`, exit 0 | ✓ PASS |
+| Typecheck | `npx tsc --noEmit` in `src/mcp/vice` | exit 0 | ✓ PASS |
+| Disposition guard (AUDIT-01) | `node --test docs-review-disposition.test.ts` | 7/7, exit 0 | ✓ PASS |
+| D-12-02 cascade resolved | `node --test audit-integrity.test.ts` | 44/44, exit 0 | ✓ PASS |
+| Coverage instrument suite | `node --test r2000-coverage.test.ts` | 71/71, exit 0 | ✓ PASS |
+| Ledger covers every declared id | derive ids with the guard's own regex, then word-match each into `19-REVIEW-FIX.md` | 24 ids derived, **0 missing** | ✓ PASS |
+| Upstream procedure digests (the oracle the suite SKIPS) | fetch all five `.agent/skills/*/SKILL.md` at `493f8404…`, compare bytes + sha256 to the manifest | 5/5 exact | ✓ PASS |
+| Upstream MIT notice vs the three reproduced blocks | fetch `LICENSE-MIT` at the pin; extract each fenced block; sha256 | four identical 1072-byte artefacts, `e2579ce7…4973b` | ✓ PASS |
+| No absorbed step calls an uncurated tool | extract `r2000_*` from the five fetched upstream files; diff against `CURATED_R2000_TOOLS`; grep the 5 non-curated names across `src/skills/` | 5 non-curated upstream names, all justified in the manifest, **0 occurrences** in shipped skills | ✓ PASS |
 | Pairwise trigger uniqueness | `node scripts/check-skill-description-overlap.mjs` | exit 0; 21 pairs, max 0.250, allowlist 0 | ✓ PASS |
-| Curated-surface tool diff | `node scripts/check-skill-tool-coverage.mjs` | exit 0; 17 `r2000_*` names, all curated | ✓ PASS |
-| Fixture generator idempotency | run `make-coverage-fixtures.mjs` twice, then `git status --porcelain` | empty | ✓ PASS |
-| **CR-04 interior of the dispatch gate** (scan level) | custom 64-byte payload, no `0x6c`, no `pha`; `scanIndirectDispatch` + `computeStructuralCensus` | `splitTables=1`, `provenDispatchTargets=[$0840…$0847]`, `tableEntryAddresses=16`, reached 17→25, `classAt($0840)`: `unreached` → `reached-as-instruction` | ✗ FAIL |
-| **CR-04 through the shipped entry point** (report level) | `buildCoverageReport()` on the indexed payload and its immediate twin | indexed `reached=25 tableEntry=16 unreached=23 splitTables=1`; immediate `reached=17 tableEntry=0 unreached=47 splitTables=0` — 17 real code bytes in both | ✗ FAIL |
-| SC4 clause C anchoring (the fixed route) | in-suite `ANCHORING: a colliding longer hex …` (`r2000-coverage.test.ts:556`) and the identifier-boundary control (`:608`) | both pass in the green run; NC4+`$8106` still `{count:1,addresses:[0x0820]}` and non-clean, NC5 still clean | ✓ PASS |
-| SC4 clauses A/B (negative controls) | NC1, NC1b, NC2, NC3, NC5 in the green run | NC1/NC1b name `labels`, NC2 names `commentVacuity`, NC3 names `divergence`, NC5 clean; NC1b and NC3 "earns its place" tests pass | ✓ PASS |
+| Curated-surface tool diff over shipped skills | `node scripts/check-skill-tool-coverage.mjs` | exit 0; 17 `r2000_*`, all curated | ✓ PASS |
+| Package contents match the notices claim | `node scripts/check-npm-packages.mjs` | exit 0; 75 files / 34 files + 7 skills | ✓ PASS |
+| Clause A — three separately-addressable numbers, no aggregate | read `COVERAGE_SCHEMA_VERSION` and `COVERAGE_REPORT_KEYS` from the module | version 2; keys `schemaVersion, generatedAt, project, structural, dispatch, labels, commentVacuity, reproducibility, divergence` — three number groups, no combined figure | ✓ PASS |
+| **CR-04 closed — my own payload, report level** | 64-byte image, 18 code bytes, zp vector consumed by `lda ($fb),y`, no `0x6c`, no `pha`; `buildCoverageReport()` | `reached=18  tableEntry=0  unreached=44  splitTables=0  proven=0  candidates=1`; immediate twin `reached=16 / 0 / 48 / 0 / 0`. Prior run measured `25 / 16 / 23 / 1 / 8` pre-fix | ✓ PASS |
+| CR-04 fix is not an over-tightening | same payload with a real `jmp ($00fb)` through the built vector | `splitTables=1`, 8 proven targets `$0840..$0847`, `tableEntry=16` — genuine dispatch still proves | ✓ PASS |
+| **D2 — class-3 route into `stack-return-push-idiom`** | 15 code bytes, no `0x6c` anywhere, `pha`/`txa`/`pha`/`tya`/`rts` within the 8-instruction window; `buildCoverageReport()` | `reached=31  tableEntry=16  unreached=17  splitTables=1  stackReturn=0  proven=8`; `classAt($0840)="reached-as-instruction"` on a cleared buffer | ✗ FAIL |
+| D3 — the window-edge control proving D2 is *inside* the predicate | identical payload, `rts` one instruction beyond `SPLIT_TABLE_WINDOW` | `reached=16  tableEntry=0  splitTables=0  proven=0`; `classAt($0840)="unreached"` | ✓ PASS (boundary discriminates) |
+| **WR-03 — illegal-opcode inflation (deferred finding, measured)** | 4 code bytes then 60 bytes of `0x02` (JAM); `buildCoverageReport()` | `reached=64  unreached=0  linearSweepDecodable=4` — 100% structural completeness, and the two contrasted figures disagree 16× | ⚠️ FAIL (loud, deferred with owner) |
 
 ### Probe Execution
 
@@ -218,95 +242,129 @@ no PLAN references one. Step 7c: **N/A**.
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |---|---|---|---|---|
-| ABS-01 | 19-01, 19-02 | Five procedures absorbed at a pinned commit, tool calls diffed, no `.agent/skills/` runtime dependency | ✓ SATISFIED | Truth 1. REQUIREMENTS.md line 46 correctly still unchecked pending this verification |
-| ABS-02 | 19-01, 19-02, 19-07 | Per-file + notices attribution under the true dual licence | ✓ SATISFIED | Truth 2. **The `[x]` at line 48 and `Complete` at line 131 were set by 19-07's own metadata commit `354bbfa`, not earned by verification — I treated the box as unearned and decided on evidence. The evidence supports it independently.** |
-| ABS-03 | 19-05 | Pairwise trigger uniqueness across the whole inventory | ✓ SATISFIED | Truth 3 |
-| ABS-04 | 19-01, 19-05 | Dated snapshot-versus-drift decision with a named re-sync trigger | ✓ SATISFIED | Truth 5 |
-| COV-01 | 19-03, 19-04, 19-08, 19-09 | Three distinct numbers, never one aggregate | ⚠️ PARTIAL | The separation holds (nine top-level keys, no combined figure, advisory class never summed) — but one of the three numbers is not trustworthy (Gap 1) |
-| COV-02 | 19-03, 19-06, 19-08, 19-09 | A vacuous pass is detectable; multi-caller labels need cross-reference-backed documentation | ✗ BLOCKED | Multi-caller rule now holds; the anti-gaming property does not (Gap 1). REQUIREMENTS.md line 59 unchecked and line 135 `Gaps Found` — correct, and 19-09 truth 4 required exactly this |
-| SURF-03 | 19-04 | Packer identity surfaced as a recon finding | ✓ SATISFIED | Truth 5 |
+| ABS-01 | 19-01, 19-02 | Five procedures absorbed at a pinned commit, tool calls diffed, no `.agent/skills/` runtime dependency | ✓ SATISFIED | Truth 1, now with the upstream oracle discharged by hand. Ready to tick |
+| ABS-02 | 19-01, 19-02, 19-07 | Per-file + notices attribution under the true dual licence | ✓ SATISFIED | Truth 2, confirmed against the network. Ready to tick |
+| ABS-03 | 19-05 | Pairwise trigger uniqueness across the whole inventory | ✓ SATISFIED | Truth 3. Ready to tick |
+| ABS-04 | 19-01, 19-05 | Dated snapshot-versus-drift decision with a named re-sync trigger | ✓ SATISFIED | Truth 5. Ready to tick |
+| SURF-03 | 19-04 | Packer identity surfaced as a recon finding | ✓ SATISFIED | Truth 5. Ready to tick |
+| COV-01 | 19-03, 19-04, 19-08, 19-09, 19-10, 19-11, 19-12 | Coverage reported as three distinct numbers, never one aggregate | ✗ BLOCKED | The separation holds (nine keys, no combined figure, `splitTableCandidates` advisory and never summed) — but one of the three numbers is still manufacturable (Gap 1: D2 silently, WR-03 loudly). Keep unchecked / `Gaps Found` |
+| COV-02 | 19-03, 19-06, 19-08, 19-09, 19-12 | A vacuous pass is detectable; multi-caller labels need cross-reference-backed documentation | ✓ SATISFIED | **Attribution corrected from the prior run.** COV-02's literal text is vacuity detection plus the multi-caller rule. Both hold and both are controlled: NC1/NC1b name `labels`, NC2 names `commentVacuity`, NC3 names `divergence`, NC5 clean, NC4 still caught by `reproducibility` by name, and WR-13 closed the "an ordinary English word happens to be a caller's name" hole with `CALLER_CITATION_WORDS` frozen. The residual anti-gaming defect is on the *structural* number, which is COV-01's, not COV-02's. Ready to tick — with the caveat that WR-04 leaves the cross-reference bound out of the JSON, which the review itself calls a COV-02-adjacent violation on the machine-readable side (deferred, Phase 20) |
 
 No orphaned requirements: all seven IDs mapped to Phase 19 in REQUIREMENTS.md lines 129-135 are
-claimed by at least one plan.
+claimed by at least one plan. All seven rows are currently unchecked and `Gaps Found`, and
+correctly so — commit `0315d9c` reverted the premature ticks and the three plans that declined to
+set them were right to. Five are now earned on evidence.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| — | — | `TBD` / `FIXME` / `XXX` / `TODO` / `HACK` / `PLACEHOLDER` across all 22 non-planning files this phase touched | — | **None found.** Debt-marker gate clean |
-| `src/mcp/vice/r2000-coverage.test.ts` | 781, 808 | Positive-control-only bracketing — negative controls that cannot reach the predicate they claim to constrain | 🛑 Blocker | Directly violates the phase's own written prohibition; the reason a 2517-passing suite conceals CR-04 |
-| `.planning/…/19-REVIEW.md` | — | 5 findings with no disposition | 🛑 Blocker | Turns AUDIT-01 red and cascades D-12-02 |
+| — | — | `TBD` / `FIXME` / `XXX` (debt-marker gate) | — | **None found** across every non-planning file changed in the range. Gate clean |
+| — | — | `TODO` / `HACK` / `PLACEHOLDER` | — | **None found**. Gate clean |
+| `src/mcp/vice/r2000-coverage.ts` | 672-678 | A doc comment asserting a property the code does not have ("a pairing inside such a window is skipped outright rather than promoted here") | 🛑 Blocker | The rationale that justifies leaving the push-idiom branch unfixed is false whenever class 4 declines the window. A false WHY comment in a file whose whole convention is documented WHYs is worse than none |
+| `src/mcp/vice/r2000-coverage.test.ts` | 2016-2062, 2152-2175 | Interior-control declaration satisfied by a control on the wrong side of the region under test — the same outside-bracketing pattern CR-04 turned on | 🛑 Blocker | Why a 2534-passing suite conceals D2 |
+| `src/mcp/vice/r2000-coverage.ts` | 437 vs 473 | Descent and linear sweep apply different rules to `illegal` opcodes | ⚠️ Warning | WR-03, deferred with owner. Measured: 100% structural completeness on a 94%-garbage image |
+| `src/skills/*/SKILL.md` | 7 citations | Hard-coded `.planning/phases/19-…` paths in shipped prose | ⚠️ Warning | WR-11, deferred. Verified to be provenance text, not runtime instructions, so SC1 is unaffected; they dangle once the phase is archived |
 
 ### Test Quality Audit
 
 | Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
 |---|---|---|---|---|---|---|
-| `r2000-coverage.test.ts` | COV-01, COV-02 | yes | none in-scope | No — fixtures are generated from declared payloads, and the generator asserts its own shared-program invariant | Value / behavioural (report-level `deepEqual` on `multiCallerUndocumented`, census counts) | ⚠️ **INSUFFICIENT for COV-02's anti-gaming clause.** Every split-table negative control is constructed so it cannot reach `hasDispatchContext`'s third branch. Strong assertions over an unreachable region |
-| `skill-attribution.test.ts` | ABS-02 | yes | none | No — the digest is pinned against a network-fetched upstream file, and a planted one-word alteration is asserted NOT to match | Value (byte count + sha256) + planted-violation | ✓ ADEQUATE |
-| `skill-description-overlap.test.ts` | ABS-03 | yes | none | No | Value + boundary + emptied-corpus control | ✓ ADEQUATE |
-| `packer-finding.test.mjs` | SURF-03 | 16 | 1 (visible live-oracle gate) | No | Value + throws-on-empty | ✓ ADEQUATE (the skip is not the only test for any clause) |
+| `r2000-coverage.test.ts` | COV-01, COV-02 | 71 | none in scope | No — fixtures are generated from declared payloads; the generator asserts its own shared-program invariant; the FP2 store declares its own `code_size` bound so the test does not type in the expected number | Value / behavioural (report-level `deepEqual`, census counts, `classAt` classes) | ⚠️ **INSUFFICIENT for one of the two declared dispatch shapes.** `stack-return-push-idiom` has three declared interior negative rows and all three are class-4 controls; nothing asserts the class-3 decline. Strong assertions over a region, with an adjacent region uncovered and a mechanism that reports it as covered |
+| `skill-attribution.test.ts` | ABS-02 | 12 | none | No — the digest is pinned against a network-fetchable upstream file and a planted one-word alteration is asserted NOT to match | Value (byte count + sha256) + planted-violation | ✓ ADEQUATE |
+| `skill-description-overlap.test.ts` | ABS-03 | 32 | none | No | Value + boundary + emptied-corpus control | ✓ ADEQUATE |
+| `r2000-upstream-audit.test.ts` | ABS-01, ABS-04 | 4 | 1 (the live digest oracle) | The skip makes the manifest's digests self-referential in an ordinary run | Value + justification/citation coverage | ⚠️ ADEQUATE WITH A CAVEAT — the skip is non-exclusive for the classification claims but IS the only check of the digests. Discharged by hand this run (5/5 against upstream); recorded as a coincidental-reliance item |
+| `packer-finding.test.mjs` | SURF-03 | 16 | 1 (visible live-oracle gate) | No | Value + throws-on-empty | ✓ ADEQUATE |
 
-**Disabled tests on requirements:** 1 visible, non-exclusive skip → not a blocker.
+**Disabled tests on requirements:** 2 visible live-oracle skips, both non-exclusive for their
+requirement's classification claims; one (the upstream digest oracle) is the sole check of a
+sub-claim and is flagged rather than absorbed. Not a blocker.
 **Circular patterns detected:** 0.
-**Insufficient assertions:** 1 → 🛑 Blocker, because the requirement it is insufficient for (COV-02's anti-gaming clause) is the one this phase turns on.
+**Insufficient assertions:** 1 → 🛑 Blocker, because the region it leaves uncovered is the one the
+phase goal's qualifier turns on.
 
 ### Decision Coverage
 
-`19-DECISIONS.md` carries five dated decisions. Decision 1 (snapshot/re-sync) and Decision 2
-(the two proposed tools, carried into ROADMAP Phase 20's notes by name) are both traceable into
-shipped artifacts. Non-blocking; no drift observed.
+No `*-CONTEXT.md` exists for this phase, so the `check.decision-coverage-verify` gate is skipped
+cleanly. Read informally instead: `19-DECISIONS.md` carries five decisions, all dated 2026-08-24.
+Decision 1 (snapshot / re-sync trigger) is traceable into
+`upstream-procedure-manifest.json`'s `resync_triggers`, which a passing test asserts carries a
+mechanism per trigger. Decision 2 (the two proposed tools) is carried into ROADMAP Phase 20's notes
+by name, with an explicit withdrawal condition. Non-blocking; no drift observed.
+
+### Warnings (non-blocking, human awareness)
+
+1. **A live flake fired in my run.** The full suite came back `# fail 1` on
+   `r2000-session.test.ts`'s `stub: a child that answers nothing within the call timeout …`
+   (`not ok 858`) — deferred item 3, a real spawned child against a 200 ms wall-clock budget while
+   `node --test` runs files concurrently across 12 cores. Standalone it passed 25/25 immediately
+   afterwards, and `git log a756b17..HEAD -- r2000-session.*` is empty, so it is not this phase's
+   regression. But the running tally is now **3 red in 7 full-suite runs** on 2026-08-25 against
+   **0 red in 5 standalone runs**: a green full-suite observation for this phase is probabilistic,
+   not proof, and no plan in this run could own the fix. Owner unchanged: a plan that owns
+   `r2000-session.ts`.
+2. **WR-04 leaves a bounded measure unlabelled in the machine-readable report.** The
+   cross-reference cap prints a NOTE but never reaches the JSON. Phase 20 reads the JSON.
+3. **WR-03 is a second, louder inflation route on the same number** (measured above). Deferred with
+   a legitimate reason; promoted here to a human decision rather than re-filed as a defect.
+4. **WR-11's shipped-prose planning-path citations** will dangle at the next archive. Confirmed
+   harmless to SC1 (provenance text, not runtime reads).
 
 ### Human Verification Required
 
-None outstanding. The prior verification's two human items are both resolved or deferred:
+None outstanding. Every prior human item is resolved or deferred:
 
-1. **Licence election and notice sufficiency** — taken at 19-07's checkpoint, option
-   `approve-wording-release-on-reverification`. Recorded verbatim in `19-07-SUMMARY.md:100-110`.
-   Not re-raised.
+1. **Licence election and notice sufficiency** — taken at 19-07's checkpoint
+   (`approve-wording-release-on-reverification`). Not re-raised; the artefact is byte-verified
+   against upstream.
 2. **`flat-three` schema review** — deferred to Phase 20 by ROADMAP's own note (see Deferred
-   Items). Note the schema moved to version 2 during gap closure with the same nine top-level
-   keys, so the deferral is still well-posed.
+   Items).
+
+The one *new* judgment call — whether WR-03 is promoted into this closure round — is filed inside
+Gap 1's `missing` list rather than as a separate human item, because it is actionable by the
+closure plan either way.
 
 ### Release Hold
 
 19-07's checkpoint conditioned lifting `[skip release]` on exactly: *"Phase 19 re-verification
-returns no gaps."* This re-verification **returns gaps**. The hold therefore stands; nothing may
-be published on the strength of this report. All 14 gap-closure commits correctly carry
-`[skip release]`, and nothing has been published.
+returns no gaps."* This re-verification **returns one gap**. The hold therefore stands. All 19
+commits in this phase carry `[skip release]` and nothing has been published.
 
 ### Gaps Summary
 
-Two of the prior run's three concerns are genuinely closed, and closed well. The licence work
-(19-07) is the strongest artifact in the phase: the notice is byte-exact against upstream in all
-three files, the false sentence is replaced with a statement that is true of the actual tarball
-contents, and the guard is held down by a planted-violation control that would catch a one-word
-transcription drift. The multi-caller anchoring (19-06) is likewise real, and its control tests
-both directions in one commit so an over-tightened rule cannot pass silently.
+Both of the prior run's gaps are closed, and the work that closed them is the best in the phase.
+The disposition ledger is a genuine structural fix rather than a green-making edit: it takes
+ownership of the guard away from nine documents that happened to quote an id, it names the
+`19-REVIEW.md` byte-identity it depends on, and it records the one deferral a previous plan failed
+to honour against itself instead of glossing it. The CR-04 fix is likewise real — I reproduced it
+from my own payload through the shipped entry point, and I confirmed the positive control still
+proves, so it was not bought with an over-tightening.
 
-What remains is the same defect the prior run named, one level deeper. 19-08 was asked to gate the
-class-3 split-table scan on real dispatch context and enumerated three admissible gates; it shipped
-four, and the fourth — two stores into consecutive zero-page addresses — is not dispatch evidence.
-It is how every 16-bit pointer on a 6502 is built, including the ones that are then read through
-with `lda ($fb),y`. I reproduced the consequence at report level through the shipped
-`buildCoverageReport()`: a 64-byte program with 17 bytes of code reports 25 bytes reached as
-instruction and 16 more claimed as table entries, against an immediate-addressing twin that
-reports the truthful 17. The instrument's headline number can still be talked into a better answer
-by ordinary data, which is precisely the property the phase goal names, and Phase 20 is instructed
-to run under this number continuously.
+The remaining gap is the same sentence the prior run closed with, and it came true. 19-10 built a
+mechanism whose stated job was to make "a sufficient shape admitted without an interior negative
+control" red the suite by name, then fixed one of the two shapes that mechanism governs. The other
+shape kept a rationale — class 4 claims those windows first — that is only true when class 4's exact
+five-instruction pattern matches. I wrote a payload where it does not match, and class 3 promoted
+the pairing anyway: 15 bytes of code, no `jmp` opcode in the image, 31 bytes reported reached, 16
+more claimed as table entries, eight fabricated proven entry points, and a cleared buffer classed
+`reached-as-instruction`. The window-edge twin declines, which is what proves the payload is inside
+the predicate rather than beside it.
 
-The second gap is smaller but has the same shape: the phase's own review report carries five
-findings with no disposition, which leaves the workspace suite red at 2 failures. `deferred-items.md`
-predicted both would clear when 19-09 landed; 19-09 landed and they did not, because the second
-review pass arrived after it. A red tree cannot satisfy a lifting condition phrased as "returns no
-gaps".
+The mechanism does not catch this because `reachesGateInterior()` defines that shape's interior as a
+disjunction and every control declared against it satisfies only the class-4 half. So the fix has
+two parts and the second matters more than the first: close the class-3 route (deleting the branch
+is defensible — class 4 owns the idiom and now gates it properly), and split the witness so a shape
+reachable by two routes owes a control per route. Otherwise the next tightening is verified the same
+way for the third time.
 
-Both gaps trace to one root cause worth naming for the closure plan: **a heuristic's negative
-control was built from the outside of the predicate it constrains.** The fix for CR-04 is small
-(match the indirect-jump operand against the vector that was built); the fix that matters is the
-control that reaches the gate's interior, because without it the next tightening will be verified
-the same way.
+Separately, and for the human rather than the planner: the structural number has a second inflation
+route that nobody has closed and everybody has seen. Four bytes of code followed by sixty bytes of
+`$02` reports 100% structural completeness with `unreached=0`. That one is at least loud — the
+sibling `linearSweepDecodable=4` contradicts it 16× on the same report — and its deferral reason is
+sound. But Phase 20 is instructed to run *under* this number continuously, so someone should decide
+it rather than inherit it.
 
 ---
 
-_Verified: 2026-08-25T05:55:58Z_
+_Verified: 2026-08-25T09:47:08Z_
 _Verifier: Claude (gsd-verifier)_
