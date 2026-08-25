@@ -796,6 +796,115 @@ test("ANCHORING: a caller's label name satisfies the rule only on an identifier 
   );
 });
 
+test("WR-13: a caller's label name counts only when the comment USES it as a reference -- an ordinary English word in ordinary prose names no caller", () => {
+  // WR-13, and the same falsely-clean class as CR-01 at a lower trigger rate.
+  // regenerator2000 label names are routinely ordinary English words, and an
+  // ordinary description of what a routine does will contain one by accident.
+  // The reproduction from `19-REVIEW.md`, verbatim in its inputs: callers
+  // [$0012, $0034], caller $0012 renamed `loop`, and a comment that refers to
+  // NO caller at all. Pre-fix this reported {count: 0, addresses: []} -- the
+  // label was certified as documenting its caller, stayed in
+  // `labels.kindRatio.user`, and stayed in the reproducibility sample, so the
+  // measure that exists to catch it could no longer see it.
+  //
+  // BOTH DIRECTIONS IN ONE TEST, therefore in one commit (T-19G-12-03): the
+  // three genuine citation shapes must still clear the rule. A tightening
+  // asserted only in the refusing direction is satisfied by a rule that
+  // declines every name, which measures nothing.
+  const symbols: R2000Symbol[] = [
+    { address: 0x0012, name: "loop", kind: "User", type: "Subroutine" },
+    { address: 0x0820, name: "two_callers", kind: "User", type: "Subroutine" },
+  ];
+  const census = computeStructuralCensus(new Uint8Array(0), 0x0810, []);
+  const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x0810);
+  const crossReferences: R2000CrossReference[] = [{ address: 0x0820, callers: [0x0012, 0x0034] }];
+  const reproFor = (comment: string) =>
+    computeReproducibility({
+      census,
+      dispatch,
+      symbols,
+      comments: [{ address: 0x0820, type: "line", comment }],
+      blocks: [],
+      crossReferences,
+    });
+
+  const coincidental = reproFor("[confirmed-code] sets the mode flag before the main loop runs");
+  assert.deepEqual(
+    coincidental.multiCallerUndocumented,
+    { count: 1, addresses: [0x0820] },
+    "`loop` inside \"main loop runs\" is an ordinary English word in ordinary prose, not a reference to the routine at $0012. " +
+      "Pre-fix this reported { count: 0, addresses: [] } -- a falsely-clean verdict on the anti-gaming measure itself (WR-13).",
+  );
+
+  // (b) introduced by a caller-naming word.
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag; reached from loop on the cold path").multiCallerUndocumented,
+    { count: 0, addresses: [] },
+    "a name introduced by a caller-naming word is a citation and must still clear the rule",
+  );
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag; called by loop and by the raster handler").multiCallerUndocumented,
+    { count: 0, addresses: [] },
+    "`called by <name>` is a citation and must still clear the rule",
+  );
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag. callers: loop").multiCallerUndocumented,
+    { count: 0, addresses: [] },
+    "`callers: <name>` is a citation and must still clear the rule",
+  );
+
+  // (a) marked up as a symbol.
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag before the main `loop` runs").multiCallerUndocumented,
+    { count: 0, addresses: [] },
+    "a backticked name is an identifier the annotator marked up, not prose",
+  );
+
+  // (c) followed by its own parenthesised hex address.
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag; loop ($0012) reaches it on the cold path").multiCallerUndocumented,
+    { count: 0, addresses: [] },
+    "a name followed by its own parenthesised hex address is a citation",
+  );
+
+  // The residual is asserted rather than left implicit: a longer identifier
+  // that merely embeds a cited name still names no caller, so the WR-13
+  // tightening did not loosen the identifier boundaries 19-06 installed.
+  assert.deepEqual(
+    reproFor("[confirmed-code] sets the mode flag; reached from loop_counter on the cold path").multiCallerUndocumented,
+    { count: 1, addresses: [0x0820] },
+    "`loop_counter` embeds `loop` -- a citation marker must not buy a substring match",
+  );
+});
+
+test("WR-13: the fixture-level both-directions statement -- NC5 stays CLEAN and NC4 is still caught by `reproducibility`", () => {
+  // The unit controls above are hand-built inputs. This is the same claim made
+  // against the COMMITTED corpus, which is what a future reader will actually
+  // trust: the non-vacuity control must not have been made non-clean by the
+  // tightening, and the control the rule exists for must still be caught by
+  // the measure BY NAME.
+  //
+  // NC5's $0820 comment cites its callers by HEX ("reached from $0810 and from
+  // $0816"), so it is the hex branch that carries it -- confirmed by reading
+  // `GOOD_COMMENTS` in the generator. That is why the name-branch tightening
+  // leaves it clean, and asserting it here is what makes "no fixture's verdict
+  // moved" a checked property rather than a claim.
+  const good = coverageFindings(reportFor(WELL_DOCUMENTED));
+  assert.equal(
+    good.clean,
+    true,
+    `the genuinely well-documented control must stay CLEAN under the reference-demanding name branch. Findings: ${JSON.stringify(good.findings, null, 2)}`,
+  );
+  assert.deepEqual(good.findings, []);
+
+  const nc4 = coverageFindings(reportFor("nc4-multi-caller-unnamed"));
+  assert.equal(nc4.clean, false, "NC4's two-caller label is documented without naming either caller and must not read clean");
+  assert.ok(
+    nc4.findings.some((f) => f.measure === "reproducibility"),
+    "NC4 must still be caught by the reproducibility measure BY NAME, never by an unnamed aggregate",
+  );
+});
+
 test("every reported count is a count of the deduped list printed beside it", () => {
   // WR-02. `coverageFindings()` prints a count and an address list in ONE
   // sentence ("N label name(s) still carry an auto-name prefix at $..."), so a

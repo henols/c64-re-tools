@@ -1461,9 +1461,103 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * The adjacent signals that turn a caller's label NAME into a caller
+ * CITATION -- the marker set the name branch of `namesACaller()` reads (WR-13).
+ *
+ * A NAMED CONSTANT rather than literals inlined in the regex, so the decision
+ * is inspectable in one place and widening it is a one-line edit somewhere
+ * obvious rather than a change buried in a pattern string.
+ *
+ * Each word is matched on identifier boundaries, and in the pattern built from
+ * this list it must sit within three NON-IDENTIFIER characters of the name it
+ * introduces: `from init`, `called by init`, `callers: init`. `by` carries
+ * `called by` / `invoked by` / `used by` -- a comment saying that some routine
+ * uses this one is naming a caller.
+ *
+ * Spelled at both the lowercase and the sentence-initial-capital form rather
+ * than matched case-insensitively, because the NAME half of the same regex is
+ * case-SENSITIVE (a label's name is its name, and `Init` is a different symbol
+ * from `init`) and one regex carries both halves.
+ */
+const CALLER_CITATION_WORDS: readonly string[] = Object.freeze([
+  "from",
+  "by",
+  "call",
+  "called",
+  "caller",
+  "callers",
+  "calls",
+]);
+
+/** `CALLER_CITATION_WORDS` as a regex alternation, each word at its lowercase
+ * and its sentence-initial-capital spelling. */
+const CALLER_CITATION_ALTERNATION = CALLER_CITATION_WORDS.map(
+  (word) => `${word}|${word.charAt(0).toUpperCase()}${word.slice(1)}`,
+).join("|");
+
+/**
+ * Does `rawComment` use `name` -- the user label recorded at a caller's
+ * address -- AS A REFERENCE to that caller?
+ *
+ * THE DECISION, RECORDED (WR-13). Bare presence of the name is NOT enough.
+ * regenerator2000 label names are routinely ordinary English words -- `loop`,
+ * `init`, `main`, `start`, `data`, `table`, `draw` -- and an ordinary
+ * description of what a routine does will contain one by accident. The
+ * reproduced case: callers `[$0012, $0034]`, comment "sets the mode flag
+ * before the main loop runs", caller `$0012` named `loop`. Nothing in that
+ * comment refers to the routine at `$0012`, yet the pre-WR-13 identifier-
+ * bounded test matched `loop` inside "main loop runs" and certified the label
+ * as documenting its caller -- a falsely-clean verdict, and worse than a noisy
+ * one, because a label counted as documented stays in `labels.kindRatio.user`
+ * and stays in the reproducibility sample, so the measure that exists to catch
+ * it can no longer see it.
+ *
+ * So a name counts only in one of three shapes, all still bounded on
+ * identifier boundaries so `my_entry_pointer` still does not name
+ * `entry_point`:
+ *
+ *   (a) MARKED UP AS A SYMBOL -- the name in backticks. An annotator who
+ *       fences a token is quoting an identifier, not writing prose.
+ *   (b) INTRODUCED BY A CALLER-NAMING WORD from `CALLER_CITATION_WORDS`,
+ *       within three non-identifier characters: `from init`, `called by init`,
+ *       `callers: init`.
+ *   (c) FOLLOWED BY ITS OWN PARENTHESISED HEX ADDRESS -- `init ($0012)`.
+ *
+ * THE ALTERNATIVE WEIGHED AND REJECTED: drop the name branch entirely and
+ * accept only the hex form, which CR-01's fix already anchors correctly. It is
+ * strictly safer and strictly simpler. It was rejected because it would
+ * silently reclassify every project whose annotator cites callers by name
+ * rather than by address -- a real and reasonable convention -- turning a
+ * measure of documentation quality into a measure of citation style, with no
+ * signal to the operator that the rule had changed underneath them. The
+ * tightening above is the cheapest change that refuses the coincidence while
+ * still accepting a genuine name citation.
+ *
+ * THE RESIDUAL, STATED: a marker word can still precede a coincidental name
+ * ("copies bytes from screen" where a caller is named `screen`). That is a
+ * far narrower coincidence than bare presence, and it errs toward accepting a
+ * citation rather than toward manufacturing one; widening the refusal further
+ * would need a corpus, not a guess.
+ */
+function citesCallerByName(rawComment: string, name: string): boolean {
+  const token = escapeRegExp(name);
+  const notIdentBefore = "(?<![0-9A-Za-z_])";
+  const notIdentAfter = "(?![0-9A-Za-z_])";
+  const patterns = [
+    // (a) marked up as a symbol.
+    "`" + token + "`",
+    // (b) introduced by a caller-naming word.
+    `${notIdentBefore}(?:${CALLER_CITATION_ALTERNATION})${notIdentAfter}[^0-9A-Za-z_]{1,3}${token}${notIdentAfter}`,
+    // (c) followed by its own parenthesised hex address.
+    `${notIdentBefore}${token}${notIdentAfter}\\s*\\(\\$[0-9a-fA-F]{1,4}\\)`,
+  ];
+  return patterns.some((pattern) => new RegExp(pattern).test(rawComment));
+}
+
 /** Does `comment` literally name at least one of `callers` -- either as a
- * hexadecimal address, or as the user label name recorded at a caller
- * address?
+ * hexadecimal address, or as a REFERENCE to the user label name recorded at a
+ * caller address?
  *
  * The match is ANCHORED, not a substring test:
  *
@@ -1473,18 +1567,23 @@ function escapeRegExp(value: string): string {
  *     comment mentioning an unrelated and entirely ordinary address whose
  *     leading digits merely coincide with a caller's short form names NO
  *     caller: `$8106` is not `$0810`. Case-insensitive, as before.
- *   - a NAME reference must stand on an identifier boundary on BOTH sides:
+ *   - a NAME reference must stand on an identifier boundary on BOTH sides --
  *     the characters either side may not be an ASCII letter, digit or
- *     underscore. So `my_entry_pointer` does not name `entry_point`.
+ *     underscore, so `my_entry_pointer` does not name `entry_point` -- AND
+ *     must be USED AS A REFERENCE rather than merely present. See
+ *     `citesCallerByName()` for what counts, why bare presence does not, and
+ *     which alternative was rejected (WR-13).
  *
  * Why anchored rather than "purely textual": this rule is the one measure
  * whose entire subject is refusing to be talked into a clean verdict, and an
  * unanchored `includes()` could be satisfied by a string that merely TOUCHES a
  * caller's short form -- a falsely-clean verdict on the anti-gaming measure
- * itself (T-19-14, T-19G-06-01). Held down in BOTH directions by two committed
- * controls in `r2000-coverage.test.ts`: "ANCHORING: a colliding longer hex
- * never satisfies the multi-caller rule ..." and "ANCHORING: a caller's label
- * name satisfies the rule only on an identifier boundary". */
+ * itself (T-19-14, T-19G-06-01, T-19G-12-01). Held down in BOTH directions by
+ * three committed controls in `r2000-coverage.test.ts`: "ANCHORING: a
+ * colliding longer hex never satisfies the multi-caller rule ...", "ANCHORING:
+ * a caller's label name satisfies the rule only on an identifier boundary",
+ * and "WR-13: a caller's label name counts only when the comment USES it as a
+ * reference ...". */
 function namesACaller(
   rawComment: string,
   callers: readonly number[],
@@ -1499,7 +1598,7 @@ function namesACaller(
       if (new RegExp(`\\$${escapeRegExp(token)}(?![0-9a-f])`, "i").test(rawComment)) return true;
     }
     const name = nameByAddress.get(caller);
-    if (name && new RegExp(`(?<![0-9A-Za-z_])${escapeRegExp(name)}(?![0-9A-Za-z_])`).test(rawComment)) return true;
+    if (name && citesCallerByName(rawComment, name)) return true;
   }
   return false;
 }
