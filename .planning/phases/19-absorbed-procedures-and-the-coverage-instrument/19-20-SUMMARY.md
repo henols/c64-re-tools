@@ -26,7 +26,7 @@ affects: [phase-20, coverage-report-consumers, r2000-census]
 actuals:
   tokens: 11757
   tasks: 3
-  commits: 4
+  commits: 8
 
 tech-stack:
   added: []
@@ -274,3 +274,5 @@ None — no external service configuration required.
 - `git diff --name-only` lists none of `ANSWER.md`, `ANSWER.sha256`, `QUESTION.md`, `19-CONTEXT.md`, `19-REVIEW.md`, `.planning/REQUIREMENTS.md`.
 - `19-DECISIONS.md` **81 insertions / 0 deletions**; `19-VALIDATION.md` **170 insertions / 0 deletions**.
 - No scope-reduction vocabulary (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no phase number in any new string literal in `r2000-coverage.ts`.
+
+_Commit accounting for `actuals.commits: 8`: four task commits (`c0677e6`, `751face`, `8ddfb04`, `ded3352`), the SUMMARY (`fd26f51`), the self-check append (`5ad356d`), the STATE/ROADMAP metadata commit (`5c7ecef`), and this correction. `actuals.tokens` is `chars/4` over the realized `+` lines of the four task commits (47,027 chars), against a plan estimate of 40,000 — an overestimate of roughly 3.4x._
