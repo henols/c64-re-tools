@@ -162,3 +162,10 @@ modified.
 **Still open. Owner: a plan that owns `r2000-session.ts`.** Recorded here rather than absorbed,
 because a flake that only ever fires in CI's own gate is exactly the kind of item that gets
 explained away once per run and never fixed.
+
+**Sixth full-suite observation, same day:** 19-13's own phase gate ran
+`cd src/mcp/vice && npm test` at `88d7de4` and came back **green** — `# tests 2580 / # pass 2535 /
+# fail 0`, exit 0, `# duration_ms 102561`. The rate is therefore **2 red in 6 full-suite runs** on
+2026-08-25, and **0 red in 4 standalone runs**. A green gate does not close this item: an
+intermittent failure that happens not to fire is not a fixed one, and the clearing condition above
+is unchanged.

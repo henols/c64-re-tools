@@ -121,6 +121,49 @@ wall-clock budget (`:622`) while `node --test` runs test files concurrently acro
 never been observed red standalone — 25/25 on every run, including three consecutive runs by 19-13.
 Recorded as `deferred-items.md` item 3 with its owner, not absorbed.
 
+### Second gap-closure phase gate — run at close, 2026-08-25 (plan 19-13)
+
+Every row is an exit code that was observed, from the repository at `88d7de4`. The full suite is
+`npm test` = `node --test '*.test.*'`; `npm run test:automated` is **never** the evidence here
+because it is `node test-gate.mjs`, which runs every `*.test.*` on disk **minus** the nine frozen
+`MANUAL_ONLY_TESTS` entries (`vice-broker-launch`, `vice-proxy`, `broker-e2e`, `stock-live`,
+`stock-live-triage`, `stock-live-broker-monitor`, `stock-broker-live`, `fork-live`,
+`stock-a4-checkpoint-flood`) — a subset that would hide a CI failure in any of them.
+
+| # | Gate | Command | Result |
+|---|---|---|---|
+| 1 | vice suite (FULL) | `cd src/mcp/vice && npm test` | **exit 0** — `# tests 2580`, `# suites 24`, `# pass 2535`, **`# fail 0`**, `# skipped 40`, `# todo 5`, `# duration_ms 102561.052051` |
+| 2 | AUDIT-01 guard, standalone | `cd src/mcp/vice && node --test docs-review-disposition.test.ts` | **exit 0** — 7 tests / 7 pass / 0 fail |
+| 3 | D-12-02 cascade, standalone | `cd src/mcp/vice && node --test audit-integrity.test.ts` | **exit 0** — 44 tests / 44 pass / 0 fail. Observed independently of the aggregate run, so the cascade is demonstrated resolved rather than inferred |
+| 4 | Typecheck | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | **exit 0** |
+| 5 | Package contents | `node scripts/check-npm-packages.mjs` | **exit 0** |
+| 6 | Skill tool coverage | `node scripts/check-skill-tool-coverage.mjs` | **exit 0** |
+| 7 | Description overlap | `node scripts/check-skill-description-overlap.mjs` | **exit 0** |
+| 8 | Fixture determinism | `cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs` ×2 | `wrote 10 control fixtures` on **both** runs; `git status --porcelain fixtures/coverage` **empty**. Directory count **10**, equal to the pinned `COMMITTED_CONTROL_FIXTURES = 10` |
+| 9 | Seven-guard cascade census | `node --test <guard>.test.ts` for each of the seven guards D-12-02 names | **all seven exit 0** — `docs-review-disposition` 7/7, `docs-core-value-decision` 6/6, `docs-dangling-refs` 8/8, `docs-deferred-ledger` 6/6, `docs-fork-decision` 6/6, `docs-linerefs` 3/3, `docs-r2000-decisions` 5/5. **Zero of seven genuinely red** |
+
+**`REQUIREMENTS.md` was read and not written.** Observed at 2026-08-25 after every gate above:
+
+| Observation | Line | State |
+|---|---|---|
+| COV-01 checkbox | `.planning/REQUIREMENTS.md:57` | `- [ ] **COV-01**: …` — **still unchecked** |
+| COV-02 checkbox | `.planning/REQUIREMENTS.md:59` | `- [ ] **COV-02**: …` — **still unchecked** |
+| COV-01 status row | `.planning/REQUIREMENTS.md:134` | `\| COV-01 \| Phase 19 \| Gaps Found \|` |
+| COV-02 status row | `.planning/REQUIREMENTS.md:135` | `\| COV-02 \| Phase 19 \| Gaps Found \|` |
+| Working tree | — | `git status --porcelain .planning/REQUIREMENTS.md` **empty** |
+
+19-13 declares `requirements: [COV-02, COV-01]`, so the execute-plan workflow's own
+`requirements.mark-complete` step would have ticked both. It was **deliberately not run** — the box
+is earned by re-verification, never by the run that fixed the defect, and a self-ticked box poisons
+every later judgement built on it. 19-08 reverted its own automatic mark-complete for the same
+reason and 19-09 did not run the step at all; this makes three consecutive plans declining it.
+
+**The release hold still stands.** 19-07's checkpoint selected
+`approve-wording-release-on-reverification`, and the named condition that lifts `[skip release]` is,
+verbatim: *"Phase 19 re-verification returns no gaps."* This run does **not** satisfy it — no
+re-verification has been performed, and a green suite is not a re-verification. Every commit in this
+plan carries `[skip release]`.
+
 ## The inherited concurrency deferral (D18-16) — closed by measurement
 
 | Item | Command that ran | Ran against | Observed result |
