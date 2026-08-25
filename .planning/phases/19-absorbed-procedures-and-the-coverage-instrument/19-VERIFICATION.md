@@ -1,254 +1,312 @@
 ---
 phase: 19-absorbed-procedures-and-the-coverage-instrument
-verified: 2026-08-24T18:46:48Z
+verified: 2026-08-25T05:55:58Z
 status: gaps_found
-score: 3/5 must-haves verified
+score: 4/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: 2/5
+  previous_verified: 2026-08-24T18:46:48Z
+  gaps_closed:
+    - "SC2 / ABS-02 — the elected MIT licence's permission notice now ships, byte-exactly, in all three notices files, and the sentence the same commit falsified is gone. Confirmed against the real upstream repository over the network, not against the project's own manifest."
+    - "SC4 clause C, route 1 — `namesACaller()` is anchored on a hex-token and identifier boundary; the NC4-plus-colliding-hex gaming attempt no longer buys a clean verdict, and a both-directions control is committed."
+  gaps_remaining:
+    - "SC4 / COV-02 — the census-inflation route. Narrowed by 19-08's gate, NOT closed: `hasDispatchContext()`'s third accepted shape is an ordinary 16-bit zero-page pointer construction, which is not dispatch evidence. Reproduced at report level against HEAD."
+  regressions:
+    - "The full test suite went RED (2 failures) at commit `80c544b` — this phase's own second code-review report added five findings (CR-04, WR-13, WR-14, WR-15, IN-05) with no recorded disposition. `docs-review-disposition.test.ts` (AUDIT-01) fails; `audit-integrity.test.ts` (D-12-02) cascades. The tree was 0-fail immediately before that commit."
 gaps:
-  - truth: "SC2 — Absorbed procedure text carries a per-file attribution header naming the source repository, file path, and the pinned commit, and `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` licence for the absorbed text specifically"
+  - truth: "SC4 — Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result ... (phase goal: 'a coverage instrument ... that resists being gamed')"
     status: partial
     reason: >-
-      The attribution headers and the dual-licence record are both genuinely present and
-      accurate (independently confirmed: all five upstream sha256 digests match the real
-      repository at the pin). The failure is 19-01's own ABS-02 prohibition — "MUST NOT ship
-      a documentation claim that the same commit falsifies" — which is violated by shipped
-      text. `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117` asserts "The MIT permission notice
-      and copyright above travel inside every absorbed file's header, which is what ships in
-      both published tarballs." Three independent falsifications, all reproduced: (a) the MIT
-      permission notice text ("Permission is hereby granted, free of charge...") appears
-      NOWHERE in the repository — a repo-wide grep returns only 19-REVIEW.md's own quotation
-      of the fix; (b) no absorbed file header contains it — the headers carry the copyright
-      line and the licence NAME only; (c) `@henols/vice-mcp` ships ZERO skill files
-      (`npm pack --dry-run` file list), so no absorbed header ships in that tarball at all,
-      while the false claim itself IS packed there. Separately, MIT's own inclusion condition
-      ("this permission notice shall be included in all copies or substantial portions") is
-      therefore undischarged for the elected licence.
-    artifacts:
-      - path: "src/mcp/vice/THIRD-PARTY-NOTICES.md"
-        issue: "Lines 115-117 assert a permission notice that exists nowhere, and assert it ships in a tarball that contains no skill files. Packed into the published tarball."
-      - path: "src/skills/routine-queue-walker/SKILL.md"
-        issue: "Attribution header (and the four sibling headers in c64-memory-mapping/c64-program-recon) carries the licence name and copyright but no permission notice."
-    missing:
-      - "Reproduce the MIT permission notice verbatim in `src/mcp/vice/THIRD-PARTY-NOTICES.md`, `installer/THIRD-PARTY-NOTICES.md` and the root `THIRD-PARTY-NOTICES.md`, so the elected licence's inclusion condition is actually discharged."
-      - "Correct or delete the sentence at `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117` — in particular the 'ships in both published tarballs' clause, which is false for `@henols/vice-mcp` regardless of the notice fix."
-      - "Add a guard asserting the permission-notice text is present in every notices file that claims incorporation, so the claim cannot drift from the fact again."
-  - truth: "SC4 — Running the coverage tool against a binary reports three distinct numbers ... and any label reached from more than one call site requires cross-reference-backed documentation to count"
-    status: partial
-    reason: >-
-      Two of three clauses hold and were confirmed live. The third — the multi-caller
-      cross-reference rule — is defeatable, and the phase goal's own qualifier ("a coverage
-      instrument ... that resists being gamed") is falsified twice over. BOTH defects were
-      reproduced against shipped code at REPORT level, not inferred.
-      (1) `namesACaller()` (`r2000-coverage.ts:990-1005`) tests `lower.includes("$" + hex)`
-      with no boundary anchor. Taking the NC4 control fixture EXACTLY as shipped — a label at
-      $0820 with callers [$0810, $0816], documented without naming either — and appending a
-      mention of an unrelated but perfectly ordinary C64 address, `$8106`, to its comment
-      flips `multiCallerUndocumented` from {count:1,addresses:[2080]} to {count:0,addresses:[]}.
-      The comment still names neither caller. The label then counts as documented, stays in
-      `labels.kindRatio.user`, stays in the reproducibility sample population, and produces no
-      finding. The negative control that exists to catch precisely this passes only because
-      its shipped comment happens to contain no colliding hex — fixture-only reliance.
-      (2) The Class-3 split lo/hi table scan (`r2000-coverage.ts:578-620`) pairs ANY two
-      indexed `ld*` instructions within 8 decoded instructions, with no dispatch-context gate,
-      reconstructs up to 64 targets out of whatever bytes lie at the two bases, and feeds them
-      back as `extraSeeds` at `r2000-coverage.ts:1311`. Two 64-byte programs, each containing
-      exactly 7 bytes of real code and 57 bytes of ordinary data, differing ONLY in that one
-      uses indexed rather than immediate addressing (a screen+colour copy loop — the single
-      most ordinary C64 idiom), report structural completeness of reached=7/unreached=57
-      versus reached=55/unreached=9. The headline structural measure inflates 8x from ordinary
-      data. `linearSweepDecodable` is indeed reported beside the census and never summed, so
-      19-03's literal truth "Decodability is never counted as evidence of code" holds as
-      written — but the same outcome is reached by the other route: ordinary DATA is
-      classified `reached-as-instruction`.
+      Clauses A (three separately-addressable numbers, never one aggregate), B (a mechanically
+      auto-labelled or "handles data" binary visibly fails) and C (the multi-caller
+      cross-reference rule) now all hold — C was genuinely fixed by 19-06 and is held down by a
+      both-directions control. What does NOT hold is the goal's own qualifier: the structural
+      completeness number, which is one of the three numbers SC4 mandates, is still
+      manufacturable out of ordinary data. 19-08 gated the class-3 split-table scan, but
+      `hasDispatchContext()` (`src/mcp/vice/r2000-coverage.ts:644-662`) accepts, as one of three
+      sufficient shapes, "two stores into consecutive zero-page addresses". That is the
+      construction of ANY 16-bit pointer — `lda ($fb),y` builds the identical thing — not of a
+      dispatch. The predicate never looks at what CONSUMES the vector it saw being built.
+      REPRODUCED INDEPENDENTLY, at report level, through the shipped `buildCoverageReport()`,
+      against HEAD `80c544b`: two 64-byte payloads at `$0810` containing 17 bytes of real code and
+      47 bytes of ordinary data, identical except for the addressing mode of two loads, and
+      neither containing a `jmp ($nnnn)` opcode (`0x6c`) or a single `pha` anywhere in the image:
+
+        INDEXED  (zp vector built, consumed by `lda ($fb),y`):
+          reached=25  tableEntry=16  unreached=23  splitTables=1  splitTableCandidates=0
+        IMMEDIATE twin:
+          reached=17  tableEntry=0   unreached=47  splitTables=0  splitTableCandidates=0
+
+      41 of 64 bytes claimed as code-or-table on a program with 17 bytes of code, and
+      `classAt(census, 0x0840)` returns `reached-as-instruction` for what is a cleared data
+      buffer. `provenDispatchTargets()` — the module's declared single seam, whose own doc
+      comment reads "ADDING A SOURCE HERE IS THE DECISION TO TREAT THAT SOURCE AS PROOF OF CODE"
+      — returns all eight reconstructed values. That decision is being made by accident, one
+      level down, inside `hasDispatchContext`.
+
+      The prior verification's own remediation text named exactly three admissible gates —
+      "a following indexed indirect jump, a pha/pha/rts idiom, or a corroborating
+      cross-reference". The shipped gate adds a fourth shape that is outside that enumeration and
+      is not dispatch evidence.
+
+      This also violates 19-08's and 19-09's shared prohibition, verbatim: "MUST NOT let a control
+      fixture's incidental text stand in for an enforced rule — a heuristic with a positive
+      control and no negative one is not evidence that it declines anything." The two committed
+      false-positive controls (FP1 `fp1-indexed-copy-loop`, FP1b `fp1b-immediate-copy-loop`, and
+      the in-suite `ORDINARY_INDEXED_COPY`) carry NO zero-page store at all, and the positive
+      control `SPLIT_TABLE` carries a real `jmp ($00fb)`. The two bracket the OUTSIDE of the gate.
+      Nothing exercises its interior — a vector that is built and then consumed by something
+      other than a jump — which is why a 2517-passing suite conceals it.
+
+      Blocking rather than cosmetic: the phase goal says "before any decomposition work runs under
+      it", and ROADMAP Phase 20 ("Decomposition to Closure") both depends on this instrument and
+      is instructed to "Run Phase 19's coverage instrument throughout this phase". A structural
+      completeness number that inflates on the single most ordinary 6502 idiom (indirect-indexed
+      data access) cannot gate that sweep.
     artifacts:
       - path: "src/mcp/vice/r2000-coverage.ts"
-        issue: "namesACaller() at ~990-1005 matches caller hex as an unanchored substring; the label-name branch has the same shape (rawComment.includes(name))."
-      - path: "src/mcp/vice/r2000-coverage.ts"
-        issue: "Class-3 split lo/hi scan at ~578-620 has no dispatch-context gate and promotes reconstructed data words to descent seeds via extraSeeds at :1311."
+        issue: "`hasDispatchContext()` at :644-662 accepts two consecutive zero-page stores as proof of dispatch. Condition (c) also contributes almost nothing over (d): `resolveSplitOrientation()` at :679-712 already requires the same two consecutive zero-page store consumers, so in the ordinary tight-pointer case the very same two instructions satisfy both."
       - path: "src/mcp/vice/r2000-coverage.test.ts"
-        issue: "Test adequacy: the split-table scan has a POSITIVE control only (line 495-502, 'a split lo/hi table pair is reconstructed'). No test asks whether an ordinary indexed load pair is wrongly treated as a table. No test anchors namesACaller(). The suite is green because it never poses either question."
+        issue: "Test adequacy. `dispatch class 3 DECLINES an ordinary two-table indexed read loop` (:781) and `an ordinary indexed copy loop does not inflate the census over its immediate twin` (:808) are both built on payloads with no zero-page store. The gate's interior has no control."
+      - path: "src/mcp/vice/fixtures/coverage/fp1-indexed-copy-loop/store.json"
+        issue: "FP1/FP1b prove the census declines a pairing with no vector construction. They cannot prove it declines a pairing whose vector is built and then consumed by a data read."
+      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md"
+        issue: "CR-04 records this defect and has no disposition anywhere, which is itself what turns the test suite red (see the second gap)."
     missing:
-      - "Anchor namesACaller() on a hex-token boundary (non-hex-digit or end of string) and compare against a canonical width; anchor the label-name branch on a word boundary too."
-      - "Gate the Class-3 split-table scan on real dispatch context (a following indexed indirect jump, a pha/pha/rts idiom, or a corroborating cross-reference) before its targets may become descent seeds — or report them as a separate advisory class that never enters extraSeeds."
-      - "Add a false-positive control fixture: a program of known code size containing an ordinary two-table indexed copy loop, asserting the census does NOT inflate."
-      - "Add an anchoring control for namesACaller(): the NC4 comment plus a colliding longer hex must still report the label as undocumented."
-      - "Re-check REQUIREMENTS.md line 59 — COV-02 is marked [x] Complete on the strength of a rule that does not hold."
-human_verification:
-  - test: "Review the `MIT OR Apache-2.0` -> MIT election now published in two npm tarballs, and the notices wording that will replace the falsified sentence."
-    expected: "A lawyer-or-owner judgement that the election is correct and the inclusion condition is discharged by the corrected notices."
-    why_human: "A licence election and the sufficiency of an attribution notice are legal claims. No test settles them. Flagged by 19-01, 19-02 and 19-DECISIONS decision 4; CR-03 bears directly on it."
-  - test: "Review 19-03's `flat-three` coverage report schema (`COVERAGE_SCHEMA_VERSION` 1, `COVERAGE_REPORT_KEYS`) before Phase 20 reads it."
-    expected: "Explicit human acceptance of the top-level key set, since a schema test now pins it and Phase 20 hardens it."
-    why_human: "Auto-selected under `mode: yolo` and never shown to a human. It is a forward-compatibility commitment, not a correctness property a test can decide."
+      - "Require the CONSUMER, not the construction: a zero-page vector may count only when an indirect-jump opcode within reach dispatches through the vector that was actually built (match `insn.operand.value` of the `0x6c` against the lower of the two consecutive zero-page store targets). `19-REVIEW.md` CR-04 carries a ready patch."
+      - "Add the interior control the gate has never had — the payload above, asserting `splitTables === []`, `provenDispatchTargets(scan) === []` and `classAt(census, 0x0840) === \"unreached\"`; ideally as a third generated fixture (`fp2-zeropage-data-pointer`) so the statement lands at report level, where the gap is actually phrased."
+      - "Apply the same treatment to the class-4 stack-return scan (WR-14): it pours into `provenDispatchTargets()` with no index-register match, no target-decodability check and a guessed entry count, and has no negative control at all. Its committed positive fixture already proves a mid-instruction address ($c006, the third byte of `lda $c013,x`)."
+      - "Re-check REQUIREMENTS.md line 59 / line 135 — COV-02 correctly remains unchecked and `Gaps Found`; keep it that way until the gate holds."
+  - truth: "The phase's own artifacts leave the workspace test suite RED — `cd src/mcp/vice && npm test` reports 2 failures"
+    status: failed
+    reason: >-
+      Independently confirmed on the full suite (never `test:automated`): `# tests 2564,
+      # pass 2517, # fail 2`, exit 1, 95.8s.
+      (1) `docs-review-disposition.test.ts:338` — "every REVIEW.md finding id anywhere in
+      .planning/phases/ has a recorded disposition (AUDIT-01, self-applied)" fails naming five ids,
+      all in this phase's `19-REVIEW.md`: CR-04, IN-05, WR-13, WR-14, WR-15.
+      (2) `audit-integrity.test.ts:225` — D-12-02, "no milestone audit declares a gated status
+      while any docs guard is red", cascades from it while five milestone audits declare a gated
+      status. Its message names seven red guards, but six of the seven
+      (`docs-core-value-decision`, `docs-dangling-refs`, `docs-deferred-ledger`,
+      `docs-fork-decision`, `docs-linerefs`, `docs-r2000-decisions`) pass when run standalone —
+      spot-checked three, all exit 0 — so exactly one guard is genuinely red, and it is (1).
+      This is a documentation-ledger gap rather than a code regression, but the tree IS red and
+      the phase cannot be called complete over it. `deferred-items.md` declared both conditions
+      "clears when the last gap-closure plan (19-09) lands its SUMMARY"; 19-09 landed and they did
+      not clear, because the second review pass added five new undispositioned findings after it.
+    artifacts:
+      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md"
+        issue: "CR-04, WR-13, WR-14, WR-15, IN-05 have no disposition in any of the guard's five accepted sources."
+      - path: ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md"
+        issue: "Both deferred conditions are recorded as clearing when 19-09 lands. 19-09 has landed; neither cleared. The ledger now understates the state."
+    missing:
+      - "Fix CR-04 in code and cite the plan/SUMMARY that did it (it must not be dispositioned as accepted — it is the defect SC4 turns on)."
+      - "Record a disposition for WR-13, WR-14, WR-15 and IN-05 — fixed-and-cited, or a filed todo naming the reason."
+      - "Re-run the full suite to 0 failures before the phase is closed; the `[skip release]` hold's lifting condition is a no-gaps re-verification, and a red tree is a gap."
+deferred:
+  - truth: "Human review of the coverage report's `flat-three` schema (`COVERAGE_SCHEMA_VERSION`, `COVERAGE_REPORT_KEYS`) before it is depended on"
+    addressed_in: "Phase 20"
+    evidence: "ROADMAP Phase 20 notes: 'The coverage report's `flat-three` schema was auto-selected under `yolo` mode and never reviewed by a human (19-DECISIONS.md, closing note). This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment.' Carried forward from the prior verification's human item 2; note the schema has since moved to version 2 (19-08) with the same nine top-level keys."
 coincidental_reliance_items:
-  - truth: "NC4 (`nc4-multi-caller-unnamed`) proves the multi-caller rule fires"
+  - truth: "SC2 — the notices guard proves every file that claims incorporation reproduces the permission notice"
     reason: fixture-only
-    harden: "NC4 passes only because its shipped comment contains no hex string that collides with a caller's short-form hex. The precondition 'the comment contains no colliding hex' is established by the fixture's own text and is nowhere enforced by the rule. Anchor the match, then add the colliding-hex variant as a second control."
+    harden: "The guard's obligation is keyed on INCORPORATION_CLAIM_PATTERN, derived from the incorporated-material heading's shared phrase. That is deliberately NOT the notice heading (19-07 records the reasoning: keying on the notice section would make the test tautological). The residual reliance is that a future notices file could incorporate the prose while phrasing its claim differently and so owe nothing. Advisory only — the claim phrase is currently identical across all three files and is itself asserted."
 ---
 
 # Phase 19: Absorbed Procedures and the Coverage Instrument — Verification Report
 
 **Phase Goal:** Upstream's five analyze procedures become this project's own skills — absorbed, attributed, and diffed against the curated surface — and a coverage instrument exists that resists being gamed, before any decomposition work runs under it.
 
-**Verified:** 2026-08-24T18:46:48Z (HEAD `81d46d1`)
+**Verified:** 2026-08-25T05:55:58Z (HEAD `80c544b`)
 **Status:** gaps_found
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after gap-closure plans 19-06 … 19-09
 
 ## Goal Achievement
 
-The goal has two halves joined by "and". The **absorption half is achieved, and achieved well** — verified against the real upstream repository over the network, not merely against the project's own manifest. The **instrument half is not**: the goal's own qualifier is "a coverage instrument ... that **resists being gamed**", and two distinct gaming routes were reproduced at report level against shipped code. The clause "before any decomposition work runs under it" makes this blocking rather than cosmetic — Phase 20 is *Decomposition to Closure* and consumes exactly these numbers.
+The goal has two halves joined by "and". **The absorption half is now fully achieved** — the one
+outstanding defect against it (the licence-inclusion claim) was genuinely and carefully fixed, and
+I confirmed the fix against the real upstream repository over the network rather than against the
+project's own manifest. **The instrument half is still not.** The goal's qualifier is "a coverage
+instrument … that **resists being gamed**", and one of the two gaming routes the prior
+verification reproduced is still open at HEAD. It was narrowed, not closed: where the pre-19-08
+code accepted any two indexed loads, the post-19-08 code additionally requires a zero-page pointer
+construction — which is a *lower* bar than it sounds, because indirect-indexed **data** access is
+one of the most common shapes in 6502 code and builds the identical vector. I reproduced the
+inflation at report level, through `buildCoverageReport()`, before ruling on it.
+
+The trailing clause "before any decomposition work runs under it" is what makes this blocking
+rather than cosmetic. Phase 20 is *Decomposition to Closure*, depends on this phase by name, and
+is instructed by ROADMAP to run this instrument *throughout* rather than once at the end.
+
+Separately, the phase leaves the workspace test suite red, from its own review ledger.
 
 ### Observable Truths
 
 | # | Truth (ROADMAP Success Criterion) | Status | Evidence |
 |---|---|---|---|
-| 1 | Five procedures absorbed at a pinned commit into `c64-program-recon`/`c64-memory-mapping` + a new routine-queue-walker; every tool call diffed against the curated `r2000_*` surface; zero runtime dependency on `.agent/skills/` | ✓ VERIFIED | **Independently confirmed against upstream.** Fetched all five procedure files from `github.com/ricardoquesada/regenerator2000` at `493f8404...` — all five sha256 digests AND byte counts match the manifest exactly (4457 / 14674 / 15308 / 9248 / 9705 bytes). Five `ATTRIBUTION (ABS-02)` blocks across exactly three destinations, matching `manifest.procedures` destinations 1:1. Tool diff: 33 curated + 8 non-curated, each non-curated entry carrying a substantive justification, an upstream citation and its sites; four citations spot-checked at their claimed line numbers in the fetched upstream files — all exact. `check-skill-tool-coverage.mjs` exits 0 (17 distinct `r2000_*` names, all curated). `grep -rn "\.agent/skills" src/skills/` → 0 hits. |
-| 2 | Per-file attribution header naming source repo, file path, pinned commit; `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` for the absorbed text specifically | ✗ FAILED | Literal clauses hold — headers carry all six provenance fields; both notices files carry an `## Incorporated material` section naming the dual licence, the copyright and the MIT election for the absorbed prose specifically. **But 19-01's explicit ABS-02 prohibition is violated by shipped text** (CR-03 reproduced): `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117`. See Gaps. |
-| 3 | No two skills contend for the same trigger; a pairwise description check runs clean across all of them | ✓ VERIFIED | `check-skill-description-overlap.mjs` exits 0: 7 skills, 21 pairs (= n(n−1)/2 for n=7), observed max **0.250** (`c64-program-recon` :: `c64-provenance-diff`) against an **inclusive** threshold of 0.35, **allowlist size 0**. The threshold is measured, not taste: `skill-descriptions.mjs:64-97` records the clean-inventory ceiling, two real pairs at 0.200, and upstream's own most-similar sibling pair at 0.261 — which is why the absorbed descriptions were rewritten rather than carried. Prohibitions honoured: no skill removed from the inventory, no exemption added (allowlist empty), threshold not raised. |
-| 4 | Three distinct numbers, never one aggregate; a mechanically auto-labelled or "handles data" binary visibly fails; any label reached from >1 call site requires cross-reference-backed documentation to count | ✗ FAILED | Clauses A and B pass; clause C is defeatable, and the goal's "resists being gamed" fails twice. See Gaps and Behavioural Spot-Checks. |
-| 5 | Packer identity surfaced as a recon finding; the snapshot-versus-drift trade is a dated decision naming its own re-sync trigger | ✓ VERIFIED | `packer-finding.mjs` (610 lines): `PACKER_VERDICTS` frozen to exactly four; `identifiedByOracle()` is structurally the only constructor that assigns `packer` and it **throws** on a non-string/empty name; `unknownFinding()` throws on an empty reason; both `spawnSync` sites pass an argument array with `shell: false`. Wired — `c64-program-recon/SKILL.md:88-89` names the script path from the repo root. 16/17 tests pass, 1 skip (the live oracle gate). Decision 1 (`19-DECISIONS.md:28-86`) is dated, states the trade, and names a re-sync trigger whose **mechanism** is a hash comparison against `manifest.resync_triggers` — checkable, not aspirational. |
+| 1 | Five procedures absorbed at a pinned commit into `c64-program-recon`/`c64-memory-mapping` + a new routine-queue-walker; every tool call diffed against the curated `r2000_*` surface; zero runtime dependency on `.agent/skills/` | ✓ VERIFIED | Regression-clean. 5 `ATTRIBUTION (ABS-02)` blocks across exactly three destinations (routine-queue-walker ×1, c64-memory-mapping ×2, c64-program-recon ×2), each naming the pin `493f8404…` (5 occurrences). `check-skill-tool-coverage.mjs` exit 0 — 37 distinct `vice_*` names across 33 files / 7 skill dirs, 31 resolved on the stock manifest, every non-resolved one classified; `r2000_*`: 17 distinct names, **all curated**; 8/8 r2000 CLI verbs named by at least one skill file. `grep -rn "\.agent/skills" src/skills/` → **0 hits**. |
+| 2 | Per-file attribution header naming source repo, file path, pinned commit; `THIRD-PARTY-NOTICES.md` records the true dual `MIT OR Apache-2.0` for the absorbed text specifically | ✓ VERIFIED | **Gap closed, confirmed against upstream.** Fetched `LICENSE-MIT` from `ricardoquesada/regenerator2000` at `493f840418f1450a342bb220c2fe3d2585dd0525`: 1072 bytes, sha256 `e2579ce7…4973b`. Extracted the reproduced block from each of the three notices files — root, `installer/`, `src/mcp/vice/` — all three are **1072 bytes, sha256 `e2579ce7…4973b`**: byte-exact, identical, upstream-matching. The falsified sentence at `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117` is gone, replaced by an accurate statement (":124-128") that this package "packs no skill file at all (compare the two `files[]` lists), which is precisely why the notice is reproduced in this document". Verified true: `check-npm-packages.mjs` exit 0 — `@henols/vice-mcp` 75 files, `@henols/c64-re-tools` 34 files / **7 skills**. Guard added with a planted-violation control (`skill-attribution.test.ts:624`, `:692` alters one word and asserts the digest no longer matches, `:717` forbids the deleted claim with whitespace normalisation). The legal judgement the prior verification routed to a human was taken at 19-07's checkpoint — option `approve-wording-release-on-reverification` — so it is resolved, not re-raised. |
+| 3 | No two skills contend for the same trigger; a pairwise description check runs clean across all of them | ✓ VERIFIED | Regression-clean. `check-skill-description-overlap.mjs` exit 0: 7 skills, **21 pairs** (= n(n−1)/2 for n=7), observed maximum **0.250** (`c64-program-recon` :: `c64-provenance-diff`) against an inclusive threshold of 0.35, **allowlist size 0**, and CLAUDE.md's project-skills table byte-identical to all 7 SKILL.md descriptions. No skill removed, no exemption added, threshold unchanged. |
+| 4 | Three distinct numbers, never one aggregate; a mechanically auto-labelled or "handles data" binary visibly fails; any label reached from >1 call site requires cross-reference-backed documentation to count | ✗ FAILED | Clauses A, B and C all hold — C was genuinely fixed. The **goal qualifier fails**: CR-04 reproduced at report level against HEAD. See Gaps and Behavioural Spot-Checks. |
+| 5 | Packer identity surfaced as a recon finding; the snapshot-versus-drift trade is a dated decision naming its own re-sync trigger | ✓ VERIFIED | Regression-clean. `packer-finding.mjs` present (26,302 bytes) and wired — `c64-program-recon/SKILL.md:88-89` names it from the repo root with both an ordinary and an `--entropy` invocation. `19-DECISIONS.md` Decision 1 is dated **2026-08-24**, states the snapshot trade explicitly ("no live link back to upstream and no automatic notification"), pins 53,392 bytes across five paths with per-file sha256, and names a re-sync trigger whose mechanism is a hash comparison against `manifest.resync_triggers` — checkable, not aspirational. |
 
-**Score: 3/5 truths verified** (0 present-but-behaviour-unverified)
+**Score: 4/5 truths verified** (0 present-but-behaviour-unverified)
+
+### Deferred Items
+
+| # | Item | Addressed In | Evidence |
+|---|---|---|---|
+| 1 | Human review of the `flat-three` coverage report schema before it is depended on | Phase 20 | ROADMAP Phase 20 note names it verbatim: "This phase's first use of the report is the moment to confirm or revise it, before Phase 21 hardens the commitment." |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `src/skills/routine-queue-walker/SKILL.md` | Absorbed procedure, attributed, curated-tools-only | ✓ VERIFIED | Exists; frontmatter present; attribution header at :5-30; digest matches upstream |
-| `src/skills/c64-memory-mapping/SKILL.md` | Two absorbed procedures, attributed | ✓ VERIFIED | 2 attribution blocks (:235, :486) |
-| `src/skills/c64-program-recon/SKILL.md` | One absorbed procedure + reference-only BASIC material | ✓ VERIFIED | 2 attribution blocks (:303, :505); names `packer-finding.mjs` |
-| `src/mcp/vice/r2000-coverage.ts` | Census, widened dispatch scan, three measures, pinned schema | ⚠️ HOLLOW | Present, wired, data flows — but two measurement defects reproduced (see Gaps) |
-| `src/mcp/vice/r2000-coverage.test.ts` | Schema test, independence test, six controls | ⚠️ INADEQUATE | 93/93 pass. Positive-only control for the split-table scan; no anchoring control for `namesACaller()` |
-| `src/mcp/vice/skill-attribution.test.ts` | Frozen-registry presence/absence guard | ✓ VERIFIED | Passes; registry holds a row per source path |
-| `src/mcp/vice/r2000-upstream-audit.test.ts` | Rejects abbreviated/floating refs; requires justifications | ✓ VERIFIED | Passes; manifest carries full 40-hex commit and per-tool justifications |
-| `scripts/lib/skill-descriptions.mjs` | Pure predicates | ✓ VERIFIED | Threshold measured and documented in situ |
-| `scripts/check-skill-description-overlap.mjs` | CI runner + OK line | ✓ VERIFIED | Exits 0 with the full metrics line |
-| `src/skills/c64-program-recon/scripts/packer-finding.mjs` | Packer finding, hard-unknown default | ✓ VERIFIED | 610 lines; never-infer-a-name enforced structurally |
-| `src/mcp/vice/THIRD-PARTY-NOTICES.md` | Incorporated-material section | ✗ SHIPS A FALSE CLAIM | Section correct; :115-117 falsified by the same commit |
-| `installer/THIRD-PARTY-NOTICES.md` | Notices in the package carrying absorbed prose | ✓ VERIFIED | Packed (`npm pack --dry-run`); 7 SKILL.md also packed, in sync with `src/skills/` |
-| `.../19-DECISIONS.md` | Five dated decisions with reversal/re-sync conditions | ✓ VERIFIED | Five decisions, each with an explicit reversal or re-sync condition |
-| `.../19-VALIDATION.md` | Per-requirement test/command that ran | ✓ VERIFIED | 52 table rows; no placeholder rows found |
-| `.../evidence/coverage-reproducibility/ANSWER.sha256` | Non-retrofittable seal | ✓ VERIFIED | Seal is over the canonical answer LINE between markers (not the whole file — an initial whole-file digest mismatch resolved on reading the test); the seal test passes and fails-closed when RE-DERIVED is absent |
-| `.../19-STDIO-MULTIPLEXING-EVIDENCE.md` | D18-16 measurement of record | ✓ VERIFIED | 223 lines; re-runnable driver committed beside it |
+| `THIRD-PARTY-NOTICES.md` (×3) | Reproduce the upstream MIT permission notice byte-exactly; record the dual licence for the absorbed text | ✓ VERIFIED | All three carry a 1072-byte block with sha256 `e2579ce7…4973b`, equal to the fetched upstream file at the pin |
+| `src/mcp/vice/skill-attribution.test.ts` | Guard the notice claim, with a planted-violation control | ✓ VERIFIED | `:624` presence-and-digest test over every file claiming incorporation; `:692` one-word-alteration control; `:717` forbidden-claim check |
+| `scripts/check-npm-packages.mjs` | Assert a packed notices file reproduces the notice | ✓ VERIFIED | `:95-112`, exit 0 on the real tree |
+| `src/mcp/vice/r2000-coverage.ts` | The dispatch-context gate, the advisory split-table class, the single proven-target seam | ⚠️ WIRED BUT DEFEATABLE | `COVERAGE_SCHEMA_VERSION` = 2; `COVERAGE_REPORT_KEYS` still the same nine keys; `splitTableCandidates` exists as an advisory sibling and is never read by `provenDispatchTargets()`; `buildCoverageReport()` seeds from `provenDispatchTargets()` only (`:1659`). The gate itself (`:644-662`) admits an ordinary data-pointer construction — see Gaps |
+| `src/mcp/vice/fixtures/coverage/fp1{,b}-*` | Generated false-positive census control pair | ⚠️ PRESENT, INSUFFICIENT | 8 fixture dirs total; generator idempotent (two consecutive regenerations leave `git status --porcelain src/mcp/vice/fixtures/coverage` empty). Neither payload carries a zero-page store, so neither reaches the gate's interior |
+| `.planning/…/19-VALIDATION.md` | Extended, not replaced | ✓ VERIFIED | `git diff` over 19-09's commit: 85 insertions, **1 deletion**, and the single deleted line is the frontmatter field `closed_by: 19-05` — zero table rows removed |
+| `.planning/…/19-REVIEW.md` | Second-pass review with dispositions | ✗ INCOMPLETE | 24 findings; 5 (CR-04, WR-13, WR-14, WR-15, IN-05) have no disposition, which fails AUDIT-01 |
 
 ### Key Link Verification
 
-| From | To | Via | Status |
-|---|---|---|---|
-| `routine-queue-walker/SKILL.md` | `upstream-procedure-manifest.json` | Header quotes commit + sha256 | ✓ WIRED — and the sha256 matches the real upstream bytes |
-| `skill-attribution.test.ts` | manifest | Header-vs-manifest agreement per absorbed file | ✓ WIRED |
-| `check-npm-packages.mjs` | `scripts/lib/skill-corpus.mjs` | `topLevelSkillDirs()` supplies the relation | ✓ WIRED |
-| `installer/package.json` | `installer/THIRD-PARTY-NOTICES.md` | `files[]` entry | ✓ WIRED — confirmed in the packed file list |
-| `r2000-coverage.ts` | `disasm-decoder.ts` | `decode()` supplies the instruction stream | ✓ WIRED |
-| `r2000-cli.ts` | `r2000-coverage.ts` | `cmdCoverage()` → `buildCoverageReport()` | ✓ WIRED — exercised live |
-| `r2000-cli.ts` | `r2000-session.ts` | Store reads via the single-owner session seam | ✓ WIRED — `queryR2000Json` only; no new spawn site |
-| `c64-program-recon/SKILL.md` | `scripts/packer-finding.mjs` | Playbook names the path from repo root | ✓ WIRED (:88-89) |
-| `check-skill-description-overlap.mjs` | `scripts/lib/skill-descriptions.mjs` | Runner imports the predicates the test imports | ✓ WIRED |
-| `19-DECISIONS.md` | manifest `resync_triggers` | Decision 1's checking mechanism | ✓ WIRED |
+| From | To | Via | Status | Details |
+|---|---|---|---|---|
+| `buildCoverageReport()` | `computeStructuralCensus()` | `extraSeeds: provenDispatchTargets(dispatch)` | ✓ WIRED | `r2000-coverage.ts:1656-1659`; never `discoveredTargets`, never `splitTableCandidates` — confirmed by reading, and by my repro reproducing the identical numbers through the public entry point |
+| `hasDispatchContext()` | `provenDispatchTargets()` | gate at `:871`, `:907-911` deciding `splitTables` membership | ⚠️ WIRED, WRONG PREDICATE | The link exists and functions; the predicate admits non-dispatch evidence, so the seam's stated contract ("proof of code") is not upheld |
+| `c64-program-recon/SKILL.md` | `packer-finding.mjs` | named script path from the repo root | ✓ WIRED | `:88-89` |
+| notices files | absorbed skill prose | `INCORPORATION_CLAIM_PATTERN` on the shared claim phrase | ✓ WIRED | Deliberately not keyed on the notice heading, so the presence test is not tautological |
 
 ### Data-Flow Trace (Level 4)
 
-| Artifact | Data | Source | Real data? | Status |
+| Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| `r2000-cli.ts` coverage verb | symbols / comments / blocks / cross-references | Live `r2000_get_*` over the session seam | Yes — live run returned 10 symbols, real xrefs | ✓ FLOWING |
-| `r2000-coverage.ts` census | raw program bytes | `loadProject()` → base64+gzip decode of the real project file | Yes | ✓ FLOWING |
-| `r2000-coverage.ts` census seeds | `extraSeeds` | `scanIndirectDispatch().discoveredTargets` | Yes — **but reconstructs seeds from ordinary data; this is the CR-02 defect** | ⚠️ FLOWING-BUT-WRONG |
-| `packer-finding.mjs` `packer` field | oracle stdout | `spawnSync(cmd, [args], {shell:false})` | Yes — and structurally unreachable from entropy | ✓ FLOWING |
+| `buildCoverageReport()` | `structural.reachedAsInstruction` | recursive descent from `seeds` ∪ `provenDispatchTargets(dispatch)` | Yes, but **over-produces** | ⚠️ INFLATED — 25 reported on a 17-byte-code payload |
+| `buildCoverageReport()` | `structural.tableEntry` | `dispatch.tableEntryAddresses` | Yes, but over-produces | ⚠️ INFLATED — 16 bytes claimed from an unproven pairing |
+| `buildCoverageReport()` | `labels.kindRatio` | `computeLabelRatio(symbols, …)` over the store | Yes | ✓ FLOWING |
+| `buildCoverageReport()` | `reproducibility.multiCallerUndocumented` | `crossReferences` + anchored `namesACaller()` | Yes | ✓ FLOWING |
+| `buildCoverageReport()` | `commentVacuity` / `divergence` | store comments / blocks | Yes | ✓ FLOWING |
 
 ### Behavioural Spot-Checks
 
 | Behaviour | Command | Result | Status |
 |---|---|---|---|
-| Upstream pin is real, not asserted | `curl` all 5 paths at `493f8404...` + `sha256sum` | 5/5 MATCH on digest and byte count | ✓ PASS |
-| Upstream citations are real | `sed -n '85p;158p'` / `'31p;74p'` on fetched upstream files | All 4 spot-checked citations exact | ✓ PASS |
-| Coverage verb runs end to end | `node vice-proxy.ts r2000 coverage src/.../nc1-all-auto/project.regen2000proj` | rc=0; prints "MEASURE 1 of 3", "MEASURE 2 of 3", "MEASURE 3 of 3", divergence sub-report, and an explicit "Read the numbers against each other, never as one figure" | ✓ PASS |
-| No aggregate figure anywhere | Inspect live report + `COVERAGE_REPORT_KEYS` schema test | No combined percentage in the object or the rendering | ✓ PASS |
-| Vacuous binary visibly fails | All 6 control fixtures through `buildCoverageReport` + `coverageFindings` | 6/6 match `expect_clean`; NC1 all-auto → 2 findings, NC2 generic-comments → 4 findings, NC5 well-documented → clean | ✓ PASS |
-| **Multi-caller rule resists gaming** | NC4 as shipped vs NC4 + "; mirrors the value at `$8106`" appended to the $0820 comment | `multiCallerUndocumented` {count:1,[2080]} → **{count:0,[]}**. Names neither caller ($0810/$0816). | ✗ **FAIL** |
-| **Structural census resists gaming** | Two 64-byte programs, each 7 bytes real code + 57 bytes data, differing only immediate vs indexed addressing | reached **7/64** vs reached **55/64**; `splitTables=1`, `discovered=1` | ✗ **FAIL** |
-| Packer finding never infers a name | `node --test packer-finding.test.mjs` | 17 tests, 16 pass, 1 skip (live oracle gate), 0 fail | ✓ PASS |
-| Phase-19 suites | `node --test r2000-coverage.test.ts skill-attribution.test.ts r2000-upstream-audit.test.ts skill-description-overlap.test.ts r2000-verb-coverage.test.ts` | 93 tests, 92 pass, 1 skip, 0 fail | ✓ PASS |
-| Skill gates | `check-skill-description-overlap` / `-tool-coverage` / `-fork-honesty` | all exit 0 | ✓ PASS |
+| Full workspace suite (once, never `test:automated`) | `cd src/mcp/vice && npm test` | `# tests 2564  # pass 2517  # fail 2`, exit 1, 95.8s | ✗ FAIL |
+| Are the six cascaded guards genuinely red? | `node --test docs-core-value-decision.test.ts` etc. | 3/3 spot-checked PASS standalone | ✓ PASS (cascade confirmed spurious; the seventh is real) |
+| Upstream MIT licence matches the reproduced notice | `curl …/493f8404…/LICENSE-MIT \| sha256sum` vs the block in each of 3 notices files | 1072 bytes / `e2579ce7…4973b` — all four identical | ✓ PASS |
+| Package contents match the notices claim | `node scripts/check-npm-packages.mjs` | exit 0; `@henols/vice-mcp` 75 files (0 skills), `@henols/c64-re-tools` 34 files / 7 skills | ✓ PASS |
+| Pairwise trigger uniqueness | `node scripts/check-skill-description-overlap.mjs` | exit 0; 21 pairs, max 0.250, allowlist 0 | ✓ PASS |
+| Curated-surface tool diff | `node scripts/check-skill-tool-coverage.mjs` | exit 0; 17 `r2000_*` names, all curated | ✓ PASS |
+| Fixture generator idempotency | run `make-coverage-fixtures.mjs` twice, then `git status --porcelain` | empty | ✓ PASS |
+| **CR-04 interior of the dispatch gate** (scan level) | custom 64-byte payload, no `0x6c`, no `pha`; `scanIndirectDispatch` + `computeStructuralCensus` | `splitTables=1`, `provenDispatchTargets=[$0840…$0847]`, `tableEntryAddresses=16`, reached 17→25, `classAt($0840)`: `unreached` → `reached-as-instruction` | ✗ FAIL |
+| **CR-04 through the shipped entry point** (report level) | `buildCoverageReport()` on the indexed payload and its immediate twin | indexed `reached=25 tableEntry=16 unreached=23 splitTables=1`; immediate `reached=17 tableEntry=0 unreached=47 splitTables=0` — 17 real code bytes in both | ✗ FAIL |
+| SC4 clause C anchoring (the fixed route) | in-suite `ANCHORING: a colliding longer hex …` (`r2000-coverage.test.ts:556`) and the identifier-boundary control (`:608`) | both pass in the green run; NC4+`$8106` still `{count:1,addresses:[0x0820]}` and non-clean, NC5 still clean | ✓ PASS |
+| SC4 clauses A/B (negative controls) | NC1, NC1b, NC2, NC3, NC5 in the green run | NC1/NC1b name `labels`, NC2 names `commentVacuity`, NC3 names `divergence`, NC5 clean; NC1b and NC3 "earns its place" tests pass | ✓ PASS |
 
-**On the green-suite / reproduced-defect tension.** Both are true and they are not in conflict — they are the same finding seen twice. The suite passes because it never poses either question. `r2000-coverage.test.ts:495-502` asserts the split-table scan *reconstructs a real table* (a positive control) and nothing asserts it *declines an ordinary indexed load pair*. NC4 asserts the multi-caller rule fires on a comment that happens to contain no colliding hex, and nothing asserts it on one that does. For criterion 4 specifically — whose whole subject is an instrument that cannot be talked into a clean verdict — a control set with no adversarial half is not evidence of the property being claimed. This is a test-adequacy gap, not a flaky-test gap.
+### Probe Execution
+
+No probes declared or discoverable — `find scripts -path '*/tests/probe-*.sh'` returns nothing and
+no PLAN references one. Step 7c: **N/A**.
 
 ### Requirements Coverage
 
-| Requirement | Source Plan | Description | Status | Evidence |
+| Requirement | Source Plan(s) | Description | Status | Evidence |
 |---|---|---|---|---|
-| ABS-01 | 19-01, 19-02 | Five procedures absorbed at a pinned commit, tool calls diffed, no `.agent/skills/` runtime dep | ✓ SATISFIED | All 5 digests confirmed against upstream; 8 non-curated dispositions justified; 0 `.agent/skills` refs |
-| ABS-02 | 19-01, 19-02 | Attributed per file and in `THIRD-PARTY-NOTICES.md` under the true dual licence | ✗ BLOCKED | Attribution correct; a shipped notices claim is falsified by the same commit (prohibition violation) |
-| ABS-03 | 19-05 | No two skills contend for the same trigger | ✓ SATISFIED | 21/21 pairs clean, max 0.250 < 0.35, allowlist 0 |
-| ABS-04 | 19-05 | Snapshot-versus-drift is a dated decision with a named re-sync trigger | ✓ SATISFIED | Decision 1 + `manifest.resync_triggers` mechanism |
-| COV-01 | 19-03, 19-04 | Three distinct numbers, never one aggregate | ✓ SATISFIED | Live report prints three named measures, no combined figure |
-| COV-02 | 19-03 | A vacuous pass is detectable; multi-caller labels require cross-reference-backed documentation | ✗ BLOCKED | Vacuity half verified (6/6 controls). Multi-caller half defeated by an unanchored substring match — reproduced. **REQUIREMENTS.md:59 marks this `[x]` Complete.** |
-| SURF-03 | 19-04 | Packer identity surfaced as a recon finding | ✓ SATISFIED | Four frozen verdicts, single name-assigning constructor, wired into the recon playbook |
+| ABS-01 | 19-01, 19-02 | Five procedures absorbed at a pinned commit, tool calls diffed, no `.agent/skills/` runtime dependency | ✓ SATISFIED | Truth 1. REQUIREMENTS.md line 46 correctly still unchecked pending this verification |
+| ABS-02 | 19-01, 19-02, 19-07 | Per-file + notices attribution under the true dual licence | ✓ SATISFIED | Truth 2. **The `[x]` at line 48 and `Complete` at line 131 were set by 19-07's own metadata commit `354bbfa`, not earned by verification — I treated the box as unearned and decided on evidence. The evidence supports it independently.** |
+| ABS-03 | 19-05 | Pairwise trigger uniqueness across the whole inventory | ✓ SATISFIED | Truth 3 |
+| ABS-04 | 19-01, 19-05 | Dated snapshot-versus-drift decision with a named re-sync trigger | ✓ SATISFIED | Truth 5 |
+| COV-01 | 19-03, 19-04, 19-08, 19-09 | Three distinct numbers, never one aggregate | ⚠️ PARTIAL | The separation holds (nine top-level keys, no combined figure, advisory class never summed) — but one of the three numbers is not trustworthy (Gap 1) |
+| COV-02 | 19-03, 19-06, 19-08, 19-09 | A vacuous pass is detectable; multi-caller labels need cross-reference-backed documentation | ✗ BLOCKED | Multi-caller rule now holds; the anti-gaming property does not (Gap 1). REQUIREMENTS.md line 59 unchecked and line 135 `Gaps Found` — correct, and 19-09 truth 4 required exactly this |
+| SURF-03 | 19-04 | Packer identity surfaced as a recon finding | ✓ SATISFIED | Truth 5 |
 
-**Orphaned requirements:** none. All seven IDs mapped to Phase 19 in REQUIREMENTS.md are claimed by a plan, and no plan claims an ID outside the seven.
-
-### Prohibition Checks
-
-| Plan | Prohibition | Status |
-|---|---|---|
-| 19-01 (ABS-02) | MUST NOT claim verbatim provenance for adapted text or vice versa | ✓ HONOURED — every header says "ADAPTED, NOT VERBATIM" with named deviations |
-| 19-01 (ABS-02) | **MUST NOT ship a documentation claim that the same commit falsifies** | ✗ **VIOLATED, AND SHIPPED** — `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117`, packed into `@henols/vice-mcp` |
-| 19-02 (ABS-01) | MUST NOT ship an absorbed step needing a tool this project does not expose | ✓ HONOURED — `check-skill-tool-coverage` exits 0; all 17 extracted `r2000_*` names curated |
-| 19-03 (COV-01) | MUST NOT compute/emit/store/display a single combined coverage figure | ✓ HONOURED — verified in the live report object and the rendering |
-| 19-03 (COV-02) | MUST NOT let an absent input or empty sealed answer read as a pass | ✓ HONOURED — NC1's report reads "UNKNOWN rather than clean" for both unavailable measures; the seal test fails closed |
-| 19-04 (SURF-03) | MUST NOT report a packer name no oracle stated verbatim | ✓ HONOURED — structurally enforced by a single throwing constructor |
-| 19-04 (COV-01) | MUST NOT record a live run as evidence without command and raw output | ✓ HONOURED — `19-STDIO-MULTIPLEXING-EVIDENCE.md` carries the command sequence and raw output |
-| 19-05 (ABS-03) | MUST NOT resolve a collision by removal, exemption, or raising the threshold | ✓ HONOURED — 7/7 skills scanned, allowlist size 0, threshold justified by measurement |
-| 19-05 (ABS-04) | MUST NOT record a decision as settled without a named reversal condition | ✓ HONOURED — all five decisions carry one |
+No orphaned requirements: all seven IDs mapped to Phase 19 in REQUIREMENTS.md lines 129-135 are
+claimed by at least one plan.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `src/mcp/vice/THIRD-PARTY-NOTICES.md` | 115-117 | Shipped claim falsified by its own commit | 🛑 Blocker | Prohibition violation; published in a tarball |
-| `src/mcp/vice/r2000-coverage.ts` | ~992-1006 | Unanchored `String.includes` used as an identity match | 🛑 Blocker | Defeats the multi-caller rule |
-| `src/mcp/vice/r2000-coverage.ts` | ~578-621 | Ungated heuristic promoting reconstructed data to descent seeds | 🛑 Blocker | Inflates the headline structural measure |
-| `src/mcp/vice/r2000-coverage.test.ts` | 495-502 | Positive-only control for a heuristic whose risk is false positives | ⚠️ Warning | Green suite conceals both blockers |
-| — | — | Debt markers (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`) across the phase's 13 primary source files | ℹ️ Clean | **None found** |
+| — | — | `TBD` / `FIXME` / `XXX` / `TODO` / `HACK` / `PLACEHOLDER` across all 22 non-planning files this phase touched | — | **None found.** Debt-marker gate clean |
+| `src/mcp/vice/r2000-coverage.test.ts` | 781, 808 | Positive-control-only bracketing — negative controls that cannot reach the predicate they claim to constrain | 🛑 Blocker | Directly violates the phase's own written prohibition; the reason a 2517-passing suite conceals CR-04 |
+| `.planning/…/19-REVIEW.md` | — | 5 findings with no disposition | 🛑 Blocker | Turns AUDIT-01 red and cascades D-12-02 |
 
-### Deferred Items
+### Test Quality Audit
 
-None of the gaps above is addressed by a later phase. Phase 20 (*Decomposition to Closure*) *consumes* the coverage instrument, so both instrument defects harden the moment it runs — which is precisely what the phase goal's clause "before any decomposition work runs under it" was written to prevent.
+| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
+|---|---|---|---|---|---|---|
+| `r2000-coverage.test.ts` | COV-01, COV-02 | yes | none in-scope | No — fixtures are generated from declared payloads, and the generator asserts its own shared-program invariant | Value / behavioural (report-level `deepEqual` on `multiCallerUndocumented`, census counts) | ⚠️ **INSUFFICIENT for COV-02's anti-gaming clause.** Every split-table negative control is constructed so it cannot reach `hasDispatchContext`'s third branch. Strong assertions over an unreachable region |
+| `skill-attribution.test.ts` | ABS-02 | yes | none | No — the digest is pinned against a network-fetched upstream file, and a planted one-word alteration is asserted NOT to match | Value (byte count + sha256) + planted-violation | ✓ ADEQUATE |
+| `skill-description-overlap.test.ts` | ABS-03 | yes | none | No | Value + boundary + emptied-corpus control | ✓ ADEQUATE |
+| `packer-finding.test.mjs` | SURF-03 | 16 | 1 (visible live-oracle gate) | No | Value + throws-on-empty | ✓ ADEQUATE (the skip is not the only test for any clause) |
 
-For completeness, two omissions ARE legitimately deferred and are **not** gaps: `r2000_toggle_splitter` and `r2000_set_immediate_format` are recorded in the manifest as future-surface proposals with named requirements (DECOMP-01/BUILD-02 and BUILD-03) and a named implementing phase, per 19-DECISIONS Decision 2.
+**Disabled tests on requirements:** 1 visible, non-exclusive skip → not a blocker.
+**Circular patterns detected:** 0.
+**Insufficient assertions:** 1 → 🛑 Blocker, because the requirement it is insufficient for (COV-02's anti-gaming clause) is the one this phase turns on.
+
+### Decision Coverage
+
+`19-DECISIONS.md` carries five dated decisions. Decision 1 (snapshot/re-sync) and Decision 2
+(the two proposed tools, carried into ROADMAP Phase 20's notes by name) are both traceable into
+shipped artifacts. Non-blocking; no drift observed.
 
 ### Human Verification Required
 
-#### 1. The MIT election and the corrected notices wording
+None outstanding. The prior verification's two human items are both resolved or deferred:
 
-**Test:** Review the `MIT OR Apache-2.0` → MIT election now published in two npm tarballs, together with whatever replaces the falsified sentence at `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117`.
-**Expected:** An owner-or-counsel judgement that the election is correct and that MIT's inclusion condition is discharged by the corrected notices.
-**Why human:** A licence election and the sufficiency of an attribution notice are legal claims that no test settles. Carried forward explicitly by 19-01, 19-02 and 19-DECISIONS decision 4.
+1. **Licence election and notice sufficiency** — taken at 19-07's checkpoint, option
+   `approve-wording-release-on-reverification`. Recorded verbatim in `19-07-SUMMARY.md:100-110`.
+   Not re-raised.
+2. **`flat-three` schema review** — deferred to Phase 20 by ROADMAP's own note (see Deferred
+   Items). Note the schema moved to version 2 during gap closure with the same nine top-level
+   keys, so the deferral is still well-posed.
 
-#### 2. The `flat-three` coverage report schema
+### Release Hold
 
-**Test:** Review `COVERAGE_SCHEMA_VERSION` 1 and the exact `COVERAGE_REPORT_KEYS` top-level key set before Phase 20 reads it.
-**Expected:** Explicit human acceptance of the key set.
-**Why human:** Auto-selected under `mode: yolo` and never shown to a human. A schema test now pins it and Phase 20 will harden it — it is a forward-compatibility commitment, not a correctness property a test can decide.
+19-07's checkpoint conditioned lifting `[skip release]` on exactly: *"Phase 19 re-verification
+returns no gaps."* This re-verification **returns gaps**. The hold therefore stands; nothing may
+be published on the strength of this report. All 14 gap-closure commits correctly carry
+`[skip release]`, and nothing has been published.
 
 ### Gaps Summary
 
-Phase 19 delivered two things and got one of them right.
+Two of the prior run's three concerns are genuinely closed, and closed well. The licence work
+(19-07) is the strongest artifact in the phase: the notice is byte-exact against upstream in all
+three files, the false sentence is replaced with a statement that is true of the actual tarball
+contents, and the guard is held down by a planted-violation control that would catch a one-word
+transcription drift. The multi-caller anchoring (19-06) is likewise real, and its control tests
+both directions in one commit so an over-tightened rule cannot pass silently.
 
-**The absorption is excellent, and it verifies exogenously.** This is the rarer outcome: rather than take the manifest's word for the pin, I fetched all five upstream procedure files from GitHub at commit `493f8404...` and confirmed every sha256 and every byte count. I then spot-checked four of the manifest's upstream line-number citations against the fetched files — all exact. The tool diff is genuine work: 33 curated calls plus 8 non-curated dispositions, each with a real justification, a cited upstream site, and (for the two deferred tools) a named future requirement and implementing phase. The description-overlap gate is a real gate with a measured threshold, zero exemptions, and a documented reason why upstream's own sibling pair (0.261) forced the absorbed descriptions to be rewritten rather than carried. The packer finding makes "never infer a name" a structural property rather than a rule: exactly one constructor can assign `packer`, and it throws rather than accept an empty string. Criteria 1, 3 and 5 are verified without reservation.
+What remains is the same defect the prior run named, one level deeper. 19-08 was asked to gate the
+class-3 split-table scan on real dispatch context and enumerated three admissible gates; it shipped
+four, and the fourth — two stores into consecutive zero-page addresses — is not dispatch evidence.
+It is how every 16-bit pointer on a 6502 is built, including the ones that are then read through
+with `lda ($fb),y`. I reproduced the consequence at report level through the shipped
+`buildCoverageReport()`: a 64-byte program with 17 bytes of code reports 25 bytes reached as
+instruction and 16 more claimed as table entries, against an immediate-addressing twin that
+reports the truthful 17. The instrument's headline number can still be talked into a better answer
+by ordinary data, which is precisely the property the phase goal names, and Phase 20 is instructed
+to run under this number continuously.
 
-**The instrument is not yet an instrument that resists being gamed**, which is the goal's own qualifier. Both defects the code reviewer reported were re-reproduced here independently, at report level, against shipped code:
+The second gap is smaller but has the same shape: the phase's own review report carries five
+findings with no disposition, which leaves the workspace suite red at 2 failures. `deferred-items.md`
+predicted both would clear when 19-09 landed; 19-09 landed and they did not, because the second
+review pass arrived after it. A red tree cannot satisfy a lifting condition phrased as "returns no
+gaps".
 
-- Taking the NC4 negative control **exactly as committed** — the fixture whose stated purpose is "the two-caller label at $0820 is documented without naming either caller" — and adding a mention of `$8106`, an unrelated and entirely ordinary C64 address, to its comment flips the finding from `{count:1}` to `{count:0}`. The comment still names neither caller. Success criterion 4's final clause says such a label "requires cross-reference-backed documentation to count"; it does not.
-- Two 64-byte programs with identical code content — 7 bytes of real code, 57 bytes of ordinary data — report structural completeness of 7/64 and 55/64 respectively. The only difference is that the second uses indexed rather than immediate addressing. An ordinary screen+colour copy loop is enough to make the headline structural measure over-report by 8x, because the split lo/hi table heuristic has no dispatch-context gate and feeds reconstructed data words back in as descent seeds.
-
-The green test suite and the reproduced defects are not in tension; they are the same finding twice. The split-table scan has a positive control and no negative one, and NC4 passes only because its committed comment happens to contain no colliding hex — a precondition the fixture's own text supplies and the rule itself never enforces.
-
-Separately, ABS-02's explicit prohibition — "MUST NOT ship a documentation claim that the same commit falsifies" — is violated by text that is already packed into `@henols/vice-mcp`. The notices file states that the MIT permission notice travels inside every absorbed file's header and ships in both tarballs. The permission notice text exists nowhere in the repository; the headers carry only the copyright line and the licence name; and the vice tarball ships no skill files at all. The third clause is false independently of the first two, so fixing the notice text alone will not discharge it.
-
-None of this is deferrable. The phase goal ends "before any decomposition work runs under it", and Phase 20 is the decomposition work.
+Both gaps trace to one root cause worth naming for the closure plan: **a heuristic's negative
+control was built from the outside of the predicate it constrains.** The fix for CR-04 is small
+(match the indirect-jump operand against the vector that was built); the fix that matters is the
+control that reaches the gate's interior, because without it the next tightening will be verified
+the same way.
 
 ---
 
-_Verified: 2026-08-24T18:46:48Z_
+_Verified: 2026-08-25T05:55:58Z_
 _Verifier: Claude (gsd-verifier)_
