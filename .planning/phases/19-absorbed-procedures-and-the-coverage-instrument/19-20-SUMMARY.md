@@ -185,7 +185,7 @@ _Task 1 carried `tdd="true"` and produced the RED/GREEN pair. No REFACTOR commit
 - `src/mcp/vice/r2000-coverage.ts` — `isDecodableAsInstruction()` added as a type-predicate at module level with the incident written into its doc comment; the descent's guard replaced (before the marking loop, with the reason for that placement written where a reorderer would read it); the linear sweep's two-line skip re-expressed through the predicate with its meaning explicitly unchanged; `isPlausibleEntryPoint()` composed from the predicate plus its in-image bound.
 - `src/mcp/vice/r2000-coverage.test.ts` — section 3b (the WR-03 minimal pair, the anti-contradiction relation, and the twelve-fixture + Phase 11 regression statements); section 9c (PINs 5–8 with `CENSUS_SIGNATURE`, `PREDICATE_SIGNATURE`, `censusBodyText()`); `PHASE_11_FIXTURE_PATH` hoisted so two sections read one path spelling.
 - `.planning/phases/…/19-DECISIONS.md` — Decision 6 plus its cross-reference row. 81 insertions, 0 deletions.
-- `.planning/phases/…/19-VALIDATION.md` — the round-4 plan-19-20 section: the measured contradiction, the twelve-fixture before/after table, the four pins, the three planted violations, the Decision-6 residual, and the observed prohibitions. 169 insertions, 0 deletions across two appends.
+- `.planning/phases/…/19-VALIDATION.md` — the round-4 plan-19-20 section: the measured contradiction, the twelve-fixture before/after table, the four pins, the three planted violations, the Decision-6 residual, and the observed prohibitions. 170 insertions, 0 deletions across two appends (plus two in-place corrections to this plan's own new rows, which are why the net is still zero deletions only because they were made before the commit).
 
 ## Decisions Made
 
@@ -259,3 +259,18 @@ None — no external service configuration required.
 ---
 *Phase: 19-absorbed-procedures-and-the-coverage-instrument*
 *Completed: 2026-08-25*
+
+## Self-Check: PASSED
+
+- All five modified/created files exist on disk.
+- All five commits (`c0677e6`, `751face`, `8ddfb04`, `ded3352`, `fd26f51`) exist in `git log --all`.
+- `cd src/mcp/vice && node --test r2000-coverage.test.ts` — **107 pass, 0 fail**, exit 0.
+- `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` — **22 pass, 0 fail**.
+- `cd src/mcp/vice && npx tsc --noEmit` — exit 0.
+- `cd src/mcp/vice && node --test docs-r2000-decisions.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts audit-integrity.test.ts comment-phase-pointers.test.ts` — **79 pass, 0 fail**.
+- Full suite (`npm test`, not the `test:automated` subset) — **2593 pass, 0 fail, 40 skipped, 5 todo** over 24 suites.
+- `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/r2000-coverage.ts` → **1**.
+- `git status --porcelain src/mcp/vice/fixtures/coverage` — empty.
+- `git diff --name-only` lists none of `ANSWER.md`, `ANSWER.sha256`, `QUESTION.md`, `19-CONTEXT.md`, `19-REVIEW.md`, `.planning/REQUIREMENTS.md`.
+- `19-DECISIONS.md` **81 insertions / 0 deletions**; `19-VALIDATION.md` **170 insertions / 0 deletions**.
+- No scope-reduction vocabulary (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no phase number in any new string literal in `r2000-coverage.ts`.
