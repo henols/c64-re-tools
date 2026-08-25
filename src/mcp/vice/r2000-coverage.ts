@@ -640,6 +640,18 @@ function zeroPageStoreTarget(insn: Instruction): number | null {
 interface SplitOrientation {
   loBase: number;
   hiBase: number;
+  /**
+   * The LOWER of the two consecutive zero-page addresses the pairing's own two
+   * loads are consumed by -- the address a little-endian 6502 vector's LOW byte
+   * lives at, which is therefore the address an indirect jump through that
+   * vector names. A fact about the construction, not a convention.
+   *
+   * Carried on the orientation rather than re-derived, because it comes out of
+   * the SAME two consumer stores that decided which base holds the low byte:
+   * the vector address and the orientation that justified it travel together
+   * and cannot disagree.
+   */
+  vectorLow: number;
 }
 
 /**
@@ -722,10 +734,12 @@ export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
  *     A `pha`/`pha`/`rts` in the same neighbourhood as two indexed loads is
  *     an extremely ordinary coincidence; the LINK is the evidence, not the
  *     shape.
- *   - `zeropage-vector-jumped-through` -- two stores into CONSECUTIVE zero-page
- *     addresses within reach AND an indirect jump within reach whose pointer is
- *     the LOWER of those two addresses. That is the classic "build a vector in
- *     zero page, then `jmp (vector)`" idiom, matched END TO END.
+ *   - `zeropage-vector-jumped-through` -- the pairing's OWN two loads are
+ *     consumed by two CONSECUTIVE zero-page stores (which is what resolves the
+ *     orientation), AND an indirect jump within reach names the LOWER of those
+ *     two addresses. That is the classic "build a vector in zero page, then
+ *     `jmp (vector)`" idiom, matched END TO END and matched against the pairing
+ *     under test.
  *
  * WHY THE CONSTRUCTION ALONE IS NOT EVIDENCE (CR-04). Two stores into
  * consecutive zero-page addresses is how EVERY 16-bit pointer on a 6502 is
@@ -737,6 +751,21 @@ export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
  * indirect-jump opcode "within reach" is not accepted either: an indirect jump
  * through some OTHER vector near two indexed loads is not evidence that those
  * loads feed it. The operand value must equal the vector that was built.
+ *
+ * WHY A CONSUMER OF SOME OTHER VECTOR IS NOT EVIDENCE ABOUT THIS PAIRING. The
+ * sentence above is only half the rule, and this branch previously held only
+ * that half: it demanded a consumer, then went looking for one by scanning the
+ * WHOLE window for any two zero-page store targets differing by exactly one
+ * with a jump naming the lower. A second, unrelated consecutive zero-page pair
+ * inside the same window defeats that outright --
+ * `lda lo,x : sta $fb : lda hi,x : sta $fc : sta $fd : sta $fe : jmp ($00fd)`
+ * builds the pairing's vector at `$fb`/`$fc`, builds a foreign one at
+ * `$fd`/`$fe`, jumps through the FOREIGN one, and was promoted on the strength
+ * of a link that has nothing to do with the tables being reconstructed. Two
+ * consecutive zero-page pairs in one window is not an exotic shape; a routine
+ * that sets up a source pointer and a destination pointer has two. So the
+ * address compared here is `vectorLow` -- the one the pairing's own two
+ * consumer stores built -- and no other.
  */
 function hasDispatchContext(insns: readonly Instruction[], start: number, reach: number, pairing: DispatchPairing): boolean {
   const end = Math.min(insns.length, start + reach + 1);
@@ -753,28 +782,21 @@ function hasDispatchContext(insns: readonly Instruction[], start: number, reach:
     }
   }
 
-  const zpStores: number[] = [];
   /** The pointer each indirect jump in the window dispatches THROUGH, collected
    * rather than treated as sufficient on sight -- see the doc comment. */
   const indirectJumpPointers: number[] = [];
   for (let k = start; k < end; k++) {
     const insn = insns[k]!;
     if (insn.opcode === 0x6c && insn.operand) indirectJumpPointers.push(insn.operand.value);
-    const zp = zeroPageStoreTarget(insn);
-    if (zp !== null) zpStores.push(zp);
   }
 
-  // `zeropage-vector-jumped-through`. `b - a === 1` (never `Math.abs`) so `a`
-  // is the LOWER of the two, which on a little-endian 6502 vector is the byte
-  // an indirect jump names. An exact numeric equality on the zero-page address
-  // -- `jmp ($00fb)` decodes to operand.value 0xfb and `sta $fb` to operand
-  // .value 0xfb -- never a string or hex-text comparison.
-  for (const a of zpStores) {
-    for (const b of zpStores) {
-      if (b - a !== 1) continue;
-      if (indirectJumpPointers.includes(a)) return true;
-    }
-  }
+  // `zeropage-vector-jumped-through`, decided against the PAIRING rather than
+  // against the window's contents: the vector compared is the one the pairing's
+  // OWN two consumer stores built, carried on the orientation as `vectorLow`.
+  // An exact numeric equality on the zero-page address -- `jmp ($00fb)` decodes
+  // to operand.value 0xfb and `sta $fb` to operand.value 0xfb -- never a string
+  // or hex-text comparison.
+  if (indirectJumpPointers.includes(pairing.oriented.vectorLow)) return true;
   return false;
 }
 
@@ -813,9 +835,10 @@ function resolveSplitOrientation(
 
   const firstBase = insns[firstIndex]!.operand!.value;
   const secondBase = insns[secondIndex]!.operand!.value;
+  const vectorLow = Math.min(firstZp, secondZp);
   return firstZp < secondZp
-    ? { loBase: firstBase, hiBase: secondBase }
-    : { loBase: secondBase, hiBase: firstBase };
+    ? { loBase: firstBase, hiBase: secondBase, vectorLow }
+    : { loBase: secondBase, hiBase: firstBase, vectorLow };
 }
 
 /**
