@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-08-PLAN.md
-last_updated: "2026-08-25T05:02:01.703Z"
+stopped_at: Completed 19-09-PLAN.md — Phase 19 gap-closure run complete
+last_updated: "2026-08-25T05:22:49.173Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 gap closure — 19-08 gated the Class-3 split-table scan on real dispatch context and seeded the descent only from proven targets (COV-01, COV-02)
-state_head: 9c9166db16921eb116d2a6d928df9ae2573ad990
+state_head: d8fd07907fda3a3f9a297f720091cf5190ec66e7
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 20
 ---
 
@@ -69,9 +69,9 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 8 of 9 complete (19-09 remaining)
-Status: Wave 2 in progress — 19-08 complete, 19-09 next
-Last activity: 2026-08-25 — 19-08 gated the split-table scan and gave it the negative control it never had (COV-01, COV-02)
+Plan: 9 of 9 complete
+Status: Gap-closure run COMPLETE (19-06 … 19-09). Next: Phase 19 re-verification, which is also the named condition that lifts the `[skip release]` hold.
+Last activity: 2026-08-25 — 19-09 committed the generated false-positive census control pair, re-pinned the fixture count at 8, and extended 19-VALIDATION.md (COV-01, COV-02)
 
 ## Performance Metrics
 
@@ -187,6 +187,7 @@ Last activity: 2026-08-25 — 19-08 gated the split-table scan and gave it the n
 | Phase 19 P06 | 22 min | 2 tasks | 2 files |
 | Phase 19 P07 | 2h | 3 tasks | 5 files |
 | Phase 19 P08 | 30 min | 2 tasks | 2 files |
+| Phase 19 P09 | 55 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -368,6 +369,7 @@ Recent decisions affecting current work:
 - [Phase 19]: Checkpoint decision: report shape narrow-and-add-sibling — discoveredTargets narrowed to proven-only, splitTableCandidates added as advisory sibling (19-08)
 - [Phase 19]: COVERAGE_SCHEMA_VERSION bumped 1 -> 2; nine-entry COVERAGE_REPORT_KEYS top-level set unchanged (19-08)
 - [Phase 19]: A proven class-3 split table additionally requires a lo/hi orientation resolved by its own store construction; otherwise it is advisory (19-08, WR-01)
+- [Phase 19]: 19-09: the false-positive census control pair writes its 57 data bytes out in full in BOTH literals rather than sharing a constant, so the identical-tail invariant is a real check an edit can break rather than one true by construction. Both plantable invariants were demonstrated throwing. — A shared data constant would make the 'differing ONLY in addressing mode' invariant vacuously true, reproducing in the generator the exact defect class the gap closure exists to remove.
 
 ### Pending Todos
 
@@ -568,6 +570,8 @@ guarded.
   Phase 10 criterion 4 / `R2000-06` deletion decision, which was earned against real
   illegal opcodes. See `docs/phase9-regenerator2000-probe-findings.md` § Accepted
   limits, entry 1.
+
+- ABS-02 reads Complete in REQUIREMENTS.md (line 131, checkbox line 46), set by 19-07's metadata commit 354bbfa via the automatic requirements.mark-complete step — a requirement marked complete by the run that fixed it. 19-09 reported it rather than editing (read-only over REQUIREMENTS.md by must_haves and threat T-19G-09-03). Phase 19 re-verification must treat ABS-02's Complete as unearned and re-decide it on the evidence.
 
 ## Deferred Items
 
@@ -860,8 +864,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T05:02:01.601Z
-Stopped at: Completed 19-08-PLAN.md
+Last session: 2026-08-25T05:22:25.385Z
+Stopped at: Completed 19-09-PLAN.md — Phase 19 gap-closure run complete
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
