@@ -91,6 +91,9 @@ interface FixtureStore {
   purpose: string;
   origin: number;
   size: number;
+  /** Declared ONLY by the false-positive census pair. The bound the census may
+   * not exceed is the fixture's own declaration, not a constant typed here. */
+  code_size?: number;
   expect_clean: boolean;
   expect_measure: string | null;
   symbols: R2000Symbol[];
@@ -935,16 +938,34 @@ test("bounded walk: the descent walker honours an explicit step bound and report
 });
 
 // ---------------------------------------------------------------------------
-// 9. The six committed controls
+// 9. The committed controls
 // ---------------------------------------------------------------------------
 
-test("six control fixtures are committed, each with a project file and a store file", () => {
+/** The pinned size of the committed control set: five findings controls, one
+ * non-vacuity control, and the two-fixture false-positive census pair. The
+ * number lives here and in `fixtures/coverage/README.md`, and both must agree
+ * with the directory count -- a stale count in either is the same defect class
+ * this phase's gap closure exists to remove. */
+const COMMITTED_CONTROL_FIXTURES = 8;
+
+test("the committed control set is exactly the pinned size, and every fixture carries a project file and a store file", () => {
   const dirs = fixtureDirs();
-  assert.equal(dirs.length, 6, `expected six committed control fixtures, found ${dirs.length}: ${dirs.join(", ")}`);
+  assert.equal(
+    dirs.length,
+    COMMITTED_CONTROL_FIXTURES,
+    `expected ${COMMITTED_CONTROL_FIXTURES} committed control fixtures, found ${dirs.length}: ${dirs.join(", ")}`,
+  );
   for (const dir of dirs) {
     const { store } = loadFixture(dir);
     assert.ok(readFileSync(join(FIXTURE_ROOT, dir, "project.regen2000proj"), "utf8").length > 0, `${dir}: project file is empty`);
     assert.equal(typeof store.expect_clean, "boolean", `${dir}: store.json must declare expect_clean`);
+    if (store.code_size !== undefined) {
+      // A fixture that declares a code size is asserted about NUMERICALLY, so
+      // it owes a reader a sentence saying what property it holds down. A bare
+      // number with no stated purpose is how a control decays into a constant.
+      assert.equal(typeof store.purpose, "string", `${dir}: a store declaring code_size must declare a purpose`);
+      assert.ok(store.purpose.trim().length > 0, `${dir}: a store declaring code_size must declare a NON-EMPTY purpose`);
+    }
   }
 });
 
@@ -990,6 +1011,111 @@ test("NC3 earns its place: the census does not move by one byte under a mass blo
   assert.equal(massSet.structural.unreached, good.structural.unreached);
   assert.ok(massSet.divergence.censusCodeStoreNotCode > 0);
   assert.equal(good.divergence.censusCodeStoreNotCode, 0);
+});
+
+const FP_INDEXED = "fp1-indexed-copy-loop";
+const FP_IMMEDIATE = "fp1b-immediate-copy-loop";
+
+/** The 64 payload bytes a fixture's project file actually carries, read back
+ * through the shipped decoder rather than re-derived from the generator. */
+function payloadOf(dir: string): Uint8Array {
+  const { projectPath } = loadFixture(dir);
+  const project = JSON.parse(readFileSync(projectPath, "utf8")) as { raw_data_base64: string };
+  return decodeRawData(project.raw_data_base64);
+}
+
+test("a false-positive control fixture is committed for the census, and the census declines to inflate on it", () => {
+  // The scan-level negative controls in section 8 prove the GATE declines an
+  // ordinary indexed copy loop. This is the REPORT-level statement of the same
+  // property, run through `buildCoverageReport()` on committed fixtures --
+  // which is where every other report-level control in this project lives, and
+  // where the gap ("the census does NOT inflate") is actually phrased.
+  const indexedStore = loadFixture(FP_INDEXED).store;
+  const immediateStore = loadFixture(FP_IMMEDIATE).store;
+
+  assert.equal(typeof indexedStore.code_size, "number", `${FP_INDEXED}: the bound must be DECLARED BY THE FIXTURE, not typed into this test`);
+  assert.equal(typeof immediateStore.code_size, "number", `${FP_IMMEDIATE}: the bound must be DECLARED BY THE FIXTURE, not typed into this test`);
+
+  const indexed = reportFor(FP_INDEXED);
+  const immediate = reportFor(FP_IMMEDIATE);
+
+  assert.equal(
+    indexed.structural.reachedAsInstruction,
+    immediate.structural.reachedAsInstruction,
+    `two committed programs with identical code content, differing ONLY in addressing mode, must report the same ` +
+      `structural.reachedAsInstruction. Pre-gate the indexed fixture reached 55 of its 64 bytes against 7 bytes of real code, ` +
+      `while the immediate twin reached 7: an 8x inflation of the headline structural measure, manufactured out of 57 bytes ` +
+      `of ordinary data. A number here that is neither 7 nor 55 is a rewrite, not a regression -- read the generator first.`,
+  );
+  assert.ok(
+    indexed.structural.reachedAsInstruction <= indexedStore.code_size!,
+    `${FP_INDEXED}: the census reached ${indexed.structural.reachedAsInstruction} bytes of a program whose store declares ` +
+      `${indexedStore.code_size} bytes of code. reachedAsInstruction means REACHED BY RECURSIVE DESCENT FROM A SEED, so it can ` +
+      `never exceed the code that is actually there (pre-gate: 55).`,
+  );
+  assert.ok(
+    immediate.structural.reachedAsInstruction <= immediateStore.code_size!,
+    `${FP_IMMEDIATE}: the census reached ${immediate.structural.reachedAsInstruction} bytes against a declared ${immediateStore.code_size}`,
+  );
+
+  // Two equal numbers alone would be satisfiable by an instrument that saw
+  // nothing at all in either fixture. State the ONE structural difference
+  // between the pair explicitly, so the equality above is the equality of two
+  // reports that DID see the difference and declined to act on it.
+  assert.equal(
+    indexed.dispatch.splitTableCandidates.length,
+    1,
+    `${FP_INDEXED}: the ungated lo/hi pairing must still be REPORTED as an advisory candidate -- discarding it would make the ` +
+      `instrument quieter rather than more honest`,
+  );
+  assert.equal(indexed.dispatch.splitTableCandidates[0]!.orientationResolved, false, "nothing in this payload determines which base holds the low byte");
+  assert.deepEqual(indexed.dispatch.splitTableCandidates[0]!.targets, [], "an unoriented pairing must emit NO targets");
+  assert.equal(immediate.dispatch.splitTableCandidates.length, 0, `${FP_IMMEDIATE}: the immediate twin has no indexed pair at all, so it has nothing to advise about`);
+
+  // The proven-target seam -- the ONE thing that may seed a descent -- must
+  // contribute nothing for either fixture. `provenDispatchTargets()` is read
+  // here rather than `dispatch.discoveredTargets`, for the reason the seam
+  // exists.
+  assert.deepEqual(provenDispatchTargets(indexed.dispatch), [], `${FP_INDEXED}: an ungated pairing must contribute nothing to the seam that seeds a descent`);
+  assert.deepEqual(provenDispatchTargets(immediate.dispatch), [], `${FP_IMMEDIATE}: nothing to contribute`);
+  assert.deepEqual(indexed.dispatch.splitTables, [], `${FP_INDEXED}: an ordinary copy loop is not a PROVEN split table (pre-gate: splitTables=1, discovered=8)`);
+  assert.deepEqual(indexed.dispatch.tableEntryAddresses, [], `${FP_INDEXED}: an ungated pairing must not claim a single byte as a table entry either`);
+});
+
+test("FP1b earns its place: without a committed twin, FP1's census could only be compared against a remembered number", () => {
+  // The whole gap-closure run exists to replace remembered numbers with
+  // measured ones. A lone indexed fixture asserting `reached <= 7` would be
+  // satisfied by an instrument that had quietly stopped censusing anything;
+  // the twin supplies the live baseline that makes the comparison mean
+  // something, and it is COMMITTED rather than built inline so the pair's
+  // relationship is a property of the repository.
+  const indexed = loadFixture(FP_INDEXED).store;
+  const immediate = loadFixture(FP_IMMEDIATE).store;
+
+  assert.equal(indexed.origin, immediate.origin, "the pair must sit at the same origin, or their censuses are not comparable");
+  assert.equal(indexed.size, immediate.size, "the pair must be the same length");
+  assert.equal(indexed.code_size, immediate.code_size, "the pair must declare the same code size");
+
+  const a = payloadOf(FP_INDEXED);
+  const b = payloadOf(FP_IMMEDIATE);
+  const codeSize = indexed.code_size!;
+  assert.equal(a.length, b.length);
+  assert.notDeepEqual(
+    [...a.subarray(0, codeSize)],
+    [...b.subarray(0, codeSize)],
+    "the prologues must actually DIFFER -- two identical programs would make the comparison vacuous",
+  );
+  assert.deepEqual(
+    [...a.subarray(codeSize)],
+    [...b.subarray(codeSize)],
+    "the 57 data bytes must be identical in the COMMITTED payloads, not merely in the generator that wrote them",
+  );
+
+  // And the baseline is a live measurement, not a constant: the twin must
+  // reach something, or "equal to the twin" would be satisfiable by zero.
+  const immediateReport = reportFor(FP_IMMEDIATE);
+  assert.ok(immediateReport.structural.reachedAsInstruction > 0, "the baseline half of the pair must actually reach something");
+  assert.equal(immediateReport.structural.reachedAsInstruction, codeSize, "the immediate twin's every code byte is reached, and nothing beyond it");
 });
 
 // ---------------------------------------------------------------------------
