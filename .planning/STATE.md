@@ -3,21 +3,23 @@ gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: Own the substrate
 status: planning
-last_updated: "2026-08-25T15:24:41.820Z"
+last_updated: "2026-08-25T16:05:00.000Z"
 last_activity: 2026-08-25
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
+current_phase: 23
+current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-23 at the start of milestone v0.5.0)
+See: .planning/PROJECT.md (updated 2026-08-25 at the start of milestone v0.6.0)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -29,7 +31,16 @@ the verdict, and a specific reversal condition. Pinned by
 `docs-core-value-decision.test.ts`. It still says nothing about findings that
 outlive the session; that omission is now a decision rather than a default.*
 
-**Shipped:** v0.4.0 Debt discharged, decisions settled — 2026-08-23 (6 phases,
+**Shipped:** v0.5.0 Persistent Session and the Coverage Instrument —
+2026-08-25 (2 executed phases, 27 plans, 61 tasks, 13/27 requirements,
+`override_closeout`). A regenerator2000 session now survives many tool calls
+with crash recovery and a FIFO queue; all five upstream analyze procedures are
+absorbed and attributed at a pinned commit as a seventh skill joins the set; and
+a derived-from-bytes coverage census exists that the store's own block table
+cannot move by a single byte. Phases 20-22 were **cut** on 2026-08-25 by the
+dxa+Ghidra pivot — nothing was attempted and failed, and their 14 requirements
+(DECOMP-*, BUILD-*, EQUIV-*) are held for v0.7.0.
+**Previously:** v0.4.0 Debt discharged, decisions settled — 2026-08-23 (6 phases,
 44 plans, 119 tasks, 16/16 requirements, audit round 1 `tech_debt` with zero
 blockers and zero open gaps). The inherited ledger drained from 19 items to
 **0**; `FORK-01` (**retain**) and `CORE-01` (**keep-dated**) are dated decisions
@@ -37,36 +48,40 @@ pinned by their own guards; `scripts/audit-gate.mjs` makes a clean audit status
 impossible over a red docs guard, and was observed refusing all four write
 routes; and the plugin payload now lives under `src/` with both tarballs still
 validated.
-**Previously:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
+**Before that:** v0.3.0 regenerator2000 static-analysis backend — 2026-08-21 (4
 phases, 36 plans, 12/12 in-scope requirements, audit round 2 `passed`). Recon
 findings are queryable state: 17 curated `r2000_*` tools and 7 `vice-mcp r2000`
 CLI verbs over a persistent annotation store, container-side and structurally
 incapable of touching VICE.
-**Before that:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
+**And before that:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 19 — Absorbed Procedures and the Coverage Instrument
-27 v0.5.0 requirements (SESS/SURF/ABS/COV/DECOMP/BUILD/EQUIV), all 27 mapped to
-five phases in `.planning/ROADMAP.md` (Phases 18-22). Phase 18 is verified and
-complete; Phase 19 has five plans, of which 19-01 (the absorption tracer) and
-19-02 (the remaining four procedures plus the installer notices document) are
-executed — all five upstream analyze procedures are now absorbed and attributed,
-closing ABS-01 and ABS-02. ROADMAP.md still carries all three shipped
-milestones collapsed, with full detail in
-`milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md` and
-`milestones/v0.4.0-ROADMAP.md`.
-**Phase numbering continues from 17 — v0.5.0 starts at Phase 18**, and numbers
-are never reused, including the dissolved ones. The Deferred Items ledger below
-reads **0 open**: the 19 items inherited at the v0.3.0 close were discharged by
-v0.4.0, which is what it existed to do.
+**Current focus:** Phase 23 — The Real-Release Gate (Go/Degrade/No-Go)
+Milestone **v0.6.0 Own the substrate**, opened 2026-08-25. 32 requirements
+(PROOF/DXA/GHID/OPC/STORE/CUT/AUTO), all 32 mapped to four phases in
+`.planning/ROADMAP.md` (Phases **23-26**) — Phase 23 is a standalone
+go / degrade / no-go gate whose deliverable is evidence, not product code, on
+the pattern Phase 9 used. Phases 24-26 build the two engines, the annotation
+store and cutover, and automatic annotation respectively. **Nothing in Phases
+24-26 may be planned as though Phase 23's verdict is already known** — a
+`degrade` narrows scope and a `no-go` changes what the milestone is.
+`DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04` are deliberately v0.7.0 and
+are not mapped. ROADMAP.md carries all four shipped milestones collapsed, with
+full detail in `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md`,
+`milestones/v0.4.0-ROADMAP.md` and `milestones/v0.5.0-ROADMAP.md`.
+**Phase numbering starts at 23 — Phases 20, 21 and 22 were cut on 2026-08-25
+and are never reused**, and no number is ever reused, including the dissolved
+ones. The Deferred Items ledger below reads **0 open** pending todos; the
+suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-08-25 — Milestone v0.6.0 started
+Phase: 23 — The Real-Release Gate (Go/Degrade/No-Go)
+Plan: Not started — no plans written yet
+Status: Roadmap complete, ready to plan Phase 23
+Progress: 0/4 phases complete (v0.6.0)
+Last activity: 2026-08-25 — v0.6.0 roadmap created, 32/32 requirements mapped to Phases 23-26
 
 ## Performance Metrics
 
@@ -224,6 +239,41 @@ Last activity: 2026-08-25 — Milestone v0.6.0 started
   granularity calibration (4-6 phases) without changing what has to be built
   or in what order. Full sequencing rationale recorded in ROADMAP.md ->
   "Sequencing Rationale (v0.5.0)".
+
+- **v0.6.0 opened as Phases 23-26 (2026-08-25), starting at 23 rather than at
+  20.** Phases 20, 21 and 22 were cut at the v0.5.0 close, dissolved by the
+  dxa+Ghidra pivot rather than abandoned; their numbers are never reused. The
+  four-phase shape is: a standalone real-release go/degrade/no-go gate (23),
+  the two engines (24), the annotation store and the r2000 cutover (25), and
+  automatic annotation (26).
+- v0.6.0: the assumption gate is a **phase**, not a criterion inside one — the
+  second time this project has made that call (Phase 9 was the first, and its
+  gate fired for real, returning `degrade`). `PROOF-05`'s failure mode is
+  *reconsider the milestone*, not *replan the phase*: every number behind the
+  dxa+Ghidra pivot comes from one 279-byte fixture written by the same person
+  testing it, and if it does not survive real cracked code, Phases 24-26 are
+  not the same phases.
+- v0.6.0: `OPC-01..03` (the 105-byte undocumented-opcode SLEIGH extension) is
+  kept **inside** Phase 24 rather than split into its own phase. Its
+  verification is not separable — `OPC-03` can only be checked by running the
+  harness `GHID-01` delivers, and `GHID-04`'s acceptance (structural facts from
+  real cracked code) is not honestly claimable while 105 opcode bytes are
+  undecodable, since crack and packer code is exactly where that gap bites. A
+  split would force Phase 24 to close on a claim its own corpus contradicts.
+  Full rationale in ROADMAP.md → "Sequencing Rationale (v0.6.0)".
+- v0.6.0: the cutover (`CUT-01..03`) rides with the annotation store in Phase 25
+  rather than becoming a fifth phase. The deletion is only safe once a
+  replacement demonstrably produces the same facts, and `CUT-02`'s reuse
+  decisions are decisions about what the store is built out of. Split apart,
+  Phase 25 would end with the replacement standing beside its predecessor —
+  the exact state `CUT-01` exists to prevent.
+- v0.6.0: four new **Standing Constraints** added to ROADMAP.md at the open,
+  each a hazard demonstrated on a committed fixture during the pivot
+  exploration and each of which fails *silently*: Ghidra deletes hardware
+  writes without volatile I/O blocks; structural facts live in
+  `DecompInterface`, never `DataTypeManager`; a `memmap.json` lookup is
+  bank-parameterised and narrowest-range-wins; dxa is the discovery engine and
+  nothing more.
 
 ### Decisions
 
@@ -906,8 +956,24 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T14:04:51.925Z
-Stopped at: Phase 19 complete, ready to plan Phase 20
+Last session: 2026-08-25T16:05:00.000Z
+Stopped at: **v0.6.0 roadmap created.** 32/32 requirements (PROOF-01..05,
+  DXA-01..03, GHID-01..05, OPC-01..03, STORE-01..06, CUT-01..03, AUTO-01..07)
+  mapped to four phases (**23-26**) in `.planning/ROADMAP.md`, each with
+  Goal / Depends-on / Requirements / Success Criteria plus per-phase notes, and
+  a "Sequencing Rationale (v0.6.0)" section justifying the four-phase shape,
+  the gate-as-a-phase call, and `OPC-*` staying inside Phase 24.
+  `.planning/REQUIREMENTS.md`'s Traceability table and Coverage block are
+  filled in (32 mapped, 0 unmapped, verified mechanically in both directions).
+  Four new Standing Constraints were added to ROADMAP.md, all silent-failure
+  hazards from the pivot exploration.
+  Next: `/gsd-plan-phase 23`. Read `PROOF-05`'s gate discipline first — Phase 23
+  builds no product code, and nothing in Phases 24-26 may be planned as though
+  its verdict is already known.
+Previously stopped at: v0.5.0 closed and archived 2026-08-25 — Phase 19
+  complete, Phases 20-22 cut by the dxa+Ghidra pivot, milestone v0.6.0 opened
+  and its 32 requirements defined.
+Before that: the Phase 18 discussion covered
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
@@ -923,14 +989,14 @@ Stopped at: Phase 19 complete, ready to plan Phase 20
   planted-violation gates are mandated (save-survives-SIGKILL, lost-update,
   settings-no-revert). Phase 18's plans are not written yet.
   Next: `/gsd-plan-phase 18`.
-Previously stopped at: **v0.5.0 roadmap created.** 27/27 requirements
+Earlier: **v0.5.0 roadmap created.** 27/27 requirements
   (SESS-01..04, SURF-01..03, ABS-01..04, COV-01..02, DECOMP-01..04,
   BUILD-01..06, EQUIV-01..04) mapped to five phases (18-22) in
   `.planning/ROADMAP.md`, with per-phase Goal/Depends-on/Requirements/Success
   Criteria plus a "Sequencing Rationale (v0.5.0)" section justifying the
   5-phase shape and EQUIV-01's placement. `.planning/REQUIREMENTS.md`'s
   Traceability table and Coverage block are filled in (27 mapped, 0 unmapped).
-Before that: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
+Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed and
   archived (2026-08-23). Six phases (12-17), 44/44 plans, 119 tasks, 16/16
   requirements. Final audit round 1, `tech_debt` — zero blockers, zero open
   gaps; the 16 items the pre-close artifact audit reported were acknowledged
@@ -947,4 +1013,11 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the gate: `/gsd-plan-phase 23` — The Real-Release Gate (Go/Degrade/No-Go)
+- Before planning: secure the Phase 23 corpus. `c64-provenance-diff` runs against
+  a *consuming* project's `recovery/` tree (`RELEASES.json` plus `.bin` dumps and
+  their `.map.json` manifests); nothing in this repository is a real cracked
+  release. If real releases cannot be obtained, that fact is a gate input, not a
+  footnote — measuring on another self-authored fixture reproduces the exact
+  defect `PROOF-01` exists to remove.
+- Do not plan Phases 24, 25 or 26 until Phase 23's verdict is recorded.

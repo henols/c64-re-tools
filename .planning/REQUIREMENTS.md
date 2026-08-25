@@ -105,17 +105,68 @@ Deferred to v0.7.0 and beyond. Tracked, not in this roadmap.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements. Every v0.6.0 requirement maps to exactly
+one phase; no requirement is carried by two, and none is orphaned.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | — |
+| PROOF-01 | Phase 23 | Pending |
+| PROOF-02 | Phase 23 | Pending |
+| PROOF-03 | Phase 23 | Pending |
+| PROOF-04 | Phase 23 | Pending |
+| PROOF-05 | Phase 23 | Pending |
+| DXA-01 | Phase 24 | Pending |
+| DXA-02 | Phase 24 | Pending |
+| DXA-03 | Phase 24 | Pending |
+| GHID-01 | Phase 24 | Pending |
+| GHID-02 | Phase 24 | Pending |
+| GHID-03 | Phase 24 | Pending |
+| GHID-04 | Phase 24 | Pending |
+| GHID-05 | Phase 24 | Pending |
+| OPC-01 | Phase 24 | Pending |
+| OPC-02 | Phase 24 | Pending |
+| OPC-03 | Phase 24 | Pending |
+| STORE-01 | Phase 25 | Pending |
+| STORE-02 | Phase 25 | Pending |
+| STORE-03 | Phase 25 | Pending |
+| STORE-04 | Phase 25 | Pending |
+| STORE-05 | Phase 25 | Pending |
+| STORE-06 | Phase 25 | Pending |
+| CUT-01 | Phase 25 | Pending |
+| CUT-02 | Phase 25 | Pending |
+| CUT-03 | Phase 25 | Pending |
+| AUTO-01 | Phase 26 | Pending |
+| AUTO-02 | Phase 26 | Pending |
+| AUTO-03 | Phase 26 | Pending |
+| AUTO-04 | Phase 26 | Pending |
+| AUTO-05 | Phase 26 | Pending |
+| AUTO-06 | Phase 26 | Pending |
+| AUTO-07 | Phase 26 | Pending |
+
+**Phase names:**
+
+- **Phase 23** — The Real-Release Gate (Go/Degrade/No-Go)
+- **Phase 24** — The Two Engines
+- **Phase 25** — The Annotation Store and the Cutover
+- **Phase 26** — Automatic Annotation
 
 **Coverage:**
 - v0.6.0 requirements: 32 total
-- Mapped to phases: 0
-- Unmapped: 32 ⚠️
+- Mapped to phases: 32
+- Unmapped: 0 ✓
+
+**Per-phase counts:** Phase 23 — 5 (PROOF-01..05); Phase 24 — 11 (DXA-01..03,
+GHID-01..05, OPC-01..03); Phase 25 — 9 (STORE-01..06, CUT-01..03); Phase 26 — 7
+(AUTO-01..07).
+
+**Not mapped, deliberately.** `DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04`
+are v0.7.0 scope and are not v0.6.0 requirements — see the Scope note above and
+`## Future Requirements`. The two open research questions in
+`research/questions.md` are inputs to Phase 23, not requirements: the first is
+what `PROOF-01..04` measure, and the second (does Ghidra's 6502 decompiler
+degrade on illegal opcodes in real code) is answered deliberately by `OPC-03`
+in Phase 24 rather than carried as its own requirement.
 
 ---
 *Requirements defined: 2026-08-25*
-*Last updated: 2026-08-25 after initial definition*
+*Last updated: 2026-08-25 — roadmap created, traceability populated (32/32 mapped to Phases 23-26)*
