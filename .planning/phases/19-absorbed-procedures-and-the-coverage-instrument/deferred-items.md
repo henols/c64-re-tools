@@ -88,15 +88,15 @@ block records why. The text above is left byte-unchanged.
 guards `audit-integrity.test.ts`'s D-12-02 message names was run individually at `1494ade`
 (`cd src/mcp/vice && node --test <guard>.test.ts`), and every exit code was recorded:
 
-| Guard | Exit | Observed |
-|---|---|---|
-| `docs-review-disposition.test.ts` | 0 | 7 tests / 7 pass / 0 fail |
-| `docs-core-value-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
-| `docs-dangling-refs.test.ts` | 0 | 8 tests / 8 pass / 0 fail |
-| `docs-deferred-ledger.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
-| `docs-fork-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
-| `docs-linerefs.test.ts` | 0 | 3 tests / 3 pass / 0 fail |
-| `docs-r2000-decisions.test.ts` | 0 | 5 tests / 5 pass / 0 fail |
+| Guard | Exit | Observed | Status |
+|---|---|---|---|
+| `docs-review-disposition.test.ts` | 0 | 7 tests / 7 pass / 0 fail | resolved |
+| `docs-core-value-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail | resolved |
+| `docs-dangling-refs.test.ts` | 0 | 8 tests / 8 pass / 0 fail | resolved |
+| `docs-deferred-ledger.test.ts` | 0 | 6 tests / 6 pass / 0 fail | resolved |
+| `docs-fork-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail | resolved |
+| `docs-linerefs.test.ts` | 0 | 3 tests / 3 pass / 0 fail | resolved |
+| `docs-r2000-decisions.test.ts` | 0 | 5 tests / 5 pass / 0 fail | resolved |
 
 **Genuinely red today: zero of seven.** The claim above that six of the seven were only a cascade
 artefact is confirmed by measurement, and the seventh — `docs-review-disposition.test.ts`, the one
@@ -174,6 +174,10 @@ is unchanged.
 
 ## `vice-proxy.test.ts` — the same concurrency-flake mechanism, a second file (observed 2026-08-25 by 19-15)
 
+- **Status:** acknowledged
+  (v0.5.0 close, 2026-08-25 — real and unfixed; owner is a plan that owns
+  `vice-proxy.ts`/`vice-proxy.test.ts`. Carried forward, not closed.)
+
 **Out of scope for 19-15 and deliberately not fixed here.** Two full-suite runs during this plan's
 verification came back `# tests 2585 / # pass 2539 / # fail 1` with these two subtests red:
 
@@ -201,6 +205,9 @@ timeout from a plan fenced out of that file. Recorded here rather than explained
 ---
 
 ## The same concurrency flake, observed in a SECOND file under plan 19-18
+
+- **Status:** acknowledged
+  (v0.5.0 close, 2026-08-25 — same mechanism as above; carried forward.)
 
 `cd src/mcp/vice && npm test` at the close of plan 19-18: **2627 tests, 2581 pass, 1 fail, 40
 skipped, 5 todo**, `duration_ms 155534`. The single red was
@@ -329,14 +336,14 @@ contention.
 
 **The round-4 tally, counted from the five plan SUMMARYs rather than from memory:**
 
-| Plan | Full-suite runs | Observed | Which flake |
-|---|---|---|---|
-| 19-15 | 2 | `# tests 2585 / # pass 2539 / # fail 1` on **both** | `vice-proxy.test.ts:1594` and `:2260` |
-| 19-16 | 1 | `# tests 2589 / # pass 2544 / # fail 0` | none |
-| 19-17 | 1 | `# tests 2611 / # pass 2566 / # fail 0` | none |
-| 19-18 | 1 | `# tests 2627 / # pass 2581 / # fail 1` | `r2000-session.test.ts` (item 3) |
-| 19-20 | 2 | 2589 pass and 2593 pass, **both `# fail 0`** | none |
-| 19-19 | 1 | `# tests 2638 / # pass 2593 / # fail 0` | none |
+| Plan | Full-suite runs | Observed | Which flake | Status |
+|---|---|---|---|---|
+| 19-15 | 2 | `# tests 2585 / # pass 2539 / # fail 1` on **both** | `vice-proxy.test.ts:1594` and `:2260` | resolved |
+| 19-16 | 1 | `# tests 2589 / # pass 2544 / # fail 0` | none | resolved |
+| 19-17 | 1 | `# tests 2611 / # pass 2566 / # fail 0` | none | resolved |
+| 19-18 | 1 | `# tests 2627 / # pass 2581 / # fail 1` | `r2000-session.test.ts` (item 3) | resolved |
+| 19-20 | 2 | 2589 pass and 2593 pass, **both `# fail 0`** | none | resolved |
+| 19-19 | 1 | `# tests 2638 / # pass 2593 / # fail 0` | none | resolved |
 
 **Eight full-suite runs across round 4, three of them red, and every red was one of these two
 files.** Standalone, neither has ever been observed red: 19-15 measured `vice-proxy.test.ts` at

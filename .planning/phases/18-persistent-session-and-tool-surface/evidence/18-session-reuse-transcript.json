@@ -1,13 +1,13 @@
 {
-  "recordedAt": "2026-08-24T09:38:07.372Z",
+  "recordedAt": "2026-08-25T14:38:52.966Z",
   "r2000Bin": "regenerator2000",
   "argv": [
     "--mcp-server-stdio",
-    "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/.r2000-spawn-seam-test-live-FqZ8j9/session-reuse.regen2000proj"
+    "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/.r2000-spawn-seam-test-live-LAnYv6/session-reuse.regen2000proj"
   ],
   "assertNoViceFlagRanBeforeChildExisted": true,
-  "pidAfterCall1": 2793780,
-  "pidAfterCall2": 2793780,
+  "pidAfterCall1": 3220361,
+  "pidAfterCall2": 3220361,
   "samePid": true,
   "note": "D18-02 proof, captured live: assertNoViceFlag(argv) ran against buildMcpServerStdioArgs()'s output before any child existed for this project path, and a second r2000_get_binary_info call reached the same held child (same pid) as the first -- driven by r2000-spawn-seam.test.ts against a real regenerator2000 binary."
 }

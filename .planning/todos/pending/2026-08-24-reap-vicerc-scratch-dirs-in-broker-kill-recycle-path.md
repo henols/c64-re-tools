@@ -4,8 +4,13 @@ title: Reap vicerc scratch dirs in broker kill/recycle path
 area: broker
 severity: minor
 files:
+
   - src/mcp/vice/broker-launch.mts:329
   - src/mcp/vice/broker-launch.mts:318-327
+
+audit_acknowledged:
+  milestone: v0.5.0
+  at: 2026-08-25
 ---
 
 ## Problem
@@ -54,19 +59,25 @@ Implement reaping where the source comment says it belongs: the broker's
 actually exited. The fix does **not** go at `:329`.
 
 Sketch:
+
 - Record `scratchConfigDir` on the `InstanceRecord` alongside `pid`/`port`, so
   the owning path can find it later.
+
 - On confirmed process exit (kill, recycle, and crash-supervision respawn), and
   only after exit is confirmed, `rm -rf` the recorded dir.
+
 - Reap orphans at broker startup: dirs matching the prefix whose recorded
   instance is gone. Guard against deleting a dir belonging to a live pid.
 
 Constraints to respect:
+
 - `broker-launch.mts` is `.mts`, compiled by `build.ts` into committed
   `resources/*.mjs`; `resources-sync.test.ts` fails CI on drift. Any edit
   requires regenerating and committing the artifact.
+
 - Stock-only today (`backend === "stock"`), but keep BACK-02 in mind: the fork
   path must stay bit-for-bit unchanged.
+
 - Update the `:318-327` header comment — leaving it saying "deliberately does
   NOT clean up" after adding cleanup would be actively misleading.
 

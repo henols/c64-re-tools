@@ -855,6 +855,9 @@ resurfaces at the next `audit-open` scan and must be acknowledged again.
 
 **Counts:** 16 newly acknowledged, 0 carried forward from a prior close.
 
+
+**v0.5.0 close (2026-08-25): 5 newly acknowledged, 16 carried forward from prior closes — 21 suppressed in total.** A further 13 rows the scanner had been reading as deferred items were NOT suppressed but corrected: they are evidence tables (guard exit codes in phase 19 item 2, the round-4 flake tally in item 6), over-read because that file's title is an `#` heading so the scanner treats the whole document as the Deferred Items section. They now carry an explicit `resolved` status column. The three genuinely-open entries above are load-induced test flakes, real and unfixed, carried forward rather than closed.
+
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
 | uat_gaps | 03/03-HUMAN-UAT.md | partial (0 pending scenarios) | 2026-08-23 | v0.4.0 |
@@ -873,6 +876,11 @@ resurfaces at the next `audit-open` scan and must be acknowledged again.
 | deferred_items | 07/deferred-items.md: `07-10` Route A `CPUHISTORY_GET` decode mismatch → its own Resolution entry records the corrected wire layout, the classification guard and the live 511,061-cycle proof, and states "Nothing from this entry remains open" | acknowledged | 2026-08-23 | v0.4.0 |
 | deferred_items | 08.2/deferred-items.md: `D-1` `repo-root.test.ts`'s "not under .claude" assertion false-fails when the suite runs from inside a Claude Code worktree | acknowledged | 2026-08-23 | v0.4.0 |
 | deferred_items | 16/deferred-items.md: `16-08` pre-existing `npm test` failures → both cascading guards went green when plan 16-10 landed (2386 tests / 0 fail), corrected in the entry itself | acknowledged | 2026-08-23 | v0.4.0 |
+| uat_gaps | 18/18-HUMAN-UAT.md | passed (0 pending scenarios) | 2026-08-25 | v0.5.0 |
+| todos | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path.md | (presence-only) | 2026-08-25 | v0.5.0 |
+| deferred_items | 18/deferred-items.md: two load-induced full-suite flakes (broker-e2e, r2000-mcp-client) | acknowledged | 2026-08-25 | v0.5.0 |
+| deferred_items | 19/deferred-items.md: vice-proxy.test.ts:1594 and :2260 concurrency flake | acknowledged | 2026-08-25 | v0.5.0 |
+| deferred_items | 19/deferred-items.md: the same flake observed in a second file under 19-18 | acknowledged | 2026-08-25 | v0.5.0 |
 
 **On the three `deferred_items` rows.** Two of the three read as genuinely closed
 in their own text (07's Resolution and 16's orchestrator correction); they are

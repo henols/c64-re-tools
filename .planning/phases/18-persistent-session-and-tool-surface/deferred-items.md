@@ -60,6 +60,10 @@ substitute for that teardown. Measured at this gate: no
 files run individually, nor the full suite.
 
 ## 2. Two flaky (non-reproducible) failures observed during a full-suite run
+
+- **Status:** acknowledged
+  (v0.5.0 close, 2026-08-25 — load-induced test flakiness on a shared host,
+  not a regression; carried forward rather than fixed.)
    under heavy concurrent load — not real regressions
 
 Running the full suite with all ~24 test files' default parallelism (via the
