@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 20 plans — 17/20 executed (5/5 original, 4/4 first-round gap closure, 5/5 second-round gap closure: 19-14, 19-10, 19-11, 19-12, 19-13, and 3/6 of the third gap-closure round: 19-15, 19-16, 19-17), with 19-18 … 19-20 outstanding
+**Plans**: 20 plans — 18/20 executed (5/5 original, 4/4 first-round gap closure, 5/5 second-round gap closure: 19-14, 19-10, 19-11, 19-12, 19-13, and 4/6 of the third gap-closure round: 19-15, 19-16, 19-17, 19-18), with 19-19 … 19-20 outstanding
 
 **Wave 1**
 
@@ -261,7 +261,7 @@ under it.
 
 **Gap-closure wave 4** *(blocked on gap-closure wave 3)*
 
-- [ ] 19-18-PLAN.md — re-key control identity from shape to (shape × route), drop the disjunction round 3 leaked through, and derive the route set from source
+- [x] 19-18-PLAN.md — re-key control identity from shape to (shape × route), drop the disjunction round 3 leaked through, and derive the route set from source
 
 **Gap-closure wave 5** *(blocked on gap-closure wave 4)*
 
@@ -400,7 +400,7 @@ in a milestone archive.
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
 | 18. Persistent Session and Tool Surface | v0.5.0 | 7/7 | Complete | 2026-08-24 |
-| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 17/20 | In Progress|  |
+| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 18/20 | In Progress|  |
 | 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |
 | 22. Equivalence and Modifiability | v0.5.0 | TBD | Not started | - |
