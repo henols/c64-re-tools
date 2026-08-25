@@ -550,26 +550,51 @@ function materialiseShape(
 }
 
 /**
- * The index this family's `sample`-th draw takes on one generative axis.
- *
- * Each axis is walked by its OWN evenly-spaced sweep over its own length, and
- * the sweeps are decorrelated by rotating the sample index through a multiplier
- * coprime to `SAMPLES_PER_FAMILY` (so the rotation is a bijection and the sweep
- * stays even). Rotating rather than reusing one linear index is what stops the
- * axes being sampled in lockstep -- with a single index, a family's whole draw
- * would sit on one diagonal of the product space and the INTERLEAVING axis in
- * particular would collapse to a handful of placements.
+ * A deterministic 32-bit avalanche mix. Pure, reproducible, and dependency-free
+ * -- the corpus must render byte-identically on every run, so nothing here may
+ * read a clock or a random source.
  */
-function axisIndex(sample: number, axisLength: number, rotation: number): number {
-  if (axisLength <= 1) return 0;
-  const rotated = (sample * rotation) % SAMPLES_PER_FAMILY;
-  return Math.floor((rotated * axisLength) / SAMPLES_PER_FAMILY);
+function mix32(value: number): number {
+  let x = value | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  return (x ^ (x >>> 16)) >>> 0;
 }
 
-/** Rotations, each coprime to `SAMPLES_PER_FAMILY` (18 = 2 * 3 * 3). */
-const PLACEMENT_ROTATION = 1;
-const PERMUTATION_ROTATION = 7;
-const NOP_PLAN_ROTATION = 11;
+/**
+ * The index this family's `sample`-th draw takes on one generative axis.
+ *
+ * WHY A MIXED DRAW RATHER THAN A LINEAR SWEEP, and this was measured twice
+ * rather than reasoned about. Any scheme of the form "rotate the sample index by
+ * a constant, then scale it onto the axis" maps an ARITHMETIC PROGRESSION in the
+ * sample index to an arithmetic progression on the axis. The stratum index is
+ * exactly such a progression -- the terminator is `stratumIndex % 3` -- so the
+ * terminator axis stayed locked to a stride on the ORDER axis no matter which
+ * coprime multiplier was chosen. Concretely: with one multiplier every
+ * permutation whose two consumer stores were adjacent landed on the indirect
+ * jumps and never on `rts`, and with another the same set landed on `rts` and
+ * never on either jump. Each time, one of the two branches under demonstration
+ * lost its entire GENERATED coverage while the arithmetic looked even.
+ *
+ * An avalanche mix has no such structure. The draw is still a pure function of
+ * (family, sample, axis) -- so the corpus is byte-reproducible, which is
+ * asserted -- but a progression on the input is not a progression on the output.
+ *
+ * The FAMILY is part of the seed, deliberately. Without it, the eight core
+ * combos sharing an attachment set would draw the SAME permutations and the same
+ * nop placements, differing only in their two load fragments -- seven eighths of
+ * the corpus's ORDER coverage duplicated. Seeding by family makes those eight
+ * families explore eight different regions of the permutation space.
+ */
+function axisIndex(familyIndex: number, sample: number, axisLength: number, axisSeed: number): number {
+  if (axisLength <= 1) return 0;
+  return mix32((familyIndex * 0x9e37 + sample) * 2654435761 + axisSeed) % axisLength;
+}
+
+/** Distinct per-axis seeds, so two axes drawn at the same sample do not agree. */
+const PLACEMENT_AXIS_SEED = 0x51ed;
+const PERMUTATION_AXIS_SEED = 0x27d4;
+const NOP_PLAN_AXIS_SEED = 0x1b873;
 
 /**
  * The three placement KINDS each stratum draws, and why an even sweep alone is
@@ -808,9 +833,9 @@ function enumerateArrangements(family: Family, familyIndex: number): Arrangement
             ? canonical
             : kind === "maximal"
               ? maximal
-              : placements[axisIndex(sample, placements.length, PLACEMENT_ROTATION)]!;
-        const perm = perms[axisIndex(sample, perms.length, PERMUTATION_ROTATION)]!;
-        const plan = plans[axisIndex(sample, plans.length, NOP_PLAN_ROTATION)]!;
+              : placements[axisIndex(familyIndex, sample, placements.length, PLACEMENT_AXIS_SEED)]!;
+        const perm = perms[axisIndex(familyIndex, sample, perms.length, PERMUTATION_AXIS_SEED)]!;
+        const plan = plans[axisIndex(familyIndex, sample, plans.length, NOP_PLAN_AXIS_SEED)]!;
         stratum.push([...applyNops(materialiseShape(family, perm, placement), plan), terminator]);
       }
       strata.push(stratum);
