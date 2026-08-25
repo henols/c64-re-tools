@@ -29,6 +29,16 @@ denied), so it behaves identically on both backends. Register writes render as
 generated bit-name enums, symbols flow both ways between the store and a live
 emulator, and the flat linear `toacme` decoder this replaced is deleted.
 
+**As of v0.5.0 that session persists, and as of v0.6.0 the substrate under it is
+changing.** The r2000 project stays open across many tool calls with crash
+recovery, a FIFO call queue and save-before-return persistence; all five upstream
+analyze procedures are absorbed into this project's own skills (now seven,
+including `routine-queue-walker`). But the dxa+Ghidra pivot decided 2026-08-24
+reverses D-R1/D-R2: **v0.6.0 replaces regenerator2000 as the analysis engine**
+with dxa for discovery, Ghidra headless for semantic analysis, and an annotation
+store this project owns. The paragraph above describes what ships today and stays
+true until v0.6.0 closes.
+
 ## Core Value
 
 A Claude session can reliably drive a real C64 emulator to reverse-engineer a
@@ -142,25 +152,30 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 - ✓ Core Value is confirmed on two milestones of evidence, resolving the flag left at the v0.3.0 close — v0.4.0 Phase 17 (`CORE-01` decided **keep-dated** at a `gate="blocking-human"` checkpoint, with the case against the verdict carried rather than resolved and a specific reversal condition stated; pinned by `docs-core-value-decision.test.ts`. The provenance record was itself corrected by plan 17-04 after UAT gap `G-17-1` — see the `*Provenance.*` paragraph under Core Value)
 - ✓ The plugin payload lives under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed — v0.4.0 Phase 16 (`PKG-01`..`PKG-04`; both published tarballs still validated by `scripts/check-npm-packages.mjs`)
 
+- ✓ A regenerator2000 project stays open across many tool calls in one working session, with crash detection between calls, save-before-return persistence and a single-owner write path — v0.5.0 Phase 18 (`SESS-01`..`SESS-04`)
+- ✓ The curated `r2000_*` surface covers what the absorbed procedures actually call, `r2000_get_address_details`'s D-32 refusal is re-decided (D-36 supersedes D-32; client-side composition), and which packer a binary used is a recon finding — v0.5.0 Phase 18 (`SURF-01`..`SURF-03`)
+- ✓ All five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, attributed per file and in `THIRD-PARTY-NOTICES.md`, with no dependency on `.agent/skills/` and no pairwise trigger collision across all seven skill descriptions — v0.5.0 Phase 19 (`ABS-01`..`ABS-04`; a seventh skill, `routine-queue-walker`, shipped with them)
+- ✓ Coverage is a derived-from-bytes census the store's own block table cannot move by a single byte, reported as three distinct numbers and defended by six committed controls against a vacuous pass — v0.5.0 Phase 19 (`COV-01`/`COV-02`; `COV-01` closed under an accepted override, since the replacement plan for the instrument *is* the dxa+Ghidra pivot)
+
 ### Active
 
-<!-- v0.5.0 scope, opened 2026-08-23. REQ-IDs live in `.planning/REQUIREMENTS.md`;
+<!-- v0.6.0 scope, opened 2026-08-25. REQ-IDs live in `.planning/REQUIREMENTS.md`;
      this list is the human-readable restatement and moves to Validated at the
-     v0.5.0 close. -->
+     v0.6.0 close. The milestone is scoped to the substrate only — DECOMP-01..04,
+     BUILD-01..06 and EQUIV-01..04 stay re-mapped to v0.7.0, deliberately not
+     rewritten against a store that does not exist yet. -->
 
-- [ ] A regenerator2000 project stays open across a whole working session instead of being respawned per tool call
-- [ ] The curated `r2000_*` surface covers what the absorbed analyze procedures actually call, starting with `r2000_read_region`
-- [ ] `r2000_get_address_details`'s D-32 refusal is re-decided against the upstream 64K `OutOfRange` defect rather than carried — answered by D-36 (supersedes D-32; client-side composition)
-- [ ] Upstream's five analyze procedures are absorbed into this project's skills — folded into `c64-program-recon` / `c64-memory-mapping` where they fit, new skills where nothing owns the job — with no dependency on `.agent/skills/`
-- [ ] A binary is fully decomposed: nothing left `Undefined`, no unnamed entry point, every referenced non-hardware address documented, hardware writes as named enums — with coverage **measured**, not asserted
-- [ ] The export is rebuildable source: one file per subsystem off r2000 scopes wired by `acme-build`'s `!source`, data tables in their own files
-- [ ] Every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move
-- [ ] A relocation-hazard report enumerates what blocks movement — jump tables, self-modifying code, page alignment, cycle-exact raster code
-- [ ] The rebuild is provenance-aware: `c64-provenance-diff`'s verdict carried at point of use, cracker patches excluded rather than inherited
-- [ ] Modifiability is demonstrated — one behaviour removed and one added, reassembled, both observed taking effect in VICE
-- [ ] Reassembly plus a clean hazard report gates every phase; behavioural equivalence in VICE via `compare.mjs` is the milestone's final bar
-- [ ] Which packer a binary used is surfaced as a recon finding
-- [ ] Absorbed procedure text is attributed in `THIRD-PARTY-NOTICES.md` under regenerator2000's dual `MIT OR Apache-2.0` licence
+- [ ] The pivot's numbers are re-measured against real cracked releases rather than the one 279-byte self-authored fixture, as a go/no-go gate before anything is built on them
+- [ ] The `memmap.json` flat address model is tested against code that banks ROM in and out, where an address's meaning becomes bank-dependent
+- [ ] dxa is vendored and its human-readable listing is parsed into a machine-readable code/data map — it has no machine-readable output, so that parser is this project's to own
+- [ ] Ghidra runs headless under this project's harness, handed dxa's map plus volatile `$0000-$0001` / `$D000-$DFFF` memory blocks before `analyzeAll()`, so the decompiler cannot delete hardware writes as dead stores
+- [ ] Structural facts are exported from Ghidra's **decompiler** layer via `DecompInterface` — array bounds, the split-pointer `CONCAT11` idiom, record strides, resolved computed jumps — not from the listing's data types, which return essentially nothing on 6502
+- [ ] Undocumented NMOS opcodes are decodable by Ghidra: all 105 opcode bytes stock's `6502.slaspec` omits, as a SLEIGH extension
+- [ ] An annotation store this project owns holds labels, comments, per-range typing, scopes, enums, undo and persistence, reached through an MCP surface
+- [ ] The store exports ACME source, carrying the two idioms worth stealing rather than rediscovering — the `=*+$01` mid-instruction label for self-modifying write targets, and typed label prefixes
+- [ ] The 19,181 lines of regenerator2000 integration glue are deleted, not left beside their replacement
+- [ ] Annotation is automatic where it can be: the `memmap.json` join and its three selection rules, `$01` bank-state derivation, and VIC graphics-map derivation
+
 
 ### Out of Scope
 
@@ -514,23 +529,43 @@ export boundary.
 (STATE.md → Deferred Items), plus Phase 19's own SC4/COV-01 override — accepted
 because the replacement plan for the coverage instrument *is* this pivot.
 
-## Next Milestone Goals
+## Current Milestone: v0.6.0 Own the substrate
 
-**v0.6.0 — own the substrate.** Decided 2026-08-25 at the v0.5.0 close. Three
-new phases have to land before v0.5.0's cut goals can be attempted at all, and
-then those goals follow on the new substrate:
+**Opened 2026-08-25.** Decided at the v0.5.0 close and scoped in this session.
+
+**Goal:** Replace regenerator2000 as the analysis substrate with dxa + Ghidra
+and an annotation store this project owns — proving the pivot's numbers hold on
+real cracked code *before* anything is built on them.
+
+**Target features:**
+- The pivot's measurements re-run against real cracked releases as a standalone
+  go/no-go gate, including the `memmap.json` flat-address model against
+  ROM-banking code
+- dxa vendored plus the listing parser this project must own, since dxa has no
+  machine-readable output
+- Ghidra headless under this project's harness, with volatile I/O memory blocks
+  applied before `analyzeAll()` so hardware writes survive the decompiler
+- Structural facts exported through `DecompInterface`, not `DataTypeManager`
+- The 105-byte undocumented-opcode SLEIGH extension
+- An owned annotation store — labels, comments, per-range typing, scopes, enums,
+  undo, persistence — with an MCP surface and an ACME exporter
+- 19,181 lines of regenerator2000 integration glue deleted
+- Automatic annotation: the `memmap.json` join, `$01` bank-state derivation, VIC
+  graphics-map derivation
+
+**Scoped to the substrate only.** `DECOMP-01..04`, `BUILD-01..06` and
+`EQUIV-01..04` stay re-mapped to v0.7.0 rather than being rewritten now against
+a store that does not exist yet. That is a scoping decision taken in this
+session, not a second cut — see "Next Milestone Goals" below.
+
+**Phases:**
 
 | | Phase | Delivers |
 |---|---|---|
-| A | The two engines | dxa vendored plus a listing parser; Ghidra headless harness; `ApplyHints` (volatile I/O blocks + dxa's map); `ExportAnalysis` against `DecompInterface`; the undocumented-opcode SLEIGH extension (`docs/undocumented-opcodes-ghidra.md`, all 105 bytes) — stock Ghidra's `6502.slaspec` defines 57 instructions, all documented, so this is the one real toolchain gap |
-| B | The annotation store | labels, comments, per-range typing, scopes, enums, undo, persistence; MCP surface; ACME exporter. Deletes 19,181 lines of r2000 integration glue (9,087 non-test + 9,928 test) |
-| C | Automatic annotation | the `memmap.json` join and its three selection rules; `$01` bank-state derivation; VIC graphics-map derivation |
-
-Then v0.5.0's cut phases, rewritten: decomposition to closure, rebuildable
-source and the reassembly gate, equivalence and modifiability — carrying
-DECOMP-01..04, BUILD-01..06 and EQUIV-01..04 unchanged except for BUILD-01,
-already reworded from "per regenerator2000 scope" to "per annotation-store
-scope".
+| **23** | The real-release gate | dxa + Ghidra re-run against the `c64-provenance-diff` fixtures — real releases, already committed, already provenance-classified. Measures data-recovery rate and false positives on real packed/cracked code, whether constant propagation still resolves indirect dispatch when the index is *computed* rather than an immediate `ldx #$02`, whether the `analyzer.rs` work being dropped was doing something the pair does not replace, and how the auto-annotation join behaves against ROM banking. Go / degrade / no-go on Phase 9's pattern — which came back `degrade` and shipped a smaller, correct milestone |
+| **24** (A) | The two engines | dxa vendored plus a listing parser; Ghidra headless harness; `ApplyHints` (volatile I/O blocks + dxa's map); `ExportAnalysis` against `DecompInterface`; the undocumented-opcode SLEIGH extension (`docs/undocumented-opcodes-ghidra.md`, all 105 bytes) — stock Ghidra's `6502.slaspec` defines 57 instructions, all documented, so this is the one real toolchain gap |
+| **25** (B) | The annotation store | labels, comments, per-range typing, scopes, enums, undo, persistence; MCP surface; ACME exporter. Deletes 19,181 lines of r2000 integration glue (9,087 non-test + 9,928 test) |
+| **26** (C) | Automatic annotation | the `memmap.json` join and its three selection rules; `$01` bank-state derivation; VIC graphics-map derivation |
 
 **Phase numbering starts at 23.** 20-22 are cut and never reused.
 
@@ -544,12 +579,30 @@ and enum generation.
 needs, with claimed 100% unp64 benchmark parity). Owner decision 2026-08-25:
 depack-by-running via `c64-ram-capture` is sufficient.
 
-**Open before planning:** every number behind this pivot comes from one
-279-byte fixture written by the same person testing it. Re-run against a real
-cracked release — the `c64-provenance-diff` fixtures are the obvious target.
-The specific risk is that `memmap.json` has a flat address model, so against
-code that banks ROM in and out an address's meaning becomes bank-dependent.
-See `.planning/research/questions.md`.
+**The open question is now Phase 23, not a caveat.** Every number behind this
+pivot comes from one 279-byte fixture written by the same person testing it.
+Rather than carry that as a note, v0.6.0 opens with the gate that answers it,
+against the `c64-provenance-diff` fixtures. The specific risk named at the
+v0.5.0 close is that `memmap.json` has a flat address model, so against code
+that banks ROM in and out an address's meaning becomes bank-dependent. See
+`.planning/research/questions.md` for both open questions and
+`.planning/notes/dxa-ghidra-pivot.md` for the evidence being re-tested.
+
+**Byte-perfect reconstruction is explicitly not the goal.** Source quality and
+functionality are; rebuilding a binary is a separate, later step (user decision,
+2026-08-24).
+
+## Next Milestone Goals
+
+**v0.7.0 — the rebuild half, on the owned substrate.** v0.5.0's three cut
+phases, rewritten: decomposition to closure, rebuildable source and the
+reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
+`BUILD-01..06` and `EQUIV-01..04` unchanged except for `BUILD-01`, already
+reworded from "per regenerator2000 scope" to "per annotation-store scope". They
+were held out of v0.6.0 deliberately: each is written against a substrate that
+v0.6.0 builds, so scoping them before Phase 25 lands would mean writing them
+twice. Their text stands in
+[`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md).
 
 ---
 
@@ -995,11 +1048,10 @@ written).
 
 ---
 
-*Last updated: 2026-08-25 at the **close of milestone v0.5.0**. The milestone
-shipped its first half (persistent session, absorbed procedures, coverage
-instrument) and cut its second: Phases 20-22 were dissolved by the dxa+Ghidra
-pivot, which reverses D-R1/D-R2 and reduces regenerator2000 from the analysis
-engine to an annotation store this project will own. Current Milestone became
-"Shipped: v0.5.0"; Next Milestone Goals became v0.6.0's three substrate phases
-plus the three rewritten ones. Full evidence in
-`.planning/notes/dxa-ghidra-pivot.md` and its evidence directory.*
+*Last updated: 2026-08-25 at the **start of milestone v0.6.0 — Own the
+substrate**. v0.5.0's delivered scope moved from Active to Validated; Active was
+replaced with v0.6.0's substrate scope; "Next Milestone Goals" became "Current
+Milestone: v0.6.0" with a fourth phase (23, the real-release gate) added ahead of
+the three decided at the v0.5.0 close; and the three rewritten cut phases —
+`DECOMP-*`, `BUILD-*`, `EQUIV-*` — moved to a new "Next Milestone Goals" for
+v0.7.0 rather than being scoped now against a store that does not exist yet.*

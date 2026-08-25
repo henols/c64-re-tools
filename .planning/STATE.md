@@ -1,21 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.0
-milestone_name: (not yet defined — run /gsd-new-milestone)
-status: Awaiting next milestone
-stopped_at: v0.5.0 shipped 2026-08-25; dxa+Ghidra pivot decided, v0.6.0 unplanned
-last_updated: "2026-08-25T14:45:56.739Z"
+milestone_name: Own the substrate
+status: planning
+last_updated: "2026-08-25T15:24:41.820Z"
 last_activity: 2026-08-25
-last_activity_desc: v0.5.0 milestone closed (override_closeout); Phases 20-22 cut by the dxa+Ghidra pivot
-state_head: 6d265632e8b92fe9e2b11a6c6871b4f81b1b73cf
 progress:
-  total_phases: 5
-  completed_phases: 2
-  total_plans: 27
-  completed_plans: 27
-  percent: 40
-current_phase: 23
-current_phase_name: (unplanned — v0.6.0 starts at Phase 23; 20-22 are cut and never reused)
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -68,10 +63,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: Milestone v0.5.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-25 — Milestone v0.5.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-08-25 — Milestone v0.6.0 started
 
 ## Performance Metrics
 
