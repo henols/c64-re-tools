@@ -3983,6 +3983,185 @@ test("PIN 4: the class-4 publication site PRECEDES the shared gate's only call s
 });
 
 // ---------------------------------------------------------------------------
+// 9c. The ONE DECODABILITY PREDICATE, derived from the module's own text (WR-03)
+//
+// The same family as 9b's four pins and 19-16's pairing-consultation pin, one
+// level over: those say the dispatch gate's ROUTES are read from the module
+// rather than hand-maintained; these say the census's DECODABILITY STANDARD is
+// one definition with a known set of readers.
+//
+// WHY THE CENSUS NEEDS ITS OWN PINS. The WR-03 defect was not a wrong answer in
+// one place. It was three places answering the same question, two of them
+// agreeing and the third -- the one producing the headline number -- never
+// asking at all. A report-level control catches that on the payload it was
+// written for; only a source-level pin catches the NEXT reader that answers it
+// a fourth way. All four read `r2000-coverage.ts` through
+// `functionBodyFromSource()`, the one source reader in this file, and every
+// anchor is CODE with comments stripped.
+// ---------------------------------------------------------------------------
+
+/**
+ * `computeStructuralCensus()`'s signature, as the source reader must find it.
+ *
+ * The RETURN-TYPE tail rather than the `export function ...(` head, and that is
+ * forced rather than stylistic: this function's parameter list ends with
+ * `opts: StructuralCensusOptions = {}`, and those default-value braces would be
+ * the first `{` the shared reader met -- it would brace-match them and extract
+ * an EMPTY body. The reader throws rather than returning empty, so the wrong
+ * anchor would fail loudly rather than silently; this is the anchor that lets
+ * the pins actually run. Asserted unique in the module before anything is read
+ * through it.
+ */
+const CENSUS_SIGNATURE = "): StructuralCensus {";
+/** The decodability predicate's own signature. */
+const PREDICATE_SIGNATURE = "function isDecodableAsInstruction(";
+/** A call to the predicate, as it is spelled at every call site. */
+const PREDICATE_CALL = "isDecodableAsInstruction(";
+/** The decoder's illegal flag as it is spelled at a READ. */
+const ILLEGAL_FLAG_READ = ".illegal";
+/** The loop that marks an instruction's bytes as class zero -- the statement
+ * the predicate must be consulted BEFORE. */
+const CLASS_ZERO_MARKING = "mark(pc + i, 0)";
+/** The linear-sweep region's first mention of the figure it accumulates. */
+const SWEEP_ANCHOR = "linearSweepDecodable";
+
+/** `computeStructuralCensus()`'s body with comments stripped -- the text the
+ * pins below measure offsets in. Extracted from the RAW source and stripped
+ * afterwards, the same order `scanBodyText()` uses, so there is one notion of
+ * "inside the function" in this file. */
+function censusBodyText(): string {
+  const source = coverageSource();
+  assert.equal(
+    countOccurrences(source, CENSUS_SIGNATURE),
+    1,
+    `the anchor ${JSON.stringify(CENSUS_SIGNATURE)} must occur exactly once in r2000-coverage.ts, or the extraction below reads some ` +
+      `other function's body and every pin built on it measures the wrong text`,
+  );
+  const body = withoutComments(functionBodyFromSource(source, CENSUS_SIGNATURE));
+  assert.ok(body.trim().length > 0, "computeStructuralCensus()'s body extracted empty -- every pin built on it would pass over nothing");
+  return body;
+}
+
+test("PIN 5: the decodability predicate is DECLARED exactly once and CALLED from exactly three sites", () => {
+  // A fourth reader is a fourth answer to "is this byte an instruction", and
+  // the WR-03 defect is precisely what a fourth answer looks like once the
+  // standards drift. A reader removed is just as interesting: it would mean one
+  // of the three consumers went back to deciding for itself.
+  const source = withoutComments(coverageSource());
+  const mentions = countOccurrences(source, PREDICATE_CALL);
+  assert.ok(
+    mentions > 0,
+    `no occurrence of ${JSON.stringify(PREDICATE_CALL)} survives in the stripped source -- the predicate was renamed and this pin would pass vacuously`,
+  );
+  const declarations = (source.match(/function\s+isDecodableAsInstruction\(/g) ?? []).length;
+  assert.equal(declarations, 1, `the module declares the decodability predicate ${declarations} time(s); one definition is the whole point of extracting it`);
+
+  const callSites = mentions - declarations;
+  assert.equal(
+    callSites,
+    3,
+    `r2000-coverage.ts calls the decodability predicate from ${callSites} site(s), not 3. The three consumers are the recursive ` +
+      `descent, the linear sweep and the entry-point gate. A FOURTH consumer is a fourth place that decides what counts as an ` +
+      `instruction, and two standards among three readers is exactly how the descent came to claim sixty-four of sixty-four bytes ` +
+      `on a four-byte program while the sweep beside it said four. A consumer REMOVED is the same defect running the other way.`,
+  );
+});
+
+test("PIN 6: the three call sites are the descent, the linear sweep and the entry-point gate -- and nothing else", () => {
+  // PIN 5 counts; this one places. Three calls in the right two functions is a
+  // different claim from three calls anywhere in the module, and only the
+  // second claim is worth anything: a call added to some fourth function would
+  // keep PIN 5's arithmetic intact only if a real consumer were deleted, but a
+  // call MOVED between functions would not move the count at all.
+  const censusBody = censusBodyText();
+  const scanBody = scanBodyText();
+
+  const inCensus = countOccurrences(censusBody, PREDICATE_CALL);
+  const inScan = countOccurrences(scanBody, PREDICATE_CALL);
+  assert.equal(
+    inCensus,
+    2,
+    `computeStructuralCensus() calls the decodability predicate ${inCensus} time(s); it must call it exactly twice -- once in the ` +
+      `recursive descent and once in the linear sweep, which is what makes reachedAsInstruction and linearSweepDecodable comparable`,
+  );
+  assert.equal(inScan, 1, `scanIndirectDispatch() calls the decodability predicate ${inScan} time(s); its entry-point gate is the one consumer there`);
+  assert.equal(
+    inCensus + inScan,
+    3,
+    "the placed call sites must account for every call site PIN 5 counted -- a call outside these two functions is a consumer nobody placed",
+  );
+
+  // The census's two calls sit on opposite sides of the sweep's own anchor:
+  // one in the descent above it, one in the sweep below it.
+  const sweepAt = censusBody.indexOf(SWEEP_ANCHOR);
+  assert.ok(sweepAt !== -1, `computeStructuralCensus() no longer mentions ${SWEEP_ANCHOR} -- the sweep region cannot be located and this pin would pass over nothing`);
+  const descentCallAt = censusBody.indexOf(PREDICATE_CALL);
+  const sweepCallAt = censusBody.lastIndexOf(PREDICATE_CALL);
+  assert.ok(descentCallAt !== -1 && sweepCallAt !== descentCallAt, "the two census call sites must be distinct");
+  assert.ok(
+    descentCallAt < sweepAt,
+    `the first call to the decodability predicate inside computeStructuralCensus() is at offset ${descentCallAt}, at or after the ` +
+      `linear-sweep region at ${sweepAt} -- the recursive descent is then not consulting it at all`,
+  );
+  assert.ok(
+    sweepCallAt > sweepAt,
+    `the second call is at offset ${sweepCallAt}, before the linear-sweep region at ${sweepAt} -- the sweep is then not consulting ` +
+      `the shared predicate and the two reported figures are free to describe different byte sets again`,
+  );
+});
+
+test("PIN 7: the decoder's illegal flag is READ at exactly one site in the module, inside the predicate", () => {
+  // The flag is the fact the predicate exists to own. A fourth site testing it
+  // DIRECTLY is how the standards diverged the first time -- the sweep and the
+  // entry-point gate each tested it inline, and the descent, which never did,
+  // was free to disagree with both.
+  //
+  // COMMENTS ARE STRIPPED FIRST, and an unstripped count would be
+  // self-invalidating rather than merely noisy: the predicate's own doc comment
+  // explains this flag and names it, so the raw count is inflated by
+  // documentation. A stripped count also cannot HIDE a fourth reader behind a
+  // comment, which is the failure the other direction.
+  const source = withoutComments(coverageSource());
+  const reads = countOccurrences(source, ILLEGAL_FLAG_READ);
+  assert.ok(reads > 0, `no read of ${ILLEGAL_FLAG_READ} survives in the stripped source -- the decoder's flag was renamed and this pin would pass vacuously`);
+  assert.equal(
+    reads,
+    1,
+    `the decoder's illegal flag is read at ${reads} site(s) in r2000-coverage.ts. Exactly one is allowed, and it is the decodability ` +
+      `predicate's own body. A second reader is a second standard for what counts as an instruction, whether or not it agrees today.`,
+  );
+
+  const predicateBody = withoutComments(functionBodyFromSource(coverageSource(), PREDICATE_SIGNATURE));
+  assert.ok(predicateBody.trim().length > 0, "the decodability predicate's body extracted empty -- this pin would pass over nothing");
+  assert.ok(
+    predicateBody.includes(ILLEGAL_FLAG_READ),
+    `the module's one read of ${ILLEGAL_FLAG_READ} is not inside the decodability predicate. The count above would then be satisfied ` +
+      `by some other function owning the flag, which is the same divergence wearing a different shape.`,
+  );
+});
+
+test("PIN 8: the descent consults the predicate BEFORE the loop that marks class zero", () => {
+  // THE ASSERTION THE COUNTING PINS CANNOT MAKE, because statement ORDER is
+  // invisible to them. Consulted before the marking loop, an illegal byte is
+  // never marked and stays `unreached`. Consulted after, it is claimed as
+  // reached code and only then abandoned -- which is the exact behaviour that
+  // reported sixty-four of sixty-four bytes as executed code on a four-byte
+  // program. A reorder would leave PINs 5, 6 and 7 green and every mention of
+  // the predicate in place while reintroducing the defect.
+  const body = censusBodyText();
+  const guardAt = body.indexOf(PREDICATE_CALL);
+  const markAt = body.indexOf(CLASS_ZERO_MARKING);
+  assert.ok(guardAt !== -1, "the recursive descent no longer calls the decodability predicate at all");
+  assert.ok(markAt !== -1, `the class-zero marking loop ${JSON.stringify(CLASS_ZERO_MARKING)} was not found -- it was rewritten and this pin must be re-derived, not deleted`);
+  assert.ok(
+    guardAt < markAt,
+    `the descent consults the decodability predicate at offset ${guardAt} of computeStructuralCensus()'s body, AFTER the class-zero ` +
+      `marking loop at ${markAt}. The illegal byte would then be claimed as reached code before the trace stops, the four class ` +
+      `counts would still sum, and nothing else in this suite would notice.`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 10. The previously-unseen fixture
 // ---------------------------------------------------------------------------
 

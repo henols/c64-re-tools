@@ -679,3 +679,145 @@ and the corpus property catches the LEAK at a population of 972 the moment it be
   was written as 98 while task 3 was still unwritten and is 96 as observed. The number was corrected
   in place, which is the single deletion in this plan's `19-VALIDATION.md` diff; no row from any
   earlier round was touched.
+
+## Round-4 gap closure → executed evidence (2026-08-25, plan 19-20)
+
+WR-03, the **second inflation route on the same structural number** SC4 gates on, and a different
+mechanism from everything else in this round. Every other plan here is about `provenDispatchTargets()`
+and what may seed a recursive descent. This one is the census's **own classification**: the descent
+walked straight THROUGH an illegal opcode and claimed its bytes as executed code, while the linear
+sweep eight lines below it in the same function refused to count them.
+
+**WR-03 was PROMOTED into this round by orchestrator decision**, superseding the deferral recorded in
+`19-CONTEXT.md`'s `<deferred>` section. `19-CONTEXT.md` was **deliberately not edited** to say so —
+the promotion is recorded here and in `19-DECISIONS.md` Decision 6 rather than by rewriting a context
+document after the fact. The reasoning: an unfixed, measured inflation on the number Phase 20 runs
+under, filed by the round-3 verification under `missing` as a human call, risking a fourth
+`SC4 partial` and with it D-08's one-way edit to a ROADMAP success criterion.
+
+### The measured contradiction, and what closed it
+
+| Payload | Before | After |
+|---|---|---|
+| `JAM_FILLED_IMAGE` — 64 bytes at `$0810`, `lda #$01 : ldx #$00` then sixty `$02` | `reachedAsInstruction=64`, `unreached=0`, `linearSweepDecodable=4` | `reachedAsInstruction=4`, `unreached=60`, `linearSweepDecodable=4` |
+| `NOP_FILLED_IMAGE` — byte-identical except the filler is `$ea` | `reachedAsInstruction=64`, `unreached=0`, `linearSweepDecodable=64` | **unchanged**: `64`, `0`, `64` |
+
+One hundred per cent structural completeness on a ninety-four-per-cent-garbage image, with the sibling
+figure on the SAME report disagreeing sixteen-fold — and the legal twin proving the tightening
+discriminates rather than refuses. The pair is built by one function from one filler byte, and that
+"the only difference is the filler" is itself asserted (the two members differ at exactly 60 of 64
+offsets, and are the same length).
+
+The fix is **one decodability predicate with three consumers** — `isDecodableAsInstruction()`, read by
+the recursive descent, the linear sweep and `isPlausibleEntryPoint()`. This is WR-14's pattern one
+level over: `isPlausibleEntryPoint()` itself was extracted when the two halves of
+`provenDispatchTargets()` were found held to different standards. `linearSweepDecodable`'s MEANING was
+not touched — the descent was brought to the sweep's standard, never the reverse.
+
+A general relation is now asserted rather than a fact about one payload:
+`reachedAsInstruction <= linearSweepDecodable` for every payload tested. The report can no longer
+claim more bytes as executed code than the sweep can decode as legal instructions.
+
+### The twelve-fixture regression — measured, not asserted
+
+Every committed coverage fixture carries **zero illegal instructions on a reached path**, which is WHY
+the tightening moves none of them. Asserted per fixture, so a mover would name itself.
+
+| Fixture | `reachedAsInstruction` before | after | `unreached` after | `linearSweepDecodable` after |
+|---|---|---|---|---|
+| `fp1-indexed-copy-loop` | 7 | 7 | 55 | 48 |
+| `fp1b-immediate-copy-loop` | 7 | 7 | 57 | 48 |
+| `fp2-zeropage-data-pointer` | 17 | 17 | 45 | 60 |
+| `fp2b-immediate-data-pointer` | 17 | 17 | 47 | 60 |
+| `fp3-unlinked-push-idiom` | 15 | 15 | 47 | 60 |
+| `fp3b-immediate-push-idiom` | 15 | 15 | 49 | 60 |
+| `nc1-all-auto` | 30 | 30 | 32 | 57 |
+| `nc1b-auto-renamed-in-place` | 30 | 30 | 32 | 57 |
+| `nc2-generic-comments` | 30 | 30 | 32 | 57 |
+| `nc3-all-data-blocks` | 30 | 30 | 32 | 57 |
+| `nc4-multi-caller-unnamed` | 30 | 30 | 32 | 57 |
+| `nc5-well-documented` | 30 | 30 | 32 | 57 |
+| Phase 11 `recon-subject.regen2000proj` (previously unseen, authored for a different phase) | 68 | 68 | 31 | 94 (range 100) |
+
+The recorded table is asserted **set-equal to the fixture directory listing in both directions**, so a
+fixture added without a recorded number reds rather than escaping the regression statement.
+
+The **sealed reproducibility answer still holds**: `ANSWER.sha256` matches, both canonical lines match
+the grammar, and the LIVE two-route recomputation from `nc5-well-documented` reproduces the sealed
+line on both the store route and the bytes route. `ANSWER.md`, `ANSWER.sha256` and `QUESTION.md` are
+byte-unchanged and appear in no diff.
+
+Plan 19-17's composed corpus is unaffected — **22 pass, 0 fail** — which this run confirms rather than
+assumes. Its generator still throws on a `0x02` byte, so the corpus remains structurally unable to
+launder this route.
+
+### One predicate, three consumers, DERIVED FROM SOURCE — four pins (WR-03)
+
+The same family as 9b's four route pins and 19-16's pairing-consultation pin, one level over: those
+say the dispatch gate's ROUTES are read from the module; these say the census's DECODABILITY STANDARD
+is one definition with a known set of readers. All four read `r2000-coverage.ts` through
+`functionBodyFromSource()`, the ONE source reader in that file — no second extractor was written;
+these four join 19-16's pairing-consultation pin and 19-18's four route pins as readers of one
+helper. Every anchor is CODE with comments stripped.
+
+| Pin | Derives | From | Observed | Non-vacuity guard |
+|---|---|---|---|---|
+| 5 | the predicate's **definition and call-site counts** | occurrences of `isDecodableAsInstruction(` in the whole comment-stripped module, minus the declarations | **1 definition, 3 call sites** | asserts the occurrence count is non-zero and the declaration count is exactly 1 before subtracting |
+| 6 | **where** the three calls are | occurrences inside `computeStructuralCensus()`'s and `scanIndirectDispatch()`'s comment-stripped bodies, plus their offsets against the sweep region | **2 in the census (one each side of the `linearSweepDecodable` anchor), 1 in the scan, total 3** | asserts the census anchor is unique in the module, that the extracted body is non-empty, that the sweep anchor was found, and that the two census sites are distinct |
+| 7 | the **owner of the decoder's illegal flag** | occurrences of `.illegal` in the whole comment-stripped module | **exactly 1**, and it lies inside the predicate's own body | asserts the count is non-zero before comparing, and stripping is load-bearing in both directions — the predicate's own doc comment names the flag, and an unstripped count could also hide a fourth reader behind a comment |
+| 8 | the **statement order** inside the descent | offsets of `isDecodableAsInstruction(` and of the class-zero marking loop `mark(pc + i, 0)` inside the census body | predicate at **1586**, marking loop at **1682**; the sweep region begins at **2361** and the sweep's own call is at **2473** | asserts both anchors were found, and says explicitly that a rewritten marking loop must be re-derived rather than the pin deleted |
+
+Pin 8 is the one the counting pins cannot make. Consulted before the marking loop, an illegal byte is
+never marked and stays `unreached`; consulted after, it is claimed and only then abandoned — and the
+four class counts would still sum, so nothing else in the suite would notice.
+
+The `CENSUS_SIGNATURE` anchor is the return-type tail `): StructuralCensus {` rather than the
+`export function …(` head, and that is forced rather than stylistic: the parameter list ends
+`opts: StructuralCensusOptions = {}`, whose default-value braces would be the first `{` the shared
+reader met, extracting an EMPTY body. The reader throws on an empty extraction, so the wrong anchor
+fails loudly — but this is the anchor that lets the pins run.
+
+### The gate watched FAIL — three planted violations
+
+All three were applied to `src/mcp/vice/r2000-coverage.ts` **in the working tree only** and restored
+from a byte-exact pre-plant copy (sha256 `9574ff73…4ea09`), confirmed `diff -q`-identical, with
+`git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exiting 0 and the suites re-run green.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 26 | the WR-03 control, PIN 7 | the **illegal test removed from the predicate** so it checks only existence and truncation — the one-word edit a future author would actually make. `npx tsc --noEmit` **exit 0** | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 107 / # pass 103 / # fail 4`. `not ok 5 - WR-03: the descent stops at an illegal opcode …` with `64 !== 4`; `not ok 98 - PIN 7 …` on its own non-vacuity guard: `no read of .illegal survives in the stripped source`. Two pre-existing controls red alongside — `not ok 39 - dispatch class 4 DECLINES a window whose reconstructed entry point does not decode as a legal instruction` and `not ok 77 - every REACHABLE pair's verdicts are measured in THAT ROUTE'S own collection` — because the plant loosens the entry-point gate too | restored, re-run: **107 pass, 0 fail** |
+| 27 | the WR-03 control, the general relation, PINs 5, 6 and 8 | the **descent's guard reverted only**, leaving the sweep strict — the literal pre-fix state | **exit 1**, `# tests 107 / # pass 102 / # fail 5`. Measured: `reached=64 unreached=0 sweep=4`, exactly the round-3 verification's numbers. `not ok 9` verbatim: `JAM_FILLED_IMAGE: the census claims 64 bytes as executed code while the linear sweep can decode only 4 of them as legal, non-truncated instructions.` `not ok 96 - PIN 5` (`2 !== 3`), `not ok 97 - PIN 6` (`1 !== 2`), `not ok 99 - PIN 8` (`predicate at offset 2486 … AFTER the class-zero marking loop at 1695`) | restored, re-run: **107 pass, 0 fail** |
+| 28 | PINs 5, 6 and 7 | the **sweep restates the test inline** — `if (insn.illegal) continue; if (insn.notes.includes("truncated")) continue;` — instead of reading the predicate. **Behaviour identical**: `JAM reached=4 unreached=60 sweep=4`, `NOP 64/0/64`, and **not one report-level control moved** | **exit 1**, `# tests 107 / # pass 104 / # fail 3`. `not ok 96 - PIN 5` (`2 !== 3`), `not ok 97 - PIN 6` (`1 !== 2`), `not ok 98 - PIN 7`: `the decoder's illegal flag is read at 2 site(s) in r2000-coverage.ts. Exactly one is allowed …`. The grammar suite stayed **22 pass, 0 fail** | restored, re-run: **107 pass, 0 fail** |
+
+**Plant 26 did NOT reproduce `linearSweepDecodable=4`, and that is the honest result rather than the
+predicted one.** The plan expected 64/0/4; the measurement was **64/0/64**. The reason is a property
+of the fix: loosening the shared predicate loosens the SWEEP as well, so the two figures move together
+and the general `reachedAsInstruction <= linearSweepDecodable` relation **does not red** under that
+plant. That is not a weakness — it is the design working. Once both figures read one predicate, no
+edit expressible as a change to that predicate can make them contradict each other; only an edit that
+un-shares them can, which is what plant 27 does and what PINs 5, 6 and 8 catch by name. Plant 27 was
+run specifically to establish the pre-fix numbers the round-3 verification reported, and it reproduced
+them exactly.
+
+**Plant 28 is the one worth reading twice.** It is behaviour-preserving: every report-level control in
+the file stayed green, the composed corpus stayed green, and `tsc` was clean. Only the source-derived
+pins caught it. A second inline standard that AGREES today is exactly how the descent and the sweep
+came to disagree in the first place, and a report-level suite cannot see it.
+
+### Prohibitions observed (plan 19-20)
+
+- `COVERAGE_SCHEMA_VERSION` is still `2` (`grep -c 'COVERAGE_SCHEMA_VERSION = 2'` prints 1) and
+  `COVERAGE_REPORT_KEYS` is unchanged — this plan changes what a number MEASURES on a garbage image,
+  not the report's shape.
+- `git diff --name-only` lists none of `ANSWER.md`, `ANSWER.sha256`, `QUESTION.md`, `19-CONTEXT.md`,
+  `19-REVIEW.md` or `.planning/REQUIREMENTS.md`. No requirement checkbox was ticked by this plan.
+- `git status --porcelain src/mcp/vice/fixtures/coverage` is empty — no fixture changed.
+- The dispatch gate was not touched: `hasDispatchContext()`, `DISPATCH_GATE_ROUTES`,
+  `PROVEN_TARGET_SOURCES` and `provenDispatchTargets()` are byte-unchanged, and 19-18's four route
+  pins plus 19-16's pairing-consultation pin all still pass.
+- Plan 19-17's corpus keeps its no-`0x02` generator throw; the grammar suite is untouched and green.
+- `r2000-session.ts` was not opened and its 200 ms call timeout was not widened.
+- No runtime dependency was added to either published package.
+- The full suite was run, not the `test:automated` subset: **2589 pass, 0 fail, 40 skipped, 5 todo**
+  over 24 suites — neither of the two known contention flakes
+  (`vice-proxy.test.ts` wall-clock budgets, `r2000-session.test.ts`'s 200 ms timeout) appeared.
