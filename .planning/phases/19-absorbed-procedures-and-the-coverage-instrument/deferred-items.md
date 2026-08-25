@@ -169,3 +169,31 @@ explained away once per run and never fixed.
 2026-08-25, and **0 red in 4 standalone runs**. A green gate does not close this item: an
 intermittent failure that happens not to fire is not a fixed one, and the clearing condition above
 is unchanged.
+
+---
+
+## `vice-proxy.test.ts` — the same concurrency-flake mechanism, a second file (observed 2026-08-25 by 19-15)
+
+**Out of scope for 19-15 and deliberately not fixed here.** Two full-suite runs during this plan's
+verification came back `# tests 2585 / # pass 2539 / # fail 1` with these two subtests red:
+
+- `vice-proxy.test.ts:1594` — `three states: each unreachable shape gets its own message and fix`
+- `vice-proxy.test.ts:2260` — `ending path releases the lease: SIGINT`
+
+Both fail identically: `timed out waiting for a proxy stdout message (stderr so far: )` at
+`nextMessage` (`vice-proxy.test.ts:335`), after ~8 s. **Standalone the same file is green** —
+`node --test vice-proxy.test.ts` → `# tests 123 / # pass 119 / # fail 0`, 4 skipped, 103 s.
+
+**Same mechanism as item 3 above, a different file.** Each of these tests spawns a real proxy child
+and waits on its stdout against a wall-clock budget; `node --test` runs the 24 suite files
+concurrently across this host's cores, so under a full suite the budget competes with every other
+file's children. Red only under the full suite, never standalone — the identical split.
+
+**Not caused by this plan, confirmed rather than assumed.** 19-15 modified only
+`r2000-coverage.ts`, `r2000-coverage.test.ts` and `fixtures/coverage/`. `vice-proxy.test.ts`
+imports nothing from that module family, and the coverage module is read-only by construction
+(asserted at source level) so it cannot affect a spawned proxy's stdout timing.
+
+**Still open. Owner: a plan that owns `vice-proxy.ts` / `vice-proxy.test.ts`.** Do not widen a
+timeout from a plan fenced out of that file. Recorded here rather than explained away, because item
+3 exists precisely because this failure class gets re-explained once per run and never fixed.
