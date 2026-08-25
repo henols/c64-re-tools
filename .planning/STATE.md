@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-11-PLAN.md
-last_updated: "2026-08-25T08:22:08.101Z"
+stopped_at: Completed 19-12-PLAN.md
+last_updated: "2026-08-25T08:55:24.999Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 execution started
-state_head: fe9e6fd8e7d0e13a5dfaa9544c0b18df775f26d9
+state_head: 7198e81f87724de27eea343e09323a2261296d6f
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 20
 ---
 
@@ -69,7 +69,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 4 of 14
+Plan: 5 of 14
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 19 execution started
 
@@ -191,6 +191,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P14 | 8 min | 2 tasks | 1 files |
 | Phase 19 P10 | 26 min | 3 tasks | 8 files |
 | Phase 19 P11 | 30 min | 2 tasks | 3 files |
+| Phase 19 P12 | 31 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -380,6 +381,8 @@ Recent decisions affecting current work:
 - [Phase 19]: WR-14 dispositioned fixed-and-cited: the class-4 stack-return scan is gated to class 3's standard (same index register, plus every published entry point in-image and decodable) rather than deleted or demoted to advisory — The idiom is real and its push-order lo/hi justification is sound, so the defect was the missing gate. Class 4 fed the same provenDispatchTargets() seam class 3 feeds while satisfying none of its five conditions -- gating one half of a seam is not a gate.
 - [Phase 19]: WR-15 dispositioned fixed-and-cited: only a PROVEN class-3 pairing consumes its leading load; an advisory recording remembers its first candidate and keeps scanning the window — One unrelated indexed load between the two halves of a real split table turned proven 1 / advisory 0 / proven targets 8 into proven 0 / advisory 2 / proven targets 0, reported as a clean-looking empty splitTables. The direction is safe (under-report) but silent, which is the one thing a coverage instrument may not be.
 - [Phase 19]: The class-4 interior witness is register-agnostic, and GATE_INTERIOR_DECLARATIONS rows now carry an explicit polarity whose negative subset alone satisfies a shape's need for an interior control — Requiring the register match inside the interior predicate would put the mismatched-register control outside the very predicate it constrains -- CR-04's exact defect. And letting the two new interior POSITIVE controls count toward shape coverage would displace 19-10's rule that every sufficient shape owes the suite a negative control reaching inside it.
+- [Phase 19]: WR-13 fixed by demanding a reference in the multi-caller name branch (backticked, caller-naming word, or parenthesised hex), not by removing the name branch — Removing the name branch and accepting only the hex form was weighed and rejected: it would silently reclassify every project whose annotator cites callers by name, turning a documentation-quality measure into a citation-style measure. The decision and the residual are recorded beside the rule.
+- [Phase 19]: IN-05 fixed by one derived effectiveEnd = min(origin+size, 0x10000) in scanIndirectDispatch(), read by all five sites that previously recomputed origin-plus-length — The census was clamped by IN-04 and its own dispatch sub-report was not, so one report described two address spaces. Stating the bound once is this repository single-seam-per-concern pattern applied at function scope; the review named four sites, there are five (19-11 isPlausibleEntryPoint is the fifth).
 
 ### Pending Todos
 
@@ -874,8 +877,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T08:21:42.040Z
-Stopped at: Completed 19-11-PLAN.md
+Last session: 2026-08-25T08:55:13.439Z
+Stopped at: Completed 19-12-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
