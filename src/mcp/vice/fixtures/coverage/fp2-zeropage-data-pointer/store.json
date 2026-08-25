@@ -1,0 +1,13 @@
+{
+  "control": "FP2",
+  "purpose": "the dispatch gate's INTERIOR control. FP1/FP1b and the positive SPLIT_TABLE bracket the gate from the OUTSIDE -- FP1 carries no zero-page store at all and SPLIT_TABLE carries a real jmp ($00fb) -- so nothing exercised the interior: a vector that IS genuinely built and then consumed by something other than a jump. This payload satisfies every condition the pre-CR-04 gate required (two indexed loads through the same register, two stores into consecutive zero-page addresses inside the pairing window, a resolvable lo/hi orientation, and eight reconstructed targets that each decode) while dispatching NOWHERE -- it consumes its vector with lda ($fb),y, an indirect-indexed DATA read, the most ordinary 16-bit pointer idiom on a 6502. The property under test is that dispatch.splitTables, provenDispatchTargets() and dispatch.tableEntryAddresses are ALL empty and classAt($0840) is unreached. Pre-fix this reported splitTables=1, eight proven targets at $0840..$0847, sixteen claimed table-entry bytes and reached=33 against a declared code_size of 17",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 17,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}

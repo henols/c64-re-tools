@@ -627,37 +627,92 @@ function zeroPageStoreTarget(insn: Instruction): number | null {
 }
 
 /**
+ * The COMPLETE, frozen list of shapes `hasDispatchContext()` accepts as proof
+ * that something dispatches through a reconstructed pair of tables. One stable
+ * string id per sufficient shape, in the order the predicate tests them.
+ *
+ * A SHAPE LISTED HERE IS THE DECISION TO TREAT THAT SHAPE AS PROOF OF CODE --
+ * the same decision `provenDispatchTargets()`'s doc comment describes, made one
+ * level down. The class-3 gate reads this predicate, and `splitTables` is one
+ * of the four sources that seam publishes, so a shape admitted here becomes a
+ * recursive-descent seed and turns whatever it points at into headline
+ * `reachedAsInstruction`.
+ *
+ * ADDING A SHAPE HERE WITHOUT A NEGATIVE CONTROL THAT REACHES ITS INTERIOR
+ * FAILS THE TEST SUITE BY NAME. `r2000-coverage.test.ts`'s
+ * `GATE_INTERIOR_DECLARATIONS` must claim every id in this array, and a
+ * declaration is checked mechanically by a witness that decodes the payload --
+ * not accepted as a claim. That mechanism exists because CR-04 was a real
+ * false-positive route that a 2517-passing suite concealed: every negative
+ * control the gate had bracketed it from the OUTSIDE, and a negative control
+ * built from the outside of the predicate it constrains is not a control.
+ *
+ * The count is also tied to the predicate mechanically: a test reads
+ * `hasDispatchContext()`'s body from this module's source text and asserts that
+ * the number of true-returning sites in it equals this array's length, so a
+ * fourth branch added without a matching id reds the suite rather than sliding
+ * through a hand-maintained mirror.
+ */
+export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
+  "stack-return-push-idiom",
+  "zeropage-vector-jumped-through",
+]);
+
+/**
  * Does the instruction window starting at `start` carry evidence that
  * something DISPATCHES through a reconstructed pair of tables?
  *
- * Accepts any ONE of the three shapes 19-RESEARCH §3.2 step 3 names:
- *   - an indirect-jump opcode (`0x6c`) within reach;
- *   - a `pha` ... `pha` ... `rts` shape within reach. After the Class-4 pass
- *     runs FIRST and claims its windows, a pairing inside such a window is
- *     skipped outright rather than promoted here -- the condition is kept so
- *     this function reads as a COMPLETE statement of what counts as dispatch
- *     context, not as a partial one whose omissions must be inferred;
- *   - two stores into CONSECUTIVE zero-page addresses within reach, which is
- *     the classic "build a vector in zero page, then `jmp (vector)`"
- *     construction.
+ * Accepts either ONE of the two shapes named in `DISPATCH_CONTEXT_SHAPES`:
+ *
+ *   - `stack-return-push-idiom` -- a `pha` ... `pha` ... `rts` shape within
+ *     reach. After the Class-4 pass runs FIRST and claims its windows, a
+ *     pairing inside such a window is skipped outright rather than promoted
+ *     here; the condition is kept so this function reads as a COMPLETE
+ *     statement of what counts as dispatch context, not as a partial one whose
+ *     omissions must be inferred.
+ *   - `zeropage-vector-jumped-through` -- two stores into CONSECUTIVE zero-page
+ *     addresses within reach AND an indirect jump within reach whose pointer is
+ *     the LOWER of those two addresses. That is the classic "build a vector in
+ *     zero page, then `jmp (vector)`" idiom, matched END TO END.
+ *
+ * WHY THE CONSTRUCTION ALONE IS NOT EVIDENCE (CR-04). Two stores into
+ * consecutive zero-page addresses is how EVERY 16-bit pointer on a 6502 is
+ * built, and `lda ($fb),y` -- indirect-indexed DATA access, far more common in
+ * real code than indirect jump -- needs exactly the identical construction.
+ * A predicate that never looks at what CONSUMES the vector it saw being built
+ * cannot tell a jump table from a screen pointer, and every ordinary pointer
+ * setup then promotes its data to `reachedAsInstruction`. So a bare
+ * indirect-jump opcode "within reach" is not accepted either: an indirect jump
+ * through some OTHER vector near two indexed loads is not evidence that those
+ * loads feed it. The operand value must equal the vector that was built.
  */
 function hasDispatchContext(insns: readonly Instruction[], start: number, reach: number): boolean {
   const end = Math.min(insns.length, start + reach + 1);
 
   let sawPha = 0;
   const zpStores: number[] = [];
+  /** The pointer each indirect jump in the window dispatches THROUGH, collected
+   * rather than treated as sufficient on sight -- see the doc comment. */
+  const indirectJumpPointers: number[] = [];
   for (let k = start; k < end; k++) {
     const insn = insns[k]!;
-    if (insn.opcode === 0x6c) return true;
+    if (insn.opcode === 0x6c && insn.operand) indirectJumpPointers.push(insn.operand.value);
     if (insn.opcode === 0x48) sawPha++;
+    // `stack-return-push-idiom`
     if (insn.opcode === 0x60 && sawPha >= 2) return true;
     const zp = zeroPageStoreTarget(insn);
     if (zp !== null) zpStores.push(zp);
   }
 
-  for (let a = 0; a < zpStores.length; a++) {
-    for (let b = a + 1; b < zpStores.length; b++) {
-      if (Math.abs(zpStores[a]! - zpStores[b]!) === 1) return true;
+  // `zeropage-vector-jumped-through`. `b - a === 1` (never `Math.abs`) so `a`
+  // is the LOWER of the two, which on a little-endian 6502 vector is the byte
+  // an indirect jump names. An exact numeric equality on the zero-page address
+  // -- `jmp ($00fb)` decodes to operand.value 0xfb and `sta $fb` to operand
+  // .value 0xfb -- never a string or hex-text comparison.
+  for (const a of zpStores) {
+    for (const b of zpStores) {
+      if (b - a !== 1) continue;
+      if (indirectJumpPointers.includes(a)) return true;
     }
   }
   return false;
@@ -841,7 +896,11 @@ export function scanIndirectDispatch(
   // is not evidence of anything. A pairing is PROVEN only when ALL of:
   //   (a) it is not inside a window Class 4 already claimed;
   //   (b) both loads index through the SAME register;
-  //   (c) something in reach dispatches through the pair (`hasDispatchContext`);
+  //   (c) something in reach CONSUMES the pair as a dispatch
+  //       (`hasDispatchContext`) -- either the stack-return push idiom, or a
+  //       zero-page vector that an indirect jump in reach actually jumps
+  //       THROUGH. The mere construction of a zero-page vector is not enough:
+  //       an indirect-indexed data read builds the identical pointer (CR-04);
   //   (d) its lo/hi orientation is decided by the pairing's own store
   //       construction rather than by address order (`resolveSplitOrientation`);
   //   (e) EVERY reconstructed target lands strictly inside the image AND on a

@@ -1,24 +1,30 @@
 #!/usr/bin/env node
-// make-coverage-fixtures.mjs -- the reproducible generator for COV-02's eight
+// make-coverage-fixtures.mjs -- the reproducible generator for COV-02's nine
 // committed control fixtures.
 //
-// WHY A GENERATOR RATHER THAN EIGHT HAND-COMMITTED BLOBS: the eight fixtures
-// are two groups, and each group's defining property is a SAMENESS that only a
-// generator can hold.
+// WHY A GENERATOR RATHER THAN NINE HAND-COMMITTED BLOBS: the nine fixtures are
+// three groups, and each group's defining property is a SAMENESS or a CHECKED
+// NEGATIVE that only a generator can hold.
 //
 //   * The five findings controls (NC1..NC5) are the SAME 64-byte program with
 //     a different STORE attached. If each were hand-assembled, a change to the
 //     program would silently drift five controls apart from each other and the
 //     independence claim ("only the store differs") would stop being true
 //     without anything failing.
-//   * The false-positive PAIR (FP1, FP1b) carries its own two programs, which
-//     are byte-identical apart from a seven-byte code prologue -- one indexed,
-//     one immediate. That only-difference-is-the-addressing-mode relationship
-//     IS the fixture: comparing the census of the two is meaningless if they
-//     differ anywhere else. Hand-committing them would let the relationship
-//     drift silently, so the pair is generated TOGETHER and the generator
-//     THROWS unless the two payloads are equal in length and byte-identical
-//     from the end of the prologue onward.
+//   * The census false-positive PAIR (FP1, FP1b) carries its own two programs,
+//     which are byte-identical apart from a seven-byte code prologue -- one
+//     indexed, one immediate. That only-difference-is-the-addressing-mode
+//     relationship IS the fixture: comparing the census of the two is
+//     meaningless if they differ anywhere else. Hand-committing them would let
+//     the relationship drift silently, so the pair is generated TOGETHER and
+//     the generator THROWS unless the two payloads are equal in length and
+//     byte-identical from the end of the prologue onward.
+//   * The dispatch gate's INTERIOR control (FP2) carries a third program whose
+//     defining property is a NEGATIVE: it must build a zero-page vector, index
+//     two tables through one register, resolve an orientation, reconstruct
+//     eight decodable targets -- and dispatch NOWHERE. "Dispatches nowhere" is
+//     enforced here by a throw on any `$6c` or `$48` byte anywhere in the
+//     image, so it is a checked fact rather than a claim in a comment.
 //
 // Every fixture's project file is produced by this repository's own real
 // `synthesizeProject()` -- never hand-assembled JSON -- so the payload format
@@ -218,6 +224,140 @@ for (let i = FP_CODE_SIZE; i < INDEXED_COPY_LOOP.length; i++) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The INTERIOR control PAIR (FP2, FP2b). Two 64-byte programs at $0810 whose
+// 17-byte code prologue BUILDS A ZERO-PAGE VECTOR and then consumes it with an
+// indirect-indexed DATA read.
+//
+// FP2 -- ZEROPAGE_DATA_POINTER:
+//
+//   $0810  ldx #$00
+//   $0812  lda $0830,x      ; lo table, indexed through X
+//   $0815  sta $fb          ; vector lo
+//   $0817  lda $0838,x      ; hi table, indexed through the SAME register
+//   $081A  sta $fc          ; vector hi  <- consecutive with $fb
+//   $081C  ldy #$00
+//   $081E  lda ($fb),y      ; reads DATA through the pointer. NOT a dispatch.
+//   $0820  rts
+//   $0821  ea x15           ; filler up to $0830
+//   $0830  40 41 ... 47     ; eight ascending lo bytes
+//   $0838  08 x8            ; eight hi bytes
+//   $0840  ea x16           ; sixteen legal single-byte instructions
+//
+// WHY THIS CONTROL EXISTS -- and why it is a DIFFERENT KIND of control from
+// FP1/FP1b. The FP1 pair carries no zero-page store at all, and the positive
+// control `SPLIT_TABLE` carries a real `jmp ($00fb)`. Those two bracket the
+// dispatch-context gate from the OUTSIDE. Nothing exercised its INTERIOR: a
+// vector that is genuinely built -- two indexed loads through the same
+// register, two stores into consecutive zero-page addresses inside the pairing
+// window, a resolvable lo/hi orientation, and eight reconstructed targets that
+// every one of them decodes -- and then consumed by something that is not a
+// jump. That is the single most ordinary 16-bit pointer idiom on a 6502, and
+// before this pair landed the gate treated the CONSTRUCTION as proof of
+// dispatch (19-REVIEW.md CR-04): FP2 reported splitTables=1, eight
+// provenDispatchTargets at $0840..$0847, sixteen claimed table-entry bytes and
+// reached=33 of 64 against 17 bytes of real code, while its immediate twin
+// reported reached=17. A negative control built from the OUTSIDE of the
+// predicate it constrains is not a control at all.
+//
+// The no-0x6c / no-0x48 invariants below are what make "this program
+// dispatches nowhere" a CHECKED property of the generator rather than a claim
+// in this comment.
+//
+// FP2b, the immediate twin that supplies FP2's MEASURED census baseline, is
+// declared below.
+// ---------------------------------------------------------------------------
+
+/** `ldx #$00 : lda $0830,x : sta $fb : lda $0838,x : sta $fc : ldy #$00 :
+ * lda ($fb),y : rts` -- the interior control's indexed prologue. */
+const FP2_INDEXED_PROLOGUE = [
+  0xa2, 0x00, // $0810 ldx #$00
+  0xbd, 0x30, 0x08, // $0812 lda $0830,x   (lo table)
+  0x85, 0xfb, //       $0815 sta $fb       (vector lo)
+  0xbd, 0x38, 0x08, // $0817 lda $0838,x   (hi table)
+  0x85, 0xfc, //       $081A sta $fc       (vector hi)
+  0xa0, 0x00, //       $081C ldy #$00
+  0xb1, 0xfb, //       $081E lda ($fb),y   <- a DATA read, not a dispatch
+  0x60, //             $0820 rts
+];
+
+/** The real code size of both interior-control payloads, DERIVED from the
+ * prologue rather than typed as a bare number, so the non-inflation control
+ * cannot drift away from the payloads it guards. */
+const FP2_CODE_SIZE = FP2_INDEXED_PROLOGUE.length;
+
+/**
+ * The interior control's 47 data bytes, WRITTEN OUT IN FULL: fifteen `nop`
+ * filler bytes up to offset `0x20`, then eight ascending lo bytes `$40..$47` at
+ * `$0830`, then eight `$08` hi bytes at `$0838`, then sixteen `nop` bytes at
+ * `$0840`.
+ *
+ * The lo/hi pair reconstructs the eight little-endian values `$0840..$0847`,
+ * and the sixteen bytes there decode as legal single-byte instructions -- which
+ * is exactly what makes the pre-CR-04 gate's condition (e) pass and the
+ * inflation happen. The data is ORDINARY: a screen pointer table is built this
+ * way in essentially every C64 program.
+ *
+ * WRITTEN AS A LITERAL RATHER THAN COMPUTED FROM THE PROLOGUE'S LENGTH, and
+ * concatenated below rather than laid into a pre-sized 64-byte array. A helper
+ * that filled to a fixed size would absorb any prologue edit -- the payload
+ * would stay 64 bytes no matter what -- which would make the 64-byte invariant
+ * true by construction and therefore worthless. It is the same discipline as
+ * the FP1 pair's twice-written data region, applied to the length invariant:
+ * a plant that adds or removes one prologue byte must make the generator throw.
+ */
+const FP2_DATA_REGION = [
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0821 filler
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, //       $0829 filler
+  0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, // $0830 lo bytes
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, // $0838 hi bytes
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0840 reconstructed targets
+  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $0848
+];
+
+/** The interior control's prologue followed by `FP2_DATA_REGION`, CONCATENATED
+ * so the payload's length is the sum of its two parts rather than a constant
+ * the helper enforces. See `FP2_DATA_REGION`'s own comment. */
+function withZeroPageVectorData(prologue) {
+  return Uint8Array.from([...prologue, ...FP2_DATA_REGION]);
+}
+
+const ZEROPAGE_DATA_POINTER = withZeroPageVectorData(FP2_INDEXED_PROLOGUE);
+
+// The interior control's stated properties, ENFORCED. Ordered so the message
+// names the invariant an edit actually broke: the 64-byte size first, then the
+// prologue length, then the dispatches-nowhere property.
+if (ZEROPAGE_DATA_POINTER.length !== 0x40) {
+  throw new Error(`ZEROPAGE_DATA_POINTER must be exactly 64 bytes, got ${ZEROPAGE_DATA_POINTER.length}`);
+}
+
+if (FP2_INDEXED_PROLOGUE.length !== FP2_CODE_SIZE) {
+  throw new Error(
+    `the interior control's prologue must be exactly FP2_CODE_SIZE (${FP2_CODE_SIZE}) bytes -- it is ` +
+      `${FP2_INDEXED_PROLOGUE.length}; the declared code size is what the census is asserted not to exceed, so it may not be a ` +
+      `number that is true of only one of the payloads that declares it`,
+  );
+}
+
+// THE PROPERTY CR-04 TURNS ON, made a checked fact rather than a comment: the
+// interior control must dispatch NOWHERE. `0x6c` is `jmp (indirect)` and `0x48`
+// is `pha` (half of the stack-return idiom); a payload containing either byte
+// ANYWHERE -- even as a data byte a decode could stumble onto -- can no longer
+// hold down the claim "the gate declines a vector nothing jumps through".
+function assertDispatchesNowhere(name, payload) {
+  for (let i = 0; i < payload.length; i++) {
+    if (payload[i] === 0x6c || payload[i] === 0x48) {
+      throw new Error(
+        `${name} must DISPATCH NOWHERE, but carries $${payload[i].toString(16).padStart(2, "0")} at offset ${i} ` +
+          `($${(ORIGIN + i).toString(16)}) -- $6c is jmp (indirect) and $48 is pha, and either byte anywhere in the image makes this ` +
+          `fixture unable to hold down the property it exists for: that a zero-page vector nothing jumps through is not dispatch context (CR-04)`,
+      );
+    }
+  }
+}
+
+assertDispatchesNowhere("ZEROPAGE_DATA_POINTER", ZEROPAGE_DATA_POINTER);
+
 const ADDR = { entry: 0x0810, setFlag: 0x0820, readTable: 0x0828, tailCall: 0x0830 };
 
 const CROSS_REFERENCES = [
@@ -368,6 +508,20 @@ const FIXTURES = [
       "the twin of FP1 whose ONLY difference is the addressing mode of its two loads. It is committed rather than inferred so FP1's census can be compared against a measured baseline instead of against a remembered number -- a remembered number being exactly what a control fixture exists to replace",
     program: IMMEDIATE_COPY_LOOP,
     code_size: FP_CODE_SIZE,
+    expect_clean: false,
+    expect_measure: null,
+    symbols: [],
+    comments: [],
+    blocks: [],
+    cross_references: [],
+  },
+  {
+    dir: "fp2-zeropage-data-pointer",
+    control: "FP2",
+    purpose:
+      "the dispatch gate's INTERIOR control. FP1/FP1b and the positive SPLIT_TABLE bracket the gate from the OUTSIDE -- FP1 carries no zero-page store at all and SPLIT_TABLE carries a real jmp ($00fb) -- so nothing exercised the interior: a vector that IS genuinely built and then consumed by something other than a jump. This payload satisfies every condition the pre-CR-04 gate required (two indexed loads through the same register, two stores into consecutive zero-page addresses inside the pairing window, a resolvable lo/hi orientation, and eight reconstructed targets that each decode) while dispatching NOWHERE -- it consumes its vector with lda ($fb),y, an indirect-indexed DATA read, the most ordinary 16-bit pointer idiom on a 6502. The property under test is that dispatch.splitTables, provenDispatchTargets() and dispatch.tableEntryAddresses are ALL empty and classAt($0840) is unreached. Pre-fix this reported splitTables=1, eight proven targets at $0840..$0847, sixteen claimed table-entry bytes and reached=33 against a declared code_size of 17",
+    program: ZEROPAGE_DATA_POINTER,
+    code_size: FP2_CODE_SIZE,
     expect_clean: false,
     expect_measure: null,
     symbols: [],

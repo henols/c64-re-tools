@@ -942,11 +942,13 @@ test("bounded walk: the descent walker honours an explicit step bound and report
 // ---------------------------------------------------------------------------
 
 /** The pinned size of the committed control set: five findings controls, one
- * non-vacuity control, and the two-fixture false-positive census pair. The
- * number lives here and in `fixtures/coverage/README.md`, and both must agree
- * with the directory count -- a stale count in either is the same defect class
- * this phase's gap closure exists to remove. */
-const COMMITTED_CONTROL_FIXTURES = 8;
+ * non-vacuity control, the two-fixture false-positive census pair, and the
+ * dispatch gate's INTERIOR control (`fp2-zeropage-data-pointer`) -- a payload
+ * that satisfies every condition the pre-CR-04 gate required while dispatching
+ * nowhere at all. The number lives here and in `fixtures/coverage/README.md`,
+ * and both must agree with the directory count -- a stale count in either is
+ * the same defect class this phase's gap closure exists to remove. */
+const COMMITTED_CONTROL_FIXTURES = 9;
 
 test("the committed control set is exactly the pinned size, and every fixture carries a project file and a store file", () => {
   const dirs = fixtureDirs();
@@ -1116,6 +1118,67 @@ test("FP1b earns its place: without a committed twin, FP1's census could only be
   const immediateReport = reportFor(FP_IMMEDIATE);
   assert.ok(immediateReport.structural.reachedAsInstruction > 0, "the baseline half of the pair must actually reach something");
   assert.equal(immediateReport.structural.reachedAsInstruction, codeSize, "the immediate twin's every code byte is reached, and nothing beyond it");
+});
+
+const FP2_INTERIOR = "fp2-zeropage-data-pointer";
+
+test("a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it", () => {
+  // The gate's INTERIOR, at report level. FP1/FP1b carry no zero-page store at
+  // all and the positive control SPLIT_TABLE carries a real `jmp ($00fb)`, so
+  // those two bracket the gate from the OUTSIDE. This fixture is inside it: it
+  // satisfies every condition the pre-CR-04 gate required -- two indexed loads
+  // through the same register, two stores into CONSECUTIVE zero-page addresses
+  // inside the pairing window, a resolvable lo/hi orientation, and eight
+  // reconstructed targets that every one of them decodes -- and then consumes
+  // its vector with `lda ($fb),y`, an indirect-indexed DATA read. Building a
+  // 16-bit pointer is not dispatching through one.
+  const store = loadFixture(FP2_INTERIOR).store;
+  assert.equal(typeof store.code_size, "number", `${FP2_INTERIOR}: the bound must be DECLARED BY THE FIXTURE, not typed into this test`);
+
+  const report = reportFor(FP2_INTERIOR);
+
+  assert.deepEqual(
+    report.dispatch.splitTables,
+    [],
+    `${FP2_INTERIOR}: a zero-page vector consumed by an indirect-indexed DATA read is not a PROVEN split table. ` +
+      `Pre-fix splitTables.length was 1 { loBase: $0830, hiBase: $0838 } -- the gate accepted the CONSTRUCTION of a 16-bit ` +
+      `pointer as proof of dispatch, which is how every 16-bit pointer on a 6502 is built (CR-04).`,
+  );
+  assert.deepEqual(
+    provenDispatchTargets(report.dispatch),
+    [],
+    `${FP2_INTERIOR}: nothing here may seed a recursive descent. Pre-fix this returned the eight values ` +
+      `$0840, $0841, $0842, $0843, $0844, $0845, $0846, $0847 -- reconstructed out of 16 bytes of ordinary pointer data.`,
+  );
+  assert.deepEqual(
+    report.dispatch.tableEntryAddresses,
+    [],
+    `${FP2_INTERIOR}: an ungated pairing must not claim a single byte as a table entry either. Pre-fix it claimed 16 addresses ` +
+      `($0830..$0837 and $0838..$083f).`,
+  );
+  assert.equal(
+    classAt(report.structural, 0x0840),
+    "unreached",
+    `${FP2_INTERIOR}: $0840 holds ordinary data that nothing proven ever reaches. Pre-fix its class was ` +
+      `"reached-as-instruction" -- the HEADLINE measure, manufactured out of data.`,
+  );
+  assert.ok(
+    report.structural.reachedAsInstruction <= store.code_size!,
+    `${FP2_INTERIOR}: the census reached ${report.structural.reachedAsInstruction} bytes of a program whose store declares ` +
+      `${store.code_size} bytes of code. reachedAsInstruction means REACHED BY RECURSIVE DESCENT FROM A SEED, so it can never ` +
+      `exceed the code that is actually there (pre-fix: 33 against a declared 17).`,
+  );
+
+  // Both directions in one test: the gate must not become a machine that
+  // declines everything. The genuinely-consumed split table -- whose
+  // `jmp ($00fb)` operand value equals its own `sta $fb` target -- is still
+  // PROVEN, and its targets still reach the one seam that seeds a descent.
+  const proven = scanOf(SPLIT_TABLE);
+  assert.equal(proven.splitTables.length, 1, "a real split table with a genuine dispatch consumer must still be PROVEN");
+  assert.ok(
+    provenDispatchTargets(proven).includes(0xc00d),
+    "the proven split table's reconstructed target must still reach provenDispatchTargets() -- a tightening that declines everything measures nothing",
+  );
 });
 
 // ---------------------------------------------------------------------------

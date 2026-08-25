@@ -1,6 +1,6 @@
 # Coverage control fixtures — COV-02
 
-**Eight** committed synthetic fixtures, in two groups.
+**Nine** committed synthetic fixtures, in three groups.
 
 - **Five findings controls plus one non-vacuity control** (`nc1`…`nc5`). Five must FAIL and one
   must PASS. Without `nc5-well-documented` the whole coverage instrument would be vacuous: an
@@ -9,6 +9,12 @@
   findings controls at all. The property they hold down is that the census does **not inflate** —
   `structural.reachedAsInstruction` may never exceed the real code size — and their clean/non-clean
   verdict is incidental, which is why both declare `expect_measure: null`.
+- **The dispatch gate's INTERIOR control** (`fp2`). `fp1`/`fp1b` carry no zero-page store at all
+  and the positive control `SPLIT_TABLE` carries a real `jmp ($00fb)`, so those two bracket the
+  gate from the **outside**. `fp2-zeropage-data-pointer` is *inside* it: a zero-page vector that is
+  genuinely built and then consumed by an indirect-indexed **data** read. A negative control built
+  from the outside of the predicate it constrains is not a control at all — which is why a
+  2517-passing suite concealed `19-REVIEW.md` CR-04.
 
 Every fixture is generated, never hand-written:
 
@@ -33,18 +39,20 @@ writer emits rather than a hand-assembled approximation.
 | `nc5-well-documented` | NC5 | **nothing** — a genuinely well-documented program | none: this one must come back **clean** |
 | `fp1-indexed-copy-loop` | FP1 | **nothing** — an ordinary two-table indexed copy loop that dispatches through nothing. It is a control against a defect the *instrument* can commit, not one a project can | `structural.reachedAsInstruction` must not exceed the `code_size` the store declares (7), and must equal FP1b's. Pre-gate this program reported **55** of 64 bytes reached |
 | `fp1b-immediate-copy-loop` | FP1b | **nothing** — FP1 with its two loads made immediate; the only difference between the two programs | the baseline half of the pair: it reported **7** pre-gate and must still report 7, so FP1's number is compared against a *measured* value rather than a remembered one |
+| `fp2-zeropage-data-pointer` | FP2 | **nothing** — an ordinary 16-bit pointer: two indexed table reads stored into `$fb`/`$fc`, then `lda ($fb),y`. It satisfies **every** condition the pre-CR-04 dispatch gate required while dispatching nowhere at all. **This is the control that reaches the gate's interior**, which no prior control did | `dispatch.splitTables`, `provenDispatchTargets()` and `dispatch.tableEntryAddresses` must all be **empty**, `classAt($0840)` must be `unreached`, and `structural.reachedAsInstruction` must not exceed the declared `code_size` (17). Pre-fix: `splitTables=1`, eight proven targets at `$0840`…`$0847`, 16 claimed table-entry bytes, `classAt($0840)="reached-as-instruction"`, **reached=33** |
 
 ## Shape of each fixture
 
 | File | What it is |
 |---|---|
-| `project.regen2000proj` | the project file, written by `synthesizeProject()`. Identical across the **five** `nc*` fixtures — for those, only the store differs. The false-positive pair each carries its own program, which is the whole point of the pair. |
-| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `r2000-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair additionally carries `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
+| `project.regen2000proj` | the project file, written by `synthesizeProject()`. Identical across the **five** `nc*` fixtures — for those, only the store differs. The false-positive pair and the interior control each carry their own program, which is the whole point of them. |
+| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `r2000-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair and the interior control additionally carry `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
 
 ## The program shared by the five `nc*` fixtures
 
-The **five** `nc*` fixtures carry the same 64-byte program at `$0810`; the false-positive pair does
-not, and no fixture outside that group is claimed to. It has real subroutines, one label reached
+The **five** `nc*` fixtures carry the same 64-byte program at `$0810`; the false-positive pair and
+the interior control do not, and no fixture outside the `nc*` group is claimed to. It has real
+subroutines, one label reached
 from **two** call sites (which is what the cross-reference rule engages on), one absolute data
 reference, one indexed data reference, and deliberate unreachable filler. The filler is what makes
 the divergence sub-report's "store says `Code`, the census never reached it" direction non-zero
@@ -77,6 +85,45 @@ asserted about**: it throws unless the two payloads are equal in length, each ex
 each prologue exactly `FP_CODE_SIZE`, and byte-identical from offset `FP_CODE_SIZE` onward. Both
 data regions are written out in full in their own literal rather than shared, so that last
 invariant is a real check an edit can break rather than one true by construction.
+
+## The interior control's own program
+
+`fp2-zeropage-data-pointer` is a third 64-byte program at `$0810`, unrelated to either group above,
+with a **17-byte** code prologue:
+
+```
+$0810  ldx #$00
+$0812  lda $0830,x     ; lo table, indexed through X
+$0815  sta $fb         ; vector lo
+$0817  lda $0838,x     ; hi table, indexed through the SAME register
+$081A  sta $fc         ; vector hi  <- consecutive with $fb
+$081C  ldy #$00
+$081E  lda ($fb),y     ; reads DATA through the pointer. NOT a dispatch.
+$0820  rts
+$0821  ea x15          ; filler
+$0830  40 41 ... 47    ; eight ascending lo bytes
+$0838  08 x8           ; eight hi bytes
+$0840  ea x16          ; sixteen legal single-byte instructions
+```
+
+**Why the outside-bracketing controls above could not catch CR-04.** The pre-fix gate accepted
+*"two stores into consecutive zero-page addresses within reach"* as proof of dispatch. That is the
+construction of **any** 16-bit pointer on a 6502 — it is what `jmp ($fb)` needs and equally what
+`lda ($fb),y`, `sta ($fb),y` and `cmp ($fb),y` need — and the predicate never looked at what
+*consumed* the vector it saw being built. `fp1`/`fp1b` carry no zero-page store at all and
+`SPLIT_TABLE` carries a real `jmp ($00fb)`, so both sat outside the region the gate had to rule on.
+This payload sits inside it: it satisfies every pre-fix condition — two indexed loads through one
+register, two consecutive zero-page stores inside the pairing window, a resolvable lo/hi
+orientation, and eight reconstructed targets that each decode — while dispatching nowhere.
+
+Pre-fix it reported `splitTables=1`, eight `provenDispatchTargets` at `$0840`…`$0847`, 16 claimed
+`tableEntryAddresses`, `classAt($0840)="reached-as-instruction"` and **reached=33** of 64 bytes
+against 17 bytes of real code. The gate now requires the indirect-jump operand value to equal the
+**lower** of two adjacent zero-page store targets, so all five converge: empty, empty, empty,
+`unreached`, and 17.
+
+"**This program dispatches nowhere**" is not a claim in a comment — the generator **throws** on any
+byte equal to `$6c` (`jmp (indirect)`) or `$48` (`pha`) anywhere in the image, naming the offset.
 
 ## These do not ship
 
