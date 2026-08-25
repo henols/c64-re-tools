@@ -228,3 +228,83 @@ read-only by construction (asserted at source level).
 explicitly fenced out of that file with a standing prohibition — *"`r2000-session.ts`'s 200 ms call
 timeout is not widened"* — so widening it here was never an option, and would have been the wrong
 fix regardless: the budget is not too small, the measurement is wall-clock under contention.
+
+---
+
+## 4. WR-03 — the illegal-opcode inflation route, PROMOTED into round 4 and CLOSED by plan 19-20
+
+**Status: CLOSED 2026-08-25.** Recorded here with its closing evidence rather than deleted: this
+ledger is append-only, and a closed item that carries what closed it is what a later reader needs.
+
+**What it was, measured.** A 64-byte image at `$0810` holding `lda #$01 : ldx #$00` followed by sixty
+`$02` bytes reported `reachedAsInstruction=64`, `unreached=0` and `linearSweepDecodable=4`. One
+hundred per cent structural completeness on a ninety-four-per-cent-garbage image, with the sibling
+figure on the SAME report disagreeing **sixteen-fold**. The round-3 verification measured this and
+filed it under Gap 1's `missing` list as a human call — promote it into the closure round, or record
+that Phase 20's first use of the instrument accepts it with the contradiction as the tell.
+
+**What it is now, measured** (plan 19-20's SUMMARY and its `19-VALIDATION.md` section): the same
+image reports `reachedAsInstruction=4`, `unreached=60`, `linearSweepDecodable=4`. Its byte-identical
+twin whose sixty filler bytes are `$ea` is **unchanged** at `64 / 0 / 64`, so the tightening
+discriminates rather than refuses. All twelve committed coverage fixtures and the previously-unseen
+Phase 11 fixture report the same `reachedAsInstruction` as before. `reachedAsInstruction <=
+linearSweepDecodable` is now asserted as a general relation, so the report cannot contradict itself
+about its own bytes.
+
+**It is a DIFFERENT route from the dispatch gate, and that is why it was a separate decision.** Every
+other gate this round added guards `provenDispatchTargets()` and what may seed a recursive descent.
+This one is the census's **own classification** — the recursive descent walked straight through an
+illegal opcode and claimed its bytes, while the linear sweep in the same function refused to count
+them. The fix is one decodability predicate, `isDecodableAsInstruction()`, read by the descent, the
+sweep and `isPlausibleEntryPoint()`, held in place by PINs 5–8.
+
+**Authority for the promotion, and what was deliberately not edited.** `19-CONTEXT.md`'s `<deferred>`
+section records WR-03 as deliberately NOT folded into round 4. That deferral was superseded by the
+**orchestrator's decision** to promote it, on the grounds that an unfixed, measured inflation on the
+number Phase 20 runs under risked a fourth `SC4 partial` and with it D-08's one-way edit.
+`19-CONTEXT.md` was **deliberately left byte-unchanged**: a context document rewritten after the fact
+to agree with what happened records nothing about what was decided. The promotion is recorded in
+`19-VALIDATION.md`'s plan-19-20 section, in `19-DECISIONS.md` Decision 6, and here.
+
+**The rejected alternative and the reversal condition are in `19-DECISIONS.md` Decision 6** (dated
+2026-08-25), not restated here as an independent claim. In short: stopping only at the CPU-halting
+opcodes and loosening the linear sweep to match was rejected because it would change what
+`linearSweepDecodable` MEANS in a report Phase 20 consumes, which owes a `COVERAGE_SCHEMA_VERSION`
+bump and a consumer review that this predicate-and-control round does not take.
+
+**The residual, named rather than left for the closure to imply away.** 19-20's fix brings the census
+to the linear sweep's **existing** standard. `disasm-opcodes.ts` flags 105 of 256 opcode-table entries
+illegal, of which only 12 are `jam`; the other 93 are stable undocumented instructions real C64 code
+uses. A program that legitimately executes one of those is now **under-reported by BOTH figures
+instead of contradicted by them**. That is the safe direction for an instrument whose point is that
+reachability must be PROVEN, and it is no longer silent, because the two figures now agree and the
+relation between them is asserted. Its reversal condition is Decision 6's: a real target program
+whose `linearSweepDecodable` minus `reachedAsInstruction` gap is explained by a stable undocumented
+opcode on a path it really executes.
+
+## 5. D-08 — the SC4 rescoping contingency, RECORDED and NOT ACTED ON
+
+**Status: RECORDED. Not executed by any plan in this round, and not executable without explicit user
+confirmation.**
+
+**The contingency, as `19-CONTEXT.md` D-08 states it.** If round 4's verification returns
+`SC4 partial` **again**, the conclusion is that the criterion is over-specified for what a heuristic
+disassembler can prove, and the next action is to rescope SC4 to **advisory-not-gate** — NOT to run a
+round 5. Record that verdict rather than planning another shape fix.
+
+**Why it is written down here.** Three rounds have each ended by fixing the shape that had just been
+found, and the fourth was planned the same way until D-06 replaced the loop with a property. Writing
+the contingency into the ledger is what stops a fifth round being planned reflexively the moment a
+fourth `SC4 partial` appears. It is a decision recorded in advance, not a prediction that the verdict
+will be partial.
+
+**It is ONE-WAY, and that rating is the reason it is not acted on here.** Rescoping SC4 edits a
+ROADMAP success criterion **and** a REQUIREMENTS entry (COV-01) that **Phase 20's entry conditions
+read**. It therefore changes a published contract between phases, which cannot be reversed by
+reverting a commit once Phase 20 has planned against it. **It requires explicit user confirmation
+before anyone acts on it.**
+
+**What plan 19-19 did and did not do about it.** It wrote this entry. It did not edit `ROADMAP.md`, it
+did not edit `.planning/REQUIREMENTS.md`, it did not touch any success criterion, and it ticked no
+requirement checkbox — COV-01 and COV-02 remain the phase verifier's judgment, as every plan in this
+round has recorded.
