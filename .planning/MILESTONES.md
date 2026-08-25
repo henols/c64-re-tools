@@ -1,5 +1,73 @@
 # Milestones
 
+## v0.5.0 Persistent Session and the Coverage Instrument (Shipped: 2026-08-25)
+
+**Phases completed:** 2 phases, 27 plans, 61 tasks
+
+**Key accomplishments:**
+
+- Ran the Architecture Change Procedure's six steps in full for the D-17/D-18 per-call-lifecycle reversal, allocated D-36 superseding D-32's `r2000_get_address_details` exclusion, and pinned both with `docs-r2000-decisions.test.ts`, proven non-vacuous by three live red-then-green planted-violation probes against the real committed documents.
+- Added `ensureProjectSettings()` and `R2000ProjectSettingsError` to `r2000-project.ts` -- a read-parse-force-rewrite pass over an existing `.regen2000proj` that silently forces `use_illegal_opcodes` to `true` and refuses by name on a `settings.system` mismatch, a missing file, or malformed JSON, proven by 11 new unit tests including a committed non-vacuity control and a live red-then-green probe.
+- Promoted `withR2000Session()`'s one-shot spawn/handshake logic into a long-lived `openR2000Session()` primitive, built a new `r2000-session.ts` single-slot lifecycle owner on top of it (reuse-on-same-path, evict-on-path-change, evict-on-external-write), rewired `runR2000Tool()` through it with its save-per-mutation body byte-identical, landed D18-09's three-scenario save-discipline planted-violation gate watched red-then-green, and — while proving the plan's own full-suite requirement — found and fixed a real cross-session staleness bug the persistent-session design introduced for `r2000-symbols.ts`'s separate one-shot import/export flow.
+- A crashed or wedged regenerator2000 session is now recoverable and attributable: between-call deaths respawn transparently, mid-call/wedge deaths fail loud and are never retried, a named restart budget refuses a genuinely broken project after repeated crashes, and the proxy's own exit no longer orphans a live child — with the SIGKILLed-proxy risk answered by measurement, not assumption.
+- `r2000_read_region` joins the curated surface with both views and a documented 4096-byte cap (`R2000_READ_REGION_MAX_BYTES`), and `r2000_get_address_details` is now curated as a four-read client-side composition (`composeAddressDetails()`) under D-36 — never calling upstream's own same-named tool, which live-reconfirmed still answers `OutOfRange` at every address on a full 64K project.
+- A single FIFO queue now owns each persistent regenerator2000 session, preserving whole-operation call-and-save ordering and surfacing stuck contention as a named timeout.
+- The phase is closed by a live settings round trip, full Node 22 gate, package checks, and explicit evidence for all six requirements.
+- The seventh skill `routine-queue-walker` lands absorbed from regenerator2000 @`493f840…` with a six-field attribution header, the packaging guard now asserts a relation instead of the literal six, both notices files are true in the same commit, two mechanical guards hold the attribution chain shut (each proven to fire), and D18-16 is answered by a three-run measurement showing the stdio child does not multiplex.
+- All five upstream analyze procedures are now absorbed at one pinned commit — `analyze-blocks` and `analyze-symbol` into `c64-memory-mapping`, `analyze-routine` and a deferred REFERENCE-ONLY `analyze-basic` into `c64-program-recon` — with one attribution block per source path rather than per file, a registry asserted equal to the manifest's own procedure set, a BASIC trigger vocabulary proven absent from every description, and the tarball that actually ships the prose finally carrying a notices document asserted against its own packed payload.
+- A derived-from-bytes coverage census that regenerator2000's own block table cannot move by a single byte, with a four-class widened dispatch scan, two label figures, a comment-vacuity measure, a bytes-versus-store reproducibility seal, and six committed controls — five that must fail for a named reason, one that must pass.
+- The coverage instrument became runnable — an eighth `r2000` CLI verb that reads the store through the held session and prints three separately named measures with no aggregate anywhere — and packer identity became a project-owned recon finding whose name field has exactly one assignment site, inside an external oracle's branch.
+- A pairwise Jaccard trigger-collision gate over all seven skill descriptions — threshold 0.35 justified by the measurement that produced it, empty allowlist, wired blocking into CI — plus three descriptions sharpened by a dispatcher read the metric never fired on, five dated decisions with checkable reversal conditions, and a green seven-step phase gate.
+- The one measure whose whole subject is refusing to be talked into a clean verdict can no longer be talked into one: a hex string that merely touches a caller's short form, or a label name embedded in a longer identifier, buys nothing — proven by two controls that were observed red before the fix and green after.
+- The census now has a committed false-positive control that was proven red before the gate landed: two 64-byte programs differing only in a seven-byte prologue, generated together under four enforced invariants, reporting `reachedAsInstruction` 55 and 7 against the pre-19-08 instrument and 7 and 7 now — with the phase's validation record extended rather than rewritten, and `REQUIREMENTS.md` verified honest without being touched.
+- `hasDispatchContext()` now requires the dispatch CONSUMER rather than the construction — an indirect jump whose operand equals the lower of two adjacent zero-page store targets — held down by `fp2-zeropage-data-pointer`, the gate's first interior control, plus a witness-checked declaration table that reds the suite by name when a sufficient shape has no interior control.
+- The class-4 stack-return scan is now held to class 3's standard before it may seed a recursive descent — same-index-register match plus a decodable, in-image entry point — with the two negative controls it never had; and only a PROVEN split-table pairing consumes its leading load, so an unrelated indexed load between the two halves of a real dispatch table no longer erases it.
+- A caller's label name now counts only when the comment USES it as a reference (backticked, introduced by a caller-naming word, or followed by its own parenthesised hex address), and the dispatch scan reads one clamped `effectiveEnd` at `$10000` instead of five recomputations of origin-plus-length.
+- All 24 `19-REVIEW.md` finding ids now carry a durable, quality-bearing disposition in `19-REVIEW-FIX.md` — measured to cover the full set ALONE, with every other disposition source excluded — while `19-REVIEW.md` itself is byte-unchanged; both stale deferred entries are corrected against measurement rather than prediction; and the full suite is observed green at `# tests 2580 / # pass 2535 / # fail 0` with both named guards passing standalone.
+- `CR-02` — the one `19-REVIEW.md` finding id undispositioned in all five sources the AUDIT-01 guard accepts — now carries an evidence-bearing disposition in `.planning/todos/completed/`, taking `docs-review-disposition.test.ts` from 6/7 to 7/7 and clearing the `D-12-02` cascade, with `19-REVIEW.md` byte-unchanged.
+- `hasDispatchContext()`'s stack-return branch now demands a `pha` at each paired load's own successor and an `rts` after both, so the round-3 blocker payload — 15 code bytes that manufactured eight "proven" entry points and 47 of 64 bytes of code-or-table — reports nothing.
+- `hasDispatchContext()`'s second true-returning site now compares the indirect jump's operand against the vector the pairing's own two stores built, and a source-derived pin asserts that BOTH branches consult the pairing — so a presence-only branch reds the suite by name instead of satisfying declarations its own author writes.
+- A thousand 6502 arrangements composed from a ten-fragment alphabet across 72 stratified families, each one's expected verdict COMPUTED by a six-rule oracle that never touches a byte, and one set equality asserting in both directions that the dispatch instrument proves exactly the arrangements that carry a proven data-flow link.
+- The anti-regression mechanism's own hole is closed: a control target is now a (shape, route) pair, the disjunction that let a class-4-only control vouch for the class-3 route is deleted, and the route set — its call sites, publication sites, seam sources and gate ordering — is read from `r2000-coverage.ts`'s own text rather than mirrored by hand.
+- All seven gates this round added consolidated into one traceable table — the payload each must decline with its measured values, the payload it must still accept, the plant, the test observed red and its counts — with D-07's three clauses each mapped to the row that discharges it, WR-03 marked CLOSED with its evidence and its residual, D-08 recorded as a one-way contingency nobody acted on, and the full workspace suite run once, green.
+- One decodability predicate read by the recursive descent, the linear sweep and the entry-point gate — closing WR-03, the second inflation route on `reachedAsInstruction`, so a 94%-garbage image reports four bytes of code instead of sixty-four while its legal twin still reports all sixty-four.
+
+---
+
+**Closeout type:** `override_closeout`.
+
+**Known verification overrides:** 5 newly acknowledged, 16 carried forward from a
+prior close (see STATE.md → Deferred Items). Phase 19 additionally carries one
+verification override inside its own `19-VERIFICATION.md` (SC4 / COV-01),
+accepted by the owner on the grounds that a replacement plan for the coverage
+instrument supersedes further gap-closure rounds — that replacement is the pivot
+recorded below.
+
+### Known Gaps
+
+**Phases 20-22 were CUT on 2026-08-25, dissolved by the dxa+Ghidra pivot rather
+than abandoned.** Their goals survive; the substrate they were written against
+does not. Nothing was attempted and failed — no plan was ever written for any of
+the three. The fourteen requirements they carried are re-mapped to v0.6.0, not
+dropped:
+
+- DECOMP-01, DECOMP-02, DECOMP-03, DECOMP-04 — decomposition to closure
+- BUILD-01 … BUILD-06 — rebuildable source and the reassembly gate
+- EQUIV-01 … EQUIV-04 — equivalence and modifiability
+
+**Why.** Measured on a committed 279-byte fixture, regenerator2000 unannotated
+flat-decodes; dxa recovered 72% of data bytes with zero false positives and
+resolved a dispatch table unaided; Ghidra, given dxa's map and volatile I/O
+blocks, resolved the indirect dispatch, the self-modifying write, and the
+index/stride/split-pointer facts. Full record and reproduction material:
+`.planning/notes/dxa-ghidra-pivot.md` and
+`.planning/notes/dxa-ghidra-pivot-evidence/`. This reverses D-R1/D-R2 from
+`.planning/notes/regenerator2000-integration.md`.
+
+**What shipped instead.** This milestone is named for what it actually
+delivered — the persistent session and the coverage instrument — not for the
+"rebuild half" thesis it opened with, which the pivot cancelled mid-milestone.
+
 ## v0.4.0 Debt discharged, decisions settled (Shipped: 2026-08-23)
 
 **Phases completed:** 6 phases (12, 13, 14, 15, 16, 17), 44 plans, 119 tasks

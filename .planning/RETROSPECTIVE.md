@@ -2,6 +2,87 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v0.5.0 — Persistent Session and the Coverage Instrument
+
+**Shipped:** 2026-08-25 (`override_closeout`)
+**Phases:** 2 executed, 3 cut | **Plans:** 27 | **Tasks:** 61
+
+### What Was Built
+
+A regenerator2000 session that survives many tool calls, with crash recovery,
+a restart budget and a FIFO call queue. All five upstream analyze procedures
+absorbed at one pinned commit, plus a seventh skill. A derived-from-bytes
+coverage census the store's own block table cannot move by a byte, with six
+committed controls and a four-class dispatch scan. A pairwise trigger-collision
+gate over all seven skill descriptions.
+
+### What Worked
+
+**Building the instrument before the sweep it measures.** Phase 19 preceded the
+decomposition work deliberately, mirroring v0.4.0's audit-gate-first ordering.
+That sequencing is what made the pivot cheap: because the coverage instrument
+existed and was adversarially tested, its four gap-closure rounds surfaced how
+weak the underlying substrate's discovery actually was — which is the finding
+the pivot rests on.
+
+**Cutting three phases cost almost nothing, because no plan had been written.**
+The three cut phases had goals and success criteria but no PLAN.md and no
+directories. The pivot rewrote roadmap prose and reworded exactly one
+requirement (BUILD-01). Late planning was, this once, exactly right.
+
+**Measuring instead of arguing.** The pivot decision was settled by building a
+279-byte fixture and running four toolchains against it, not by comparing
+feature lists. Two of the assistant's own confident readings were overturned by
+that measurement — Ghidra was written off as weak on 6502 before the decompiler
+layer was queried, and the annotation join's first selection rule produced
+plausible wrong comments.
+
+### What Was Inefficient
+
+**Four gap-closure rounds on one success criterion.** SC4/COV-01 was closed and
+re-defeated three times, each round shutting the shape it was shown and being
+beaten by a different shape in the same function. Round 4 was finally scoped by
+*defect class* rather than by finding id, which worked — but that framing should
+have been round 2's. The criterion ultimately shipped as an accepted override.
+
+**Thirteen evidence-table rows read as open deferred items** at close, because
+a deferred-items file titled with `#` rather than `##` makes the scanner treat
+the whole document as the Deferred Items section. Cost a detour through a CLI
+writer that refuses that shape.
+
+### Patterns Established
+
+- **Cut, not abandoned.** A phase dissolved by a substrate change is recorded
+  as `Cut` in the Progress table with a banner in its detail section saying the
+  goal survives and where its requirements were re-mapped. Distinct from a
+  phase that was attempted and failed.
+- **Carry standing constraints out of phase notes before archiving them.**
+  Archiving v0.5.0's phase details silently removed the only second normative
+  mention of `.vsf`, reddening `docs-dangling-refs` and cascading into
+  `audit-integrity`. Constraints that outlive a phase belong in a
+  `## Standing Constraints` section, which the ROADMAP now has.
+
+### Key Lessons
+
+- **Query the right layer before concluding a tool is weak.** Ghidra's 6502
+  structural facts are in `DecompInterface`, not `DataTypeManager`. The obvious
+  implementation returns almost nothing and reads as a capability gap.
+- **Declare I/O volatile or the decompiler deletes hardware writes.** Silently.
+  Three of four `$01` writes and a `$d020` write vanished as dead stores. On a
+  raster loop this would delete the entire visible effect with no warning.
+- **A guard cascade has one root.** Six red docs guards traced to a single
+  missing `.vsf` mention. Fix the root before triaging the cascade.
+
+### Cost Observations
+
+- Sessions: the pivot was decided inside a single `/gsd-explore` session that
+  built the fixture, installed Ghidra, and ran four toolchains end to end.
+- Notable: the whole evidential basis for cancelling half a milestone is 279
+  bytes of assembly and about a dozen tool invocations. The standing caveat is
+  that it is *one* fixture, written by the person testing it — recorded as the
+  first open research question rather than resolved.
+
+
 ## Milestone: v0.4.0 — Debt discharged, decisions settled
 
 **Shipped:** 2026-08-23

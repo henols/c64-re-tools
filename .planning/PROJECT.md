@@ -459,171 +459,99 @@ provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 (VICE 3.9) through the real broker. Archived at
 [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
 
-## Current Milestone: v0.5.0 The rebuild half — absorbed playbooks, modifiable source
+## Shipped: v0.5.0 Persistent Session and the Coverage Instrument
 
-**Goal:** Turn a C64 binary into rebuildable, subsystem-split, fully-symbolised
-ACME source that functions identically to the original and is *demonstrably*
-modifiable — by absorbing regenerator2000's own analyze procedures into this
-project's skills, and by holding a project open across a session instead of
-respawning the binary per tool call.
+**Shipped 2026-08-25** (`override_closeout`). 2 executed phases, 27 plans, 61
+tasks, 13/27 requirements.
 
-**Opened:** 2026-08-23, immediately after the v0.4.0 close.
-**Phase numbering continues from 17 — this milestone starts at Phase 18**, and
-numbers are never reused, including the dissolved and cut ones.
+**Opened as** "The rebuild half — absorbed playbooks, modifiable source"
+(Phases 18-22), aiming to turn a C64 binary into rebuildable, subsystem-split,
+fully-symbolised ACME source. **It delivered the first half and cut the second.**
 
-**Why now.** This document's own "What This Is" has said "reverse-engineer **and
-rebuild**" since v0.1.x, and the rebuild half has never shipped. v0.3.0 made
-findings queryable instead of prose; v0.4.0 cleared the ledger that was blocking
-new capability. What is missing is the step from *annotated binary* to *source a
-person can change*. Three things measured live this session make it both
-tractable and overdue:
+**Delivered:** a regenerator2000 session that survives many tool calls with
+crash recovery and a FIFO call queue; all five upstream analyze procedures
+absorbed and attributed at one pinned commit; a seventh skill
+(`routine-queue-walker`); and a derived-from-bytes coverage census that the
+store's own block table cannot move by a single byte, with six committed
+controls and a pairwise trigger-collision gate over all seven skill
+descriptions.
 
-- regenerator2000 0.9.20's MCP surface exposes **28 tools**; this project curates
-  **17** (pinned by `r2000-tools.test.ts:66`). That gap is not surplus — it
-  contains `r2000_read_region`, the tool every upstream analyze procedure uses to
-  read disassembly at all.
-- Upstream ships **five agent skills** (`r2000-analyze-program`, `-blocks`,
-  `-routine`, `-symbol`, `-basic`) that overlap `c64-program-recon` and
-  `c64-memory-mapping` directly — but they live only in the GitHub repository's
-  `.agent/skills/`, **not** in the published crate. `cargo install
-  regenerator2000` yields the MCP server and none of the skills, which is why
-  they are absorbed here rather than wrapped.
-- The overlap's root cause is a **session-model mismatch**, not skill text. This
-  project spawns a fresh `--mcp-server-stdio` per tool call (`spawnSync`,
-  `r2000-launch.ts`); upstream's procedures assume a persistent `--mcp-server`
-  session with live cursor state, under which `r2000_get_disassembly_cursor`,
-  `r2000_jump_to_address` and `r2000_read_selected` are meaningful and under
-  per-call spawn are not. `c64-program-recon`'s own text already concedes the
-  cost: batching "is what makes that affordable under the per-call
-  spawn-load-mutate-save-exit lifecycle".
+**Cut on 2026-08-25:** Phases 20-22 (Decomposition to Closure; Rebuildable
+Source and the Reassembly Gate; Equivalence and Modifiability), dissolved by
+the dxa+Ghidra pivot. No plan was ever written for any of the three — the
+fourteen requirements they carried (DECOMP-*, BUILD-*, EQUIV-*) are re-mapped
+to v0.6.0, not dropped.
 
-**Target features:**
+**The pivot, and why it reverses D-R1/D-R2.** Those phases assumed
+regenerator2000 as the analysis substrate. Measured on a committed 279-byte
+fixture (141 code / 138 data bytes) exercising split pointer tables, an
+RTS-trick dispatch, a bounded indexed array, a stride-5 record array, inline
+`JSR` parameters and self-modifying code:
 
-- **A persistent regenerator2000 session** replacing the per-call
-  spawn-load-mutate-save-exit lifecycle — the enabler for everything below, and a
-  deliberate reversal of D-17/D-18. It must answer Phase 9's recorded
-  session-model gotcha (three separate MCP client connections produced a `.vsf`
-  that did **not** contain a written label) and keep the `--vice` invariant
-  guarded in code, not merely documented.
-- **A tool surface aligned to the absorbed procedures' actual needs**, starting
-  with `r2000_read_region`, and with `r2000_get_address_details`'s D-32 refusal re-decided against the upstream 64K `OutOfRange` defect rather than carried a second milestone — D-36 supersedes D-32 with a client-side composition.
-- **Upstream's analyze procedures absorbed, not wrapped** — read for how they
-  sequence the work, then folded into `c64-program-recon` and
-  `c64-memory-mapping` where they fit, with new skills created where nothing
-  currently owns the job. Two jobs have no owner among the six shipped skills:
-  walking a routine queue and documenting each routine, and the rebuild itself.
-  Absorption removes any dependency on `.agent/skills/`, so the crate/repo split
-  stops mattering — at the price of snapshotting upstream's procedure at 0.9.20.
-- **Full decomposition and documentation with *measured* coverage** — nothing
-  left `Undefined`, no `p_XXXX`/`l_XXXX` entry point left unnamed, every
-  referenced non-hardware address named and documented, hardware writes rendered
-  as named enums. Coverage is computed and reported, never asserted.
-- **Rebuildable source** — one file per subsystem off r2000 scopes, wired by
-  `acme-build`'s `!source`; data tables extracted to their own files so graphics,
-  levels and music can be swapped; every branch, `JSR`/`JMP` and data reference
-  through a symbol so code can move.
-- **A relocation-hazard report** enumerating what blocks movement — jump tables
-  with baked-in addresses, self-modifying code, page-alignment assumptions,
-  cycle-exact raster code — rather than letting an inserted byte silently break
-  everything downstream.
-- **A provenance-aware rebuild** — `c64-provenance-diff`'s verdict carried at
-  point of use, with cracker patches deliberately excluded rather than inherited.
-  A rebuild of the game, not of somebody's crack.
-- **Modifiability demonstrated, not described** — one behaviour removed and one
-  added in the rebuilt source, reassembled, both observed taking effect in VICE.
-  This is the only acceptance criterion here that can *fail* in a way the
-  structural ones cannot: split-by-subsystem, no-raw-addresses and
-  provenance-aware can all be satisfied by source that is still miserable to
-  change, because none of them forces anyone to try.
-- **Staged equivalence** — reassembly plus a clean hazard report gates every
-  phase; behavioural comparison in VICE via `c64-ram-capture`'s `compare.mjs`
-  classification and its documented drift floor is the milestone's final bar.
-  **Byte-identity is explicitly not the bar**, in the user's own words: "byte
-  identical is nothing I care about but the function of it be identical."
-- **Packer identification** surfaced as a recon finding, from 0.9.20's packer
-  signature database (Exomizer, ByteBoozer, Dali, TinyCrunch, MC-Cracken, TBC
-  Multicompactor, ECA), so provenance work can use it as evidence rather than
-  only as a depack step.
+- **r2000 unannotated flat-decodes** — every data table rendered as garbage
+  instructions. So does `da65` with no info file.
+- **dxa**, with zero hints, typed 72% of data bytes as data with **zero false
+  positives**, found every routine from the BASIC `SYS`, and resolved a
+  4-entry address table to labels.
+- **Ghidra**, given dxa's map plus volatile `$0000-$0001`/`$D000-$DFFF` memory
+  blocks, resolved the indirect dispatch (`COMPUTED_JUMP`), flagged the
+  self-modifying write landing inside a Code block, and recovered the index
+  bound, the split-pointer `CONCAT11` idiom and the record stride — all in the
+  **decompiler** layer, not the listing's data types.
 
-**Proving ground: synthetic fixtures only.** The pipeline is built and
-regression-tested against committed synthetic `.prg` fixtures, so CI can run it
-end to end and this repository carries no copyrighted game image. Applying it to
-a real title — `bruce_lee`, where two independently-cracked releases,
-reproducibility-verified game-entry captures and a generated provenance ledger
-already exist — is downstream use, not this milestone's evidence.
+r2000 is consequently reduced from "the analysis engine" to an annotation store
+plus an ACME printer, both of which this project can own. `cc65` (da65/ca65/
+ld65) is not adopted: da65's `RANGE TYPE` vocabulary cannot express a
+split-address table or a struct, so everything Ghidra recovers dies at that
+export boundary.
 
-**Explicitly not in this milestone:** the two upstream contributions
-(`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
-`--mcp-port`/`--mcp-bind`), unchanged from v0.4.0 and still pull requests against
-projects this repo does not own; BASIC token decoding (upstream's
-`r2000-analyze-basic`, deliberately not absorbed); and any claim of
-byte-identical output.
+**Standing record:** `.planning/notes/dxa-ghidra-pivot.md`,
+`auto-annotation-from-ghidra-xrefs.md`, `ghidra-volatile-io-and-banking.md`,
+`vic-graphics-map-derivation.md`, and the reproduction material in
+`notes/dxa-ghidra-pivot-evidence/`.
 
-<details>
-<summary>Previous milestone detail — v0.4.0 phase-by-phase narrative (archived 2026-08-23)</summary>
-
-**v0.4.0 Debt discharged, decisions settled — as it was tracked during execution:**
-
-**Opened:** 2026-08-21, immediately after the v0.3.0 close.
-**All phases complete:** 2026-08-23. Six phases (12, 13, 14, 15, 16, 17), 44/44
-plans, 16/16 requirements.
-
-**Goal:** Stop inheriting the same ledger a third time — every carried item
-becomes a fix or a dated decision, and the two questions this project has
-answered *by default* each milestone get answered deliberately.
-
-**Target features (all delivered):**
-
-- **External verification replaces the internal proxies.** The three
-  highest-value carried items are one failure mode this project has now been
-  taught five times — an internal check standing in for an external one. Re-record
-  `VERIF-02`'s three synthetic binmon fixtures against real stock VICE; confirm
-  `BACK-01`/`BACK-04`'s `--help` backend discriminator against real stock *and*
-  fork binaries; exercise the four Phase 3 behavioural/spelling wire details
-  written spec-driven and never run. All three are live-testable in this
-  environment: genuine unpatched stock VICE is at `/usr/bin/x64sc`, with the fork
-  shadowing it earlier on `PATH`. *Delivered by Phase 13 — and the sixth
-  instance of the lesson: one of the four details came back refuted.*
-- **An audit cannot record `passed` over a red guard.** Require a green run of the
-  `docs-*.test.ts` guards as a precondition of `status: passed`. The
-  instrument already exists and nothing forces anyone to read it — which is how
-  Phase 08's `WR-04`..`WR-12` and Phase 09's `IN-01`..`IN-03` stayed invisible
-  until the completeness guard was built, and how `4f048bb` closed with that
-  guard already red. *Delivered by Phase 12, sequenced first so every later
-  phase ran under its own gate.*
-- **The fork-backend decision, actually made.** Remove it, or record a dated
-  decision naming the criteria that would reverse it. It is the largest single
-  simplification available and has been retained by default across two closes.
-  The criteria are coupled to the upstream work below, not independent of it.
-  *Delivered by Phase 14: `FORK-01` decided **retain**.*
-- **Every remaining pending todo dispositioned.** Each of the other ~14 becomes
-  fixed, filed `wont-fix` with rationale, or explicitly promoted into scope.
-  *Delivered by Phase 15 (21 → 2) and Phase 17 (2 → 0).*
-- **Phase 03's UAT gap closed** — `vice_autostart`/`vice_disk_attach`/`vice_snapshot_load`
-  against real fixtures; `vice_keyboard_petscii`/`vice_joystick_set` against a
-  running program; the hot non-stopping-checkpoint auto-disable guard under
-  sustained 20+/sec hit pressure. *Delivered by Phase 15 — the last scenario by
-  a real checkpoint flood on the KERNAL IRQ entry against stock VICE 3.9.*
-- **Core Value restated or confirmed** on two milestones of evidence, resolving
-  the flag deliberately left under Core Value at the v0.3.0 close. *Delivered by
-  Phase 17: `CORE-01` decided **keep-dated**.*
-- **Packaging and repo shape** — relocate the plugin payload under `src/`, merge
-  `.mcp.json`, and close `QUAL-01..03` (tests for `acme.mjs`/`driver.mjs`/`derive.mjs`,
-  orphaned planning references in source comments, the control-plane exposure).
-  *Delivered by Phase 16.*
-
-**Explicitly not in this milestone:** the two upstream contributions
-(`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
-`--mcp-port`/`--mcp-bind`). Both are pull requests against third-party projects,
-already recorded under Out of Scope, and neither is a deliverable of this repo.
-The coupling is real and was named rather than ignored: if `KEYBOARD_MATRIX_SET`
-ever lands upstream, one of the three standing reasons to keep the fork backend
-disappears — so `FORK-01` cites it as a reversal criterion instead of treating
-the two as independent.
-
-</details>
+**Known verification overrides:** 5 newly acknowledged, 16 carried forward
+(STATE.md → Deferred Items), plus Phase 19's own SC4/COV-01 override — accepted
+because the replacement plan for the coverage instrument *is* this pivot.
 
 ## Next Milestone Goals
+
+**v0.6.0 — own the substrate.** Decided 2026-08-25 at the v0.5.0 close. Three
+new phases have to land before v0.5.0's cut goals can be attempted at all, and
+then those goals follow on the new substrate:
+
+| | Phase | Delivers |
+|---|---|---|
+| A | The two engines | dxa vendored plus a listing parser; Ghidra headless harness; `ApplyHints` (volatile I/O blocks + dxa's map); `ExportAnalysis` against `DecompInterface`; the undocumented-opcode SLEIGH extension (`docs/undocumented-opcodes-ghidra.md`, all 105 bytes) — stock Ghidra's `6502.slaspec` defines 57 instructions, all documented, so this is the one real toolchain gap |
+| B | The annotation store | labels, comments, per-range typing, scopes, enums, undo, persistence; MCP surface; ACME exporter. Deletes 19,181 lines of r2000 integration glue (9,087 non-test + 9,928 test) |
+| C | Automatic annotation | the `memmap.json` join and its three selection rules; `$01` bank-state derivation; VIC graphics-map derivation |
+
+Then v0.5.0's cut phases, rewritten: decomposition to closure, rebuildable
+source and the reassembly gate, equivalence and modifiability — carrying
+DECOMP-01..04, BUILD-01..06 and EQUIV-01..04 unchanged except for BUILD-01,
+already reworded from "per regenerator2000 scope" to "per annotation-store
+scope".
+
+**Phase numbering starts at 23.** 20-22 are cut and never reused.
+
+**Reuse rather than rebuild:** `disasm-opcodes.ts`/`disasm-decoder.ts`/
+`disasm-renderer.ts` (2,555 lines) already decode 6502 including illegal
+opcodes; `r2000-d64.ts` (310 lines) is standalone; `memmap.json` plus
+`r2000-regbits-gen.ts` plus `r2000-enum-gen.ts` already own machine knowledge
+and enum generation.
+
+**Dropped deliberately:** r2000's unpacker (~5,400 lines including the CPU it
+needs, with claimed 100% unp64 benchmark parity). Owner decision 2026-08-25:
+depack-by-running via `c64-ram-capture` is sufficient.
+
+**Open before planning:** every number behind this pivot comes from one
+279-byte fixture written by the same person testing it. Re-run against a real
+cracked release — the `c64-provenance-diff` fixtures are the obvious target.
+The specific risk is that `memmap.json` has a flat address model, so against
+code that banks ROM in and out an address's meaning becomes bank-dependent.
+See `.planning/research/questions.md`.
+
+---
 
 **v0.4.0 took four of the five candidates standing at the v0.3.0 close** — the
 carried debt, the fork-backend decision, the Core Value restatement, and
@@ -1067,22 +995,11 @@ written).
 
 ---
 
-*Last updated: 2026-08-23 at the **start of milestone v0.5.0**. Current Milestone
-replaced "None open" with v0.5.0 "The rebuild half — absorbed playbooks,
-modifiable source", carrying the three live measurements that motivate it
-(regenerator2000 0.9.20's 28-tool MCP surface against this project's curated 17;
-upstream's five `.agent/skills/` analyze procedures present in the GitHub
-repository but absent from the published crate; the per-call-spawn vs
-persistent-session mismatch that is the overlap's actual root cause), the
-synthetic-fixtures-only proving ground, and the explicit non-goals. Requirements
-→ Active replaced the empty v0.4.0-close placeholder with v0.5.0's thirteen
-items. v0.4.0's execution narrative is unchanged in its `<details>` block beside
-v0.3.0's and v0.2.0's. Not touched at this write: `## Core Value` and its
-`*Provenance.*` paragraph (pinned by `docs-core-value-decision.test.ts`),
-Requirements → Validated, Out of Scope, Context, Constraints, Engineering
-Governance, Key Decisions, Current State and Next Milestone Goals — all still
-accurate as of the v0.4.0 close, and the sections this milestone's own decisions
-will amend as it runs. Previously: 2026-08-23 at the v0.4.0 milestone close;
-2026-08-23 after Phase 17 close; 2026-08-21 at the v0.3.0 milestone close;
-2026-08-21 after Phase 11 close; 2026-08-20 after Phase 9 close; 2026-08-19 at
-v0.2.0 milestone close.*
+*Last updated: 2026-08-25 at the **close of milestone v0.5.0**. The milestone
+shipped its first half (persistent session, absorbed procedures, coverage
+instrument) and cut its second: Phases 20-22 were dissolved by the dxa+Ghidra
+pivot, which reverses D-R1/D-R2 and reduces regenerator2000 from the analysis
+engine to an annotation store this project will own. Current Milestone became
+"Shipped: v0.5.0"; Next Milestone Goals became v0.6.0's three substrate phases
+plus the three rewritten ones. Full evidence in
+`.planning/notes/dxa-ghidra-pivot.md` and its evidence directory.*

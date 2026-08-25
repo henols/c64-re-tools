@@ -1,21 +1,21 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.5.0
-milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
-current_phase: 20
-current_phase_name: Decomposition to Closure
-status: planning
-stopped_at: Phase 19 complete, ready to plan Phase 20
-last_updated: "2026-08-25T14:33:43.742Z"
+milestone: v0.6.0
+milestone_name: (not yet defined — run /gsd-new-milestone)
+status: Awaiting next milestone
+stopped_at: v0.5.0 shipped 2026-08-25; dxa+Ghidra pivot decided, v0.6.0 unplanned
+last_updated: "2026-08-25T14:45:56.739Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: 8c48c9b5f95dc442b2cd88bee53c1d1588729452
+last_activity_desc: v0.5.0 milestone closed (override_closeout); Phases 20-22 cut by the dxa+Ghidra pivot
+state_head: 6d265632e8b92fe9e2b11a6c6871b4f81b1b73cf
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 27
   completed_plans: 27
   percent: 40
+current_phase: 23
+current_phase_name: (unplanned — v0.6.0 starts at Phase 23; 20-22 are cut and never reused)
 ---
 
 # Project State
@@ -68,10 +68,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 20 — Decomposition to Closure
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-25 — Phase 19 complete, transitioned to Phase 20
+Phase: Milestone v0.5.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-25 — Milestone v0.5.0 completed and archived
 
 ## Performance Metrics
 
@@ -855,7 +855,6 @@ resurfaces at the next `audit-open` scan and must be acknowledged again.
 
 **Counts:** 16 newly acknowledged, 0 carried forward from a prior close.
 
-
 **v0.5.0 close (2026-08-25): 5 newly acknowledged, 16 carried forward from prior closes — 21 suppressed in total.** A further 13 rows the scanner had been reading as deferred items were NOT suppressed but corrected: they are evidence tables (guard exit codes in phase 19 item 2, the round-4 flake tally in item 6), over-read because that file's title is an `#` heading so the scanner treats the whole document as the Deferred Items section. They now carry an explicit `resolved` status column. The three genuinely-open entries above are load-induced test flakes, real and unfixed, carried forward rather than closed.
 
 | Category | Item | Status | Deferred At | Milestone |
@@ -953,33 +952,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- **Plan the first phase: `/gsd-plan-phase 18`.** The roadmap is written
-  (`.planning/ROADMAP.md`, Phases 18-22) and `.planning/REQUIREMENTS.md`'s
-  Traceability table reads 27/27 mapped, 0 unmapped. Phase 18 (Persistent
-  Session and Tool Surface) is the enabler every later phase assumes — plan it
-  first.
-
-- Three requirements are flagged in ROADMAP.md for phase-level research rather
-  than assumed: `SURF-03` (packer-identification mechanism, Phase 19 — MEDIUM
-  confidence, no dedicated tool confirmed in the live 28-tool surface),
-  `EQUIV-01` (extending `compare.mjs` for original-vs-different-binary mode,
-  Phase 22 — this milestone's single highest-risk requirement, no existing
-  precedent), and `EQUIV-02`/`EQUIV-03` (deterministic input replay for the
-  behavioural/modifiability demos, Phase 22 — no VICE-specific tooling
-  located). See each phase's Notes in ROADMAP.md for specifics before writing
-  those phases' plans.
-
-- Two standing candidates from the v0.4.0 close remain out of this milestone's
-  scope and still need a home: the two **upstream contributions**
-  (`KEYBOARD_MATRIX_SET` for VICE's binary monitor, regenerator2000's
-  `--mcp-port`/`--mcp-bind`), which stay Out of Scope because they are pull
-  requests against projects this repo does not own; and the **9 follow-on items
-  v0.4.0 promoted rather than closed**, each already carrying a named owner in
-  `milestones/v0.4.0-REQUIREMENTS.md` → `### Promoted by DEBT-01`,
-  `### Fork Backend Follow-on` and `### Control-Plane Bind Follow-on`.
-
-- Two coverage TODOs the v0.4.0 audit recorded as non-blocking, still worth
-  folding in opportunistically rather than rediscovering: five of six v0.4.0
-  phases have a `VALIDATION.md` still at `status: draft` (never reconciled by
-  `validate-phase`), and only Phase 17 produced a `SECURITY.md` — Phase 16's
-  packaging/CI/network-bind work is the one most likely to have benefited.
+- Start the next milestone with /gsd-new-milestone
