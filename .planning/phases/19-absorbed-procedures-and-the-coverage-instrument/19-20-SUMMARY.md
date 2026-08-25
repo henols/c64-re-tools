@@ -144,7 +144,7 @@ coverage:
     rationale: "The guards prove the decision record is well-formed and consistent with the rest of the phase's documents. Whether the tradeoff itself is the right one for a C64 reverse-engineering instrument — under-reporting a census when a program executes a `lax` — is a judgment about the domain that no test asserts."
 
 # Metrics
-duration: 42 min
+duration: 29 min
 completed: 2026-08-25
 status: complete
 ---
@@ -155,9 +155,9 @@ status: complete
 
 ## Performance
 
-- **Duration:** 42 min
-- **Started:** 2026-08-25T13:05:00Z (reconstructed — the context bundle read, plan read and baseline measurement preceded the first commit at 13:31:07Z)
-- **Completed:** 2026-08-25T13:47:00Z
+- **Duration:** ~29 min
+- **Started:** ~2026-08-25T13:24:00Z (reconstructed, bounded below by plan 19-18's final commit at 13:23:42Z and above by this plan's first commit at 13:31:07Z)
+- **Completed:** ~2026-08-25T13:53:00Z
 - **Tasks:** 3
 - **Files modified:** 4
 
