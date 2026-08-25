@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-20-PLAN.md
-last_updated: "2026-08-25T13:49:39.464Z"
+stopped_at: Completed 19-19-PLAN.md
+last_updated: "2026-08-25T14:05:32.772Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 19 execution started
-state_head: 5ad356d9ee8fa35f54da6eee05352e9d113db70e
+last_activity_desc: Phase 19 round-4 gap closure completed (19-19 consolidation and phase gate)
+state_head: eb0b92b968131305d72201e2fbffb78793d50208
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
   percent: 20
 ---
 
@@ -69,9 +69,9 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 19 of 20 executed — next 19-19
-Status: Executing Phase 19 (fourth gap-closure round, 19-20 done; 19-19 outstanding)
-Last activity: 2026-08-25 — Phase 19 execution started
+Plan: 20 of 20 executed — every plan in phase 19 has a SUMMARY
+Status: Phase 19's fourth gap-closure round is complete and its gate is green; awaiting re-verification, which owns the COV-01 / COV-02 verdict
+Last activity: 2026-08-25 — Phase 19 round-4 gap closure completed (19-19 consolidation and phase gate)
 
 ## Performance Metrics
 
@@ -198,6 +198,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P17 | 45 min | 3 tasks | 2 files |
 | Phase 19 P18 | 26 min | 3 tasks | 4 files |
 | Phase 19 P20 | 29 min | 3 tasks | 4 files |
+| Phase 19 P19 | 20 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -405,6 +406,9 @@ Recent decisions affecting current work:
 - [Phase 19]: A route's verdict is measured through the collection that route publishes into, never through the aggregate provenDispatchTargets() seam — STACK_RETURN is a class-3 decline and a class-4 acceptance in one payload. Through the seam it reads as accepted and the decline is inexpressible; through splitTables and stackReturnDispatch both facts are legible.
 - [Phase 19]: The recursive descent stops at an illegal opcode; the census's three readers (descent, linear sweep, isPlausibleEntryPoint) are brought to ONE predicate, isDecodableAsInstruction() — The descent walked through illegal opcodes and claimed their bytes while the sweep beside it refused them: a 64-byte image with four bytes of code reported reachedAsInstruction=64 against linearSweepDecodable=4. Two readers already agreed on the stricter rule; the third never asked.
 - [Phase 19]: The descent moved to the sweep's standard and NOT the reverse; COVERAGE_SCHEMA_VERSION stays 2 — Loosening the sweep to walk stable undocumented opcodes would redefine what linearSweepDecodable MEANS in a report Phase 20 consumes, which owes a schema bump and a consumer review. Residual accepted and sized: 105 of 256 opcode entries are flagged illegal, only 12 of them jam, so 93 stable undocumented instructions will now stop a census and under-report it. Reversal condition named in 19-DECISIONS.md Decision 6.
+- [Phase 19]: 19-19: The round-4 consolidation states its 15-demonstration total as DERIVED by counting the planted-violation rows the five SUMMARYs record (1+3+2+6+3), and invites the recount; three cells carry a named absence rather than a plausible number, because the pairing-consultation pin, the four route pins and the declaration half of the (shape x route) assertion have no report values by construction
+- [Phase 19]: 19-19: WR-03 recorded CLOSED in deferred-items.md with its before/after measurements (64/0/4 to 4/60/4, the $ea twin unchanged at 64/0/64), the orchestrator authority that superseded 19-CONTEXT.md's deferral, the deliberate decision to leave 19-CONTEXT.md byte-unchanged, and the residual sized at 93 stable undocumented opcodes now under-reported by BOTH figures instead of contradicted by them
+- [Phase 19]: 19-19: D-08 recorded as a contingency and NOT acted on -- if round-4 verification returns SC4 partial again the next action is to rescope SC4 to advisory-not-gate rather than run a round 5, but that edit is ONE-WAY (a ROADMAP success criterion plus a REQUIREMENTS entry Phase 20's entry conditions read) and requires explicit user confirmation; no checkbox, criterion or requirements entry was touched
 
 ### Pending Todos
 
@@ -899,8 +903,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T13:49:30.595Z
-Stopped at: Completed 19-20-PLAN.md
+Last session: 2026-08-25T14:04:51.925Z
+Stopped at: Completed 19-19-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
