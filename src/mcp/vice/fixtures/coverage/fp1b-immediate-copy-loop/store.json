@@ -1,0 +1,13 @@
+{
+  "control": "FP1b",
+  "purpose": "the twin of FP1 whose ONLY difference is the addressing mode of its two loads. It is committed rather than inferred so FP1's census can be compared against a measured baseline instead of against a remembered number -- a remembered number being exactly what a control fixture exists to replace",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 7,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}

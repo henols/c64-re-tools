@@ -1,0 +1,13 @@
+{
+  "control": "FP1",
+  "purpose": "the CENSUS false-positive control, NOT a findings control: an ordinary two-table indexed copy loop that dispatches through nothing. The property under test is that structural.reachedAsInstruction does not exceed code_size; the clean/non-clean verdict is INCIDENTAL and expect_measure is deliberately null",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 7,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}
