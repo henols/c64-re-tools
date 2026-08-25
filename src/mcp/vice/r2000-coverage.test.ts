@@ -943,12 +943,13 @@ test("bounded walk: the descent walker honours an explicit step bound and report
 
 /** The pinned size of the committed control set: five findings controls, one
  * non-vacuity control, the two-fixture false-positive census pair, and the
- * dispatch gate's INTERIOR control (`fp2-zeropage-data-pointer`) -- a payload
- * that satisfies every condition the pre-CR-04 gate required while dispatching
- * nowhere at all. The number lives here and in `fixtures/coverage/README.md`,
- * and both must agree with the directory count -- a stale count in either is
- * the same defect class this phase's gap closure exists to remove. */
-const COMMITTED_CONTROL_FIXTURES = 9;
+ * two-fixture INTERIOR control pair (`fp2-zeropage-data-pointer` and its
+ * immediate twin `fp2b-immediate-data-pointer`) -- payloads that satisfy every
+ * condition the pre-CR-04 gate required while dispatching nowhere at all. The
+ * number lives here and in `fixtures/coverage/README.md`, and both must agree
+ * with the directory count -- a stale count in either is the same defect class
+ * this phase's gap closure exists to remove. */
+const COMMITTED_CONTROL_FIXTURES = 10;
 
 test("the committed control set is exactly the pinned size, and every fixture carries a project file and a store file", () => {
   const dirs = fixtureDirs();
@@ -1121,6 +1122,7 @@ test("FP1b earns its place: without a committed twin, FP1's census could only be
 });
 
 const FP2_INTERIOR = "fp2-zeropage-data-pointer";
+const FP2_IMMEDIATE = "fp2b-immediate-data-pointer";
 
 test("a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it", () => {
   // The gate's INTERIOR, at report level. FP1/FP1b carry no zero-page store at
@@ -1169,6 +1171,26 @@ test("a zero-page vector that is BUILT and then read through as data is not disp
       `exceed the code that is actually there (pre-fix: 33 against a declared 17).`,
   );
 
+  // The census baseline is MEASURED, not remembered: the immediate twin is a
+  // committed fixture whose only difference is the addressing mode of the two
+  // vector-byte loads. Two equal numbers alone would be satisfiable by an
+  // instrument that saw nothing in either, so the twin's own non-zero census is
+  // asserted in "FP2b earns its place" below.
+  const twinStore = loadFixture(FP2_IMMEDIATE).store;
+  const twin = reportFor(FP2_IMMEDIATE);
+  assert.equal(
+    report.structural.reachedAsInstruction,
+    twin.structural.reachedAsInstruction,
+    `the interior control and its immediate twin carry 17 bytes of real code EACH and differ only in the addressing mode of two ` +
+      `loads, so they must report the same structural.reachedAsInstruction. Pre-fix the pair was asymmetric: 33 against the twin's ` +
+      `17, because the indexed variant's two loads were promoted to a "proven" split table and their 16 bytes of pointer data ` +
+      `became descent seeds. A number here that is neither 17 nor 33 is a rewrite, not a regression -- read the generator first.`,
+  );
+  assert.ok(
+    twin.structural.reachedAsInstruction <= twinStore.code_size!,
+    `${FP2_IMMEDIATE}: the census reached ${twin.structural.reachedAsInstruction} bytes against a declared ${twinStore.code_size}`,
+  );
+
   // Both directions in one test: the gate must not become a machine that
   // declines everything. The genuinely-consumed split table -- whose
   // `jmp ($00fb)` operand value equals its own `sta $fb` target -- is still
@@ -1179,6 +1201,53 @@ test("a zero-page vector that is BUILT and then read through as data is not disp
     provenDispatchTargets(proven).includes(0xc00d),
     "the proven split table's reconstructed target must still reach provenDispatchTargets() -- a tightening that declines everything measures nothing",
   );
+});
+
+test("FP2b earns its place: without a committed twin, the interior control's census could only be compared against a remembered number", () => {
+  // The same reasoning as `FP1b earns its place`, pointed at the interior
+  // control. A lone FP2 asserting `reached <= 17` would be satisfied by an
+  // instrument that had quietly stopped censusing anything; the twin supplies
+  // the live baseline that makes "equal to the twin" mean something, and it is
+  // COMMITTED rather than built inline so the pair's relationship is a property
+  // of the repository rather than of the generator that wrote it.
+  const indexed = loadFixture(FP2_INTERIOR).store;
+  const immediate = loadFixture(FP2_IMMEDIATE).store;
+
+  assert.equal(indexed.origin, immediate.origin, "the pair must sit at the same origin, or their censuses are not comparable");
+  assert.equal(indexed.size, immediate.size, "the pair must be the same length");
+  assert.equal(indexed.code_size, immediate.code_size, "the pair must declare the same code size");
+
+  const a = payloadOf(FP2_INTERIOR);
+  const b = payloadOf(FP2_IMMEDIATE);
+  const codeSize = indexed.code_size!;
+  assert.equal(a.length, b.length);
+  assert.notDeepEqual(
+    [...a.subarray(0, codeSize)],
+    [...b.subarray(0, codeSize)],
+    "the prologues must actually DIFFER -- two identical programs would make the comparison vacuous",
+  );
+  assert.deepEqual(
+    [...a.subarray(codeSize)],
+    [...b.subarray(codeSize)],
+    "the 47 data bytes must be identical in the COMMITTED payloads, not merely in the generator that wrote them",
+  );
+
+  // And the baseline is a live measurement, not a constant: the twin must reach
+  // something, or "equal to the twin" would be satisfiable by zero.
+  const twin = reportFor(FP2_IMMEDIATE);
+  assert.ok(
+    twin.structural.reachedAsInstruction > 0,
+    "the baseline half of the interior pair must actually reach something -- otherwise the equality asserted above is satisfiable by an " +
+      "instrument that censused nothing at all, which is the failure mode a measured baseline exists to rule out",
+  );
+  assert.equal(twin.structural.reachedAsInstruction, codeSize, "the immediate twin's every code byte is reached, and nothing beyond it");
+
+  // The twin has no indexed pair at all, so it has nothing to advise about --
+  // which is the ONE structural difference between the two reports, stated so
+  // the equality above is the equality of two reports that DID see it.
+  assert.equal(indexed.size, 0x40, "the interior control is a 64-byte payload");
+  assert.equal(reportFor(FP2_INTERIOR).dispatch.splitTableCandidates.length, 1, `${FP2_INTERIOR}: the ungated lo/hi pairing must still be REPORTED as advisory`);
+  assert.equal(twin.dispatch.splitTableCandidates.length, 0, `${FP2_IMMEDIATE}: the immediate twin has no indexed pair at all`);
 });
 
 // ---------------------------------------------------------------------------

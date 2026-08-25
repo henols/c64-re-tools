@@ -1,0 +1,13 @@
+{
+  "control": "FP2b",
+  "purpose": "the twin of FP2 whose ONLY difference is the addressing mode of its two vector-byte loads -- immediate constants instead of indexed table reads. The same zero-page vector is still built at $fb/$fc and still consumed by the same lda ($fb),y. It is committed rather than inferred so FP2's census is compared against a LIVE, MEASURED baseline instead of against a number someone remembered: the two must report the SAME structural.reachedAsInstruction, and the twin's must be strictly greater than zero, so the equality cannot be satisfied by an instrument that quietly stopped censusing anything. Pre-fix the pair was asymmetric -- 33 against 17, on 17 bytes of real code in both",
+  "origin": 2064,
+  "size": 64,
+  "code_size": 17,
+  "expect_clean": false,
+  "expect_measure": null,
+  "symbols": [],
+  "comments": [],
+  "blocks": [],
+  "cross_references": []
+}
