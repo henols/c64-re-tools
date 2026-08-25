@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 9/9 plans executed — 5/5 original plans, 4/4 gap-closure plans (19-06, 19-07, 19-08, 19-09 all done)
+**Plans**: 13 plans — 9/9 executed (5/5 original, 4/4 first-round gap closure), plus 4 planned second-round gap-closure plans (19-10 … 19-13) not yet executed
 
 **Wave 1**
 
@@ -225,6 +225,24 @@ under it.
 **Gap-closure wave 3** *(blocked on gap-closure wave 2)*
 
 - [x] 19-09-PLAN.md — the committed false-positive census control pair, the corrected fixture counts, and the extended validation record
+
+**Gap closure, round 2** *(re-verification 2026-08-25 returned `gaps_found`, 4/5 must-haves, two open gaps; waves renumbered from 1 for this run)*
+
+**Gap-closure wave 1**
+
+- [ ] 19-10-PLAN.md — tracer: require the dispatch CONSUMER rather than the zero-page pointer construction, and commit the interior control the gate has never had, asserted at report level
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 19-11-PLAN.md — gate the class-4 stack-return scan to class 3's standard with the negative controls it never had, and stop an unrelated indexed load from silently erasing a proven split table
+
+**Gap-closure wave 3** *(blocked on gap-closure wave 2)*
+
+- [ ] 19-12-PLAN.md — make the multi-caller rule's name branch demand a reference rather than a coincidence, and give the dispatch scan the census's own 16-bit bound
+
+**Gap-closure wave 4** *(blocked on gap-closure wave 3)*
+
+- [ ] 19-13-PLAN.md — the durable disposition ledger, the two corrected deferred entries, the extended validation record, and the full-suite green gate
 
 Notes:
 
