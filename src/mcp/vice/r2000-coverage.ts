@@ -632,6 +632,33 @@ function zeroPageStoreTarget(insn: Instruction): number | null {
 }
 
 /**
+ * Which of the two reconstructed bases holds the LOW byte of the vector the
+ * pairing builds. The named return type of `resolveSplitOrientation()`, given
+ * a name so the pairing under test can be carried across a call boundary as
+ * one value rather than re-derived inside every predicate that needs it.
+ */
+interface SplitOrientation {
+  loBase: number;
+  hiBase: number;
+}
+
+/**
+ * THE PAIRING A DISPATCH PREDICATE IS BEING ASKED TO RULE ON.
+ *
+ * `hasDispatchContext()` takes this rather than re-guessing it from the
+ * window, because a predicate that never looks at the pairing under test
+ * cannot say anything about it. `firstIndex` and `secondIndex` are the two
+ * indexed loads' own instruction indices, and `oriented` is the orientation
+ * their store construction justified -- the call site only reaches the
+ * predicate once that orientation is non-null.
+ */
+interface DispatchPairing {
+  firstIndex: number;
+  secondIndex: number;
+  oriented: SplitOrientation;
+}
+
+/**
  * The COMPLETE, frozen list of shapes `hasDispatchContext()` accepts as proof
  * that something dispatches through a reconstructed pair of tables. One stable
  * string id per sufficient shape, in the order the predicate tests them.
@@ -669,12 +696,32 @@ export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
  *
  * Accepts either ONE of the two shapes named in `DISPATCH_CONTEXT_SHAPES`:
  *
- *   - `stack-return-push-idiom` -- a `pha` ... `pha` ... `rts` shape within
- *     reach. After the Class-4 pass runs FIRST and claims its windows, a
- *     pairing inside such a window is skipped outright rather than promoted
- *     here; the condition is kept so this function reads as a COMPLETE
- *     statement of what counts as dispatch context, not as a partial one whose
- *     omissions must be inferred.
+ *   - `stack-return-push-idiom` -- the RTS trick, matched as a DATA FLOW from
+ *     the pairing under test: the instruction immediately after EACH of the
+ *     two paired loads is a `pha`, and an `rts` follows both of those pushes
+ *     inside the window. Each load must push the byte it just read, because
+ *     that is the whole mechanism -- `rts` jumps to the address assembled from
+ *     the two pushed bytes, so a pairing whose bytes were never pushed is not
+ *     the thing that address came from.
+ *
+ *     WHY THE PRESENCE OF A PUSH IDIOM IS NOT EVIDENCE ABOUT THIS PAIRING.
+ *     This branch previously accepted any two `pha` bytes and any `rts` seen
+ *     anywhere in the window, on the stated rationale that the Class-4 pass
+ *     runs first and claims its windows, so a pairing inside one is never
+ *     promoted here. That rationale is FALSE and has been removed rather than
+ *     kept: Class 4 claims only its exact five-instruction shape
+ *     (`indexed load : pha : indexed load : pha : rts`), and every time it
+ *     DECLINES -- mixed index registers, an implausible reconstructed entry
+ *     point, or any instruction sitting between a load and its push -- the
+ *     window is left unclaimed and this pass rules on the pairing itself.
+ *     `lda lo,x : sta $fb : lda hi,x : sta $fc : pha : txa : pha : tya : rts`
+ *     is the concrete case: the two pushes carry the accumulator's leftover
+ *     value and the X register, neither load's byte reaches the stack, and
+ *     the payload was still promoted -- manufacturing eight "proven" entry
+ *     points and 47 of 64 bytes of code-or-table out of a 15-byte program.
+ *     A `pha`/`pha`/`rts` in the same neighbourhood as two indexed loads is
+ *     an extremely ordinary coincidence; the LINK is the evidence, not the
+ *     shape.
  *   - `zeropage-vector-jumped-through` -- two stores into CONSECUTIVE zero-page
  *     addresses within reach AND an indirect jump within reach whose pointer is
  *     the LOWER of those two addresses. That is the classic "build a vector in
@@ -691,10 +738,21 @@ export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
  * through some OTHER vector near two indexed loads is not evidence that those
  * loads feed it. The operand value must equal the vector that was built.
  */
-function hasDispatchContext(insns: readonly Instruction[], start: number, reach: number): boolean {
+function hasDispatchContext(insns: readonly Instruction[], start: number, reach: number, pairing: DispatchPairing): boolean {
   const end = Math.min(insns.length, start + reach + 1);
 
-  let sawPha = 0;
+  // `stack-return-push-idiom`, decided against the PAIRING rather than against
+  // the window's contents: the two paired loads must each be immediately
+  // followed by the `pha` that carries the byte they just read, and the `rts`
+  // that consumes the assembled address must follow both of those pushes.
+  // Read at the two loads' own successors, so no `pha` anywhere else in the
+  // window can stand in for either of them.
+  if (insns[pairing.firstIndex + 1]?.opcode === 0x48 && insns[pairing.secondIndex + 1]?.opcode === 0x48) {
+    for (let k = pairing.secondIndex + 2; k < end; k++) {
+      if (insns[k]!.opcode === 0x60) return true;
+    }
+  }
+
   const zpStores: number[] = [];
   /** The pointer each indirect jump in the window dispatches THROUGH, collected
    * rather than treated as sufficient on sight -- see the doc comment. */
@@ -702,9 +760,6 @@ function hasDispatchContext(insns: readonly Instruction[], start: number, reach:
   for (let k = start; k < end; k++) {
     const insn = insns[k]!;
     if (insn.opcode === 0x6c && insn.operand) indirectJumpPointers.push(insn.operand.value);
-    if (insn.opcode === 0x48) sawPha++;
-    // `stack-return-push-idiom`
-    if (insn.opcode === 0x60 && sawPha >= 2) return true;
     const zp = zeroPageStoreTarget(insn);
     if (zp !== null) zpStores.push(zp);
   }
@@ -741,7 +796,7 @@ function resolveSplitOrientation(
   firstIndex: number,
   secondIndex: number,
   reach: number,
-): { loBase: number; hiBase: number } | null {
+): SplitOrientation | null {
   const consumerOf = (from: number): number | null => {
     const end = Math.min(insns.length, from + reach + 1);
     for (let k = from + 1; k < end; k++) {
@@ -1039,7 +1094,9 @@ export function scanIndirectDispatch(
       // (b) + (d). The orientation is the ONLY thing that may name a base
       // "lo": `Math.min` over two addresses is not evidence (WR-01).
       const oriented = sameIndexRegister(first, second) ? resolveSplitOrientation(insns, i, j, SPLIT_TABLE_WINDOW) : null;
-      const gatedSoFar = oriented !== null && hasDispatchContext(insns, i, SPLIT_TABLE_WINDOW); // (c)
+      // (c). The pairing under test crosses the call boundary: a predicate
+      // that re-guesses which loads it is ruling on cannot rule on them.
+      const gatedSoFar = oriented !== null && hasDispatchContext(insns, i, SPLIT_TABLE_WINDOW, { firstIndex: i, secondIndex: j, oriented });
 
       // Encounter order for the advisory case; the resolved roles otherwise.
       const loBase = oriented ? oriented.loBase : a;
