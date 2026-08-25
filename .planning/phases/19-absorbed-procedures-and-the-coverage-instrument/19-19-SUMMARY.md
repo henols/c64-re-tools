@@ -353,3 +353,14 @@ None — no external service configuration required.
 ---
 *Phase: 19-absorbed-procedures-and-the-coverage-instrument*
 *Completed: 2026-08-25*
+
+## Self-Check: PASSED
+
+- `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md` — FOUND
+- `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md` — FOUND
+- `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-19-SUMMARY.md` — FOUND
+- Commits `89af69a`, `e476452`, `3ab56f6` — all FOUND in `git log --oneline --all`
+- `19-REVIEW.md`'s last commit is still `80c544b` (2026-08-25, the second review pass) — this plan
+  did not touch it and finding-id continuity is preserved
+- Both tasks' `<acceptance_criteria>` re-run and passing; both `<verify>` blocks and the plan-level
+  `<verification>` block re-run in full with no exceptions
