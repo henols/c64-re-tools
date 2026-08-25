@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 8
 waived_count: 0
-fixed_count: 1
-total_count: 9
-last_updated: 2026-08-24T21:56:23.308Z
+fixed_count: 2
+total_count: 10
+last_updated: 2026-08-25T11:58:16.142Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,7 @@ last_updated: 2026-08-24T21:56:23.308Z
 | 7 | 19 | unmet-truth | .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-REVIEW.md |  | 17 Phase 19 review findings (CR-01, IN-01..IN-04, WR-01..WR-12) undispositioned; 19-06 discharges CR-01 and WR-02, the rest are owned by 19-07/19-08/19-09 and keep docs-review-disposition.test.ts + audit-integrity D-12-02 red until 19-09 lands | open |  | 2026-08-24T21:28:33.217Z |  |
 | 8 | 19 | deviation | src/mcp/vice/skill-attribution.test.ts |  | 19-07 deferred WR-11: three suites and five shipped-prose citations hard-code a .planning/phases/19- path that GSD archives at milestone close; 19-07 added no new instance | open |  | 2026-08-24T21:56:23.195Z |  |
 | 9 | 19 | deviation | src/mcp/vice/skill-attribution.test.ts |  | 19-07 deferred WR-12: manifestEntryFor() lies to the type system and can throw a TypeError instead of its intended message; not called by 19-07's guard | open |  | 2026-08-24T21:56:23.308Z |  |
+| 10 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | trueReturnGuardChains() cut for-header semicolons; fixed in the same commit by tracking parenthesis depth | fixed |  | 2026-08-25T11:57:33.035Z | 2026-08-25T11:58:16.142Z |
 
 ````json
 [
@@ -134,6 +135,18 @@ last_updated: 2026-08-24T21:56:23.308Z
     "reason": "",
     "recorded_at": "2026-08-24T21:56:23.308Z",
     "resolved_at": null
+  },
+  {
+    "id": 10,
+    "kind": "deviation",
+    "phase": "19",
+    "file": "src/mcp/vice/r2000-coverage.test.ts",
+    "line": null,
+    "description": "trueReturnGuardChains() cut for-header semicolons; fixed in the same commit by tracking parenthesis depth",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-08-25T11:57:33.035Z",
+    "resolved_at": "2026-08-25T11:58:16.142Z"
   }
 ]
 ````
