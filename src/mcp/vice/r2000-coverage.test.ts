@@ -66,6 +66,23 @@ import { decodeRawData } from "./r2000-project.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
 
+/** The previously-unseen Phase 11 fixture -- authored for a different phase and
+ * never used to write these rules. Named once here because two sections now
+ * read it, and two spellings of one path is two fixtures as far as a future
+ * rename is concerned. */
+const PHASE_11_FIXTURE_PATH = join(
+  HERE,
+  "..",
+  "..",
+  "..",
+  ".planning",
+  "phases",
+  "11-annotation-store-enums-and-the-symbol-round-trip",
+  "evidence",
+  "criterion1",
+  "recon-subject.regen2000proj",
+);
+
 // src/mcp/vice -> repo root -> .planning/phases/19-.../evidence/coverage-reproducibility
 const EVIDENCE_DIR = join(
   HERE,
@@ -470,6 +487,58 @@ function withOrdinaryData(prologue: readonly number[]): Uint8Array {
 const ORDINARY_INDEXED_COPY = withOrdinaryData(ORDINARY_INDEXED_PROLOGUE);
 const ORDINARY_IMMEDIATE_COPY = withOrdinaryData(ORDINARY_IMMEDIATE_PROLOGUE);
 
+/** WR-03's minimal pair: `lda #$01 : ldx #$00` -- four bytes of real code --
+ * followed by sixty bytes of one repeated filler byte, in a 64-byte image at
+ * the ordinary origin.
+ *
+ * The FILLER BYTE is the only difference between the two members, and the pair
+ * is therefore built by one function rather than typed twice: "the only
+ * difference is the filler" is then true by construction, and the assertion
+ * below that checks it is checking the construction rather than a claim. */
+const WR03_CODE = [0xa9, 0x01, 0xa2, 0x00] as const;
+const WR03_SIZE = 64;
+/** `$02` -- one of the CPU-halting opcodes the decoder flags illegal. */
+const WR03_JAM_FILLER = 0x02;
+/** `$ea` -- `nop`, as legal as a byte gets. */
+const WR03_NOP_FILLER = 0xea;
+
+function wr03Image(filler: number): Uint8Array {
+  const out = new Uint8Array(WR03_SIZE);
+  out.set(WR03_CODE, 0);
+  out.fill(filler, WR03_CODE.length);
+  return out;
+}
+
+const JAM_FILLED_IMAGE = wr03Image(WR03_JAM_FILLER);
+const NOP_FILLED_IMAGE = wr03Image(WR03_NOP_FILLER);
+
+/** The number of filler bytes in either member -- derived, so it cannot drift
+ * away from the payload it describes. */
+const WR03_FILLER_BYTES = WR03_SIZE - WR03_CODE.length;
+
+/** Every committed coverage fixture's `structural.reachedAsInstruction`, as
+ * MEASURED at the commit that precedes the WR-03 tightening.
+ *
+ * Not a wish list. Each of these twelve payloads was checked to carry zero
+ * illegal instructions on a reached path, which is WHY bringing the recursive
+ * descent to the linear sweep's standard moves none of them. A number that
+ * moves here is a finding to record -- naming the illegal opcode the descent
+ * stopped at -- and never a number to update. */
+const FIXTURE_REACHED_BEFORE_WR03: Readonly<Record<string, number>> = {
+  "fp1-indexed-copy-loop": 7,
+  "fp1b-immediate-copy-loop": 7,
+  "fp2-zeropage-data-pointer": 17,
+  "fp2b-immediate-data-pointer": 17,
+  "fp3-unlinked-push-idiom": 15,
+  "fp3b-immediate-push-idiom": 15,
+  "nc1-all-auto": 30,
+  "nc1b-auto-renamed-in-place": 30,
+  "nc2-generic-comments": 30,
+  "nc3-all-data-blocks": 30,
+  "nc4-multi-caller-unnamed": 30,
+  "nc5-well-documented": 30,
+};
+
 /** The census wired exactly as `buildCoverageReport()` wires it: the origin as
  * the only ordinary seed, the scan's table entries, and `extraSeeds` read from
  * the ONE proven-target seam. */
@@ -577,6 +646,150 @@ test("decodability: removing the seed set collapses the reached count, so a cens
     seedless.linearSweepDecodable,
     "the linear-sweep figure must not depend on the seed set at all",
   );
+});
+
+// ---------------------------------------------------------------------------
+// 3b. WR-03 -- an illegal opcode is not an instruction the census may claim
+//
+// THE SECOND INFLATION ROUTE ON THE SAME STRUCTURAL NUMBER, and a different
+// mechanism from the dispatch gate every other control in this file guards.
+// This one is the census's OWN classification: the recursive descent used to
+// walk straight THROUGH an illegal opcode and claim its bytes as reached code,
+// while the linear sweep sitting eight lines below it in the same function
+// refused to count them. Measured on the payload below at the commit before
+// this section existed: `reachedAsInstruction=64`, `unreached=0`,
+// `linearSweepDecodable=4` -- one hundred per cent structural completeness on a
+// ninety-four-per-cent-garbage image, with the sibling figure on the SAME
+// report disagreeing sixteen-fold.
+//
+// The pair below is minimal on purpose. Both members are 64 bytes at $0810,
+// both start with the same four bytes of real code, and they differ only in the
+// filler byte -- so the tightening cannot be mistaken for a refusal to count
+// anything, and cannot be satisfied by a census that simply reaches less.
+// ---------------------------------------------------------------------------
+
+test("WR-03: the descent stops at an illegal opcode instead of claiming it -- four code bytes are four, not sixty-four", () => {
+  const { census } = wiredCensus(JAM_FILLED_IMAGE, ORDINARY_ORIGIN);
+
+  assert.equal(
+    census.reachedAsInstruction,
+    WR03_CODE.length,
+    `the census claims ${census.reachedAsInstruction} of ${WR03_SIZE} bytes as executed code on an image whose only real code is ` +
+      `${WR03_CODE.length} bytes -- the remaining ${WR03_FILLER_BYTES} are $${WR03_JAM_FILLER.toString(16).padStart(2, "0")}, an ` +
+      `illegal opcode. Before this tightening this figure read 64 while linearSweepDecodable, on the same report, read 4.`,
+  );
+  assert.equal(
+    census.unreached,
+    WR03_FILLER_BYTES,
+    `the ${WR03_FILLER_BYTES} illegal bytes must be UNREACHED, not merely unclaimed: the predicate is consulted BEFORE the loop ` +
+      `that marks an instruction's bytes, so the illegal byte is never marked in the first place. Got unreached=${census.unreached}.`,
+  );
+  assert.equal(
+    census.linearSweepDecodable,
+    WR03_CODE.length,
+    "the linear sweep's own figure is unchanged by this plan -- it always refused these bytes, and that is the standard the descent moved to",
+  );
+});
+
+test("WR-03 both directions: the same payload filled with `nop` still reports every one of its sixty-four bytes reached", () => {
+  // The half that makes the tightening a DISCRIMINATION rather than a refusal.
+  // A census that had simply become more reluctant would fail here.
+  const { census } = wiredCensus(NOP_FILLED_IMAGE, ORDINARY_ORIGIN);
+
+  assert.equal(
+    census.reachedAsInstruction,
+    WR03_SIZE,
+    `the legal twin must still report all ${WR03_SIZE} bytes reached: sixty $ea bytes are sixty legal one-byte instructions and the ` +
+      `descent walks straight through them. Got ${census.reachedAsInstruction}.`,
+  );
+  assert.equal(census.unreached, 0, "the legal twin leaves nothing unreached");
+  assert.equal(census.linearSweepDecodable, WR03_SIZE, "the legal twin's sweep figure is the full image too, so the two figures agree here as well");
+});
+
+test("WR-03: the two members of the pair are the same length and differ at exactly the sixty filler offsets", () => {
+  // "The only difference is the filler byte" is a property of the pair, so it
+  // is checked rather than asserted in a comment.
+  assert.equal(JAM_FILLED_IMAGE.length, NOP_FILLED_IMAGE.length, "the pair must be the same length or the comparison above compares two payloads");
+  assert.equal(JAM_FILLED_IMAGE.length, WR03_SIZE);
+  let differing = 0;
+  for (let i = 0; i < JAM_FILLED_IMAGE.length; i++) if (JAM_FILLED_IMAGE[i] !== NOP_FILLED_IMAGE[i]) differing++;
+  assert.equal(
+    differing,
+    WR03_FILLER_BYTES,
+    `the pair differs at ${differing} offsets; it must differ at exactly the ${WR03_FILLER_BYTES} filler offsets and nowhere else`,
+  );
+});
+
+test("WR-03: the four byte classes still sum to rangeBytes for both members -- the byte the descent stopped claiming became unreached", () => {
+  // A tightening that LOST a byte rather than reclassifying it would be a
+  // different defect wearing this one's fix. Making one class smaller must make
+  // another larger.
+  for (const [name, bytes] of [["JAM_FILLED_IMAGE", JAM_FILLED_IMAGE], ["NOP_FILLED_IMAGE", NOP_FILLED_IMAGE]] as const) {
+    const { census } = wiredCensus(bytes, ORDINARY_ORIGIN);
+    assert.equal(
+      census.reachedAsInstruction + census.tableEntry + census.referencedAsData + census.unreached,
+      census.rangeBytes,
+      `${name}: the four classes must be disjoint and exhaustive over the censused range`,
+    );
+    assert.equal(census.rangeBytes, WR03_SIZE, `${name}: rangeBytes`);
+  }
+});
+
+test("WR-03: reachedAsInstruction never exceeds linearSweepDecodable -- the report cannot contradict itself about its own bytes", () => {
+  // STATED AS THE GENERAL RELATION, not as a fact about these two payloads,
+  // because the defect was never about $02 specifically. The descent and the
+  // sweep now read ONE decodability predicate, so a byte the sweep refuses is a
+  // byte the descent cannot have walked through. Any future divergence between
+  // the two standards reds here regardless of which opcode exposes it.
+  for (const [name, bytes] of [
+    ["JAM_FILLED_IMAGE", JAM_FILLED_IMAGE],
+    ["NOP_FILLED_IMAGE", NOP_FILLED_IMAGE],
+    ["ORDINARY_INDEXED_COPY", ORDINARY_INDEXED_COPY],
+    ["ORDINARY_IMMEDIATE_COPY", ORDINARY_IMMEDIATE_COPY],
+  ] as const) {
+    const { census } = wiredCensus(bytes, ORDINARY_ORIGIN);
+    assert.ok(
+      census.reachedAsInstruction <= census.linearSweepDecodable,
+      `${name}: the census claims ${census.reachedAsInstruction} bytes as executed code while the linear sweep can decode only ` +
+        `${census.linearSweepDecodable} of them as legal, non-truncated instructions. Two figures on one report describing two ` +
+        `different byte sets is the contradiction WR-03 named; they are decided by one predicate and must stay comparable.`,
+    );
+  }
+});
+
+test("WR-03 regression: every committed coverage fixture reports the SAME reached count it did before the tightening", () => {
+  // The blast-radius claim, measured per fixture rather than asserted once, so
+  // a mover names itself. Every one of these payloads carries zero illegal
+  // instructions on a reached path -- that is why bringing the descent to the
+  // sweep's standard moves none of them.
+  const dirs = fixtureDirs();
+  assert.deepEqual(
+    dirs.slice().sort(),
+    Object.keys(FIXTURE_REACHED_BEFORE_WR03).sort(),
+    "the recorded before/after table must cover exactly the committed fixture set -- a fixture missing from the table is a fixture " +
+      "this regression statement does not cover, and a stale entry is a control that no longer exists",
+  );
+  for (const dir of dirs) {
+    const expected = FIXTURE_REACHED_BEFORE_WR03[dir]!;
+    const actual = buildCoverageReport({ projectPath: join(FIXTURE_ROOT, dir, "project.regen2000proj") }).structural.reachedAsInstruction;
+    assert.equal(
+      actual,
+      expected,
+      `${dir}: reachedAsInstruction moved from ${expected} to ${actual}. Record the finding and name the illegal opcode the descent ` +
+        `stopped at -- do NOT update the recorded number to match.`,
+    );
+  }
+});
+
+test("WR-03 regression: the previously-unseen Phase 11 fixture's census is unchanged at 68 of 100", () => {
+  // The one payload in this suite that was authored for a different phase and
+  // never used to write these rules. If the tightening had a blast radius, this
+  // is where it would be least expected and most informative.
+  const report = buildCoverageReport({ projectPath: PHASE_11_FIXTURE_PATH });
+  const s = report.structural;
+  assert.equal(s.reachedAsInstruction, 68, `the Phase 11 fixture's reached count moved to ${s.reachedAsInstruction} from 68`);
+  assert.equal(s.reachedAsInstruction + s.tableEntry + s.referencedAsData + s.unreached, 100);
+  assert.equal(s.rangeBytes, 100);
 });
 
 // ---------------------------------------------------------------------------
@@ -3774,19 +3987,7 @@ test("PIN 4: the class-4 publication site PRECEDES the shared gate's only call s
 // ---------------------------------------------------------------------------
 
 test("the previously-unseen Phase 11 fixture -- authored for a different phase, never used to write these rules -- produces a well-formed report", () => {
-  const path = join(
-    HERE,
-    "..",
-    "..",
-    "..",
-    ".planning",
-    "phases",
-    "11-annotation-store-enums-and-the-symbol-round-trip",
-    "evidence",
-    "criterion1",
-    "recon-subject.regen2000proj",
-  );
-  const report = buildCoverageReport({ projectPath: path });
+  const report = buildCoverageReport({ projectPath: PHASE_11_FIXTURE_PATH });
   assert.deepEqual(Object.keys(report), [...COVERAGE_REPORT_KEYS]);
   assert.equal(report.project.payloadDecoded, true);
   assert.equal(report.project.origin, 0x0810, "the report must name the fixture's own recorded origin");
