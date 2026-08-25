@@ -284,6 +284,14 @@ Notes:
 - **2026-08-24 — the phase's five dated decisions live in `19-DECISIONS.md`**, each with its evidence, the alternatives weighed, and a named, checkable reversal or re-sync condition (ABS-04). The executed validation record — every requirement beside a command that actually ran, plus the fourteen planted-violation demonstrations and the full phase gate — is `19-VALIDATION.md`.
 
 ### Phase 20: Decomposition to Closure
+> **CUT 2026-08-25 — dissolved by the dxa+Ghidra pivot, not abandoned.**
+> This phase's *goal* survives; its *substrate* does not. It was written against
+> regenerator2000's annotation store, data-typing tools and scope-based export,
+> all of which the pivot removes. See `.planning/notes/dxa-ghidra-pivot.md`.
+> The requirements it carried are **not** dropped — they are re-mapped onto the
+> v0.6.0 phases that rebuild the substrate first. Do not plan or execute this
+> phase; read it only as the record of what was intended before the pivot.
+
 
 **Goal**: A committed synthetic C64 binary is fully decomposed and documented —
 nothing left ambiguous, every entry point and reference named, every hardware
@@ -309,6 +317,14 @@ Notes:
 - A `!byte` fallback line inside an otherwise densely-named region is the signature of a silently-degraded illegal opcode — grep for it; don't assume Phase 18's forced setting held across every session this phase opens.
 
 ### Phase 21: Rebuildable Source and the Reassembly Gate
+> **CUT 2026-08-25 — dissolved by the dxa+Ghidra pivot, not abandoned.**
+> This phase's *goal* survives; its *substrate* does not. It was written against
+> regenerator2000's annotation store, data-typing tools and scope-based export,
+> all of which the pivot removes. See `.planning/notes/dxa-ghidra-pivot.md`.
+> The requirements it carried are **not** dropped — they are re-mapped onto the
+> v0.6.0 phases that rebuild the substrate first. Do not plan or execute this
+> phase; read it only as the record of what was intended before the pivot.
+
 
 **Goal**: An annotated project becomes rebuildable, symbol-only, subsystem-split
 ACME source with a relocation-hazard report — and clean reassembly plus a clean
@@ -335,6 +351,14 @@ Notes:
 - **BUILD-02 and BUILD-03 both depend on a tool Phase 19 proposed and Phase 20 implements** (`19-DECISIONS.md` decision 2): `r2000_toggle_splitter` is what supplies the boundary BUILD-02's table extraction cuts on, and `r2000_set_immediate_format` **is** BUILD-03's low/high-byte mechanism — a 16-bit address loaded as two immediate bytes is the one construct where a reference cannot go through a symbol without it. If Phase 20 withdrew either proposal, re-open the question here rather than discovering it mid-rebuild.
 
 ### Phase 22: Equivalence and Modifiability
+> **CUT 2026-08-25 — dissolved by the dxa+Ghidra pivot, not abandoned.**
+> This phase's *goal* survives; its *substrate* does not. It was written against
+> regenerator2000's annotation store, data-typing tools and scope-based export,
+> all of which the pivot removes. See `.planning/notes/dxa-ghidra-pivot.md`.
+> The requirements it carried are **not** dropped — they are re-mapped onto the
+> v0.6.0 phases that rebuild the substrate first. Do not plan or execute this
+> phase; read it only as the record of what was intended before the pivot.
+
 
 **Goal**: The rebuild is proven, not described — behaviourally identical to
 the original in VICE, and demonstrably modifiable — using a comparator
@@ -400,10 +424,10 @@ in a milestone archive.
 | 16. Packaging and Repo Shape | v0.4.0 | 11/11 | Complete | 2026-08-23 |
 | 17. Project Identity and Ledger Close | v0.4.0 | 4/4 | Complete | 2026-08-23 |
 | 18. Persistent Session and Tool Surface | v0.5.0 | 7/7 | Complete | 2026-08-24 |
-| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 20/20 | In Progress|  |
-| 20. Decomposition to Closure | v0.5.0 | TBD | Not started | - |
-| 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | TBD | Not started | - |
-| 22. Equivalence and Modifiability | v0.5.0 | TBD | Not started | - |
+| 19. Absorbed Procedures and the Coverage Instrument | v0.5.0 | 20/20 | Complete | 2026-08-25 |
+| 20. Decomposition to Closure | v0.5.0 | 0/0 | Cut | 2026-08-25 |
+| 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | 0/0 | Cut | 2026-08-25 |
+| 22. Equivalence and Modifiability | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

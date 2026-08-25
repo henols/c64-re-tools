@@ -138,8 +138,8 @@ import { readFileSync } from "node:fs";
 // ---------------------------------------------------------------------------
 
 /**
- * The report's schema version. Phase 20 reads this report repeatedly through
- * its decomposition sweep and Phase 21 reuses the dispatch scan, so the field
+ * The report's schema version. The decomposition sweep reads this report
+ * repeatedly and the reassembly gate reuses the dispatch scan, so the field
  * set is a contract, not an implementation detail. Bump this ONLY together
  * with `r2000-coverage.test.ts`'s exact top-level key-set assertion -- that
  * test exists so a silent field rename fails loudly rather than quietly
@@ -636,7 +636,7 @@ export interface IndirectDispatchScan {
    *
    * It exists so the observation is not DISCARDED: "something indexes two
    * tables here and we cannot prove what it dispatches to" is precisely what
-   * Phase 21's hazard report wants to see, flagged as unproven. Its findings
+   * the hazard report wants to see, flagged as unproven. Its findings
    * carry `orientationResolved: false` and an empty `targets` list. */
   splitTableCandidates: SplitTableFinding[];
   /** Every EVIDENCE-BACKED target the scan discovered, ascending and deduped:
@@ -646,7 +646,7 @@ export interface IndirectDispatchScan {
    * that narrowing is the schema-version-2 change (header trap 8).
    *
    * An ADDRESS LIST, not a figure -- the classes stay separately addressable
-   * above so Phase 21's hazard report can consume just the one it needs. */
+   * above so the hazard report can consume just the one it needs. */
   discoveredTargets: number[];
   /** Addresses occupied by reconstructed table entries (two bytes each).
    * Proven classes only, for the same reason as `discoveredTargets`. */
@@ -971,7 +971,8 @@ export function scanIndirectDispatch(
   // can claim any origin and carry any length -- and this scan, whose output is
   // that report's own dispatch sub-report, was left unbounded. Values at or
   // above $10000 caused no crash (the census's `mark()` filters them) but they
-  // were written into the JSON that Phase 20 and Phase 21 consume, and
+  // were written into the JSON that the decomposition and reassembly work
+  // consumes, and
   // `r2000-cli.ts`'s `hexAddr()` renders them as five hex digits: a report
   // whose two halves describe two different address spaces is misleading even
   // when nothing throws. Computed the SAME way as the census's clamp so the two

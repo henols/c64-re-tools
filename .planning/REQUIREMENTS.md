@@ -69,7 +69,7 @@ milestone starts at **Phase 18**.
 
 ### Rebuildable Source
 
-- [ ] **BUILD-01**: Export emits one ACME source file per regenerator2000 scope, wired by `acme-build`'s `!source` and assembling to a single output
+- [ ] **BUILD-01**: Export emits one ACME source file per annotation-store scope, wired by `acme-build`'s `!source` and assembling to a single output
 - [ ] **BUILD-02**: Data tables are extracted to their own files, so graphics, levels and music can be swapped without touching code
 - [ ] **BUILD-03**: Every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move
 - [ ] **BUILD-04**: A hazard report enumerates what blocks movement across four classes — indexed jump tables including the RTS-trick idiom, self-modifying code, page-alignment dependence, and cycle-exact raster code — none of which any existing tool in this stack detects
