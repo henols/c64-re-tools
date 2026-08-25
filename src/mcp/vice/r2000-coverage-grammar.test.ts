@@ -782,7 +782,18 @@ function enumerateArrangements(family: Family, familyIndex: number): Arrangement
       const plans = nopPlans(coreLength + 1, NOP_COUNTS[nopIndex]!);
       const stratum: Fragment[][] = [];
       for (let r = 0; r < PER_STRATUM; r++) {
-        const sample = stratumIndex * PER_STRATUM + r;
+        // STRATUM-MINOR, draw-MAJOR, and that ordering is load-bearing. Written
+        // the other way round (`stratumIndex * PER_STRATUM + r`) every canonical
+        // draw takes an EVEN sample index, and because `PER_STRATUM` shares a
+        // factor with `SAMPLES_PER_FAMILY` the rotations below then reach only
+        // half the residues -- in a structured half, so the ORDER axis ends up
+        // correlated with the terminator axis. That was MEASURED: in the
+        // four-store family every permutation whose two consumer stores were
+        // adjacent landed on the `rts` terminator and never on either jump, so
+        // the corpus could not compose a foreign-vector arrangement at all.
+        // Indexing the draw first keeps the nine strata on nine CONSECUTIVE
+        // sample indices, which the rotations spread across the whole range.
+        const sample = r * STRATA_PER_FAMILY + stratumIndex;
         // EVERY stratum's first draw is the canonical interleaving, so a family
         // draws it against all three terminators and all three nop counts. That
         // matters because the jump that closes a zero-page-vector link IS the
