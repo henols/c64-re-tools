@@ -367,3 +367,57 @@ defect than the loose branch it replaced.
 **Test-count movement:** 71 → 76 over this plan. `+2` report-level and liveness tests, `+1`
 witness-pair test, and `+2` from the data-driven per-fixture tests that iterate the fixture
 directory (10 → 12). `COMMITTED_CONTROL_FIXTURES` moved 10 → 12 with them.
+
+## Round-4 gap closure → executed evidence (2026-08-25, plan 19-16)
+
+The SECOND true-returning site of `hasDispatchContext()`, in the branch round 3 believed it had
+fixed. This section is an **extension**: no row above was altered, deleted or renumbered, and every
+command below was run in this working tree with the output that is quoted.
+
+The invariant under demonstration is the same D-02, applied to the branch that already demanded a
+consumer but went looking for one across the whole window:
+
+> A branch of `hasDispatchContext()` may return true only on a **proven data-flow link** from the
+> two reconstructed table bases to the dispatch mechanism — never on the mere presence of a shape
+> within the window.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01, COV-02 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the new in-suite pair `ZP_VECTOR_FOREIGN_JUMP` / `ZP_VECTOR_OWN_JUMP` — `lda $0830,x : sta $fb : lda $0838,x : sta $fc : sta $fd : sta $fe : jmp ($00fd)` and the same 64 bytes with the jump's operand byte changed to `$fb` | **Observed RED first**, before the predicate was touched: `not ok 62 - a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it` and `not ok 63 - the tightened zero-page-vector branch is LIVE: the one-byte-different twin whose jump names the pairing's OWN vector is still PROVEN`, **76 pass / 2 fail of 78**. Pre-fix the two payloads were INDISTINGUISHABLE in the report — both `splitTables=1`, both `tableEntryAddresses=16`, both eight proven targets at `$0840`…`$0847`, both `reached=33`, both `classAt($0840)="reached-as-instruction"` — which is why test 63's liveness relation (`own > foreign`) failed too: `observed 33 against 33`. **Post-fix: `ZP_VECTOR_FOREIGN_JUMP` reports `splitTables=0`, `splitTableCandidates=1`, `tableEntryAddresses=0`, `provenDispatchTargets()=[]`, `reached=17` against its own derived 17-byte prologue, `classAt($0840)="unreached"`; `ZP_VECTOR_OWN_JUMP` still reports `splitTables=1`, sixteen table-entry addresses, the eight targets `$0840`…`$0847` and `reached=33`.** **78 pass, 0 fail** |
+| COV-01 | 19-16 | `cd src/mcp/vice && npx tsc --noEmit` | the whole `src/mcp/vice` TypeScript surface | **exit 0** after `SplitOrientation` gained its third field `vectorLow` and both arms of `resolveSplitOrientation()`'s return were updated |
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts docs-linerefs.test.ts` | the three documentation guards | **27 pass, 0 fail** — no phase-number pointer and no dangling reference in the comments this plan wrote, and the two `rewriteArguments()` line citations are still exact |
+| COV-01 | 19-16 | `git status --porcelain src/mcp/vice/fixtures/coverage` | the twelve committed control fixtures | **empty** — this plan commits no fixture change; both new payloads are in-suite constants |
+
+### The gate watched FAIL — the branch-B planted violation
+
+A gate nobody has watched fail is not known to be a gate (D-07). Branch B was reverted **in the
+working tree only** to its exact pre-fix form — re-collect every zero-page store target across the
+whole window, accept when any two of them differ by exactly one and the window carries an indirect
+jump naming the lower — and the suite re-run.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 16 | `hasDispatchContext()` branch B (`zeropage-vector-jumped-through`), asserted at scan and census level by `r2000-coverage.test.ts` over `ZP_VECTOR_FOREIGN_JUMP` and its one-byte twin | branch B reverted to the window-wide `zpStores` collection plus the nested `b - a === 1` pair loop, ignoring `pairing.oriented.vectorLow` entirely | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 78 / # pass 76 / # fail 2`. The reds are `not ok 62` (failing on its FIRST assertion with `actual` `[{ at: 2064, loBase: 2096, hiBase: 2104, entries: 8, orientationResolved: true, targets: [2112…2119] }]` against `expected` `[]`) and `not ok 63` (`observed 33 against 33`). Direct measurement of the planted predicate over the same two payloads: **both** report `splitTables=1`, `splitTableCandidates=0`, `tableEntryAddresses=16`, `provenDispatchTargets = $0840,$0841,$0842,$0843,$0844,$0845,$0846,$0847`, `reached=33`, `classAt($0840)="reached-as-instruction"` | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **78 pass, 0 fail**, and `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 — the demonstration left no trace in the committed source |
+
+**The observed numbers exceeded what the plan anticipated, and the difference is recorded rather
+than smoothed over.** The plan expected the planted predicate to promote the foreign-jump payload
+to one proven split table, sixteen claimed table-entry bytes and eight proven targets, which it
+did. What the plan did not state is that the planted predicate makes the declined payload and the
+proven one **byte-for-byte identical in the report**: same `splitTables`, same table-entry count,
+same eight targets, same census, same class at `$0840`. The one-operand-byte difference that is the
+whole subject of the control had **no observable effect at all** under the old branch. That is a
+stronger statement of the defect than "it over-reports", and it is why the liveness test reds under
+the plant as well: the relation `own > foreign` is exactly the thing the old predicate could not
+express. No payload was adjusted to reproduce a remembered figure — both were generated from one
+prologue array and then measured.
+
+### Both directions — the positive control that was actually run
+
+A tightening whose positive control was never run is indistinguishable from one that declines
+everything.
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `ZP_VECTOR_OWN_JUMP` — the declined payload with ONE operand byte changed, so the indirect jump names the vector the pairing's own two stores built | **PASS.** `splitTables.length === 1`, `provenDispatchTargets(scan)` deep-equals `[$0840…$0847]`, and `census.reachedAsInstruction` (33) **strictly exceeds** the declined payload's (17) — a relation, not a pinned count. The two payloads are asserted to differ at exactly one byte offset, `ZP_VECTOR_JUMP_OPERAND_INDEX`, so the verdict difference cannot be caused by anything else |
+| COV-01 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `SPLIT_TABLE`, `SPLIT_TABLE_CLEAN` and `SPLIT_TABLE_INTERPOSED`, the three pre-existing positive controls for this branch, re-asserted in the SAME test as the tightening | **PASS.** All three still report `splitTables.length === 1`. `SPLIT_TABLE_INTERPOSED` is the sharpest of the three: its orientation resolves across an interposed load through the other index register, and the vector its own two stores build is still the one the jump names |
+| COV-02 | 19-16 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `fp2-zeropage-data-pointer`, the CR-04 interior control, re-asserted in the same test | **PASS.** Still `dispatch.splitTables === []` — a vector that is built and then read through as DATA is still declined, and the tightening did not disturb the condition round 2 added |
