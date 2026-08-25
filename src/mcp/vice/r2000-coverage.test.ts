@@ -2161,6 +2161,197 @@ test("the tightened class-3 push-idiom branch is LIVE: a payload whose two paire
 });
 
 // ---------------------------------------------------------------------------
+// 8b(ii). The SECOND true-returning site: the jump must name the pairing's OWN
+// vector.
+//
+// The same defect class as the push-idiom branch above, in the branch that was
+// believed fixed. `zeropage-vector-jumped-through` already demands a CONSUMER
+// -- an indirect jump naming the lower of two consecutive zero-page store
+// targets -- because the CONSTRUCTION of a vector says nothing about what reads
+// it (CR-04). But it collected those store targets by scanning the WHOLE
+// window, with no link to the two loads actually being paired. So a payload
+// could build its pairing's vector at `$fb`/`$fc`, build a second, unrelated
+// vector at `$fd`/`$fe`, jump through the SECOND, and be promoted on the
+// strength of a link that has nothing to do with the tables being
+// reconstructed.
+//
+// A consumer that consumes some OTHER vector is not evidence about THIS pairing
+// any more than a bare construction is evidence about its consumer.
+// ---------------------------------------------------------------------------
+
+/** `lda $0830,x : sta $fb : lda $0838,x : sta $fc : sta $fd : sta $fe :
+ * jmp ($00fd)` -- the pairing builds its own vector at `$fb`/`$fc`, and the
+ * indirect jump consumes a DIFFERENT vector at `$fd`/`$fe`.
+ *
+ * Both vectors are consecutive zero-page pairs and both sit inside the same
+ * pairing window, which is the whole point: a window-wide search for "any two
+ * consecutive zero-page store targets with a jump through the lower" finds
+ * `$fd`/`$fe` and answers yes, while the two loads under test wrote to
+ * `$fb`/`$fc` and nothing in the program ever reads that vector at all.
+ *
+ * The table and target layout is FP3's -- eight ascending lo bytes at `$0830`,
+ * eight `$08` hi bytes at `$0838`, filler `nop` at `$0840` -- so the eight
+ * addresses this payload must NOT prove are the same eight the push-idiom
+ * controls name, written once in `PUSH_IDIOM_TARGETS` rather than twice. */
+const ZP_VECTOR_FOREIGN_PROLOGUE = [
+  0xbd, 0x30, 0x08, // $0810 lda $0830,x   (lo table)
+  0x85, 0xfb, //       $0813 sta $fb       <- the PAIRING's own vector, low byte
+  0xbd, 0x38, 0x08, // $0815 lda $0838,x   (hi table, SAME register)
+  0x85, 0xfc, //       $0818 sta $fc       <- the PAIRING's own vector, high byte
+  0x85, 0xfd, //       $081A sta $fd       <- a SECOND, unrelated vector
+  0x85, 0xfe, //       $081C sta $fe
+  0x6c, 0xfd, 0x00, // $081E jmp ($00fd)   <- consumes the FOREIGN vector
+];
+
+/** The offset of the indirect jump's operand byte inside the prologue, FOUND
+ * rather than counted, so the twin below stays a one-byte edit of this payload
+ * even if the prologue is re-laid-out. */
+const ZP_VECTOR_JUMP_OPERAND_INDEX = ZP_VECTOR_FOREIGN_PROLOGUE.indexOf(0x6c) + 1;
+
+/** FP3's table and target layout under an arbitrary prologue. */
+function withZpVectorData(prologue: readonly number[]): Uint8Array {
+  const out = new Uint8Array(0x40).fill(0xea);
+  out.set(prologue, 0);
+  for (let k = 0; k < 8; k++) {
+    out[0x0830 - ORDINARY_ORIGIN + k] = 0x40 + k; // lo bytes -> $0840..$0847
+    out[0x0838 - ORDINARY_ORIGIN + k] = 0x08; // hi bytes
+  }
+  return out;
+}
+
+const ZP_VECTOR_FOREIGN_JUMP = withZpVectorData(ZP_VECTOR_FOREIGN_PROLOGUE);
+
+/** The both-directions half. Byte-identical to `ZP_VECTOR_FOREIGN_JUMP` except
+ * that the indirect jump's operand names `$fb` -- the vector the pairing's own
+ * two stores built -- so the payload becomes a genuine `jmp (vector)` dispatch
+ * and must still be PROVEN.
+ *
+ * DERIVED BY SUBSTITUTION from the declined payload rather than typed out
+ * again, so "the only difference is which vector is jumped through" is true by
+ * construction and the assertions are about the SCAN's output. A tightening
+ * whose positive control was never run is indistinguishable from one that
+ * declines everything. */
+const ZP_VECTOR_OWN_JUMP = withZpVectorData(
+  ZP_VECTOR_FOREIGN_PROLOGUE.map((b, i) => (i === ZP_VECTOR_JUMP_OPERAND_INDEX ? 0xfb : b)),
+);
+
+/** The declined payload's own prologue length, DERIVED from the prologue rather
+ * than typed, so the census bound cannot drift away from the payload it
+ * guards. */
+const ZP_VECTOR_FOREIGN_JUMP_CODE_BYTES = ZP_VECTOR_FOREIGN_PROLOGUE.length;
+
+test("a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it", () => {
+  const { scan, census } = wiredCensus(ZP_VECTOR_FOREIGN_JUMP, ORDINARY_ORIGIN);
+
+  assert.deepEqual(
+    scan.splitTables,
+    [],
+    "a pairing whose vector nothing reads is not a PROVEN split table, however many other vectors the window jumps through. " +
+      "Pre-fix splitTables.length was 1 { loBase: $0830, hiBase: $0838 }: the branch searched the WHOLE window for any two " +
+      "consecutive zero-page store targets and found $fd/$fe, a vector neither paired load was ever stored into.",
+  );
+  assert.deepEqual(
+    provenDispatchTargets(scan),
+    [],
+    "nothing here may seed a recursive descent. Pre-fix this returned the eight values $0840, $0841, $0842, $0843, $0844, " +
+      "$0845, $0846, $0847 -- reconstructed out of 16 bytes of ordinary pointer data on the strength of a foreign jump.",
+  );
+  assert.deepEqual(
+    scan.tableEntryAddresses,
+    [],
+    "an ungated pairing must not claim a single byte as a table entry either. Pre-fix it claimed 16 addresses " +
+      "($0830..$0837 and $0838..$083f).",
+  );
+  assert.equal(
+    classAt(census, 0x0840),
+    "unreached",
+    "$0840 holds ordinary data that nothing proven ever reaches. Pre-fix its class was \"reached-as-instruction\" -- the " +
+      "HEADLINE measure, manufactured out of data.",
+  );
+  assert.equal(
+    census.reachedAsInstruction,
+    ZP_VECTOR_FOREIGN_JUMP_CODE_BYTES,
+    `the census must reach exactly the ${ZP_VECTOR_FOREIGN_JUMP_CODE_BYTES}-byte prologue and nothing beyond it. Pre-fix it ` +
+      `reached the prologue PLUS the 16 filler bytes at $0840, because the fabricated split table seeded a descent into them.`,
+  );
+
+  // The gate must be seen to have EXAMINED the pairing and DECLINED it, not to
+  // have never noticed it. An advisory candidate is exactly that record: a
+  // count of 0 here would mean either that the pairing was promoted (a proven
+  // pairing emits no advisory) or that it was never ruled on at all.
+  assert.equal(
+    scan.splitTableCandidates.length,
+    1,
+    "the declined pairing must still be REPORTED as exactly one advisory candidate -- the record that the gate examined it",
+  );
+
+  // Both directions, in the same test and the same commit. The pre-existing
+  // positive controls for THIS branch are re-asserted here rather than left to
+  // be noticed elsewhere: a tightening that declines everything measures
+  // nothing.
+  assert.equal(
+    scanOf(SPLIT_TABLE).splitTables.length,
+    1,
+    "a real split table whose OWN vector is jumped through must still be PROVEN",
+  );
+  assert.equal(
+    scanOf(SPLIT_TABLE_CLEAN).splitTables.length,
+    1,
+    "the WR-15 clean baseline builds its vector at $fb/$fc and jumps through $fb -- still PROVEN",
+  );
+  assert.equal(
+    scanOf(SPLIT_TABLE_INTERPOSED).splitTables.length,
+    1,
+    "the WR-15 twin resolves its orientation across an interposed load and jumps through its own vector -- still PROVEN",
+  );
+  assert.deepEqual(
+    reportFor(FP2_INTERIOR).dispatch.splitTables,
+    [],
+    "the CR-04 interior control builds a zero-page vector and reads through it as DATA -- it must still be DECLINED",
+  );
+});
+
+test("the tightened zero-page-vector branch is LIVE: the one-byte-different twin whose jump names the pairing's OWN vector is still PROVEN", () => {
+  // The liveness half, and the reason it is asserted in the same commit as the
+  // tightening. A branch that can never return true is dead code wearing a
+  // sufficient-shape label: the suite would be green, DISPATCH_CONTEXT_SHAPES
+  // would still declare two shapes, and one of them would measure nothing.
+  const foreign = wiredCensus(ZP_VECTOR_FOREIGN_JUMP, ORDINARY_ORIGIN);
+  const own = wiredCensus(ZP_VECTOR_OWN_JUMP, ORDINARY_ORIGIN);
+
+  // "The only difference is which vector is jumped through" is a CHECKED
+  // property of the two payloads, not a claim in this comment.
+  const differing: number[] = [];
+  for (let i = 0; i < ZP_VECTOR_FOREIGN_JUMP.length; i++) {
+    if (ZP_VECTOR_FOREIGN_JUMP[i] !== ZP_VECTOR_OWN_JUMP[i]) differing.push(i);
+  }
+  assert.deepEqual(
+    differing,
+    [ZP_VECTOR_JUMP_OPERAND_INDEX],
+    "the declined payload and the proven one must differ at EXACTLY the indirect jump's operand byte and nowhere else, or the " +
+      "verdict difference below could be caused by something other than which vector is jumped through",
+  );
+
+  assert.equal(
+    own.scan.splitTables.length,
+    1,
+    "a pairing whose two stores build the vector the window then jumps through IS the zero-page vector dispatch idiom and must be " +
+      "PROVEN. If this is 0 the branch declines everything and the shape it declares is dead.",
+  );
+  assert.deepEqual(
+    provenDispatchTargets(own.scan),
+    PUSH_IDIOM_TARGETS,
+    "the proven pairing's eight reconstructed entry points must reach the ONE seam that seeds a recursive descent",
+  );
+  assert.ok(
+    own.census.reachedAsInstruction > foreign.census.reachedAsInstruction,
+    `a PROVEN pairing seeds a descent into its targets, so the twin must reach strictly more bytes than the declined payload ` +
+      `(observed ${own.census.reachedAsInstruction} against ${foreign.census.reachedAsInstruction}). A relation rather than a ` +
+      `pinned count -- what matters is that the proven seeds were actually followed.`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 8c. Which SIDE of the predicate each negative control is on (CR-04)
 //
 // THE ROOT CAUSE, IN ONE SENTENCE: a negative control built from the OUTSIDE of
@@ -2435,6 +2626,20 @@ const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.fr
     position: "zeropage-vector-jumped-through",
     polarity: "positive",
     note: "the WR-15 twin: the same genuine split table with one unrelated indexed load between its two halves. Pre-fix that load consumed the leading load and the whole proven pairing silently vanished from the report",
+  },
+  {
+    control: "ZP_VECTOR_FOREIGN_JUMP",
+    bytes: () => ({ bytes: ZP_VECTOR_FOREIGN_JUMP, origin: ORDINARY_ORIGIN }),
+    position: "zeropage-vector-jumped-through",
+    polarity: "negative",
+    note: "THE INTERIOR CONTROL for the OWNERSHIP condition. A same-register indexed pairing, a resolvable orientation, consecutive zero-page stores inside the window and a real indirect jump -- everything the shape's interior asks for -- and the jump names a SECOND vector the two paired loads never wrote to. Interior rather than outside-bracketing precisely because the ownership of the vector is the condition under test",
+  },
+  {
+    control: "ZP_VECTOR_OWN_JUMP",
+    bytes: () => ({ bytes: ZP_VECTOR_OWN_JUMP, origin: ORDINARY_ORIGIN }),
+    position: "zeropage-vector-jumped-through",
+    polarity: "positive",
+    note: "the both-directions half of the row above: the SAME payload with the jump's operand byte naming the pairing's own vector, which the gate must ACCEPT. Recorded as positive rather than filed under a heading it does not belong to",
   },
 ]);
 
