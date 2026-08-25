@@ -34,3 +34,22 @@ standalone (`node --test <guard>.test.ts` exits 0) and are the known cascade in
 --name-only 5c68473..HEAD` after 19-06's two task commits lists only
 `src/mcp/vice/r2000-coverage.ts` and `src/mcp/vice/r2000-coverage.test.ts`, and neither guard
 reads either file.
+
+## 3. `r2000-session.test.ts`'s call-timeout stub test is load-sensitive (found by 19-11)
+
+**Found during:** plan 19-11's plan-level verification (`cd src/mcp/vice && npm test`).
+
+**Condition:** `stub: a child that answers nothing within the call timeout rejects with
+R2000TimeoutError, is killed, and the crash counter increases by 1` failed once in a full-suite
+run (`# fail 1`), then passed on both a standalone run of `r2000-session.test.ts`
+(`# tests 25 / # pass 25 / # fail 0`) and an immediate re-run of the full suite
+(`# tests 2578 / # pass 2533 / # fail 0`).
+
+**Why deferred rather than fixed:** the test drives a real child process against a wall-clock
+call timeout, so it is sensitive to machine load rather than to any code this plan touched.
+19-11 modified only `src/mcp/vice/r2000-coverage.ts` and
+`src/mcp/vice/r2000-coverage.test.ts`; `r2000-session.test.ts` reads neither. Widening the
+timeout would be a change to a file outside this plan's scope fence, made on one observation.
+
+**Clears when:** a plan that owns `r2000-session.ts` either widens the timeout or replaces the
+wall-clock wait with an injected clock.
