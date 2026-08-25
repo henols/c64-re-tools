@@ -38,25 +38,26 @@ milestone starts at **Phase 18**.
 
 - [x] **SURF-01**: The curated `r2000_*` surface covers what the absorbed procedures actually call — starting with `r2000_read_region`, so a routine can be read at a range instead of exporting the whole program — and the tool-count pin and generated `docs/tool-support.md` move with it without drift
 - [x] **SURF-02**: `r2000_get_address_details`'s D-32 refusal is re-decided against the still-live upstream `u16` overflow at `handler.rs:1894` — fixed, worked around, or refused with a documented route, but not carried unexamined a second milestone
-- [ ] **SURF-03**: Which packer a binary used is surfaced as a recon finding, so provenance work can use it as evidence and not only as a depack step
+- [x] **SURF-03**: Which packer a binary used is surfaced as a recon finding, so provenance work can use it as evidence and not only as a depack step
   - *Closed 2026-08-24 (19-04, 19-05) on a **negative result**, stated as one: no read-only route to packer identity exists on the pinned 0.9.20 surface, established four independent ways. What ships is a project-owned recon finding (`packer-finding.mjs`) with a three-valued verdict and a structurally enforced hard unknown — it can say "packed, name unknown" and cannot be made to name a packer it did not observe. The external `unp64` oracle is not installed here; its branch is implemented and live-gated so it becomes live the day the oracle appears. Bar, alternatives and reopen trigger: `19-DECISIONS.md` decision 3.*
 
 ### Absorbed Procedures
 
-- [ ] **ABS-01**: The five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, with their tool calls diffed explicitly against the curated surface so no absorbed step calls a tool this project does not expose — and with no runtime dependency on `.agent/skills/`, which the published crate excludes
+- [x] **ABS-01**: The five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, with their tool calls diffed explicitly against the curated surface so no absorbed step calls a tool this project does not expose — and with no runtime dependency on `.agent/skills/`, which the published crate excludes
   - *Closed 2026-08-24 (19-01 tracer, 19-02 the remaining four). All five absorbed at `493f8404…`; `check-skill-tool-coverage.mjs` exits 0 with 17 distinct `r2000_*` names, all curated; zero `.agent/skills` references anywhere under `src/skills/`. `analyze-basic` is absorbed as REFERENCE-ONLY under FUT-01 with its trigger phrases mechanically kept out of every description.*
-- [ ] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
+- [x] **ABS-02**: Absorbed procedure text is attributed per file and in `THIRD-PARTY-NOTICES.md` under regenerator2000's true dual `MIT OR Apache-2.0` licence
   - *Closed 2026-08-24 (19-01, 19-02). Five per-file attribution blocks — one per SOURCE PATH, since two skills absorb two procedures each — with commit and digest asserted equal to the manifest's; both `THIRD-PARTY-NOTICES.md` files carry the incorporated-material section, and the installer tarball's copy is asserted against its **packed** file list. The MIT election is a **human-judgment** item, carried forward: `19-DECISIONS.md` decision 4.*
-- [ ] **ABS-03**: No two skills contend for the same trigger — every description is checked pairwise across the whole inventory, absorbed and existing, because descriptions *are* the trigger mechanism
+- [x] **ABS-03**: No two skills contend for the same trigger — every description is checked pairwise across the whole inventory, absorbed and existing, because descriptions *are* the trigger mechanism
   - *Closed 2026-08-24 (19-05). `check-skill-description-overlap.mjs` scans all seven skills, compares all 21 pairs, and exits 0 at an observed maximum of **0.250** against an inclusive threshold of **0.35**, with an **empty** allowlist. Green on **sharpened descriptions, not a weakened gate**: three descriptions were sharpened by naming their distinguishing input or output (`acme-build :: c64-memory-mapping` 0.200 → 0.100; `c64-memory-mapping :: routine-queue-walker` 0.167 → 0.111), no skill was excluded, and the threshold constant was not touched. A verbatim duplicate makes it exit 1, demonstrated and restored.*
-- [ ] **ABS-04**: The snapshot-versus-drift trade is a dated decision with a named re-sync trigger, not an unstated consequence discovered at the next close
+- [x] **ABS-04**: The snapshot-versus-drift trade is a dated decision with a named re-sync trigger, not an unstated consequence discovered at the next close
   - *Closed 2026-08-24 (19-01 mechanism, 19-05 the record). `19-DECISIONS.md` carries five dated decisions, each with its evidence, the alternatives weighed, and a **named, checkable** reversal or re-sync condition; the snapshot trade's checking mechanism is the manifest's `resync_triggers` array, making re-sync a hash comparison rather than a read-and-judge.*
 
 ### Coverage Instrument
 
-- [ ] **COV-01**: Coverage is computed from the annotation store and reported as three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility check — never collapsed into one aggregate percentage
+- [x] **COV-01**: Coverage is computed from the annotation store and reported as three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility check — never collapsed into one aggregate percentage
   - *Closed 2026-08-24 (19-03 instrument, 19-04 CLI verb). Three separately addressable measures plus comment vacuity, the dispatch scan and the divergence sub-report, under a pinned schema with **no combined-figure key anywhere** — asserted by a recursive key scan. Exercised live against a Phase 11 fixture the instrument's rules were never written against.*
-- [ ] **COV-02**: A vacuous pass is detectable: mechanically auto-labelling everything, or commenting every routine "handles data", does not produce a clean report, and multi-caller labels require cross-reference-backed documentation
+  - ***Ticked under an accepted override, 2026-08-25, not under a passing verification.** COV-01's literal text (three distinct numbers, never one aggregate) was earned in 19-03/19-04 and has held through every round. What did NOT close by verification is the phase goal's qualifier that the instrument "resists being gamed": four verification cycles each found the structural-completeness number inflatable by a new shape. A fourth gap-closure round (19-15 … 19-20) executed against the last known shape and its executors measured that instance closed (`31 / 16 / 1 / 8` → `15 / 0 / 0 / []`; WR-03 `64 / 0 / 4` → `4 / 60 / 4`), but no independent verifier ruled on that work — the owner directed that r2000 testing stop, having a separate plan that supersedes further rounds against this instrument, and accepted the residual risk. Full disposition and reopen conditions: `19-VERIFICATION.md` `overrides` frontmatter and its "Round 4 — Disposition" section.*
+- [x] **COV-02**: A vacuous pass is detectable: mechanically auto-labelling everything, or commenting every routine "handles data", does not produce a clean report, and multi-caller labels require cross-reference-backed documentation
   - *Closed 2026-08-24 (19-03). Five planted defects each caught by a NAMED measure, plus one genuinely well-documented fixture that must come back clean as the both-directions control. The census is proven independent of the store: rewriting every block entry to one type moves zero census bytes.*
 
 ### Decomposition
@@ -126,13 +127,13 @@ duplicated. Full phase Goals/Depends-on/Success-Criteria live in
 | SESS-04 | Phase 18 | Complete |
 | SURF-01 | Phase 18 | Complete |
 | SURF-02 | Phase 18 | Complete |
-| SURF-03 | Phase 19 | Gaps Found |
-| ABS-01 | Phase 19 | Gaps Found |
-| ABS-02 | Phase 19 | Gaps Found |
-| ABS-03 | Phase 19 | Gaps Found |
-| ABS-04 | Phase 19 | Gaps Found |
-| COV-01 | Phase 19 | Gaps Found |
-| COV-02 | Phase 19 | Gaps Found |
+| SURF-03 | Phase 19 | Complete |
+| ABS-01 | Phase 19 | Complete |
+| ABS-02 | Phase 19 | Complete |
+| ABS-03 | Phase 19 | Complete |
+| ABS-04 | Phase 19 | Complete |
+| COV-01 | Phase 19 | Complete |
+| COV-02 | Phase 19 | Complete |
 | DECOMP-01 | Phase 20 | Pending |
 | DECOMP-02 | Phase 20 | Pending |
 | DECOMP-03 | Phase 20 | Pending |

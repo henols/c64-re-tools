@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phases 18-22)
-current_phase: 19
-current_phase_name: Absorbed Procedures and the Coverage Instrument
-status: executing
-stopped_at: Completed 19-19-PLAN.md
-last_updated: "2026-08-25T14:05:32.772Z"
+current_phase: 20
+current_phase_name: Decomposition to Closure
+status: planning
+stopped_at: Phase 19 complete, ready to plan Phase 20
+last_updated: "2026-08-25T14:33:43.742Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 19 round-4 gap closure completed (19-19 consolidation and phase gate)
-state_head: eb0b92b968131305d72201e2fbffb78793d50208
+last_activity_desc: Phase 19 complete, transitioned to Phase 20
+state_head: 8c48c9b5f95dc442b2cd88bee53c1d1588729452
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 27
   completed_plans: 27
-  percent: 20
+  percent: 40
 ---
 
 # Project State
@@ -68,16 +68,16 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 20 of 20 executed — every plan in phase 19 has a SUMMARY
-Status: Phase 19's fourth gap-closure round is complete and its gate is green; awaiting re-verification, which owns the COV-01 / COV-02 verdict
-Last activity: 2026-08-25 — Phase 19 round-4 gap closure completed (19-19 consolidation and phase gate)
+Phase: 20 — Decomposition to Closure
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-25 — Phase 19 complete, transitioned to Phase 20
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 174
+- Total plans completed: 187
 - Average duration: —
 - Total execution time: —
 
@@ -104,6 +104,7 @@ Last activity: 2026-08-25 — Phase 19 round-4 gap closure completed (19-19 cons
 | 16 | 11 | - | - |
 | 17 | 4 | 2026-08-23 | Ledger closed to 0; CORE-01 decided keep-dated; G-17-1 provenance correction |
 | 18 | 7 | - | - |
+| 19 | 20 | - | - |
 
 **Recent Trend:**
 
@@ -904,7 +905,7 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-25T14:04:51.925Z
-Stopped at: Completed 19-19-PLAN.md
+Stopped at: Phase 19 complete, ready to plan Phase 20
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),

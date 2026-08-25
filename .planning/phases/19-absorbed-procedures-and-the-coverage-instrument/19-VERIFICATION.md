@@ -1,23 +1,56 @@
 ---
 phase: 19-absorbed-procedures-and-the-coverage-instrument
-verified: 2026-08-25T09:47:08Z
-status: gaps_found
-score: 4/5 must-haves verified
+verified: 2026-08-25T14:32:03Z
+status: passed
+score: 5/5 must-haves verified (1 override)
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+overrides:
+  - must_have: "SC4 — the coverage instrument reports three distinct numbers and (phase goal) resists being gamed, before any decomposition work runs under it"
+    reason: >-
+      Superseded by owner decision, not closed by a fourth verification. Rounds 1-3 each closed
+      the shape they were shown and were then defeated by a different shape in the same function.
+      The fourth gap-closure round (plans 19-15, 19-16, 19-17, 19-18, 19-20, 19-19) was scoped by
+      DEFECT CLASS rather than by finding id and did land against this gap's named instance: the
+      D2 payload recorded in `superseded_gaps` below — 15 code bytes, no `0x6c` anywhere, measured
+      at `reachedAsInstruction=31 / tableEntry=16 / splitTables=1 / provenDispatchTargets=8` — now
+      reports `15 / 0 / 0 / []` with `classAt($0840) = "unreached"`, and WR-03's louder route
+      (`64 / 0 / 4` on a 94%-garbage image) reports `4 / 60 / 4`. That measurement is the
+      EXECUTORS' own, taken on their own work; no independent verifier re-ruled on it, because the
+      owner directed that r2000 testing stop. Henrik has a separate plan for the coverage
+      instrument that supersedes further gap-closure rounds against it, and accepted the residual
+      risk explicitly. COV-01 is therefore accepted as an override rather than claimed as verified.
+      What would reopen it: the replacement plan landing, or Phase 20's first real use of the
+      instrument surfacing an inflated structural number.
+    accepted_by: "henrik"
+    accepted_at: "2026-08-25T14:32:03Z"
+gaps: []
 re_verification:
   previous_status: gaps_found
   previous_score: 4/5
-  previous_verified: 2026-08-25T05:55:58Z
-  gaps_closed:
+  previous_verified: 2026-08-25T09:47:08Z
+  round_4_disposition: >-
+    Six plans executed (19-15, 19-16, 19-17, 19-18, 19-20, 19-19), 40 commits. Orchestrator-measured
+    at HEAD: full `npm test` in `src/mcp/vice` 2638 tests / 2593 pass / 0 fail / exit 0; typecheck,
+    installer suite (18/0), skill-script tests, `check-npm-packages`, `check-skill-tool-coverage`,
+    `check-skill-fork-honesty`, `check-skill-description-overlap` and `npm run smoke` (80 tools) all
+    exit 0; schema-drift and ui safety gates clean; codebase-drift advisory-warn only. The
+    `code-review` capability gate was deliberately NOT invoked — every plan in the round prohibits
+    regenerating `19-REVIEW.md`, whose finding ids plan 19-13's disposition ledger keys off; it
+    remains byte-unchanged at `80c544b`. No independent verifier ran on the round's substance.
+  gaps_closed_prior_round:
     - "SC4 / CR-04 — the census-inflation route via the zero-page pointer CONSTRUCTION is closed at its root. `hasDispatchContext()` now requires the CONSUMER (a `0x6c` operand equal to the lower of two consecutive zero-page store targets); the bare-`0x6c`-within-reach branch was removed. Reproduced INDEPENDENTLY at report level against HEAD `13cb5e1` on a payload I wrote from scratch, not the committed fixture: 18 declared code bytes report `reachedAsInstruction=18, tableEntry=0, splitTables=0, provenDispatchTargets=[]`, against the prior run's measured `25 / 16 / 1 / 8`. The pairing is still REPORTED as one advisory candidate, so it demonstrably reached the gate and was declined rather than never being examined."
     - "The workspace test suite is no longer red from this phase's own artifacts. `19-REVIEW-FIX.md` dispositions all 24 finding ids `19-REVIEW.md` declares (set equality re-derived mechanically with the guard's own regex, 24/24, zero missing). `docs-review-disposition.test.ts` 7/7 exit 0 and `audit-integrity.test.ts` 44/44 exit 0, both standalone. `19-REVIEW.md` is byte-unchanged across the whole run (0 files in `git diff --name-only a756b17..HEAD`), so finding-id continuity is preserved; `19-VALIDATION.md` and `deferred-items.md` are purely additive (93/0 and 135/0 insertions/deletions)."
-  gaps_remaining:
+  gaps_remaining_prior_round:
     - "SC4 / COV-01 — the structural-completeness number is still inflatable, by a DIFFERENT shape than the one just closed. `hasDispatchContext()`'s FIRST branch (`stack-return-push-idiom`) is reachable from the class-3 pass outside any class-4 window, and accepts. Reproduced at report level on a payload with 15 code bytes and no `jmp` opcode anywhere: `reachedAsInstruction=31, tableEntry=16, splitTables=1, provenDispatchTargets=8`, `classAt($0840)=reached-as-instruction` on a cleared buffer, while class 4 itself DECLINES the same window (`stackReturnDispatch=0`)."
   regressions: []
-gaps:
+# Retained verbatim as history. This was the round-3 open gap; it is now carried as the
+# `overrides` entry above (accepted by the owner, superseded rather than re-verified), so it
+# is no longer an open gap and is not counted against the score. Kept in full because its
+# measurements are the baseline the round-4 work was judged against.
+superseded_gaps:
   - truth: "SC4 — the coverage instrument reports three distinct numbers and (phase goal) 'resists being gamed', before any decomposition work runs under it"
-    status: partial
+    status: superseded-by-override
     reason: >-
       Clauses A (three separately-addressable numbers, never one aggregate), B (a mechanically
       auto-labelled or "handles data" binary visibly fails) and C (the multi-caller
@@ -106,9 +139,19 @@ coincidental_reliance_items:
 
 **Phase Goal:** Upstream's five analyze procedures become this project's own skills — absorbed, attributed, and diffed against the curated surface — and a coverage instrument exists that resists being gamed, before any decomposition work runs under it.
 
-**Verified:** 2026-08-25T09:47:08Z (HEAD `13cb5e1`)
-**Status:** gaps_found
-**Re-verification:** Yes — second gap-closure round (plans 19-10 … 19-14)
+**Status:** passed (5/5, one override) — closed 2026-08-25T14:32:03Z at HEAD `8c48c9b`
+**Last independent verification:** 2026-08-25T09:47:08Z (HEAD `13cb5e1`) — returned `gaps_found`, 4/5
+**Re-verification:** third gap-closure round (plans 19-10 … 19-14) was the last round a verifier ruled on
+
+> **Read this before the analysis below.** Everything from "Goal Achievement" down to
+> "Gaps Summary" is the **round-3 verdict**, preserved verbatim. It is the last independent
+> verification this phase received, and its one open gap was later **accepted as an override by
+> the project owner rather than re-verified** — a fourth gap-closure round (plans 19-15, 19-16,
+> 19-17, 19-18, 19-20, 19-19) executed against it, but no verifier ruled on that work. The
+> disposition, what the round measured, and what would reopen it are in
+> **"Round 4 — Disposition"** at the end of this document and in the `overrides` frontmatter key.
+> Where the text below says the instrument half "is still not achieved", read it as the state at
+> HEAD `13cb5e1`, not at close.
 
 ## Goal Achievement
 
@@ -366,5 +409,70 @@ it rather than inherit it.
 
 ---
 
-_Verified: 2026-08-25T09:47:08Z_
-_Verifier: Claude (gsd-verifier)_
+## Round 4 — Disposition
+
+**This section was written by the execute-phase orchestrator, not by a verifier.** No independent
+verification ran on the round-4 work. That is the single most important fact about this closure and
+it is stated first deliberately.
+
+### What happened
+
+The round-3 gap above — SC4's goal qualifier, requirement COV-01 — was the fourth consecutive
+verification to find the structural-completeness number inflatable, each time by a different shape
+in the same function. A fourth gap-closure round was planned and executed against it, scoped by
+**defect class** rather than by finding id (`19-CONTEXT.md` D-01), with the stated acceptance bar
+(D-07) that every new gate be *demonstrated to fail* when its control is removed.
+
+Six plans landed across six waves, 40 commits:
+
+| Plan | What it changed |
+|---|---|
+| 19-15 | `hasDispatchContext()` branch A requires a proven push link tied to the pairing under test |
+| 19-16 | Branch B compares against `pairing.oriented.vectorLow`; source-derived pin asserts every `return true` site's depth-1 guard chain names `pairing` |
+| 19-17 | `r2000-coverage-grammar.test.ts` — 2000-payload composed corpus, computed oracle, one set-equality property in both directions |
+| 19-18 | Control identity re-keyed from *shape* to *(shape, route)*; route set derived from source; four source pins |
+| 19-20 | WR-03 closed — `isDecodableAsInstruction()`, one predicate, three consumers |
+| 19-19 | Seven-gate consolidation in `19-VALIDATION.md`; full-suite gate |
+
+Against this gap's own two named payloads, the executors measured:
+
+- **D2** (15 code bytes, no `0x6c` in the image): `31 / 16 / 1 / 8` → **`15 / 0 / 0 / []`**, `classAt($0840)` now `unreached`
+- **WR-03** (4 code bytes + 60 × `$02`): `64 / 0 / 4` → **`4 / 60 / 4`**; the `$ea`-filled twin still `64 / 0 / 64`
+
+### Why it is an override and not a pass
+
+Those numbers are the executors' measurements of their own work. The mechanism that converts an
+executor's claim into a verdict is a verifier run, and the project owner directed that r2000 testing
+stop — a separate plan supersedes further gap-closure rounds against this instrument. Closing the
+phase on `passed` without saying so would misrepresent the evidence, so the gap is carried as an
+`overrides` entry: accepted, attributed, dated, with its reopen condition named.
+
+### Orchestrator-measured at HEAD `8c48c9b`
+
+These are independent of the executors:
+
+- Full `npm test` in `src/mcp/vice`: **2638 tests, 2593 pass, 0 fail, 0 `not ok`, exit 0**
+- `npm run typecheck` exit 0 · installer `npm test` 18/0 · `node --test 'src/skills/*/scripts/*.test.mjs'` exit 0
+- `check-npm-packages.mjs`, `check-skill-tool-coverage.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-description-overlap.mjs` all exit 0 · `npm run smoke` OK (80 tools)
+- Capability gates: schema-drift clean, ui safety-gate clean, codebase-drift **advisory-warn only** (`.planning/codebase/` map stale against `src`, `LICENSE`, `THIRD-PARTY-NOTICES.md`, `VERSION`, `.gitignore`)
+- The two known contention flakes (`vice-proxy.test.ts` `:1594`/`:2260`, `r2000-session.test.ts`'s 200 ms budget) did **not** reproduce; both remain open in `deferred-items.md`
+
+### Gates deliberately not run
+
+- **Code review.** `workflow.code_review` is on, but all six plans prohibit regenerating
+  `19-REVIEW.md`, whose 24 finding ids plan 19-13's disposition ledger keys off. Regenerating would
+  orphan them and re-redden AUDIT-01 — the exact failure mode 19-13 closed. Left byte-unchanged at
+  `80c544b`. The gate is advisory and never blocking.
+- **Licensing / ABS-02 scrutiny.** The project owner has accepted all licensing and attribution
+  risk in this repository and directed that it stop being treated as a concern. Not re-examined.
+
+### What would reopen this
+
+The replacement plan for the coverage instrument landing, or Phase 20's first real use of the
+instrument surfacing an inflated structural number. Phase 20 is instructed to run *under* this
+number continuously, so that use is the natural checkpoint.
+
+---
+
+_Round-3 verification: 2026-08-25T09:47:08Z — Claude (gsd-verifier)_
+_Round-4 disposition: 2026-08-25T14:32:03Z — Claude (execute-phase orchestrator), override accepted by henrik_
