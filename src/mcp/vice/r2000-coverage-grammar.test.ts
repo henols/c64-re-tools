@@ -1175,6 +1175,379 @@ function provenIds(): Set<string> {
 }
 
 // ---------------------------------------------------------------------------
+// The computed oracle
+//
+// SIX NUMBERED RULES over the SYMBOLIC fragment list, each written as its own
+// small helper with a comment naming the source behaviour it states. Nothing
+// below decodes a byte, scans a window, walks a census or reads anything from
+// the module under test except the two shared constants `SPLIT_TABLE_WINDOW`
+// and `MAX_TABLE_ENTRIES`. Its only contact with bytes is reading the FIXED
+// `DATA_TAIL` to reconstruct target values, which is arithmetic over a known
+// constant rather than a reimplementation of anything.
+//
+// That separation is what makes this a SPECIFICATION rather than a second
+// implementation, and it is not left to good intentions: the isolation is
+// asserted mechanically by a source-text pin below, which reads the span
+// between the two section markers and fails if it names the scan.
+// --- ORACLE SECTION BEGIN ---
+// ---------------------------------------------------------------------------
+
+interface Pairing {
+  firstIndex: number;
+  secondIndex: number;
+}
+
+interface ClassFourWindow {
+  startIndex: number;
+  /** The FIRST load's base. The 6502 pushes the high byte first, so the leading
+   * load reads the hi table -- the one condition the idiom supplies for free. */
+  hiBase: number;
+  loBase: number;
+}
+
+interface Orientation {
+  loBase: number;
+  hiBase: number;
+  /** The LOWER of the two consecutive zero-page addresses the pairing's OWN two
+   * loads are consumed by, which is the address an indirect jump through that
+   * vector names. */
+  vectorLow: number;
+}
+
+interface OracleVerdict {
+  linked: boolean;
+  /** The numbered rule that DECIDED this verdict, printed by every failure
+   * message so a disagreement cites a rule rather than an array index. */
+  rule: string;
+}
+
+/** The byte the fixed data tail holds at `address`. The oracle's ONLY contact
+ * with bytes, and only with a constant it declared itself. */
+function dataTailByteAt(address: number): number {
+  const offset = address - TABLE_LO_BASE;
+  if (offset < 0 || offset >= DATA_TAIL.length) {
+    throw new Error(
+      `the oracle was asked for the byte at ${hex(address)}, outside the fixed data tail ` +
+        `[${hex(TABLE_LO_BASE)}, ${hex(TABLE_LO_BASE + DATA_TAIL.length)}). The oracle reads the tail and nothing ` +
+        `else; reaching this means the geometry changed and the oracle's scope must be restated rather than widened ` +
+        `by adding a decoder to it.`,
+    );
+  }
+  return DATA_TAIL[offset]!;
+}
+
+function loadAt(fragments: readonly Fragment[], index: number): Extract<Fragment, { kind: "indexedLoad" }> {
+  const fragment = fragments[index];
+  if (!fragment || fragment.kind !== "indexedLoad") {
+    throw new Error(`the oracle expected an indexed load at fragment ${index}`);
+  }
+  return fragment;
+}
+
+/**
+ * R1 -- PAIRING. Two indexed loads L1 before L2, indexing through the SAME
+ * register, with DISTINCT table bases, where L2 occurs at most
+ * `SPLIT_TABLE_WINDOW` fragments after L1.
+ *
+ * States the class-3 pass's own inner-loop bounds: the second load is sought at
+ * instruction indices `i + 1` through `i + SPLIT_TABLE_WINDOW`, two loads
+ * through different registers are two tables rather than one split one, and a
+ * pairing whose two bases are equal has no span to reconstruct.
+ */
+function pairingsOf(fragments: readonly Fragment[]): Pairing[] {
+  const loadIndices: number[] = [];
+  for (let i = 0; i < fragments.length; i++) {
+    if (fragments[i]!.kind === "indexedLoad") loadIndices.push(i);
+  }
+  const out: Pairing[] = [];
+  for (let a = 0; a < loadIndices.length; a++) {
+    for (let b = a + 1; b < loadIndices.length; b++) {
+      const firstIndex = loadIndices[a]!;
+      const secondIndex = loadIndices[b]!;
+      if (secondIndex - firstIndex > SPLIT_TABLE_WINDOW) continue;
+      const first = loadAt(fragments, firstIndex);
+      const second = loadAt(fragments, secondIndex);
+      if (first.register !== second.register) continue;
+      if (first.base === second.base) continue;
+      out.push({ firstIndex, secondIndex });
+    }
+  }
+  return out;
+}
+
+/**
+ * R2 -- THE CLASS-4 WINDOW, AND WHEN IT IS CLAIMED. Five consecutive fragments
+ * matching indexed load, `pha`, indexed load, `pha`, `rts`, with both loads
+ * through the same register.
+ *
+ * THE WINDOW IS CLAIMED ON SHAPE AND REGISTER ALONE, BEFORE ANY PLAUSIBILITY
+ * TEST. The class-4 pass adds every instruction of a matched window to its
+ * claimed set as soon as the register check passes, and only THEN walks and
+ * validates the table -- so a window whose reconstruction turns out implausible
+ * has still been claimed, and R3 below still shuts the class-3 route out of it.
+ * Modelling the two steps the other way round -- claiming only on a successful
+ * publish -- makes the oracle disagree with the instrument on exactly the
+ * arrangements that matter, and the disagreement then reads as an instrument
+ * defect when it is an oracle defect.
+ *
+ * The register check runs BEFORE the claim, which is the one thing the pass
+ * does not do on shape alone: a mismatched-register window is not class 4's, so
+ * it is left unclaimed and the class-3 pass is still free to rule on it.
+ */
+function classFourWindowsOf(fragments: readonly Fragment[]): ClassFourWindow[] {
+  const out: ClassFourWindow[] = [];
+  for (let i = 0; i + 4 < fragments.length; i++) {
+    const a = fragments[i]!;
+    const b = fragments[i + 1]!;
+    const c = fragments[i + 2]!;
+    const d = fragments[i + 3]!;
+    const e = fragments[i + 4]!;
+    if (a.kind !== "indexedLoad") continue;
+    if (b.kind !== "pha") continue;
+    if (c.kind !== "indexedLoad") continue;
+    if (d.kind !== "pha") continue;
+    if (e.kind !== "rts") continue;
+    if (a.register !== c.register) continue;
+    out.push({ startIndex: i, hiBase: a.base, loBase: c.base });
+  }
+  return out;
+}
+
+/** The fragment indices a claimed class-4 window occupies. */
+function classFourClaimedIndices(windows: readonly ClassFourWindow[]): Set<number> {
+  const claimed = new Set<number>();
+  for (const window of windows) {
+    for (let k = 0; k < 5; k++) claimed.add(window.startIndex + k);
+  }
+  return claimed;
+}
+
+/**
+ * R4 -- CLASS-3 ORIENTATION. Each of the two paired loads must have a
+ * nearest-FOLLOWING zero-page store within the window; the two store addresses
+ * must differ by exactly one; the load reaching the LOWER address holds the low
+ * byte, because a 6502 vector is little-endian.
+ *
+ * Without a resolvable orientation the pairing is advisory and publishes
+ * nothing, however good its other evidence looks -- which is why even the
+ * push-idiom route needs the store construction present. `vectorLow` is derived
+ * here, from the SAME two consumer stores that decided the lo/hi roles, so the
+ * vector address and the orientation that justified it cannot disagree.
+ */
+function orientationOf(fragments: readonly Fragment[], pairing: Pairing): Orientation | null {
+  const consumerOf = (from: number): number | null => {
+    const end = Math.min(fragments.length, from + SPLIT_TABLE_WINDOW + 1);
+    for (let k = from + 1; k < end; k++) {
+      const fragment = fragments[k]!;
+      if (fragment.kind === "storeZp") return fragment.address;
+    }
+    return null;
+  };
+
+  const firstZp = consumerOf(pairing.firstIndex);
+  const secondZp = consumerOf(pairing.secondIndex);
+  if (firstZp === null || secondZp === null) return null;
+  if (Math.abs(firstZp - secondZp) !== 1) return null;
+
+  const firstBase = loadAt(fragments, pairing.firstIndex).base;
+  const secondBase = loadAt(fragments, pairing.secondIndex).base;
+  const vectorLow = Math.min(firstZp, secondZp);
+  return firstZp < secondZp
+    ? { loBase: firstBase, hiBase: secondBase, vectorLow }
+    : { loBase: secondBase, hiBase: firstBase, vectorLow };
+}
+
+/**
+ * R5 -- CLASS-3 DISPATCH LINK, either of two.
+ *
+ * The STACK-RETURN link: the fragment immediately after EACH paired load is a
+ * `pha`, and an `rts` follows the second push inside the LEADING load's window.
+ * Read at the two loads' own successors, so no `pha` elsewhere in the window can
+ * stand in for either of them -- the link is the evidence, not the shape.
+ *
+ * The ZERO-PAGE-VECTOR link: an indirect jump inside the leading load's window
+ * names exactly the LOWER of the two store addresses R4 resolved. A jump through
+ * some OTHER vector built in the same window is not evidence about this pairing;
+ * a routine with a source pointer and a destination pointer has two.
+ */
+function dispatchLinkOf(
+  fragments: readonly Fragment[],
+  pairing: Pairing,
+  orientation: Orientation,
+): string | null {
+  const end = Math.min(fragments.length, pairing.firstIndex + SPLIT_TABLE_WINDOW + 1);
+
+  if (
+    fragments[pairing.firstIndex + 1]?.kind === "pha" &&
+    fragments[pairing.secondIndex + 1]?.kind === "pha"
+  ) {
+    for (let k = pairing.secondIndex + 2; k < end; k++) {
+      if (fragments[k]!.kind === "rts") return "stack-return-push-idiom";
+    }
+  }
+
+  for (let k = pairing.firstIndex; k < end; k++) {
+    const fragment = fragments[k]!;
+    if (fragment.kind === "indirectJump" && fragment.pointer === orientation.vectorLow) {
+      return "zeropage-vector-jumped-through";
+    }
+  }
+
+  return null;
+}
+
+interface ReconstructionOptions {
+  /** Class 4 only: `rts` increments before jumping, so the idiom pushes
+   * `target - 1` and the reconstruction adds one back. Class 3 adds nothing. */
+  rtsIncrement: boolean;
+  /** Class 4 only: a zero span still walks one entry. */
+  minimumOneEntry: boolean;
+}
+
+/**
+ * R6, first half -- RECONSTRUCTION. The entry count is the DISTANCE between the
+ * two bases, clamped at `MAX_TABLE_ENTRIES`; each entry is the little-endian
+ * word assembled from the lo and hi tables at the same offset; the walk stops
+ * where the image stops.
+ */
+function reconstructTargets(loBase: number, hiBase: number, options: ReconstructionOptions): number[] {
+  const span = Math.abs(hiBase - loBase);
+  let entries = span > 0 ? span : options.minimumOneEntry ? 1 : 0;
+  if (entries > MAX_TABLE_ENTRIES) entries = MAX_TABLE_ENTRIES;
+
+  const targets: number[] = [];
+  for (let k = 0; k < entries; k++) {
+    if (loBase + k >= IMAGE_END || hiBase + k >= IMAGE_END) break;
+    if (loBase + k < GRAMMAR_ORIGIN || hiBase + k < GRAMMAR_ORIGIN) break;
+    const value = dataTailByteAt(loBase + k) | (dataTailByteAt(hiBase + k) << 8);
+    targets.push(options.rtsIncrement ? (value + 1) & 0xffff : value);
+  }
+  return targets;
+}
+
+/**
+ * R6, second half -- PLAUSIBILITY. A published entry point must lie strictly
+ * inside the image and on a byte that is a legal, non-truncated instruction.
+ *
+ * With the fixed `DATA_TAIL` that reduces to "inside the sixteen-byte `nop` run
+ * at `TARGET_BASE`", because every reconstruction this geometry admits is either
+ * inside that run or far outside the image. The reduction is not assumed: a
+ * value landing inside the image but below `TARGET_BASE` would need the decoder
+ * the oracle is forbidden to call, so it THROWS by name rather than guessing,
+ * and the corpus-wide property below would report it immediately.
+ */
+function targetPlausible(target: number): boolean {
+  if (target < GRAMMAR_ORIGIN || target >= IMAGE_END) return false;
+  if (target < TARGET_BASE) {
+    throw new Error(
+      `the oracle reconstructed ${hex(target)}: inside the image but below ${hex(TARGET_BASE)}. Deciding whether that ` +
+        `byte is a legal entry point needs a decoder, which the oracle may not have. With the fixed DATA_TAIL every ` +
+        `reconstruction is either inside the sixteen-byte nop run or far outside the image, so reaching this branch ` +
+        `means the geometry changed and R6 must be restated.`,
+    );
+  }
+  return dataTailByteAt(target) === NOP_BYTE;
+}
+
+/** Class 3 publishes ALL-OR-NOTHING: every reconstructed target must be
+ * plausible, and an empty reconstruction publishes nothing. */
+function everyTargetPlausible(targets: readonly number[]): boolean {
+  return targets.length > 0 && targets.every(targetPlausible);
+}
+
+/** Class 4 publishes its SURVIVING PREFIX: the walk stops at the first
+ * implausible value, marks the finding truncated, and publishes what came
+ * before -- so a window publishes exactly when its first target is plausible. */
+function plausiblePrefixLength(targets: readonly number[]): number {
+  let length = 0;
+  for (const target of targets) {
+    if (!targetPlausible(target)) break;
+    length++;
+  }
+  return length;
+}
+
+/**
+ * Does this arrangement carry a PROVEN DATA-FLOW LINK from two reconstructed
+ * table bases to a dispatch mechanism?
+ *
+ * A claimed class-4 window whose reconstruction publishes (R2 then R6), OR a
+ * pairing satisfying R1, available under R3, oriented under R4, linked under R5,
+ * whose reconstruction publishes under R6.
+ *
+ * R3 -- CLASS-3 AVAILABILITY -- is applied here rather than inside `pairingsOf`
+ * because it is a fact about the interaction of the two passes rather than about
+ * the pairing: a pairing whose LEADING load lies inside a claimed class-4 window
+ * is unavailable to the class-3 route, whether or not class 4 went on to publish
+ * anything.
+ */
+function expectedProvenLink(arrangement: Arrangement): OracleVerdict {
+  const fragments = arrangement.fragments;
+
+  const windows = classFourWindowsOf(fragments); // R2
+  const claimed = classFourClaimedIndices(windows);
+
+  for (const window of windows) {
+    const targets = reconstructTargets(window.loBase, window.hiBase, {
+      rtsIncrement: true,
+      minimumOneEntry: true,
+    });
+    if (plausiblePrefixLength(targets) > 0) {
+      return { linked: true, rule: "R2+R6 class-4 window published" };
+    }
+  }
+
+  const pairings = pairingsOf(fragments); // R1
+  if (pairings.length === 0) {
+    return {
+      linked: false,
+      rule: windows.length > 0 ? "R2+R6 class-4 window claimed, reconstruction implausible" : "R1 no pairing",
+    };
+  }
+
+  let furthest = "R1 no pairing";
+  for (const pairing of pairings) {
+    if (claimed.has(pairing.firstIndex)) {
+      furthest = "R3 leading load inside a claimed class-4 window";
+      continue;
+    }
+    const orientation = orientationOf(fragments, pairing); // R4
+    if (orientation === null) {
+      furthest = "R4 orientation unresolved";
+      continue;
+    }
+    const link = dispatchLinkOf(fragments, pairing, orientation); // R5
+    if (link === null) {
+      furthest = "R5 no dispatch link";
+      continue;
+    }
+    const targets = reconstructTargets(orientation.loBase, orientation.hiBase, {
+      rtsIncrement: false,
+      minimumOneEntry: false,
+    }); // R6
+    if (everyTargetPlausible(targets)) {
+      return { linked: true, rule: `R1..R6 class-3 ${link}` };
+    }
+    furthest = "R6 reconstruction implausible";
+  }
+  return { linked: false, rule: furthest };
+}
+
+// ---------------------------------------------------------------------------
+// --- ORACLE SECTION END ---
+// ---------------------------------------------------------------------------
+
+/** The ids the ORACLE expects to be proven. The other side of the headline
+ * equality, computed from composition and never declared per payload. */
+function expectedIds(): Set<string> {
+  const out = new Set<string>();
+  for (const payload of CORPUS) {
+    if (expectedProvenLink(payload.arrangement).linked) out.add(payload.id);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Smoke tests -- the corpus is what it claims to be
 // ---------------------------------------------------------------------------
 
@@ -1436,6 +1809,315 @@ test("the module under test is READ-ONLY by construction, and this suite writes 
     assert.ok(
       !source.includes(`${forbidden}(`),
       `this suite must not write to the filesystem, but it calls ${forbidden}()`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The oracle's own guards
+// ---------------------------------------------------------------------------
+
+test("the oracle never reaches the instrument: no decode, no scan, no census inside the oracle section", () => {
+  // The isolation that makes this a specification rather than a second
+  // implementation, asserted over this file's OWN source text rather than left
+  // to the reader. A future edit that reaches for the scan to settle a hard case
+  // reds here by name.
+  const source = readFileSync(join(HERE, "r2000-coverage-grammar.test.ts"), "utf8");
+  const beginMarker = "// --- ORACLE SECTION BEGIN ---";
+  const endMarker = "// --- ORACLE SECTION END ---";
+  const begin = source.indexOf(beginMarker);
+  const end = source.indexOf(endMarker, begin + beginMarker.length);
+  assert.ok(begin >= 0, "the oracle section's BEGIN marker is missing");
+  assert.ok(end > begin, "the oracle section's END marker is missing or precedes its BEGIN marker");
+
+  const section = source.slice(begin + beginMarker.length, end);
+  assert.ok(
+    section.length > 4000,
+    `the oracle section is only ${section.length} characters -- the markers have drifted and this pin would pass ` +
+      `over an empty span`,
+  );
+  assert.ok(section.includes("function expectedProvenLink("), "the oracle section must contain expectedProvenLink()");
+
+  for (const forbidden of [
+    "decode(",
+    "scanIndirectDispatch(",
+    "computeStructuralCensus(",
+    "provenDispatchTargets(",
+    "scanOfPayload(",
+    "censusOfPayload(",
+    "measure(",
+    ".bytes",
+  ]) {
+    assert.ok(
+      !section.includes(forbidden),
+      `the oracle section names \`${forbidden}\`. The oracle reads the SYMBOLIC fragment list and the fixed DATA_TAIL ` +
+        `and nothing else; an oracle that reaches into the scan it is checking agrees with it by construction and ` +
+        `proves nothing.`,
+    );
+  }
+
+  // And the positive half: exactly the six rules are named in the section, so a
+  // rule silently dropped reds rather than passing as a smaller oracle.
+  for (const rule of ["R1 --", "R2 --", "R3 --", "R4 --", "R5 --", "R6, first half --", "R6, second half --"]) {
+    assert.ok(section.includes(rule) || source.includes(rule), `the oracle no longer states rule \`${rule}\``);
+  }
+});
+
+test("the oracle's SCOPE is honest: no corpus payload reaches classes 1 or 2, so the oracle may be silent about them", () => {
+  // Every indirect jump in the alphabet points through zero page, which lies
+  // outside the image, so its target is null and it names no multi-entry table.
+  // That is what LICENSES the oracle to say nothing about the two opcode-keyed
+  // classes. If a future alphabet change breaks it the oracle becomes
+  // incomplete, and this assertion reds first.
+  let jumpsSeen = 0;
+  for (const payload of CORPUS) {
+    const { scan } = measure(payload);
+    for (const jump of scan.indirectJumps) {
+      jumpsSeen++;
+      assert.equal(
+        jump.target,
+        null,
+        `${payload.id} (\`${payload.spelling}\`): the indirect jump at ${hex(jump.at)} through ${hex(jump.pointer)} ` +
+          `resolved to a target, so class 1 is live in this corpus and the oracle's silence about it is no longer honest`,
+      );
+    }
+    assert.deepEqual(
+      scan.multiEntryTables,
+      [],
+      `${payload.id} (\`${payload.spelling}\`): a multi-entry table was reconstructed, so class 2 is live in this ` +
+        `corpus and the oracle's silence about it is no longer honest`,
+    );
+  }
+  assert.ok(jumpsSeen > 0, "no corpus payload carries an indirect jump at all, so this assertion is vacuous");
+});
+
+test("the computed oracle AGREES with all nine hand-declared pinned verdicts", () => {
+  // THE ANTI-COUPLING CHECK, and it is not optional. The nine declarations were
+  // written by a human reading the shapes; the oracle was written from the six
+  // rules. If the oracle ever drifts toward being a copy of the implementation
+  // it is checking, it will start agreeing with the instrument and disagreeing
+  // with these nine -- and this assertion is what fires.
+  for (const idiom of PINNED_IDIOMS) {
+    const arrangement: Arrangement = {
+      id: `pinned:${idiom.name}`,
+      family: idiom.family,
+      kind: "indexed",
+      fragments: idiom.fragments,
+    };
+    const verdict = expectedProvenLink(arrangement);
+    assert.equal(
+      verdict.linked,
+      idiom.linked,
+      `pinned idiom \`${idiom.name}\` (\`${spellArrangement(idiom.fragments)}\`): the oracle says ` +
+        `${verdict.linked ? "LINKED" : "unlinked"} by ${verdict.rule}, the hand declaration says ` +
+        `${idiom.linked ? "LINKED" : "unlinked"} because ${idiom.why}`,
+    );
+  }
+  assert.equal(
+    PINNED_IDIOMS.filter((idiom) => idiom.linked).length,
+    3,
+    "the pinned set must declare both verdicts -- nine members that all declare the same way would let an oracle " +
+      "that answers one way for everything agree with all of them",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The headline property
+// ---------------------------------------------------------------------------
+
+test("the set of arrangements the instrument PROVES equals exactly the set the oracle says carries a proven link", () => {
+  const proven = provenIds();
+  const expected = expectedIds();
+
+  const provenNotExpected = [...proven].filter((id) => !expected.has(id)).sort();
+  const expectedNotProven = [...expected].filter((id) => !proven.has(id)).sort();
+
+  const describe = (ids: readonly string[]): string =>
+    ids
+      .slice(0, 8)
+      .map((id) => {
+        const payload = PAYLOAD_BY_ID.get(id)!;
+        const verdict = expectedProvenLink(payload.arrangement);
+        return `\n    ${id}  \`${payload.spelling}\`  [oracle: ${verdict.linked ? "LINKED" : "unlinked"} by ${verdict.rule}]`;
+      })
+      .join("") + (ids.length > 8 ? `\n    ... and ${ids.length - 8} more` : "");
+
+  // ONE assertion, BOTH directions. Decomposing this into two one-directional
+  // tests would make each half satisfiable by a broken instrument: "nothing
+  // unproven is proven" holds for an instrument that proves nothing at all, and
+  // "everything expected is proven" holds for one that proves everything.
+  assert.deepEqual(
+    { provenNotExpected, expectedNotProven },
+    { provenNotExpected: [], expectedNotProven: [] },
+    `the instrument and the oracle disagree over ${CORPUS.length} composed payloads.\n` +
+      `  PROVEN but NOT expected (${provenNotExpected.length}) -- false positives of the kind that has failed this ` +
+      `criterion three times:${describe(provenNotExpected)}\n` +
+      `  EXPECTED but NOT proven (${expectedNotProven.length}) -- an over-tightening that would make the instrument ` +
+      `measure nothing:${describe(expectedNotProven)}`,
+  );
+
+  assert.equal(proven.size, expected.size);
+});
+
+test("an arrangement the oracle says is unlinked moves not one byte into the seed set or the table-entry class", () => {
+  for (const payload of CORPUS) {
+    const verdict = expectedProvenLink(payload.arrangement);
+    if (verdict.linked) continue;
+    const { scan, proven } = measure(payload);
+    const where = `${payload.id} (\`${payload.spelling}\`) [oracle: unlinked by ${verdict.rule}]`;
+    assert.deepEqual(proven, [], `${where}: nothing here may seed a recursive descent`);
+    assert.deepEqual(scan.splitTables, [], `${where}: an unlinked pairing is advisory, never a PROVEN split table`);
+    assert.deepEqual(scan.stackReturnDispatch, [], `${where}: no stack-return idiom may be published`);
+    assert.deepEqual(scan.tableEntryAddresses, [], `${where}: not one byte may be claimed as a table entry`);
+  }
+});
+
+test("an unlinked arrangement's census reaches exactly its own prologue and classifies no table byte as code", () => {
+  for (const payload of CORPUS) {
+    const verdict = expectedProvenLink(payload.arrangement);
+    if (verdict.linked) continue;
+    const { census } = measure(payload);
+    const where = `${payload.id} (\`${payload.spelling}\`) [oracle: unlinked by ${verdict.rule}]`;
+
+    // An EXACT equality, licensed by the one-terminator-last contract: the
+    // descent walks the whole prologue from the origin and stops at the
+    // terminator, so it reaches neither more nor less than the arrangement's own
+    // code length.
+    assert.equal(
+      census.reachedAsInstruction,
+      payload.prologueBytes,
+      `${where}: the census reached ${census.reachedAsInstruction} bytes of a ${payload.prologueBytes}-byte program`,
+    );
+
+    assert.equal(
+      classAt(census, TARGET_BASE),
+      "unreached",
+      `${where}: ${hex(TARGET_BASE)} holds ordinary data that nothing proven ever reaches`,
+    );
+
+    // At the table base the honest claim is NOT "unreached". An indexed load's
+    // absolute operand marks its base `referenced-as-data`, which is a fourth,
+    // deliberately separate class -- reported beside the proven ones and never
+    // summed into them. What may never happen is the table base being claimed as
+    // CODE or as a proven TABLE ENTRY, and that is what is asserted.
+    const tableClass = classAt(census, TABLE_LO_BASE);
+    assert.ok(
+      tableClass === "unreached" || tableClass === "referenced-as-data",
+      `${where}: ${hex(TABLE_LO_BASE)} is classified \`${tableClass}\`. An unlinked arrangement may leave its table ` +
+        `base unreached or merely referenced as data, never reached-as-instruction and never table-entry`,
+    );
+  }
+});
+
+test("twins: an unlinked pair reports the same census, and a LINKED indexed member reaches strictly more than its twin", () => {
+  // The split is decided by the COMPUTED verdict, not by hand. Applying twin
+  // equality to a linked pair would be false -- the whole point of a linked
+  // arrangement is that it reaches further than a program with no indexed pair
+  // -- and skipping linked pairs would leave the property one-directional, so
+  // the two statements are asserted against each other's complement.
+  let equalPairs = 0;
+  let strictPairs = 0;
+  for (const payload of INDEXED_MEMBERS) {
+    const twin = PAYLOAD_BY_ID.get(payload.twinId)!;
+    const verdict = expectedProvenLink(payload.arrangement);
+    const indexedReach = measure(payload).census.reachedAsInstruction;
+    const twinReach = measure(twin).census.reachedAsInstruction;
+    const where = `${payload.id} (\`${payload.spelling}\`) [oracle: ${verdict.linked ? "LINKED" : "unlinked"} by ${verdict.rule}]`;
+
+    if (verdict.linked) {
+      assert.ok(
+        indexedReach > twinReach,
+        `${where}: a linked arrangement seeds a descent its twin cannot, so it must reach strictly more than the ` +
+          `twin's ${twinReach} bytes -- observed ${indexedReach}`,
+      );
+      strictPairs++;
+    } else {
+      assert.equal(
+        indexedReach,
+        twinReach,
+        `${where}: the twin differs only in addressing mode, so an unlinked pair must report the same census -- ` +
+          `${indexedReach} against ${twinReach}`,
+      );
+      equalPairs++;
+    }
+  }
+  assert.ok(equalPairs > 0 && strictPairs > 0, "both halves of the twin property must be exercised");
+});
+
+test("the instrument is NOT quietly measuring nothing: the corpus carries a population of genuinely linked arrangements", () => {
+  const linked = CORPUS.filter((payload) => expectedProvenLink(payload.arrangement).linked);
+  assert.ok(
+    linked.length >= MIN_LINKED,
+    `only ${linked.length} of ${CORPUS.length} payloads carry a proven link, below MIN_LINKED (${MIN_LINKED}). ` +
+      `Every "nothing unproven is proven" statement in this file is satisfied by an instrument that had quietly ` +
+      `stopped scanning; this is the half that rules that out.`,
+  );
+  for (const payload of linked) {
+    const { proven, census } = measure(payload);
+    const where = `${payload.id} (\`${payload.spelling}\`)`;
+    assert.ok(proven.length > 0, `${where}: a linked arrangement must publish a non-empty seed set`);
+    assert.ok(
+      census.reachedAsInstruction > payload.prologueBytes,
+      `${where}: a linked arrangement's seeds must carry the descent beyond its own ${payload.prologueBytes}-byte ` +
+        `prologue -- observed ${census.reachedAsInstruction}`,
+    );
+  }
+});
+
+test("degenerate inputs produce empty dispatch collections and no throw", () => {
+  const rawBytes = (fragments: readonly Fragment[]): Uint8Array =>
+    Uint8Array.from(fragments.flatMap((fragment) => FRAGMENT_BYTES(fragment)));
+
+  const cases: [string, Uint8Array][] = [
+    ["an empty byte array", new Uint8Array(0)],
+    ["a single-instruction payload", rawBytes([RTS])],
+    [
+      "a payload shorter than the pairing window",
+      rawBytes([loadX(TABLE_LO_BASE), loadX(TABLE_HI_BASE), RTS]),
+    ],
+  ];
+
+  for (const [name, bytes] of cases) {
+    const scan = scanOfPayload(bytes);
+    assert.deepEqual(scan.indirectJumps, [], `${name}: no indirect jump`);
+    assert.deepEqual(scan.multiEntryTables, [], `${name}: no multi-entry table`);
+    assert.deepEqual(scan.splitTables, [], `${name}: no proven split table`);
+    assert.deepEqual(scan.splitTableCandidates, [], `${name}: no advisory candidate`);
+    assert.deepEqual(scan.stackReturnDispatch, [], `${name}: no stack-return idiom`);
+    assert.deepEqual(scan.discoveredTargets, [], `${name}: no discovered target`);
+    assert.deepEqual(scan.tableEntryAddresses, [], `${name}: no table-entry address`);
+    assert.deepEqual(provenDispatchTargets(scan), [], `${name}: no proven target`);
+    const census = censusOfPayload(bytes, scan);
+    assert.equal(census.rangeBytes, bytes.length, `${name}: the census must still be well-formed`);
+  }
+});
+
+test("every address list the scan publishes is strictly ascending and free of duplicates, and scanning twice is stable", () => {
+  const ascendingAndUnique = (values: readonly number[]): boolean =>
+    values.every((value, index) => index === 0 || value > values[index - 1]!);
+
+  for (const payload of CORPUS) {
+    const { scan, census } = measure(payload);
+    const where = `${payload.id} (\`${payload.spelling}\`)`;
+    for (const [name, list] of [
+      ["discoveredTargets", scan.discoveredTargets],
+      ["tableEntryAddresses", scan.tableEntryAddresses],
+      ["provenDispatchTargets", provenDispatchTargets(scan)],
+      ["census.seeds", census.seeds],
+    ] as [string, number[]][]) {
+      assert.ok(
+        ascendingAndUnique(list),
+        `${where}: ${name} is not strictly ascending -- ${list.map((value) => hex(value)).join(", ")}`,
+      );
+    }
+  }
+
+  // Idempotency, measured on a fresh scan rather than on the memoised one.
+  for (const payload of [INDEXED_MEMBERS[0]!, INDEXED_MEMBERS[INDEXED_MEMBERS.length - 1]!, TWIN_MEMBERS[0]!]) {
+    assert.deepEqual(
+      scanOfPayload(payload.bytes),
+      scanOfPayload(payload.bytes),
+      `${payload.id}: scanning the same payload twice must yield deep-equal results`,
     );
   }
 });
