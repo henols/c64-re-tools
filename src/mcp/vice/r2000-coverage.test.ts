@@ -48,6 +48,7 @@ import {
   computeStructuralCensus,
   coverageFindings,
   normaliseComment,
+  provenDispatchTargets,
   scanIndirectDispatch,
   type CoverageReport,
   type R2000BlockEntry,
@@ -147,13 +148,26 @@ const MULTI_ENTRY_TABLE = Uint8Array.from([
   0x60, 0xea, // $c010
 ]);
 
-/** Two indexed loads whose bases are three apart -- a split lo/hi table. */
+/** Two indexed loads whose bases are three apart, WITH the dispatch consumer
+ * that makes them a split lo/hi table rather than an ordinary copy loop: each
+ * load is stored into one half of a consecutive zero-page vector, and the
+ * vector is then jumped through.
+ *
+ * The consumer is not decoration. 19-08 gated the class-3 scan because two
+ * indexed loads on their own are the most ordinary shape in C64 code, and
+ * this payload as originally committed carried NO consumer at all -- it was a
+ * positive control for a heuristic that fired on anything. The store pair is
+ * also what resolves the lo/hi orientation: the load reaching the LOWER of
+ * two consecutive zero-page addresses holds the low byte, which is a fact
+ * about the construction rather than `Math.min` over two addresses (WR-01). */
 const SPLIT_TABLE = Uint8Array.from([
   0xbd, 0x10, 0xc0, // $c000 lda $c010,x   (lo base)
-  0xbd, 0x13, 0xc0, // $c003 lda $c013,x   (hi base)
-  0x60, // $c006 rts
-  0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // $c007..$c00f
-  0x06, 0x06, 0x06, // $c010 lo bytes
+  0x85, 0xfb, //       $c003 sta $fb       (vector lo)
+  0xbd, 0x13, 0xc0, // $c005 lda $c013,x   (hi base)
+  0x85, 0xfc, //       $c008 sta $fc       (vector hi)
+  0x6c, 0xfb, 0x00, // $c00a jmp ($00fb)   <- the dispatch consumer
+  0xea, 0xea, 0xea, // $c00d..$c00f
+  0x0d, 0x0d, 0x0d, // $c010 lo bytes  -> $c00d, a legal nop
   0xc0, 0xc0, 0xc0, // $c013 hi bytes
 ]);
 
@@ -188,6 +202,69 @@ function scanOf(bytes: Uint8Array) {
 }
 
 // ---------------------------------------------------------------------------
+// The FALSE-POSITIVE payloads for the class-3 negative controls (19-08).
+//
+// Same discipline as the four payloads above -- smallest program exhibiting
+// exactly one shape -- but pointed the other way. Until 19-08 the class-3
+// split-table scan had a POSITIVE control only, which is precisely how a
+// green suite concealed a reproduced blocker: the scan paired ANY two indexed
+// `ld*` instructions inside eight decoded instructions, with no dispatch
+// context required, reconstructed up to 64 "targets" out of whatever bytes
+// lay at the two operand bases, and fed them straight back as descent seeds.
+// A heuristic with a positive control and no negative one is not evidence
+// that it declines anything.
+//
+// The two payloads below are byte-identical apart from their seven-byte code
+// prologue -- one immediate, one indexed -- and that identity is ASSERTED
+// rather than asserted-about, so the "differing ONLY in addressing mode"
+// claim is a checked property of the fixtures.
+// ---------------------------------------------------------------------------
+
+const ORDINARY_ORIGIN = 0x0810;
+
+/** `lda $0827,x : lda $083f,x : rts` -- a screen-plus-colour copy loop, the
+ * single most ordinary shape in C64 code. No indirect jump, no `pha`/`pha`/
+ * `rts`, no zero-page vector construction: nothing dispatches through these
+ * two tables, because they are not tables. */
+const ORDINARY_INDEXED_PROLOGUE = [0xbd, 0x27, 0x08, 0xbd, 0x3f, 0x08, 0x60];
+
+/** `lda #$20 : lda #$38 : nop : nop : rts` -- the immediate twin. Identical
+ * in length and in every data byte; the two loads are immediate rather than
+ * indexed, and that is the ONLY difference. */
+const ORDINARY_IMMEDIATE_PROLOGUE = [0xa9, 0x20, 0xa9, 0x38, 0xea, 0xea, 0x60];
+
+/** The real code size of both payloads, DERIVED from the prologue rather than
+ * typed as a bare number, so the non-inflation control cannot drift away from
+ * the payload it guards. */
+const ORDINARY_CODE_BYTES = ORDINARY_INDEXED_PROLOGUE.length;
+
+/** 57 bytes of ordinary data: 24 ascending from $10, 24 of $08, 9 of $20. */
+function withOrdinaryData(prologue: readonly number[]): Uint8Array {
+  const out = new Uint8Array(64);
+  out.set(prologue, 0);
+  let i = prologue.length;
+  for (let k = 0; k < 24; k++) out[i++] = 0x10 + k;
+  for (let k = 0; k < 24; k++) out[i++] = 0x08;
+  for (let k = 0; k < 9; k++) out[i++] = 0x20;
+  return out;
+}
+
+const ORDINARY_INDEXED_COPY = withOrdinaryData(ORDINARY_INDEXED_PROLOGUE);
+const ORDINARY_IMMEDIATE_COPY = withOrdinaryData(ORDINARY_IMMEDIATE_PROLOGUE);
+
+/** The census wired exactly as `buildCoverageReport()` wires it: the origin as
+ * the only ordinary seed, the scan's table entries, and `extraSeeds` read from
+ * the ONE proven-target seam. */
+function wiredCensus(bytes: Uint8Array, origin: number) {
+  const scan = scanIndirectDispatch(decode(bytes, origin), bytes, origin);
+  const census = computeStructuralCensus(bytes, origin, [origin], {
+    tableEntryAddresses: scan.tableEntryAddresses,
+    extraSeeds: provenDispatchTargets(scan),
+  });
+  return { scan, census };
+}
+
+// ---------------------------------------------------------------------------
 // 1. Schema
 // ---------------------------------------------------------------------------
 
@@ -200,6 +277,14 @@ test("the report's top-level key set is exactly the pinned set, in order, and ca
       "so a rename here breaks both consumers. Bump COVERAGE_SCHEMA_VERSION deliberately if the change is intended.",
   );
   assert.equal(report.schemaVersion, COVERAGE_SCHEMA_VERSION);
+  assert.equal(
+    COVERAGE_SCHEMA_VERSION,
+    2,
+    "the schema version is pinned to a LITERAL here so a bump is always deliberate. It moved 1 -> 2 in 19-08: the top-level key set above is UNCHANGED, but the " +
+      "`dispatch` sub-object's target vocabulary changed -- `discoveredTargets` narrowed to evidence-backed targets only, and the ungated split lo/hi pairings it " +
+      "used to include moved to the advisory sibling `splitTableCandidates`. A consumer reading `discoveredTargets` gets a smaller, honest set than at version 1, " +
+      "and this number is the only signal it gets. Accepted by a human at 19-08's decision checkpoint (option `narrow-and-add-sibling`).",
+  );
   assert.equal(typeof report.generatedAt, "string");
 });
 
@@ -320,6 +405,17 @@ test("idempotency: two consecutive reports over the same fixture are deeply equa
     void generatedAt;
     return rest;
   };
+  // The advisory class is covered by the deep comparison above only if it is
+  // actually ON the report object -- a silently-dropped field would make the
+  // comparison pass vacuously. Assert its presence explicitly, so "two
+  // consecutive reports are deeply equal INCLUDING the advisory field" is a
+  // checked statement rather than an assumed one.
+  const report = reportFor(WELL_DOCUMENTED);
+  assert.ok(
+    Array.isArray(report.dispatch.splitTableCandidates),
+    "dispatch.splitTableCandidates must be present and an array on every report -- if it were dropped, the deep comparison above would cover nothing",
+  );
+
   assert.deepEqual(strip(reportFor(WELL_DOCUMENTED)), strip(reportFor(WELL_DOCUMENTED)));
 });
 
@@ -634,14 +730,24 @@ test("dispatch class 2: a multi-entry table yields every entry, not the single e
   assert.equal(table.truncated, false);
 });
 
-test("dispatch class 3: a split lo/hi table pair is reconstructed from its two bases", () => {
+test("dispatch class 3: a PROVEN split lo/hi table pair is reconstructed from its two bases", () => {
   const scan = scanOf(SPLIT_TABLE);
-  assert.equal(scan.splitTables.length >= 1, true);
+  assert.equal(scan.splitTables.length, 1);
+  assert.deepEqual(scan.splitTableCandidates, [], "a pairing with a real dispatch consumer is PROVEN, never advisory");
   const split = scan.splitTables[0]!;
   assert.equal(split.loBase, 0xc010);
   assert.equal(split.hiBase, 0xc013);
+  assert.equal(
+    split.orientationResolved,
+    true,
+    "the lo/hi roles must come from the store construction (the load reaching $fb holds the low byte), never from Math.min over the two bases -- WR-01",
+  );
   assert.equal(split.entries, 3, "the entry count is the fixed distance between the two bases");
-  assert.deepEqual(split.targets, [0xc006, 0xc006, 0xc006]);
+  assert.deepEqual(split.targets, [0xc00d, 0xc00d, 0xc00d]);
+  assert.ok(
+    provenDispatchTargets(scan).includes(0xc00d),
+    "a proven split table's targets MUST reach the one seam that seeds the descent -- otherwise the gate is a machine that declines everything",
+  );
 });
 
 test("dispatch class 4: the stack-return dispatch idiom is found even though it contains no indirect-jump opcode", () => {
@@ -653,6 +759,161 @@ test("dispatch class 4: the stack-return dispatch idiom is found even though it 
   assert.equal(idiom.hiBase, 0xc010);
   assert.equal(idiom.loBase, 0xc013);
   assert.deepEqual(idiom.targets, [0xc006, 0xc006, 0xc006], "the idiom pushes target-1 because rts increments, so the scan must add one back");
+});
+
+// ---------------------------------------------------------------------------
+// 8b. The NEGATIVE controls the class-3 scan never had (19-08)
+//
+// The class-3 split-table scan's risk is FALSE POSITIVES, and until now it had
+// a positive control only. That asymmetry is exactly why a fully green suite
+// concealed a reproduced blocker: `19-REVIEW.md` CR-02 showed that two 64-byte
+// programs differing ONLY in immediate versus indexed addressing reported
+// reached=7 and reached=55 -- an 8x inflation of the headline structural
+// measure, manufactured out of ordinary data, with `splitTables=1` and
+// `discovered=8`. Every test in this section asserts that the instrument
+// DECLINES something. A heuristic with a positive control and no negative one
+// is not evidence that it declines anything.
+// ---------------------------------------------------------------------------
+
+test("dispatch class 3 DECLINES an ordinary two-table indexed read loop", () => {
+  const scan = scanIndirectDispatch(decode(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN), ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN);
+
+  assert.deepEqual(
+    scan.splitTables,
+    [],
+    "an indexed copy loop with NO indirect jump, NO pha/pha/rts and NO zero-page vector construction is not a dispatch table. " +
+      "Pre-gate this reported splitTables=1 with 8 reconstructed 'targets' at $0820..$0827.",
+  );
+  assert.equal(
+    scan.splitTableCandidates.length,
+    1,
+    "the pairing must still be REPORTED, as an advisory candidate -- discarding it would make the instrument quieter rather than more honest, " +
+      "and Phase 21's hazard report wants to see 'something indexes two tables here and we cannot prove what it dispatches to'",
+  );
+  const candidate = scan.splitTableCandidates[0]!;
+  assert.equal(candidate.orientationResolved, false, "nothing in this payload determines which base holds the low byte, so no orientation may be asserted");
+  assert.deepEqual(candidate.targets, [], "an unoriented pairing must emit NO targets -- a byte-swapped value is not an address (WR-01)");
+
+  assert.deepEqual(provenDispatchTargets(scan), [], "an ungated pairing must contribute nothing to the ONE seam that seeds a descent");
+  assert.deepEqual(scan.tableEntryAddresses, [], "an ungated pairing must not claim a single byte as a table entry either");
+
+  // Both directions in one test: the gate must not be a machine that declines
+  // everything. The genuinely-consumed split table still passes.
+  assert.equal(scanOf(SPLIT_TABLE).splitTables.length, 1, "a real split table with a genuine dispatch consumer must still be PROVEN");
+});
+
+test("an ordinary indexed copy loop does not inflate the census over its immediate twin", () => {
+  // "Differing ONLY in addressing mode" is a CHECKED property of the fixtures,
+  // not a claim about them: the comparison below is meaningless if the two
+  // payloads differ anywhere outside their seven-byte prologue.
+  assert.equal(ORDINARY_INDEXED_COPY.length, ORDINARY_IMMEDIATE_COPY.length);
+  assert.equal(ORDINARY_INDEXED_PROLOGUE.length, ORDINARY_IMMEDIATE_PROLOGUE.length);
+  assert.deepEqual(
+    [...ORDINARY_INDEXED_COPY.subarray(ORDINARY_CODE_BYTES)],
+    [...ORDINARY_IMMEDIATE_COPY.subarray(ORDINARY_CODE_BYTES)],
+    "the 57 data bytes must be identical -- otherwise the two payloads differ in more than their addressing mode",
+  );
+
+  const indexed = wiredCensus(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN);
+  const immediate = wiredCensus(ORDINARY_IMMEDIATE_COPY, ORDINARY_ORIGIN);
+
+  assert.equal(
+    indexed.census.reachedAsInstruction,
+    immediate.census.reachedAsInstruction,
+    `two programs with identical code content, differing ONLY in addressing mode, must report the same reachedAsInstruction. ` +
+      `Pre-gate the indexed variant reported reached=55 / unreached=9 against the immediate twin's reached=7 / unreached=57 ` +
+      `(splitTables=1, discovered=8): an 8x inflation of the headline structural measure, manufactured out of 57 bytes of ordinary data.`,
+  );
+  assert.ok(
+    indexed.census.reachedAsInstruction <= ORDINARY_CODE_BYTES,
+    `the census reached ${indexed.census.reachedAsInstruction} bytes of a program whose real code is ${ORDINARY_CODE_BYTES} bytes -- ` +
+      `reachedAsInstruction means REACHED BY RECURSIVE DESCENT FROM A SEED, so it can never exceed the code that is actually there`,
+  );
+  assert.ok(immediate.census.reachedAsInstruction <= ORDINARY_CODE_BYTES);
+
+  // The two operand bases are legitimately `referenced-as-data` -- which is
+  // correct, and is NOT `reached-as-instruction`. That is the whole 2-byte
+  // difference between the two unreached counts.
+  assert.equal(
+    immediate.census.unreached - indexed.census.unreached,
+    2,
+    "the indexed variant's only remaining difference is its two operand bases, marked referenced-as-data",
+  );
+  assert.equal(indexed.census.referencedAsData, 2);
+});
+
+test("the class-4 stack-return idiom is not also reported as a class-3 split table", () => {
+  const scan = scanOf(STACK_RETURN);
+  assert.equal(scan.stackReturnDispatch.length, 1);
+  const idiom = scan.stackReturnDispatch[0]!;
+  assert.ok(idiom.targets.length > 0, "the idiom reported no targets -- the byte-swap assertion below would be vacuous");
+
+  for (const finding of [...scan.splitTables, ...scan.splitTableCandidates]) {
+    assert.notEqual(
+      finding.at,
+      idiom.at,
+      `WR-01: the same five instructions at $${idiom.at.toString(16)} were reported by BOTH class 4 and class 3, with contradictory lo/hi roles. ` +
+        `Class 4 runs first and claims its window precisely so class 3 declines it.`,
+    );
+  }
+
+  const byteSwap = (a: number): number => ((a & 0xff) << 8) | ((a >> 8) & 0xff);
+  const reported = [...idiom.targets, ...scan.splitTables.flatMap((f) => f.targets), ...scan.splitTableCandidates.flatMap((f) => f.targets)];
+  for (const a of reported) {
+    for (const b of reported) {
+      if (a === b) continue;
+      assert.notEqual(
+        b,
+        byteSwap(a),
+        `WR-01: $${b.toString(16)} is the byte-swap of $${a.toString(16)}, so the same two table bases were read in both orders and both results published as addresses`,
+      );
+    }
+  }
+});
+
+test("an advisory split-table candidate never reaches the census", () => {
+  // The advisory pairing in ORDINARY_INDEXED_COPY reconstructs $0820..$0827
+  // from the bytes at its two operand bases, and every one of those values
+  // lands inside the image -- so nothing but the gate keeps them out of the
+  // census. Reconstructed here by hand from the payload, so this control does
+  // not depend on the scan reporting them.
+  const wouldBeTargets = [0x0820, 0x0821, 0x0822, 0x0823, 0x0824, 0x0825, 0x0826, 0x0827];
+  const { scan, census } = wiredCensus(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN);
+  assert.equal(scan.splitTableCandidates.length, 1, "the pairing must be advisory here, or this control tests nothing");
+
+  for (const address of wouldBeTargets) {
+    assert.ok(address >= ORDINARY_ORIGIN && address < ORDINARY_ORIGIN + ORDINARY_INDEXED_COPY.length, `$${address.toString(16)} must be in-image`);
+    assert.notEqual(
+      classAt(census, address),
+      "reached-as-instruction",
+      `$${address.toString(16)} was reconstructed from data bytes by an UNPROVEN pairing -- it must never be classified as reached by descent`,
+    );
+  }
+  // $0827 is one of the two operand bases, so it is legitimately data.
+  assert.equal(classAt(census, 0x0827), "referenced-as-data");
+  for (const address of wouldBeTargets.filter((a) => a !== 0x0827)) {
+    assert.equal(classAt(census, address), "unreached", `$${address.toString(16)}`);
+  }
+});
+
+test("a census whose origin plus size would leave the 16-bit space is bounded", () => {
+  // IN-04. A `.regen2000proj` the operator did not author can claim any origin
+  // and carry any length; the contract on malformed input is a well-formed
+  // census, never a wrap and never a classified address the machine cannot
+  // address.
+  const bytes = new Uint8Array(64).fill(0xea);
+  const census = computeStructuralCensus(bytes, 0xfff0, [0xfff0]);
+
+  assert.equal(census.rangeBytes, 0x10000 - 0xfff0, "only the bytes inside the 16-bit space are censused");
+  assert.equal(
+    census.reachedAsInstruction + census.tableEntry + census.referencedAsData + census.unreached,
+    census.rangeBytes,
+    "the four classes must sum to the censused range",
+  );
+  assert.equal(census.size, bytes.length, "the payload's own length is still reported, so the truncation is visible rather than hidden");
+  assert.equal(classAt(census, 0x10000), null, "no address at or beyond $10000 may be classified");
+  assert.equal(classAt(census, 0xffff), "reached-as-instruction", "the last in-space byte is still censused normally");
+  assert.ok(census.linearSweepDecodable <= census.rangeBytes, "the linear sweep is bounded by the same range as the census");
 });
 
 test("bounded walk: a table whose entries would chain indefinitely reports truncation and terminates (T-19-12)", () => {
