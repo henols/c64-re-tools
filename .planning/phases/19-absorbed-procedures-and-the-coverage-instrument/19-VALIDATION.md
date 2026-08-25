@@ -455,3 +455,98 @@ for.
 **Test-count movement:** 76 → 80 over this plan. `+2` for the foreign-jump control and its proven
 twin, `+1` for the pairing-consultation pin, `+1` for `functionBodyFromSource()`'s own throw. No
 fixture directory was added, so `COMMITTED_CONTROL_FIXTURES` stays 12.
+
+## Round-4 gap closure → executed evidence (2026-08-25, plan 19-17)
+
+The move that ends the loop (D-06): a PROPERTY over a COMPOSED corpus with a COMPUTED oracle,
+replacing "one hand-built fixture per shape". This section is an **extension**: no row above was
+altered, deleted or renumbered, and every command below was run in this working tree with the
+output that is quoted.
+
+The corpus and the oracle as observed at the time of both demonstrations:
+
+| Quantity | Observed |
+|---|---|
+| Indexed arrangements | **1000** (`MIN_CORPUS` 400, `MAX_CORPUS` 1000) |
+| Immediate twins | 1000 — total corpus **2000 payloads** |
+| Families (core combo × attachment set) | **72** = 8 × 9; every family contributed, **11–15 members each** (`MIN_PER_FAMILY` 4) |
+| Linked / unlinked split | **22 linked, 1978 unlinked** (`MIN_LINKED` 20). By route: 18 class-3 `zeropage-vector-jumped-through`, 3 class-4 windows published, 1 class-3 `stack-return-push-idiom` |
+| Generative reach | load separations 1–9 (past `SPLIT_TABLE_WINDOW` = 8); 13 distinct prologue lengths (7–19 bytes); 55 arrangements whose terminator falls outside the leading load's window; all four register pairings, both base orders, all three terminators, `nop` counts 0/1/2 |
+| Suite | `node --test r2000-coverage-grammar.test.ts` — **22 tests, 22 pass, 0 fail**, `duration_ms 449` (budget 30 000) |
+
+| Requirement | Plan | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-01, COV-02 | 19-17 | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | the whole composed corpus, driven through `decode()` → `scanIndirectDispatch()` → `provenDispatchTargets()` → `computeStructuralCensus()`, the same wiring `buildCoverageReport()` uses | **22 pass, 0 fail.** The headline property — the set of arrangements the instrument PROVES equals exactly the set `expectedProvenLink()` says carries a proven data-flow link — holds in **both directions** over 2000 payloads, as ONE assertion |
+| COV-01 | 19-17 | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | the nine `PINNED_IDIOMS` against the computed oracle | **PASS.** The oracle agrees with all nine hand-declared verdicts (three linked, six unlinked). The declarations were written by reading the shapes; the oracle was written from the six rules — an oracle drifting into being a copy of the scan would start agreeing with the instrument and disagreeing with these nine |
+| COV-01 | 19-17 | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | the oracle's own source span, between two section markers in the suite | **PASS.** The span names none of `decode(`, `scanIndirectDispatch(`, `computeStructuralCensus(`, `provenDispatchTargets(`, `scanOfPayload(`, `censusOfPayload(`, `measure(` or `.bytes`, and is asserted non-empty and to contain `expectedProvenLink()`. The oracle's isolation is a mechanical fact, not an intention |
+| COV-01 | 19-17 | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | every corpus payload's `indirectJumps` and `multiEntryTables` | **PASS.** Every recorded indirect jump has a **null** target and `multiEntryTables` is empty throughout, which is what licenses the oracle's silence about classes 1 and 2 |
+| COV-01 | 19-17 | `cd src/mcp/vice && npx tsc --noEmit` | the whole `src/mcp/vice` TypeScript surface | **exit 0** |
+| COV-01 | 19-17 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the per-case suite this grammar suite JOINS rather than replaces | **80 pass, 0 fail** — unchanged. No existing fixture or declaration was deleted |
+| COV-01 | 19-17 | `node scripts/check-npm-packages.mjs` and `grep -c 'r2000-coverage-grammar' src/mcp/vice/package.json` | both packed tarballs | **exit 0** and **0** — the new suite is not in `files[]`, so neither tarball gained a byte |
+| COV-01 | 19-17 | `cd src/mcp/vice && node --test ci-suite-coverage.test.ts` | the CI suite-directory derivation | **10 pass, 0 fail** — `src/mcp/vice` was already provably covered, so no CI wiring changed |
+
+### The property watched FAIL — two planted violations, one per tightened branch
+
+A gate nobody has watched fail is not known to be a gate (D-07.2). This round tightened **two**
+true-returning sites, so the demonstration is run twice; a demonstration against only one leaves the
+other's coverage unwatched. Each revert was applied **in the working tree only** and restored.
+
+The number worth having is not "a test went red" but **how many generated arrangements moved into
+the proven-but-not-expected half of the symmetric difference**. A hand-built corpus reports one
+template per loosening — the one somebody wrote. A composed corpus reports a POPULATION, and its
+size is the measure of what the loosening actually admits.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 19 | `hasDispatchContext()` branch A (`stack-return-push-idiom`), asserted corpus-wide by `r2000-coverage-grammar.test.ts` | branch A reverted to its presence-only form — `let sawPha = 0; for (k = start; k < end; k++) { if (opcode === 0x48) sawPha++; if (opcode === 0x60 && sawPha >= 2) return true; }` — two `$48` bytes and a `$60` byte anywhere in the window, ignoring the `pairing` parameter | **Corpus at the time of this demonstration: 1000 indexed arrangements + 1000 immediate twins, 72 families, 22 linked / 1978 unlinked.** `node --test r2000-coverage-grammar.test.ts` **exit 1**, `# tests 22 / # pass 18 / # fail 4`. The reds are `not ok 15 - the set of arrangements the instrument PROVES equals exactly the set the oracle says carries a proven link`, `not ok 16 - an arrangement the oracle says is unlinked moves not one byte into the seed set or the table-entry class`, `not ok 17 - an unlinked arrangement's census reaches exactly its own prologue and classifies no table byte as code`, and `not ok 18 - twins: an unlinked pair reports the same census, and a LINKED indexed member reaches strictly more than its twin`. **Falsely-proven population: 3** arrangements, `expectedNotProven` 0. The three, verbatim from the failure message: `lda $0838,x : sta $fc : lda $0830,x : pha : sta $fb : txa : tya : pha : rts`; `lda $0830,x : sta $fb : lda $0838,x : sta $fc : pha : txa : pha : tya : rts`; `nop : lda $0838,y : sta $fc : lda $0830,y : pha : pha : sta $fb : rts`. Test 17 quoted `the census reached 31 bytes of a 15-byte program` — the round-3 verification's own numbers for the blocker payload, reproduced by a corpus that was never told about it | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **22 pass, 0 fail**, and `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 |
+| 20 | `hasDispatchContext()` branch B (`zeropage-vector-jumped-through`), asserted corpus-wide by `r2000-coverage-grammar.test.ts` | branch B reverted to its pre-19-16 form — re-collect every zero-page store target across the whole window into `zpStores`, then accept when any two of them differ by exactly one and the window carries an indirect jump naming the lower, ignoring `pairing.oriented.vectorLow` | **Corpus at the time of this demonstration: 1000 indexed arrangements + 1000 immediate twins, 72 families, 22 linked / 1978 unlinked.** `node --test r2000-coverage-grammar.test.ts` **exit 1**, `# tests 22 / # pass 18 / # fail 4`. The reds are the same four tests, 15 through 18. **Falsely-proven population: 6** arrangements, `expectedNotProven` 0. Three of the six, verbatim: `lda $0838,x : sta $fd : lda $0830,x : sta $fc : sta $fe : nop : nop : sta $fb : jmp ($00fb)`; `lda $0838,x : sta $fd : lda $0830,x : sta $fc : sta $fb : sta $fe : jmp ($00fb)`; `nop : lda $0838,x : sta $fd : lda $0830,x : sta $fc : sta $fb : sta $fe : jmp ($00fd)`. Test 17 quoted `the census reached 33 bytes of a 17-byte program` — 19-16's own pre-fix numbers for the foreign-jump control, again reproduced without being told | `git checkout -- src/mcp/vice/r2000-coverage.ts`, re-run: **22 pass, 0 fail**, `npx tsc --noEmit` exit 0, and `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 — neither revert survived |
+
+**Seven of the nine falsely-proven arrangements are shapes nobody wrote.** Only two are the pinned
+historical members (the round-3 blocker under plant 19, the foreign-jump control under plant 20).
+That ratio is the whole claim of this plan restated as a measurement: the per-shape suite would have
+reported one template per loosening, and the composed corpus reports a population of three and six.
+
+**Every red is a population statement, not a template statement.** Tests 16, 17 and 18 red under
+both plants as well, and each names the first offending arrangement with its fragment spelling and
+the rule number the oracle decided it by — so a NEW defect, in a shape nobody has filed a finding
+for, reports itself legibly rather than as an index into an array.
+
+### A sampling defect in the generator, found BY the demonstrations and fixed generatively
+
+The first run of plant 20 came back red but with a falsely-proven population of **1** — the pinned
+member alone. Under the letter of the task that is not a GREEN demonstration, but in substance it is
+the failure the task's own clause warns about: the GENERATED half of the corpus was contributing
+nothing to that branch's coverage, and removing the pinned member would have turned the
+demonstration green. It was treated as a finding about the corpus and fixed in the generator, not
+worked around with another hand-written template.
+
+The cause, measured rather than reasoned about: the per-family draw indexed each generative axis by
+a linear rotation of the sample index, scaled onto the axis length. Any scheme of that form maps an
+ARITHMETIC PROGRESSION in the sample index to an arithmetic progression on the axis — and the
+stratum index is exactly such a progression, since the terminator is `stratumIndex % 3`. So the
+ORDER axis stayed locked to a stride on the terminator axis whichever coprime multiplier was chosen.
+Two orderings were tried and measured:
+
+| Draw indexing | Plant 19 falsely proven | Plant 20 falsely proven |
+|---|---|---|
+| `stratumIndex * PER_STRATUM + r`, linear rotations | 3 (1 pinned + 2 generated) | **1 (pinned only)** |
+| `r * STRATA_PER_FAMILY + stratumIndex`, linear rotations | **1 (pinned only)** | 5 (1 pinned + 4 generated) |
+| avalanche mix of `(family, sample, axis)` — **shipped** | **3** (1 pinned + 2 generated) | **6** (1 pinned + 5 generated) |
+
+Reordering alone only moved which branch lost its coverage. The shipped draw is a 32-bit avalanche
+mix of `(familyIndex, sample, axisSeed)`: still a pure function of three indices, so the corpus is
+byte-reproducible and the determinism test asserts it, but a progression on the input is no longer a
+progression on the output. Seeding by FAMILY also stopped the eight core combos sharing an
+attachment set from drawing identical permutations — seven eighths of the corpus's ORDER coverage
+had been duplicated.
+
+### Prohibitions observed
+
+- `git diff --numstat` on `19-VALIDATION.md`: insertions only, **0 deletions**.
+- `git diff --name-only` lists neither `.planning/REQUIREMENTS.md` nor `19-REVIEW.md`; both are
+  byte-unchanged and no requirement checkbox was ticked.
+- `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 — no production code changed in this
+  plan; both reverts were working-tree-only and both were restored.
+- The grammar suite JOINS the per-case controls rather than replacing them: no fixture directory, no
+  committed payload constant and no gate-interior declaration was deleted, and
+  `r2000-coverage.test.ts` still reports 80 pass / 0 fail unchanged.
