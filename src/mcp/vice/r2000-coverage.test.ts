@@ -422,6 +422,16 @@ test("idempotency: two consecutive reports over the same fixture are deeply equa
   );
 
   assert.deepEqual(strip(reportFor(WELL_DOCUMENTED)), strip(reportFor(WELL_DOCUMENTED)));
+
+  // And over EVERY committed fixture, not one hand-picked case. Idempotency is
+  // a property of the instrument, so a new fixture directory joins this loop
+  // automatically -- which is what keeps the claim from going stale the moment
+  // a payload with a different shape lands. `generatedAt` is the only field
+  // that may differ between two runs; everything else, including the advisory
+  // candidate list and every class run, must be byte-stable.
+  for (const dir of fixtureDirs()) {
+    assert.deepEqual(strip(reportFor(dir)), strip(reportFor(dir)), `${dir}: two consecutive reports over one input must be deeply equal`);
+  }
 });
 
 test("ordering: every offending-address list in every fixture's report is in ascending numeric order", () => {
