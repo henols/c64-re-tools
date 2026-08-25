@@ -22,7 +22,7 @@ affects: [phase-20 decomposition sweep, phase-21 hazard report, 19-11 class-4 ti
 actuals:
   tokens: 41000
   tasks: 3
-  commits: 4
+  commits: 5
 
 tech-stack:
   added: []
@@ -434,3 +434,10 @@ None — no external service configuration required.
 ---
 *Phase: 19-absorbed-procedures-and-the-coverage-instrument*
 *Completed: 2026-08-25*
+
+## Self-Check: PASSED
+
+All four created fixture files exist on disk. All five commits
+(`7f0499a`, `40530b7`, `3a9cd40`, `7581931`, `5a59b0f`) are present in
+`git log --oneline --all`. Plan-level `<verification>` items 1-9 re-run and
+recorded in the Verification Results table above.

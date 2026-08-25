@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-14-PLAN.md
-last_updated: "2026-08-25T07:14:07.566Z"
+stopped_at: Completed 19-10-PLAN.md
+last_updated: "2026-08-25T07:47:09.230Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 execution started
-state_head: f25259e582d7862cdd65f10ed977aabcfa6f6ad8
+state_head: 5a59b0f058b8b461fa7da0cb3ae2a1a6c0f6baee
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 21
-  completed_plans: 17
+  completed_plans: 18
   percent: 20
 ---
 
@@ -69,7 +69,7 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 2 of 14
+Plan: 3 of 14
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 19 execution started
 
@@ -189,6 +189,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P08 | 30 min | 2 tasks | 2 files |
 | Phase 19 P09 | 55 min | 3 tasks | 8 files |
 | Phase 19 P14 | 8 min | 2 tasks | 1 files |
+| Phase 19 P10 | 26 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -373,6 +374,8 @@ Recent decisions affecting current work:
 - [Phase 19]: 19-09: the false-positive census control pair writes its 57 data bytes out in full in BOTH literals rather than sharing a constant, so the identical-tail invariant is a real check an edit can break rather than one true by construction. Both plantable invariants were demonstrated throwing. — A shared data constant would make the 'differing ONLY in addressing mode' invariant vacuously true, reproducing in the generator the exact defect class the gap closure exists to remove.
 - [Phase 19]: CR-02's disposition was filed in the AUDIT-01 guard's source 3 (.planning/todos/completed/), not in a SUMMARY or in 19-REVIEW-FIX.md — Source 1 arrives only at plan close, after this plan's own verification must observe the guard green; source 5 is plan 19-13's deliverable and writing it here would put two plans on one file. Filed under completed/ rather than pending/ because CR-02 is disposed, not deferred: a pending todo would need a matching STATE.md Deferred Items row or docs-deferred-ledger direction A turns red.
 - [Phase 19]: A wave-1 disposition names in-flight work as outstanding: CR-04 is recorded as OUTSTANDING with plan 19-10 named, never as fixed — 19-10 had produced no SUMMARY and no commit at this record's date. Every hash written into the record (1706d8b, 9c9166d) was resolved with git cat-file -t first, so the record cites only what already landed. A disposition that predicts a commit is not a record.
+- [Phase 19]: CR-04 recorded FIXED, not accepted: hasDispatchContext() now requires the dispatch CONSUMER — the bare-0x6c-within-reach branch is REMOVED, and a zero-page vector counts only when an indirect jump in reach names the LOWER of two store targets differing by exactly one. — An indirect jump through some OTHER vector near two indexed loads is not evidence that those loads feed it. The only positive class-3 assertion (SPLIT_TABLE) survives on the stricter rule because its jmp indirect operand equals its own sta target.
+- [Phase 19]: A negative control must reach the INTERIOR of the predicate it constrains, and the declaration is checked mechanically — DISPATCH_CONTEXT_SHAPES plus reachesGateInterior() and GATE_INTERIOR_DECLARATIONS, with the declared shape count asserted against the predicate own source text. — Every negative control 19-08 shipped bracketed the gate from the OUTSIDE, which is why a 2517-passing suite concealed CR-04. The witness THROWS on an unknown shape id so minting one without an interior predicate is a test failure rather than a vacuous pass.
 
 ### Pending Todos
 
@@ -867,8 +870,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T07:13:42.898Z
-Stopped at: Completed 19-14-PLAN.md
+Last session: 2026-08-25T07:46:38.866Z
+Stopped at: Completed 19-10-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
