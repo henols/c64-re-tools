@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 13 plans — 9/9 executed (5/5 original, 4/4 first-round gap closure), plus 4 planned second-round gap-closure plans (19-10 … 19-13) not yet executed
+**Plans**: 14 plans — 9/9 executed (5/5 original, 4/4 first-round gap closure), plus 5 planned second-round gap-closure plans (19-10 … 19-14) not yet executed
 
 **Wave 1**
 
@@ -231,6 +231,7 @@ under it.
 **Gap-closure wave 1**
 
 - [ ] 19-10-PLAN.md — tracer: require the dispatch CONSUMER rather than the zero-page pointer construction, and commit the interior control the gate has never had, asserted at report level
+- [ ] 19-14-PLAN.md — discharge `CR-02`, the one genuinely undispositioned finding id, so the tree is green before any downstream plan asserts it (`.planning/`-only; runs in parallel with 19-10)
 
 **Gap-closure wave 2** *(blocked on gap-closure wave 1)*
 
@@ -242,7 +243,7 @@ under it.
 
 **Gap-closure wave 4** *(blocked on gap-closure wave 3)*
 
-- [ ] 19-13-PLAN.md — the durable disposition ledger, the two corrected deferred entries, the extended validation record, and the full-suite green gate
+- [ ] 19-13-PLAN.md — the durable disposition ledger replacing the five accidental dispositions, the two corrected deferred entries, the extended validation record, and the full-suite green gate
 
 Notes:
 
