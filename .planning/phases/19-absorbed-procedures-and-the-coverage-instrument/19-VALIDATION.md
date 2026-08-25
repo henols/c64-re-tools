@@ -918,3 +918,32 @@ row above:
 - **Row 7's closure moves the census to the linear sweep's existing standard, and that standard
   under-reports.** See the WR-03 item in `deferred-items.md` and `19-DECISIONS.md` Decision 6 for the
   size of that residual and its named reversal condition.
+
+### Round-4 phase gate — run at close, 2026-08-25 (plan 19-19)
+
+Run once, in full. Every figure below is transcribed verbatim from the command's own output.
+
+| # | Gate | Command | Result | Verdict |
+|---|---|---|---|---|
+| 1 | The whole workspace suite, **never** the `test:automated` subset | `cd src/mcp/vice && npm test` | `# tests 2638`, `# suites 24`, `# pass 2593`, **`# fail 0`**, `# cancelled 0`, `# skipped 40`, `# todo 5`, `# duration_ms 116872.403001`; **exit 0**, 117 s wall. Zero `not ok` lines in the whole transcript | ✓ PASS |
+| 2 | TypeScript surface | `cd src/mcp/vice && npx tsc --noEmit` | **exit 0** | ✓ PASS |
+| 3 | The per-case coverage controls | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `# tests 107 / # pass 107 / # fail 0`, `# duration_ms 239.049193`, **exit 0**. **107 > the 71 recorded at the round-3 verification** — the round added 36 | ✓ PASS |
+| 4 | The composed-corpus property | `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | `# tests 22 / # pass 22 / # fail 0`, `# duration_ms 508.78394`, **exit 0** | ✓ PASS |
+| 5 | The seven documentation and audit guards, including the two over `19-DECISIONS.md` and the deferred ledger that plans 19-20 and 19-19 both extend | `cd src/mcp/vice && node --test docs-review-disposition.test.ts audit-integrity.test.ts ci-suite-coverage.test.ts comment-phase-pointers.test.ts docs-dangling-refs.test.ts docs-r2000-decisions.test.ts docs-deferred-ledger.test.ts` | `# tests 96 / # pass 96 / # fail 0`, `# duration_ms 7001.932616`, **exit 0** | ✓ PASS |
+| 6 | Both published tarballs | `node scripts/check-npm-packages.mjs` | **exit 0** — transitive closure from `vice-proxy.ts` 58 modules clean; `@henols/vice-mcp` **75 files**, `@henols/c64-re-tools` **34 files, 7 skills** | ✓ PASS |
+| 7 | Skill → tool coverage | `node scripts/check-skill-tool-coverage.mjs` | **exit 0** — 37 distinct `vice_*` names from 33 files across 7 skill directories, 31 resolved on the stock manifest (38 tools); `r2000_*` 17 distinct names, **all curated**; 8/8 r2000 CLI verbs resolved | ✓ PASS |
+| 8 | Skill description overlap | `node scripts/check-skill-description-overlap.mjs` | **exit 0** — 7 skills, 21 pairs, observed maximum **0.250** (`c64-program-recon :: c64-provenance-diff`), threshold 0.35 inclusive, allowlist size 0, CLAUDE.md table 7 rows byte-identical | ✓ PASS |
+| 9 | Fixture generator determinism | `cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs` then `git status --porcelain src/mcp/vice/fixtures/coverage` | `make-coverage-fixtures: wrote 12 control fixtures`, and the porcelain output **empty** | ✓ PASS |
+
+**No failure to diagnose, and that is stated as an observation rather than as a conclusion about the
+tree's stability.** The full suite reported `# fail 0`, so neither of the two documented contention
+flakes fired on this run: `vice-proxy.test.ts`'s wall-clock budgets (`:1594`, `:2260`) and
+`r2000-session.test.ts`'s 200 ms call timeout. Both items stay **open** in `deferred-items.md`. An
+intermittent failure that happens not to fire is not a fixed one, and neither file was touched by any
+plan in this round — the flake handling this plan was prepared to perform was therefore not needed,
+and no timeout was widened.
+
+**Test-count movement across round 4**, for a reader reconciling the numbers above with the per-plan
+sections: the per-case coverage suite moved **71 → 76 → 80 → 96 → 107** across plans 19-15, 19-16,
+19-18 and 19-20, and plan 19-17 added a second suite of 22 corpus tests. The workspace total moved
+from 2564 at the close of the first gap-closure run to **2638** here.

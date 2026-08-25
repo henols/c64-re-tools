@@ -308,3 +308,39 @@ before anyone acts on it.**
 did not edit `.planning/REQUIREMENTS.md`, it did not touch any success criterion, and it ticked no
 requirement checkbox — COV-01 and COV-02 remain the phase verifier's judgment, as every plan in this
 round has recorded.
+
+---
+
+## 6. Round-4 full-suite observation — item 3 and the `vice-proxy.test.ts` flake, running tally (plan 19-19)
+
+**Neither documented contention flake fired on this round's phase gate.**
+`cd src/mcp/vice && npm test` at plan 19-19's close: `# tests 2638`, `# suites 24`, `# pass 2593`,
+**`# fail 0`**, `# skipped 40`, `# todo 5`, `# duration_ms 116872.403001`, **exit 0**, with zero
+`not ok` lines in the transcript.
+
+**This does not close item 3 and does not close the `vice-proxy.test.ts` item.** A green run is the
+absence of an observation, not evidence of a fix. Both clearing conditions are unchanged: item 3
+clears when a plan that OWNS `r2000-session.ts` either widens the 200 ms budget or replaces the
+wall-clock wait with an injected clock; the `vice-proxy.test.ts` item clears the same way for the
+file that owns it. Plan 19-19 modified only `.planning/` documents and was fenced out of both files
+by a standing prohibition, so widening either budget was never available to it and would have been
+the wrong fix regardless — the budget is not too small, the measurement is wall-clock under
+contention.
+
+**The round-4 tally, counted from the five plan SUMMARYs rather than from memory:**
+
+| Plan | Full-suite runs | Observed | Which flake |
+|---|---|---|---|
+| 19-15 | 2 | `# tests 2585 / # pass 2539 / # fail 1` on **both** | `vice-proxy.test.ts:1594` and `:2260` |
+| 19-16 | 1 | `# tests 2589 / # pass 2544 / # fail 0` | none |
+| 19-17 | 1 | `# tests 2611 / # pass 2566 / # fail 0` | none |
+| 19-18 | 1 | `# tests 2627 / # pass 2581 / # fail 1` | `r2000-session.test.ts` (item 3) |
+| 19-20 | 2 | 2589 pass and 2593 pass, **both `# fail 0`** | none |
+| 19-19 | 1 | `# tests 2638 / # pass 2593 / # fail 0` | none |
+
+**Eight full-suite runs across round 4, three of them red, and every red was one of these two
+files.** Standalone, neither has ever been observed red: 19-15 measured `vice-proxy.test.ts` at
+`# tests 123 / # pass 119 / # fail 0` (4 skipped) and 19-18 measured `r2000-session.test.ts` at
+25 pass / 0 fail. That split — red only under the full suite, never standalone — is the signature the
+mechanism predicts, and it is why a green gate is recorded here as an observation rather than as a
+clearing event.
