@@ -41,6 +41,7 @@ import {
   DISPATCH_CONTEXT_SHAPES,
   DISPATCH_GATE_ROUTES,
   MAX_TABLE_ENTRIES,
+  PROVEN_TARGET_SOURCES,
   R2000CoverageInputError,
   SPLIT_TABLE_WINDOW,
   buildCoverageReport,
@@ -3600,6 +3601,172 @@ test("EVERY true-returning site of hasDispatchContext() consults the PAIRING und
         `Two rounds of this defect shipped past a suite whose every other guard was green.`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// 9b. The ROUTE SET, derived from the module's own text (D-05)
+//
+// One family of five pins, of which the pairing-consultation pin above is the
+// first. That one says every true-returning site consults the pairing; these
+// four say the route set, its call sites, its publication sites, the seam's own
+// source set and the two gates' ordering are all READ FROM THE MODULE rather
+// than hand-maintained.
+//
+// WHY THAT DISTINCTION IS THE WHOLE POINT. `DISPATCH_GATE_ROUTES` without these
+// pins is a hand-maintained mirror with no link to what it mirrors: a future
+// author who adds a third gate, or a second consumer of the shared gate, and
+// does not touch the array leaves the suite fully green -- the root cause
+// displaced one level up rather than removed. That is exactly the shape of the
+// defect this round closes, so shipping its fix in a form vulnerable to it
+// would be the same mistake a third time.
+//
+// All four read `r2000-coverage.ts` through `functionBodyFromSource()`, the one
+// source reader in this file, and all four are anchored on CODE with comments
+// stripped -- a pin satisfiable by editing a comment is not a pin.
+// ---------------------------------------------------------------------------
+
+/** `scanIndirectDispatch()`'s signature, as the source reader must find it. */
+const SCAN_SIGNATURE = "export function scanIndirectDispatch(";
+/** `provenDispatchTargets()`'s signature, likewise. */
+const PROVEN_SIGNATURE = "export function provenDispatchTargets(";
+
+/** Occurrences of a LITERAL substring in `text`. A literal rather than a regex
+ * because every needle below is DATA -- a `publishesInto` field read off a
+ * route record -- and a field value interpolated into a regex would be a
+ * pattern rather than a name. */
+function countOccurrences(text: string, needle: string): number {
+  let n = 0;
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + needle.length)) n++;
+  return n;
+}
+
+/** `scanIndirectDispatch()`'s body with comments stripped -- the text pins 2
+ * and 4 measure offsets in. */
+function scanBodyText(): string {
+  const body = withoutComments(functionBodyFromSource(coverageSource(), SCAN_SIGNATURE));
+  assert.ok(body.trim().length > 0, "scanIndirectDispatch()'s body extracted empty -- every pin built on it would pass over nothing");
+  return body;
+}
+
+test("PIN 1: the number of hasDispatchContext() CALL SITES equals the number of routes that consult the shared gate", () => {
+  // D-05's literal ask. A SECOND consumer of the shared gate is a second route
+  // by which a declared shape becomes a proven finding, and a route with no
+  // negative control is the defect this whole round is about. This pin makes
+  // adding one red the suite instead of creating the route silently.
+  //
+  // Comments stripped first: the module's doc comments mention this predicate
+  // by name several times, and a pin a comment can satisfy is not a pin.
+  const source = withoutComments(coverageSource());
+  const mentions = countOccurrences(source, "hasDispatchContext(");
+  assert.ok(mentions > 0, "no occurrence of `hasDispatchContext(` survives in the stripped source -- it was renamed and this pin would pass vacuously");
+  const declarations = (source.match(/function\s+hasDispatchContext\(/g) ?? []).length;
+  assert.equal(declarations, 1, `the module declares hasDispatchContext() ${declarations} time(s); this pin's arithmetic assumes exactly one`);
+
+  const callSites = mentions - declarations;
+  const consulting = DISPATCH_GATE_ROUTES.filter((r) => r.consultsSharedGate);
+  assert.ok(callSites > 0, "the shared gate is declared but never called -- a predicate nothing consults gates nothing");
+  assert.equal(
+    callSites,
+    consulting.length,
+    `r2000-coverage.ts calls hasDispatchContext() from ${callSites} site(s), but DISPATCH_GATE_ROUTES declares ` +
+      `${consulting.length} route(s) with consultsSharedGate: true (${consulting.map((r) => r.id).join(", ") || "(none)"}). A ` +
+      `consumer of the shared gate is a ROUTE by which a declared shape becomes a proven finding, and every reachable route owes ` +
+      `the suite a negative control that DECLINES through its own publication collection. Adding one here without recording it ` +
+      `there creates a control target nothing checks -- which is how the class-3 route into the push idiom went uncontrolled.`,
+  );
+});
+
+test("PIN 2: each route publishes from exactly ONE site inside scanIndirectDispatch(), and the sites total the route count", () => {
+  // A third gate publishing a shape-gated finding into either collection reds
+  // here, and so does a route whose collection is never written to at all --
+  // which would be a declared route that cannot produce a finding, and whose
+  // negative controls would therefore pass for free.
+  const body = scanBodyText();
+  let total = 0;
+  for (const route of DISPATCH_GATE_ROUTES) {
+    const sites = countOccurrences(body, `${route.publishesInto}.push(`);
+    assert.equal(
+      sites,
+      1,
+      `route "${route.id}" declares that it publishes into "${route.publishesInto}", but scanIndirectDispatch() writes to that ` +
+        `collection from ${sites} site(s) rather than 1. Two sites is a second gate publishing through one route's name; zero is ` +
+        `a route that can never produce a finding, so its negative controls would decline for free.`,
+    );
+    total += sites;
+  }
+  assert.ok(total > 0, "no publication site was found at all -- the extraction regressed and this pin would pass over nothing");
+  assert.equal(
+    total,
+    DISPATCH_GATE_ROUTES.length,
+    `scanIndirectDispatch() carries ${total} declared publication site(s) against ${DISPATCH_GATE_ROUTES.length} declared route(s)`,
+  );
+});
+
+test("PIN 3: the seam's own sources are exactly PROVEN_TARGET_SOURCES, and every route publishes into one of them", () => {
+  // ADDING A SOURCE TO THE SEAM IS THE DECISION TO TREAT THAT SOURCE AS PROOF
+  // OF CODE. The advisory candidate collection is the dangerous one: pairings
+  // the gate examined and DECLINED would become recursive-descent seeds, and
+  // `reachedAsInstruction` means reached by descent from a seed. This pin makes
+  // that edit red the suite by name.
+  const body = withoutComments(functionBodyFromSource(coverageSource(), PROVEN_SIGNATURE));
+  const iterated = [...new Set([...body.matchAll(/\bscan\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!))];
+  assert.ok(iterated.length > 0, "provenDispatchTargets() reads no `scan.` field at all -- the extraction regressed");
+  assert.ok(PROVEN_TARGET_SOURCES.length > 0, "PROVEN_TARGET_SOURCES is empty -- the comparison below would be vacuous");
+
+  for (const field of iterated) {
+    assert.ok(
+      PROVEN_TARGET_SOURCES.includes(field),
+      `provenDispatchTargets() reads scan.${field}, which PROVEN_TARGET_SOURCES does not declare. A source added to the seam is ` +
+        `the decision to treat it as proof of code -- and if that source is the advisory candidate collection, pairings the gate ` +
+        `explicitly DECLINED become recursive-descent seeds. Declared sources: ${PROVEN_TARGET_SOURCES.join(", ")}.`,
+    );
+  }
+  for (const declared of PROVEN_TARGET_SOURCES) {
+    assert.ok(
+      iterated.includes(declared),
+      `PROVEN_TARGET_SOURCES declares "${declared}", which provenDispatchTargets() does not read -- a stale declaration standing ` +
+        `in for a source the seam no longer has. Read: ${iterated.join(", ")}.`,
+    );
+  }
+  for (const route of DISPATCH_GATE_ROUTES) {
+    assert.ok(
+      PROVEN_TARGET_SOURCES.includes(route.publishesInto),
+      `route "${route.id}" publishes into "${route.publishesInto}", which the seam never reads. A route whose findings cannot ` +
+        `reach provenDispatchTargets() is not a route into the seed set, and declaring it as one overstates what its controls prove.`,
+    );
+  }
+});
+
+test("PIN 4: the class-4 publication site PRECEDES the shared gate's only call site, and no call precedes it", () => {
+  // What makes the class-4 pass a ROUTE and not a caller of the shared gate --
+  // and therefore what makes the reachability matrix's one UNREACHABLE pair a
+  // source-level fact rather than a claim in a table. The class-4 window is its
+  // own gate: it carries no zero-page-vector condition and it reaches its
+  // verdict before the shared predicate is consulted at all.
+  //
+  // Both anchors are CODE, with comments stripped, so the pin cannot be
+  // satisfied by editing a comment into the right order.
+  const body = scanBodyText();
+  const standalone = DISPATCH_GATE_ROUTES.filter((r) => !r.consultsSharedGate);
+  assert.equal(standalone.length, 1, `this pin reads the ordering of ONE standalone route against the shared gate, found ${standalone.length}`);
+  const classFour = standalone[0]!;
+
+  const publishAt = body.indexOf(`${classFour.publishesInto}.push(`);
+  const gateAt = body.indexOf("hasDispatchContext(");
+  assert.ok(publishAt !== -1, `route "${classFour.id}" publishes into "${classFour.publishesInto}", which scanIndirectDispatch() never writes to`);
+  assert.ok(gateAt !== -1, "scanIndirectDispatch() never calls hasDispatchContext() -- the shared gate is not consulted at all");
+  assert.ok(
+    publishAt < gateAt,
+    `route "${classFour.id}" publishes at offset ${publishAt} of scanIndirectDispatch()'s body, AFTER the shared gate's call site ` +
+      `at ${gateAt}. Its verdict would then depend on the shared predicate, it would no longer be a standalone route, and the ` +
+      `reachability matrix's unreachable pair would stop being true.`,
+  );
+  assert.ok(
+    !body.slice(0, publishAt).includes("hasDispatchContext("),
+    `the region of scanIndirectDispatch() before route "${classFour.id}" publishes already calls hasDispatchContext(). That route ` +
+      `is declared consultsSharedGate: false, and a shape the shared gate accepts would then be reachable through it -- making ` +
+      `(zeropage-vector-jumped-through, ${classFour.id}) reachable and owed a negative control it does not have.`,
+  );
 });
 
 // ---------------------------------------------------------------------------

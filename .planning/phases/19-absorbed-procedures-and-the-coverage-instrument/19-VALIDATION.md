@@ -566,7 +566,7 @@ membership, call sites, publication sites and ordering are all read from that mo
 
 | Requirement | Plan | Command that ran | Ran against | Observed result |
 |---|---|---|---|---|
-| COV-01 | 19-18 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the route-keyed witness, declaration table, reachability matrix and four source-derived pins | **98 pass, 0 fail** (80 before this plan; 86 after task 1, 92 after task 2, 98 after task 3). No existing fixture, payload constant or declaration row was deleted |
+| COV-01 | 19-18 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the route-keyed witness, declaration table, reachability matrix and four source-derived pins | **96 pass, 0 fail** (80 before this plan; 86 after task 1, 92 after task 2, 96 after task 3). No existing fixture, payload constant or declaration row was deleted |
 | COV-01 | 19-18 | same suite, one assertion | `reachesGateInterior(STACK_RETURN_MIXED_REGISTERS, $c000, "stack-return-push-idiom", "class-3-pass")` | **false**, and with `"class-4-pass"` **true**. This pair of assertions is the proof that the disjunction is gone rather than moved: before the re-key one call answered for both routes and the class-4 answer stood in for the class-3 one |
 | COV-01 | 19-18 | same suite, one assertion | `reachesGateInterior(payloadOf(fp3-unlinked-push-idiom), $0810, "stack-return-push-idiom", ...)` | **true** on `class-3-pass`, **false** on `class-4-pass`. FP3 carries no five-instruction window, so it is interior to exactly one route — the other direction, without which a witness that answered "class-3: no" for everything would satisfy the row above |
 | COV-01 | 19-18 | same suite | the unreachable pair and an invented route | `reachesGateInterior(…, "zeropage-vector-jumped-through", "class-4-pass")` **THROWS** naming both halves; `reachesGateInterior(…, "stack-return-push-idiom", "route-nobody-declared")` **THROWS** naming the route |
@@ -612,3 +612,70 @@ reads `hasDispatchContext()`'s own guard text and does not consult any table her
 corpus property (plan 19-17), whose oracle is computed from six rules rather than declared. Both are
 independent of every table in this section. Saying so is what keeps this mechanism from being
 trusted past what it proves.
+
+### The route set DERIVED FROM SOURCE — four pins (D-05)
+
+`DISPATCH_GATE_ROUTES` without these is a hand-maintained mirror with no link to what it mirrors: a
+future author who adds a third gate and does not touch the array leaves the suite green — the root
+cause displaced one level up rather than removed. All four read `r2000-coverage.ts` through
+`functionBodyFromSource()`, the ONE source reader in that file (promoted by plan 19-16 and whose own
+failure mode — it THROWS naming the signature for a function that does not exist — is separately
+asserted and passing). No second extractor was written; these four plus 19-16's pairing-consultation
+pin are five readers of one helper. Every anchor is CODE with comments stripped, so no pin can be
+satisfied by editing a comment.
+
+| Pin | Derives | From | Observed | Non-vacuity guard |
+|---|---|---|---|---|
+| 1 | the number of **call sites** consulting the shared gate | occurrences of `hasDispatchContext(` in the whole comment-stripped module, minus the one declaration | **1 call site = 1 route** with `consultsSharedGate: true` | asserts the occurrence count is non-zero and the declaration count is exactly 1 before subtracting, so a rename fails loudly |
+| 2 | each route's **publication site** | `<publishesInto>.push(` inside `scanIndirectDispatch()`'s comment-stripped body | **exactly 1 site per route, total 2** = `DISPATCH_GATE_ROUTES.length` | zero sites fails as loudly as two: a route whose collection is never written to could never produce a finding, so its negative controls would decline for free |
+| 3 | the **seam's own sources** | the `scan.` fields `provenDispatchTargets()` iterates | **exactly 4** — `indirectJumps`, `multiEntryTables`, `stackReturnDispatch`, `splitTables` — set-equal to `PROVEN_TARGET_SOURCES` in both directions, and every route's `publishesInto` is a member | asserts both the extracted set and the declared array are non-empty before comparing |
+| 4 | the **ordering** that makes the class-4 pass a route rather than a caller of the shared gate | offsets inside `scanIndirectDispatch()`'s comment-stripped body | `stackReturnDispatch.push(` at offset **4474**, `hasDispatchContext(` at **5750**; the region before the publication site contains **no** occurrence of the gate | asserts exactly one standalone route exists and that both anchors were found before comparing offsets |
+
+Pin 4 is what makes the reachability matrix's one UNREACHABLE pair a source-level fact rather than a
+claim in a table: the class-4 window reaches its verdict before the shared predicate is consulted at
+all, so a shape the shared gate accepts cannot become reachable through it.
+
+### The pins watched FAIL — two planted violations
+
+Both plants were applied to `src/mcp/vice/r2000-coverage.ts` **in the working tree only** and
+restored from a byte-exact pre-plant copy, confirmed `diff`-identical, with the suites re-run green.
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 24 | pin 1 | a **second call site** for the shared gate: the class-3 condition-(c) expression rewritten to call `hasDispatchContext()` twice, conjoined. `npx tsc --noEmit` **exit 0** and behaviour unchanged — which is the point, a hand-maintained mirror would have accepted it | `node --test r2000-coverage.test.ts` **exit 1**, `# tests 96 / # pass 95 / # fail 1`. `not ok 85 - PIN 1 …`, message verbatim: `r2000-coverage.ts calls hasDispatchContext() from 2 site(s), but DISPATCH_GATE_ROUTES declares 1 route(s) with consultsSharedGate: true (class-3-pass).` The grammar suite stayed **22 pass, 0 fail** — a behaviour-preserving edit is invisible to a report-level property, which is exactly why this pin reads source text | restored, re-run: **96 pass, 0 fail** |
+| 25 | pin 3 | a **fifth iteration** in `provenDispatchTargets()` over `scan.splitTableCandidates` — the advisory collection | **exit 1**, `# tests 96 / # pass 95 / # fail 1`. `not ok 87 - PIN 3 …`, message verbatim: `provenDispatchTargets() reads scan.splitTableCandidates, which PROVEN_TARGET_SOURCES does not declare. A source added to the seam is the decision to treat it as proof of code -- and if that source is the advisory candidate collection, pairings the gate explicitly DECLINED become recursive-descent seeds.` **The grammar suite did NOT red: 22 pass, 0 fail** | restored, re-run: **96 pass, 0 fail**, grammar **22 pass, 0 fail** |
+
+**Why plant 25 left the grammar suite green, measured rather than assumed.** An advisory record is
+constructed with `targets: []` — the collection carries the pairing's bases and entry count but no
+reconstructed addresses at all — so iterating it adds nothing to the seed set and the report does not
+move by one byte. The plan anticipated a second red here; the honest observation is that it did not
+occur, and the reason is a property of the advisory record rather than a weakness in the corpus.
+
+That makes pin 3 the **only** guard standing between the advisory collection and the seed set for
+this exact edit, which is worth knowing precisely. A second, stronger plant was run to establish what
+the corpus catches once the leak is real:
+
+| # | Guard | Planted violation | Red | Green after restore |
+|---|---|---|---|---|
+| 25b | pin 3 **and** the composed-corpus property | plant 25 **plus** the advisory record built with `targets,` instead of `targets: []`, so the leak actually carries addresses | `r2000-coverage.test.ts` **exit 1**, `# tests 96 / # pass 83 / # fail 13`; `r2000-coverage-grammar.test.ts` **exit 1**, `# tests 22 / # pass 18 / # fail 4`. **Falsely-proven population: 972** of 2000 composed payloads, `expectedNotProven` 0 — e.g. `lda $0838,x : sta $fc : lda $0830,x : sta $fb : jmp ($00fd)` `[oracle: unlinked by R5 no dispatch link]`. Twelve per-case controls red alongside pin 3, including `an advisory split-table candidate never reaches the census` | restored, re-run: **96 pass, 0 fail** and **22 pass, 0 fail**, `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exit 0 |
+
+Two independent mechanisms therefore cover the advisory-source threat, and they cover different
+halves of it: pin 3 catches the DECLARATION of the source whether or not it leaks anything today,
+and the corpus property catches the LEAK at a population of 972 the moment it becomes real.
+
+### Prohibitions observed (plan 19-18)
+
+- `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0 at the end of every task: all five
+  plants were working-tree-only and all five were restored from byte-exact copies.
+- `git diff --name-only` lists neither `.planning/REQUIREMENTS.md` nor `19-REVIEW.md`; both are
+  byte-unchanged and no requirement checkbox was ticked by this plan.
+- `COVERAGE_SCHEMA_VERSION` is still `2` and `COVERAGE_REPORT_KEYS` is unchanged — two new exported
+  constants are not a report-shape change, and the report's pinned key-set test still passes.
+- No fixture directory, committed payload constant or declaration row was DELETED. Rows gained a
+  field; `STACK_RETURN` gained a second row; two payloads that were already committed but undeclared
+  (`PUSH_IDIOM_LINKED`, `PUSH_IDIOM_WINDOW_EDGE`) gained rows of their own.
+- `git status --porcelain src/mcp/vice/fixtures/coverage` is empty — no fixture changed.
+- One correction to this plan's OWN row above, recorded rather than hidden: the per-case suite total
+  was written as 98 while task 3 was still unwritten and is 96 as observed. The number was corrected
+  in place, which is the single deletion in this plan's `19-VALIDATION.md` diff; no row from any
+  earlier round was touched.
