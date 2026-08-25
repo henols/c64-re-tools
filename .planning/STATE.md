@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-16-PLAN.md
-last_updated: "2026-08-25T11:57:22.704Z"
+stopped_at: Completed 19-17-PLAN.md
+last_updated: "2026-08-25T12:46:08.349Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 19 execution started
-state_head: 3f131014c822efe444ed7f3f718cbfe4c3a4b1bb
+state_head: bed4e94a74eae47dc52212052b765465f06790f1
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 27
-  completed_plans: 23
+  completed_plans: 24
   percent: 20
 ---
 
@@ -69,8 +69,8 @@ v0.4.0, which is what it existed to do.
 ## Current Position
 
 Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
-Plan: 16 of 20 executed — next 19-17
-Status: Executing Phase 19 (third gap-closure round, 19-16 done)
+Plan: 17 of 20 executed — next 19-18
+Status: Executing Phase 19 (third gap-closure round, 19-17 done)
 Last activity: 2026-08-25 — Phase 19 execution started
 
 ## Performance Metrics
@@ -195,6 +195,7 @@ Last activity: 2026-08-25 — Phase 19 execution started
 | Phase 19 P13 | 23 min | 3 tasks | 4 files |
 | Phase 19 P15 | 58 min | 3 tasks | 8 files |
 | Phase 19 P16 | 14 min | 3 tasks | 3 files |
+| Phase 19 P17 | 45 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -395,6 +396,8 @@ Recent decisions affecting current work:
 - [Phase 19]: A tightening ships in the same commit as a liveness positive control — A branch that can never return true is dead code wearing a sufficient-shape label -- a worse defect than the loose branch it replaced, and invisible in a green suite.
 - [Phase 19]: hasDispatchContext() branch B compares the indirect jump against `pairing.oriented.vectorLow` — the vector the pairing itself built through its own two consumer stores — so a jump through an unrelated consecutive zero-page pair in the same window no longer proves a split table — The vector address rides `SplitOrientation` rather than being re-derived: it comes out of the same two consumer stores that decided the lo/hi roles, so orientation and vector cannot disagree
 - [Phase 19]: D-02 is enforced by a source-derived pin that extracts every `return true` site in the body of hasDispatchContext() and asserts that each site DEPTH-1 guard chain names the `pairing` parameter — Every other guard around this gate is satisfiable by the same author who writes a loose branch; a pin that reads the body of the predicate is not. Watched fail against the presence-only form of both branches
+- [Phase 19]: The dispatch instrument's per-shape controls are joined by a corpus-wide PROPERTY: 1000 composed 6502 arrangements plus 1000 immediate twins, whose expected verdict is COMPUTED by a six-rule oracle over the symbolic fragment list, with one set equality asserting in both directions that the instrument proves exactly what carries a proven data-flow link — Three consecutive rounds each closed by one hand-built fixture for the shape just found, so the suite always trailed the next shape by a round. A per-shape control cannot be written for a shape nobody has thought of, at any N.
+- [Phase 19]: A generative sampler's axes are drawn by a 32-bit avalanche mix seeded per family, never by a linear rotation of the sample index — Measured twice: any rotate-then-scale scheme maps an arithmetic progression on the sample index to one on the axis, and the stratum index IS such a progression, so the ORDER axis stayed locked to a stride on the terminator axis and one of the two branches under demonstration lost its whole generated coverage whichever ordering was chosen.
 
 ### Pending Todos
 
@@ -889,8 +892,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T11:56:50.009Z
-Stopped at: Completed 19-16-PLAN.md
+Last session: 2026-08-25T12:45:54.837Z
+Stopped at: Completed 19-17-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
