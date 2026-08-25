@@ -192,7 +192,7 @@ under it.
   4. Running the coverage tool against a binary reports three distinct numbers — structural completeness, the Auto-versus-User label ratio, and a sampled independent-reproducibility result — never one aggregate percentage; a binary mechanically auto-labelled or commented "handles data" everywhere visibly fails to read as well-documented, and any label reached from more than one call site requires cross-reference-backed documentation to count.
   5. Which packer a binary used is surfaced as a recon finding, and the snapshot-versus-drift trade for the absorbed procedure text is a dated decision naming its own re-sync trigger, not a consequence discovered at the next milestone close.
 
-**Plans**: 14/14 plans executed — 9/9 of the original and first-round set (5/5 original, 4/4 first-round gap closure), plus 5/5 of the second-round gap-closure plans (19-14, 19-10, 19-11, 19-12, 19-13)
+**Plans**: 19 plans — 14/14 executed (5/5 original, 4/4 first-round gap closure, 5/5 second-round gap closure: 19-14, 19-10, 19-11, 19-12, 19-13), plus 5 planned for the third gap-closure round (19-15 … 19-19)
 
 **Wave 1**
 
@@ -244,6 +244,28 @@ under it.
 **Gap-closure wave 4** *(blocked on gap-closure wave 3)*
 
 - [x] 19-13-PLAN.md — the durable disposition ledger replacing the five accidental dispositions, the two corrected deferred entries, the extended validation record, and the full-suite green gate
+
+**Gap closure, round 3** *(re-verification 2026-08-25 returned `gaps_found`, 4/5 must-haves, one open gap — SC4's goal qualifier, `COV-01`. This is the FOURTH verification cycle, which `19-CONTEXT.md` refers to as "round 4"; it is the third gap-closure run. Scoped by DEFECT CLASS rather than by finding id (`19-CONTEXT.md` D-01): a branch of `hasDispatchContext()` may return true only on a proven data-flow link from the two reconstructed table bases to the dispatch mechanism. Waves renumbered from 1 for this run.)*
+
+**Gap-closure wave 1**
+
+- [ ] 19-15-PLAN.md — tracer: close the class-3 route into `stack-return-push-idiom` on a proven push link, commit the FP3 interior control pair, and watch the gate fail
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 19-16-PLAN.md — make the second true-returning site consult the pairing too: the indirect jump must name the vector the two paired loads built, not any consecutive pair in the window
+
+**Gap-closure wave 3** *(blocked on gap-closure wave 2)*
+
+- [ ] 19-17-PLAN.md — the move that ends the loop: a generated-payload corpus and one set equality stating the instrument proves exactly what carries a proven link
+
+**Gap-closure wave 4** *(blocked on gap-closure wave 3)*
+
+- [ ] 19-18-PLAN.md — re-key control identity from shape to (shape × route), drop the disjunction round 3 leaked through, and derive the route set from source
+
+**Gap-closure wave 5** *(blocked on gap-closure wave 4)*
+
+- [ ] 19-19-PLAN.md — the consolidated planted-violation record, the WR-03 and D-08 dispositions recorded rather than acted on, and one full-suite phase gate
 
 Notes:
 
