@@ -779,7 +779,20 @@ export function scanIndirectDispatch(
   const insns = Array.isArray(instructions) ? instructions : [];
   const size = safeBytes.length;
 
-  const inImage = (addr: number): boolean => addr >= safeOrigin && addr + 1 < safeOrigin + size;
+  // IN-05. THE ONE BOUND THIS SCAN DESCRIBES, stated once and read everywhere
+  // below. `computeStructuralCensus()` clamps its range at the 16-bit address
+  // space for IN-04's reason -- a `.regen2000proj` the operator did not author
+  // can claim any origin and carry any length -- and this scan, whose output is
+  // that report's own dispatch sub-report, was left unbounded. Values at or
+  // above $10000 caused no crash (the census's `mark()` filters them) but they
+  // were written into the JSON that Phase 20 and Phase 21 consume, and
+  // `r2000-cli.ts`'s `hexAddr()` renders them as five hex digits: a report
+  // whose two halves describe two different address spaces is misleading even
+  // when nothing throws. Computed the SAME way as the census's clamp so the two
+  // are one quantity, not two that happen to agree.
+  const effectiveEnd = Math.min(safeOrigin + size, 0x10000);
+
+  const inImage = (addr: number): boolean => addr >= safeOrigin && addr + 1 < effectiveEnd;
   const wordAt = (addr: number): number | null => {
     if (!inImage(addr)) return null;
     const idx = addr - safeOrigin;
@@ -800,7 +813,7 @@ export function scanIndirectDispatch(
    * confidently it is printed.
    */
   const isPlausibleEntryPoint = (value: number): boolean => {
-    if (!(value >= safeOrigin && value < safeOrigin + size)) return false;
+    if (!(value >= safeOrigin && value < effectiveEnd)) return false;
     const decoded = decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0];
     return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
   };
@@ -844,7 +857,7 @@ export function scanIndirectDispatch(
       }
       const entry = wordAt(cursor);
       if (entry === null) break;
-      if (!(entry >= safeOrigin && entry < safeOrigin + size)) break;
+      if (!(entry >= safeOrigin && entry < effectiveEnd)) break;
       targets.push(entry);
       tableEntryAddresses.add(cursor);
       tableEntryAddresses.add(cursor + 1);
@@ -932,7 +945,13 @@ export function scanIndirectDispatch(
     for (let k = 0; k < entries; k++) {
       const loIdx = loBase + k - safeOrigin;
       const hiIdx = hiBase + k - safeOrigin;
-      if (loIdx < 0 || hiIdx < 0 || loIdx >= size || hiIdx >= size) break;
+      // IN-05. The upper bound is the scan's ONE `effectiveEnd`, expressed on
+      // the addresses rather than on the indices, so this walk stops where the
+      // census stops instead of at the payload's declared length. Both halves
+      // of the pair must be inside it: publishing `loBase + k` as a table entry
+      // address while `hiBase + k` lies outside the machine's address space
+      // would put a value in the report the measured machine cannot address.
+      if (loIdx < 0 || hiIdx < 0 || loBase + k >= effectiveEnd || hiBase + k >= effectiveEnd) break;
       // The idiom pushes `target - 1`, because `rts` increments before
       // jumping. Reconstruct the real entry point.
       const pushed = safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8);
@@ -1042,7 +1061,9 @@ export function scanIndirectDispatch(
       for (let k = 0; k < entries; k++) {
         const loIdx = loBase + k - safeOrigin;
         const hiIdx = hiBase + k - safeOrigin;
-        if (loIdx < 0 || hiIdx < 0 || loIdx >= size || hiIdx >= size) break;
+        // IN-05, as in the class-4 walk above: the scan's ONE `effectiveEnd`,
+        // never the payload's declared length.
+        if (loIdx < 0 || hiIdx < 0 || loBase + k >= effectiveEnd || hiBase + k >= effectiveEnd) break;
         targets.push(safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8));
         entryAddresses.push(loBase + k, hiBase + k);
       }

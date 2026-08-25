@@ -348,6 +348,75 @@ function scanOf(bytes: Uint8Array) {
   return scanIndirectDispatch(decode(bytes, DISPATCH_ORIGIN), bytes, DISPATCH_ORIGIN);
 }
 
+/** `scanOf`, at an origin the caller chooses. The IN-05 controls need the SAME
+ * program at two origins -- one legal, one that leaves the 16-bit space -- and
+ * the origin is the variable under test there rather than a constant. */
+function scanAt(bytes: Uint8Array, origin: number) {
+  return scanIndirectDispatch(decode(bytes, origin), bytes, origin);
+}
+
+// ---------------------------------------------------------------------------
+// IN-05: the two payloads that walk off the top of the address space.
+//
+// Both are built FROM the origin rather than typed against one, so "the same
+// program at a legal origin" is true by construction rather than by a second
+// hand-typed copy that could drift. Only the second byte-pair of every operand
+// differs between placements.
+// ---------------------------------------------------------------------------
+
+/** `jmp (origin+3)` into a table that fills the rest of the payload, every
+ * entry resolving to `origin` itself.
+ *
+ * The class-2 walk advances two bytes per entry while the word it reads
+ * resolves inside the image, so this is the shape whose TABLE ENTRY ADDRESSES
+ * run past `$FFFF` when the declared origin plus length does: pre-IN-05 the
+ * walk's own in-image predicate stopped at `origin + size`, and at
+ * origin `$FFF0` with a 64-byte payload that is `$10030`. */
+function tableWalkPayload(origin: number, size: number): Uint8Array {
+  const out = new Uint8Array(size).fill(0xea);
+  const pointer = origin + 3;
+  out[0] = 0x6c;
+  out[1] = pointer & 0xff;
+  out[2] = (pointer >> 8) & 0xff;
+  for (let i = 3; i + 1 < size; i += 2) {
+    out[i] = origin & 0xff;
+    out[i + 1] = (origin >> 8) & 0xff;
+  }
+  return out;
+}
+
+/** The class-4 stack-return idiom with its two tables placed as high as the
+ * 16-bit space allows: `lda origin+$0f,x : pha : lda origin+$09,x : pha : rts`,
+ * six entries (the distance between the two bases), every entry reconstructing
+ * the `rts` at `origin+8`.
+ *
+ * `hiBase + k` is what leaves the space here: at origin `$FFF0` the hi base IS
+ * `$FFFF`, so entry 1 onward addressed `$10000`, `$10001`, ... and pre-IN-05
+ * those were published into `tableEntryAddresses` because the walk's bound was
+ * the payload's declared length. The table bytes hold `target - 1`, since the
+ * idiom pushes the address `rts` increments past. */
+function stackReturnTopOfSpacePayload(origin: number, size: number): Uint8Array {
+  const out = new Uint8Array(size).fill(0xea);
+  const loBase = origin + 0x09;
+  const hiBase = origin + 0x0f;
+  const pushed = origin + 0x07; // target `origin+8`, the idiom's own `rts`
+  out.set(
+    [
+      0xbd, hiBase & 0xff, (hiBase >> 8) & 0xff, // lda hiBase,x  -- the HIGH byte is pushed first
+      0x48, // pha
+      0xbd, loBase & 0xff, (loBase >> 8) & 0xff, // lda loBase,x
+      0x48, // pha
+      0x60, // rts  <- the entry point every table entry reconstructs
+    ],
+    0,
+  );
+  for (let k = 0; k < hiBase - loBase; k++) {
+    out[loBase + k - origin] = pushed & 0xff;
+    out[hiBase + k - origin] = (pushed >> 8) & 0xff;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // The FALSE-POSITIVE payloads for the class-3 negative controls (19-08).
 //
@@ -1404,7 +1473,7 @@ test("an advisory split-table candidate never reaches the census", () => {
   }
 });
 
-test("a census whose origin plus size would leave the 16-bit space is bounded", () => {
+test("a census whose origin plus size would leave the 16-bit space is bounded, AND SO IS ITS OWN DISPATCH SUB-REPORT", () => {
   // IN-04. A `.regen2000proj` the operator did not author can claim any origin
   // and carry any length; the contract on malformed input is a well-formed
   // census, never a wrap and never a classified address the machine cannot
@@ -1422,6 +1491,112 @@ test("a census whose origin plus size would leave the 16-bit space is bounded", 
   assert.equal(classAt(census, 0x10000), null, "no address at or beyond $10000 may be classified");
   assert.equal(classAt(census, 0xffff), "reached-as-instruction", "the last in-space byte is still censused normally");
   assert.ok(census.linearSweepDecodable <= census.rangeBytes, "the linear sweep is bounded by the same range as the census");
+
+  // ---- IN-05. The census above was bounded by IN-04; its own dispatch
+  // sub-report was not, and the two halves of one report described two
+  // different address spaces. Nothing crashed -- the census's `mark()` filters
+  // out-of-space values -- but the values were written into the JSON Phase 20
+  // and Phase 21 consume, and `r2000-cli.ts`'s `hexAddr()` renders them as five
+  // hex digits.
+  //
+  // Asserted here rather than in a parallel test precisely so the census's own
+  // bound and its dispatch sub-report's bound are stated in ONE place: what is
+  // under test is that they describe ONE address space, which two tests each
+  // asserting "and this one is small too" would not establish.
+  const OUT_OF_SPACE_ORIGIN = 0xfff0;
+  const LEGAL_ORIGIN = DISPATCH_ORIGIN; // $c000, comfortably inside the space
+  const PAYLOAD_SIZE = 0x40; // $fff0 + $40 = $10030, past the top by $30
+
+  const bounded = [
+    { what: "class-2 table walk", scan: scanAt(tableWalkPayload(OUT_OF_SPACE_ORIGIN, PAYLOAD_SIZE), OUT_OF_SPACE_ORIGIN) },
+    {
+      what: "class-4 stack-return walk",
+      scan: scanAt(stackReturnTopOfSpacePayload(OUT_OF_SPACE_ORIGIN, PAYLOAD_SIZE), OUT_OF_SPACE_ORIGIN),
+    },
+  ];
+
+  for (const { what, scan } of bounded) {
+    // (1) table entry addresses.
+    for (const addr of scan.tableEntryAddresses) {
+      assert.ok(
+        addr <= 0xffff,
+        `${what}: tableEntryAddresses contains $${addr.toString(16)}, which the measured machine cannot address. ` +
+          `Pre-IN-05 the walk's bound was the payload's declared length ($10030), not the address space.`,
+      );
+    }
+    // (2) discovered targets.
+    for (const target of scan.discoveredTargets) {
+      assert.ok(target <= 0xffff, `${what}: discoveredTargets contains $${target.toString(16)}`);
+    }
+    // (3) every target of every split-table finding, proven and advisory alike.
+    for (const finding of [...scan.splitTables, ...scan.splitTableCandidates]) {
+      for (const target of finding.targets) {
+        assert.ok(target <= 0xffff, `${what}: a split-table finding at $${finding.at.toString(16)} publishes $${target.toString(16)}`);
+      }
+    }
+    // (4) every target of every stack-return finding.
+    for (const finding of scan.stackReturnDispatch) {
+      for (const target of finding.targets) {
+        assert.ok(target <= 0xffff, `${what}: a stack-return finding at $${finding.at.toString(16)} publishes $${target.toString(16)}`);
+      }
+    }
+  }
+
+  // THE NON-VACUITY HALF. Four "nothing exceeds $FFFF" assertions are satisfied
+  // by a scan that found nothing at all, so the malformed input must still
+  // produce findings, and the SAME program at a legal origin must produce the
+  // findings the bounded run truncates -- otherwise the bound is indistinguish-
+  // able from a switch that empties the report.
+  const boundedTable = bounded[0]!.scan;
+  const legalTable = scanAt(tableWalkPayload(LEGAL_ORIGIN, PAYLOAD_SIZE), LEGAL_ORIGIN);
+  assert.equal(boundedTable.multiEntryTables.length, 1, "the malformed run must still find its table -- an empty scan proves nothing");
+  assert.equal(legalTable.multiEntryTables.length, 1);
+  const boundedEntries = boundedTable.multiEntryTables[0]!.entries;
+  const legalEntries = legalTable.multiEntryTables[0]!.entries;
+  assert.ok(boundedEntries > 0, "the bounded walk must still read entries, not stop at zero");
+  assert.ok(
+    legalEntries > boundedEntries,
+    `the bound must be doing work: the same payload at $${LEGAL_ORIGIN.toString(16)} read ${legalEntries} entries and at ` +
+      `$${OUT_OF_SPACE_ORIGIN.toString(16)} read ${boundedEntries}. Equal counts would mean the clamp never engaged.`,
+  );
+  assert.equal(
+    Math.max(...boundedTable.tableEntryAddresses),
+    0xfffe,
+    "the last table entry address the bounded walk may publish is the last word that fits below $10000",
+  );
+
+  const boundedStack = bounded[1]!.scan;
+  const legalStack = scanAt(stackReturnTopOfSpacePayload(LEGAL_ORIGIN, PAYLOAD_SIZE), LEGAL_ORIGIN);
+  assert.equal(boundedStack.stackReturnDispatch.length, 1, "the malformed run must still match the class-4 idiom");
+  assert.equal(legalStack.stackReturnDispatch.length, 1);
+  assert.ok(
+    boundedStack.stackReturnDispatch[0]!.entries > 0,
+    "the bounded class-4 walk must still publish its first entry, so assertion (4) is not vacuous",
+  );
+  assert.ok(
+    legalStack.stackReturnDispatch[0]!.entries > boundedStack.stackReturnDispatch[0]!.entries,
+    `the class-4 bound must be doing work: ${legalStack.stackReturnDispatch[0]!.entries} entries at a legal origin against ` +
+      `${boundedStack.stackReturnDispatch[0]!.entries} at $${OUT_OF_SPACE_ORIGIN.toString(16)}`,
+  );
+  assert.deepEqual(
+    legalStack.stackReturnDispatch[0]!.targets,
+    Array.from({ length: 6 }, () => LEGAL_ORIGIN + 8),
+    "at a legal origin every one of the six entries reconstructs the idiom's own `rts` -- these are the findings the bounded run truncates",
+  );
+
+  // ONE ADDRESS SPACE, stated as such: the census built over the same malformed
+  // origin/length pair stops at $10000, and so does everything its dispatch
+  // sub-report published.
+  const censusRangeEnd = 0xfff0 + census.rangeBytes;
+  assert.equal(censusRangeEnd, 0x10000, "the census's own bound is unchanged by this run");
+  for (const { what, scan } of bounded) {
+    for (const addr of [...scan.tableEntryAddresses, ...scan.discoveredTargets]) {
+      assert.ok(
+        addr < censusRangeEnd,
+        `${what}: $${addr.toString(16)} lies outside the range the census beside it describes -- the report would contradict itself`,
+      );
+    }
+  }
 });
 
 test("bounded walk: a table whose entries would chain indefinitely reports truncation and terminates (T-19-12)", () => {
