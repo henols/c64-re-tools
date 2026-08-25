@@ -357,6 +357,39 @@ export interface StructuralCensusOptions {
 }
 
 /**
+ * Does `decoded` exist, and is it an instruction a program could actually
+ * EXECUTE -- one the decoder did not flag illegal and did not have to
+ * truncate?
+ *
+ * THE ONE DECODABILITY PREDICATE IN THIS MODULE, and the reason it exists is
+ * an incident rather than tidiness. Three places here answer "is this byte an
+ * instruction": the linear sweep, the entry-point gate inside
+ * `scanIndirectDispatch()`, and the recursive descent that produces the
+ * HEADLINE number. The first two tested the decoder's illegal flag. The third
+ * never asked. It walked straight THROUGH an illegal opcode, claimed its bytes
+ * as reached code, and carried on into whatever followed.
+ *
+ * Measured on a 64-byte image at $0810 holding `lda #$01` / `ldx #$00` and then
+ * sixty `$02` bytes: `reachedAsInstruction=64`, `unreached=0`,
+ * `linearSweepDecodable=4`. One hundred per cent structural completeness on a
+ * ninety-four-per-cent-garbage image, with the sibling figure on the SAME
+ * report disagreeing sixteen-fold. Two figures describing two different byte
+ * sets is not a rounding difference; it is a report contradicting itself.
+ *
+ * The predicate exists so those two figures cannot describe different byte sets
+ * again. It is the same extraction `isPlausibleEntryPoint()` itself received
+ * when the two halves of `provenDispatchTargets()` were found held to different
+ * standards -- one definition, every reader on it.
+ *
+ * It reads the decoder's OWN boolean flag and its own `truncated` note. Never a
+ * mnemonic string comparison and never an opcode-byte range: which opcodes are
+ * illegal is the opcode table's fact to state, not this module's to restate.
+ */
+function isDecodableAsInstruction(decoded: Instruction | undefined): decoded is Instruction {
+  return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
+}
+
+/**
  * Classifies every byte in `[origin, origin + size)` by recursive descent
  * from `seeds`.
  *
@@ -434,7 +467,20 @@ export function computeStructuralCensus(
 
       const offset = pc - safeOrigin;
       const decoded = decode(safeBytes.subarray(offset), pc, { count: 1 })[0];
-      if (!decoded || decoded.notes.includes("truncated")) break;
+      // THE PREDICATE IS CONSULTED HERE, BEFORE THE MARKING LOOP BELOW, and
+      // that order is the whole of the WR-03 fix -- not an accident of how the
+      // statements happened to be written.
+      //
+      // Consulted before: the illegal byte is never marked, so it stays
+      // `unreached` and the four class counts still sum to `rangeBytes`.
+      // Consulted after: the byte would be claimed as reached code and only
+      // then abandoned, which is precisely the behaviour that reported
+      // sixty-four of sixty-four bytes as executed code on a four-byte program.
+      //
+      // A later reader who keeps the predicate but moves this test below the
+      // marking loop reintroduces the defect while leaving every mention of the
+      // predicate in place. Do not reorder these two statements.
+      if (!isDecodableAsInstruction(decoded)) break;
 
       for (let i = 0; i < decoded.bytes.length; i++) mark(pc + i, 0);
 
@@ -468,10 +514,16 @@ export function computeStructuralCensus(
   // Linear-sweep decodability -- reported, never summed. See trap 2. Swept
   // over the SAME bounded range as the census, so the two figures describe
   // the same bytes (IN-04).
+  // The skip is expressed through the SAME predicate the descent above reads,
+  // so the two figures are comparable by construction rather than by
+  // coincidence. This figure's MEANING is untouched: it still counts bytes that
+  // decode as legal, non-truncated instructions, exactly as it always did. The
+  // descent was brought to this standard; this standard was never loosened to
+  // the descent's, because `linearSweepDecodable` is a published field of a
+  // report other phases consume and redefining it would be a schema question.
   let linearSweepDecodable = 0;
   for (const insn of decode(safeBytes.subarray(0, rangeSize), safeOrigin)) {
-    if (insn.illegal) continue;
-    if (insn.notes.includes("truncated")) continue;
+    if (!isDecodableAsInstruction(insn)) continue;
     linearSweepDecodable += insn.bytes.length;
   }
 
@@ -945,11 +997,15 @@ export function scanIndirectDispatch(
    * of them. A value pointing at a byte that does not decode is not an entry
    * point, and a mid-instruction address is not evidence of code however
    * confidently it is printed.
+   *
+   * This gate COMPOSES the module's decodability predicate with its own
+   * in-image bound rather than restating the decodability test. Its behaviour
+   * is unchanged by that composition -- the two conditions it applied were
+   * already the predicate's two conditions.
    */
   const isPlausibleEntryPoint = (value: number): boolean => {
     if (!(value >= safeOrigin && value < effectiveEnd)) return false;
-    const decoded = decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0];
-    return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
+    return isDecodableAsInstruction(decode(safeBytes.subarray(value - safeOrigin), value, { count: 1 })[0]);
   };
 
   const indirectJumps: IndirectJumpFinding[] = [];
