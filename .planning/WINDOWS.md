@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 8
 waived_count: 0
-fixed_count: 2
+fixed_count: 3
 total_count: 11
-last_updated: 2026-08-25T13:22:44.057Z
+last_updated: 2026-08-25T13:23:33.194Z
 ---
 
 # Broken Windows Ledger
@@ -25,7 +25,7 @@ last_updated: 2026-08-25T13:22:44.057Z
 | 8 | 19 | deviation | src/mcp/vice/skill-attribution.test.ts |  | 19-07 deferred WR-11: three suites and five shipped-prose citations hard-code a .planning/phases/19- path that GSD archives at milestone close; 19-07 added no new instance | open |  | 2026-08-24T21:56:23.195Z |  |
 | 9 | 19 | deviation | src/mcp/vice/skill-attribution.test.ts |  | 19-07 deferred WR-12: manifestEntryFor() lies to the type system and can throw a TypeError instead of its intended message; not called by 19-07's guard | open |  | 2026-08-24T21:56:23.308Z |  |
 | 10 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | trueReturnGuardChains() cut for-header semicolons; fixed in the same commit by tracking parenthesis depth | fixed |  | 2026-08-25T11:57:33.035Z | 2026-08-25T11:58:16.142Z |
-| 11 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | PUSH_IDIOM_WINDOW_EDGE declared interior to (zeropage-vector-jumped-through, class-3-pass) rather than OUTSIDE as plan 19-18 specified; the plan's position was factually false | open |  | 2026-08-25T13:22:44.057Z |  |
+| 11 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | PUSH_IDIOM_WINDOW_EDGE declared interior to (zeropage-vector-jumped-through, class-3-pass) rather than OUTSIDE as plan 19-18 specified; the plan's position was factually false | fixed |  | 2026-08-25T13:22:44.057Z | 2026-08-25T13:23:33.194Z |
 
 ````json
 [
@@ -156,10 +156,10 @@ last_updated: 2026-08-25T13:22:44.057Z
     "file": "src/mcp/vice/r2000-coverage.test.ts",
     "line": null,
     "description": "PUSH_IDIOM_WINDOW_EDGE declared interior to (zeropage-vector-jumped-through, class-3-pass) rather than OUTSIDE as plan 19-18 specified; the plan's position was factually false",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-25T13:22:44.057Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-25T13:23:33.194Z"
   }
 ]
 ````
