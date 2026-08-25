@@ -317,6 +317,86 @@ same source read decision 1's re-sync trigger (a) already performs), or a re-run
 against a newer binary reports a verdict other than `serial-one-request-at-a-time`. Either
 observation reopens the reader-writer question with a real reason behind it.
 
+## Decision 6 — The recursive descent stops at an illegal opcode, and the census's three readers are brought to ONE predicate
+
+**Decided:** 2026-08-25 (measured and implemented in plan 19-20)
+
+`computeStructuralCensus()`'s recursive descent **stops at an illegal opcode and does not
+claim its bytes**. The three places in `src/mcp/vice/r2000-coverage.ts` that answer "is this
+byte an instruction a program executes" now read ONE predicate,
+`isDecodableAsInstruction()`, and that predicate is the standard the linear sweep and
+`isPlausibleEntryPoint()` **already used**. The descent was brought up to them; they were
+not brought down to it.
+
+**The evidence — a measured self-contradiction, not a theoretical one.** A 64-byte image at
+`$0810` holding `lda #$01` / `ldx #$00` followed by sixty `$02` bytes reported
+`reachedAsInstruction=64`, `unreached=0` and `linearSweepDecodable=4`. One hundred per cent
+structural completeness on a ninety-four-per-cent-garbage image, with the sibling figure on
+the SAME report disagreeing sixteen-fold. `reachedAsInstruction` is the number SC4 gates on
+and the number Phase 20 runs under.
+
+The root cause is WR-14's pattern one level over. This module already had **two readers
+agreeing on the stricter rule and one that never asked** — and the one that never asked was
+the one producing the headline figure. That is precisely the shape that made
+`isPlausibleEntryPoint()` worth extracting in the first place, when the two halves of
+`provenDispatchTargets()` were found held to different standards. After this change the same
+payload reports `4` / `60` / `4`; the byte-identical twin whose filler is `$ea` still reports
+`64` / `0` / `64`, so the tightening discriminates rather than refuses.
+
+**The alternative weighed and REJECTED: stop only at the CPU-halting opcodes.** Let the
+descent walk through the stable undocumented instructions and loosen the linear sweep to
+match, so the two figures stay comparable at the looser standard. It is arguably more
+faithful to the machine — a `jam` halts the processor and a `lax` does not — and it would
+avoid the under-report named below.
+
+It is rejected **for this round**, and for a specific reason rather than a preference:
+loosening the sweep would change what `linearSweepDecodable` **MEANS**. That field currently
+counts bytes decoding as LEGAL, non-truncated instructions; that meaning is published in the
+report Phase 20 consumes; and redefining it is a report-shape change that owes a
+`COVERAGE_SCHEMA_VERSION` bump and a review of every consumer. This round is a
+predicate-and-control round and does not bump the schema — `COVERAGE_SCHEMA_VERSION` is
+still `2` and `COVERAGE_REPORT_KEYS` is unchanged. Recording that boundary explicitly is
+better than absorbing the schema question into a bug fix.
+
+**The residual, stated plainly with its size as a number.** `disasm-opcodes.ts` flags
+**105 of its 256 entries** illegal. Only **12** of those are `jam`; the other **93** are
+stable undocumented instructions that real C64 code does use — 27 `nop` variants, 7 each of
+`slo`, `rla`, `sre`, `rra`, `dcp` and `isc`, 6 `lax`, 4 `sax`, and the rest. (The count is
+not a coincidence of this table: the working notes on undocumented opcodes carried in this
+tree describe exactly "all 105 opcode bytes not defined by the documented NMOS 6502 ISA".)
+A program that legitimately executes one of those 93 will now have its census **stop there
+and under-report** its reached count.
+
+Three things make that acceptable rather than merely tolerated. The direction of the error
+is the safe one — an instrument whose entire point is that reachability must be PROVEN
+should under-claim, not over-claim. It is **no longer silent**: the two figures now agree
+instead of contradicting each other, and `reachedAsInstruction <= linearSweepDecodable` is
+asserted as a general relation. And the sweep already behaved this way, so the census now
+**shares an existing limitation rather than inventing a new one**.
+
+**Reversal condition, named and checkable:** a real target program is measured whose census
+under-reports because the descent stopped at a stable undocumented opcode — concretely, a
+payload where `linearSweepDecodable` minus `reachedAsInstruction` is explained by a `lax`,
+`sax`, `slo`, `rla`, `sre`, `rra`, `dcp`, `isc` or undocumented-`nop` byte on a path the
+program really executes. The remedy is then a **named option on the census plus a
+`COVERAGE_SCHEMA_VERSION` bump**, taken together with Phase 20's own review of the
+`flat-three` schema. It is never a silent divergence between the descent and the sweep —
+ending that divergence is the whole of what this decision buys, and it is held in place by
+four source-derived pins (one definition, three placed call sites, the decoder's illegal
+flag read at exactly one comment-stripped site, and the statement order that keeps an
+illegal byte `unreached` rather than claimed).
+
+**Provenance of the work itself.** WR-03 sat in `19-CONTEXT.md`'s `<deferred>` section and
+was **promoted into this round by orchestrator decision**; `19-CONTEXT.md` was deliberately
+left unedited rather than rewritten after the fact, and the promotion is recorded here and
+in `19-VALIDATION.md`. The blast radius was measured, not assumed: all twelve committed
+coverage fixtures and the previously-unseen Phase 11 fixture report the same
+`reachedAsInstruction` as before (7, 7, 17, 17, 15, 15, 30 six times, and 68), and the
+sealed reproducibility answer still holds with `ANSWER.md`, `ANSWER.sha256` and
+`QUESTION.md` byte-unchanged.
+
+---
+
 ---
 
 ## Cross-references
@@ -328,6 +408,7 @@ observation reopens the reader-writer question with a real reason behind it.
 | 3 — packer-identity bar | SURF-03 | `packer-finding.mjs` + `packer-finding.test.mjs`; 19-RESEARCH.md §2.2 | ROADMAP §19 Notes |
 | 4 — MIT election | ABS-02 | both `THIRD-PARTY-NOTICES.md` files; `skill-attribution.test.ts` | — (human-judgment item, carried to the phase verifier) |
 | 5 — concurrency deferral closed | ABS-04 (D18-16) | `19-STDIO-MULTIPLEXING-EVIDENCE.md`; `stdio.rs:67-98` | ROADMAP §19 Notes |
+| 6 — the descent stops at an illegal opcode | COV-01 (serves COV-02) | `r2000-coverage.test.ts` WR-03 minimal pair + PINs 5-8; `19-VALIDATION.md` round-4 plan 19-20 section | ROADMAP §20 — the report Phase 20 runs under |
 
 **Note on FUT-01.** ABS-01's "five procedures absorbed" and FUT-01's deferral of BASIC
 token decoding are reconciled deliberately rather than tacitly (19-02 Task 1(b)):

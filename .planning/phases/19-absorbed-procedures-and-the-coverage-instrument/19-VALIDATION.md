@@ -821,3 +821,31 @@ came to disagree in the first place, and a report-level suite cannot see it.
 - The full suite was run, not the `test:automated` subset: **2589 pass, 0 fail, 40 skipped, 5 todo**
   over 24 suites — neither of the two known contention flakes
   (`vice-proxy.test.ts` wall-clock budgets, `r2000-session.test.ts`'s 200 ms timeout) appeared.
+
+### The decision this route rests on, and the residual it names (Decision 6)
+
+`19-DECISIONS.md` Decision 6 (dated 2026-08-25) records the choice and its price. The two halves
+worth restating here, because they are measurements rather than positions:
+
+- **The rejected alternative had a real case.** Stopping only at the CPU-halting opcodes and
+  loosening the linear sweep to match is arguably more faithful to the machine — a `jam` halts the
+  processor and a `lax` does not. It is rejected for this round because loosening the sweep would
+  change what `linearSweepDecodable` **MEANS**, and that meaning is published in the report Phase 20
+  consumes. Redefining it owes a `COVERAGE_SCHEMA_VERSION` bump and a consumer review; this round is
+  a predicate-and-control round and does not bump the schema.
+- **The residual has a size.** `disasm-opcodes.ts` flags **105 of 256** entries illegal, of which
+  only **12** are `jam`. The other **93** are stable undocumented instructions real C64 code does
+  use — 27 undocumented `nop` variants, 7 each of `slo`, `rla`, `sre`, `rra`, `dcp` and `isc`, 6
+  `lax`, 4 `sax`, and the remainder. A program that legitimately executes one of those will now have
+  its census stop there and **under-report**. The direction of the error is the safe one for an
+  instrument whose point is that reachability must be PROVEN; it is no longer silent, because the
+  two figures now agree and `reachedAsInstruction <= linearSweepDecodable` is asserted generally;
+  and the sweep already behaved this way, so the census shares an existing limitation rather than
+  inventing one.
+
+The reversal condition is checkable rather than rhetorical: a real target program whose
+`linearSweepDecodable` minus `reachedAsInstruction` gap is explained by a stable undocumented opcode
+on a path it really executes. The remedy is then a named census option plus a
+`COVERAGE_SCHEMA_VERSION` bump, taken with Phase 20's own review of the `flat-three` schema — never
+a silent divergence between the descent and the sweep, which is the condition Decision 6 exists to
+end.
