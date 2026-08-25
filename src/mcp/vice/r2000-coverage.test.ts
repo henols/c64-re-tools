@@ -249,6 +249,88 @@ const STACK_RETURN_IMPLAUSIBLE_TARGET = (() => {
   return bytes;
 })();
 
+/** The WR-15 pair. `SPLIT_TABLE_CLEAN` is a genuine split lo/hi table with a
+ * real `jmp ($00fb)` consumer -- the exact shape the class-3 positive control
+ * certifies -- and `SPLIT_TABLE_INTERPOSED` is the SAME program with one
+ * unrelated indexed load through the OTHER index register inserted between the
+ * two halves.
+ *
+ * Until 19-11 the inner class-3 loop took the FIRST second-load it encountered
+ * and then broke, whether that pairing was proven or merely advisory. So the
+ * interposed load consumed the leading load and the genuine pairing behind it
+ * was never examined: `proven 1 / advisory 0 / proven targets 8` became
+ * `proven 0 / advisory 2 / proven targets 0`, with no indication that a proven
+ * pairing had been preempted. The direction of that error is safe -- an
+ * under-report -- but it is silent.
+ *
+ * The twin is DERIVED from the clean prologue by insertion rather than typed
+ * out again, so "identical except for the interposed load" is true by
+ * construction. What is asserted about the pair is the SCAN's output equality,
+ * which is a different claim and the one the control exists to make. */
+const WR15_LO_BASE = 0xc020;
+const WR15_HI_BASE = 0xc028;
+const WR15_SIZE = 0x30;
+const WR15_ENTRIES = WR15_HI_BASE - WR15_LO_BASE;
+
+const SPLIT_TABLE_CLEAN_PROLOGUE = [
+  0xbd, 0x20, 0xc0, // $c000 lda $c020,x   (lo base)
+  0x85, 0xfb, //       $c003 sta $fb       (vector lo)
+  0xbd, 0x28, 0xc0, // $c005 lda $c028,x   (hi base)
+  0x85, 0xfc, //       $c008 sta $fc       (vector hi)
+  0x6c, 0xfb, 0x00, // $c00a jmp ($00fb)   <- the dispatch consumer
+];
+
+/** `lda $c018,y` -- indexed, in-image, and through the OTHER register, so it
+ * cannot pair with the leading load. In-image is load-bearing: an out-of-image
+ * base is skipped by the pairing's own `inImage` check, and the payload would
+ * then not reproduce the defect at all. */
+const WR15_INTERPOSED_LOAD = [0xb9, 0x18, 0xc0];
+
+const SPLIT_TABLE_INTERPOSED_PROLOGUE = [
+  ...SPLIT_TABLE_CLEAN_PROLOGUE.slice(0, 3),
+  ...WR15_INTERPOSED_LOAD,
+  ...SPLIT_TABLE_CLEAN_PROLOGUE.slice(3),
+];
+
+/** Filler is `nop` so every reconstructed target decodes as a legal one-byte
+ * instruction, and the two tables reconstruct $c010..$c017. */
+function withSplitTableData(prologue: readonly number[]): Uint8Array {
+  const out = new Uint8Array(WR15_SIZE).fill(0xea);
+  out.set(prologue, 0);
+  for (let k = 0; k < WR15_ENTRIES; k++) {
+    out[WR15_LO_BASE - DISPATCH_ORIGIN + k] = 0x10 + k; // lo bytes -> $c010..$c017
+    out[WR15_HI_BASE - DISPATCH_ORIGIN + k] = 0xc0; // hi bytes
+  }
+  return out;
+}
+
+const SPLIT_TABLE_CLEAN = withSplitTableData(SPLIT_TABLE_CLEAN_PROLOGUE);
+const SPLIT_TABLE_INTERPOSED = withSplitTableData(SPLIT_TABLE_INTERPOSED_PROLOGUE);
+
+/** `lda $c020,x : lda $c018,y : lda $c024,y : rts` -- three indexed loads, no
+ * zero-page store, no indirect jump, no push idiom. Nothing here is provable,
+ * and the LEADING load has TWO possible second loads inside its window.
+ *
+ * That second property is why this payload exists. "At most ONE advisory
+ * candidate per leading load" is a property two committed controls already
+ * depend on, and it is the property most at risk from the WR-15 change, which
+ * makes the inner loop keep scanning after an advisory recording. Asserting it
+ * over a payload that only ever had one candidate pairing to begin with would
+ * be vacuous. */
+const MULTIPLE_ADVISORY_PAIRINGS = (() => {
+  const out = new Uint8Array(WR15_SIZE).fill(0xea);
+  out.set(
+    [
+      0xbd, 0x20, 0xc0, // $c000 lda $c020,x
+      0xb9, 0x18, 0xc0, // $c003 lda $c018,y   <- candidate second load 1
+      0xb9, 0x24, 0xc0, // $c006 lda $c024,y   <- candidate second load 2
+      0x60, //             $c009 rts
+    ],
+    0,
+  );
+  return out;
+})();
+
 /** A table whose every entry resolves in-image, far longer than the bound. */
 function chainingTable(): Uint8Array {
   const bytes = new Uint8Array(3 + 300);
@@ -822,6 +904,115 @@ test("dispatch class 3: a PROVEN split lo/hi table pair is reconstructed from it
   assert.ok(
     provenDispatchTargets(scan).includes(0xc00d),
     "a proven split table's targets MUST reach the one seam that seeds the descent -- otherwise the gate is a machine that declines everything",
+  );
+});
+
+test("a PROVEN split table survives an unrelated indexed load between its two halves (WR-15)", () => {
+  // The pair's relationship first, so the comparison below is a comparison of
+  // two programs that differ ONLY in the interposed load.
+  assert.equal(SPLIT_TABLE_CLEAN.length, SPLIT_TABLE_INTERPOSED.length, "the pair must be the same length");
+  assert.equal(SPLIT_TABLE_INTERPOSED_PROLOGUE.length, SPLIT_TABLE_CLEAN_PROLOGUE.length + WR15_INTERPOSED_LOAD.length);
+  assert.deepEqual(
+    [...SPLIT_TABLE_CLEAN.subarray(WR15_LO_BASE - DISPATCH_ORIGIN)],
+    [...SPLIT_TABLE_INTERPOSED.subarray(WR15_LO_BASE - DISPATCH_ORIGIN)],
+    "the two tables must be byte-identical in both payloads, or the pair is not comparable",
+  );
+  const interposedInsn = decode(SPLIT_TABLE_INTERPOSED, DISPATCH_ORIGIN)[1]!;
+  assert.equal(interposedInsn.mode, "absolute_y", "the interposed load must index through the OTHER register, or it would pair legitimately");
+  assert.ok(
+    interposedInsn.operand!.value >= DISPATCH_ORIGIN && interposedInsn.operand!.value < DISPATCH_ORIGIN + WR15_SIZE,
+    "the interposed load's base must be IN-IMAGE, or the pairing is skipped by its own inImage check and the payload reproduces nothing",
+  );
+
+  const clean = scanOf(SPLIT_TABLE_CLEAN);
+  const interposed = scanOf(SPLIT_TABLE_INTERPOSED);
+
+  assert.equal(clean.splitTables.length, 1, "the baseline must actually prove a split table, or every equality below is satisfiable by two empty reports");
+  assert.equal(clean.splitTableCandidates.length, 0, "a leading load that produced a PROVEN pairing must emit no advisory candidate");
+  assert.equal(provenDispatchTargets(clean).length, WR15_ENTRIES, "and it must prove all eight entries");
+
+  assert.equal(
+    interposed.splitTables.length,
+    1,
+    "PRE-FIX: proven 1 / advisory 0 / proven targets 8 without the interposed load, versus proven 0 / advisory 2 / proven targets 0 with it. " +
+      "One unrelated indexed load between the two halves of a real split table consumed the leading load, and a dispatch table with a genuine " +
+      "`jmp ($00fb)` consumer became invisible -- reported as a clean-looking empty splitTables with no indication that a proven pairing had " +
+      "been preempted.",
+  );
+  assert.deepEqual(
+    interposed.splitTables[0]!.targets,
+    clean.splitTables[0]!.targets,
+    "the interposed variant must reconstruct the SAME targets as the clean one -- asserted by deep-equality against the live baseline, never " +
+      "against a hard-coded list",
+  );
+  assert.equal(interposed.splitTables[0]!.loBase, clean.splitTables[0]!.loBase);
+  assert.equal(interposed.splitTables[0]!.hiBase, clean.splitTables[0]!.hiBase);
+  assert.deepEqual(
+    provenDispatchTargets(interposed),
+    provenDispatchTargets(clean),
+    "and the ONE seam that seeds a recursive descent must see the same eight addresses. Pre-fix it saw none.",
+  );
+
+  // The advisory list must not be where the proven pairing went.
+  for (const candidate of interposed.splitTableCandidates) {
+    assert.notEqual(
+      candidate.at,
+      interposed.splitTables[0]!.at,
+      `the pairing at $${candidate.at.toString(16)} is reported as advisory AND as proven -- an advisory recording is exactly what the proven ` +
+        `pairing was silently downgraded to pre-fix`,
+    );
+    assert.equal(candidate.orientationResolved, false);
+    assert.deepEqual(candidate.targets, [], "an unoriented pairing must emit NO targets");
+  }
+});
+
+test("only a PROVEN pairing consumes its leading load, and at most one advisory candidate is emitted per leading load", () => {
+  // The property two committed controls depend on -- `dispatch class 3
+  // DECLINES an ordinary two-table indexed read loop` and the FP1 report-level
+  // control both observe `splitTableCandidates.length === 1` -- and the one
+  // most at risk from the WR-15 change, which makes the inner loop keep
+  // scanning after an advisory recording.
+  //
+  // Asserted over a payload whose LEADING load genuinely has two possible
+  // second loads, so the assertion is not vacuous. That precondition is
+  // counted from the decoded stream rather than claimed.
+  const insns = decode(MULTIPLE_ADVISORY_PAIRINGS, DISPATCH_ORIGIN);
+  const indexedLoadsInWindow = insns
+    .slice(1, 1 + SPLIT_TABLE_WINDOW)
+    .filter((insn) => !!insn.operand && insn.mnemonic.startsWith("ld") && ["absolute_x", "absolute_y", "zeropage_x"].includes(insn.mode));
+  assert.ok(
+    indexedLoadsInWindow.length >= 2,
+    `the leading load must have at least two possible second loads inside its window, or "at most one candidate" is asserted over a payload ` +
+      `that could only ever produce one. Found ${indexedLoadsInWindow.length}.`,
+  );
+
+  const scan = scanOf(MULTIPLE_ADVISORY_PAIRINGS);
+  assert.deepEqual(scan.splitTables, [], "nothing in this payload dispatches, so nothing may be proven");
+  assert.deepEqual(provenDispatchTargets(scan), [], "and nothing may reach the seam that seeds a descent");
+
+  const perLeadingLoad = new Map<number, number>();
+  for (const candidate of scan.splitTableCandidates) perLeadingLoad.set(candidate.at, (perLeadingLoad.get(candidate.at) ?? 0) + 1);
+  for (const [at, count] of perLeadingLoad) {
+    assert.equal(
+      count,
+      1,
+      `the leading load at $${at.toString(16)} emitted ${count} advisory candidates. At most ONE per leading load -- the first seen, in ` +
+        `encounter order, so the output is deterministic.`,
+    );
+  }
+  assert.equal(perLeadingLoad.get(0xc000), 1, "the leading load with two possible pairings must emit exactly one candidate, not two");
+
+  // And a leading load that produced a proven pairing emits none.
+  const proven = scanOf(SPLIT_TABLE_CLEAN);
+  assert.equal(proven.splitTables.length, 1);
+  assert.deepEqual(proven.splitTableCandidates, [], "a PROVEN pairing consumes its leading load, so no advisory candidate may be emitted for it");
+
+  // The two committed controls' own numbers, re-asserted here so a regression
+  // in this property names itself in this test rather than only in theirs.
+  assert.equal(
+    scanIndirectDispatch(decode(ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN), ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN).splitTableCandidates.length,
+    1,
+    "the ordinary indexed copy loop must still emit exactly one advisory candidate",
   );
 });
 
@@ -1612,64 +1803,110 @@ interface GateInteriorDeclaration {
   bytes: () => { bytes: Uint8Array; origin: number };
   /** The shape id whose interior this control reaches, or `OUTSIDE`. */
   position: string;
+  /** Does this control assert the instrument DECLINES the payload
+   * (`negative`) or ACCEPTS it (`positive`)?
+   *
+   * Recorded explicitly rather than inferred from the row's position, because
+   * 19-11 added interior POSITIVE controls -- the WR-15 pair, both of which
+   * carry a genuinely consumed zero-page vector and must both be PROVEN.
+   * Filing a positive control in a table introduced for negative ones without
+   * saying so would mislabel it, and a mislabelled control reads as coverage
+   * it does not supply.
+   *
+   * The shape-coverage test below counts only `negative` rows, so a shape's
+   * interior is still claimed only by a control that asserts a DECLINE:
+   * "every sufficient shape owes the suite a negative control that reaches
+   * inside it" is the 19-10 rule this preserves rather than dilutes. A
+   * `positive` row is checked the other way -- it must actually be accepted. */
+  polarity: "negative" | "positive";
   /** Why this control exists, in one clause. Documentary. */
   note: string;
 }
 
 /**
- * One row per negative dispatch control this suite carries, with its POSITION
- * relative to the predicate it constrains. Populated honestly: four of these
- * bracket the gate from the outside and always did, and saying so plainly is
- * what makes the interior rows mean something.
+ * One row per dispatch control this suite carries, with its POSITION relative
+ * to the predicate it constrains and its POLARITY. Populated honestly: five of
+ * these bracket the gate from the outside and always did, two of them are
+ * POSITIVE controls rather than negative ones, and saying both plainly is what
+ * makes the interior negative rows mean something.
  */
 const GATE_INTERIOR_DECLARATIONS: readonly GateInteriorDeclaration[] = Object.freeze([
   {
     control: "ORDINARY_INDEXED_COPY",
     bytes: () => ({ bytes: ORDINARY_INDEXED_COPY, origin: ORDINARY_ORIGIN }),
     position: OUTSIDE,
+    polarity: "negative",
     note: "an ordinary two-table indexed copy loop with NO zero-page store at all -- it never enters the region the gate rules on",
   },
   {
     control: FP_INDEXED,
     bytes: () => ({ bytes: payloadOf(FP_INDEXED), origin: loadFixture(FP_INDEXED).store.origin }),
     position: OUTSIDE,
+    polarity: "negative",
     note: "the committed form of the same copy loop; no zero-page store, so outside by the same reasoning",
   },
   {
     control: FP_IMMEDIATE,
     bytes: () => ({ bytes: payloadOf(FP_IMMEDIATE), origin: loadFixture(FP_IMMEDIATE).store.origin }),
     position: OUTSIDE,
+    polarity: "negative",
     note: "the immediate twin: not even an indexed load pair, so outside the class-3 pairing precondition itself",
   },
   {
     control: FP2_IMMEDIATE,
     bytes: () => ({ bytes: payloadOf(FP2_IMMEDIATE), origin: loadFixture(FP2_IMMEDIATE).store.origin }),
     position: OUTSIDE,
+    polarity: "negative",
     note: "the interior control's twin. It BUILDS the same zero-page vector, but its two loads are immediate, so there is no indexed pair to rule on -- which is exactly why it is a census baseline and not a second interior control",
   },
   {
     control: FP2_INTERIOR,
     bytes: () => ({ bytes: payloadOf(FP2_INTERIOR), origin: loadFixture(FP2_INTERIOR).store.origin }),
     position: "zeropage-vector-jumped-through",
+    polarity: "negative",
     note: "THE INTERIOR CONTROL. Two indexed loads through one register, two consecutive zero-page stores inside the window, a resolvable orientation, eight decodable targets -- and it dispatches nowhere (CR-04)",
   },
   {
     control: "STACK_RETURN",
     bytes: () => ({ bytes: STACK_RETURN, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    polarity: "negative",
     note: "reaches the push idiom's interior, and class 3 must still DECLINE it because class 4 runs first and claims the window (WR-01)",
   },
   {
     control: "STACK_RETURN_MIXED_REGISTERS",
     bytes: () => ({ bytes: STACK_RETURN_MIXED_REGISTERS, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    polarity: "negative",
     note: "THE CLASS-4 INTERIOR CONTROL for the register condition (WR-14). It matches the five-instruction window in every respect except that its two loads index through different registers, which is precisely what makes it interior rather than outside-bracketing",
   },
   {
     control: "STACK_RETURN_IMPLAUSIBLE_TARGET",
     bytes: () => ({ bytes: STACK_RETURN_IMPLAUSIBLE_TARGET, origin: DISPATCH_ORIGIN }),
     position: "stack-return-push-idiom",
+    polarity: "negative",
     note: "THE CLASS-4 INTERIOR CONTROL for the entry-point condition (WR-14). Byte-identical to the genuine fixture apart from three data bytes, so the window matches, the reconstruction succeeds, and only the plausibility test declines it",
+  },
+  {
+    control: "MULTIPLE_ADVISORY_PAIRINGS",
+    bytes: () => ({ bytes: MULTIPLE_ADVISORY_PAIRINGS, origin: DISPATCH_ORIGIN }),
+    position: OUTSIDE,
+    polarity: "negative",
+    note: "three indexed loads with no zero-page store, no indirect jump and no push idiom -- outside both shapes. It exists to make the at-most-one-advisory-candidate property non-vacuous (WR-15)",
+  },
+  {
+    control: "SPLIT_TABLE_CLEAN",
+    bytes: () => ({ bytes: SPLIT_TABLE_CLEAN, origin: DISPATCH_ORIGIN }),
+    position: "zeropage-vector-jumped-through",
+    polarity: "positive",
+    note: "the WR-15 baseline: a genuine split table whose vector is built and then jumped through, which the gate must ACCEPT. Interior by the same construction as FP2, and POSITIVE rather than negative -- recorded plainly rather than filed under a heading it does not belong to",
+  },
+  {
+    control: "SPLIT_TABLE_INTERPOSED",
+    bytes: () => ({ bytes: SPLIT_TABLE_INTERPOSED, origin: DISPATCH_ORIGIN }),
+    position: "zeropage-vector-jumped-through",
+    polarity: "positive",
+    note: "the WR-15 twin: the same genuine split table with one unrelated indexed load between its two halves. Pre-fix that load consumed the leading load and the whole proven pairing silently vanished from the report",
   },
 ]);
 
@@ -1697,11 +1934,36 @@ test("every gate-interior declaration is mechanically TRUE, not a claim in a tab
   }
 });
 
+test("a control DECLARED as positive is actually ACCEPTED by the instrument", () => {
+  // The polarity field's own check, in the direction where it is unambiguous.
+  // A row declared `positive` that proves nothing is mislabelled, and a
+  // mislabelled control reads as coverage it does not supply -- which is the
+  // same failure class as an outside-bracketing control wearing an interior
+  // label. Negative rows are checked by their own dedicated tests instead,
+  // because polarity there is scoped to a particular gate: STACK_RETURN is
+  // negative for class 3 and simultaneously class 4's positive fixture, so a
+  // blanket "negative rows prove nothing" assertion would be false about it.
+  const positives = GATE_INTERIOR_DECLARATIONS.filter((r) => r.polarity === "positive");
+  assert.ok(positives.length > 0, "no positive row exists -- this assertion would pass vacuously");
+  for (const row of positives) {
+    const { bytes, origin } = row.bytes();
+    const scan = scanIndirectDispatch(decode(bytes, origin), bytes, origin);
+    assert.ok(
+      provenDispatchTargets(scan).length > 0,
+      `${row.control} is DECLARED a POSITIVE control but the instrument proves nothing about it. A positive control that is declined is ` +
+        `mislabelled, and reads as coverage it does not supply.`,
+    );
+  }
+});
+
 test("every shape the dispatch predicate accepts is claimed by an interior declaration", () => {
   // The standing mechanism. Adding a sufficient shape to DISPATCH_CONTEXT_SHAPES
   // without a negative control that reaches its interior reds the suite BY NAME
   // -- which is the exact failure the 19-08 tightening did not have.
-  const claimed = new Set(GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE).map((r) => r.position));
+  // NEGATIVE interior rows only. A positive control proves the gate accepts
+  // something; the rule this test enforces is that every sufficient shape has
+  // a control which reaches inside it and asserts a DECLINE.
+  const claimed = new Set(GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE && r.polarity === "negative").map((r) => r.position));
   for (const shapeId of DISPATCH_CONTEXT_SHAPES) {
     assert.ok(
       claimed.has(shapeId),
@@ -1711,8 +1973,9 @@ test("every shape the dispatch predicate accepts is claimed by an interior decla
     );
   }
   // And the reverse direction, so a stale row cannot satisfy a shape that no
-  // longer exists.
-  for (const shapeId of claimed) {
+  // longer exists. Over EVERY interior row, either polarity: a stale positive
+  // row is as stale as a stale negative one.
+  for (const shapeId of GATE_INTERIOR_DECLARATIONS.filter((r) => r.position !== OUTSIDE).map((r) => r.position)) {
     assert.ok(
       DISPATCH_CONTEXT_SHAPES.includes(shapeId),
       `GATE_INTERIOR_DECLARATIONS claims the interior of shape "${shapeId}", which DISPATCH_CONTEXT_SHAPES does not list -- a ` +

@@ -975,11 +975,38 @@ export function scanIndirectDispatch(
   // Anything else is ADVISORY: recorded in `splitTableCandidates` with no
   // orientation claim and no targets, contributing to neither `discovered`
   // nor `tableEntryAddresses`.
+  //
+  // AN ADVISORY RECORDING DOES NOT CONSUME THE LEADING LOAD (WR-15). Only a
+  // PROVEN pairing does. Otherwise one unrelated indexed load between the two
+  // halves of a real split table erases it: the advisory pairing takes the
+  // leading load, the genuine pairing behind it is never examined, and the
+  // report shows a clean-looking empty `splitTables`. The direction of that
+  // error is safe -- an under-report, never an over-report -- but it is
+  // silent, which is the one thing a coverage instrument may not be.
   for (let i = 0; i < insns.length; i++) {
     const first = insns[i]!;
     if (!first.operand || !INDEXED_LOAD_MODES.has(first.mode)) continue;
     if (!first.mnemonic.startsWith("ld")) continue;
     if (classFourWindow.has(first.address)) continue; // (a)
+
+    // ONLY A PROVEN PAIRING CONSUMES ITS LEADING LOAD (WR-15). An ADVISORY
+    // recording does not: the first advisory pairing seen for this leading
+    // load is remembered here and emitted only if the window closes with no
+    // proven pairing found. Until 19-11 the inner loop broke on BOTH
+    // branches, so one unrelated indexed load sitting between the two halves
+    // of a real split table consumed the leading load and the genuine pairing
+    // behind it was never examined -- a dispatch table with a real
+    // `jmp ($00fb)` consumer became invisible, and its eight targets vanished
+    // from the seed set. The direction of that error is safe (under-report,
+    // not over-report) but it is SILENT: the report showed two advisory
+    // candidates and a clean-looking empty `splitTables`, with no indication
+    // that a proven pairing had been preempted.
+    //
+    // At most ONE advisory candidate per leading load is still emitted -- the
+    // first seen, in encounter order, so the output is deterministic -- and a
+    // leading load that produces a proven pairing emits none.
+    let pendingAdvisory: SplitTableFinding | null = null;
+    let pendingAdvisoryTruncated = false;
     for (let j = i + 1; j < Math.min(insns.length, i + 1 + SPLIT_TABLE_WINDOW); j++) {
       const second = insns[j]!;
       if (!second.operand || !INDEXED_LOAD_MODES.has(second.mode)) continue;
@@ -1006,7 +1033,6 @@ export function scanIndirectDispatch(
       if (entries > MAX_TABLE_ENTRIES) {
         entries = MAX_TABLE_ENTRIES;
         tableTruncated = true;
-        truncated = true;
       }
 
       // Reconstruct WITHOUT publishing anything yet: nothing below touches
@@ -1031,8 +1057,14 @@ export function scanIndirectDispatch(
         for (const value of targets) discovered.add(value);
         for (const addr of entryAddresses) tableEntryAddresses.add(addr);
         splitTables.push({ at: first.address, loBase, hiBase, entries: targets.length, targets, truncated: tableTruncated, orientationResolved: true });
-      } else {
-        splitTableCandidates.push({
+        if (tableTruncated) truncated = true;
+        pendingAdvisory = null; // a proven pairing emits no advisory candidate
+        break; // a PROVEN pairing consumes its leading load -- and only that
+      }
+
+      // Advisory: remember the FIRST one and keep scanning the window.
+      if (pendingAdvisory === null) {
+        pendingAdvisory = {
           at: first.address,
           // ENCOUNTER order, not lo/hi roles -- see `orientationResolved`.
           loBase: a,
@@ -1041,9 +1073,13 @@ export function scanIndirectDispatch(
           targets: [],
           truncated: tableTruncated,
           orientationResolved: false,
-        });
+        };
+        pendingAdvisoryTruncated = tableTruncated;
       }
-      break; // one pairing per leading load
+    }
+    if (pendingAdvisory !== null) {
+      splitTableCandidates.push(pendingAdvisory);
+      if (pendingAdvisoryTruncated) truncated = true;
     }
   }
 
