@@ -5,16 +5,16 @@ milestone_name: The rebuild half — absorbed playbooks, modifiable source (Phas
 current_phase: 19
 current_phase_name: Absorbed Procedures and the Coverage Instrument
 status: executing
-stopped_at: Completed 19-09-PLAN.md — Phase 19 gap-closure run complete
-last_updated: "2026-08-25T06:56:19.528Z"
+stopped_at: Completed 19-14-PLAN.md
+last_updated: "2026-08-25T07:14:07.566Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 19 gap closure — 19-08 gated the Class-3 split-table scan on real dispatch context and seeded the descent only from proven targets (COV-01, COV-02)
-state_head: 1a84f6e7211bceaf5a219aa269802bfb0a46f241
+last_activity_desc: Phase 19 execution started
+state_head: f25259e582d7862cdd65f10ed977aabcfa6f6ad8
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 21
-  completed_plans: 16
+  completed_plans: 17
   percent: 20
 ---
 
@@ -68,10 +68,10 @@ v0.4.0, which is what it existed to do.
 
 ## Current Position
 
-Phase: 19 (Absorbed Procedures and the Coverage Instrument) — READY TO EXECUTE
-Plan: 9 of 9 complete
-Status: Gap-closure run COMPLETE (19-06 … 19-09). Next: Phase 19 re-verification, which is also the named condition that lifts the `[skip release]` hold.
-Last activity: 2026-08-25 — 19-09 committed the generated false-positive census control pair, re-pinned the fixture count at 8, and extended 19-VALIDATION.md (COV-01, COV-02)
+Phase: 19 (Absorbed Procedures and the Coverage Instrument) — EXECUTING
+Plan: 2 of 14
+Status: Ready to execute
+Last activity: 2026-08-25 — Phase 19 execution started
 
 ## Performance Metrics
 
@@ -188,6 +188,7 @@ Last activity: 2026-08-25 — 19-09 committed the generated false-positive censu
 | Phase 19 P07 | 2h | 3 tasks | 5 files |
 | Phase 19 P08 | 30 min | 2 tasks | 2 files |
 | Phase 19 P09 | 55 min | 3 tasks | 8 files |
+| Phase 19 P14 | 8 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -370,6 +371,8 @@ Recent decisions affecting current work:
 - [Phase 19]: COVERAGE_SCHEMA_VERSION bumped 1 -> 2; nine-entry COVERAGE_REPORT_KEYS top-level set unchanged (19-08)
 - [Phase 19]: A proven class-3 split table additionally requires a lo/hi orientation resolved by its own store construction; otherwise it is advisory (19-08, WR-01)
 - [Phase 19]: 19-09: the false-positive census control pair writes its 57 data bytes out in full in BOTH literals rather than sharing a constant, so the identical-tail invariant is a real check an edit can break rather than one true by construction. Both plantable invariants were demonstrated throwing. — A shared data constant would make the 'differing ONLY in addressing mode' invariant vacuously true, reproducing in the generator the exact defect class the gap closure exists to remove.
+- [Phase 19]: CR-02's disposition was filed in the AUDIT-01 guard's source 3 (.planning/todos/completed/), not in a SUMMARY or in 19-REVIEW-FIX.md — Source 1 arrives only at plan close, after this plan's own verification must observe the guard green; source 5 is plan 19-13's deliverable and writing it here would put two plans on one file. Filed under completed/ rather than pending/ because CR-02 is disposed, not deferred: a pending todo would need a matching STATE.md Deferred Items row or docs-deferred-ledger direction A turns red.
+- [Phase 19]: A wave-1 disposition names in-flight work as outstanding: CR-04 is recorded as OUTSTANDING with plan 19-10 named, never as fixed — 19-10 had produced no SUMMARY and no commit at this record's date. Every hash written into the record (1706d8b, 9c9166d) was resolved with git cat-file -t first, so the record cites only what already landed. A disposition that predicts a commit is not a record.
 
 ### Pending Todos
 
@@ -864,8 +867,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T05:22:25.385Z
-Stopped at: Completed 19-09-PLAN.md — Phase 19 gap-closure run complete
+Last session: 2026-08-25T07:13:42.898Z
+Stopped at: Completed 19-14-PLAN.md
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
