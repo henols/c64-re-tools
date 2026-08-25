@@ -71,6 +71,56 @@ the plan that did the fixing. 19-08 reverted its own automatic
 `requirements.mark-complete COV-01 COV-02` for exactly this reason, and 19-09 did not run the
 step at all.
 
+## Second gap-closure run → executed evidence (2026-08-25, plans 19-14, 19-10, 19-11, 19-12, 19-13)
+
+`19-VERIFICATION.md` reopened this phase a second time with two gaps: the class-3 dispatch gate's
+residual (`CR-04`) plus four newly-raised findings, and a red workspace suite left by the phase's
+own artifacts. The rows below are the executed evidence from the five plans that answered them,
+in wave order. Same five-column shape as the two tables above; **no row above was altered,
+deleted or renumbered** — this section is an extension, and every command below appears verbatim
+in a 19-10 / 19-11 / 19-12 / 19-14 SUMMARY with the result that was actually observed there.
+
+| Requirement | Plan(s) | Command that ran | Ran against | Observed result |
+|---|---|---|---|---|
+| COV-02 | 19-14 | `cd src/mcp/vice && node --test docs-review-disposition.test.ts` | `19-REVIEW.md`'s derived id set against the guard's five disposition sources | **Pre-write** `# tests 7`, `# pass 6`, **`# fail 1`**, exit 1 — `finding(s) with no disposition anywhere … 19-REVIEW.md (19-absorbed-procedures-and-the-coverage-instrument): CR-02`, one id and one phase. **Post-write** `# tests 7`, `# pass 7`, **`# fail 0`**, exit 0. The change was a new file in the guard's source 3, never an edit to `19-REVIEW.md` |
+| COV-02 | 19-14 | `node --test {docs-review-disposition,docs-core-value-decision,docs-dangling-refs,docs-deferred-ledger,docs-fork-decision,docs-linerefs,docs-r2000-decisions}.test.ts` — seven separate standalone runs | the seven guards D-12-02's failure message names | **all seven exit 0** (7/7, 6/6, 8/8, 6/6, 6/6, 3/3, 5/5). The six-of-seven cascade claim is measured rather than inherited from `19-VERIFICATION.md`'s three-of-six spot-check; `audit-integrity.test.ts` standalone then exits 0 at `# tests 44 # pass 44 # fail 0` |
+| COV-02 | 19-10 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `fp2-zeropage-data-pointer`, the dispatch gate's first INTERIOR control, through the shipped `buildCoverageReport()` | `# tests 64 / # pass 64 / # fail 0`. **Observed RED against the unfixed gate first**, all five assertions: `splitTables.length` **1 → 0**; `provenDispatchTargets()` **eight values (`$840`…`$847`) → `[]`**; `tableEntryAddresses.length` **16 → 0**; `classAt($0840)` **`"reached-as-instruction"` → `"unreached"`**; `structural.reachedAsInstruction` **33 → 17** against a declared `code_size` of 17. Supporting census, same run: pre-fix `tableEntry=16 / referencedAsData=0 / unreached=15 / splitTableCandidates=0`, post-fix `0 / 2 / 45 / 1` |
+| COV-01 | 19-10 | `cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs (twice) && test -z "$(git status --porcelain fixtures/coverage)"` | the ten committed control fixtures, after the FP2 pair was added to the generator | porcelain **empty** on both runs — the determinism contract still holds after two plans added fixtures. Two generator-invariant throws demonstrated and restored: `ZEROPAGE_DATA_POINTER must be exactly 64 bytes, got 63` (one prologue byte removed) and `assertDispatchesNowhere()` on any `$6c`/`$48` byte |
+| COV-01, COV-02 | 19-10 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | the whole `src/mcp/vice` suite | exit 0 — `# tests 2573 / # suites 24 / # pass 2528 / # fail 0 / # skipped 40 / # todo 5` |
+| COV-02 | 19-11 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | the class-4 negative controls, the rebuilt `STACK_RETURN` fixture, and the WR-15 two-payload comparison | `# tests 69 / # pass 69 / # fail 0` (66 before this plan). The class-4 scan now satisfies the two class-3 conditions it never did — same-index-register match and a decodable in-image entry point — through `isPlausibleEntryPoint()`, one predicate shared by both halves of the seam rather than two copies |
+| COV-01, COV-02 | 19-11 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | the whole `src/mcp/vice` suite | `# tests 2578 / # suites 24 / # pass 2533 / # fail 0 / # skipped 40 / # todo 5`. A first run of the same command reported `# fail 1` on `r2000-session.test.ts`'s 200 ms wall-clock stub test, which passed 25/25 standalone — logged as `deferred-items.md` item 3 rather than absorbed |
+| COV-02 | 19-12 | `node --test r2000-coverage.test.ts` | the WR-13 citation controls and the extended out-of-16-bit-space test | `# tests 71 / # pass 71 / # fail 0`. `citesCallerByName()` now demands a reference not a coincidence, with `CALLER_CITATION_WORDS` frozen; `nc5-well-documented` stays clean with an empty findings array and `nc4-multi-caller-unnamed` is still caught by `reproducibility` **by name** |
+| COV-01, COV-02 | 19-12 | `npm test` (FULL suite, serial schedule) | the whole `src/mcp/vice` suite | **`# tests 2580 / # pass 2535 / # fail 0`**. On the parallel schedule the same command reported `# fail 1` — deferred item 3 again, the same 200 ms stub test |
+| COV-02 | 19-12 | `node fixtures/coverage/make-coverage-fixtures.mjs` ×2 → `git status --porcelain src/mcp/vice/fixtures/coverage` | the ten committed control fixtures | **empty** — and `git diff src/mcp/vice/fixtures/` is empty across both of this plan's commits, so no fixture and no expected verdict was moved to accommodate the tightening |
+
+### Measured in this run that the first gap-closure run did not measure
+
+Three things the first run could not have recorded, each with the command that produced it.
+
+**1. The dispatch gate's interior.** Before 19-10 the gate had no interior control at all: FP1/FP1b
+carry no zero-page store, and `SPLIT_TABLE` carries a real `jmp ($00fb)`, so all three bracket the
+predicate from the *outside*. `fp2-zeropage-data-pointer` satisfies every pre-fix sufficient
+condition while dispatching nowhere. Its pre-fix and post-fix values are the five-row table above.
+The immediate twin `fp2b-immediate-data-pointer` makes that baseline **measured rather than
+remembered** — byte-identical from offset 17 onward, asserted over the *committed* bytes via
+`payloadOf()` rather than over the generator's constants.
+
+**2. The class-4 negative controls, which did not exist.** Recorded by 19-11 against the shipped
+code at `cdf60bc` before any fix: `STACK_RETURN_MIXED_REGISTERS` (`lda $c010,x : pha : lda $c013,y :
+pha : rts`, two tables walked by two different registers) and the implausible-target payload both
+reached `provenDispatchTargets()` pre-fix and both are declined post-fix, each carrying a
+`GATE_INTERIOR_DECLARATIONS` row stating its position **and** its polarity, mechanically checked in
+both directions. The `STACK_RETURN` positive fixture was also rebuilt: it had been naming the
+mid-instruction address `$c006` as an entry point, which is not an entry point.
+
+**3. The full-suite line, and the one test that is load-sensitive.** Full-suite runs across this
+run: `# tests 2573 / # pass 2528 / # fail 0` (19-10), `2578 / 2533 / 0` (19-11), `2580 / 2535 / 0`
+(19-12, serial schedule). Two of the five full-suite runs on 2026-08-25 reported `# fail 1` on
+`r2000-session.test.ts:616`'s stub test, which drives a real spawned child against a **200 ms**
+wall-clock budget (`:622`) while `node --test` runs test files concurrently across 12 cores. It has
+never been observed red standalone — 25/25 on every run, including three consecutive runs by 19-13.
+Recorded as `deferred-items.md` item 3 with its owner, not absorbed.
+
 ## The inherited concurrency deferral (D18-16) — closed by measurement
 
 | Item | Command that ran | Ran against | Observed result |

@@ -18,6 +18,54 @@ would be 19-06 claiming work it did not do.
 **Clears when:** the last gap-closure plan (19-09) lands its SUMMARY. Not before — the guard
 is red *correctly* while the run is in flight.
 
+### Correction — 2026-08-25 (plan 19-13)
+
+**The stated clearing condition was reached and the condition did NOT clear.** 19-09 landed its
+SUMMARY at `6b6a34c` on 2026-08-25. The text above is left byte-unchanged as the record of what
+was believed; this block is what actually happened.
+
+**Why it did not clear.** Two things, both measured rather than quoted:
+
+1. **A second review pass landed after 19-09.** Commit `80c544b` (2026-08-25, *"docs(19): add code
+   review report"*) regenerated `19-REVIEW.md` — it is the file's second and only other commit,
+   the first being `81d46d1` on 2026-08-24 — and declared **five new ids**: `CR-04`, `WR-13`,
+   `WR-14`, `WR-15`, `IN-05`. Chronology confirmed with `git merge-base --is-ancestor`:
+   `5c68473` → `6b6a34c` (19-09's SUMMARY) → `80c544b`. A condition phrased as "when plan N
+   lands" cannot survive new findings arriving after plan N.
+2. **`CR-02`'s only disposition was an accident, and the same commit erased it.** `CR-02` was never
+   in the 17 ids listed above, because at the time it *was* dispositioned — by an incidental mention
+   in the then-current `19-VERIFICATION.md`, the guard's source 2. Measured:
+   `git show 5c68473:….../19-VERIFICATION.md | grep -c CR-02` = **1**; `grep -c CR-02` against the
+   file today = **0**. `80c544b` rewrote that report and the mention went with it, leaving `CR-02`
+   as the single undispositioned id. That is precisely the failure mode the phase's ledger now
+   exists to end: a disposition that exists only because a report happened to quote an id evaporates
+   the next time the report is rewritten, and records nothing about what was done.
+
+**What the guard reports today** — measured at `1494ade` (this plan's Task 1), not quoted from
+`19-VERIFICATION.md`:
+
+```
+cd src/mcp/vice && node --test docs-review-disposition.test.ts
+# tests 7
+# pass 7
+# fail 0
+exit 0
+```
+
+`CR-02` was discharged in wave 1 of the second gap-closure run by plan **19-14** (commit `c201da4`),
+which filed `.planning/todos/completed/2026-08-25-phase-19-review-cr-02-disposition.md` — the
+guard's source 3. That is the change that took the guard green.
+
+**New clearing condition — phrased so it can actually be satisfied, and it is:**
+`19-REVIEW-FIX.md` exists in the phase directory and dispositions **every** id `19-REVIEW.md`
+declares, so the green does not depend on any other document continuing to mention any id, AND
+`docs-review-disposition.test.ts` passes standalone. Both hold: the ledger was written at `1494ade`,
+set equality against the 24 declared ids was demonstrated mechanically in both directions, and the
+ledger **alone** — with every other disposition source excluded — covers all 24. The guard's exit
+code is above.
+
+**Status: CLEARED 2026-08-25.**
+
 ## 2. `audit-integrity.test.ts` D-12-02 cascades from item 1 (found by 19-06, same owner)
 
 **Condition:** `no milestone audit declares a gated status while any docs guard is red
@@ -29,6 +77,37 @@ standalone (`node --test <guard>.test.ts` exits 0) and are the known cascade in
 `audit-integrity`'s own guard runner.
 
 **Clears when:** item 1 clears.
+
+### Correction — 2026-08-25 (plan 19-13)
+
+The dependency stated above is still the right one — this item only ever cascaded from item 1 — but
+it was stated against a prediction that failed, so it inherited that failure. Item 1's correction
+block records why. The text above is left byte-unchanged.
+
+**The seven-guard cascade was re-checked standalone rather than assumed.** Every one of the seven
+guards `audit-integrity.test.ts`'s D-12-02 message names was run individually at `1494ade`
+(`cd src/mcp/vice && node --test <guard>.test.ts`), and every exit code was recorded:
+
+| Guard | Exit | Observed |
+|---|---|---|
+| `docs-review-disposition.test.ts` | 0 | 7 tests / 7 pass / 0 fail |
+| `docs-core-value-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
+| `docs-dangling-refs.test.ts` | 0 | 8 tests / 8 pass / 0 fail |
+| `docs-deferred-ledger.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
+| `docs-fork-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail |
+| `docs-linerefs.test.ts` | 0 | 3 tests / 3 pass / 0 fail |
+| `docs-r2000-decisions.test.ts` | 0 | 5 tests / 5 pass / 0 fail |
+
+**Genuinely red today: zero of seven.** The claim above that six of the seven were only a cascade
+artefact is confirmed by measurement, and the seventh — `docs-review-disposition.test.ts`, the one
+that was genuinely red — is now green for a real reason (see item 1). `audit-integrity.test.ts`
+itself was then run standalone: **exit 0, 44 tests / 44 pass / 0 fail**, so D-12-02 is demonstrated
+resolved rather than inferred from an aggregate run.
+
+**New clearing condition:** item 1's new clearing condition is satisfied AND
+`audit-integrity.test.ts` passes standalone. Both hold, with the exit codes above.
+
+**Status: CLEARED 2026-08-25.**
 
 **Both conditions pre-date plan 19-06** and are provably untouched by it: `git diff
 --name-only 5c68473..HEAD` after 19-06's two task commits lists only
@@ -53,3 +132,33 @@ timeout would be a change to a file outside this plan's scope fence, made on one
 
 **Clears when:** a plan that owns `r2000-session.ts` either widens the timeout or replaces the
 wall-clock wait with an injected clock.
+
+### Re-measured — 2026-08-25 (plan 19-13)
+
+**The clearing condition above is unchanged and still correct** — plan 19-13's `files_modified`
+fence covers only `.planning/` files, so widening that timeout is not available to it either, and
+making a red gate green by rewriting a ledger is one of this plan's own prohibitions. What follows
+is added evidence, not a restatement of the condition.
+
+**The rate is no longer a single observation.** Across five full-suite runs on 2026-08-25 it has
+been observed red **twice**: 19-11's first plan-level run (`# fail 1`), then green on 19-11's
+immediate re-run, green on the orchestrator's wave-3 post-merge gate runs 1 and 2, and red on run 3
+(`# tests 2580 / # pass 2534 / # fail 1`, `not ok 858`). Standalone it has never been observed red:
+19-11 recorded 25/25, and this plan ran `node --test r2000-session.test.ts` three consecutive times
+at `1494ade` — **exit 0, 25 tests / 25 pass / 0 fail on all three.**
+
+**The load-sensitivity diagnosis is now source-level rather than inferred.** The test drives a real
+spawned child against a **200 ms** wall-clock budget (`r2000-session.test.ts:622`,
+`{ timeoutMs: 200 }`, test declared at `:616`). `node --test` runs test *files* concurrently — 12
+cores on this host — so under a full suite the 200 ms budget competes with every other file's child
+processes, while a standalone run has the machine to itself. That is the mechanism, and it explains
+the exact split observed: red only ever under the full suite, never standalone.
+
+**Nothing in either gap-closure run touched it, confirmed rather than assumed.**
+`git log a756b17..HEAD -- src/mcp/vice/r2000-session.ts src/mcp/vice/r2000-session.test.ts` is
+empty, and neither file imports anything from `r2000-coverage.*`, the only module family this run
+modified.
+
+**Still open. Owner: a plan that owns `r2000-session.ts`.** Recorded here rather than absorbed,
+because a flake that only ever fires in CI's own gate is exactly the kind of item that gets
+explained away once per run and never fixed.
