@@ -5,16 +5,16 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: "Completed 23-10-PLAN.md — verdict recorded: no-go, rule R1; docs/phase23-real-release-gate-findings.md"
-last_updated: "2026-08-26T15:44:39.331Z"
+stopped_at: Completed 23-11-PLAN.md — Phase 23 closed on verdict no-go (rule R1); gate bound into ROADMAP/STATE/REQUIREMENTS
+last_updated: "2026-08-26T15:59:30.979Z"
 last_activity: 2026-08-26
 last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
-state_head: edad925026a3a22ed64d0c85c59fb7a890086a9a
+state_head: 5ee1c3e9c67eda2e2bbdb6025d4b41a682a82df8
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -83,7 +83,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — COMPLETE (verdict recorded)
 Plan: 6 of 11 executed (23-01, 23-02, 23-03, 23-04, 23-10, 23-11) — 23-05..23-09 **deliberately NOT dispatched** by explicit operator decision (each reads the depacked flat-64K capture as its substrate, D-03, and 23-03 could not produce one); their criteria are `could-not-run`. This is 6 of 11 executed and 5 deliberately not dispatched — **not** 11/11, and **not** five failures.
 Status: **Phase 23 COMPLETE.** Verdict recorded: **`no-go`**, rule **`R1`** fired on the single input `C0_CORPUS: partial`, and bound by 23-11 into ROADMAP.md, this file and REQUIREMENTS.md. Next: **Phase 24 (The Two Engines) is verdict-gated** — read `docs/phase23-real-release-gate-findings.md` frontmatter `verdict` / `verdict_rule_applied` before writing any plan there. `R1`'s own recorded consequence: *secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only.* The frontmatter progress counters below are handler-derived and read 6/11 plans and 0/4 phases because five plans were deliberately not dispatched — the phase is complete in fact while incomplete by plan count.
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 5 of 11 done
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 6 of 11 executed (5 deliberately not dispatched, so the phase reads incomplete by plan count while being complete in fact)
 Last activity: 2026-08-26 — 23-11 complete: the verdict now gates Phase 24 through the ROADMAP `**Depends on**` line and Notes its planner reads first, `R1`'s consequence is written beside (never over) the Phases 24/25/26 success criteria, and the PROOF traceability reflects reality — PROOF-04 and PROOF-05 Complete, PROOF-01/02/03 recorded **not met** with their reason. Previously: 23-10 complete: `docs/phase23-real-release-gate-findings.md` records verdict **no-go** / rule **R1**, derived from the pre-committed rule; the rule reproduced verbatim, the five non-dispatched plans named, 8 accepted limits and 15 corrections collected
 
 ## Performance Metrics
@@ -218,6 +218,7 @@ Last activity: 2026-08-26 — 23-11 complete: the verdict now gates Phase 24 thr
 | Phase 23 P04 | 33 min | 2 tasks | 2 files |
 | Phase 23 P03 | 1h 55m | 3 tasks | 7 files |
 | Phase 23 P10 | 47 min | 3 tasks | 5 files |
+| Phase 23 P11 | 22 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1068,8 +1069,17 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T15:32:04.294Z
-Stopped at: Completed 23-10-PLAN.md — verdict recorded: **no-go**, rule **R1**, in `docs/phase23-real-release-gate-findings.md`. Only 23-11 remains in phase 23.
+Last session: 2026-08-26T15:59:30.945Z
+Stopped at: Completed 23-11-PLAN.md — Phase 23 closed on verdict no-go (rule R1); gate bound into ROADMAP/STATE/REQUIREMENTS
+  Phase 23 is closed. The verdict `no-go` (rule `R1`) now gates Phase 24 through
+  its ROADMAP `**Depends on**` line and Notes, this file points at
+  `docs/phase23-real-release-gate-findings.md` rather than copying it, and the
+  PROOF traceability reads 2 of 5 met — `PROOF-04` and `PROOF-05` Complete,
+  `PROOF-01`/`PROOF-02`/`PROOF-03` Pending with the reason on the row. Six of
+  eleven plans executed; 23-05..23-09 deliberately not dispatched. Zero product
+  code across the whole phase; the full suite is green at 2593 pass / 0 fail.
+
+Earlier in phase 23:
   Plan **23-02** provisioned the three instruments and ran the phase's tracer:
   one thin path through every layer — fetch, sha256 verify, build, assemble,
   run dxa, parse the listing, count bytes, run Ghidra headless, carve volatile
