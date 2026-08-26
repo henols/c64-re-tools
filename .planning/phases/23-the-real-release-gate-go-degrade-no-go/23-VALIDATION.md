@@ -13,6 +13,14 @@ created: 2026-08-26
 
 > Per-phase validation contract for feedback sampling during execution.
 
+> **Superseded in part by plan `23-01`.** This file was seeded before the operator
+> confirmed that **two** independently-cracked releases of one title are available.
+> `23-01`'s `<assumption_delta_decision>` promotes the corpus noun to a list
+> (`corpus.releases[]`, exactly one `canonical: true`, single-release as the degenerate
+> case). The rows below have been updated to match. Where this file and `23-01`'s
+> pre-committed `evidence/SCHEMA.md` ever disagree, **`23-01` wins** — it is the
+> pre-commitment, this is a derived contract.
+
 **Unusual shape, deliberately.** This phase ships **no product code** (ROADMAP:
 "Nothing here builds product… the Phase 9 shape exactly, 8 plans, zero product
 code"). There is nothing to unit-test. As in Phase 9, the validation contract
@@ -66,7 +74,8 @@ the phase writes no code and exposes no surface (see § Security Domain in
 | TBD | closing | — | PROOF-05 (verdict) | — | N/A | evidence | `grep -E '^verdict: (go\|degrade\|no-go)$' docs/phase23-*-findings.md` | ✅ grep | ⬜ pending |
 | TBD | closing | — | PROOF-05 (rule cited) | — | N/A | evidence | `grep -E '^verdict_rule_applied: R[0-9]+$' docs/phase23-*-findings.md` **and** the fired rule's text reproduced in the body | ✅ grep | ⬜ pending |
 | TBD | TBD | — | PROOF-01 | — | N/A | evidence | outcome lines `C1_DATA_RECOVERY_PCT:`, `C1_FALSE_POSITIVES:`, `C1_FALSE_NEGATIVES:`, `C1_ADJUDICATED_FRACTION:`, `C1_WINDOW:` all present in `evidence/criterion1-*.txt` | ❌ W0 (schema fixed in 23-01) | ⬜ pending |
-| TBD | TBD | — | PROOF-01 (corpus identity) | — | N/A | evidence | `corpus.file_sha256` and `corpus.capture_sha256` present and non-empty in the findings frontmatter | ❌ W0 | ⬜ pending |
+| TBD | TBD | — | PROOF-01 (corpus identity) | — | N/A | evidence | `corpus.releases[]` present in the findings frontmatter with `release` / `file_sha256` / `capture_sha256` / `canonical` on every element, all non-empty, and **exactly one** element carrying `canonical: true` | ❌ W0 | ⬜ pending |
+| TBD | 23-06 | 3 | PROOF-01 (cracker hold-out) | — | N/A | evidence | `PROV_HOLDOUT:` present; if `unavailable`, the pre-committed temporal-separation fallback and its cost are written up as an `## ACCEPTED LIMIT` block | ❌ W0 | ⬜ pending |
 | TBD | TBD | — | PROOF-02 | — | N/A | evidence | `C2_COMPUTED_DISPATCH:` ∈ {`resolved`,`unresolved`,`not-exercised`}; if `resolved`, a target address is shown; otherwise a transcript path is cited | ❌ W0 | ⬜ pending |
 | TBD | TBD | — | PROOF-03 | — | N/A | evidence | `C3_BANK_DIVERGENCE:` ∈ {`found`,`not-exercised`}; if `found`, address + two `$01` values + two resolutions shown | ❌ W0 | ⬜ pending |
 | TBD | TBD | — | PROOF-04 | — | N/A | evidence | every row in `evidence/criterion4-*.md` matches `replaced-by:\|lost-accepted:\|lost-blocking:` | ❌ W0 | ⬜ pending |
