@@ -797,3 +797,253 @@ set.** Recorded in the phase's `deferred-items.md`, not fixed (phase 23 may not 
 under `src/`). Four consecutive full runs on an unchanged tree gave fail counts 1, 4, 1, 1 with
 the failing test *identity* changing between runs and 2592/2638 passing every time. A single
 red run of that suite is not evidence that a `.planning/`-only change broke something.
+
+## Corrections to prior documents
+
+Every `## RESEARCH CORRECTIONS` entry recorded in every evidence file, collected here in one
+pass, plus the corrections `SCHEMA.md` and this phase's execution generated directly. Plans
+23-02 through 23-04 were forbidden from editing `23-RESEARCH.md` and recorded their
+corrections locally, precisely so parallel plans in one wave could not collide on a single
+document (`evidence/README.md` § *Evidence conventions* 8). **This document is that file's
+single owner**, and the applicable corrections below are applied to it as scoped edits in the
+same commit as this section.
+
+1. **`.planning/research/questions.md` claims a real corpus that does not exist in this
+   repository.** Under "Does dxa + Ghidra hold up on a real cracked release?" it tells the
+   reader the measurements are *"answerable against the existing `c64-provenance-diff`
+   fixtures — real releases, already committed, already provenance-classified"*. That is
+   false. `c64-provenance-diff` is pure Node over a **consuming** project's `recovery/` tree
+   and ships no releases; there is no `recovery/` tree here, and a `find` over the whole tree
+   for `*.prg` / `*.d64` / `*.t64` returns three `.prg` files, all synthetic probe fixtures.
+   **The corpus was operator-supplied under D-04** and lives outside this checkout. Filed as
+   `.planning/todos/pending/2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md`.
+   *Not applied here:* `questions.md` is outside this plan's `files_modified` set; the todo is
+   its owner.
+
+2. **`23-CONTEXT.md`'s Claude's-discretion note recommended reusing `BankProbe3.java`'s
+   `getBlock()`-first volatile guard verbatim, and on a flat 64K import that is wrong —
+   silently.** The pivot's guard calls `getBlock(addr)` and sets `setVolatile(true)` on
+   whatever comes back. That was written for the `.prg` route, where no block covers `$D000`,
+   so `getBlock` returned null and a fresh I/O block was created. On a flat 64K raw import
+   Ghidra's `BinaryLoader` creates exactly **one** block, `RAM 0000-ffff`, so
+   `getBlock($D000)` returns the whole image and `setVolatile(true)` marks the **entire
+   address space volatile — with no error and no warning**, and the symptom (no dead-store
+   elimination anywhere) looks like success. The pattern this phase used instead is
+   **split-first**: `Memory.split()` at `$0002`, `$D000` and `$E000`, then `setVolatile(true)`
+   on the carved `$0000-$0001` and `$D000-$DFFF` blocks only, with the `getBlock`-null
+   fallback retained for the `.prg` branch so one script serves both routes. Verified live
+   against Ghidra 12.1.3. Evidence: `evidence/FlatVolatile.java` (header comment § *The one
+   thing not to copy from the pivot*) and the rehearsal transcript in
+   `evidence/tools/instrument-provenance.txt` § 3.
+
+3. **`23-CONTEXT.md`'s `<specifics>` framed criterion 1's cracker/game separation as
+   unavailable, and the operator's corpus turned it into a measurement.** The note reads
+   *"Criterion 1's cracker/game separation is not available via provenance diffing on a single
+   image, since `c64-provenance-diff` is N-way"* — correct given its assumption of one image,
+   but that assumption did not survive planning. The operator supplied **two independently
+   cracked releases of one title**, which makes the N-way diff able to classify. The design
+   this phase committed keeps the unadjudicated third bucket (`U = W \ (C ∪ D)`, entering no
+   ratio) **alongside** the cracker hold-out rather than replacing it, and the hold-out
+   precedence contract makes the held-out figures the only criterion-1 rule inputs with the
+   with-cracker figures printed beside them and never gating. Evidence:
+   `evidence/corpus/corpus-intake.txt` (two releases, hashed) and `evidence/SCHEMA.md` §§ 4
+   and *Hold-out precedence contract*. Note that the separation was nonetheless never
+   exercised — 23-06 was not dispatched — so this correction records a design that is
+   available, not a result.
+
+4. **`SCHEMA.md` § 1 supersedes the scalar `corpus.file_sha256` / `corpus.capture_sha256`
+   frontmatter keys proposed in `23-RESEARCH.md` Pattern 2 and `23-VALIDATION.md`'s
+   verification map.** With two releases those scalar keys have no single correct value, and
+   adding a `corpus.file_sha256_secondary` beside them would reproduce the exact
+   canonical-image-centric model `recovery-schema.mjs` already exists in this codebase to
+   prevent. The corpus is a **list with exactly one element flagged canonical**; the
+   one-release case is the degenerate single-element list. `SCHEMA.md` says so itself and
+   directs the correction here. *Applied* to `23-RESEARCH.md` in this commit.
+
+5. **The fixture's 141-code / 138-data ground truth is not source-derivable, and this phase
+   is the first to check** (`evidence/fixture/fixture-baseline.txt` RC-1). `23-RESEARCH.md`
+   logs it as assumption A1 and states the 72% / 0-FP / 28%-FN claim "was reproduced exactly".
+   Re-deriving the partition byte by byte from `fixture.a` via ACME's own report gives
+   **145 code / 131 data / 3 assembler-pad** — never 141/138 under any padding treatment. All
+   four published figures are exactly reproducible under a four-byte reclassification
+   (`$0869-$086b`, `$08a6`), but that reclassification was **fitted** and is recorded as a
+   hypothesis. What is proven is the negative: A1 was an assumption and remains one, and the
+   published partition is more generous to dxa than the source is in exactly the place that
+   decides the "0 false positives" headline. *Applied* to `23-RESEARCH.md` in this commit.
+
+6. **dxa's "alpha software" self-description is in `INSTALL`, not the man page**
+   (`evidence/fixture/fixture-baseline.txt` RC-3). `grep -i alpha dxa.1` exits 1 with no
+   output; the statement is at `INSTALL:15`. The claim holds; the citation does not.
+   *Applied* to `23-RESEARCH.md` in this commit.
+
+7. **The pivot's published dxa command line uses `-a enabled`, not `-a dump`**
+   (`evidence/fixture/fixture-baseline.txt` RC-2). The pivot ran
+   `dxa -U -p all-nmos6502 -t detect-all -a enabled fixture.prg` and its `dxa.out` carries
+   address+text lines with no byte columns. `23-02-PLAN.md` calls the `-a dump` variant "the
+   pivot's own published command line"; `-a dump` is **this phase's**, required by
+   `SCHEMA.md` § 6 because the byte columns are what make counts *read* rather than inferred
+   from mnemonic lengths. dxa's classification is identical under both (179 code / 100 data
+   either way). Only the attribution was wrong; no number changes. *Not applied:*
+   `23-02-PLAN.md` is a committed plan file and is not this plan's to edit.
+
+8. **All eight `analyzer.rs` line numbers in the research inventory are correct**
+   (`evidence/criterion4-analyzer-audit.md` correction 1). `8`, `20`, `285`, `372`, `419`,
+   `445`, `546`, `581` verified against a structural grep. **No correction needed** —
+   recorded so a verifier can see the check was made rather than assumed.
+
+9. **`LabelType` declares fourteen variants, not eleven**
+   (`evidence/criterion4-analyzer-audit.md` correction 2). The research's "11 variants used"
+   is accurate as written — eleven are *produced* by `analyzer.rs` — but the enum at
+   `state/types.rs:361-378` carries fourteen. The three never emitted are `Predefined = 10`,
+   `UserDefined = 11` and `LocalUserDefined = 12`, all store-side kinds set by a human or a
+   platform symbol table. A store schema copied from the enum would inherit three values the
+   analysis pass has no opinion about. *Applied* to `23-RESEARCH.md` in this commit.
+
+10. **`BlockType` declares twelve variants, not seven**
+    (`evidence/criterion4-analyzer-audit.md` correction 3). Seven have an arm in
+    `analyzer.rs`; `state/types.rs:314-331` carries twelve. The five with no arm — `DataByte`,
+    `PetsciiText`, `ScreencodeText`, `ExternalFile`, `Undefined` — fall through to a bare
+    `else { pc += 1 }` and **record no label and no cross-reference**. r2000's analyzer is
+    therefore silent about text blocks and undefined regions, so `STORE-01`'s PETSCII and
+    screencode typing has no analyzer-side predecessor to inherit behaviour from. *Applied* to
+    `23-RESEARCH.md` in this commit.
+
+11. **`update_usage`'s per-`LabelType` count map is built and never read**
+    (`evidence/criterion4-analyzer-audit.md` correction 4). The research summarises the
+    function as "Ref counting + first-seen-type". Line 427 increments
+    `types.entry(priority)`; line 202 destructures the tuple as `(_types_map, refs,
+    first_type)` — the leading underscore is the compiler-silencing name for an unused
+    binding. Within `analyzer.rs` the counting is dead code. This matters because "ref
+    counting" implies a ranking mechanism a replacement would have to reproduce, and there is
+    none: selection is purely first-wins. *Applied* to `23-RESEARCH.md` in this commit.
+
+12. **`guess_scope_end`'s splitter branch can fall through**
+    (`evidence/criterion4-analyzer-audit.md` correction 5). On meeting a splitter the function
+    returns the *previous* line's last byte, but **only if that line has a non-zero byte
+    length** (lines 561-564). On a zero-length visual line the `if bytes > 0` guard fails, no
+    value is returned, and the scan continues past the splitter looking for an `RTS`/`RTI`.
+    The source carries an unresolved author comment at that exact spot. A reimplementation
+    treating the splitter as an unconditional terminator would not match. *Applied* to
+    `23-RESEARCH.md` in this commit.
+
+13. **`flow_analyze` ignores `block_types` entirely and cannot follow an indirect jump**
+    (`evidence/criterion4-analyzer-audit.md` correction 6). It reads `state.raw_data` directly
+    and never consults `state.block_types`, so it decodes straight into data blocks the rest
+    of the file is careful to respect; and its `JMP` arm is guarded by
+    `op.mode == AddressingMode::Absolute` (line 647), so `JMP ($xxxx)` terminates the span
+    without queueing anything. **`flow_analyze` structurally cannot follow the construct
+    `follow_indirect_jumps` exists to handle, and the two passes never combine.** *Applied* to
+    `23-RESEARCH.md` in this commit.
+
+14. **The research's structural grep missed one top-level item, and it is not an entry point**
+    (`evidence/criterion4-analyzer-audit.md` correction 7). `type UsageData` at line 13 — the
+    tuple alias `(BTreeMap<LabelType, usize>, Vec<Addr>, LabelType)`. Recorded rather than
+    added to the capability table, because a type alias is not a capability; its three fields
+    are dispositioned through E5 `update_usage`. **No count changes.**
+
+15. **`23-RESEARCH.md`'s PROOF-05 ordering check is unsatisfiable as written, and the
+    satisfiable form is scoped to `evidence/`.** The traceability row proposes
+    `git log --oneline --reverse -- <phase dir> | head -1` naming 23-01. The phase directory
+    already carried four commits before execution began — the CONTEXT, RESEARCH, VALIDATION and
+    PLAN documents — so that query names the context commit and can never name the rule commit,
+    whatever any plan does. The ordering assertion must be scoped to `evidence/`, which is
+    where measurement artifacts land and where nothing existed before the rule commit.
+    Evidence: `evidence/README.md` § *Ordering proof* → *Scope note*. *Applied* to
+    `23-RESEARCH.md` in this commit.
+
+## Reproducing this
+
+**Every evidence file this phase produced, by relative path, with what it proves.** Paths are
+relative to `.planning/phases/23-the-real-release-gate-go-degrade-no-go/`.
+
+| Path | What it proves |
+|---|---|
+| `evidence/DECISION-RULE.md` | That the verdict was derived and not judged — `R1`..`R9`, the inputs table, the never-a-gate declarations and the threshold / precision / hold-out contracts, all committed before any number existed |
+| `evidence/SCHEMA.md` | That no measuring plan could invent a line name, a window, a denominator or a dxa flag that flattered its own result |
+| `evidence/README.md` | The binding evidence conventions, the ordering proof, and the repo-integrity diff |
+| `evidence/corpus/corpus-intake.txt` | That two independently-cracked releases were identified by name and sha256 without either image entering the repository, and that the canonical choice was made by a rule stated before any measurement |
+| `evidence/corpus/.gitignore` | That no binary image form can enter the repository by accident |
+| `evidence/capture/RELEASES.json` | The two-release scratch registry, `danish` flagged canonical |
+| `evidence/capture/handoff-identification.txt` | How `$1BC2` was identified by disassembling the running machine, and the two voided runs that preceded the recorded ones |
+| `evidence/capture/capture-record-primary.md` | The canonical release's two runs, the verbatim `vice_memory_compare` output disproving equivalence, and ACCEPTED LIMITs 1 and 2 |
+| `evidence/capture/capture-record-secondary.md` | The secondary release's two runs, both voided, and the single disarm-and-resume record for the session |
+| `evidence/capture/CAPTURE-SUMMARY.txt` | `C0_CORPUS: partial` — rule `R1`'s only input — with the aggregation rule reproduced so a reader re-derives it |
+| `evidence/tools/instrument-provenance.txt` | The dxa fetch/pin/verify/build transcript, the Ghidra and Java versions, and the two headless Ghidra rehearsals |
+| `evidence/tools/TOOLS.txt` | The instrument and fixture-baseline outcome lines in `SCHEMA.md`'s declared single home |
+| `evidence/tools/dxa-0.1.5.tar.gz.sha256` | The pinned tarball hash `DXA-01` must vendor |
+| `evidence/tools/dxa` | The built binary the gate actually measured with, sha256 `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523` |
+| `evidence/tools/verify/*.bash` | Each task's own automated verify, kept as run |
+| `evidence/fixture/fixture.a`, `evidence/fixture/fixture.lbl` | The 279-byte fixture and its symbol file, rebuilt rather than quoted |
+| `evidence/fixture/fixture-baseline.mjs` | The classifier that produced the reproduced fixture figures |
+| `evidence/fixture/fixture-baseline.txt` | That the pivot's 141/138 partition is not source-derivable (RC-1), plus RC-2, RC-3 and the four schema-vs-plan divergences |
+| `evidence/dxa-listing-parse.mjs` | The `-a dump` listing parser that **refuses** rather than under-counting on an unseen line shape |
+| `evidence/FlatVolatile.java` | The split-first volatile pre-script, and why the pivot's `getBlock()`-first guard silently marks all 64K volatile |
+| `evidence/ExportAnalysis23.java` | The structural-fact / reference export script, rehearsed headless |
+| `evidence/criterion4-analyzer-audit.md` | All 26 `analyzer.rs` capabilities with exactly one disposition each, `C4_UNREPLACED_CAPABILITIES: 0`, three priced losses and seven research corrections |
+
+**Files that do not exist, and would have to be produced by a re-run:**
+`evidence/inventory/INVENTORY.txt` (23-05), `evidence/criterion1-provenance.txt` (23-06),
+`evidence/criterion1-dxa-classification.txt` and `-secondary.txt` (23-07),
+`evidence/criterion2-ghidra-dispatch.txt` (23-08),
+`evidence/criterion3-bank-divergence.txt` (23-09).
+
+**The corpus images are not in this repository.** They are identified by release name plus
+sha256 only (D-04), and their filesystem locations are deliberately absent from this document:
+`danish` = `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5`, `saeger` =
+`b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5`, both 174848 bytes.
+
+**The capture sha256s the runs were against: there are none.** `CAPTURE_SHA256` is
+`could-not-run` for both releases and `CAPTURE_SIZE` likewise, because the 64K image was never
+assembled. What exists instead are four VICE `.vsf` snapshots banked outside the checkout
+(`danish_r1_handoff`, `danish_r2_handoff`, `saeger_r1_handoff` and its sibling), each proven
+faithful on reload. Finding A above is the validated route from those snapshots to an exact
+65536-byte image with a stable sha256.
+
+**Re-running the verdict derivation** (the only measurement this document itself performed):
+
+```
+grep '^C0_CORPUS:' .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture/CAPTURE-SUMMARY.txt | tail -1
+grep '^C4_UNREPLACED_CAPABILITIES:' .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/criterion4-analyzer-audit.md | tail -1
+```
+
+Read the first value against `R1` in `evidence/DECISION-RULE.md`. `partial` is not `pass`,
+`R1` is first, `R1` fires, verdict `no-go`. That is the whole derivation.
+
+**Re-running the ordering proof:**
+
+```
+git log --oneline -1 -- .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/DECISION-RULE.md
+git log --oneline --reverse -- .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence | head -1
+git log --oneline 474c37c -- '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/criterion*' '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/inventory' '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture'
+```
+
+The first two must name the same commit; the third must return nothing.
+
+**Re-running the fixture baseline** (this is the one measurement a re-run can reproduce today,
+because it needs no corpus):
+
+```
+acme -f cbm -o fixture.prg -l fixture.lbl fixture.a
+dxa -g 0000 -p all-nmos6502 -d skip-scanning -t detect-internal -R <entrypoints> -B <datablocks> -a dump fixture.prg
+node evidence/fixture/fixture-baseline.mjs        # ground-truth re-derivation + classification
+```
+
+`-g 0000` is **mandatory** on a flat capture: dxa's default load-address detection reads the
+first two bytes as a little-endian load address, so a processor-port `$2F $37` re-bases the
+image to `* = $372f` and discards roughly 50K, warning only on **stderr**. The second
+invocation is identical except `-t detect-all`, and both data-byte counts are printed; neither
+is chosen after the fact (`evidence/SCHEMA.md` § 6).
+
+**Re-running Ghidra headless** (rehearsed in this phase on the fixture; never run on a
+release):
+
+```
+analyzeHeadless <proj> <name> -import <image> \
+  -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x0 \
+  -noanalysis -preScript FlatVolatile.java [<entrypoints-file>] -deleteProject
+analyzeHeadless <proj> <name> -process <name> -postScript ExportAnalysis23.java -deleteProject
+```
+
+Ghidra is identified by version `12.1.3 PUBLIC` build `2026-Aug-17` and by nothing else; its
+install location is an undeclared external input to this phase and is deliberately not
+recorded here.

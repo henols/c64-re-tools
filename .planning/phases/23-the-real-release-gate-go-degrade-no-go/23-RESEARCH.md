@@ -211,7 +211,19 @@ change the plan:
 1. **The fixture's 72% / 0-FP / 28%-FN claim was reproduced exactly** by
    rebuilding `fixture.a` with ACME and re-running dxa's own command line
    (100 of 138 true-data bytes typed as data = 72.46%; 179 code bytes; 279
-   total). This pins the operational definition the new numbers must sit beside:
+   total).
+   **[CORRECTED by 23-02 — see `evidence/fixture/fixture-baseline.txt` RC-1 and
+   `docs/phase23-real-release-gate-findings.md` correction 5.** The *arithmetic*
+   reproduces against the published 141/138 partition, but that partition is
+   **not source-derivable**: re-deriving it byte by byte from `fixture.a` via
+   ACME's own report gives 145 code / 131 data / 3 assembler-pad, never 141/138
+   under any padding treatment. `FIXTURE_REPRODUCED: no`. The source-derived
+   figures are `72.39 (97/134)` recovery, **3** false positives and
+   `27.61 (37/134)` false negatives, and those — not the published ones — are the
+   apples-to-apples side of D-11's comparison. The published partition is more
+   generous to dxa than the source is, in exactly the place that decides the
+   "0 false positives" headline.]**
+   This pins the operational definition the new numbers must sit beside:
    *positive class = data*, *denominator = true data bytes*, *false positive = a
    code byte typed as data*. Without this the "beside" comparison D-11 requires
    is not apples-to-apples.
@@ -344,9 +356,14 @@ Notes for the planner:
   sha256 above is corroborated only by a third party (FreeBSD ports). That is
   enough for a throwaway probe build, and `DXA-01` in Phase 24 must vendor
   **this same hash** — record it in the verdict document.
-- dxa's own man page describes it as *"alpha software only … new and not well
-  tested"*. That is a property of the tool under test, not a supply-chain
-  signal, but it belongs in the findings document beside the numbers.
+- dxa describes itself as *"still considered \"alpha\" software and there may be
+  bugs, which is why it is not part of the official xa distribution yet"*. That is
+  a property of the tool under test, not a supply-chain signal, but it belongs in
+  the findings document beside the numbers.
+  **[CORRECTED by 23-02 — see `evidence/fixture/fixture-baseline.txt` RC-3: the
+  self-description is at `INSTALL:15`, NOT in the man page `dxa.1`.
+  `grep -i alpha dxa.1` exits 1 with no output. The claim holds; the citation
+  did not.]**
   `[CITED: https://www.floodgap.com/retrotech/xa/]`
 
 ---
@@ -535,10 +552,18 @@ the tool pins, because the numbers are meaningless without them:
 ```yaml
 verdict: go|degrade|no-go
 verdict_rule_applied: R<N>
+# CORRECTED by evidence/SCHEMA.md section 1, which supersedes the scalar shape
+# proposed here: with two releases the scalar keys have no single correct value,
+# and a `file_sha256_secondary` beside them would reproduce the very
+# canonical-image-centric model recovery-schema.mjs exists to prevent. The corpus
+# is a LIST with exactly one element flagged canonical; the one-release case is
+# the degenerate single-element list.
 corpus:
-  release: "<operator-supplied name/id>"
-  file_sha256: "<sha256 of the supplied .d64/.prg>"
-  capture_sha256: "<sha256 of the flat 64K image>"
+  releases:
+    - release: "<operator-supplied name/id>"
+      file_sha256: "<sha256 of the supplied .d64/.prg>"
+      capture_sha256: "<sha256 of the flat 64K image>"
+      canonical: true
 tools:
   dxa: "0.1.5 (sha256 8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799)"
   ghidra: "12.1.3 PUBLIC build 2026-Aug-17"
@@ -710,7 +735,11 @@ $ dxa -U -p all-nmos6502 -t detect-all -a dump fixture.prg
   → 179 + 100 = 279  ✓
 ```
 
-Against the fixture's stated ground truth of **141 code / 138 data**:
+Against the fixture's stated ground truth of **141 code / 138 data**
+**[CORRECTED — that partition is an assumption, not a derivation: `fixture.a`
+yields 145/131/3-pad. See `evidence/fixture/fixture-baseline.txt` RC-1. The table
+below is the published arithmetic, retained because it is what the pivot claimed;
+the source-derived figures are 72.39 (97/134) / 3 FP / 27.61 (37/134).]**:
 
 | Quantity | Value | Definition |
 |----------|-------|------------|
@@ -1252,21 +1281,30 @@ so the substantive body is ~700 lines. Reading is permitted; running r2000 is no
 | `analyze(state) -> AnalysisResult` | 20 | The whole pass: walks blocks, emits `labels: BTreeMap<Addr, Vec<Label>>` and `cross_refs: BTreeMap<Addr, Vec<Addr>>` | Ghidra `ReferenceManager` for xrefs; label naming is the annotation store's job (Phase 25) |
 | `analyze_instruction(...)` | 285 | Per-addressing-mode operand → label-type attribution | Ghidra reference *kind* (`READ`/`WRITE`/`READ_WRITE`/`DATA`) |
 | `promote_return_labels(...)` | 372 | Promotes `Branch`/`Jump`/`Subroutine` to `Return` when the target's first byte is `RTS ($60)` or `RTI ($40)` — the IDA `locret_` convention | **No Ghidra equivalent surfaced by the pivot.** Candidate "lost" entry; cost is cosmetic label quality |
-| `update_usage(...)` | 419 | Ref counting + first-seen-type, feeding first-wins label selection | Store-side concern |
+| `update_usage(...)` | 419 | Ref counting + first-seen-type, feeding first-wins label selection. **[CORRECTED — the per-`LabelType` count map is built at line 427 and NEVER READ: `analyze` destructures it as `_types_map` at line 202. Within `analyzer.rs` the counting is dead code; selection is purely first-wins, with no ranking mechanism for a replacement to reproduce. See criterion-4 audit correction 4.]** | Store-side concern |
 | `follow_indirect_jumps(...)` | 445 | On `JMP ($xxxx)` (`0x6C`), if `$xxxx` is an `Address`-typed block inside the binary, read the 16-bit pointer and register a jump target label + xref | **Directly overlaps criterion 2.** Ghidra's `COMPUTED_JUMP` covers the constant case; the r2000 version needs the block already typed `Address`, so it is not obviously stronger — this comparison is criterion 4's most load-bearing row |
-| `guess_scope_end(state, start)` | 546 | Scope end = first `RTS`/`RTI` at or after `start`, or the next virtual splitter | Ghidra `Function.getBody()` |
-| `flow_analyze(state, start)` | 581 | Worklist reachability from an entry, returning covered `Range<usize>` spans | Ghidra `analyzeAll()` + `Disassemble Entry Points` |
+| `guess_scope_end(state, start)` | 546 | Scope end = first `RTS`/`RTI` at or after `start`, or the next virtual splitter. **[CORRECTED — the splitter branch is CONDITIONAL: it returns the previous line's last byte only `if bytes > 0` (lines 561-564). On a zero-length visual line the guard fails, nothing is returned, and the scan continues PAST the splitter looking for an `RTS`/`RTI`. A reimplementation treating the splitter as an unconditional terminator would not match. See criterion-4 audit correction 5.]** | Ghidra `Function.getBody()` |
+| `flow_analyze(state, start)` | 581 | Worklist reachability from an entry, returning covered `Range<usize>` spans. **[CORRECTED — two structural limits the one-line summary hides: it reads `state.raw_data` and NEVER consults `state.block_types`, so it decodes straight into data blocks; and its `JMP` arm is guarded by `op.mode == AddressingMode::Absolute` (line 647), so `JMP ($xxxx)` terminates the span without queueing anything. It structurally cannot follow the construct `follow_indirect_jumps` exists to handle, and the two passes never combine. See criterion-4 audit correction 6.]** | Ghidra `analyzeAll()` + `Disassemble Entry Points` |
 | `AnalysisResult` | 8 | `{ labels, cross_refs }` | The annotation store's schema (`STORE-01`) |
 
 Supporting vocabularies the audit must account for, because each is a concrete
 fact r2000 records and the replacement must either record or drop:
 
-- **`LabelType` (11 variants used):** `AbsoluteAddress`, `Branch`, `ExternalJump`,
+- **`LabelType` (11 variants used; the enum declares **14** — `Predefined = 10`,
+  `UserDefined = 11` and `LocalUserDefined = 12` at `state/types.rs:361-378` are
+  store-side kinds `analyzer.rs` never emits, so a store schema copied from the
+  enum inherits three values the analysis pass has no opinion about; see
+  `evidence/criterion4-analyzer-audit.md` correction 2):** `AbsoluteAddress`, `Branch`, `ExternalJump`,
   `Field`, `Jump`, `Pointer`, `Return`, `Subroutine`, `ZeroPageAbsoluteAddress`,
   `ZeroPageField`, `ZeroPagePointer`. Note the ZP-specific triple and the
   `Field` vs `Pointer` distinction — these drive the typed label prefixes
   (`zpp_`/`zpa_`/`f_`) that `STORE-05` names as "worth stealing".
-- **`BlockType` (7 variants used):** `Code`, `Address`, `DataWord`,
+- **`BlockType` (7 variants used; the enum declares **12** at
+  `state/types.rs:314-331` — `DataByte`, `PetsciiText`, `ScreencodeText`,
+  `ExternalFile` and `Undefined` have no arm and fall through to a bare
+  `else { pc += 1 }`, recording **no label and no cross-reference**, so
+  `STORE-01`'s PETSCII and screencode typing has no analyzer-side predecessor;
+  see `evidence/criterion4-analyzer-audit.md` correction 3):** `Code`, `Address`, `DataWord`,
   `LoHiAddress`, `HiLoAddress`, `LoHiWord`, `HiLoWord`. The split-pointer table
   handling (`LoHiAddress` with a virtual-splitter-aware pair walk) is the
   concrete r2000 capability Ghidra answers with the `CONCAT11` idiom in the
@@ -1378,11 +1416,11 @@ evidence-integrity check, exactly as Phase 9's `09-VALIDATION.md` did it.
 
 | Req ID | Behaviour | Check type | Automated command | Exists? |
 |--------|-----------|------------|-------------------|---------|
-| PROOF-05 (ordering) | 23-01's commit precedes every measurement commit | evidence | `git log --oneline --reverse -- <phase dir> \| head -1` names 23-01 | ✅ git |
+| PROOF-05 (ordering) | 23-01's commit precedes every measurement commit | evidence | **[CORRECTED — the phase-directory form is unsatisfiable by construction: four CONTEXT/RESEARCH/VALIDATION/PLAN commits predate execution, so that query always names the context commit. Scope to `evidence/`, per `evidence/README.md` § Ordering proof → Scope note.]** `git log --oneline --reverse -- <phase dir>/evidence \| head -1` names the rule commit | ✅ git |
 | PROOF-05 (verdict) | Verdict is machine-readable | evidence | `grep -E '^verdict: (go\|degrade\|no-go)$' docs/phase23-*-findings.md` | ✅ grep |
 | PROOF-05 (rule cited) | The fired rule is named and reproduced | evidence | `grep -E '^verdict_rule_applied: R[0-9]+$'` and the rule text present in the body | ✅ grep |
 | PROOF-01 | Numbers present, beside the fixture's | evidence | outcome lines `C1_DATA_RECOVERY_PCT:`, `C1_FALSE_POSITIVES:`, `C1_FALSE_NEGATIVES:`, `C1_ADJUDICATED_FRACTION:`, `C1_WINDOW:` all present in `evidence/criterion1-*.txt` | ❌ Wave 0 (schema fixed in 23-01) |
-| PROOF-01 (corpus identity) | Binary named and hashed | evidence | `corpus.file_sha256` and `corpus.capture_sha256` in frontmatter, non-empty | ❌ Wave 0 |
+| PROOF-01 (corpus identity) | Binary named and hashed | evidence | **[CORRECTED per `evidence/SCHEMA.md` § 1 — scalar keys superseded]** `corpus.releases[]` in frontmatter, every element carrying `release` / `file_sha256` / `capture_sha256` / `canonical`, and exactly one element `canonical: true` | ❌ Wave 0 |
 | PROOF-02 | Computed dispatch result recorded either way | evidence | `C2_COMPUTED_DISPATCH:` ∈ {`resolved`,`unresolved`,`not-exercised`}; if `resolved`, a target address is shown; otherwise a transcript path is cited | ❌ Wave 0 |
 | PROOF-03 | Bank divergence established or absence recorded | evidence | `C3_BANK_DIVERGENCE:` ∈ {`found`,`not-exercised`}; if `found`, address + two `$01` values + two `memmap.json` resolutions shown | ❌ Wave 0 |
 | PROOF-04 | Every audited capability has a disposition | evidence | every row in `evidence/criterion4-*.md` matches `replaced-by:\|lost-accepted:\|lost-blocking:` | ❌ Wave 0 |
@@ -1473,7 +1511,7 @@ is inert here; these are the ones that bite.
 
 | # | Claim | Section | Risk if wrong |
 |---|-------|---------|---------------|
-| A1 | The fixture's stated ground truth (141 code / 138 data) is correct; the 72%/28% arithmetic was reproduced against it but the partition itself was taken from the pivot note rather than re-derived from `fixture.a` byte by byte | Criterion 1 | Low. The reproduction is self-consistent to the published figures; a re-derivation from `fixture.a` + `fixture.lbl` would close it in one plan step and is worth doing while rebuilding the fixture anyway |
+| A1 | The fixture's stated ground truth (141 code / 138 data) is correct; the 72%/28% arithmetic was reproduced against it but the partition itself was taken from the pivot note rather than re-derived from `fixture.a` byte by byte | Criterion 1 | **CLOSED AND REFUTED by 23-02.** The re-derivation was done: `fixture.a` yields 145 code / 131 data / 3 assembler-pad, never 141/138. `FIXTURE_REPRODUCED: no`. The published figures are reproducible only under a four-byte reclassification that was **fitted**, so it is a hypothesis, not a derivation. The source-derived baseline is `72.39 (97/134)` / **3** FP / `27.61 (37/134)`, and the published partition is more generous to dxa than the source is in exactly the place deciding the "0 false positives" headline. See `evidence/fixture/fixture-baseline.txt` RC-1 |
 | A2 | The `-a dump` line grammar (`^AAAA (hh )+\s+text`) covers every line shape dxa 0.1.5 emits | Pitfall 4 / Code Examples | Medium. Verified against the fixture's output including `.byt`, `.word`, label and mid-instruction-label lines, but a real release may produce shapes the fixture did not. **The byte-total assertion is the guard** — it converts an unseen shape into a refusal rather than a silent undercount |
 | A3 | The recommended `C` / `D` / `U` three-bucket adjudication is the right measurement design | Criterion 1 | Medium. It is a proposal, not a finding. 23-01 must adopt or replace it *before* measuring; whichever it picks, the property that matters is that it was fixed first |
 | A4 | Temporal separation at the loader handoff is a sound proxy for cracker-versus-game code | Criterion 1 | Medium. A cracktro that stays resident, or a trainer patched into the game's own code, defeats it. Mitigated by asking the operator for a second release of the title (option 1), which makes the separation a measurement |
