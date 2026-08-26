@@ -458,7 +458,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-1 pending (1 file in `.planning/todos/pending/` + 0 UAT-gap rows = 1) — see
+2 pending (2 files in `.planning/todos/pending/` + 0 UAT-gap rows = 2) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -572,10 +572,23 @@ Phase 18 deliberately: reaping is a change to broker lifetime semantics, not
 part of Phase 18's goal. Filing it re-armed
 `docs-deferred-ledger.test.ts` direction A, which had been inert for as long as
 the tree was empty — hence the matching row added to `## Deferred Items` below
-in the same change. This section's opening figure above (`1 pending`) is
+in the same change. This section's opening figure above (`2 pending`) is
 derived from, and must always equal, `## Deferred Items`'s table row count
 below — a discipline that has gone stale twice before and is not itself
 guarded.
+
+**A second todo was filed 2026-08-26**, also outside phase work, during
+`/gsd-discuss-phase 23`:
+`2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md`.
+`.planning/research/questions.md` frames Phase 23's measurements as
+"answerable against the existing `c64-provenance-diff` fixtures — real
+releases, already committed", which is false for this repo: that skill reads a
+*consuming* project's `recovery/` tree, and the only binaries here are three
+synthetic probe fixtures. ROADMAP.md's Phase 23 Notes already say the opposite
+and correct thing, so the repo contradicts itself with the wrong version in the
+file `gsd-phase-researcher` reads first. Deferred out of the discussion rather
+than fixed inline because it is a documentation correction, not a phase-context
+decision — but it should land before `/gsd-plan-phase 23` runs.
 
 ### Quick Tasks Completed
 
@@ -839,6 +852,7 @@ by `.planning/quick/260823-kf6`.
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
 | broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
+| planning | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md | major | Pending |
 
 *The ledger was empty at the v0.4.0 close; the one row above was filed
 2026-08-24, after that close, and is the first pending todo since Phase 17
