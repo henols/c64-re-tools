@@ -1484,7 +1484,12 @@ is inert here; these are the ones that bite.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All six were closed during phase-23 planning. Each carries a `RESOLVED:` pointer naming the
+plan and the construct that closed it. Nothing here is still open; a reader looking for a
+live unknown should read the measuring plans' `## ACCEPTED LIMIT` sections instead.
+
 
 1. **Can the operator supply two independently-cracked releases of one title
    rather than one image?**
@@ -1496,6 +1501,12 @@ is inert here; these are the ones that bite.
      answer changes the criterion-1 method from an argument into a measurement.
      If the answer is no, temporal separation (option 2) is the default and 23-01
      says so.
+   - **RESOLVED:** asked and answered yes during planning — the operator has two
+     independently-cracked releases. `23-01`'s `<assumption_delta_decision>`
+     promotes the corpus noun from a scalar image to a `corpus.releases[]` list
+     with exactly one `canonical: true`, and `23-03` Task 1 is the operator
+     intake that places both images and names the canonical one. `23-06` does the
+     two-release provenance classification the answer unlocked.
 
 2. **What is the measurement window, concretely?**
    - What we know: it cannot be all 65536 bytes; it must be stated; runtime
@@ -1506,6 +1517,11 @@ is inert here; these are the ones that bite.
    - Recommendation: express it as an explicit list of `$xxxx-$yyyy` ranges
      committed in 23-01's inventory schema, derived from the capture, with the
      derivation rule stated. Never as a percentage of the image.
+   - **RESOLVED:** as recommended. `23-01` Task 2 writes the *window derivation
+     rule* into `evidence/SCHEMA.md` — `W` is the union of loader-written and
+     observed-executing ranges minus `$0000-$01FF`, `$D000-$DFFF` and any range
+     neither written nor executed — committed as an explicit `$xxxx-$yyyy` range
+     list on `INV_WINDOW`, before dxa is run, and never as a percentage.
 
 3. **Does `-t detect-all` or `-t detect-internal` produce the honest number on a
    flat image?**
@@ -1514,12 +1530,21 @@ is inert here; these are the ones that bite.
    - What's unclear: how they diverge on real code with real tables.
    - Recommendation: run both, print both, and let the rule key on whichever
      23-01 named as primary. Two numbers cost one extra dxa invocation.
+   - **RESOLVED:** as recommended. `23-01`'s dxa flag set fixes both invocations
+     before any result is seen: `-t detect-internal` is declared primary and is
+     what the rule inputs are computed from, and a second identical run with
+     `-t detect-all` prints `C1_DETECT_ALL_DATA_BYTES` beside the primary's
+     `C1_DETECT_INTERNAL_DATA_BYTES`. `23-07` runs both.
 
 4. **Is `C ∩ D ≠ ∅` an error or a finding?**
    - What we know: self-modifying code and jump tables legitimately produce
      bytes that are both executed and DMA-fetched.
    - Recommendation: treat as a finding, report by count, exclude from both
      ratios, and say so in 23-01.
+   - **RESOLVED:** as recommended. `23-01` declares `C1_CODE_DATA_OVERLAP` a
+     **finding** in `evidence/SCHEMA.md`'s criterion-1 definitions and lists it in
+     `evidence/DECISION-RULE.md`'s *never-a-gate* block with its own reason, so it
+     is reported by count and enters neither ratio and no rule.
 
 5. **Should the `analyzer.rs` audit extend to `exporter/` and `state/`?**
    - What we know: criterion 4 names `analyzer.rs` specifically; the pivot's
@@ -1527,12 +1552,21 @@ is inert here; these are the ones that bite.
    - Recommendation: keep the audit scoped to `analyzer.rs`, and record any
      capability found to live elsewhere as a scope observation for Phase 25.
      Widening the audit here would grow the gate.
+   - **RESOLVED:** as recommended. `23-01`'s audit disposition vocabulary scopes
+     the audit to `analyzer.rs` only, and `23-04` carries the matching must-have —
+     a capability found in `exporter/` or `state/` is recorded as a scope
+     observation for Phase 25 and is not folded into `C4_UNREPLACED_CAPABILITIES`.
 
 6. **Does an undecodable illegal opcode poison a whole Ghidra function?**
    - Deliberately unmapped (ROADMAP Notes). Real cracked code will exercise it
      incidentally. **Record it if observed; do not act on it.** The deliberate
      answer is `OPC-03` in Phase 24, and an observation here raises `OPC-01`'s
      priority there. Adds no scope.
+   - **RESOLVED:** as a record-only observation. `23-08` Task 3 writes a
+     `## Carried forward, not scored` section into
+     `evidence/criterion2-ghidra-dispatch.txt`, either recording a poisoning
+     observation with its address and effect or stating explicitly that none was
+     seen. It gates nothing and appears in no rule input.
 
 ---
 
