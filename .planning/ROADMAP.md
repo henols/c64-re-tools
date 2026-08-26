@@ -28,12 +28,14 @@ the pivot exploration, each of which fails **silently** when broken.
   acquire guard, PID/identity-verified kill, a persisted identity/lease file, a
   fragile no-retry liveness probe distinct from the resilient query path —
   rather than re-deriving lighter versions of each.
+
 - **`.vsf` is not an established bootstrap input.** No shipped requirement
   covers it as one; its recorded home is the backlog item
   [`todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md`](todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md),
   which records why it was deferred. Point at that item, never at a numbered
   phase — the machine-type field only reads correctly by coincidence, matching
   none of the literal `System` arms and falling through to a default.
+
 - **Ghidra deletes hardware writes as dead stores unless the I/O ranges are
   marked volatile — silently, with no warning.** *(Added at the v0.6.0 open,
   2026-08-25.)* Demonstrated on the committed `bank.a` fixture: under default
@@ -45,6 +47,7 @@ the pivot exploration, each of which fails **silently** when broken.
   makes the whole run fall back to non-volatile. Applied to a raster loop this
   deletes the entire visible effect of the program and reports success. See
   [`notes/ghidra-volatile-io-and-banking.md`](notes/ghidra-volatile-io-and-banking.md).
+
 - **Ghidra's structural facts live in the decompiler layer, never the listing's
   data types.** *(Added at the v0.6.0 open, 2026-08-25.)*
   `DataTypeManager.getAllComposites()` and `getDefinedData()` — the obvious
@@ -52,6 +55,7 @@ the pivot exploration, each of which fails **silently** when broken.
   goes through `DecompInterface`. Recorded as a standing constraint because it
   is the single most expensive mistake available in this design and its symptom
   is an empty result, not an error.
+
 - **A `memmap.json` lookup is bank-parameterised and narrowest-range-wins, never
   flat and never first-match.** *(Added at the v0.6.0 open, 2026-08-25.)*
   `memmap.json` has a flat address model; the machine does not. Resolve `$01`
@@ -65,6 +69,7 @@ the pivot exploration, each of which fails **silently** when broken.
   trusted is what `PROOF-03` establishes; the discipline above stands
   regardless of that answer. See
   [`notes/auto-annotation-from-ghidra-xrefs.md`](notes/auto-annotation-from-ghidra-xrefs.md).
+
 - **dxa is the discovery engine and nothing more.** *(Added at the v0.6.0 open,
   2026-08-25.)* Checked, not assumed: `grep -in bank` over all 3,417 lines
   returns zero, and its entire C64-specific knowledge is eight lines testing
@@ -255,7 +260,7 @@ before a line of engine or store code exists.
   4. What the dropped `analyzer.rs` work did that the dxa+Ghidra pair does not is a named list of concrete capabilities, each either matched to a replacement or accepted as lost with what it costs — derived from the real thing, not inferred from the fixture.
   5. A machine-readable verdict — `go` / `degrade` / `no-go` — is recorded against decision rules **committed before the measurements were run**, and Phase 24's planner reads it as a precondition. A `degrade` verdict names which requirements narrow and how; a `no-go` names what the milestone becomes instead. Phase 9's precedent is the bar: the rule fired, `degrade` was honoured rather than overridden, and the milestone shipped smaller and correct.
 
-**Plans**: 1/11 plans executed
+**Plans**: 2/11 plans executed
 
 Plans:
 **Wave 1**
@@ -264,7 +269,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 23-02-PLAN.md — Provision dxa 0.1.5 pinned by sha256, Ghidra 12.1.3 and the probe scripts, proven end-to-end on the 279-byte fixture (the tracer)
+- [x] 23-02-PLAN.md — Provision dxa 0.1.5 pinned by sha256, Ghidra 12.1.3 and the probe scripts, proven end-to-end on the 279-byte fixture (the tracer)
 - [ ] 23-03-PLAN.md — Corpus intake and depack-by-running flat 64K captures for both releases, with capture equivalence proven
 - [ ] 23-04-PLAN.md — The analyzer.rs capability audit, read offline, every capability given one of three dispositions
 
@@ -466,7 +471,7 @@ in a milestone archive.
 | 20. Decomposition to Closure | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 22. Equivalence and Modifiability | v0.5.0 | 0/0 | Cut | 2026-08-25 |
-| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | 1/11 | In Progress | - |
+| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | 2/11 | In Progress|  |
 | 24. The Two Engines | v0.6.0 | — | Not started | - |
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Not started | - |
 | 26. Automatic Annotation | v0.6.0 | — | Not started | - |

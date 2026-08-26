@@ -5,16 +5,16 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-08-26T10:12:23.130Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-08-26T11:01:35.895Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 23 execution started
-state_head: edc527b3ede6b7afd9d3808a8c690b18b52913d8
+state_head: 822096c077bf99c692a84ff045cf3f07ba1779c1
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -81,9 +81,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plan 1 of 11 done
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plan 2 of 11 done
 Last activity: 2026-08-26 — Phase 23 execution started
 
 ## Performance Metrics
@@ -214,6 +214,7 @@ Last activity: 2026-08-26 — Phase 23 execution started
 | Phase 19 P20 | 29 min | 3 tasks | 4 files |
 | Phase 19 P19 | 20 min | 2 tasks | 2 files |
 | Phase 23 P01 | 9 min | 3 tasks | 4 files |
+| Phase 23 P02 | 34 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -466,6 +467,8 @@ Recent decisions affecting current work:
 - [Phase 23]: Phase 23 gate pre-committed sight-unseen: R1..R9 first-match-wins with thresholds 10.00/50.00/0/0 under an exact-at-threshold contract, and 68 outcome-line names frozen before any measurement exists — Operator answered `proceed` at the 23-01 Task 1 blocking-human gate. git log is the only proof PROOF-05 has, and it is one-way: once any measurement commit lands the rules can never again be shown to predate it
 - [Phase 23]: The corpus is modelled as corpus.releases[] with exactly one canonical: true, superseding the scalar corpus.file_sha256 / corpus.capture_sha256 phrasing in 23-RESEARCH.md Pattern 2 and 23-VALIDATION.md — Two independently-cracked releases are available, so the scalar keys have no single correct value; bolting a _secondary key alongside would reproduce the canonical-image-centric model recovery-schema.mjs exists to prevent. The one-release case is the degenerate single-element list
 - [Phase 23]: PROOF-05 ordering is asserted over evidence/ only, never over the phase directory — The phase directory already carries the CONTEXT, RESEARCH, VALIDATION and PLAN commits made before execution began, so a primacy check scoped to it can only ever name the context commit and is unsatisfiable by construction
+- [Phase 23]: The 279-byte fixture's published 141-code / 138-data ground truth is NOT source-derivable: re-deriving it byte by byte from acme's own report gives 145 code / 131 data / 3 assembler-pad, so FIXTURE_REPRODUCED is `no` and the baseline is the source-derived 72.39% recovery / 3 false positives / 27.61% false negatives — The four-byte reclassification that reproduces all four published figures exactly ($0869-$086b, the second `jsr print` dxa typed as data, and $08a6, the self-modified operand cell) was FITTED and is recorded as a hypothesis, not as the baseline. The direction of the divergence matters: the pivot's ground truth counts three bytes dxa got wrong as data, which is exactly what produces its headline 0-false-positive claim, so D-11's side-by-side against the corpus's inventory-derived numbers is not apples-to-apples. 23-10 needs an operator ruling on which figures D-11 prints.
+- [Phase 23]: Where 23-02-PLAN.md and the frozen SCHEMA.md disagree on an outcome-line value domain, SCHEMA.md wins and the plan's own verify is recorded failing rather than repaired — Four divergences resolved as ACCEPTED LIMITs in evidence/fixture/fixture-baseline.txt: DXA_TARBALL_SHA256_VERIFIED reads `yes` not `pass`; FIXTURE_REPRODUCED reads `no` not `fail`; both percentage lines carry the full `<decimal> (<num>/<den>)` shape; and evidence/tools/TOOLS.txt is written as SCHEMA.md's declared outcome-line home alongside the plan-named transcripts. Both the failing as-planned check and the SCHEMA-domain-substituted one are committed as runnable files under evidence/tools/verify/.
 
 ### Pending Todos
 
@@ -981,38 +984,39 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T10:11:29.437Z
-Stopped at: Completed 23-01-PLAN.md
-  Plan **23-01** pre-committed the gate before any measurement exists. Three
-  documents landed under `.planning/phases/23-…/evidence/`: `DECISION-RULE.md`
-  (a 7-input table and rules `R1`..`R9`, first match wins, `R9` the only `go`,
-  with the D-09 pre-mapped degrade narrowing on `R6`/`R7`, four never-a-gate
-  declarations, and the threshold-boundary / precision / hold-out contracts),
-  `SCHEMA.md` (68 outcome-line names with value domains and owning files, the
-  `corpus.releases[]` list schema, the criterion-1 four-set measurement model,
-  the window derivation rule, the dxa flag set, the inventory schema and the
-  three-disposition audit vocabulary), and `README.md` (the ten binding evidence
-  conventions plus the banked `## Ordering proof`). The operator answered
-  **`proceed`** at the Task 1 `blocking-human` gate, fixing the thresholds
-  (10.00 / 50.00 / 0 / 0), the criterion-1 definitions and the dxa flag set
-  sight-unseen. PROOF-05's ordering is now banked as two independent git facts:
-  the first commit anywhere under `evidence/` **is** the rule commit `474c37c`,
-  and no `criterion*` / `inventory` / `capture` path exists anywhere in history
-  at that moment. Both files are **frozen** — a later ambiguity is recorded as
-  an `## ACCEPTED LIMIT` in the measuring plan's own evidence file and overridden
-  explicitly in the findings document; the rule text does not move. Wave 2
-  (23-02 provisioning, 23-03 corpus intake, 23-04 the `analyzer.rs` audit) is
-  unblocked. No measurement has been taken and no number from the corpus exists.
-Previously stopped at: **v0.6.0 roadmap created** 2026-08-25. 32/32 requirements
-  (PROOF-01..05, DXA-01..03, GHID-01..05, OPC-01..03, STORE-01..06, CUT-01..03,
-  AUTO-01..07) mapped to four phases (**23-26**) in `.planning/ROADMAP.md`, each
-  with Goal / Depends-on / Requirements / Success Criteria plus per-phase notes,
-  and a "Sequencing Rationale (v0.6.0)" section justifying the four-phase shape,
-  the gate-as-a-phase call, and `OPC-*` staying inside Phase 24.
-  `.planning/REQUIREMENTS.md`'s Traceability table and Coverage block are filled
-  in (32 mapped, 0 unmapped, verified mechanically in both directions). Four new
-  Standing Constraints were added to ROADMAP.md, all silent-failure hazards from
-  the pivot exploration.
+Last session: 2026-08-26T11:01:26.696Z
+Stopped at: Completed 23-02-PLAN.md
+  Plan **23-02** provisioned the three instruments and ran the phase's tracer:
+  one thin path through every layer — fetch, sha256 verify, build, assemble,
+  run dxa, parse the listing, count bytes, run Ghidra headless, carve volatile
+  blocks, export references — against the 279-byte fixture whose answer is
+  published. dxa 0.1.5 is pinned (tarball `8e40ed77…826799` verified with
+  `sha256sum -c` **before** `tar xzf`; binary `0e2bf1a5…c8523`) and vendored
+  into `evidence/tools/dxa`, so `DXA-01` can later vendor the same build the
+  gate measured. Three probe scripts landed and all three ran for real:
+  `dxa-listing-parse.mjs` (the single `-a dump` parser, its byte-total refusal
+  demonstrated firing on a truncated listing), `FlatVolatile.java` (four blocks
+  after the carve, exactly two volatile, and the `.prg` branch proven from the
+  same file), and `ExportAnalysis23.java` (the 400-reference cap gone, the
+  classification count self-asserted, fired both ways).
+  **The finding:** the fixture's published 141-code / 138-data ground truth is
+  NOT derivable from `fixture.a`. Source gives 145 / 131 / 3-pad, so
+  `FIXTURE_REPRODUCED: no` and the baseline is the source-derived 72.39% /
+  3-FP / 27.61%. A fitted four-byte reclassification reproduces all four
+  published figures exactly, and its direction is generous to dxa in precisely
+  the place that produces the headline 0-false-positive claim — so **D-11's
+  side-by-side is not apples-to-apples**, and 23-10 needs an operator ruling on
+  which figures it prints. No corpus byte has been measured; 23-03 is still
+  paused at its operator checkpoint.
+Previously stopped at: **Completed 23-01-PLAN.md** — the gate pre-committed
+  before any measurement existed: `DECISION-RULE.md` (`R1`..`R9`, first match
+  wins, `R9` the only `go`), `SCHEMA.md` (68 outcome-line names with value
+  domains, frozen) and `README.md` (the ten binding evidence conventions plus
+  the banked `## Ordering proof`). The operator answered **`proceed`** at the
+  Task 1 `blocking-human` gate. Both files are frozen — a later ambiguity is
+  recorded as an `## ACCEPTED LIMIT` in the measuring plan's own evidence file,
+  which is exactly what 23-02 then had to do four times.
+
 Before that: v0.5.0 closed and archived 2026-08-25 — Phase 19
   complete, Phases 20-22 cut by the dxa+Ghidra pivot, milestone v0.6.0 opened
   and its 32 requirements defined.
