@@ -117,3 +117,45 @@ touched only `.planning/` and `docs/` — no change it made can reach a `vice-pr
 **Candidate fix for whoever owns it:** have the test pin the resolved backend for its own
 subprocess (or skip under a detected live broker of the other backend) rather than inheriting
 whatever the host's broker happens to own.
+
+---
+
+## Orchestrator regression-gate reading — the "flake set" was mostly one live broker
+
+**Recorded by the execute-phase orchestrator, 2026-08-26, after 23-10 and before 23-11.**
+
+Items 2, 3 and 4 above characterise a *load-sensitive flake set* of four tests whose
+identity varies run to run (`159`, `916`, `2408`, `2410`), with 2592/2638 passing every
+run. That characterisation was formed on a host where a VICE broker was deliberately kept
+live to drive 23-03's captures. **With the broker stopped, one full `npm test` run is
+completely green:**
+
+```
+# tests 2638   # pass 2593   # fail 0   # skipped 40   # todo 5
+# duration_ms 111329          exit code 0
+```
+
+**`2408` is not a flake at all — it is deterministic and broker-caused.** Same commit,
+same host, single-test runs: unit active → `# fail 1`; unit stopped → `# pass 1`. The test
+forces `VICE_BACKEND=stock` while a live broker owns the emulator as `fork`, so the proxy's
+backend-mismatch guard fires correctly and its own advice text trips the `doesNotMatch`
+assertion at `vice-proxy.test.ts:6421`. Filed as
+`.planning/todos/pending/2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host.md`.
+
+**What this does and does not settle**, on the timing evidence:
+
+| test | observed during | broker live? | verdict |
+|------|-----------------|--------------|---------|
+| `2408` | 23-03, 23-10 | yes | **broker-caused, deterministic — proven both directions** |
+| `916` | 23-04 | **no** (broker dead since 2026-08-20) | genuinely load-sensitive; item 2 stands |
+| `159` | 23-03/23-10 | yes | unresolved — never observed without a live broker |
+| `2410` | 23-03/23-10 | yes | unresolved — never observed without a live broker |
+
+One green run does not *prove* `159` and `2410` are broker-caused rather than load-sensitive,
+so they are left open rather than reclassified. But the gate result a later phase should
+carry forward is **green on a broker-free host**, not "1-4 varying failures" — and any plan
+that drives the emulator will re-introduce `2408` for the duration of its run and should
+expect exactly that one failure rather than treating it as evidence of a regression.
+
+**Not fixed here.** All of it is test-harness behaviour under `src/`, which phase 23 may not
+modify.
