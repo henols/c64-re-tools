@@ -2,17 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: Own the substrate
+current_phase: 23
+current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: planning
-last_updated: "2026-08-25T16:05:00.000Z"
-last_activity: 2026-08-25
+stopped_at: Phase 23 context gathered
+last_updated: "2026-08-26T08:08:51.931Z"
+last_activity: 2026-08-26
+last_activity_desc: Phase 23 context gathered — 11 decisions captured in 23-CONTEXT.md
+state_head: d6cf1ba887fe2c41edbd8690e0ba095d729e52ba
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 23
-current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 ---
 
 # Project State
@@ -79,9 +82,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 23 — The Real-Release Gate (Go/Degrade/No-Go)
 Plan: Not started — no plans written yet
-Status: Roadmap complete, ready to plan Phase 23
+Status: Context gathered, ready to plan Phase 23
 Progress: 0/4 phases complete (v0.6.0)
-Last activity: 2026-08-25 — v0.6.0 roadmap created, 32/32 requirements mapped to Phases 23-26
+Last activity: 2026-08-26 — Phase 23 context gathered; 11 decisions in 23-CONTEXT.md
 
 ## Performance Metrics
 
@@ -246,6 +249,7 @@ Last activity: 2026-08-25 — v0.6.0 roadmap created, 32/32 requirements mapped 
   four-phase shape is: a standalone real-release go/degrade/no-go gate (23),
   the two engines (24), the annotation store and the r2000 cutover (25), and
   automatic annotation (26).
+
 - v0.6.0: the assumption gate is a **phase**, not a criterion inside one — the
   second time this project has made that call (Phase 9 was the first, and its
   gate fired for real, returning `degrade`). `PROOF-05`'s failure mode is
@@ -253,6 +257,7 @@ Last activity: 2026-08-25 — v0.6.0 roadmap created, 32/32 requirements mapped 
   dxa+Ghidra pivot comes from one 279-byte fixture written by the same person
   testing it, and if it does not survive real cracked code, Phases 24-26 are
   not the same phases.
+
 - v0.6.0: `OPC-01..03` (the 105-byte undocumented-opcode SLEIGH extension) is
   kept **inside** Phase 24 rather than split into its own phase. Its
   verification is not separable — `OPC-03` can only be checked by running the
@@ -261,12 +266,14 @@ Last activity: 2026-08-25 — v0.6.0 roadmap created, 32/32 requirements mapped 
   undecodable, since crack and packer code is exactly where that gap bites. A
   split would force Phase 24 to close on a claim its own corpus contradicts.
   Full rationale in ROADMAP.md → "Sequencing Rationale (v0.6.0)".
+
 - v0.6.0: the cutover (`CUT-01..03`) rides with the annotation store in Phase 25
   rather than becoming a fifth phase. The deletion is only safe once a
   replacement demonstrably produces the same facts, and `CUT-02`'s reuse
   decisions are decisions about what the store is built out of. Split apart,
   Phase 25 would end with the replacement standing beside its predecessor —
   the exact state `CUT-01` exists to prevent.
+
 - v0.6.0: four new **Standing Constraints** added to ROADMAP.md at the open,
   each a hazard demonstrated on a committed fixture during the pivot
   exploration and each of which fails *silently*: Ghidra deletes hardware
@@ -970,24 +977,45 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-25T16:05:00.000Z
-Stopped at: **v0.6.0 roadmap created.** 32/32 requirements (PROOF-01..05,
-  DXA-01..03, GHID-01..05, OPC-01..03, STORE-01..06, CUT-01..03, AUTO-01..07)
-  mapped to four phases (**23-26**) in `.planning/ROADMAP.md`, each with
-  Goal / Depends-on / Requirements / Success Criteria plus per-phase notes, and
-  a "Sequencing Rationale (v0.6.0)" section justifying the four-phase shape,
-  the gate-as-a-phase call, and `OPC-*` staying inside Phase 24.
-  `.planning/REQUIREMENTS.md`'s Traceability table and Coverage block are
-  filled in (32 mapped, 0 unmapped, verified mechanically in both directions).
-  Four new Standing Constraints were added to ROADMAP.md, all silent-failure
-  hazards from the pivot exploration.
+Last session: 2026-08-26T08:08:51.902Z
+Stopped at: **Phase 23 context gathered.** `/gsd-discuss-phase 23` captured
+  eleven decisions in `23-CONTEXT.md`. Two are standing constraints set by the
+  owner in free text and applied to every subsequent question: regenerator2000
+  is excluded as an instrument entirely (it is `CUT-01` scope — measuring with
+  the thing being deleted would build the gate on a corpse), and VICE is how the
+  code under study is reached. From those: dxa and Ghidra are measured on a
+  **depacked flat 64K capture**, never the packed file; the corpus is
+  operator-supplied as `.d64` or `.prg`, identified by name + sha256; a
+  **VICE-produced inventory** of what the capture contains is committed *before*
+  any measurement runs, so "not exercised" is a pre-declared corpus property
+  rather than a post-hoc excuse — and it is produced by runtime observation
+  precisely so neither engine under test supplies its own test case. The rules
+  live in plan **23-01**, which touches nothing else, so git history proves they
+  predate the numbers; Phase 24 is gated by ROADMAP `Depends on` + Notes
+  pointers, Phase 9's own closure shape.
+  Two method questions were deliberately left open for research rather than
+  decided: how "data-recovery rate" and "false positive" are defined against a
+  real image with no `.lbl` ground truth, and how cracker-authored bytes are
+  held out of the game-code measurement now that N-way provenance diffing is
+  unavailable on a single image. Both are written into `23-CONTEXT.md`
+  `<specifics>` as questions the researcher must close.
   Next: `/gsd-plan-phase 23`. Read `PROOF-05`'s gate discipline first — Phase 23
   builds no product code, and nothing in Phases 24-26 may be planned as though
   its verdict is already known.
-Previously stopped at: v0.5.0 closed and archived 2026-08-25 — Phase 19
+Previously stopped at: **v0.6.0 roadmap created** 2026-08-25. 32/32 requirements
+  (PROOF-01..05, DXA-01..03, GHID-01..05, OPC-01..03, STORE-01..06, CUT-01..03,
+  AUTO-01..07) mapped to four phases (**23-26**) in `.planning/ROADMAP.md`, each
+  with Goal / Depends-on / Requirements / Success Criteria plus per-phase notes,
+  and a "Sequencing Rationale (v0.6.0)" section justifying the four-phase shape,
+  the gate-as-a-phase call, and `OPC-*` staying inside Phase 24.
+  `.planning/REQUIREMENTS.md`'s Traceability table and Coverage block are filled
+  in (32 mapped, 0 unmapped, verified mechanically in both directions). Four new
+  Standing Constraints were added to ROADMAP.md, all silent-failure hazards from
+  the pivot exploration.
+Before that: v0.5.0 closed and archived 2026-08-25 — Phase 19
   complete, Phases 20-22 cut by the dxa+Ghidra pivot, milestone v0.6.0 opened
   and its 32 requirements defined.
-Before that: the Phase 18 discussion covered
+Earlier: the Phase 18 discussion covered
   seven identified gray areas (session lifecycle & keying, crash-restart
   visibility, write serialisation, orphan & lease discipline, the D-32
   re-decision, surface-widening scope, `use_illegal_opcodes` forcing),
@@ -1023,7 +1051,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: None
+Resume file: .planning/phases/23-the-real-release-gate-go-degrade-no-go/23-CONTEXT.md
 
 ## Operator Next Steps
 
@@ -1034,4 +1062,5 @@ Resume file: None
   release. If real releases cannot be obtained, that fact is a gate input, not a
   footnote — measuring on another self-authored fixture reproduces the exact
   defect `PROOF-01` exists to remove.
+
 - Do not plan Phases 24, 25 or 26 until Phase 23's verdict is recorded.
