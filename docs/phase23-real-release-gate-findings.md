@@ -339,3 +339,461 @@ tamper check, and it is why the rule is reproduced rather than cited.
 > The ordering proof is banked as two facts in `README.md` § *Ordering proof*: that the first
 > commit anywhere under `evidence/` is the commit introducing this file, and that no
 > `criterion*`, `inventory` or `capture` path exists anywhere in history at that moment.
+
+## Run date, corpus and builds tested
+
+**Probe date:** 2026-08-26.
+
+**Corpus.** Two independently-cracked releases of one title — Bruce Lee (Datasoft, 1984) —
+supplied by the operator under D-04 and **never committed**. Identity is release name plus
+sha256; the images live outside this repository and their paths are deliberately absent from
+this document. Transcribed from `evidence/corpus/corpus-intake.txt` and reproduced in
+`evidence/capture/CAPTURE-SUMMARY.txt`.
+
+| Release | `file_sha256` | `capture_sha256` | Canonical |
+|---|---|---|---|
+| `danish` | `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5` | `could-not-run` | **yes** |
+| `saeger` | `b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5` | `could-not-run` | no |
+
+`CORPUS_RELEASES: 2`, `CORPUS_CANONICAL: danish`. The canonical designation was produced by a
+rule stated *before* any measurement of these images existed — the release whose sha256 is
+lexicographically smaller is canonical, and `1a9d29…` < `b45e53…` — so the choice cannot have
+been influenced by a result (`evidence/corpus/corpus-intake.txt` § *Canonical designation*).
+The operator directed explicitly that no CSDb id and no group attribution be invented; the
+on-disk strings `(DC)` and `XIDEX` are recorded in the intake transcript as the literal
+strings they are and are not expanded here. `INDEPENDENCE: no-shared-ancestor-indicator-found`
+is recorded in that same file as a corpus fact; it is not a declared schema name and it gates
+nothing.
+
+**Both `capture_sha256` values are `could-not-run`, and no 64-hex capture hash exists.**
+`SCHEMA.md` § 1 types that key as 64 hex. No such value can be written without fabricating
+it, so `could-not-run` is written instead, per `DECISION-RULE.md` § *Inputs*. This is
+recorded as this document's own limit under `## Accepted limits`.
+
+**Instruments.** Transcribed from `evidence/tools/TOOLS.txt`, whose values agree line for
+line with the transcripts in `evidence/tools/instrument-provenance.txt` and
+`evidence/fixture/fixture-baseline.txt`.
+
+| Instrument | Recorded value |
+|---|---|
+| dxa version | `0.1.5` |
+| dxa tarball sha256 | `8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799` (`DXA_TARBALL_SHA256_VERIFIED: yes`) |
+| dxa built-binary sha256 | `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523` |
+| Ghidra | `12.1.3 PUBLIC`, build `2026-Aug-17` |
+| Java | `openjdk 21.0.12.1 2026-08-18` (Debian build `21.0.12.1+1-1-deb13u1`) |
+| VICE backend | `fork 3.10` |
+
+The dxa tarball sha256 appears verbatim above so `DXA-01` in Phase 24 can vendor the same
+build. **Ghidra is recorded by version and build date only, never by install path** — the
+probe install's own README states it is safe to delete and that nothing in the repository
+depends on that path, so recording its location would create a dependency the install itself
+disclaims (`evidence/README.md` § *External inputs*).
+
+**Why the fork backend was the measurement instrument.** The capture route needs a stopping
+execution checkpoint, direct memory reads at a paused instant, and — for the `danish`
+release — direct keyboard-matrix injection to pass an intro gate that polls `$DC01` rather
+than going through KERNAL `GETIN`; `vice_keyboard_matrix` is fork-only, so the stock binary
+monitor could not have driven that release to its handoff at all.
+
+**A property of the tool under test, recorded beside its numbers rather than as a
+supply-chain signal.** dxa 0.1.5 describes itself as *"still considered \"alpha\" software
+and there may be bugs, which is why it is not part of the official xa distribution yet"*, and
+its tarball carries **no upstream signature and no upstream-published checksum** — the pin is
+corroborated only by a third-party ports tree (FreeBSD `devel/dxa65`). Note the citation
+correction: that self-description is at `INSTALL:15`, **not** in the man page `dxa.1`
+(`grep -i alpha dxa.1` exits 1 with no output) — see correction 6 below.
+
+## Summary table
+
+One row per ROADMAP success criterion. Every outcome cell is transcribed from an outcome line
+at column 0 of the named file, or reads `could-not-run` where no such file exists.
+`not-exercised` appears nowhere in this table, because it was never earned: no pre-committed
+inventory exists to earn it, and it is a strictly different value from `could-not-run`.
+Nothing here is folded into a pass count; **there is no pass count in this phase.**
+
+| # | Requirement | Outcome | Outcome line | Evidence file |
+|---|---|---|---|---|
+| 0 (gate input) | PROOF-01 | `partial` | `C0_CORPUS: partial` | `evidence/capture/CAPTURE-SUMMARY.txt` |
+| 1 | PROOF-01 | `could-not-run` | none — file was never produced | `evidence/criterion1-dxa-classification.txt` (absent) |
+| 2 | PROOF-02 | `could-not-run` | none — file was never produced | `evidence/criterion2-ghidra-dispatch.txt` (absent) |
+| 3 | PROOF-03 | `could-not-run` | none — file was never produced | `evidence/criterion3-bank-divergence.txt` (absent) |
+| 4 | PROOF-04 | audited: `26`, replaced `23`, lost-accepted `3`, **unreplaced `0`** | `C4_CAPABILITIES_AUDITED: 26` / `C4_REPLACED: 23` / `C4_LOST_ACCEPTED: 3` / `C4_UNREPLACED_CAPABILITIES: 0` | `evidence/criterion4-analyzer-audit.md` |
+| 5 | PROOF-05 | **`no-go`, rule `R1`** | this document's frontmatter | `docs/phase23-real-release-gate-findings.md` + `evidence/DECISION-RULE.md` |
+
+## Criterion 1
+
+> *dxa's data-recovery rate and false-positive count are readable as numbers against a named
+> real release … and printed beside the 279-byte fixture's 72%-data / 0-false-positive claim
+> rather than replacing it.*
+
+**Outcome: `could-not-run`. There is no criterion-1 number.** Plan 23-07 was not dispatched,
+because it reads the depacked flat-64K capture as its substrate (D-03) and 23-03 could not
+produce one; plan 23-05, which would have committed the measurement window `W` and the
+certain-code / certain-data sets, and plan 23-06, which would have produced the cracker
+hold-out, were not dispatched for the same reason. No `evidence/criterion1-*.txt` file exists.
+
+**The window, the denominator and the adjudicated fraction are all `could-not-run`**, and
+they are named here as first-class absences rather than left out: `C1_WINDOW` was never
+committed, `C1_DENOMINATOR_BYTES` was never computed, and `C1_ADJUDICATED_FRACTION` — the
+number that would have said what fraction of the window the measurement even spoke about —
+does not exist. `C1_CRACKER_HELD_OUT`, `C1_DATA_RECOVERY_PCT_WITH_CRACKER` and
+`C1_FALSE_POSITIVES_WITH_CRACKER` likewise do not exist, so the hold-out precedence contract
+was never exercised and **the difference between the held-out and with-cracker figures — the
+evidence about how far a naive measurement would have been distorted — was never obtained.**
+The secondary release `saeger` has no criterion-1 numbers either; had it produced any, they
+would never have been a rule input.
+
+**The fixture's reproduced numbers, printed under one definition.** These are real and they
+were reproduced by 23-02 (`evidence/fixture/fixture-baseline.txt`, outcome lines duplicated in
+`evidence/tools/TOOLS.txt`). They are printed here **beside an empty criterion-1 column**, so
+that no fixture figure can be misread as a release result. Positive class is data; the
+denominator is certain-data bytes; a false positive is a certain-**code** byte typed as data.
+
+| Quantity | Fixture, **reproduced** (source-derived) | Fixture, **as published by the pivot** | Canonical release `danish` |
+|---|---|---|---|
+| total bytes | `279` (`FIXTURE_TOTAL_BYTES: 279`) | 279 | `could-not-run` |
+| ground-truth partition | 145 code / 131 data / 3 assembler-pad → 145/134 with pad counted as data | 141 code / 138 data | `could-not-run` |
+| data-recovery rate | **`72.39 (97/134)`** | **`72.46%` (100/138)** | `could-not-run` |
+| false positives | **`3`** | **`0`** | `could-not-run` |
+| false negatives | **`27.61 (37/134)`** | `27.5%` / `27.54%` (38/138) | `could-not-run` |
+| `FIXTURE_REPRODUCED` | `no` | — | — |
+
+**`FIXTURE_REPRODUCED: no`, and that is a substantive finding, not a procedural hiccup.** The
+published 141/138 partition is **not recoverable from `fixture.a`** — re-deriving it byte by
+byte from the assembler's own report gives 145 / 131 / 3-pad under every padding treatment.
+All four published figures *are* exactly reproducible under a four-byte reclassification
+(`$0869-$086b` and `$08a6`), but that reclassification was **fitted** to make the numbers
+agree, so it is recorded as a hypothesis and not as a baseline
+(`evidence/fixture/fixture-baseline.txt` § RESEARCH CORRECTIONS RC-1). What is *proven* is
+the negative: the pivot's partition was an assumption, and it is **more generous to dxa than
+the source is, in exactly the place that decides the headline "0 false positives" claim** —
+three bytes dxa got wrong (it typed a live `JSR` as data) are counted as data in the published
+ground truth, scoring as a success rather than as three false positives. A strict-denominator
+variant is also recorded and is not the reported baseline: `71.76 (94/131)` recovery, `6`
+false positives, `28.24 (37/131)` false negatives.
+
+**The consequence for D-11's side-by-side, stated so a later plan does not repeat the
+mistake.** A future criterion-1 measurement derives `C` and `D` from a VICE runtime inventory
+(D-05 / D-06) with no hand-adjustment step. Printing such a number beside the pivot's
+published `72.46%` / `0`-FP is therefore **not apples-to-apples**. The apples-to-apples
+fixture figures are the source-derived ones — `72.39` / `3` / `27.61` — and the published
+figures may be printed beside them only with RC-1 attached.
+
+**Error direction, and what it means for Phase 26.** The error *direction* against a real
+release is `could-not-run` and remains unknown. What is known is the fixture's direction under
+both partitions: the errors run **data-called-code** (false negatives materially exceed false
+positives — `27.61%` against 3 bytes on the source-derived partition, `27.5%` against 0 on the
+published one). That is the dangerous direction, because it feeds phantom code into every
+downstream stage. **Whether Phase 26's graphics-feedback containment is sufficient or
+load-bearing therefore remains an open question that this phase did not answer**, and the only
+data bearing on it is a 279-byte self-authored fixture — which is precisely the state
+`PROOF-01` exists to end.
+
+## Criterion 2
+
+> *A computed-index indirect dispatch taken from real code is either resolved by Ghidra's
+> constant propagation, with the resolved target shown, or recorded as unresolved with its
+> transcript. A corpus containing no computed dispatch is reported as not exercised and never
+> as a pass.*
+
+**Outcome: `could-not-run`.** Plan 23-08 was not dispatched — no depacked capture exists
+(D-03) — and neither was plan 23-05, whose runtime inventory is the independent enumeration
+this criterion is checked against. No `evidence/criterion2-ghidra-dispatch.txt` exists.
+`C2_SITES_ENUMERATED` and `C2_COMPUTED_SITES` were never produced, so **zero sites were
+enumerated and zero sites were tested against the computed definition**. `C2_RESOLVED_TARGET`
+does not exist and no target is shown.
+
+**This is `could-not-run` and explicitly not `not-exercised`.** `not-exercised` is a claim
+about the corpus — that the construct was not present to test — and `SCHEMA.md` § 3 says it is
+earned *only* by the pre-committed inventory (D-05) showing the construct absent. No inventory
+exists, so nothing was earned. Both values fire `R6` identically, but they say opposite things
+about what is known, and conflating them would be exactly the softening this phase forbids.
+
+**The detection design, recorded because it is the part most easily lost.** Ghidra **reports
+nothing when it fails to resolve a dispatch** — there is no error, no diagnostic and no
+"unresolved" record in its export. Unresolved is therefore detectable only as the **absence of
+a reference from a site that was independently enumerated by something other than Ghidra**,
+which is why `C2_SITES_ENUMERATED` is specified to come from the VICE runtime inventory and
+never from Ghidra (`SCHEMA.md` § 3), and why a site is *computed* only if it dispatches
+through two or more distinct values at the same program address across the observed run
+(`SCHEMA.md` § 7). Without that independent enumeration, criterion 2 degrades to "Ghidra
+resolved the dispatch that Ghidra found", which is the circularity the definition exists to
+close. Any future run of this criterion must carry that design forward intact.
+
+**What *is* on record, and what it is not.** The pivot's own Ghidra reference dump records one
+`COMPUTED_JUMP` (`082e -> 089a`) on the 279-byte fixture — but the fixture's dispatch index was
+an immediate `ldx #$02`, the easy case, which is the specific defect this criterion exists to
+remove. It is not a criterion-2 result and is not counted as one anywhere in this document.
+
+## Criterion 3
+
+> *The point at which a single forward-carried `$01` value stops being correct is established
+> rather than assumed … or the absence of such an address in the corpus is recorded as a fact
+> about the corpus rather than about the model.*
+
+**Outcome: `could-not-run`.** Plan 23-09 was not dispatched — no depacked capture exists
+(D-03) — and plan 23-05's `$01` write timeline, which this criterion joins against, was never
+produced. No `evidence/criterion3-bank-divergence.txt` exists. `C3_DIVERGENT_SITES` and
+`C3_MEMMAP_SHA256` do not exist, and no divergent site, address or `$01` pair can be shown.
+
+**This is not `not-exercised`, and the distinction is the whole point of the criterion.**
+`not-exercised` would be a **fact about the corpus** — that real banking code in these two
+releases contains no address annotating differently under two bank states. `could-not-run` is
+a fact about **this phase's execution**: the question was never put to the corpus. The ROADMAP
+calls this "the highest-risk item on the pivot's own record", and it remains at exactly the
+risk it started at: the single-forward-carried-`$01` model is **unvalidated against real
+path-dependent code**, neither confirmed nor broken.
+
+**What the corpus did show about `$01`, recorded because it is real and adjacent.** At the
+loader/game handoff both releases read `$01 = $35` (BASIC and KERNAL banked out, RAM live
+under both), with `$DD00 = $C1` → VIC bank 2, `$D018 = $33` → `screen_base $8C00` /
+`charset_base $8800`, identical sprite pointers and PAL raster 311
+(`evidence/capture/CAPTURE-SUMMARY.txt`, derived in `evidence/capture/capture-record-primary.md`).
+That is one observed `$01` value at one instant. It is **not** a bank-divergence measurement
+and is not offered as one.
+
+## Criterion 4
+
+> *What the dropped `analyzer.rs` work did that the dxa+Ghidra pair does not is a named list
+> of concrete capabilities, each either matched to a replacement or accepted as lost with what
+> it costs — derived from the real thing, not inferred from the fixture.*
+
+**Outcome: measured.** This is the one criterion that needs no depacked capture — it is read
+offline from the `regenerator2000-core` 0.9.20 crate source, and **no regenerator2000 process
+was started** (D-01). Transcribed from `evidence/criterion4-analyzer-audit.md`:
+
+```
+C4_CAPABILITIES_AUDITED: 26
+C4_REPLACED: 23
+C4_LOST_ACCEPTED: 3
+C4_UNREPLACED_CAPABILITIES: 0
+```
+
+The counts close: 8 entry points (E1..E8) + 11 `LabelType` variants (L1..L11) + 7 `BlockType`
+variants (B1..B7) = 26 audited; 7 + 10 + 6 = 23 replaced; 1 + 1 + 1 = 3 accepted as lost;
+0 + 0 + 0 = 0 blocking; and 23 + 3 + 0 = 26.
+
+**`C4_LOST_ACCEPTED: 3` is not three failures.** `DECISION-RULE.md` lists it explicitly among
+the four inputs that never change the verdict: a capability accepted as lost with its cost
+stated is a decision, not a defect. Only the `lost-blocking:` count gates, via `R8`, and it is
+`0`.
+
+**Headline rows.**
+
+| Row | Capability | Disposition |
+|---|---|---|
+| **E6** | `follow_indirect_jumps(...)` (`analyzer.rs:445`) — on `JMP ($xxxx)`, if the pointer address is inside the image **and** already typed `BlockType::Address`, read the 16-bit pointer and emit a jump label plus a cross-reference | `replaced-by: Ghidra COMPUTED_JUMP` (observed `082e -> 089a COMPUTED_JUMP`), **with an explicit shape-mismatch note** |
+| E8 | `flow_analyze(...)` (`:581`) — worklist reachability from one entry | `replaced-by: Ghidra analyzeAll() with dxa-supplied entry points` — observed 17 functions / 152 code bytes **with** dxa hints against **0 functions / 0 code bytes without** |
+| B4 | `LoHiAddress` split pointer table (`:90-122`) | `replaced-by: Ghidra CONCAT11 decompiler idiom` — with the range answer named as lost: the arrays typed `undefined1 len=1` each, no extent, no pair count, no stride |
+| E4 | `promote_return_labels(...)` (`:372`) | `lost-accepted:` label quality — no engine records "this target is a bare return stub" |
+| L11 | `LabelType::Return` / the `r_` prefix | `lost-accepted:` — the value leaves the vocabulary |
+| B5 | `HiLoAddress` split pointer table (`:123-155`) | `lost-accepted:` — **no observation in either direction**; the pivot fixture contained no HiLo table |
+
+**E6 is the audit's most load-bearing comparison, and the audit deliberately did not settle
+it.** The row is written `replaced-by:` because Ghidra was *observed* resolving a strictly
+harder indirect dispatch, and because r2000's own precondition — an already-`Address`-typed
+block — is store state the milestone is committed to holding anyway. The audit states the
+exact condition under which it should be reclassified `lost-blocking:`: **if and only if**
+criterion 2 records `C2_COMPUTED_DISPATCH: unresolved` on a real corpus **and** `GHID-04`'s
+acceptance is read as requiring the declaration-driven static fallback rather than only the
+decompiler route. **Criterion 2 is `could-not-run`, so that condition is neither met nor
+refuted, and `C4_UNREPLACED_CAPABILITIES` stays `0` as recorded.** It is recorded here as the
+single row a re-run could move, so a later reader knows where to look first.
+
+## Criterion 5
+
+> *A machine-readable verdict — `go` / `degrade` / `no-go` — is recorded against decision rules
+> committed before the measurements were run, and Phase 24's planner reads it as a
+> precondition.*
+
+**Outcome: this document.** The verdict is `no-go` and the fired rule is `R1`, both carried as
+`verdict:` and `verdict_rule_applied:` in the frontmatter above, and the full rule is
+reproduced verbatim in the body so the derivation is checkable without any other file
+surviving.
+
+**The ordering proof, quoted so a reader need not run git.** From `evidence/README.md`
+§ *Ordering proof*, banked immediately after the rule commit landed and before any other path
+under `evidence/` existed:
+
+> **Fact one — the rules are the first thing in the evidence tree.**
+>
+> ```
+> $ git log --oneline -1 -- .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/DECISION-RULE.md
+> 474c37c docs(23-01): pre-commit the decision rule and the outcome-line schema
+>
+> $ git log --oneline --reverse -- .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence | head -1
+> 474c37c docs(23-01): pre-commit the decision rule and the outcome-line schema
+> ```
+>
+> The two commits are the same commit. `README.md` and `corpus/.gitignore` were written
+> only after the rule commit had landed, so this identity holds by construction rather
+> than by luck.
+>
+> **Fact two — no measurement evidence exists anywhere in history at this moment.**
+>
+> ```
+> $ git log --oneline -- '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/criterion*' '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/inventory' '.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture'
+> (no output)
+> ```
+
+Both facts were re-checked while writing this document. Fact one still reproduces verbatim.
+Fact two is a point-in-time statement made at commit `474c37c`, and it re-verifies today by
+scoping the same query to that commit (`git log --oneline 474c37c -- …`), which still returns
+no output. **The rules provably precede every measurement**, which is the whole of PROOF-05's
+ordering requirement. No test guard was added, per D-08: a guard would encode roadmap policy
+in the suite of a phase that ships no code.
+
+Note also that this document's verdict rests on a rule whose *thresholds and definitions* were
+confirmed by the operator at a `blocking-human` gate in 23-01 Task 1 with the selection
+`proceed` — as specified, no value adjusted (`evidence/DECISION-RULE.md` § *Decision
+checkpoint*).
+
+## Accepted limits
+
+Every `## ACCEPTED LIMIT` block recorded in every evidence file, collected here one entry
+each, unmerged and unsoftened. **Eight blocks exist across the evidence tree** and eight
+entries appear below. `evidence/capture/capture-record-secondary.md` § *Accepted limits* is a
+cross-reference to entries 1 and 2 rather than a ninth block, and is noted as such.
+
+1. **The 64K image could not be assembled** (`evidence/capture/capture-record-primary.md`
+   ACCEPTED LIMIT 1). Re-emitting 64 KB of hex through the executing agent failed twice in
+   measured, distinct ways: a 16384-byte chunk **truncated outright**, and an 8192-byte chunk
+   came back **silently 10 characters short**, caught only by an explicit length assertion.
+   Nothing available catches a *substituted* character, and a single undetected substitution
+   would put a wrong byte into the substrate every later criterion is measured on.
+   **What it breaks:** `CAPTURE_SHA256`, `CAPTURE_SIZE`, the four `write-set` artifacts and
+   the `vic_bank` / `screen_base` / `charset_base` / `sprite_data_addresses` derivation were
+   not produced, and `compare.mjs compare` could not be run over two `.bin` files.
+
+2. **`WarpMode` unavailable; every run was real-time**
+   (`evidence/capture/capture-record-primary.md` ACCEPTED LIMIT 2). `vice_machine_config_set`
+   declares `resources` as a JSON string in its own schema while the host server requires a
+   JSON object, so the call cannot be satisfied from this surface. No `x64sc` was invoked by
+   hand and none of the three power-cycling resources was ever set. **What it breaks:** ~110 s
+   to the intro gate plus ~30 s to the handoff per run, five boots across the calibration run,
+   the voided run and runs 1 and 2 — which is why the template's three-run minimum was not met.
+
+3. **Where the corpus outcome lines live** (`evidence/corpus/corpus-intake.txt` ACCEPTED
+   LIMIT 1). `SCHEMA.md` § 3 places `CORPUS_RELEASES` / `CORPUS_CANONICAL` /
+   `CORPUS_FILE_SHA256` in `evidence/capture/CAPTURE-SUMMARY.txt`; 23-03-PLAN.md Task 2
+   directed them into `evidence/corpus/corpus-intake.txt` and its verify greps there.
+   Resolved without editing either document: emitted where the identities are established, and
+   reproduced verbatim in the schema-declared home. **What it breaks:** nothing — `R1` reads
+   only `C0_CORPUS` and reads none of the three.
+
+4. **Outcome-line value vocabulary: `SCHEMA.md` wins** (`evidence/corpus/corpus-intake.txt`
+   ACCEPTED LIMIT 2, restated in `evidence/capture/CAPTURE-SUMMARY.txt`). 23-03-PLAN.md
+   directs `C0_CORPUS: fail` and a `CAPTURE_EQUIVALENT` of `pass`/`fail`; `SCHEMA.md` § 3
+   declares `pass | partial | could-not-run` and `yes | no | could-not-run`. The plan's own
+   regex would **reject** the schema-legal value `yes`. Operator-confirmed and phase-wide:
+   `SCHEMA.md` wins, the evidence is not bent to satisfy a regex the frozen pre-commitment
+   contradicts, and the mismatch is logged as a plan deviation. **What it breaks:** the
+   affected plan verifies do not pass as written; no rule input changes in substance.
+
+5. **The `Return` label promotion is gone** (`evidence/criterion4-analyzer-audit.md` ACCEPTED
+   LIMIT 1). No engine records "this target is a bare return stub". **What it breaks:** label
+   quality where a reader most wants a hint — a dispatch table whose unused slots all point at
+   a shared `RTS` reads as a table full of ordinary routines, and that idiom is common in
+   cracked releases. Consumer: `STORE-05`.
+
+6. **`LabelType::Return` leaves the label vocabulary** (`evidence/criterion4-analyzer-audit.md`
+   ACCEPTED LIMIT 2). The store's type set is eleven values rather than twelve. **What it
+   breaks:** a store schema copied from r2000's enum would carry a value nothing can ever set,
+   inviting a later reader to assume something populates it. Consumer: `STORE-01`.
+
+7. **`BlockType::HiLoAddress` has no observation in either direction**
+   (`evidence/criterion4-analyzer-audit.md` ACCEPTED LIMIT 3). The pivot fixture contained a
+   LoHi table and **no HiLo table at all**, so the `CONCAT11` observation backing B4 covers the
+   LoHi byte order only; the mirrored case is unproven, not replaced. **What it breaks:** a
+   per-range typing model cannot learn a split table's extent, pair count or stride from a
+   decompiler expression at one use site, and for the HiLo order it may not get the expression
+   at all. Consumer: `STORE-01`.
+
+8. **Four `23-02-PLAN.md` / `SCHEMA.md` divergences resolved in `SCHEMA.md`'s favour**
+   (`evidence/fixture/fixture-baseline.txt` ACCEPTED LIMIT, four sub-items in one block).
+   (a) `DXA_TARBALL_SHA256_VERIFIED` — schema domain `yes | no`, plan expects `pass`; `yes` is
+   written and the plan's regex is not satisfied. (b) `FIXTURE_REPRODUCED` — schema
+   `yes | no | could-not-run`, plan expects `pass`/`fail`; `no` is written. (c)
+   `FIXTURE_DATA_RECOVERY_PCT` and `FIXTURE_FALSE_NEGATIVES` — schema fixes the
+   `<decimal> (<num>/<den>)` shape, plan expects bare values. (d) Outcome-line home — schema
+   declares `evidence/tools/TOOLS.txt`, plan names two other files; resolved by writing all
+   three, agreeing line for line. **What it breaks:** those plan verifies are unsatisfiable
+   without contradicting the frozen pre-commitment, and are recorded as deviations rather than
+   accommodated.
+
+### Limits recorded by this document itself
+
+Kept separate so the collected count above stays equal to the number of `## ACCEPTED LIMIT`
+blocks in the evidence tree.
+
+- **`corpus.releases[].capture_sha256` is `could-not-run`, not 64 hex.** `SCHEMA.md` § 1 types
+  that key as a 64-hex string. No capture was assembled (limit 1 above), so no such value
+  exists and writing one would be fabrication. `could-not-run` is written instead, per
+  `DECISION-RULE.md` § *Inputs*. Consequence: `23-10-PLAN.md` Task 1's automated verify, which
+  greps for a 64-hex `capture_sha256`, **is not satisfied and cannot be satisfied without
+  fabricating evidence.** This follows the phase-wide precedent established by 23-02 and 23-03
+  and recorded in `evidence/corpus/corpus-intake.txt` ACCEPTED LIMIT 2: where a plan's verify
+  disagrees with the frozen pre-commitment or with the facts, the evidence is not bent.
+
+## Other findings (carried forward, not scored)
+
+**Research question 2 — does Ghidra's 6502 decompiler degrade on illegal opcodes in real
+code? No observation was made.** Ghidra was never run against real cracked code in this
+phase, because no depacked capture exists. There is therefore **no observation of an
+undecodable illegal opcode poisoning a function**, in either direction — neither that it
+happens nor that it does not. This section says so explicitly rather than being omitted. The
+deliberate answer remains `OPC-03` in Phase 24, and nothing here raises or lowers `OPC-01`'s
+priority there.
+
+**Divergence between the two releases' criterion-1 numbers: not obtained.** Neither release
+produced criterion-1 numbers, so there is no evidence here about how much the crack shapes the
+measurement. That question is untouched.
+
+**Finding A — the hex-transcription blocker is solved, and the method is validated.**
+Recorded at `.planning/todos/pending/2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md`
+(committed at `d6ed4fd`). A VICE `.vsf` snapshot already contains the exact 64K: the `C64MEM`
+module body is 4 bytes of port/PLA state followed by exactly 65536 bytes of RAM, so the image
+is a slice, with no transcription step anywhere. Validated on 2026-08-26 against 23-03's own
+hand-transcribed hex from the same instant: `$2000-$3FFF` and `$4000-$5FFF` byte-identical,
+`$0000-$1FFF` differing at exactly `$0000` and `$0001` (the 6510 processor-port overlay — the
+snapshot holds the RAM beneath it, which is the only place a snapshot-derived image
+legitimately differs from a CPU-view read), and `$6000-$7FFF` identical up to `$7871` then
+shifted, **independently localising the ten characters 23-03 reported as silently dropped**.
+The method also produces a stable sha256, which is exactly what `CAPTURE_SIZE` and
+`CAPTURE_SHA256` need.
+
+**This finding did not change the verdict and must not be read as though it did.** The verdict
+is `no-go` on the evidence as it stood when the rule was applied. Finding A is carried forward
+because `R1`'s "secure a corpus first" branch is materially cheaper than it looks, not because
+it alters anything scored here.
+
+**Finding B — the remaining blocker, unsolved: the fork's stopping exec checkpoint is not
+frame-exact.** Diffing the two `danish` handoff snapshots **directly, with no transcription
+anywhere**, still shows **201 multi-bit divergences**. That is real machine nondeterminism,
+and it is the single obstacle between this phase and a real measurement. The two releases'
+results isolate the cause cleanly: `danish`'s two runs stopped at `hit_count` 1 and 2 — i.e.
+in *different game frames* — and produced 231 differing addresses in `$0000-$CFFF`, of which
+100 lie outside every volatile region and differ by two or more bits; `saeger`'s two runs both
+stopped at `hit_count` 1 — the *same* frame — and produced 41 one-bit drifts plus exactly
+**one** non-volatile multi-bit difference (`$00F6`, the KERNAL keyboard-decoding-table
+pointer). **Frame index is the dominant term; intra-frame position costs only one-bit drift.**
+Neither is a fact about the corpus. A frame-exact stop is required before two runs can compare
+as equivalent (`evidence/capture/CAPTURE-SUMMARY.txt`; both comparisons are the tool's own
+output, pasted verbatim in the capture records).
+
+**Finding C — the two releases need different keypress routes to reach their handoff.**
+`danish` polls `$DC01` directly and needs `vice_keyboard_matrix` (fork-only); `saeger` spins on
+KERNAL `GETIN` and needs `vice_keyboard_petscii`. Each was established by disassembling the
+running gate, not guessed. This is why the fork was the measurement instrument, and it is a
+concrete constraint on any future stock-backend attempt at the same capture.
+
+**Finding D — the loader/game handoff is `$1BC2` for both releases**, identified by
+disassembling the running machine and re-verified per release on that release's own fresh
+machine, with `CAPTURE_PORT01: $35` at that instant for both. A re-run does not have to
+re-derive this.
+
+**Finding E — the test suite this phase used as its regression gate has a load-sensitive flake
+set.** Recorded in the phase's `deferred-items.md`, not fixed (phase 23 may not modify anything
+under `src/`). Four consecutive full runs on an unchanged tree gave fail counts 1, 4, 1, 1 with
+the failing test *identity* changing between runs and 2592/2638 passing every time. A single
+red run of that suite is not evidence that a `.planning/`-only change broke something.
