@@ -28,8 +28,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
 
 ### Gate extraction (SEAM-01)
 
-- **D-01: The ACME half is a hard move out of `r2000-test-gate.ts` — no
-  re-export shim.** `ACME_BIN`, `probeAcme`, `ACME_AVAILABLE`,
+- **D-01 — The ACME half is a hard move out of `r2000-test-gate.ts` — no re-export shim.** `ACME_BIN`, `probeAcme`, `ACME_AVAILABLE`,
   `acmeSkipReasonFor` and `assertAcmeRequiredIfEnvSet` move to a new module and
   all four importing test files get their import line rewritten:
   `disasm-roundtrip.test.ts:57`, `skill-acme-build-cli.test.ts:47`,
@@ -42,7 +41,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   observable form of this decision.
   — **Reversibility:** reversible — five symbols and four import lines.
 
-- **D-02: The new module is `src/mcp/vice/acme-gate.ts`.** `test-gate.ts` is
+- **D-02 — The new module is `src/mcp/vice/acme-gate.ts`.** `test-gate.ts` is
   **not available**: `test-gate.mjs` (the MANUAL_ONLY_TESTS gate) and
   `test-gate.d.mts` / `test-gate.test.ts` already occupy that name in the same
   directory and do a different job — they gate *which tests run*, not *whether
@@ -52,8 +51,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   already means "liveness probe of a running thing", a different job.
   — **Reversibility:** reversible.
 
-- **D-03: `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` keep
-  byte-identical names.** Measured fact from the scout: `.github/workflows/ci.yml`
+- **D-03 — `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` keep byte-identical names.** Measured fact from the scout: `.github/workflows/ci.yml`
   binds **only the env var names** (`ci.yml:140`, `VICE_REQUIRE_ACME: "1"`) and
   never references the module path. So ci.yml needs **no functional edit** — the
   "repointed in the same commit" clause in `SEAM-01` is satisfied by comment
@@ -64,7 +62,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   hard-FAIL into a skip, with a green run either way. This is the second silent
   failure mode the roadmap's Ordering constraint 1 names.
 
-- **D-04: The new module gets its own `acme-gate.test.ts`**, carrying (a) the
+- **D-04 — The new module gets its own `acme-gate.test.ts`**, carrying (a) the
   `package.json` `files[]`-absence assertion for `acme-gate.ts` and (b)
   criterion 1's hard-FAIL proof. `r2000-verify.test.ts:187` is left alone — it
   is still correct about `r2000-test-gate.ts`. Extending that assertion was
@@ -73,8 +71,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   removes.
   — **Reversibility:** reversible.
 
-- **D-05: Criterion 1's FAIL is proven by a committed child-process test, not a
-  one-off transcript.** `ACME_AVAILABLE` is evaluated once at module load
+- **D-05 — Criterion 1's FAIL is proven by a committed child-process test, not a one-off transcript.** `ACME_AVAILABLE` is evaluated once at module load
   (`r2000-test-gate.ts:132`), so no in-process test can re-probe. The test
   spawns a child `node --test` run with `VICE_REQUIRE_ACME=1` and `ACME_BIN`
   pointed at a nonexistent path, and asserts a **non-zero exit** plus the
@@ -85,8 +82,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
 
 ### The classification record (SEAM-02)
 
-- **D-06: The record is a committed registry data file plus an enforcing test,
-  not a prose document.** The test enumerates `src/mcp/vice/r2000-*` on disk and
+- **D-06 — The record is a committed registry data file plus an enforcing test, not a prose document.** The test enumerates `src/mcp/vice/r2000-*` on disk and
   **FAILS** when any module has no registry entry, so a module added later
   cannot slip in unclassified. A `docs/` page was rejected as the sole record:
   nothing fails when it goes stale, and its consumer (Phase 32) is five phases
@@ -96,8 +92,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   it later means re-establishing trust in a record written *after* deletions
   began, which is the one thing criterion 2 says cannot be done.
 
-- **D-07: Each entry's basis is surviving consumers plus requirement ids —
-  never the name prefix.** An entry names the concrete files/symbols that break
+- **D-07 — Each entry's basis is surviving consumers plus requirement ids — never the name prefix.** An entry names the concrete files/symbols that break
   if the module vanishes, plus any requirement it implements (`r2000-symbols` →
   the ✓ Validated `R2000-14`/`R2000-15` symbol round trip; `r2000-coverage` →
   `COV-01`/`COV-02`). **Capability** means it has a consumer or a requirement
@@ -107,7 +102,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   prefix" checkable rather than a promise.
   — **Reversibility:** costly — the basis is the evidence Phase 32 acts on.
 
-- **D-08: Three verdicts, not two: `capability`, `glue`, `glue-with-extractable`.**
+- **D-08 — Three verdicts, not two: `capability`, `glue`, `glue-with-extractable`.**
   The third names the specific symbols that must move out before the module may
   be deleted. `r2000-project.ts` is the concrete instance — it is glue that
   drives the regenerator2000 binary, but it also holds `parsePrg`
@@ -116,8 +111,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   obligation Phase 32 cannot discharge by ignoring it.
   — **Reversibility:** reversible.
 
-- **D-09: The registry lives in `src/mcp/vice/` and is deliberately absent from
-  `package.json`'s `files[]`.** Next to the modules it classifies, so registry
+- **D-09 — The registry lives in `src/mcp/vice/` and is deliberately absent from `package.json`'s `files[]`.** Next to the modules it classifies, so registry
   drift and the enumerating test show up in one diff. It is bookkeeping, not
   runtime — same `files[]` rule as the gate (D-04). A `.planning/` location was
   rejected because the test would then reach out of `src/mcp/vice/`, which
@@ -126,7 +120,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
 
 ### The coverage store boundary (SEAM-03)
 
-- **D-10: The boundary is an adapter module with a neutral vocabulary.** A new
+- **D-10 — The boundary is an adapter module with a neutral vocabulary.** A new
   non-`r2000` module owns the upstream Rust `Display` strings and exposes a
   neutral shape (e.g. `blockClassAt(blocks, addr) → "code" | "data" |
   "undefined" | null`). After the move `r2000-coverage.ts` contains **no**
@@ -139,8 +133,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   — **Reversibility:** costly — Phase 28's store repoint is written against this
   boundary; changing its shape later moves the census's only contact surface.
 
-- **D-11: All three comparison sites route through the adapter — including the
-  divergence sub-report.** The requirement text says "two functions"
+- **D-11 — All three comparison sites route through the adapter — including the divergence sub-report.** The requirement text says "two functions"
   (`storeBlockTypeAt`, `r2000-coverage.ts:1662`; `classFromStore`, `:1683`), but
   the scout found a **third** site: the boundary-audit block at
   `r2000-coverage.ts:1983-1986` compares `blockType !== "Code"` and
@@ -149,7 +142,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   "two functions" as the requirement's measurement, not as an exhaustive list.
   — **Reversibility:** reversible.
 
-- **D-12: `r2000-coverage.ts` keeps its name this phase.** Only its store
+- **D-12 — `r2000-coverage.ts` keeps its name this phase.** Only its store
   contact moves; the census itself is protected by its registry entry (D-06/D-07)
   rather than by a rename. It is 2292 lines with a 4315-line test file, no
   criterion requires the rename, and renaming it makes criterion 4's
@@ -157,8 +150,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   available to Phase 31/32 once its consumers are already repointed.
   — **Reversibility:** reversible.
 
-- **D-13: The adapter is proven substitutable by a second implementation, not by
-  a string search.** A new test feeds the census a *different* block-vocabulary
+- **D-13 — The adapter is proven substitutable by a second implementation, not by a string search.** A new test feeds the census a *different* block-vocabulary
   implementation through the adapter and asserts the census's byte counts are
   unchanged while only the divergence sub-report moves. This is the same shape
   as the existing independence test at `r2000-coverage.test.ts:604` (the
@@ -170,7 +162,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
 
 ### Extraction scope beyond the three requirements
 
-- **D-14: `prg-image.ts` is extracted in this phase.** `parsePrg` and
+- **D-14 — `prg-image.ts` is extracted in this phase.** `parsePrg` and
   `flatImageOrigin` move out of `r2000-project.ts` into a new
   `src/mcp/vice/prg-image.ts`. They are the concrete instance behind
   `r2000-project.ts`'s `glue-with-extractable` verdict (D-08), so extracting now
@@ -182,8 +174,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   — **Reversibility:** costly — adding a file to `files[]` changes the published
   tarball; removing it later is a packaging change to a published contract.
 
-- **D-15: `shippedTsModules()` / `codeOnly()` are extracted to one shared
-  test-only helper, and all copies are repointed.** The scout found **four**
+- **D-15 — `shippedTsModules()` / `codeOnly()` are extracted to one shared test-only helper, and all copies are repointed.** The scout found **four**
   hand-copies of `shippedTsModules()` — `r2000-spawn-seam.test.ts:176`,
   `stock-dispatch.test.ts:2902`, `docs-dangling-refs.test.ts:353`,
   `comment-phase-pointers.test.ts:400` — and two of `codeOnly()`
@@ -201,8 +192,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
   identical on inspection.
   — **Reversibility:** reversible.
 
-- **D-16: The "no import between sibling guard tests" convention is clarified,
-  not overruled.** `comment-phase-pointers.test.ts:53-59` records its copy as a
+- **D-16 — The "no import between sibling guard tests" convention is clarified, not overruled.** `comment-phase-pointers.test.ts:53-59` records its copy as a
   deliberate independence choice: *"Kept as a second, independent copy rather
   than an import — this file and `docs-dangling-refs.test.ts` each own their own
   scan end-to-end."* The convention forbids one guard test importing **another
@@ -217,8 +207,7 @@ a new store (Phase 31), any deletion (Phase 32). No behaviour change of any kind
 
 ### Proving it was a move (criterion 4)
 
-- **D-17: The green-run evidence names the command and states the broker was
-  stopped.** A live VICE broker makes the `BACK-05` D→G ordering test go red
+- **D-17 — The green-run evidence names the command and states the broker was stopped.** A live VICE broker makes the `BACK-05` D→G ordering test go red
   **deterministically** — a known, recorded environmental condition with an open
   todo (`.planning/todos/pending/2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host.md`).
   It is a pre-existing red, not something this extraction causes, and fixing it

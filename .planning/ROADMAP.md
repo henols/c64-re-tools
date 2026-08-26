@@ -397,7 +397,17 @@ on the record — before a line of store code exists.
   3. `r2000-coverage.ts`'s contact with the annotation store is a **named, repointable boundary** rather than two functions comparing against upstream's Rust `Display` strings, and `COV-01`/`COV-02`'s census-versus-store boundary test — the one that rewrites every block entry to a single type and asserts no census byte count moves — passes across that boundary. The coverage instrument survives the substrate swap intact instead of being deleted as glue.
   4. Full `npm test` (the whole glob, broker stopped, command named in the evidence) is green with **zero** `r2000` modules deleted — the extraction is demonstrably a move rather than a change, which is what makes every later phase's diff readable.
 
-**Plans**: TBD
+**Plans**: 5 plans in 3 waves
+
+Plans:
+- [ ] 27-01-PLAN.md — Extract the ACME availability gate into `acme-gate.ts`, repoint its four importers, and prove the missing-ACME hard-FAIL by a committed child-process observation (SEAM-01)
+- [ ] 27-02-PLAN.md — Reduce the coverage census's store contact to one named boundary, `block-class.ts`, and prove it substitutable with a zero-overlap second vocabulary (SEAM-03)
+- [ ] 27-03-PLAN.md — Move `parsePrg`, `flatImageOrigin` and `decodeRawData` into a shipped `prg-image.ts` and repoint all nine consumers (SEAM-02, SEAM-03)
+- [ ] 27-04-PLAN.md — Extract the four hand-copied `shippedTsModules()` enumerators and `codeOnly()` into `shipped-modules.ts`, and rewrite both recorded statements of the sharing convention (SEAM-02)
+- [ ] 27-05-PLAN.md — Record the capability-or-glue classification in `module-classification.ts` with its enforcing guard, then produce criterion 4's full-glob green-run evidence (SEAM-02)
+
+Waves: 1 = 27-01, 27-02 (disjoint file sets) · 2 = 27-03, 27-04 · 3 = 27-05
+(its entries must cite the post-extraction tree, so it runs last).
 
 Notes:
 
