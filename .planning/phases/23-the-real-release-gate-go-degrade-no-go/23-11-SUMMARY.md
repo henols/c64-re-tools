@@ -210,3 +210,12 @@ None — no external service configuration required.
 ---
 *Phase: 23-the-real-release-gate-go-degrade-no-go*
 *Completed: 2026-08-26*
+
+## Self-Check: PASSED
+
+- All 5 declared files exist on disk (`23-11-SUMMARY.md`, `ROADMAP.md`, `STATE.md`, `REQUIREMENTS.md`, `WINDOWS.md`).
+- All 4 task/summary commits exist in `git log --all`: `edad925`, `973edb9`, `c9970ed`, `b12baa7`.
+- Task 1 automated verify: `ROADMAP-OK`.
+- Task 2 automated verify: `STATE-OK`.
+- Task 3 automated verify as written: **fails by design** (`NOT COMPLETE: PROOF-01`, exit 1) — recorded unsatisfiable, see Deviation 1. Substituted check asserting the corrected shape: `TRACEABILITY-OK-AS-CORRECTED`.
+- Plan-level verification: Phase 24's block names the findings path twice; STATE.md names it 7 times; `git diff --name-only d6cf1ba~1..HEAD` yields 0 paths outside `.planning/` and `docs/`; full `npm test` = 2593 pass / 0 fail.
