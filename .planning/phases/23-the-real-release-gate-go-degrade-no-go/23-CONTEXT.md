@@ -82,8 +82,7 @@ planned before this phase closes.
   makes criteria 2 and 3 credible; producing it after measuring destroys the
   property and cannot be repaired by re-ordering documents.
 
-- **D-06: The inventory is produced by VICE runtime observation — never by dxa
-  or Ghidra.** Watchpoint `$01` and run: every bank switch is recorded with its
+- **D-06: The inventory is produced by VICE runtime observation — never by dxa or Ghidra.** Watchpoint `$01` and run: every bank switch is recorded with its
   actual program point and actual value. Checkpoint the dispatch site for
   criterion 2. **This closes a circularity trap:** if either engine under test
   produced the inventory, criterion 2 would degrade to "Ghidra resolved the
@@ -98,8 +97,7 @@ planned before this phase closes.
 
 ### The verdict and its pre-commitment
 
-- **D-07: The decision rules live in their own early plan (23-01), which touches
-  nothing else.** Every measuring plan comes after it. **Git history is the
+- **D-07: The decision rules live in their own early plan (23-01), which touches nothing else.** Every measuring plan comes after it. **Git history is the
   proof** — the rules commit precedes the first measurement commit and is
   checkable with `git log` by anyone, no test required. This is Phase 9's shape,
   which the ROADMAP names as the bar. 23-01 also fixes the corpus inventory
@@ -132,15 +130,13 @@ planned before this phase closes.
   badly can be superseded at verdict time, but only by recording the override
   explicitly, which weakens the pre-commitment it exists to provide.
 
-- **D-10: The verdict is machine-readable frontmatter in a durable findings
-  document**, mirroring `docs/phase9-regenerator2000-probe-findings.md`:
+- **D-10: The verdict is machine-readable frontmatter in a durable findings document**, mirroring `docs/phase9-regenerator2000-probe-findings.md`:
   `verdict: go|degrade|no-go` plus `verdict_rule_applied: R<N>`. The document
   reproduces the full rule and walks the actual outcome values through it, so a
   reader can mechanically re-derive the verdict rather than take it on trust.
   — **Reversibility:** reversible.
 
-- **D-11: The 279-byte fixture's claims are printed beside the new numbers, not
-  replaced by them.** `PROOF-01` is explicit about this, and so is criterion 1:
+- **D-11: The 279-byte fixture's claims are printed beside the new numbers, not replaced by them.** `PROOF-01` is explicit about this, and so is criterion 1:
   a reader must be able to see for themselves whether the fixture flattered the
   tool. The error *direction* is re-measured too — the fixture scored 0 false
   positives against 28% false negatives, and which way the errors run is what

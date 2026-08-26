@@ -258,16 +258,33 @@ before a line of engine or store code exists.
 **Plans**: 11 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 23-01-PLAN.md — Pre-commit the decision rule R1..R9, the outcome-line schema, the criterion-1 measurement definitions and the evidence conventions (wave 1, alone)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 23-02-PLAN.md — Provision dxa 0.1.5 pinned by sha256, Ghidra 12.1.3 and the probe scripts, proven end-to-end on the 279-byte fixture (the tracer)
 - [ ] 23-03-PLAN.md — Corpus intake and depack-by-running flat 64K captures for both releases, with capture equivalence proven
 - [ ] 23-04-PLAN.md — The analyzer.rs capability audit, read offline, every capability given one of three dispositions
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 23-05-PLAN.md — The VICE-observed corpus inventory: $01 timeline, dispatch sites, certain sets and the measurement window
 - [ ] 23-06-PLAN.md — Two-release provenance classification, holding cracker-authored bytes out of criterion 1's denominator
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 23-07-PLAN.md — Criterion 1: dxa's data-recovery rate and error direction, printed beside the fixture's reproduced numbers
 - [ ] 23-08-PLAN.md — Criterion 2: Ghidra against a computed-index dispatch, checked site by site against the runtime inventory
 - [ ] 23-09-PLAN.md — Criterion 3: where a single forward-carried $01 value stops being correct, established by observation
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 23-10-PLAN.md — The findings document and the machine-readable verdict, derived from the pre-committed rule
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 23-11-PLAN.md — ROADMAP and STATE pointers gating Phase 24, and the PROOF traceability flip
 
 Notes:
