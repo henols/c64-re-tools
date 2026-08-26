@@ -171,6 +171,7 @@ decision, not five failures and not an omission.
 - **Phase 26** — Automatic Annotation
 
 **Coverage:**
+
 - v0.6.0 requirements: 32 total
 - Mapped to phases: 32
 - Unmapped: 0 ✓

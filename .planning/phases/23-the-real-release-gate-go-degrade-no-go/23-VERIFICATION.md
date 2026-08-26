@@ -1,10 +1,31 @@
 ---
 phase: 23-the-real-release-gate-go-degrade-no-go
 verified: 2026-08-26T18:09:32Z
-status: gaps_found
-score: 2/5 must-haves verified
+score: 2/5 must-haves verified + 3 accepted overrides = 5/5 accounted for (the 3 are accepted as NOT MET, not reclassified as met)
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 3
+overrides:
+  - must_have: "dxa's data-recovery rate and false-positive count are readable as numbers against a named real release, printed beside the 279-byte fixture's claim"
+    reason: "Blocked on a reproducible flat-64K capture, which is blocked on a frame-exact emulator stop that provably does not exist today (201 multi-bit divergences between two snapshot-derived danish runs, re-measured during verification). Recorded no-go under the pre-committed rule R1; re-scoping v0.6.0 is the milestone-level answer, not re-running this phase. A --gaps cycle would produce plans that cannot run, which is the substitution R1 exists to prevent."
+    accepted_by: "henrik (asked at phase close and delegated the decision to the execute-phase orchestrator)"
+    accepted_at: "2026-08-26T18:44:56Z"
+  - must_have: "A computed-index indirect dispatch from real code is resolved by Ghidra with the target shown, or recorded as unresolved with its transcript"
+    reason: "Same substrate blocker (D-03). Correctly recorded could-not-run rather than the flattering not-exercised, which the findings document states was never earned because no pre-committed inventory exists to earn it."
+    accepted_by: "henrik (asked at phase close and delegated the decision to the execute-phase orchestrator)"
+    accepted_at: "2026-08-26T18:44:56Z"
+  - must_have: "The point at which a single forward-carried $01 value stops being correct is established rather than assumed"
+    reason: "Same substrate blocker (D-03). AUTO-04/AUTO-05 are recorded unvalidated in the Phase 26 ROADMAP entry rather than silently narrowed."
+    accepted_by: "henrik (asked at phase close and delegated the decision to the execute-phase orchestrator)"
+    accepted_at: "2026-08-26T18:44:56Z"
+override_note: |
+  The three overridden must-haves are the "re-measure against real cracked releases" half of
+  the phase goal. They are accepted as NOT MET, not reclassified as met. The other half -- a
+  recorded verdict from a rule frozen before any number existed -- was delivered and is bound
+  into Phases 24/25/26, STATE.md and REQUIREMENTS.md. PROOF-01/02/03 remain Pending in
+  REQUIREMENTS.md and must not be flipped by this override.
+  Verification warnings W1, W2 and W4 were closed before the override was applied
+  (commit 9320279); W3 is left to the nyquist validate-phase step that owns 23-VALIDATION.md.
+status: passed
 decision_coverage:
   honored: 11
   total: 11

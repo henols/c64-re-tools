@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: Own the substrate (Phases 23-26)
-current_phase: 23
-current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
-status: executing
-stopped_at: Completed 23-11-PLAN.md — Phase 23 closed on verdict no-go (rule R1); gate bound into ROADMAP/STATE/REQUIREMENTS
-last_updated: "2026-08-26T15:59:30.979Z"
+current_phase: 24
+current_phase_name: The Two Engines
+status: planning
+stopped_at: Phase 23 complete, ready to plan Phase 24
+last_updated: "2026-08-26T18:48:03.724Z"
 last_activity: 2026-08-26
-last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
-state_head: 5ee1c3e9c67eda2e2bbdb6025d4b41a682a82df8
+last_activity_desc: Phase 23 complete, transitioned to Phase 24
+state_head: 9320279a543cc21a6eeaf842a071c7fe19584ec3
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 11
+  completed_phases: 1
+  total_plans: 6
   completed_plans: 6
-  percent: 0
+  percent: 25
 ---
 
 # Project State
@@ -69,6 +69,12 @@ the pattern Phase 9 used. Phases 24-26 build the two engines, the annotation
 store and cutover, and automatic annotation respectively. **Nothing in Phases
 24-26 may be planned as though Phase 23's verdict is already known** — a
 `degrade` narrows scope and a `no-go` changes what the milestone is.
+**As of 2026-08-26 the verdict IS known and it is `no-go`** (rule `R1`,
+`docs/phase23-real-release-gate-findings.md`), so that guard is now discharged into a
+live decision rather than a caution: `R1` says *secure a corpus first, or re-scope
+v0.6.0 to a claim explicitly qualified as fixture-only*, and neither branch has been
+taken yet. Phase 23 measured criterion 4 only; criteria 1, 2 and 3 are `could-not-run`
+for want of a depacked capture.
 `DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04` are deliberately v0.7.0 and
 are not mapped. ROADMAP.md carries all four shipped milestones collapsed, with
 full detail in `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md`,
@@ -80,17 +86,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — COMPLETE (verdict recorded)
-Plan: 6 of 11 executed (23-01, 23-02, 23-03, 23-04, 23-10, 23-11) — 23-05..23-09 **deliberately NOT dispatched** by explicit operator decision (each reads the depacked flat-64K capture as its substrate, D-03, and 23-03 could not produce one); their criteria are `could-not-run`. This is 6 of 11 executed and 5 deliberately not dispatched — **not** 11/11, and **not** five failures.
-Status: **Phase 23 COMPLETE.** Verdict recorded: **`no-go`**, rule **`R1`** fired on the single input `C0_CORPUS: partial`, and bound by 23-11 into ROADMAP.md, this file and REQUIREMENTS.md. Next: **Phase 24 (The Two Engines) is verdict-gated** — read `docs/phase23-real-release-gate-findings.md` frontmatter `verdict` / `verdict_rule_applied` before writing any plan there. `R1`'s own recorded consequence: *secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only.* The frontmatter progress counters below are handler-derived and read 6/11 plans and 0/4 phases because five plans were deliberately not dispatched — the phase is complete in fact while incomplete by plan count.
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 6 of 11 executed (5 deliberately not dispatched, so the phase reads incomplete by plan count while being complete in fact)
-Last activity: 2026-08-26 — 23-11 complete: the verdict now gates Phase 24 through the ROADMAP `**Depends on**` line and Notes its planner reads first, `R1`'s consequence is written beside (never over) the Phases 24/25/26 success criteria, and the PROOF traceability reflects reality — PROOF-04 and PROOF-05 Complete, PROOF-01/02/03 recorded **not met** with their reason. Previously: 23-10 complete: `docs/phase23-real-release-gate-findings.md` records verdict **no-go** / rule **R1**, derived from the pre-committed rule; the rule reproduced verbatim, the five non-dispatched plans named, 8 accepted limits and 15 corrections collected
+Phase: 24 — The Two Engines
+Plan: Not started
+Status: **BLOCKED ON A MILESTONE DECISION — do not plan Phase 24 as scoped.** Phase 23 closed with the recorded verdict **`no-go`** (rule **`R1`**, fired on `C0_CORPUS: partial`). `R1`'s own consequence: *secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only.* That choice has not been made. Read `docs/phase23-real-release-gate-findings.md` frontmatter (`verdict`, `verdict_rule_applied`) before writing any plan here — Phases 24, 25 and 26 all carry the same Verdict-gated line in ROADMAP.md.
+Progress: [██░░░░░░░░] 25% — 1/4 phases complete (v0.6.0). Phase 23: 6 plans executed, 5 retired unexecuted (`status: superseded`, no substrate — see each plan's `superseded_reason`), closed `passed` with **3 accepted overrides recording criteria 1-3 as NOT MET**.
+Last activity: 2026-08-26 — Phase 23 complete on a no-go verdict; the "re-measure against real cracked releases" half of its goal was not achieved and is accepted as not met, not reclassified. The single gate on reviving it is a frame-exact emulator stop (todo `2026-08-26-frame-exact-emulator-stop-is-unowned.md`), which nothing owns.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 187
+- Total plans completed: 193
 - Average duration: —
 - Total execution time: —
 
@@ -118,6 +124,7 @@ Last activity: 2026-08-26 — 23-11 complete: the verdict now gates Phase 24 thr
 | 17 | 4 | 2026-08-23 | Ledger closed to 0; CORE-01 decided keep-dated; G-17-1 provenance correction |
 | 18 | 7 | - | - |
 | 19 | 20 | - | - |
+| 23 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -1071,7 +1078,7 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-26T15:59:30.945Z
-Stopped at: Completed 23-11-PLAN.md — Phase 23 closed on verdict no-go (rule R1); gate bound into ROADMAP/STATE/REQUIREMENTS
+Stopped at: Phase 23 complete, ready to plan Phase 24
   Phase 23 is closed. The verdict `no-go` (rule `R1`) now gates Phase 24 through
   its ROADMAP `**Depends on**` line and Notes, this file points at
   `docs/phase23-real-release-gate-findings.md` rather than copying it, and the
