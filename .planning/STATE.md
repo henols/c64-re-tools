@@ -5,10 +5,10 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 23-04-PLAN.md
+stopped_at: 23-03 Task 3 blocked — vice MCP tool surface unreachable
 last_updated: "2026-08-26T11:39:37.510Z"
 last_activity: 2026-08-26
-last_activity_desc: Phase 23 execution started
+last_activity_desc: Phase 23 waves 1-2 executed; 23-03 halted awaiting vice MCP
 state_head: 990b24fde0547f91d591944437bf0def41d454cf
 progress:
   total_phases: 4
@@ -81,10 +81,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 4 of 11
-Status: Ready to execute
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plan 2 of 11 done
-Last activity: 2026-08-26 — Phase 23 execution started
+Plan: 3 of 11 complete (23-01, 23-02, 23-04); 23-03 halted at Task 3
+Status: BLOCKED — 23-03 Task 3 needs the `vice` MCP tool surface, which is not reachable
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 3 of 11 done
+Last activity: 2026-08-26 — Waves 1-2 executed; 23-03 halted at a blocking-human precondition (no vice_* tools), stalling waves 3-6
 
 ## Performance Metrics
 
