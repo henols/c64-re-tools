@@ -1,0 +1,138 @@
+; Synthetic C64 fixture exercising exactly the constructs the workflow doc
+; claims as its payoff. Every one is a known-hard static-analysis case.
+        * = $0801
+; BASIC stub: 2064 SYS
+        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+
+        * = $0810
+start:
+        lda #$00
+        sta $d020               ; hardware write
+        ldx #$00
+loop_arr:
+        lda arr_src,x           ; indexed array, X bounded by cpx #$20
+        sta arr_dst,x
+        inx
+        cpx #$20
+        bne loop_arr
+
+; --- dispatch via JMP (ptr) built from a split table ---
+        ldx #$02
+        lda disp_lo,x
+        sta $fb
+        lda disp_hi,x
+        sta $fc
+        jmp ($fb)
+
+; --- RTS-trick dispatch (off-by-one targets) ---
+rts_dispatch:
+        ldx #$01
+        lda rts_hi,x
+        pha
+        lda rts_lo,x
+        pha
+        rts
+
+; --- record array, stride 5 ---
+obj_update:
+        ldx #$00
+obj_loop:
+        lda objs+0,x
+        beq obj_next
+        lda objs+1,x
+        clc
+        adc objs+3,x
+        sta objs+1,x
+        lda objs+2,x
+        adc objs+4,x
+        sta objs+2,x
+obj_next:
+        txa
+        clc
+        adc #$05
+        tax
+        cpx #$19
+        bne obj_loop
+        rts
+
+; --- inline parameters after JSR (the classic da65 PARAMSIZE case) ---
+        jsr print
+        !text "HELLO"
+        !byte $00
+        jsr print
+        !text "BYE"
+        !byte $00
+        rts
+
+print:
+        pla
+        sta $fd
+        pla
+        sta $fe
+        ldy #$01
+pr_loop:
+        lda ($fd),y
+        beq pr_done
+        jsr $ffd2
+        iny
+        bne pr_loop
+pr_done:
+        tya
+        clc
+        adc $fd
+        sta $fd
+        lda $fe
+        adc #$00
+        pha
+        lda $fd
+        pha
+        rts
+
+; --- three dispatch targets ---
+handler0:
+        inc $d021
+        rts
+handler1:
+        dec $d021
+        rts
+handler2:
+        lda #$07
+        sta $d021
+        rts
+
+; --- self-modifying code: patch an operand at runtime ---
+smc_setup:
+        lda #$aa
+        sta smc_target+1        ; writes INTO a Code block
+smc_target:
+        lda #$00
+        sta $0400
+        rts
+
+; ============ DATA ============
+disp_lo:
+        !byte <handler0, <handler1, <handler2
+disp_hi:
+        !byte >handler0, >handler1, >handler2
+
+rts_lo:
+        !byte <(handler0-1), <(handler1-1), <(handler2-1)
+rts_hi:
+        !byte >(handler0-1), >(handler1-1), >(handler2-1)
+
+; full address table (little-endian words)
+addrtab:
+        !word handler0, handler1, handler2, print
+
+arr_src:
+        !byte 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+        !byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+arr_dst:
+        !fill $20, $00
+
+objs:
+        !byte $01,$10,$00,$01,$00
+        !byte $01,$20,$00,$ff,$ff
+        !byte $01,$30,$00,$02,$00
+        !byte $00,$00,$00,$00,$00
+        !byte $00,$00,$00,$00,$00

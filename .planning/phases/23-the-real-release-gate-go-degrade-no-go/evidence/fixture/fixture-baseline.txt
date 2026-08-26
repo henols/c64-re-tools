@@ -1,0 +1,511 @@
+# Phase 23 — the 279-byte fixture baseline, reproduced (23-02, the tracer)
+#
+# Throwaway evidence, not product. Transcript convention (evidence/README.md #1):
+# every `$ <command>` line below is followed by that command's real stdout and
+# stderr. Nothing is summarised in place of output.
+#
+# What this file is for: SCHEMA.md § 4 fixes the criterion-1 measurement
+# definitions as "the fixture's own definitions, recovered by reproduction, so
+# the D-11 side-by-side is apples-to-apples". This file is that reproduction.
+# The numbers below are computed here from the rebuilt fixture by this phase's
+# own parser (evidence/dxa-listing-parse.mjs), not quoted from the pivot note.
+#
+# PROBE_DIR = /home/henrik/.cache/c64-re-tools/phase23
+
+
+## 1. Rebuild the fixture
+
+$ acme -f cbm -o fixture.prg -l fixture.lbl -r fixture.rep fixture.a
+[exit 0]
+
+$ ls -l fixture.prg
+-rw-rw-r-- 1 henrik henrik 281 26 aug 12.25 fixture.prg
+[exit 0]
+
+$ sha256sum fixture.prg
+62ab9a2c287bf33f959be28409eeae5a46b6bf1ac6d2f7e88b7850611a6fc2c0  fixture.prg
+[exit 0]
+
+$ diff -u fixture-pivot.lbl fixture.lbl
+[exit 0]
+
+The regenerated fixture.lbl is byte-identical to the pivot's — `diff` produced no
+output and exited 0. That is the first reproduction fact: the same assembler on
+the same source yields the same ground-truth symbol table, so the fixture this
+phase measures is the fixture the pivot measured, not a lookalike.
+
+281 bytes = 2 CBM header bytes + 279 image bytes, as the plan states.
+
+
+## 2. Run dxa
+
+The pivot's own published command line, with one substitution: `-a dump`
+in place of `-a enabled`. The pivot note's README records the run as
+`dxa -U -p all-nmos6502 -t detect-all -a enabled fixture.prg`, and its dxa.out
+shows address+text lines with NO byte columns. SCHEMA.md § 6 fixes the listing
+parser on a byte-column shape, which only `-a dump` emits, and 23-02-PLAN.md
+asks for `-a dump`. Both facts are recorded rather than reconciled silently;
+the substitution is carried into `## RESEARCH CORRECTIONS` below.
+
+$ env PATH=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools:/home/henrik/.local/bin:/home/henrik/.nvm/versions/node/v22.22.0/bin:/home/henrik/.dotnet:/home/henrik/.bun/bin:/home/henrik/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/snap/bin:/home/henrik/.claude/plugins/cache/claude-plugins-official/discord/0.0.4/bin:/home/henrik/.claude/plugins/cache/claude-plugins-official/frontend-design/unknown/bin:/home/henrik/.claude/plugins/marketplaces/gitkraken/plugins/gitkraken-hooks/bin:/home/henrik/.claude/plugins/cache/claude-plugins-official/skill-creator/unknown/bin dxa -U -p all-nmos6502 -t detect-all -a dump fixture.prg
+              	.word $0801
+              	* = $0801
+
+; 12 byte BASIC header.
+0801 0b 08 0a 	.byt $0b,$08,$0a
+0804 00 9e 32 	.byt $00,$9e,$32
+0807 30 36 34 	.byt $30,$36,$34
+080a 00 00 00 	.byt $00,$00,$00
+080d 00 00 00 	.byt $00,$00,$00
+0810          l810:
+0810 a9 00    	lda #$00
+0812 8d 20 d0 	sta $d020
+0815 a2 00    	ldx #$00
+0817          l817:
+0817 bd bf 08 	lda l8bf,x
+081a 9d df 08 	sta l8df,x
+081d e8       	inx
+081e e0 20    	cpx #$20
+0820 d0 f5    	bne l817
+0822 a2 02    	ldx #$02
+0824 bd ab 08 	lda l8ab,x
+0827 85 fb    	sta $fb
+0829 bd ae 08 	lda l8ae,x
+082c 85 fc    	sta $fc
+082e 6c fb 00 	jmp ($00fb)
+0831          l831:
+0831 a2 01    	ldx #$01
+0833 bd b4 08 	lda l8b4,x
+0836 48       	pha
+0837 bd b1 08 	lda l8b1,x
+083a 48       	pha
+083b 60       	rts
+083c          l83c:
+083c a2 00    	ldx #$00
+083e          l83e:
+083e bd ff 08 	lda l8ff,x
+0841 f0 13    	beq l856
+0843          l843:
+0843 bd 00 09 	lda l900,x
+0846 18       	clc
+0847 7d 02 09 	adc l902,x
+084a 9d 00 09 	sta l900,x
+084d bd 01 09 	lda l901,x
+0850 7d 03 09 	adc l903,x
+0853 9d 01 09 	sta l901,x
+0856          l856:
+0856 8a       	txa
+0857 18       	clc
+0858 69 05    	adc #$05
+085a aa       	tax
+085b e0 19    	cpx #$19
+085d d0 df    	bne l83e
+085f          l85f:
+085f 60       	rts
+0860          l860:
+0860 20 71 08 	jsr l871
+0863 48       	pha
+0864 45 4c    	eor $4c
+0866 4c 4f 00 	jmp $004f
+0869 20 71 08 	.byt $20,$71,$08
+086c 42       	.byt $42
+086d          l86d:
+086d 59 45 00 	eor !$0045,y
+0870 60       	rts
+0871          l871:
+0871 68       	pla
+0872 85 fd    	sta $fd
+0874 68       	pla
+0875 85 fe    	sta $fe
+0877 a0 01    	ldy #$01
+0879          l879:
+0879 b1 fd    	lda ($fd),y
+087b f0 06    	beq l883
+087d          l87d:
+087d 20 d2 ff 	jsr $ffd2
+0880 c8       	iny
+0881 d0 f6    	bne l879
+0883          l883:
+0883 98       	tya
+0884 18       	clc
+0885 65 fd    	adc $fd
+0887 85 fd    	sta $fd
+0889 a5 fe    	lda $fe
+088b 69 00    	adc #$00
+088d 48       	pha
+088e a5 fd    	lda $fd
+0890 48       	pha
+0891 60       	rts
+0892          l892:
+0892 ee 21 d0 	inc $d021
+0895 60       	rts
+0896          l896:
+0896 ce 21 d0 	dec $d021
+0899 60       	rts
+089a          l89a:
+089a a9 07    	lda #$07
+089c 8d 21 d0 	sta $d021
+089f 60       	rts
+08a0          l8a0:
+08a0 a9 aa    	lda #$aa
+08a2 8d a6 08 	sta l8a6
+	08a6          l8a6 = * + 1
+08a5 a9 00    	lda #$00
+08a7 8d 00 04 	sta $0400
+08aa 60       	rts
+08ab          l8ab:
+08ab 92 96 9a 	.byt $92,$96,$9a
+08ae          l8ae:
+08ae 08 08 08 	.byt $08,$08,$08
+08b1          l8b1:
+08b1 91 95 99 	.byt $91,$95,$99
+08b4          l8b4:
+08b4 08 08 08 	.byt $08,$08,$08
+08b7 92 08      .word l892
+08b9 96 08      .word l896
+08bb 9a 08      .word l89a
+08bd 71 08      .word l871
+08bf          l8bf:
+08bf 00       	.byt $00
+08c0          l8c0:
+08c0 01 02    	ora ($02,x)
+08c2 03 04    	slor ($04,x)
+08c4 05 06    	ora $06
+08c6 07 08    	slor $08
+08c8 09 0a    	ora #$0a
+08ca 0b 0c    	anc #$0c
+08cc 0d 0e 0f 	ora $0f0e
+08cf 10 11    	bpl l8e2
+08d1 12 13 14 	.byt $12,$13,$14
+08d4 15 16 17 	.byt $15,$16,$17
+08d7 18 19 1a 	.byt $18,$19,$1a
+08da 1b 1c 1d 	.byt $1b,$1c,$1d
+08df          l8df = * + 2
+08dd 1e 1f 00 	.byt $1e,$1f,$00
+08e2          l8e2 = * + 2
+08e0 00 00 00 	.byt $00,$00,$00
+08e3 00 00 00 	.byt $00,$00,$00
+08e6 00 00 00 	.byt $00,$00,$00
+08e9 00 00 00 	.byt $00,$00,$00
+08ec 00 00 00 	.byt $00,$00,$00
+08ef 00 00 00 	.byt $00,$00,$00
+08f2 00 00 00 	.byt $00,$00,$00
+08f5 00 00 00 	.byt $00,$00,$00
+08f8 00 00 00 	.byt $00,$00,$00
+08fb 00 00 00 	.byt $00,$00,$00
+08ff          l8ff = * + 1
+08fe 00 01    	.byt $00,$01
+0900          l900:
+	0901          l901 = * + 1
+0900 10 00    	bpl l902
+0902          l902:
+	0903          l903 = * + 1
+0902 01 00    	ora ($00,x)
+0904 01 20    	ora ($20,x)
+0906 00       	.byt $00
+0907          l907:
+0907 ff ff 01 	isbc $01ff,x
+090a 30 00    	bmi l90c
+090c          l90c:
+090c 02 00 00 	.byt $02,$00,$00
+090f 00 00 00 	.byt $00,$00,$00
+0912 00 00 00 	.byt $00,$00,$00
+0915 00 00 00 	.byt $00,$00,$00
+[exit 0]
+
+The full listing is 163 lines; it lives at /home/henrik/.cache/c64-re-tools/phase23/fixture/dump.lst and dxa wrote
+nothing to stderr (0 lines). The listing is reproduced above in full as the
+command output.
+
+
+## 3. Parse the listing
+
+evidence/dxa-listing-parse.mjs is the single `-a dump` column parser this phase
+owns. It is run here for the first time.
+
+$ node dxa-listing-parse.mjs /home/henrik/.cache/c64-re-tools/phase23/fixture/dump.lst 279
+LISTING: /home/henrik/.cache/c64-re-tools/phase23/fixture/dump.lst
+IMAGE_SIZE_DECLARED: 279
+PARSE_MATCHED_LINES: 125
+PARSE_ACCOUNTED_BYTES: 279
+PARSE_CODE_BYTES: 179
+PARSE_DATA_BYTES: 100
+PARSE_CODE_ADDRESSES: 179
+PARSE_DATA_ADDRESSES: 100
+PARSE_ADDRESS_RANGE: $0801-$0917
+[exit 0]
+
+The parser's own totals agree with SCHEMA.md section 4's statement of the
+fixture's shape -- "179 bytes emitted as instructions, 100 as `.byt`/`.word`,
+179 + 100 = 279" -- exactly, and were computed here rather than copied.
+
+
+## 4. The refusal, demonstrated
+
+The parser THROWS when the accounted byte total does not equal the declared
+image size. That guard is what turns an unseen line shape into a failure rather
+than a silent undercount. Demonstrated against a deliberately truncated copy of
+the same listing -- the last 20 lines removed -- so the refusal is shown firing
+on real input, not asserted.
+
+$ wc -l dump.lst dump-truncated.lst
+ 163 dump.lst
+ 143 dump-truncated.lst
+ 306 total
+[exit 0]
+
+$ node dxa-listing-parse.mjs /home/henrik/.cache/c64-re-tools/phase23/fixture/dump-truncated.lst 279
+file:///home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/dxa-listing-parse.mjs:100
+    throw new Error(
+          ^
+
+Error: dxa-listing-parse: accounted byte total 247 does not equal expected image size 279. Refusing to report an under-counted classification. accounted=247 expected=279 (matched 112 byte-emitting lines; an unseen line shape, an overlapping emission, or a wrong declared size is the cause).
+    at parseDumpListing (file:///home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/dxa-listing-parse.mjs:100:11)
+    at main (file:///home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/dxa-listing-parse.mjs:133:13)
+    at file:///home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/dxa-listing-parse.mjs:150:54
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.22.0
+[exit 1]
+
+The message names both the accounted count (247) and the expected count (279),
+as required, and exits non-zero.
+
+
+## 5. Re-derive the ground truth and cross it against dxa
+
+23-RESEARCH.md logs the fixture's 141-code / 138-data partition as assumption
+A1. This section tests A1 instead of inheriting it. The partition is re-derived
+BYTE BY BYTE from the assembler's own report -- every emitting source line's
+address and exact byte length, with acme's truncated byte columns recovered
+from the directive itself -- and then crossed against dxa's classification
+using SCHEMA.md section 4's definitions (positive class data, denominator
+certain-data bytes).
+
+$ node fixture-baseline.mjs /home/henrik/.cache/c64-re-tools/phase23/fixture/fixture.rep /home/henrik/.cache/c64-re-tools/phase23/fixture/dump.lst 0801 279
+--- ground truth, re-derived from the acme report ---
+GT_EMISSIONS: 90
+GT_TRUNCATED_COLUMNS_RECOVERED: 4
+GT_CODE_BYTES: 145
+GT_DATA_BYTES: 131
+GT_PAD_BYTES: 3
+GT_PAD_RANGE: $080d-$080f (3 bytes, emitted by no source directive; assembler fill from a `* =` re-origin)
+
+--- dxa's classification, via evidence/dxa-listing-parse.mjs ---
+DXA_MATCHED_LINES: 125
+DXA_ACCOUNTED_BYTES: 279
+DXA_CODE_BYTES: 179
+DXA_DATA_BYTES: 100
+
+--- crossed, per SCHEMA.md section 4 definitions ---
+CROSS_STRICT_TRUE_DATA_BYTES: 131
+CROSS_STRICT_RECOVERED: 94
+CROSS_STRICT_FALSE_POSITIVES: 6
+CROSS_STRICT_FALSE_NEGATIVES: 37
+CROSS_WIDE_TRUE_DATA_BYTES: 134
+CROSS_WIDE_RECOVERED: 97
+CROSS_WIDE_FALSE_POSITIVES: 3
+CROSS_WIDE_FALSE_NEGATIVES: 37
+
+--- against the published pivot figures ---
+PUBLISHED_GT_CODE_BYTES: 141
+PUBLISHED_GT_DATA_BYTES: 138
+REDERIVED_GT_CODE_BYTES: 145
+REDERIVED_GT_DATA_BYTES_STRICT: 131
+REDERIVED_GT_DATA_BYTES_WITH_PADDING: 134
+GT_PARTITION_MATCHES_PUBLISHED: no
+
+--- the three candidate denominators, all printed ---
+ON_STRICT_DENOMINATOR_RECOVERY: 71.76 (94/131)
+ON_STRICT_DENOMINATOR_FALSE_NEGATIVES: 28.24 (37/131)
+ON_WIDE_DENOMINATOR_RECOVERY: 72.39 (97/134)
+ON_WIDE_DENOMINATOR_FALSE_NEGATIVES: 27.61 (37/134)
+ON_PUBLISHED_DENOMINATOR_RECOVERY: 70.29 (97/138)
+ON_PUBLISHED_DENOMINATOR_FALSE_NEGATIVES: 26.81 (37/138)
+
+--- the false positives, listed, because the published claim is 0 ---
+FP_ADDRESSES: $0869 $086a $086b
+
+--- reconstruction of the published 141/138 partition ---
+RECON_EXTRA_DATA: $0869 $086a $086b $08a6
+RECON_CODE_BYTES: 141
+RECON_DATA_BYTES: 138
+RECON_RECOVERY: 72.46 (100/138)
+RECON_FALSE_POSITIVES: 0
+RECON_FALSE_NEGATIVES: 27.54 (38/138)
+RECON_REPRODUCES_ALL_PUBLISHED_FIGURES: yes
+[exit 0]
+
+
+## 6. The four disputed bytes, shown at source
+
+The re-derivation and the published partition differ by exactly four bytes.
+Here is what dxa did at each of them, and what the source says they are.
+
+$ grep -nE ^(0860|0863|0869|086c|08a0|08a2|08a5)  dump.lst
+55:0860          l860:
+56:0860 20 71 08 	jsr l871
+57:0863 48       	pha
+60:0869 20 71 08 	.byt $20,$71,$08
+61:086c 42       	.byt $42
+99:08a0          l8a0:
+100:08a0 a9 aa    	lda #$aa
+101:08a2 8d a6 08 	sta l8a6
+103:08a5 a9 00    	lda #$00
+[exit 0]
+
+$ grep -nE ^ *(59|60|61|62|63|64|65|10[3-9]|11[0-2])  fixture.rep
+61:    59  0860 207108                     jsr print
+62:    60  0863 48454c4c4f                 !text "HELLO"
+63:    61  0868 00                         !byte $00
+64:    62  0869 207108                     jsr print
+65:    63  086c 425945                     !text "BYE"
+66:    64  086f 00                         !byte $00
+67:    65  0870 60                         rts
+105:   103                          ; --- self-modifying code: patch an operand at runtime ---
+106:   104                          smc_setup:
+107:   105  08a0 a9aa                       lda #$aa
+108:   106  08a2 8da608                     sta smc_target+1        ; writes INTO a Code block
+109:   107                          smc_target:
+110:   108  08a5 a900                       lda #$00
+111:   109  08a7 8d0004                     sta $0400
+112:   110  08aa 60                         rts
+113:   111                          
+114:   112                          ; ============ DATA ============
+[exit 0]
+
+Reading those two extracts together:
+
+  $0869-$086b  The source (report line 64) emits `jsr print`, an instruction:
+               `print` pops its own return address, walks the inline string, and
+               returns PAST it, so control really does arrive at $0869 and this
+               really is executed code. dxa emitted `.byt $20,$71,$08` for it
+               (listing line 60) -- it had already lost the thread inside the
+               first inline string at $0863 and never recovered before the
+               second call. Under SCHEMA.md section 4 these are three bytes of
+               C that dxa typed as data, i.e. three FALSE POSITIVES.
+
+  $08a6        The operand cell of `lda #$00` at smc_target (report line 108).
+               `sta smc_target+1` at $08a2 writes into it at runtime (report
+               line 106, and the source comment says so: "writes INTO a Code
+               block"). dxa typed $08a5-$08a6 as one instruction, i.e. code.
+               Whether this cell is "code" or "data" is a definitional choice,
+               not an observation.
+
+
+## RESEARCH CORRECTIONS
+
+Recorded in this plan's own evidence file, per evidence/README.md convention 8
+(single-owner file rule). 23-10 owns 23-RESEARCH.md and the findings document
+and collects these in one pass. Nothing below is edited into 23-RESEARCH.md by
+this plan.
+
+**RC-1. Assumption A1 -- the fixture's 141-code / 138-data partition is NOT
+source-derivable, and this plan is the first to check.**
+
+23-RESEARCH.md logs the 141/138 partition as assumption A1. Re-deriving it byte
+by byte from `fixture.a` via acme's own report gives **145 code / 131 data /
+3 assembler-pad**, or 145/134 with the pad counted as data. It does not give
+141/138 under any padding treatment. The published partition classifies four
+more bytes as data than the source does.
+
+Those four bytes are identified above: `$0869-$086b`, the second `jsr print`
+opcode that dxa mis-typed as data, and `$08a6`, the self-modified operand cell.
+Reclassifying exactly those four from code to data reproduces **all four**
+published figures simultaneously and exactly -- 141/138, 72.46% (100/138),
+0 false positives, 27.54% (38/138) -- as `RECON_*` above shows.
+
+**That reconstruction was FITTED, and is recorded as a hypothesis, not as a
+derivation.** The four addresses were chosen because they make the numbers
+agree; the fact that they are also semantically meaningful (an inline-parameter
+blob boundary and an SMC operand cell) is corroboration, not proof. What is
+proven is the negative: the published partition cannot be recovered from the
+source alone, so A1 was an assumption and remains one.
+
+**Why this matters to D-11, which is the whole reason the fixture is here.**
+The pivot's partition is *more generous to dxa than the source is*, in the one
+place that decides the headline "0 false positives" claim. Three bytes dxa got
+wrong -- it typed a live JSR as data -- are counted as data in the published
+ground truth, so they score as a success instead of as three false positives.
+The corpus measurement in 23-06/23-07 derives its `C` and `D` sets from the
+pre-committed VICE runtime inventory (D-05/D-06, SCHEMA.md section 4), which has
+no equivalent hand-adjustment step. **A side-by-side that prints the corpus's
+inventory-derived numbers beside the pivot's published 72.46% / 0-FP is
+therefore NOT apples-to-apples.** The apples-to-apples fixture figures are the
+source-derived ones on the outcome lines below: 72.39% recovery, 3 false
+positives, 27.61% false negatives. D-11 should print those, and may print the
+pivot's published figures beside them only with this correction attached.
+
+**RC-2. The pivot's published dxa command line uses `-a enabled`, not `-a dump`.**
+
+The pivot evidence README records the run as
+`dxa -U -p all-nmos6502 -t detect-all -a enabled fixture.prg`, and its `dxa.out`
+carries address+text lines with no byte columns. 23-02-PLAN.md's action text
+calls `-U -p all-nmos6502 -t detect-all -a dump` "the pivot's own published
+command line"; the `-a dump` part is not the pivot's, it is this phase's, and
+SCHEMA.md section 6 requires it because the byte columns are what make counts
+READ rather than inferred from mnemonic lengths. dxa's classification is
+identical under both (179 code / 100 data either way -- the pivot's own dxa.out
+shows the same `.byt $20,$71,$08` at $0869). The substitution is correct and
+changes no number; only the attribution in the plan text is wrong.
+
+**RC-3. dxa's "alpha software" self-description is in INSTALL, not the man page.**
+
+23-02-PLAN.md attributes it to `dxa.1`. `grep -i alpha dxa.1` exits 1 with no
+output; the statement is at INSTALL:15, "Please keep in mind this is still
+considered \"alpha\" software and there may be bugs, which is why it is not part
+of the official xa distribution yet." The claim holds; the citation does not.
+Recorded in evidence/tools/instrument-provenance.txt as well.
+
+
+## ACCEPTED LIMIT
+
+Per SCHEMA.md's preamble: a measuring plan that needs a name or a value the
+pre-commitment does not declare records that as an ACCEPTED LIMIT in its own
+evidence file. It does not invent a name and it does not edit SCHEMA.md. Four
+divergences between 23-02-PLAN.md and SCHEMA.md are resolved in SCHEMA.md's
+favour, it being the frozen pre-commitment:
+
+  1. `DXA_TARBALL_SHA256_VERIFIED` -- SCHEMA.md declares the domain `yes | no`.
+     23-02-PLAN.md's action text and its automated verify both expect `pass`.
+     SCHEMA.md wins: this file and evidence/tools/TOOLS.txt carry `yes`. The
+     plan's own verify regex `^DXA_TARBALL_SHA256_VERIFIED: pass$` is therefore
+     unsatisfiable without contradicting the pre-commitment, and is not
+     satisfied. The evidence is not bent to match it.
+
+  2. `FIXTURE_REPRODUCED` -- SCHEMA.md declares `yes | no | could-not-run`.
+     23-02-PLAN.md expects `pass` / `fail`. SCHEMA.md wins: `no` is written.
+
+  3. `FIXTURE_DATA_RECOVERY_PCT` and `FIXTURE_FALSE_NEGATIVES` -- SCHEMA.md
+     section 3 fixes the percentage shape as `<decimal> (<numerator>/<denominator>)`
+     and puts `FIXTURE_FALSE_NEGATIVES` in that shape. 23-02-PLAN.md expects a
+     bare `72.46` and a bare integer `38`, and its verify regex anchors
+     `FIXTURE_DATA_RECOVERY_PCT` at end-of-line after two decimals. SCHEMA.md
+     wins: both lines carry the full percentage shape.
+
+  4. Outcome-line home -- SCHEMA.md section 3 declares the instrument and
+     fixture-baseline lines to live in `evidence/tools/TOOLS.txt`;
+     23-02-PLAN.md names `evidence/tools/instrument-provenance.txt` and
+     `evidence/fixture/fixture-baseline.txt`. Resolved without a loser: the
+     transcripts stay where the plan puts them and each carries its own outcome
+     lines, and `evidence/tools/TOOLS.txt` is written as the schema-declared
+     single home carrying all of them together. The three files agree
+     line-for-line; a later reader may use either.
+
+
+## OUTCOME LINES
+
+The values below are the SOURCE-DERIVED ones (section 5, wide denominator: the
+three assembler-pad bytes at $080d-$080f counted as data, since they are zero
+fill emitted by no instruction and SCHEMA.md section 4's partition has no third
+category). The strict-denominator variant -- 71.76 (94/131) recovery, 6 false
+positives, 28.24 (37/131) false negatives -- is recorded in section 5 and is not
+the reported baseline.
+
+FIXTURE_TOTAL_BYTES: 279
+FIXTURE_DATA_RECOVERY_PCT: 72.39 (97/134)
+FIXTURE_FALSE_POSITIVES: 3
+FIXTURE_FALSE_NEGATIVES: 27.61 (37/134)
+FIXTURE_REPRODUCED: no

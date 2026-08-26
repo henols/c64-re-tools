@@ -1,0 +1,40 @@
+# Phase 23 — instrument and fixture-baseline outcome lines
+#
+# SCHEMA.md § 3 declares this file the home of the "Instruments and the fixture
+# baseline" outcome lines. 23-02-PLAN.md instead names
+# evidence/tools/instrument-provenance.txt and evidence/fixture/fixture-baseline.txt.
+# Resolved without a loser: those two carry the transcripts AND their own outcome
+# lines, and this file carries all of them together as the schema-declared single
+# home. The three files agree line for line. See ACCEPTED LIMIT 4 in
+# evidence/fixture/fixture-baseline.txt.
+#
+# Written by 23-02. Value domains are SCHEMA.md § 3's, which is the frozen
+# pre-commitment and wins over 23-02-PLAN.md wherever the two disagree.
+#
+# Derivation and full transcripts:
+#   evidence/tools/instrument-provenance.txt   fetch, sha256 verify, build, versions,
+#                                              and the two headless Ghidra rehearsals
+#   evidence/fixture/fixture-baseline.txt      fixture rebuild, dxa run, parse, refusal,
+#                                              ground-truth re-derivation, corrections
+
+DXA_VERSION: 0.1.5
+DXA_TARBALL_SHA256: 8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799
+DXA_TARBALL_SHA256_VERIFIED: yes
+DXA_BINARY_SHA256: 0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523
+GHIDRA_VERSION: 12.1.3 PUBLIC build 2026-Aug-17
+JAVA_VERSION: openjdk 21.0.12.1 2026-08-18 OpenJDK Runtime Environment build 21.0.12.1+1-1-deb13u1-Debian
+VICE_BACKEND: fork 3.10
+FIXTURE_TOTAL_BYTES: 279
+FIXTURE_DATA_RECOVERY_PCT: 72.39 (97/134)
+FIXTURE_FALSE_POSITIVES: 3
+FIXTURE_FALSE_NEGATIVES: 27.61 (37/134)
+FIXTURE_REPRODUCED: no
+
+# FIXTURE_REPRODUCED is `no` because the published 141-code / 138-data ground-truth
+# partition is not recoverable from fixture.a: re-deriving it byte by byte from the
+# assembler's own report gives 145 / 131 / 3-pad. The published FIGURES are exactly
+# reproducible under a four-byte reclassification ($0869-$086b and $08a6), but that
+# reclassification was fitted, so it is recorded as a hypothesis and not as the
+# baseline. The values above are the source-derived ones. Full reasoning, and what
+# it means for D-11's side-by-side, in evidence/fixture/fixture-baseline.txt
+# § RESEARCH CORRECTIONS RC-1.
