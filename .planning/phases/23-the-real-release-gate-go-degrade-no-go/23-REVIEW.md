@@ -5,12 +5,16 @@ depth: standard
 files_reviewed: 1
 files_reviewed_list:
   - docs/phase23-real-release-gate-findings.md
+dispositions:
+  fixed: 7
+  deferred: 4
+  fixed_in: [97993bf, 8f07dd0]
 findings:
   critical: 4
   warning: 5
   info: 2
   total: 11
-status: issues_found
+status: issues_addressed
 ---
 
 # Phase 23: Code Review Report
@@ -70,6 +74,8 @@ those four must not be inferred from this report. They were not reviewed.**
 ## Critical Issues
 
 ### CR-01: The "one measurement a re-run can reproduce today" does not reproduce, and cannot be run as written
+
+**Disposition: FIXED** (8f07dd0) — Replaced with the invocation 23-02 actually ran; re-run and confirmed to reproduce 179/100/279 and $0801-$0917. -g 0000 guidance split between the flat-capture case (mandatory) and fixture.prg (wrong). Records that no detect-internal fixture number exists, so SCHEMA.md s6's print-both protocol was never exercised.
 
 **File:** `docs/phase23-real-release-gate-findings.md:1022-1035`
 
@@ -132,6 +138,8 @@ hazard `-g 0000` exists to prevent.
 
 ### CR-02: "201 multi-bit divergences" is cited to a file that does not contain it, and appears nowhere in the evidence tree
 
+**Disposition: FIXED** (97993bf + 8f07dd0) — Measurement re-run from scratch and landed as evidence/capture/snapshot-divergence.txt with vsf-ram-extract.mjs; reproduces at 201. Citation repointed. Orchestrator provenance stated in the transcript head and inline.
+
 **File:** `docs/phase23-real-release-gate-findings.md:772` (citation at `:781`)
 
 **Issue:** Finding B's headline number is:
@@ -172,6 +180,8 @@ a snapshot-to-snapshot diff over the full 64K — a different comparison from th
 ---
 
 ### CR-03: Claims a fourth VICE snapshot that was never saved, and generalises a one-snapshot verification to three
+
+**Disposition: FIXED** (8f07dd0) — Corrected to three handoff snapshots; records that saeger run 2 was compared live rather than banked, and that probe_frame_a is a probe not a handoff. Reload-faithfulness claim narrowed to danish.
 
 **File:** `docs/phase23-real-release-gate-findings.md:997-999`
 
@@ -216,6 +226,8 @@ corrected in the same pass.
 ---
 
 ### CR-04: The document states twice that the corpus images are not in the repository; both `.d64` files are in the working tree
+
+**Disposition: FIXED** (8f07dd0) — Corrected to 'never committed', matching D-04 and the document's own correct statement elsewhere. Notes the working copies exist at evidence/corpus/ because the MCP surface refuses paths outside the workspace, and that git ls-files reports zero tracked .d64.
 
 **File:** `docs/phase23-real-release-gate-findings.md:349`, `:818`, `:990`
 
@@ -262,6 +274,8 @@ Correction 1's `:818` clause and `evidence/corpus/corpus-intake.txt:8` / `:1021`
 
 ### WR-01: Finding E was superseded by the phase's own `deferred-items.md` 19 minutes after it was written, and 23-11 ran afterwards without updating it
 
+**Disposition: FIXED** (8f07dd0) — Finding E rewritten to the final state: green broker-free suite (2593 pass / 0 fail), 2408 deterministic and broker-caused, 916 genuinely load-sensitive, 159 and 2410 left unresolved rather than reclassified on one green run. Convention 7 honoured.
+
 **File:** `docs/phase23-real-release-gate-findings.md:795-799`
 
 **Issue:** Finding E presents a four-test "load-sensitive flake set" and concludes "A single red run
@@ -301,6 +315,8 @@ a regression.
 
 ### WR-02: "2592/2638 passing every time" is arithmetically impossible alongside the fail counts in the same sentence
 
+**Disposition: FIXED** (8f07dd0) — Resolved as a side effect of the Finding E rewrite -- the impossible '2592/2638 passing every time' sentence no longer exists; grep for 2592 returns nothing.
+
 **File:** `docs/phase23-real-release-gate-findings.md:797-798`
 
 **Issue:** "Four consecutive full runs on an unchanged tree gave fail counts 1, 4, 1, 1 with the
@@ -323,6 +339,8 @@ passing, 45 skipped or todo), with the failing test identity changing between ru
 ---
 
 ### WR-03: Corrections 2 and 3 carry no applied/not-applied disposition and no owner, leaving two proven-wrong statements standing in `23-CONTEXT.md`
+
+**Disposition: NOT FIXED** — Deferred: assigning applied/not-applied dispositions and an owner to corrections 2 and 3 is a scope decision about 23-CONTEXT.md, which no dispatched plan owns and which the phase verdict does not depend on. Left for whoever re-scopes v0.6.0.
 
 **File:** `docs/phase23-real-release-gate-findings.md:823-857`
 
@@ -360,6 +378,8 @@ meantime.
 
 ### WR-04: The Ghidra headless re-run block cannot run as printed
 
+**Disposition: FIXED** (8f07dd0) — Printed the single-invocation form actually rehearsed at instrument-provenance.txt:582, added the missing -scriptPath, removed the project-destroying two-call split, and separated the fixture (0x801) and flat-capture (0x0) routes with the synthetic-image caveat on the latter.
+
 **File:** `docs/phase23-real-release-gate-findings.md:1037-1046`
 
 **Issue:** Three defects in the printed commands, each checkable against the rehearsal transcripts
@@ -396,6 +416,8 @@ analyzeHeadless <proj> fixture-export -import fixture-image.bin \
 
 ### WR-05: The document's opening provenance contract overstates what it can guarantee
 
+**Disposition: NOT FIXED** — Deferred: narrowing the opening provenance contract is a judgement about how strong a claim the document should make, not a factual error. No value or verdict depends on it.
+
 **File:** `docs/phase23-real-release-gate-findings.md:49-54`
 
 **Issue:** "Every value in this document is transcribed from an outcome line at column 0 of a named
@@ -429,6 +451,8 @@ from memory and nothing is taken from a plan SUMMARY's paraphrase.
 
 ### IN-01: `evidence/tools/verify/README.md` is missing from the "every evidence file" index
 
+**Disposition: NOT FIXED** — Deferred: cosmetic index omission (evidence/tools/verify/README.md).
+
 **File:** `docs/phase23-real-release-gate-findings.md:975`
 
 **Issue:** The *Reproducing this* table is introduced as "**Every evidence file this phase
@@ -441,6 +465,8 @@ not `evidence/tools/verify/README.md`, which exists and is tracked. Every other 
 ---
 
 ### IN-02: The same `082e -> 089a` observation is "the easy case" in criterion 2 and "strictly harder" in criterion 4, with the comparand unstated in both
+
+**Disposition: NOT FIXED** — Deferred: the 082e -> 089a comparand is genuinely unstated in both places; resolving it needs criterion-2 and criterion-4 context that only a re-run would settle.
 
 **File:** `docs/phase23-real-release-gate-findings.md:525` and `:592-594`
 

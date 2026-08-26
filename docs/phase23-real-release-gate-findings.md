@@ -1107,12 +1107,32 @@ unexercised protocol rather than a satisfied one.
 **Re-running Ghidra headless** (rehearsed in this phase on the fixture; never run on a
 release):
 
+The two routes differ in base address and must not be conflated. Both are **single**
+invocations — import, pre-script and post-script in one call — because `-deleteProject`
+destroys the project on exit, so a second `-process` call has nothing left to open.
+
 ```
-analyzeHeadless <proj> <name> -import <image> \
+# fixture (.prg) route, as rehearsed (instrument-provenance.txt:582):
+analyzeHeadless <proj> fixture-export -import fixture-image.bin \
+  -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x801 \
+  -noanalysis -scriptPath <scriptdir> \
+  -preScript FlatVolatile.java entrypoints-fixture.txt \
+  -postScript ExportAnalysis23.java fixture-export.txt -deleteProject
+
+# flat-64K-capture route (instrument-provenance.txt:318) -- rehearsed only against a
+# SYNTHETIC 65536-byte image; never run on a real capture, because none exists:
+analyzeHeadless <proj> <name> -import <flat64k.bin> \
   -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x0 \
-  -noanalysis -preScript FlatVolatile.java [<entrypoints-file>] -deleteProject
-analyzeHeadless <proj> <name> -process <name> -postScript ExportAnalysis23.java -deleteProject
+  -noanalysis -scriptPath <scriptdir> \
+  -preScript FlatVolatile.java <entrypoints-file> \
+  -postScript ExportAnalysis23.java <out.txt> -deleteProject
 ```
+
+*(Corrected 2026-08-26, code review WR-04: the previous block omitted `-scriptPath`, without
+which `analyzeHeadless` cannot find either script; split the work across two invocations with
+`-deleteProject` on the first, destroying what the second needed; and printed
+`-loader-baseAddr 0x0` under a "rehearsed on the fixture" label when the fixture rehearsals
+used `0x801` and `0x0` belongs to the flat-capture route.)*
 
 Ghidra is identified by version `12.1.3 PUBLIC` build `2026-Aug-17` and by nothing else; its
 install location is an undeclared external input to this phase and is deliberately not
