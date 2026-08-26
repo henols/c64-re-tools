@@ -779,7 +779,13 @@ stopped at `hit_count` 1 — the *same* frame — and produced 41 one-bit drifts
 pointer). **Frame index is the dominant term; intra-frame position costs only one-bit drift.**
 Neither is a fact about the corpus. A frame-exact stop is required before two runs can compare
 as equivalent (`evidence/capture/CAPTURE-SUMMARY.txt`; both comparisons are the tool's own
-output, pasted verbatim in the capture records).
+output, pasted verbatim in the capture records). The snapshot-to-snapshot figure is recorded
+at `evidence/capture/snapshot-divergence.txt` — `DIFF_DIVERGENCE_MULTI_BIT: 201`, alongside
+`DIFF_DRIFT_ONE_BIT: 149` and `DIFF_VERDICT: not-equivalent`. *(Added 2026-08-26, code review
+CR-02: the 201 figure was cited here while existing in no evidence file. It was measured by the
+execute-phase orchestrator at phase close rather than by a dispatched plan — 23-09 would have
+owned it and was never dispatched — and that provenance is stated at the head of the transcript.
+It was re-measured from scratch for the record rather than copied forward, and reproduces.)*
 
 **Finding C — the two releases need different keypress routes to reach their handoff.**
 `danish` polls `$DC01` directly and needs `vice_keyboard_matrix` (fork-only); `saeger` spins on
@@ -792,11 +798,40 @@ disassembling the running machine and re-verified per release on that release's 
 machine, with `CAPTURE_PORT01: $35` at that instant for both. A re-run does not have to
 re-derive this.
 
-**Finding E — the test suite this phase used as its regression gate has a load-sensitive flake
-set.** Recorded in the phase's `deferred-items.md`, not fixed (phase 23 may not modify anything
-under `src/`). Four consecutive full runs on an unchanged tree gave fail counts 1, 4, 1, 1 with
-the failing test *identity* changing between runs and 2592/2638 passing every time. A single
-red run of that suite is not evidence that a `.planning/`-only change broke something.
+**Finding E — the regression gate's "flake set" was mostly one live broker; the suite is green
+on a broker-free host.** *(Superseded 2026-08-26 at phase close; the earlier text described four
+consecutive runs giving fail counts 1, 4, 1, 1 with a varying failing identity as a
+load-sensitive flake set. `evidence/README.md` § convention 7 — final occurrence wins.)*
+
+Those runs were all taken on a host where a VICE broker was deliberately kept live to drive
+23-03's captures. With the broker stopped, one full run at the same commit is completely green:
+
+```
+# tests 2638   # pass 2593   # fail 0   # skipped 40   # todo 5      exit 0
+```
+
+`2408` (`vice-proxy.test.ts:6382`, BACK-05 D-G ordering) is **not a flake at all** — it is
+deterministic and broker-caused, proven in both directions at one commit: broker unit active →
+`# fail 1`, unit stopped → `# pass 1`. The test forces `VICE_BACKEND=stock` while a live broker
+owns the emulator as `fork`, so the proxy's backend-mismatch guard fires correctly and its own
+advice text trips the `doesNotMatch` assertion. The product code is right; the test is not
+isolated from ambient host state.
+
+What this does and does not settle, on the timing evidence:
+
+| test | observed during | broker live? | verdict |
+|------|-----------------|--------------|---------|
+| `2408` | 23-03, 23-10 | yes | **broker-caused, deterministic — proven both directions** |
+| `916` | 23-04 | **no** (broker dead since 2026-08-20) | genuinely load-sensitive |
+| `159` | 23-03/23-10 | yes | unresolved — never observed on a broker-free host |
+| `2410` | 23-03/23-10 | yes | unresolved — never observed on a broker-free host |
+
+One green run does not *prove* `159` and `2410` are broker-caused rather than load-sensitive, so
+they stay open rather than being reclassified. The gate result to carry forward is
+**green on a broker-free host** — with the caveat that any future plan driving the emulator
+re-introduces `2408` for its duration and should expect exactly that one failure. Full detail in
+the phase's `deferred-items.md`; not fixed here, because all of it is test-harness behaviour
+under `src/`.
 
 ## Corrections to prior documents
 
@@ -987,17 +1022,34 @@ relative to `.planning/phases/23-the-real-release-gate-go-degrade-no-go/`.
 `evidence/criterion2-ghidra-dispatch.txt` (23-08),
 `evidence/criterion3-bank-divergence.txt` (23-09).
 
-**The corpus images are not in this repository.** They are identified by release name plus
-sha256 only (D-04), and their filesystem locations are deliberately absent from this document:
+**The corpus images are never committed to this repository.** Working copies do exist inside
+the checkout at `evidence/corpus/danish.d64` and `evidence/corpus/saeger.d64` — the `vice` MCP
+surface refuses any absolute path outside the mounted workspace, so 23-03 had to place them
+there to autostart them — but that directory's own `.gitignore` refuses every binary image form
+and `git ls-files` reports **zero** tracked `.d64`. Their identity in this document is release
+name plus sha256 only (D-04). *(Corrected 2026-08-26, code review CR-04: this previously read
+"are not in this repository", which is false of the working tree and contradicted this
+document's own — correct — "never committed" at the corpus-identity section above. Never
+committed is the claim D-04 actually makes and the one the evidence supports.)*
 `danish` = `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5`, `saeger` =
 `b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5`, both 174848 bytes.
 
 **The capture sha256s the runs were against: there are none.** `CAPTURE_SHA256` is
 `could-not-run` for both releases and `CAPTURE_SIZE` likewise, because the 64K image was never
-assembled. What exists instead are four VICE `.vsf` snapshots banked outside the checkout
-(`danish_r1_handoff`, `danish_r2_handoff`, `saeger_r1_handoff` and its sibling), each proven
-faithful on reload. Finding A above is the validated route from those snapshots to an exact
-65536-byte image with a stable sha256.
+assembled. What exists instead are **three** VICE `.vsf` handoff snapshots banked outside the checkout, in
+`~/.config/vice/mcp_snapshots/`: `danish_r1_handoff`, `danish_r2_handoff` and
+`saeger_r1_handoff`. There is no `saeger_r2_handoff` — `saeger`'s second run was compared
+**live** against run 1's snapshot rather than being banked itself
+(`evidence/capture/capture-record-secondary.md`), so the two releases were not handled
+identically and only `danish` has both of its runs on disk. A fourth snapshot,
+`probe_frame_a`, exists but is a checkpoint-imprecision probe, not a handoff instant.
+*(Corrected 2026-08-26, code review CR-03: this previously said "four ... snapshots
+(`saeger_r1_handoff` and its sibling), each proven faithful on reload", naming an artifact that
+was never saved and generalising a reload proof that was performed for `danish` and not for
+every snapshot.)*
+
+Finding A above is the validated route from those snapshots to an exact 65536-byte image with a
+stable sha256, and `evidence/capture/snapshot-divergence.txt` exercises it end to end.
 
 **Re-running the verdict derivation** (the only measurement this document itself performed):
 
@@ -1024,15 +1076,33 @@ because it needs no corpus):
 
 ```
 acme -f cbm -o fixture.prg -l fixture.lbl fixture.a
-dxa -g 0000 -p all-nmos6502 -d skip-scanning -t detect-internal -R <entrypoints> -B <datablocks> -a dump fixture.prg
-node evidence/fixture/fixture-baseline.mjs        # ground-truth re-derivation + classification
+dxa -U -p all-nmos6502 -t detect-all -a dump fixture.prg    # -> 179 code / 100 data / 279 total, $0801-$0917
+node evidence/fixture/fixture-baseline.mjs                  # ground-truth re-derivation + classification
 ```
 
-`-g 0000` is **mandatory** on a flat capture: dxa's default load-address detection reads the
-first two bytes as a little-endian load address, so a processor-port `$2F $37` re-bases the
-image to `* = $372f` and discards roughly 50K, warning only on **stderr**. The second
-invocation is identical except `-t detect-all`, and both data-byte counts are printed; neither
-is chosen after the fact (`evidence/SCHEMA.md` § 6).
+That is the invocation 23-02 actually ran, recorded at `evidence/fixture/fixture-baseline.txt:50`,
+and it reproduces `PARSE_CODE_BYTES: 179` / `PARSE_DATA_BYTES: 100` / `PARSE_ACCOUNTED_BYTES: 279`
+/ `PARSE_ADDRESS_RANGE: $0801-$0917` exactly. **Corrected 2026-08-26 (code review CR-01):** this
+block previously printed `evidence/SCHEMA.md` § 6's flat-64K-capture flag set with `fixture.prg`
+appended, which exits 2 with `dxa: Could not open <entrypoints>.` — `-R`/`-B` name inventory files
+that plan 23-05 was never dispatched to produce. Stripped of those, it yields `code=0 data=282`
+against a record that says `code=179`. A document whose purpose is re-derivability cannot print a
+reproduce command that does not reproduce.
+
+**The `-g 0000` hazard applies to a flat 64K capture and must NOT be used on `fixture.prg`.**
+On a flat capture `-g 0000` is mandatory: dxa's default load-address detection reads the first two
+bytes as a little-endian load address, so a processor-port `$2F $37` re-bases the image to
+`* = $372f` and discards roughly 50K, warning only on **stderr**. `fixture.prg` is the opposite
+case — 281 bytes carrying a genuine 2-byte `$0801` header plus the 279-byte image — so forcing
+base `$0000` decodes the header as content and shifts every address, giving `total=281` against a
+declared 279, which is precisely the mismatch `SCHEMA.md` § 6 requires the listing parser to
+**refuse** on. The two cases were conflated here and are now separated.
+
+No `-t detect-internal` fixture number exists anywhere in the evidence tree
+(`grep -r detect-internal evidence/fixture/` returns nothing), so `C1_DETECT_INTERNAL_DATA_BYTES`
+and `C1_DETECT_ALL_DATA_BYTES` are both **absent**: `SCHEMA.md` § 6's "print both, choose neither
+after the fact" protocol was specified but never exercised on the fixture. Recorded as an
+unexercised protocol rather than a satisfied one.
 
 **Re-running Ghidra headless** (rehearsed in this phase on the fixture; never run on a
 release):
