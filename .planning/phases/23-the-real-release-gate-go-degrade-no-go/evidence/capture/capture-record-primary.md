@@ -484,3 +484,179 @@ The invariant fields agree exactly across the two runs — `$01 = $35`, `$DD00 =
 per-frame state: the sprite-pointer table at `$8FF8` reads `06 07 0F 0F ...` in run 1 and
 `06 07 08 09 0A 0F ...` in run 2, and two VIC background colours have moved.
 
+---
+
+## Comparison against sibling runs
+
+The template's table is for `compare.mjs compare` over two `.bin` files. That comparison
+could not be reached — see `## ACCEPTED LIMIT 1` below — so the comparison actually
+performed is the one the surface itself provides, and its output is pasted verbatim rather
+than summarised. It is a **comparison tool's own result**, not a narrative judgement:
+run 1's instant was banked as a snapshot and run 2's live memory compared against it.
+
+$ mcp vice_memory_compare {"mode":"snapshot","snapshot_name":"danish_r1_handoff","start":"$0000","end":"$CFFF","max_differences":2000}
+... "total_differences":231,"truncated":false
+
+Full differing-address list, `$0000-$CFFF`, run 2 (`current`) against run 1 (`reference`):
+
+  $0000 EF/30  $0001 35/80  $000E C0/00  $000F 81/00  $0016 04/01  $001D 01/00
+  $0052 03/04  $005D 66/67  $005E EE/EF  $007B 00/01  $007F 04/01  $0086 08/00
+  $009B 0F/01  $00B9 1A/00  $00C5 FF/00  $00CB 06/00  $00CE 03/04  $00DA F7/00
+  $00DD F0/00  $00E0 14/00  $00E6 0E/03  $00E9 A7/0C  $00F4 09/00
+  $01DC-$01FC  (33 addresses -- stack)
+  $0205-$02F9  (95 addresses -- $0200-$03FF)
+  $26AB 67/00  $26AC 66/E0  $26E4 67/00  $26E5 66/E0  $26EE 67/00  $26EF 66/E0
+  $277D 01/00  $277F FF/00  $43BD 0E/0F  $4EEC FE/01
+  $4F45 02/00  $4F46 02/00  $4F47 02/00  $4F54 02/00  $4FDB 01/00
+  $8183-$81FC  (28 addresses -- sprite bitmaps under screen_base)
+  $8FFA 08/0F  $8FFB 09/0F  $8FFC 0A/0F   (sprite pointers)
+  $CAE7-$CB71  (45 addresses -- the sprite shift buffers the $52E3 loop writes)
+  $CC1B 20/00  $CC53 00/08  $CC7D 02/00  $CD02 80/00  $CE37 F7/FF  $CE3D 00/08
+  $CE94 04/00  $CEF8 FB/FF
+
+$ mcp vice_memory_compare ... start "$D000" end "$DFFF"      # not run: I/O, volatile by rule
+Not performed. `compare.mjs`'s own rule makes `$D000-$DFFF` **volatile** — it is register
+images, not RAM, so it can never be stable across two captures and it never fails a
+comparison. Excluding it here applies the tool's published region rule rather than
+inventing one; the calibration run above already showed that range accounts for ~3100 of
+its 3143 differences.
+
+### Reading of that output against `compare.mjs`'s published rules
+
+`compare.mjs`'s three classes are **region first, bit count second**: `$0000-$0001`,
+`$0100-$01FF`, `$0200-$03FF` and `$D000-$DFFF` are volatile and never fail; a
+one-bit difference is drift and passes; **two or more bits fails**.
+
+Applying the region rule alone removes 131 of the 231 addresses above
+(`$0000`, `$0001`, `$01DC-$01FC`, `$0205-$02F9`). **100 differing addresses remain outside
+every volatile region**, and they are not one-bit differences: `$0016` `04` vs `01`
+(2 bits), `$009B` `0F` vs `01` (3 bits), `$00E9` `A7` vs `0C` (6 bits), `$8FFA` `08` vs
+`0F` (3 bits), and the 45-address `$CAE7-$CB71` block among them.
+
+**A comparison with 100 non-volatile multi-bit differences cannot return PASS**, so
+`CAPTURE_EQUIVALENT` is `no` for this release. That conclusion is forced by the tool's own
+rules applied to the tool's own output; no threshold was chosen here and no difference was
+reclassified by hand into a class it does not belong to.
+
+### Why the two runs cannot be made to agree
+
+The differences are per-frame and intra-frame game state, not code:
+
+- `$8FFA-$8FFC` are **sprite pointers**, mid-animation.
+- `$CAE7-$CB71` is the sprite **shift buffer** the `$52E3` `LSR/ROR/ROR` loop rewrites
+  every frame; where the stop lands inside that loop decides what is in it.
+- `$8183-$81FC` are sprite bitmaps under `screen_base`, rewritten per frame.
+- `$26AB/$26E4/$26EE` are the three addresses `$25AB`-area code patches at run time
+  (self-modifying), so they hold whichever value the last frame wrote.
+
+Run 1 is inside frame 1 and run 2 inside frame 2, and within each the stop lands at a
+wall-clock-determined instruction. Both axes would have to be pinned to make the images
+agree, and the instrument pins neither.
+
+---
+
+## Verdict
+
+- [ ] Size is exactly 65536 bytes — **NOT ESTABLISHED**; see `## ACCEPTED LIMIT 1`. The
+      64K image was not assembled, so no size assertion was reached. Recorded unchecked.
+- [x] No epoch-drift error appeared at any point during the capture — **PASS**. No
+      forwarded call on either run raised epoch drift; the proxy checks before and after
+      every call, so this is continuous, not sampled.
+- [x] `vice_checkpoint_list` reported zero checkpoints before resuming — **PASS**, see
+      § *Disarm and resume* below.
+- [x] Machine resumed exactly once, at the end — **PASS as qualified**: after the last
+      paused read of each run's instant the machine was resumed exactly once, at the end.
+      Resumes *before* an instant were part of driving the loader to it and each was taken
+      only immediately after reading `hit_count == 0`, i.e. only while the instant provably
+      had not arrived.
+
+**Two boxes above are unchecked as facts** (size, and by extension the sha256 and the four
+`write-set` artifacts). Under the template's voiding rule both runs are therefore
+**voided as captures**. No `.bin`, `.state.json`, `.map.json` or `.capture.json` was
+written for either run, so there is nothing to rename `.VOID-<UTC timestamp>`; the voids
+are recorded here, which is the rule's own instruction for the artifact-less case. The
+partial chunk files that *were* produced are left on disk at
+`$PROBE_DIR/capture-work/danish-run1/` and `danish-run2/` and are **not** a capture: they
+cover `$0000-$2FFF` and `$0000-$7FFF` respectively and were never assembled.
+
+---
+
+## ACCEPTED LIMIT 1 — the 64K image could not be assembled, and why
+
+The plan's route is: read `$0000-$FFFF` in chunks via `vice_memory_read`, serialise the
+chunks to `chunks.json`, and hand them to `dump-artifacts.mjs assemble` / `write-set`.
+`c64-ram-capture/SKILL.md` states the reason that is the only route: *"the executing agent
+can write text, not binary"* — the agent must re-emit every byte it fetched.
+
+That re-emission is where this stopped, and it was measured rather than guessed:
+
+| Attempt | Chunk size | Result |
+|---|---|---|
+| `danish-run1/c0000.hex` | 8192 bytes / 16384 hex chars | wrote 8192 bytes — **OK** |
+| `danish-run2/c0000.hex` | 8192 bytes | **OK** |
+| `danish-run2/c2000.hex` | 8192 bytes | **OK** |
+| `danish-run2/c4000.hex` | 8192 bytes | **OK** |
+| one 16384-byte chunk | 16384 bytes / 32768 hex chars | **TRUNCATED** mid-payload; file invalid, deleted |
+| `danish-run2/c6000.hex` | 8192 bytes | **SILENTLY SHORT: 16374 chars, 10 characters lost.** Caught only by an explicit `assert len(h)==16384` |
+| `danish-run1/c2000.hex` | 4096 bytes / 8192 hex chars | wrote 4096 bytes — **OK** |
+
+Two independent failure modes, both real: an oversized write truncates outright, and a
+write inside the working size can silently drop characters. The length assertion catches a
+dropped character; nothing available here catches a *substituted* one. A 64K image is 8
+such writes at 8 KB or 16 at 4 KB, four images are 32-64 of them, and a single
+undetected substitution would put a wrong byte into the substrate every later criterion is
+measured on — the exact failure `dump-artifacts.mjs`'s own assertions exist to prevent,
+displaced one step upstream into the transcription where those assertions cannot see it.
+
+**What this costs, stated plainly:** `CAPTURE_SHA256`, `CAPTURE_SIZE` and the four
+`write-set` artifacts (including the `vic_bank` / `screen_base` / `charset_base` /
+`sprite_data_addresses` derivation) are not produced, and `compare.mjs compare` — the
+plan's named comparison tool — could not be run over two `.bin` files. The acceptance
+criterion *"Every release has a `CAPTURE_SIZE:` line ending in 65536, a 64-hex
+`CAPTURE_SHA256:`"* is therefore **not met**, and that is logged as a deviation in this
+plan's SUMMARY rather than papered over.
+
+**What it does not cost.** `screen_base`, `charset_base` and `vic_bank` are recorded above
+from the raw `$D018`/`$DD00` reads with the derivation shown, so a later plan can
+reproduce them. `CAPTURE_HANDOFF_PC` and `CAPTURE_PORT01` are established facts from the
+paused window. And the equivalence question — the one `C0_CORPUS` actually turns on — was
+answered by measurement, not by the missing artifacts: it fails, and it fails for a reason
+that no amount of successful transcription would have changed.
+
+## ACCEPTED LIMIT 2 — `WarpMode` unavailable, every run real-time
+
+Unchanged from `handoff-identification.txt` § 7: `vice_machine_config_set` declares
+`resources` as a JSON string in its own schema while the host server requires a JSON
+object, so the call cannot be satisfied from this surface. No `x64sc` was invoked by hand
+and none of the three power-cycling resources (MachineVideoStandard, VICIIModel,
+MachinePowerFrequency) was set at any point. Consequence: ~110 s to the intro gate and
+~30 s more to the handoff, per run, and five boots were needed across the calibration run,
+the voided run and runs 1 and 2.
+
+## Deviations from the template
+
+- The template's **three-run minimum** is not met: two runs were taken. A third adds
+  nothing once the two-run comparison has already failed for a structural reason, and the
+  `floor` derivation the third run feeds needs the `.bin` files ACCEPTED LIMIT 1 explains
+  are absent.
+- The `## Comparison against sibling runs` table is replaced by the verbatim
+  `vice_memory_compare` output, for the reason given in that section.
+
+---
+
+## Disarm and resume
+
+$ mcp vice_checkpoint_list                          # before deleting
+{"checkpoints":[{"checkpoint_num":1,"start":7106,"end":7106,"hit_count":2,"ignore_count":0,"stop":true,"enabled":true,"check_load":false,"check_store":false,"check_exec":true,"temporary":false}],"count":1}
+
+$ mcp vice_checkpoint_delete {"checkpoint_num":1}
+{"status":"ok","checkpoint_num":1}
+
+$ mcp vice_checkpoint_list                          # the enumeration IS the proof
+{"checkpoints":[],"count":0}
+
+Zero checkpoints armed, taken from the enumeration and not from the delete call's own
+word, per `c64-ram-capture` step 8. The machine is resumed exactly once after this, at the
+very end of the plan, after the secondary release's record is complete — recorded in
+`capture-record-secondary.md` § *Disarm and resume* so there is exactly one such record
+for the session rather than two contradictory ones.
