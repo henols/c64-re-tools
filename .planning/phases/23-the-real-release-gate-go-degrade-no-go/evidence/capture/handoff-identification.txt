@@ -1,0 +1,200 @@
+# Phase 23 / 23-03 Task 3 — how the loader/game handoff address was identified
+#
+# Evidence convention 1: every command line below was appended before it ran and the
+# output pasted immediately under it. The `vice` MCP tool surface is the only route to
+# the emulator used here; `x64sc` was never invoked by hand (plan prohibition).
+#
+# PROBE_DIR = /home/henrik/.cache/c64-re-tools/phase23
+# Backend   = fork, /usr/local/bin/x64sc, VICE 3.10  (Task 3 <precondition>, satisfied)
+
+## 0. Backend and liveness, before anything was booted
+
+$ mcp vice_ping
+{"status":"ok","version":"3.10","machine":"C64SC","execution":"paused"}
+
+## 1. Working copies of the corpus, inside the mounted workspace
+
+The `vice` MCP tool surface refuses any absolute path outside the mounted workspace:
+
+$ mcp vice_autostart {"path":"/home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64","run":true}
+vice: arguments.path is an absolute path (/home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64)
+outside the mounted workspace (/home/henrik/dev/henrik/git/c64-re-tools). The host emulator can
+only be handed paths that live inside the mounted workspace -- move the artifact inside the
+workspace and call again.
+
+So a working copy of each operator-supplied image was placed in `evidence/corpus/`, which
+23-01's own `.gitignore` refuses to commit for exactly this reason. The copies are
+byte-identical to the operator-supplied originals recorded in `../corpus/corpus-intake.txt`:
+
+$ git check-ignore -v evidence/corpus/danish.d64 evidence/corpus/saeger.d64
+.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/.gitignore:13:*.d64	.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/danish.d64
+.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/.gitignore:13:*.d64	.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/saeger.d64
+
+$ sha256sum evidence/corpus/danish.d64 evidence/corpus/saeger.d64
+1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5  .../evidence/corpus/danish.d64
+b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5  .../evidence/corpus/saeger.d64
+
+Both digests match `CORPUS_FILE_SHA256` in `../corpus/corpus-intake.txt` exactly, so the
+booted bytes are provably the operator-supplied bytes.
+
+## 2. VOIDED identification run 1 — epoch drift
+
+A first identification run reached gameplay, and then the proxy raised epoch drift on the
+next forwarded call:
+
+$ mcp vice_memory_search {"start":"$0200","end":"$CFFF","pattern":[76,177,8],"max_results":50}
+vice: treat every result since the previous call as void and redo that work -- epoch drift was
+detected before forwarding (epoch changed from 1 to 2, pid 793780, spawned_at 2026-08-26T12:30:51.981Z).
+
+$ mcp vice_diagnose
+vice_diagnose verdict: live
+Load-bearing evidence: the restart epoch (already checked, at zero emulator cost) and the
+stopwatch cycle delta across the bracket -- bracket 1 retired 39309 cycles (1 bracket run,
+1 resume call).
+Measured rate this call: ~39309 cycles in ~35ms (~1123114 cycles/s), beside the baseline
+~991000 cycles/s (PAL C64 full speed).
+Machine state left: paused, after the bracket that reached this verdict.
+
+Triage (`vice-wedge-triage`): the verdict is `live` on a *new* epoch — this is the
+`restarted` case already consumed by the proxy's own drift guard, not a wedge. Per
+`c64-ram-capture` § *Prove the machine did not change under you*, the run is void and the
+machine is rebooted from scratch. No capture artifact existed yet, so there was nothing to
+rename `.VOID-`; the run is recorded as voided here instead. **No capture below was taken
+on epoch 1.** Everything from § 3 down ran on epoch 2.
+
+## 3. Identification run 2 (epoch 2) — booting the canonical release
+
+$ mcp vice_autostart {"path":"<workspace>/.../evidence/corpus/danish.d64","run":true}
+{"status":"ok","path":".../evidence/corpus/danish.d64","run":true,"index":0,
+ "message":"Autostart initiated - program will load and run"}
+
+$ mcp vice_registers_get                      # +45 s, still loading
+{"PC":58831,"A":0,"X":0,"Y":10,"SP":243,"N":false,"V":false,"B":false,"D":false,"I":false,"Z":true,"C":false}
+PC = $E5CF (KERNAL screen editor / keyboard wait) — the KERNAL loader is running.
+Screen at this point: BASIC banner, `LOAD"*",8,1`, `SEARCHING FOR *`, `LOADING`.
+
+$ mcp vice_display_screenshot                 # +95 s
+Screen: "DANISH CRACKERS / Presents / BRUCE LEE / hit any key" — the crack intro.
+
+$ mcp vice_registers_get                      # at the intro
+{"PC":2305,"A":8,"X":195,"Y":117,"SP":244,...}
+PC = $0901.
+
+$ mcp vice_disassemble {"address":"$08F5","count":30}
+$08F5: C6 AE       DEC $AE
+$08F7: D0 FC       BNE $08F5
+$08F9: C6 AF       DEC $AF
+$08FB: D0 F8       BNE $08F5
+$08FD: 60          RTS
+$08FE: A2 90       LDX #$90
+$0900: E8          INX
+$0901: D0 FD       BNE $0900
+$0903: 60          RTS
+$0904: AD 19 D0    LDA $D019
+$0907: 8D 19 D0    STA $D019
+$090A: 29 01       AND #$01
+$090C: F0 1E       BEQ $092C
+$090E: C6 F9       DEC $F9
+...
+$0918: A9 1B       LDA #$1B
+$091A: 8D 11 D0    STA $D011
+$091D: BD 9E 0C    LDA $0C9E,X
+$0920: 8D 16 D0    STA $D016
+$0923: BD 9C 0C    LDA $0C9C,X
+$0926: 8D 12 D0    STA $D012
+
+$0904 is a raster-split IRQ handler ($D019 ack, $D011/$D016/$D012 rewrite) reading its
+split table at $0C9C/$0C9E. $0800-$0CFF at this instant is **crack-intro code**, and the
+CPU is spinning in its delay loop at $0900-$0901.
+
+## 4. The handoff: pressing the gate, and what changes
+
+$ mcp vice_keyboard_matrix {"key":"SPACE","hold_frames":12}
+{"status":"ok","row":7,"col":4,"pressed":true,"hold_frames":12,"auto_release_scheduled":true}
+
+(`vice_keyboard_matrix` is fork-only; `c64-ram-capture` § *Find an entry point* names it as
+the way past a "hit any key" gate that polls the matrix. The intro polls $DC01 directly, so
+KERNAL buffer injection would have been invisible to it.)
+
+$ mcp vice_display_screenshot                 # +40 s after the keypress
+Screen: "DATASOFT PRESENTS / BRUCE LEE(TM) / BY RON J FORTIER / PRESS F3 - 1 PLAYER - 2
+PLAYERS / F5 - COMPUTER - OPPONENT / F7 - TO BEGIN GAME" — the *game's own* title menu.
+The intro has handed off: a second load ran and the game image is resident.
+
+$ mcp vice_registers_get
+{"PC":7220,"A":1,"X":255,"Y":64,"SP":253,"N":false,"V":false,"B":false,"D":false,"I":false,"Z":false,"C":true}
+PC = $1C34 — no longer anywhere near the intro's $08xx-$0Cxx.
+
+## 5. Naming the handoff address by disassembly, not by guess
+
+$ mcp vice_disassemble {"address":"$1C20","count":30}
+$1C20: 4C D0 03    JMP $03D0
+$1C23: 20 C3 29    JSR $29C3
+$1C26: 20 84 31    JSR $3184
+$1C29: 20 9E 17    JSR $179E
+$1C2C: 20 84 25    JSR $2584
+$1C2F: 20 55 2D    JSR $2D55
+$1C32: A5 48       LDA $48
+$1C34: D0 FC       BNE $1C32
+$1C36: 4C C2 1B    JMP $1BC2      <-- unconditional branch back to $1BC2
+
+$ mcp vice_disassemble {"address":"$1BC2","count":30}
+$1BC2: A9 03       LDA #$03
+$1BC4: 85 48       STA $48        <-- frame counter reloaded: top of a frame loop
+$1BC6: 20 B8 19    JSR $19B8
+$1BC9: AD 04 01    LDA $0104
+$1BCC: F0 11       BEQ $1BDF
+$1BCE: 20 29 1B    JSR $1B29
+$1BD1: 20 EC 19    JSR $19EC
+$1BD4: 20 08 1A    JSR $1A08
+$1BD7: AD 05 01    LDA $0105
+$1BDA: 10 03       BPL $1BDF
+$1BDC: 4C 32 1C    JMP $1C32
+$1BDF: A5 D2       LDA $D2
+...
+$1BEE: 20 BC 40    JSR $40BC
+$1BF5: 20 A4 0D    JSR $0DA4
+$1BF8: 20 0F 0D    JSR $0D0F
+$1BFB: 20 B1 0D    JSR $0DB1
+
+$1BC2 sets the per-frame counter $48 = 3, runs the game's subsystem calls, then $1C32-$1C34
+waits for the IRQ to drain $48 to zero and $1C36 jumps unconditionally back to $1BC2.
+**$1BC2 is the head of the game's own main frame loop.**
+
+## 6. The handoff address, and why it is this one
+
+CAPTURE_HANDOFF_PC for both releases is **$1BC2**, and the capture instant is defined as
+**the FIRST execution of $1BC2 after a cold autostart**.
+
+Why this address and not another:
+
+- It is game code, not loader or intro code. At the intro the CPU is in $0800-$0CFF and the
+  game image is not yet resident; $1BC2 cannot execute until the second load has completed
+  and control has been transferred. Its first execution is therefore, by construction, on
+  the game side of the loader handoff.
+- It is the *head* of the frame loop, so its first execution is the first game frame — the
+  earliest point at which "control has reached the game" is observably true, and the point
+  at which the least timing-dependent state has accumulated. That is what makes two runs
+  comparable: nothing animated has advanced, no input has been consumed.
+- It was found by disassembling the running machine ($1C36's unconditional `JMP $1BC2`
+  closing the loop, $1BC4's frame-counter reload opening it), not by pattern-matching a
+  database or by asking a disassembler under test. **No fact used to judge dxa or Ghidra is
+  produced by dxa or Ghidra** (plan prohibition; D-06).
+
+Both releases are cracks of the same title, so the same game image and the same $1BC2 head
+are expected in both; the capture runs below confirm that per release rather than assuming
+it.
+
+## 7. Accepted limit — WarpMode could not be set, so every run is real-time
+
+$ mcp vice_machine_config_set {"resources":"{\"WarpMode\":1}"}
+vice: the host VICE MCP server ... rejected this call: Missing or invalid 'resources' object.
+Expected: { "resources": { "ResourceName": value, ... } }
+
+The `vice_machine_config_set` tool declares `resources` as a JSON **string** in its own
+schema while the host server requires a JSON **object**, so the call cannot be satisfied
+from this surface. Recorded as an observation about the tool, not worked around: no shell
+invocation of `x64sc` was attempted (plan prohibition), and none of the three power-cycling
+resources (MachineVideoStandard, VICIIModel, MachinePowerFrequency) was set at any point.
+Consequence: every load below ran at real speed, ~95 s to the intro and ~40 s more to the
+title menu.
