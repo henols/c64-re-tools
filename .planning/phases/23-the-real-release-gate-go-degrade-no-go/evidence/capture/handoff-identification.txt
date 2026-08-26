@@ -62,6 +62,64 @@ machine is rebooted from scratch. No capture artifact existed yet, so there was 
 rename `.VOID-`; the run is recorded as voided here instead. **No capture below was taken
 on epoch 1.** Everything from § 3 down ran on epoch 2.
 
+## 2b. VOIDED identification run 2 — the broker died with the session (~12:55 UTC)
+
+Recorded here, beside the § 2 epoch-drift void and in the same shape, because the
+two are the same kind of fact about the same run of work. It is out of chronological
+order deliberately: it happened AFTER everything in § 3 - § 7 below was observed, and
+placing it beside § 2 keeps both voids where a reader looking for "what was voided"
+will find them together, rather than buried under the observations they void.
+
+What happened: the VICE broker was, at that time, a child of the Claude Code process
+tree. When the executor's session was torn down at ~12:55 UTC the broker died with it,
+taking the emulator instance with it. This is not any of the four states
+`vice-wedge-triage` triages — the machine was not paused, not checkpoint-trapped, not
+wedged and not respawned-under-us. The process that owned it simply ceased to exist.
+There was no error frame to quote, because there was no surviving client to receive
+one; the death is inferred from the session teardown and from the fact that the
+subsequent session found a different broker pid.
+
+The scope of the void, stated plainly:
+
+- **Every observation in § 3 - § 7 was taken on the machine that died.** Under
+  `c64-ram-capture` § *Prove the machine did not change under you*, an observation
+  whose machine identity cannot be carried forward does not carry forward. All of it
+  is void as *measurement*.
+- **No capture artifact existed to rename.** No `.bin`, `.state.json`, `.map.json` or
+  `.capture.json` had been written at any point on that machine — the run never
+  reached `write-set`. The template's voiding rule (rename each artifact to
+  `<name>.VOID-<UTC timestamp>`, keep it on disk) therefore has nothing to act on,
+  and the void is recorded here instead. That substitution is the rule's own
+  instruction for the artifact-less case and is not a weakening of it.
+- **`$HOME/.cache/c64-re-tools/phase23/capture-data/` and `capture-work/` hold no
+  capture files** — only two transient screenshots from the § 4 keypress step. Nothing
+  in either directory is reusable evidence. The capture work below starts from zero.
+
+What survives the void, and why that is not a contradiction: § 5 - § 6's conclusion
+that `$1BC2` is the head of the game's own frame loop is a **claim about the game
+image**, not a measurement of a machine. A void invalidates numbers read off a machine
+that can no longer be shown to be the same machine; it does not invalidate a reading of
+a disassembly that any fresh machine will reproduce from the same disk bytes. The
+distinction is made honest by re-verifying it rather than asserting it: **every capture
+run below disassembles `$1BC2` on its own fresh machine, per release, and pastes the
+result**, so the handoff address the captures actually break at is proven on the machine
+that took them. What § 5 - § 6 is relied on for is only *where to look* — and the D-06
+prohibition it satisfies (the address came from emulator observation, never from dxa or
+Ghidra) is a property of how it was found, which a later machine's death cannot undo.
+
+The cause has been removed rather than worked around. The broker now runs as a systemd
+**user** unit, outside the Claude Code process tree, so a session teardown no longer
+takes the emulator with it:
+
+$ systemctl --user is-active vice-broker
+active
+
+$ mcp vice_ping
+{"status":"ok","version":"3.10","machine":"C64SC","execution":"paused"}
+
+Backend on the fresh machine is unchanged and still satisfies Task 3's
+`<precondition>`: fork, /usr/local/bin/x64sc, VICE 3.10.
+
 ## 3. Identification run 2 (epoch 2) — booting the canonical release
 
 $ mcp vice_autostart {"path":"<workspace>/.../evidence/corpus/danish.d64","run":true}
