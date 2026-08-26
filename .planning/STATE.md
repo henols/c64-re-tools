@@ -5,16 +5,16 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: "Completed 23-03-PLAN.md — C0_CORPUS: partial, R1 fires (no-go)"
-last_updated: "2026-08-26T14:53:35.874Z"
+stopped_at: "Completed 23-10-PLAN.md — verdict recorded: no-go, rule R1; docs/phase23-real-release-gate-findings.md"
+last_updated: "2026-08-26T15:32:04.364Z"
 last_activity: 2026-08-26
 last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
-state_head: 77a4dab853033a3c4d5b5ad6e2fec6ee418012b7
+state_head: 594c85866854cecf09059f6b7c96b7b8fc3256fc
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -81,10 +81,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 4 of 11 complete (23-01, 23-02, 23-03, 23-04)
-Status: Executing Phase 23 — 23-03 done; C0_CORPUS: partial, so rule R1 fires (no-go). Waves 3-6 unblocked for planning but criteria 1-3 have no capture substrate.
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 4 of 11 done
-Last activity: 2026-08-26 — 23-03 complete: corpus secured, $1BC2 handoff proven per release, C0_CORPUS: partial (no reproducible 64K capture; the fork checkpoint is not frame-exact)
+Plan: 5 of 11 complete (23-01, 23-02, 23-03, 23-04, 23-10) — 23-05..23-09 deliberately NOT dispatched (no depacked capture substrate, D-03); their criteria are `could-not-run`
+Status: Executing Phase 23 — verdict recorded: **no-go**, rule **R1** fired (`C0_CORPUS: partial`). See `docs/phase23-real-release-gate-findings.md`. Next and last: 23-11 (ROADMAP/STATE pointers gating Phase 24, PROOF traceability flip).
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 5 of 11 done
+Last activity: 2026-08-26 — 23-10 complete: `docs/phase23-real-release-gate-findings.md` records verdict **no-go** / rule **R1**, derived from the pre-committed rule; the rule reproduced verbatim, the five non-dispatched plans named, 8 accepted limits and 15 corrections collected
 
 ## Performance Metrics
 
@@ -217,6 +217,7 @@ Last activity: 2026-08-26 — 23-03 complete: corpus secured, $1BC2 handoff prov
 | Phase 23 P02 | 34 min | 3 tasks | 16 files |
 | Phase 23 P04 | 33 min | 2 tasks | 2 files |
 | Phase 23 P03 | 1h 55m | 3 tasks | 7 files |
+| Phase 23 P10 | 47 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -477,6 +478,9 @@ Recent decisions affecting current work:
 - [Phase 23]: 23-03: C0_CORPUS is `partial`, not `pass` — no flat 64K capture was assembled and neither release's two runs compare as equivalent, so rule R1 fires and the phase verdict is no-go. — Three of the aggregation rule's five conjuncts fail: CAPTURE_SHA256 and CAPTURE_SIZE are could-not-run for both releases, and CAPTURE_EQUIVALENT is `no` for both. `could-not-run` does not apply — the emulator WAS driven to the handoff four times. This is the pre-committed rule doing what it was written for, five plans before the measurement existed.
 - [Phase 23]: 23-03: the fork's stopping exec checkpoint is neither instruction-exact nor frame-exact — it reports the hit but pauses about a frame of work later, at a wall-clock-determined instruction, and can straddle a frame boundary. — Measured, not inferred: danish's two runs stopped at hit_count 1 and 2 (different frames) and diverge at 100 non-volatile multi-bit addresses; saeger's both stopped at hit_count 1 (same frame) and diverge at exactly one, $00F6. vice_run_until inherits the same mechanism and vice_execution_step advances nothing observable, so no precise-stop primitive is reachable from this surface. Any later plan needing a reproducible capture must solve this first.
 - [Phase 23]: 23-03: re-emitting a 64K capture as hex through the agent is not reliable — one oversized write truncated mid-payload and one in-size write silently dropped 10 characters, caught only by an explicit length assertion. — c64-ram-capture names this as the only route, because the MCP surface returns text and the agent must re-emit every byte it fetched. Nothing available catches a substituted character, and four 64K images are 32-64 such writes; one undetected substitution would put a wrong byte into the substrate every later criterion is measured on. Recording the gap was judged strictly better than shipping an unverifiable substrate.
+- [Phase 23]: Phase 23 verdict recorded: **no-go**, rule **R1** fired (input `C0_CORPUS: partial`). Full derivation, the rule reproduced verbatim, all five criteria and the collected limits/corrections live in one place: `docs/phase23-real-release-gate-findings.md` (frontmatter `verdict`/`verdict_rule_applied`/`criteria`) — read there, not restated here.
+- [Phase 23]: R1 is the FIRST rule under first-match-wins, so the derivation reads one input and stops. No earlier-rule walk exists to show, and the six unevaluated inputs (five with no evidence file, because 23-05..23-09 were deliberately not dispatched for want of a depacked capture, D-03) cannot flatter the verdict because the derivation never reads them.
+- [Phase 23]: No override was taken, and `corpus.releases[].capture_sha256` is written `could-not-run` rather than a fabricated 64-hex value — so 23-10-PLAN.md Task 1 own verify is recorded as unsatisfiable, following the operator-confirmed phase-wide precedent that SCHEMA.md and the facts win over a plan regex.
 
 ### Pending Todos
 
@@ -1042,8 +1046,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T14:53:35.834Z
-Stopped at: Completed 23-03-PLAN.md — C0_CORPUS: partial, R1 fires (no-go)
+Last session: 2026-08-26T15:32:04.294Z
+Stopped at: Completed 23-10-PLAN.md — verdict recorded: **no-go**, rule **R1**, in `docs/phase23-real-release-gate-findings.md`. Only 23-11 remains in phase 23.
   Plan **23-02** provisioned the three instruments and ran the phase's tracer:
   one thin path through every layer — fetch, sha256 verify, build, assemble,
   run dxa, parse the listing, count bytes, run Ghidra headless, carve volatile

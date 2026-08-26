@@ -260,7 +260,7 @@ before a line of engine or store code exists.
   4. What the dropped `analyzer.rs` work did that the dxa+Ghidra pair does not is a named list of concrete capabilities, each either matched to a replacement or accepted as lost with what it costs — derived from the real thing, not inferred from the fixture.
   5. A machine-readable verdict — `go` / `degrade` / `no-go` — is recorded against decision rules **committed before the measurements were run**, and Phase 24's planner reads it as a precondition. A `degrade` verdict names which requirements narrow and how; a `no-go` names what the milestone becomes instead. Phase 9's precedent is the bar: the rule fired, `degrade` was honoured rather than overridden, and the milestone shipped smaller and correct.
 
-**Plans**: 4/11 plans executed
+**Plans**: 5/11 plans executed
 
 Plans:
 **Wave 1**
@@ -286,7 +286,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 23-10-PLAN.md — The findings document and the machine-readable verdict, derived from the pre-committed rule
+- [x] 23-10-PLAN.md — The findings document and the machine-readable verdict, derived from the pre-committed rule — **outcome: `no-go`, rule `R1` fired** on `C0_CORPUS: partial`. `docs/phase23-real-release-gate-findings.md` carries the machine-readable verdict, the rule reproduced verbatim, and criteria 1-3 as `could-not-run` (23-05..23-09 not dispatched: no depacked capture substrate, D-03)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -471,7 +471,7 @@ in a milestone archive.
 | 20. Decomposition to Closure | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 22. Equivalence and Modifiability | v0.5.0 | 0/0 | Cut | 2026-08-25 |
-| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | 4/11 | In Progress|  |
+| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | 5/11 | In Progress|  |
 | 24. The Two Engines | v0.6.0 | — | Not started | - |
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Not started | - |
 | 26. Automatic Annotation | v0.6.0 | — | Not started | - |

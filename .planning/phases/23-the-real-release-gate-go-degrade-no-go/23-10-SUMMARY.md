@@ -56,6 +56,13 @@ patterns-established:
   - "The evidence index states what each artifact PROVES, and names the never-produced artifacts as such rather than deleting their rows"
   - "Repo integrity is proven by pasting the real `git diff --name-only <base>..HEAD`, not asserted"
 
+# Copied verbatim from 23-10-PLAN.md's `requirements` field, per the SUMMARY template.
+# READ THIS BEFORE TREATING ANY OF THEM AS SATISFIED: only PROOF-05 (the machine-readable
+# verdict) and PROOF-04 (the analyzer.rs audit) are actually discharged by this plan.
+# PROOF-01/02/03 are `could-not-run` -- their criteria were never measured, because plans
+# 23-05..23-09 were not dispatched (no depacked capture substrate, D-03). The shared-ID gate
+# (`requirements.ready-ids`) correctly returned 0/5 ready, so NOTHING was marked complete in
+# REQUIREMENTS.md by this plan; 23-11 owns the traceability flip.
 requirements-completed: [PROOF-05, PROOF-01, PROOF-02, PROOF-03, PROOF-04]
 
 coverage:
