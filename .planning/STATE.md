@@ -1,20 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.0
-milestone_name: Own the substrate
+milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
-status: planning
-stopped_at: Phase 23 context gathered
-last_updated: "2026-08-26T09:47:42.164Z"
+status: executing
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-08-26T10:12:23.130Z"
 last_activity: 2026-08-26
-last_activity_desc: Phase 23 context gathered — 11 decisions captured in 23-CONTEXT.md
-state_head: cd40421af87577ce27492e8dc1543a9211a8034a
+last_activity_desc: Phase 23 execution started
+state_head: edc527b3ede6b7afd9d3808a8c690b18b52913d8
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -80,11 +80,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — READY TO EXECUTE
-Plan: 0/11 executed — 11 plans across 6 waves, none started
-Status: Planned and verified — plan-checker PASSED, ready to execute
-Progress: 0/4 phases complete (v0.6.0)
-Last activity: 2026-08-26 — Phase 23 planned: 11 plans / 6 waves, research + pattern map + validation strategy written, plan-checker VERIFICATION PASSED
+Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
+Plan: 2 of 11
+Status: Ready to execute
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plan 1 of 11 done
+Last activity: 2026-08-26 — Phase 23 execution started
 
 ## Performance Metrics
 
@@ -213,6 +213,7 @@ Last activity: 2026-08-26 — Phase 23 planned: 11 plans / 6 waves, research + p
 | Phase 19 P18 | 26 min | 3 tasks | 4 files |
 | Phase 19 P20 | 29 min | 3 tasks | 4 files |
 | Phase 19 P19 | 20 min | 2 tasks | 2 files |
+| Phase 23 P01 | 9 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -462,6 +463,9 @@ Recent decisions affecting current work:
 - [Phase 19]: 19-19: The round-4 consolidation states its 15-demonstration total as DERIVED by counting the planted-violation rows the five SUMMARYs record (1+3+2+6+3), and invites the recount; three cells carry a named absence rather than a plausible number, because the pairing-consultation pin, the four route pins and the declaration half of the (shape x route) assertion have no report values by construction
 - [Phase 19]: 19-19: WR-03 recorded CLOSED in deferred-items.md with its before/after measurements (64/0/4 to 4/60/4, the $ea twin unchanged at 64/0/64), the orchestrator authority that superseded 19-CONTEXT.md's deferral, the deliberate decision to leave 19-CONTEXT.md byte-unchanged, and the residual sized at 93 stable undocumented opcodes now under-reported by BOTH figures instead of contradicted by them
 - [Phase 19]: 19-19: D-08 recorded as a contingency and NOT acted on -- if round-4 verification returns SC4 partial again the next action is to rescope SC4 to advisory-not-gate rather than run a round 5, but that edit is ONE-WAY (a ROADMAP success criterion plus a REQUIREMENTS entry Phase 20's entry conditions read) and requires explicit user confirmation; no checkbox, criterion or requirements entry was touched
+- [Phase 23]: Phase 23 gate pre-committed sight-unseen: R1..R9 first-match-wins with thresholds 10.00/50.00/0/0 under an exact-at-threshold contract, and 68 outcome-line names frozen before any measurement exists — Operator answered `proceed` at the 23-01 Task 1 blocking-human gate. git log is the only proof PROOF-05 has, and it is one-way: once any measurement commit lands the rules can never again be shown to predate it
+- [Phase 23]: The corpus is modelled as corpus.releases[] with exactly one canonical: true, superseding the scalar corpus.file_sha256 / corpus.capture_sha256 phrasing in 23-RESEARCH.md Pattern 2 and 23-VALIDATION.md — Two independently-cracked releases are available, so the scalar keys have no single correct value; bolting a _secondary key alongside would reproduce the canonical-image-centric model recovery-schema.mjs exists to prevent. The one-release case is the degenerate single-element list
+- [Phase 23]: PROOF-05 ordering is asserted over evidence/ only, never over the phase directory — The phase directory already carries the CONTEXT, RESEARCH, VALIDATION and PLAN commits made before execution began, so a primacy check scoped to it can only ever name the context commit and is unsatisfiable by construction
 
 ### Pending Todos
 
@@ -977,31 +981,28 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T08:08:51.902Z
-Stopped at: **Phase 23 context gathered.** `/gsd-discuss-phase 23` captured
-  eleven decisions in `23-CONTEXT.md`. Two are standing constraints set by the
-  owner in free text and applied to every subsequent question: regenerator2000
-  is excluded as an instrument entirely (it is `CUT-01` scope — measuring with
-  the thing being deleted would build the gate on a corpse), and VICE is how the
-  code under study is reached. From those: dxa and Ghidra are measured on a
-  **depacked flat 64K capture**, never the packed file; the corpus is
-  operator-supplied as `.d64` or `.prg`, identified by name + sha256; a
-  **VICE-produced inventory** of what the capture contains is committed *before*
-  any measurement runs, so "not exercised" is a pre-declared corpus property
-  rather than a post-hoc excuse — and it is produced by runtime observation
-  precisely so neither engine under test supplies its own test case. The rules
-  live in plan **23-01**, which touches nothing else, so git history proves they
-  predate the numbers; Phase 24 is gated by ROADMAP `Depends on` + Notes
-  pointers, Phase 9's own closure shape.
-  Two method questions were deliberately left open for research rather than
-  decided: how "data-recovery rate" and "false positive" are defined against a
-  real image with no `.lbl` ground truth, and how cracker-authored bytes are
-  held out of the game-code measurement now that N-way provenance diffing is
-  unavailable on a single image. Both are written into `23-CONTEXT.md`
-  `<specifics>` as questions the researcher must close.
-  Next: `/gsd-plan-phase 23`. Read `PROOF-05`'s gate discipline first — Phase 23
-  builds no product code, and nothing in Phases 24-26 may be planned as though
-  its verdict is already known.
+Last session: 2026-08-26T10:11:29.437Z
+Stopped at: Completed 23-01-PLAN.md
+  Plan **23-01** pre-committed the gate before any measurement exists. Three
+  documents landed under `.planning/phases/23-…/evidence/`: `DECISION-RULE.md`
+  (a 7-input table and rules `R1`..`R9`, first match wins, `R9` the only `go`,
+  with the D-09 pre-mapped degrade narrowing on `R6`/`R7`, four never-a-gate
+  declarations, and the threshold-boundary / precision / hold-out contracts),
+  `SCHEMA.md` (68 outcome-line names with value domains and owning files, the
+  `corpus.releases[]` list schema, the criterion-1 four-set measurement model,
+  the window derivation rule, the dxa flag set, the inventory schema and the
+  three-disposition audit vocabulary), and `README.md` (the ten binding evidence
+  conventions plus the banked `## Ordering proof`). The operator answered
+  **`proceed`** at the Task 1 `blocking-human` gate, fixing the thresholds
+  (10.00 / 50.00 / 0 / 0), the criterion-1 definitions and the dxa flag set
+  sight-unseen. PROOF-05's ordering is now banked as two independent git facts:
+  the first commit anywhere under `evidence/` **is** the rule commit `474c37c`,
+  and no `criterion*` / `inventory` / `capture` path exists anywhere in history
+  at that moment. Both files are **frozen** — a later ambiguity is recorded as
+  an `## ACCEPTED LIMIT` in the measuring plan's own evidence file and overridden
+  explicitly in the findings document; the rule text does not move. Wave 2
+  (23-02 provisioning, 23-03 corpus intake, 23-04 the `analyzer.rs` audit) is
+  unblocked. No measurement has been taken and no number from the corpus exists.
 Previously stopped at: **v0.6.0 roadmap created** 2026-08-25. 32/32 requirements
   (PROOF-01..05, DXA-01..03, GHID-01..05, OPC-01..03, STORE-01..06, CUT-01..03,
   AUTO-01..07) mapped to four phases (**23-26**) in `.planning/ROADMAP.md`, each
@@ -1051,7 +1052,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: .planning/phases/23-the-real-release-gate-go-degrade-no-go/23-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 

@@ -255,12 +255,12 @@ before a line of engine or store code exists.
   4. What the dropped `analyzer.rs` work did that the dxa+Ghidra pair does not is a named list of concrete capabilities, each either matched to a replacement or accepted as lost with what it costs — derived from the real thing, not inferred from the fixture.
   5. A machine-readable verdict — `go` / `degrade` / `no-go` — is recorded against decision rules **committed before the measurements were run**, and Phase 24's planner reads it as a precondition. A `degrade` verdict names which requirements narrow and how; a `no-go` names what the milestone becomes instead. Phase 9's precedent is the bar: the rule fired, `degrade` was honoured rather than overridden, and the milestone shipped smaller and correct.
 
-**Plans**: 11 plans
+**Plans**: 1/11 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 23-01-PLAN.md — Pre-commit the decision rule R1..R9, the outcome-line schema, the criterion-1 measurement definitions and the evidence conventions (wave 1, alone)
+- [x] 23-01-PLAN.md — Pre-commit the decision rule R1..R9, the outcome-line schema, the criterion-1 measurement definitions and the evidence conventions (wave 1, alone)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -466,7 +466,7 @@ in a milestone archive.
 | 20. Decomposition to Closure | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 21. Rebuildable Source and the Reassembly Gate | v0.5.0 | 0/0 | Cut | 2026-08-25 |
 | 22. Equivalence and Modifiability | v0.5.0 | 0/0 | Cut | 2026-08-25 |
-| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | — | Not started | - |
+| 23. The Real-Release Gate (Go/Degrade/No-Go) | v0.6.0 | 1/11 | In Progress | - |
 | 24. The Two Engines | v0.6.0 | — | Not started | - |
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Not started | - |
 | 26. Automatic Annotation | v0.6.0 | — | Not started | - |
