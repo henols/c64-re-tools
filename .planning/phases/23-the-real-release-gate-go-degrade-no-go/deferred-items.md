@@ -51,6 +51,10 @@ evidence convention 9 forbids phase 23 from modifying anything under `src/`. The
 standing project instruction that r2000 test surface is not this milestone's to verify or
 extend.
 
+**Confirmed a flake, not a break:** a second full `npm test` at the same commit ran
+`# fail 0` (2593 pass / 40 skipped / 5 todo). The failure is non-deterministic under
+suite load and does not reproduce reliably.
+
 **Candidate fix for whoever owns it:** await the observable state transition (poll the crash
 counter to the expected value with a bounded deadline) rather than sampling it once after a
 fixed timeout, so the assertion does not race the suite's scheduler.

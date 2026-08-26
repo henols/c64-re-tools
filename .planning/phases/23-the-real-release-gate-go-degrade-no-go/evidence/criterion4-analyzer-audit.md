@@ -203,3 +203,279 @@ operates on `state.disassembly` — already-rendered lines with `bytes` and an o
 `opcode` — not on `raw_data`. So scope-end guessing sits *downstream* of rendering in r2000's
 architecture. A replacement that computes scopes from bytes alone is a different design, and
 the difference is worth deciding deliberately in Phase 25 rather than inheriting by accident.
+
+---
+
+## 5. Outcome lines
+
+**The arithmetic, reproduced so a reader recomputes rather than trusts.** Three tables were
+audited and every row in all three carries exactly one disposition:
+
+- § 1 entry points: **8** rows — E1..E8. Seven `replaced-by:`, one `lost-accepted:` (E4
+  `promote_return_labels`), zero `lost-blocking:`.
+- § 2 `LabelType`: **11** rows — L1..L11. Ten `replaced-by:`, one `lost-accepted:` (L11
+  `Return`), zero `lost-blocking:`.
+- § 3 `BlockType`: **7** rows — B1..B7. Six `replaced-by:`, one `lost-accepted:` (B5
+  `HiLoAddress`), zero `lost-blocking:`.
+
+Totals: `8 + 11 + 7 = 26` audited. Replaced `7 + 10 + 6 = 23`. Accepted as lost
+`1 + 1 + 1 = 3`. Blocking `0 + 0 + 0 = 0`. The four counts close:
+`23 + 3 + 0 = 26`, which equals the audited total.
+
+C4_CAPABILITIES_AUDITED: 26
+C4_REPLACED: 23
+C4_LOST_ACCEPTED: 3
+C4_UNREPLACED_CAPABILITIES: 0
+
+**`C4_UNREPLACED_CAPABILITIES` is rule R8's only input.** `DECISION-RULE.md` R8 fires on
+`c4_unreplaced > 0`; the threshold boundary contract states that exactly `0` does **not** fire
+it and `1` does. This file records `0`, so criterion 4 does not fire R8.
+
+**`C4_LOST_ACCEPTED` never changes the verdict, and the reason is that a capability accepted
+as lost with its cost stated is a decision, not a defect.** It appears in no rule in
+`DECISION-RULE.md` and may not be added to one — it is listed there explicitly among the four
+inputs that never gate. A later reader must not read `C4_LOST_ACCEPTED: 3` as three failures:
+it is three capabilities whose loss was priced and accepted, each written up below at the same
+length a replacement would have been given.
+
+**A zero is a claim, not an absence — so here is how to disagree with it.** `0` is the
+non-firing value, which makes it the value most in need of adversarial reading. Exactly one
+row would move the count if reclassified: **E6 `follow_indirect_jumps`**. It is written
+`replaced-by:` because Ghidra was *observed* resolving a strictly harder indirect dispatch
+(`082e -> 089a COMPUTED_JUMP`) and because the precondition r2000 required — an
+already-`Address`-typed block — is itself store state the milestone is already committed to
+holding. It should be reclassified `lost-blocking:` if, and only if, **both** of these turn
+out to hold: criterion 2 records `C2_COMPUTED_DISPATCH: unresolved` on the real corpus, **and**
+`GHID-04`'s "resolved computed jumps" acceptance is read as requiring the declaration-driven
+static fallback rather than only the decompiler route. Criterion 2 is 23-08's measurement and
+is not known at the time this file is written; this audit deliberately does not pre-empt it,
+and R6 already exists to degrade on exactly that outcome without criterion 4 double-counting
+it. No other row is close to the boundary: the remaining twenty-five are either observed
+replacements or the three priced losses below.
+
+---
+
+## ACCEPTED LIMIT
+
+**(1) The `Return` label promotion is gone: no engine records "this target is a bare return
+stub".** `promote_return_labels` (E4, `analyzer.rs:372`) walked every code-flow label whose
+target was internal, sat in a `Code` block, and began with `RTS` ($60) or `RTI` ($40), and
+retyped it `LabelType::Return` — the doc comment names IDA Pro's `locret_` convention as the
+model. Nothing in dxa's listing or Ghidra's export carries this fact. The nearest observed
+approach is `085f sub_85f body=1 callers=0` in `ghidra3.txt`: Ghidra did create a function at
+the one-byte body, but named and typed it identically to every other function, so the
+return-stub-ness exists only as an inference a reader might draw from `body=1`.
+
+**What this breaks:** nothing executes differently. What degrades is label quality at exactly
+the places a human reading a disassembly most wants a hint — a jump table full of entries that
+are all bare `RTS` reads as a jump table full of ordinary routines. In a cracked release, a
+dispatch table whose unused slots point at a shared `RTS` is a common idiom, and losing the
+distinction makes the used and unused slots look alike.
+
+**Who consumes it:** `STORE-05` (typed label prefixes carrying inferred type in the name).
+Note that `STORE-05`'s own text, and the pivot note's list of prefixes worth stealing
+(`zpp_` / `zpa_` / `f_` / `a_` / `e_`), do **not** include `r_` — so this limit costs
+`STORE-05` nothing it has already promised, and is recorded here so that the omission is a
+decision rather than an oversight. Phase 25 may reinstate it cheaply: the rule is one byte
+comparison at the target address, and both engines supply the bytes.
+
+---
+
+## ACCEPTED LIMIT
+
+**(2) `LabelType::Return` leaves the label vocabulary, so the store's type set is eleven
+values rather than twelve.** This is limit (1)'s consequence one layer down, and it is
+recorded separately because it has a different consumer: (1) is about a *pass* that no longer
+runs, this is about a *value* that no longer exists in the vocabulary the annotation store
+persists. `analyzer.rs` produced eleven `LabelType` values (L1..L11); ten of them map onto an
+observed engine fact or onto a store rule the milestone has already committed to
+(`STORE-05`'s prefixes, `AUTO-03`'s image-range test). `Return` maps onto neither.
+
+**What this breaks:** a store schema modelled on r2000's vocabulary would carry a `Return`
+value that nothing can ever set, which is worse than not having it — a dead enum value invites
+a later reader to assume something populates it. The honest schema omits it.
+
+**Who consumes it:** `STORE-01` (the store holds labels … with per-range typing covering what
+`DECOMP-01` will need in v0.7.0). The decision `STORE-01` must make explicitly is whether its
+label-type vocabulary is r2000's minus `Return`, or a vocabulary designed from the engines'
+own facts. This audit's recommendation is the latter, precisely because L1..L3, L6 and L10 are
+already re-derivations rather than direct reads — but the decision belongs to Phase 25, not
+here.
+
+---
+
+## ACCEPTED LIMIT
+
+**(3) `BlockType::HiLoAddress` has no observation in either direction — the high-byte-first
+split pointer table is unproven, not replaced.** `analyzer.rs:123-155` walks a hi-then-lo
+split table exactly as it walks the lo-then-hi form (B4), pairing entry `i` of the high array
+with entry `i` of the low array, bounded by the next virtual splitter. The pivot fixture
+contained a LoHi table and **no HiLo table at all**, so the `CONCAT11` observation that backs
+B4's `replaced-by:` covers the LoHi byte order only. Claiming the mirrored case on the
+strength of the LoHi observation would be reasoning from a plausible feature list, which this
+audit's evidence discipline and this plan's prohibitions both forbid.
+
+**The uncertainty, stated as the cost requires:** the LoHi result makes it *likely* that
+Ghidra's decompiler folds the HiLo idiom into an equivalent `CONCAT11` expression with the
+operands swapped, since the byte-order difference is invisible at the p-code level. Likely is
+not observed. If it holds, this limit costs nothing beyond B4's own shape mismatch; if it does
+not, the HiLo table produces no pointer expression at all and the range must be typed by hand.
+
+**What this breaks:** the same thing B4's shape mismatch breaks, with less confidence — a
+per-range typing model cannot learn a split table's extent, pair count or stride from a
+decompiler expression at one use site, and for the HiLo order it may not get the expression
+either. Concretely: the four `DATA` references and the `pointer[4] len=8` range that made B2's
+contiguous address table a clean replacement have no analogue here; the observed split arrays
+were typed `08ad undefined1 len=1` and `08b0 undefined1 len=1`.
+
+**Who consumes it:** `STORE-01` (per-range data typing … address, table). Phase 25 must carry
+split-table ranges as declared store state with an explicit byte-order flag, and must not
+assume either order can be recovered from the engines. A cheap way to discharge this limit is
+to add a HiLo table to whatever fixture Phase 24 builds for `GHID-04` and re-check — this
+audit is not the place to build one, since criterion 4 runs offline against source and starts
+no engine.
+
+---
+
+## RESEARCH CORRECTIONS
+
+Recorded here, in this plan's **own** evidence file, per evidence convention 8. **`23-RESEARCH.md`
+is not edited by this plan** — plan 23-10 is its single owner and collects every correction in
+one pass. Two parallel plans never edit one document.
+
+1. **All eight line numbers in the research inventory are correct.** `8`, `20`, `285`, `372`,
+   `419`, `445`, `546`, `581` verified against the structural grep reproduced below. No
+   correction needed; recorded because a verifier should be able to see the check was made and
+   not merely assumed.
+
+2. **`LabelType` declares fourteen variants, not eleven.** The research says "11 variants
+   used", which is accurate as written — eleven are produced by `analyzer.rs` — but the enum
+   at `state/types.rs:361-378` carries fourteen. The three `analyzer.rs` never emits are
+   `Predefined = 10`, `UserDefined = 11` and `LocalUserDefined = 12`, all three of which share
+   the `L_` prefix and are store-side kinds set by a human or by a platform symbol table. The
+   distinction between "the enum" and "what the analyzer produces" is not drawn in the
+   research and is worth drawing, because a store schema copied from the enum would inherit
+   three values the analysis pass has no opinion about.
+
+3. **`BlockType` declares twelve variants, not seven.** Again the research's "7 variants used"
+   is accurate — seven have an arm in `analyzer.rs` — but `state/types.rs:314-331` carries
+   twelve. The five with no arm are `DataByte`, `PetsciiText`, `ScreencodeText`,
+   `ExternalFile` and `Undefined`; all five fall through to the bare `else { pc += 1 }` at
+   lines 171-173, i.e. they are walked one byte at a time and **record no label and no
+   cross-reference**. This is a substantive fact the research does not state: r2000's analyzer
+   is silent about text blocks and about undefined regions, so `STORE-01`'s PETSCII and
+   screencode typing has no analyzer-side predecessor to inherit behaviour from.
+
+4. **`update_usage`'s per-`LabelType` count map is built and never read.** The research
+   summarises the function as "Ref counting + first-seen-type, feeding first-wins label
+   selection". The refs vector and the first-seen type are read; the count map is not. Line
+   427 increments `types.entry(priority)`, and line 202 destructures the tuple as
+   `(_types_map, refs, first_type)` — the leading underscore is the compiler-silencing name
+   for an unused binding. Within `analyzer.rs` the counting is dead code. This matters because
+   "ref counting" implies a ranking mechanism that a replacement would have to reproduce, and
+   there is none: selection is purely first-wins.
+
+5. **`guess_scope_end`'s splitter branch can fall through, which the one-line summary hides.**
+   The research says "or the next virtual splitter". Precisely: on meeting a splitter the
+   function returns the *previous* line's last byte, but **only if that previous line has a
+   non-zero byte length** (lines 561-564). If the previous line is a zero-length visual line
+   the `if bytes > 0` guard fails, no value is returned, and the scan simply continues past
+   the splitter to look for an `RTS`/`RTI`. The source carries an unresolved author comment at
+   that exact spot ("Wait, just doing safe math or skipping back is fine.", line 560). A
+   reimplementation that treats the splitter as an unconditional terminator would not match.
+
+6. **`flow_analyze` ignores `block_types` entirely and cannot follow an indirect jump.** The
+   research's "worklist reachability from an entry, returning covered `Range<usize>` spans" is
+   correct but hides two structural limits. First, the function reads `state.raw_data`
+   directly and never consults `state.block_types`, so it decodes straight into data blocks
+   that the rest of the file is careful to respect. Second, its `JMP` arm is guarded by
+   `op.mode == AddressingMode::Absolute` (line 647), so `JMP ($xxxx)` terminates the span
+   without queueing anything — `flow_analyze` structurally cannot follow the construct
+   `follow_indirect_jumps` exists to handle, and the two passes never combine.
+
+7. **The research's grep missed one top-level item, and it is not an entry point.**
+   `type UsageData` at line 13 — the tuple alias
+   `(BTreeMap<LabelType, usize>, Vec<Addr>, LabelType)` that the usage map's value takes. It
+   is recorded here rather than added to § 1's table because a type alias is not a capability;
+   its three fields are dispositioned through E5 `update_usage`, which is the only code that
+   writes it. No ninth *function* or *struct* exists: the structural grep below lists exactly
+   nine top-level items, and the eight in § 1 plus `UsageData` account for all nine.
+
+8. **The test count is exactly right.** The research says "25 `#[test]` functions"; `grep -c`
+   returns `25`. The substantive body is lines 1-697 and the test module opens at line 699,
+   so "roughly lines 1-700" and "about 25 tests" both hold.
+
+---
+
+## Reproducing this
+
+**Source read.** The absolute registry path, verbatim:
+
+```
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+```
+
+**Crate and version.** `regenerator2000-core` **0.9.20**, from the crates.io registry index
+`index.crates.io-1949cf8c6b5b557f`. The supporting enum definitions were read from the sibling
+file `.../regenerator2000-core-0.9.20/src/state/types.rs` and the two `AppState` helpers from
+`.../src/state/app_state.rs`; both are recorded under `## Scope observations for Phase 25` as
+outside this audit's counted scope.
+
+**Path status.** Like the Ghidra probe install, this is an **external input to the phase**, not
+a durable repository fact. A cargo registry checkout is content-addressed by the registry hash
+and is deleted by `cargo clean`-style maintenance; the file's own sha256 below is the stable
+identity, and the path is recorded only so a later reader can find the same bytes.
+
+**No regenerator2000 process was started.** Not the binary, not `r2000-coverage.ts`, not any
+`r2000_*` MCP tool, not as an oracle, a baseline or a screening tool (D-01, evidence
+convention 4). Every fact in this file comes from reading text. Nothing in this audit compiled,
+linked or executed the crate, and the plan's tool-permission posture denies `cargo install`.
+The one tampering exposure this leaves — a modified registry copy — can only produce a wrong
+audit, which is a recorded and re-checkable claim, not code execution (threat T-23-10); the
+sha256 below is what makes it re-checkable.
+
+**Transcript.** Commands as issued, with their real stdout:
+
+```
+$ ls -d $HOME/.cargo/registry/src/*/regenerator2000-core-0.9.20/src/analyzer.rs
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+
+$ wc -l /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+1506 /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+
+$ sha256sum /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+f72782ef488ff5ead229f0190c9107a6ed61ea6a0383a6738bad1ad65f62361b  /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+
+$ grep -c '^\s*#\[test\]' /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+25
+
+$ grep -nE '^(pub )?(fn|struct|type) ' /home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs
+8:pub struct AnalysisResult {
+13:type UsageData = (
+20:pub fn analyze(state: &AppState) -> AnalysisResult {
+285:fn analyze_instruction(
+372:fn promote_return_labels(state: &AppState, usage_map: &mut BTreeMap<Addr, UsageData>) {
+419:fn update_usage(
+445:fn follow_indirect_jumps(
+546:pub fn guess_scope_end(state: &AppState, start: Addr) -> Addr {
+581:pub fn flow_analyze(state: &AppState, start: Addr) -> Vec<std::ops::Range<usize>> {
+
+$ grep -nE 'pub enum (LabelType|BlockType)' $HOME/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/types.rs
+314:pub enum BlockType {
+361:pub enum LabelType {
+
+$ grep -oE '\b(READ|WRITE|READ_WRITE|DATA|CONDITIONAL_JUMP|UNCONDITIONAL_JUMP|UNCONDITIONAL_CALL|COMPUTED_JUMP)\b' .planning/notes/dxa-ghidra-pivot-evidence/ghidra3.txt | sort | uniq -c | sort -rn
+     13 DATA
+     10 READ
+      9 WRITE
+      5 CONDITIONAL_JUMP
+      2 UNCONDITIONAL_CALL
+      2 READ_WRITE
+      1 UNCONDITIONAL_JUMP
+      1 COMPUTED_JUMP
+```
+
+The last command is the reference-kind histogram every `replaced-by:` claim in this file cites
+against. It sums to 43, matching the pivot note's "43 typed xrefs", and the eight kinds it
+lists are the complete observed vocabulary — no `replaced-by:` in this file names a Ghidra
+reference kind absent from it.
