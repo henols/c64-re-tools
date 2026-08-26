@@ -305,3 +305,182 @@ after a single long wait. The calibration run, which did reach `hit_count == 1`,
 confirm the screen first; this run did not. Timing against a real-time load is the
 variable, and it is removed by observing instead of assuming.
 
+---
+
+### Run 1 (attempt 2) — cold autostart, `hit_count == 1`
+
+Same procedure, with the correction above applied: the intro gate confirmed on screen
+before pressing, and `hit_count` polled from autostart.
+
+$ mcp vice_checkpoint_delete {"checkpoint_num":1}   ;  $ mcp vice_checkpoint_list
+{"status":"ok","checkpoint_num":1}
+{"checkpoints":[],"count":0}
+
+$ mcp vice_machine_reset {"mode":"hard","run_after":true}
+{"status":"ok","mode":"hard","run_after":true,"message":"Machine power cycled"}
+
+$ mcp vice_checkpoint_add {"start":"$1BC2","exec":true,"stop":true}
+{"status":"ok","checkpoint_num":1,"start":7106,"end":7106,"stop":true,"load":false,"store":false,"exec":true}
+vice hazard (repeat): a stopping exec checkpoint was armed again at $1BC2 ...
+
+$ mcp vice_autostart {"path":"<workspace>/.../evidence/corpus/danish.d64","run":true}
+{"status":"ok","path":".../evidence/corpus/danish.d64","run":true,"index":0,"message":"Autostart initiated - program will load and run"}
+
+$ mcp vice_display_screenshot ...                  # t+70 s: black (loader, screen blanked)
+$ mcp vice_checkpoint_list                         # hit_count 0
+$ mcp vice_display_screenshot ...                  # t+145 s: still black
+$ mcp vice_ping
+{"status":"ok","version":"3.10","machine":"C64SC","execution":"paused"}
+
+**Second procedure correction, and the cause of run 1 attempt 1's failure.** The machine
+was **paused**, and had been for minutes: on this backend a read call
+(`vice_checkpoint_list`, `vice_display_screenshot`) leaves the machine paused, and nothing
+resumes it. `vice_ping` is the only non-pausing read, and it is the one call that reports
+the fact. So a "wait and poll" loop silently stops the emulator instead of observing it.
+
+The corrected loop, used from here on and for the secondary release, is exactly the
+documented invariant with the resume made explicit:
+
+1. `vice_checkpoint_list` — read `hit_count`.
+2. If `hit_count == 0`, the machine has not reached the instant: `vice_execution_run` and
+   wait. **Resuming is safe precisely because the hit count says the instant has not
+   arrived.**
+3. If `hit_count >= 1`, the machine stopped itself at the checkpoint: **do not resume**,
+   capture in this window.
+
+Poll on the hit count, never on paused state — and never resume without having just read
+the hit count as zero.
+
+$ mcp vice_execution_run                           # resume; 40 s
+$ mcp vice_checkpoint_list                         # hit_count 0
+$ mcp vice_execution_run                           # resume; 60 s
+$ mcp vice_checkpoint_list                         # hit_count 0
+$ mcp vice_display_screenshot ...
+Screen: "DANISH CRACKERS / Presents / BRUCE LEE / hit any key / 1984. / DANISH CRACKERS"
+— the intro gate, confirmed on screen before any key is sent.
+
+$ mcp vice_keyboard_matrix {"key":"SPACE","hold_frames":12}
+{"status":"ok","row":7,"col":4,"pressed":true,"hold_frames":12,"auto_release_scheduled":true}
+$ mcp vice_execution_run                           # resume so the held key and the second load can run
+$ mcp vice_checkpoint_list                         # +30 s
+{"checkpoints":[{"checkpoint_num":1,"start":7106,"end":7106,"hit_count":1,"ignore_count":0,"stop":true,"enabled":true,"check_load":false,"check_store":false,"check_exec":true,"temporary":false}],"count":1}
+
+**`hit_count == 1`.** The machine stopped itself at the first execution of `$1BC2`. Every
+read below is in that one paused window, before any resume.
+
+#### The handoff address, re-verified on this run's own machine
+
+$ mcp vice_disassemble {"address":"$1BC2","count":4}
+$1BC2: A9 03       LDA #$03
+$1BC4: 85 48       STA $48
+$1BC6: 20 B8 19    JSR $19B8
+$1BC9: AD 04 01    LDA $0104
+
+Byte-identical to `handoff-identification.txt` § 5: `$1BC2` loads 3 into the per-frame
+counter `$48` and enters the frame loop. The address the capture broke at is proven on
+the machine that took it, not carried over from the machine § 2b voided.
+
+#### Machine state at the capture instant (same paused window as the reads)
+
+$ mcp vice_registers_get
+{"PC":13062,"A":0,"X":20,"Y":3,"SP":248,"N":false,"V":false,"B":false,"D":true,"I":false,"Z":true,"C":false}
+
+$ mcp vice_memory_read {"address":"$0000","size":2,"encoding":"hex"}
+{"address":0,"size":2,"encoding":"hex","data_hex":"EF35"}
+$ mcp vice_memory_read {"address":"$D018","size":1,"encoding":"hex"}   -> "33"
+$ mcp vice_memory_read {"address":"$DD00","size":1,"encoding":"hex"}   -> "C1"
+$ mcp vice_memory_read {"address":"$8FF8","size":8,"encoding":"hex"}   -> "06070F0F0F0F0F0F"
+
+$ mcp vice_vicii_get_state
+{"raster_line":311,"video_mode":1,"screen_enabled":true,"25_rows":true,"y_scroll":3,"x_scroll":0,
+ "border_color":240,"background_color_0":252,"background_color_1":241,"background_color_2":254,
+ "background_color_3":243,"sprite_sprite_collision":0,"sprite_background_collision":0,
+ "irq_status":124,"irq_enabled":241,"memory_pointers":51,
+ "registers":[52,225,52,225,177,141,177,141,128,141,226,141,0,0,0,0,0,155,55,213,91,3,216,0,51,124,241,0,0,255,0,0,240,252,241,254,243,244,240,255,240,245,240,240,247,253,252]}
+
+$ mcp vice_sprite_get
+sprite_0 x=52 y=225 enabled=true color=255 | sprite_1 x=52 y=225 enabled=true color=240
+sprite_2..7 enabled=false (x/y 177/141, 177/141, 128/141, 226/141, 0/0, 0/0)
+
+| Field | Value | Source |
+|---|---|---|
+| `$01` (processor port) | `$35` `%00110101` | `vice_memory_read` — LORAM=1, HIRAM=0, CHAREN=1: BASIC **and** KERNAL ROM banked out, RAM live at `$A000-$BFFF` and `$E000-$FFFF`, I/O visible |
+| `$00` (data direction) | `$EF` | same read |
+| `$DD00` | `$C1` → `vic_bank = 3 - (C1 & 3) = 2`, bank base `$8000` | `vice_memory_read` |
+| `$D018` | `$33` → `screen_base = $8C00`, `charset_base = $8800` | `vice_memory_read` |
+| sprite pointers (`screen_base+$3F8` = `$8FF8`) | `06 07 0F 0F 0F 0F 0F 0F` | `vice_memory_read` |
+| video standard | PAL (raster 311, `$D011` = `$9B`) | `vice_vicii_get_state` |
+| registers | PC `$3306`, A `$00`, X `$14`, Y `$03`, SP `$F8`, D set | `vice_registers_get` |
+| epoch-drift errors during the capture | **none** — no drift error appeared on any forwarded call | the proxy raises these itself |
+| checkpoints armed at exit | see § *Disarm and resume* below | `vice_checkpoint_list` |
+
+`$01 = $35` is the field criterion 3 needs, and it is a substantive fact about this
+release: with HIRAM = 0 the KERNAL is **out**, so the live vector pair is the RAM one at
+`$FFFA-$FFFF`, not the KERNAL's. The processor-port value was read in the same paused
+window as everything else above, per the plan's requirement.
+
+**PC is `$3306`, not `$1BC2`** — the late-stop behaviour calibrated above. `$3306` is
+inside the BCD score routine at `$32F2` the frame loop calls, i.e. downstream of `$1BC2`
+inside frame 1. The stop is on the game side of the handoff and within the first frame
+(`hit_count` is 1, so `$1BC2` has executed exactly once), which is what the instant's
+definition requires; it is not at the instruction the checkpoint names, which is what the
+instrument cannot deliver.
+
+$ mcp vice_snapshot_save {"name":"danish_r1_handoff", ...}
+{"status":"ok","name":"danish_r1_handoff","path":"/home/henrik/.config/vice/mcp_snapshots/danish_r1_handoff.vsf", ...}
+
+The instant is banked as a snapshot so it survives the rest of the session and can be
+returned to without re-booting. Verified faithful on reload: `$0000-$0001` reads back
+`EF 35` and `$8FF8` reads back `06 07 0F 0F 0F 0F 0F 0F`, both byte-identical to the
+values above.
+
+---
+
+### Run 2 — cold autostart, independent, `hit_count == 2`
+
+Identical procedure. Transcript compressed to the load-bearing calls; the intro gate was
+again confirmed on screen before the keypress.
+
+$ mcp vice_checkpoint_delete {"checkpoint_num":1}
+$ mcp vice_machine_reset {"mode":"hard","run_after":true}
+$ mcp vice_checkpoint_add {"start":"$1BC2","exec":true,"stop":true}
+$ mcp vice_autostart {"path":"<workspace>/.../evidence/corpus/danish.d64","run":true}
+$ mcp vice_checkpoint_list      # t+110 s, hit_count 0
+$ mcp vice_display_screenshot   # black
+$ mcp vice_execution_run
+$ mcp vice_checkpoint_list      # +60 s, hit_count 0
+$ mcp vice_display_screenshot   # intro gate on screen, "hit any key"
+$ mcp vice_keyboard_matrix {"key":"SPACE","hold_frames":12}
+$ mcp vice_execution_run
+$ mcp vice_checkpoint_list      # +30 s
+{"checkpoints":[{"checkpoint_num":1,"start":7106,"end":7106,"hit_count":2,"ignore_count":0,"stop":true,"enabled":true,"check_load":false,"check_store":false,"check_exec":true,"temporary":false}],"count":1}
+
+**`hit_count == 2`, not 1.** This is the decisive observation of the whole plan. The stop
+request straddled a frame boundary: `$1BC2` executed a second time before the pause took
+effect. Run 1 stopped inside frame 1; run 2 stopped inside frame 2. The two runs are
+therefore **at different game frames**, and no procedure available on this surface can
+make them agree — the stop is neither instruction-exact nor frame-exact, and there is no
+`ignore_count`-style control that fixes the *intra-frame* position.
+
+$ mcp vice_registers_get
+{"PC":21229,"A":4,"X":17,"Y":4,"SP":249,"N":false,"V":false,"B":false,"D":false,"I":false,"Z":false,"C":false}
+$ mcp vice_memory_read {"address":"$0000","size":2,"encoding":"hex"}  -> "EF35"
+$ mcp vice_memory_read {"address":"$D018","size":1,"encoding":"hex"}  -> "33"
+$ mcp vice_memory_read {"address":"$DD00","size":1,"encoding":"hex"}  -> "C1"
+$ mcp vice_memory_read {"address":"$8FF8","size":8,"encoding":"hex"}  -> "060708090A0F0F0F"
+
+$ mcp vice_vicii_get_state
+raster 311, video_mode 1, memory_pointers 51, irq_status 124, irq_enabled 241,
+background_color_1 242 / _2 241 (run 1: 241 / 254) — the title screen's colour cycle has advanced
+$ mcp vice_sprite_get
+sprite_0 color 247 (run 1: 255); geometry otherwise identical
+
+$ mcp vice_snapshot_save {"name":"danish_r2_handoff", ...}
+{"status":"ok","name":"danish_r2_handoff","path":".../danish_r2_handoff.vsf", ...}
+
+The invariant fields agree exactly across the two runs — `$01 = $35`, `$DD00 = $C1`,
+`$D018 = $33`, so `vic_bank`, `screen_base` and `charset_base` are the same, and
+`CAPTURE_PORT01` and `CAPTURE_HANDOFF_PC` are reproducible facts. What differs is
+per-frame state: the sprite-pointer table at `$8FF8` reads `06 07 0F 0F ...` in run 1 and
+`06 07 08 09 0A 0F ...` in run 2, and two VIC background colours have moved.
+
