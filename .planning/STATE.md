@@ -2,9 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
+current_phase: 27
+current_phase_name: Shared Seams Extracted
 status: planning
-last_updated: "2026-08-26T20:47:32.000Z"
+stopped_at: Phase 27 context gathered
+last_updated: "2026-08-26T21:29:09.233Z"
 last_activity: 2026-08-26
+last_activity_desc: Phase 27 context gathered - 27-CONTEXT.md committed, ready to plan
+state_head: 6403e2fa1ea6407c3f58c6e74440cf9317e0bb2d
 progress:
   total_phases: 6
   completed_phases: 0
@@ -140,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 27 — Shared Seams Extracted (not started)
+Phase: 27 — Shared Seams Extracted (context gathered, not planned)
 Plan: — (no plans written yet)
-Status: Roadmap complete — 6 phases, 28/28 requirements mapped. Awaiting `/gsd-plan-phase 27`
-Last activity: 2026-08-26 — v0.7.0 roadmap created (Phases 27-32); `REQUIREMENTS.md` traceability populated
+Status: `27-CONTEXT.md` committed — 17 decisions across four gray areas. Awaiting `/gsd-plan-phase 27`
+Last activity: 2026-08-26 — Phase 27 context gathered; `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` committed (`6403e2f`)
 
 ## Performance Metrics
 
@@ -1130,8 +1135,22 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T15:59:30.945Z
-Stopped at: Phase 23 complete, ready to plan Phase 24
+Last session: 2026-08-26T21:29:09.201Z
+Stopped at: Phase 27 context gathered
+  `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` are written and committed
+  (`6403e2f`). Four gray areas discussed, 17 decisions locked: the ACME gate is
+  a hard move to `acme-gate.ts` with all four importers repointed and no
+  re-export shim; the capability-or-glue record is a committed registry plus an
+  enforcing test citing surviving consumers and requirement ids, with a third
+  verdict `glue-with-extractable`; `r2000-coverage.ts`'s store contact becomes
+  an adapter module with a neutral vocabulary (three comparison sites, not the
+  two the requirement names), proven substitutable by a second implementation;
+  and `prg-image.ts` plus a shared `shippedTsModules()`/`codeOnly()` test helper
+  are extracted in scope. Measured during the scout: `ci.yml` binds only the env
+  var names, never the module path, so no functional CI edit is expected. No
+  code written. Next: `/gsd-plan-phase 27`.
+
+Previously stopped at: Phase 23 complete, ready to plan Phase 24
   Phase 23 is closed. The verdict `no-go` (rule `R1`) now gates Phase 24 through
   its ROADMAP `**Depends on**` line and Notes, this file points at
   `docs/phase23-real-release-gate-findings.md` rather than copying it, and the
@@ -1163,7 +1182,7 @@ Earlier in phase 23:
   side-by-side is not apples-to-apples**, and 23-10 needs an operator ruling on
   which figures it prints. No corpus byte has been measured; 23-03 is still
   paused at its operator checkpoint.
-Previously stopped at: **Completed 23-01-PLAN.md** — the gate pre-committed
+Earlier still: **Completed 23-01-PLAN.md** — the gate pre-committed
   before any measurement existed: `DECISION-RULE.md` (`R1`..`R9`, first match
   wins, `R9` the only `go`), `SCHEMA.md` (68 outcome-line names with value
   domains, frozen) and `README.md` (the ten binding evidence conventions plus
@@ -1211,7 +1230,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: None
+Resume file: .planning/phases/27-shared-seams-extracted/27-CONTEXT.md
 
 ## Operator Next Steps
 
