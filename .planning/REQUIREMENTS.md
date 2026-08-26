@@ -1,194 +1,209 @@
-# Requirements: c64-re-tools — v0.6.0 Own the substrate
+# Requirements: c64-re-tools — v0.7.0 Own the Annotation Store
 
-**Defined:** 2026-08-25
+**Defined:** 2026-08-26
 **Core Value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
 inspect chip state — and keep working when the emulator misbehaves.
 
-**Milestone goal:** Replace regenerator2000 as the analysis substrate with dxa +
-Ghidra and an annotation store this project owns — proving the pivot's numbers
-hold on real cracked code *before* anything is built on them.
+**Milestone goal:** This project owns the annotation state it has been renting
+from regenerator2000, and the analysis procedures already absorbed from it run on
+that store instead — with regenerator2000 deleted outright, no parity owed to it,
+and no procedural knowledge lost with it.
 
-**Scope note.** This milestone is the substrate only. `DECOMP-01..04`,
-`BUILD-01..06` and `EQUIV-01..04` — v0.5.0's cut phases, re-mapped at its close —
-are deliberately held for v0.7.0 rather than rewritten now against a store that
-does not exist yet. Their text stands unchanged in
-[`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md).
+**Scope note — how this milestone came to be.** v0.6.0 closed incomplete on its
+own pre-committed gate: Phase 23 recorded **`no-go`, rule `R1`**. Its Phase 25
+was taken forward as the whole of v0.7.0 because, once the Phase 24 engine
+coupling is dropped, its goal carries **no corpus dependency** and is therefore
+reachable while the `no-go` stands. Phases 24 and 26 are **held**, not cut — see
+"Held for v0.8.0" below.
 
-## v0.6.0 Requirements
+**Two owner decisions taken at the open, 2026-08-26.** Both narrow requirement
+text inherited from v0.6.0, and both are recorded here rather than left implicit:
 
-### Proof
+1. **No parity is owed to regenerator2000.** v0.6.0's Phase 25 carried the gate
+   *"nothing may delete r2000 before a replacement demonstrably produces the same
+   facts"*, and `STORE-04` was worded as *"the capability `R2000-11` shipped,
+   carried across the substrate swap rather than lost in it"*. Both are removed.
+2. **The Phase 24 engine coupling is dropped with it** — Phase 25's *"populated
+   from the engines' output"* dependency and its criterion 3's *"against a program
+   analysed by the new engines"*. The store stands on the `disasm-*` decoders this
+   project already owns.
 
-<!-- The gate. Every number behind the pivot comes from one 279-byte fixture
-     written by the same person testing it. This category exists to find that
-     out before four phases are built on it. -->
+**Three research disagreements resolved here rather than by a planner.** The four
+research agents disagreed on three points; `research/SUMMARY.md` names them as
+`D1`, `D2`, `D3`. Resolved:
 
-- [ ] **PROOF-01**: dxa's data-recovery rate and false-positive count are measured on real cracked releases from the `c64-provenance-diff` fixtures, reported as numbers against a named binary — and stated *beside* the 279-byte fixture's 72%-data / 0-false-positive claim rather than silently replacing it
-  - **NOT met at the Phase 23 close (2026-08-26).** The corpus was secured but no depacked flat-64K capture exists (the fork's stopping exec checkpoint is not frame-exact), so criterion 1 was never measured — recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Plans 23-05 and 23-07 were deliberately not dispatched rather than run against the 279-byte self-authored fixture, which is the exact defect this requirement exists to remove. Left **Pending**, deliberately: this is unmeasured, not failed.
-- [ ] **PROOF-02**: Ghidra's indirect-dispatch resolution is tested where the dispatch index is **computed** rather than an immediate `ldx #$02` — the case the pivot fixture never exercised — with the result recorded whichever way it comes out
-  - **NOT met at the Phase 23 close (2026-08-26).** Criterion 2 reads the depacked capture as its substrate (D-03); no capture exists, 23-08 was not dispatched, and the criterion is recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Note the distinction the findings document is emphatic about: this is **not** `not-exercised` — no corpus was ever searched for a computed dispatch, so nothing is known about whether the construct is present. Left **Pending**.
-- [ ] **PROOF-03**: The `memmap.json` join is run against code that banks ROM in and out, and the point where a single forward-carried `$01` value becomes wrong is established rather than assumed: path-dependent bank state is the highest-risk item on the pivot's own record
-  - **NOT met at the Phase 23 close (2026-08-26).** 23-09 was not dispatched for want of the capture substrate (D-03); criterion 3 is recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Consequence carried into Phase 26's ROADMAP notes: `AUTO-04` and `AUTO-05` are **unvalidated rather than narrowed** — the pre-mapped narrowing belongs to rule `R7`, which was never evaluated under first-match-wins. Left **Pending**.
-- [x] **PROOF-04**: The dropped `analyzer.rs` work is checked for anything the dxa+Ghidra pair does not replace, so dropping it is a measured decision rather than an inference from one fixture
-  - **Met (2026-08-26), plan 23-04.** Criterion 4 needed no capture — the audit ran offline against crate source — and every audited capability carries one of three dispositions. Outcome lines at `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/criterion4-analyzer-audit.md`; summarised in `docs/phase23-real-release-gate-findings.md` § *Criterion 4*. Reported adversarially: the audit names the single row whose reclassification would move the count, and the two conditions that would justify it.
-- [x] **PROOF-05**: The milestone's verdict is a recorded go / degrade / no-go against named rules, produced **before** any engine or store code is written — the pattern Phase 9 used, where `degrade` shipped a smaller, correct milestone
-  - **Met (2026-08-26), plans 23-01 (rules) and 23-10 (verdict), bound by 23-11.** `docs/phase23-real-release-gate-findings.md` carries machine-readable frontmatter `verdict: no-go` and `verdict_rule_applied: R1`, derived from rules committed to git before any measurement existed (23-01), with no judgement step. Zero product code was written anywhere in the phase. The gate is enforced through Phase 24's ROADMAP `**Depends on**` line and Notes, which name the file and the `verdict` field literally — D-08 declined a test guard deliberately.
+- **`D1` persistence → `node:sqlite`.** Not on the performance margin (1.16 ms vs
+  16.0 ms per edit) but on evidence grounds: SQLite's planted violation — drop the
+  `COMMIT` — reliably reddens, whereas atomic-JSON's — remove the `fsync` —
+  frequently still passes because the page cache serves the read. A guard that
+  cannot be made to fail is not evidence, and observed-RED is this project's
+  acceptance bar. `node:sqlite` is a built-in, unflagged since Node v22.13.0 and
+  therefore unconditional at the `>=22.18.0` floor, so `ENGINEERING_RULES.md` §4's
+  dependency bar is not triggered at all.
+- **`D2` undo → whole-store snapshot/restore, not a per-edit inverse journal.**
+  Measured: zero callers anywhere, and the Phase 19 manifest already disposes
+  `r2000_undo` as `omit` because idempotent range typing collapses "undo the wrong
+  conversion" into "set it correctly". Node's `sqlite` surface also does not expose
+  `sqlite3changeset_invert`, confirmed two independent ways. `STORE-04` is scoped
+  to what a planted-violation test can actually prove.
+- **`D3` no `capability-registry.ts` entry.** That registry holds only the
+  per-backend *delta*; a proxy-local family has none, and the precedent named in
+  its own header is `vice_diagnose` / `vice_recycle`. v0.6.0's `STORE-03` required
+  an entry; that clause was factually wrong and is replaced in `MCP-03` by the
+  structural check that actually exists.
 
-### Discovery Engine
+**Requirement numbering.** `STORE-*` continues from v0.6.0's `STORE-01..06`, whose
+text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
+`REPOINT-*` are new families. `CUT-*` continues from `CUT-01..03`.
 
-- [ ] **DXA-01**: dxa is vendored at a pinned version with its GPLv2+ notice in `THIRD-PARTY-NOTICES.md` and is built by this project rather than assumed present on `$PATH` — it ships in no Debian package (`dpkg -L xa65` has no `dxa`) and its upstream is dormant at 0.1.5
-- [ ] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and the parser's failure mode is a refusal rather than a silent mis-parse — dxa has no machine-readable output, so this parser is this project's to own and maintain
-- [ ] **DXA-03**: Known-data ranges are handed to dxa as `-b` data blocks, so a caller can exclude graphics regions from discovery
+## v0.7.0 Requirements
 
-### Semantic Engine
+### Shared Seams
 
-- [ ] **GHID-01**: Ghidra runs headless under this project's harness against a `.prg` or flat 64K image, given dxa's map as hints, reproducible from a committed script rather than a documented click-path
-- [ ] **GHID-02**: `$0000-$0001` and `$D000-$DFFF` are marked volatile before `analyzeAll()`, proven by a planted-violation test — remove the volatile flag and hardware writes must disappear from the output, because Ghidra deletes them as dead stores with no warning
-- [ ] **GHID-03**: A loader-owned block at the same address is handled by setting the flag on the existing block, so a run cannot fall back to non-volatile through an unhandled `MemoryConflictException`
-- [ ] **GHID-04**: Structural facts are exported through `DecompInterface` — array bounds, the split-pointer `CONCAT11` idiom, record strides, resolved computed jumps, self-modifying write targets — and not through `DataTypeManager`, which returns essentially nothing on 6502
-- [ ] **GHID-05**: Typed cross-references are exported with their access kind preserved (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), since the annotation join consumes the kind and not only the address
+<!-- These must land FIRST. Each is a module with surviving consumers that a
+     prefix-driven deletion would silently take with it. Extracting them before
+     anything else is what makes the deletion safe rather than lucky. -->
 
-### Opcode Coverage
+- [ ] **SEAM-01**: The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip
+- [ ] **SEAM-02**: Every `r2000-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `r2000-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted
+- [ ] **SEAM-03**: `r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store
 
-- [ ] **OPC-01**: All 105 opcode bytes stock Ghidra's `6502.slaspec` omits are decodable, as a SLEIGH extension layered so it cannot collide with `65c02.slaspec`'s reuse of the same bytes
-- [ ] **OPC-02**: The electrically unstable opcodes (`XAA` `$8b`, immediate `LAX`/`LXA` `$ab`) and the page-crossing-dependent ones (`AHX`, `TAS`, `SHX`, `SHY`) are modelled as declared unknowns rather than given plausible p-code — a confident wrong semantic is worse than an admitted gap
-- [ ] **OPC-03**: The extension is verified against real code containing illegal opcodes, not only against a synthetic opcode sweep
+### Store Core
 
-### Annotation Store
+<!-- The store itself. STORE-01's vocabulary is the milestone's one irreversible
+     decision: split-table orientation is unrecoverable from data that never
+     recorded it. -->
 
-- [ ] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering what `DECOMP-01` will need in v0.7.0 — code, byte, word, address, PETSCII, screencode, table
-- [ ] **STORE-02**: Edits are undoable and the store survives a process restart, proven by a planted-violation test (mutate → kill → reopen → assert persisted; then remove the save and prove the test goes red)
-- [ ] **STORE-03**: The store is reached through an MCP tool surface this project owns, declared in `capability-registry.ts` and identical on both backends — it never touches VICE, so backend-agnosticism is structural rather than tested per backend
-- [ ] **STORE-04**: Cross-references and search over the typed decode stay queryable — the capability `R2000-11` shipped, carried across the substrate swap rather than lost in it
-- [ ] **STORE-05**: The store exports ACME source carrying the two idioms worth stealing rather than rediscovering: the `=*+$01` mid-instruction label that names a self-modifying write target without breaking reassembly, and typed label prefixes carrying inferred type in the name
-- [ ] **STORE-06**: Exported source is verified by real ACME reassembly rather than asserted, reusing the `--verify` seam that keys strictly on ACME's own result line
+- [ ] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering the **full 12-member vocabulary** read off `r2000_set_data_type`'s own schema — not the 7 v0.6.0 named, because "table" is four distinct split layouts and collapsing them re-creates the exact `da65` expressiveness boundary this project rejected `cc65` for
+- [ ] **STORE-02**: Ranges are stored as ranges and are **never merged on adjacency**, so no splitter concept is needed and none is introduced — the manifest's named blocker for `DECOMP-01` and `BUILD-02`, and the over-merge bias it predicts for `COV-01`, are designed out by construction rather than worked around
+- [ ] **STORE-03**: A narrowest-range-wins lookup over the 64K space is exact at every one of the 65,536 addresses, verified by cross-validating two independent implementations rather than by spot checks — the tie-break, the range ends, and the behaviour when a typed range is partially overwritten all pinned
+- [ ] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
+- [ ] **STORE-05**: The schema carries a version field and a reserved bank field from the first write, and cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`). All three are free at decode time and unrecoverable afterwards; the bank field is reserved and **not** interpreted, since `PROOF-03` is recorded `could-not-run` and `memmap.json` is flat
+- [ ] **STORE-06**: Cross-references and search over the typed decode are answerable — which addresses reference a given address, and search across labels, comments and instructions — built on the surviving `disasm-*` decoders, with the old route gone rather than kept as a fallback
+- [ ] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
 
-### Cutover
+### MCP Surface
 
-- [ ] **CUT-01**: The 19,181 lines of regenerator2000 integration glue (9,087 non-test + 9,928 test) are deleted, gated by a whole-tree grep proven to bite on a planted reintroduction — the pattern the `toacme` removal used, so the replacement is not left standing beside its predecessor
-- [ ] **CUT-02**: What survives the swap is reused rather than rebuilt — `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` (2,555 lines), `r2000-d64.ts` (310 lines), and `memmap.json` with `r2000-regbits-gen.ts` and `r2000-enum-gen.ts` — with r2000-shaped naming resolved rather than carried as a fossil
-- [ ] **CUT-03**: Every living document naming regenerator2000 as a required prerequisite is corrected — install documentation, `CLAUDE.md`'s constraints, and the seven skills' playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
+<!-- Derived from a committed artifact, not designed. 18 of 19 curated verbs
+     have a named consumer; `r2000_delete_project_enum` has zero callers
+     anywhere and is the one verb the measured test cuts. -->
 
-### Automatic Annotation
+- [ ] **MCP-01**: The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every verb it classifies `curated` or `adapt-to-address-input` has a route, every verb it classifies `omit` is absent, and the one verb with zero callers anywhere (`r2000_delete_project_enum`) is not carried. The derivation is checked mechanically, so a future verb added without a consumer fails
+- [ ] **MCP-02**: The family registers proxy-locally through `buildViceTool()` and never reaches `forwardToVice()`, satisfying CLAUDE.md's derived-tool path-translation constraint **by construction** — no interception to forget. Pinned by the existing body-slice assertion that the runner contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`
+- [ ] **MCP-03**: Backend-agnosticism is structural, expressed where it actually lives — `stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS` ordered allow-list — and **not** by an entry in `capability-registry.ts`, which holds only the per-backend delta a proxy-local family does not have. Neither manifest nor `docs/tool-support.md` gains an entry
+- [ ] **MCP-04**: The surface is shaped for an agent rather than a cursor: addressing is by explicit address, edits are batchable and idempotent, and an ambiguous or unsupported request **refuses by name** — reporting `{available:false, reason}` rather than a plausible-looking zero, per this project's existing convention
+- [ ] **MCP-05**: Every guard that breaks on **registration rather than deletion** is repointed in the commit that registers the family — `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its two deliberate duplicates, and `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR`. Both families coexist at this point, so nothing is deleted to make them pass
 
-- [ ] **AUTO-01**: Machine addresses are annotated mechanically by joining Ghidra's typed cross-references against `memmap.json`, with no agent call, queue walk or skill invocation in the loop
-- [ ] **AUTO-02**: The join selects the **narrowest containing range**, breaking ties toward the entry carrying a `sym` — selecting by first match or by description length yields the useless wide entry, and it fails silently
-- [ ] **AUTO-03**: An address inside the loaded image is treated as a program address and never looked up in `memmap.json`, so in-program branch targets cannot be annotated as machine features
-- [ ] **AUTO-04**: Bank state is resolved **before** the address — `$01` bits 0-2 (LORAM / HIRAM / CHAREN) decoded and carried per program point — so a `$d020` write under `$34` is not labelled the border colour and a `$d000` read under `$33` is not labelled sprite-0-X
-- [ ] **AUTO-05**: Where bank state is path-dependent — computed, or set inside a routine reached from several banking contexts — the join declines to annotate rather than emitting a confident wrong comment
-- [ ] **AUTO-06**: Graphics areas are derived from the VIC pointers rather than from cross-references (`$DD00` bits 0-1 inverted for the VIC bank, `$D018` for screen and charset or bitmap, `$D011` bit 5 for the mode, screen + `$3F8` for sprite pointers), because the VIC fetches by DMA and a charset may be referenced by no instruction anywhere in the program
-- [ ] **AUTO-07**: Derived graphics ranges are fed back to dxa as `-b` data blocks and to Ghidra as data, so graphics bytes cannot mint phantom labels and phantom cross-references that feed the join and emerge as confident wrong comments
+### ACME Export
+
+<!-- v0.6.0's STORE-06 asserted this reuses an existing `--verify` seam. It does
+     not: that seam invokes regenerator2000 and parses ITS transcript. Only the
+     discipline survives. -->
+
+- [ ] **EXPORT-01**: The store exports ACME source, and correctness is established by **a real ACME actually assembling it** — through a verify path built for this purpose, since the existing `--verify` seam invokes regenerator2000 rather than ACME. The surviving discipline is carried explicitly: never trust the exit code, require unanimity, and a skipped assembler is not a pass. Proven by **two mandatory reds** — an exit-1 run where ACME passed, and an exit-0 run where ACME never ran
+- [ ] **EXPORT-02**: Both carried idioms are load-bearing in that reassembly rather than merely emitted: a self-modifying write target named by the `=*+$01` mid-instruction label reassembles byte-identically, and the **11** typed label prefixes already owned by `AUTO_NAME_PREFIX_RE` are carried — not a five-prefix reimplementation, which would silently break `routine-queue-walker`'s backlog construction. Neither idiom exists in this codebase today; both are built, not preserved
+- [ ] **EXPORT-03**: Correctness is never claimed from a string match on the exporter's own output. This project's own record is that an internally-checked opcode table still shipped 14 wrong entries, and illegal opcodes ACME cannot assemble are reported as such rather than emitted and hoped for
+
+### Procedure Re-pointing
+
+<!-- The absorbed prose is already this project's; the route underneath it is
+     not. Measured: 10 files under src/skills/, 18 distinct tool names, plus a
+     gitignored-but-shipped twin tree. -->
+
+- [ ] **REPOINT-01**: All five absorbed procedures run on the new surface with their heuristics intact — block-classification tables, symbol data-flow patterns, the BASIC V2 token table, the routine procedure and its pitfalls, the full-program orchestration — across the **10 files under `src/skills/`** that reference r2000 and its **18 distinct tool names**, including `scripts/packer-finding.mjs` (executable), `templates/memory-map.template.md` (copied into consuming projects), and two `references/*.md`
+- [ ] **REPOINT-02**: The `installer/skills/` twin tree is re-pointed in the same change. It is **gitignored yet shipped in the published tarball** — `git ls-files installer/skills` returns 0 — so any gate implemented over tracked files is structurally blind to it while users receive it. `scripts/check-npm-packages.mjs` proves the shipped copy matches
+- [ ] **REPOINT-03**: The `ABS-02` attribution chain survives the code's deletion, because the prose remains adapted from regenerator2000 — 5 blocks in 3 files under `src/skills/` plus their 5 synced twins, 10 instances across two trees, each carrying two naming lines. Separately, `routine-queue-walker/SKILL.md:3`'s YAML `description:` names regenerator2000 and must change **substantively** rather than be exempted, which re-triggers `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions
+- [ ] **REPOINT-04**: `upstream-procedure-manifest.json` is updated in the same commit that changes what it describes — its own third re-sync trigger requires it, and `r2000_undo`'s `omit` disposition is one v0.7.0 supplies a criterion for
+
+### The Cutover
+
+<!-- Last, non-negotiably: before the re-pointing lands, a grep gate cannot tell
+     "not yet re-pointed" from "reintroduced". -->
+
+- [ ] **CUT-01**: The regenerator2000 integration is deleted — a **net ~12.4k lines** of the 25,759-line `r2000-*.ts` surface (10,102 non-test + 15,657 test), the remaining ~12.9k surviving under new names. Both figures correct v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181; a phase sized at 25.7k deletes the coverage instrument and the enum generator
+- [ ] **CUT-02**: The grep gate's scope is chosen against measured blast radius and defended in both directions. 291 tracked files mention regenerator2000, **55 outside `.planning/`**, so ~236 legitimately keep the word permanently: a whole-tree gate produces 236 false fires and gets switched off, while the `toacme` precedent's real scope (`src/skills/` + `README.md` + `src/mcp/vice/` + `docs/stock-vice-parity.md`) is blind to `docs/`, `scripts/`, `installer/` and both tarballs. Proven by **three plants** — a `.ts`, a `docs/` file and a `scripts/` file — each observed biting
+- [ ] **CUT-03**: The gate's exemption set carries its own **non-vacuity assertion**: deleting an attribution block must trip it. An exemption nothing can violate is not an exemption
+- [ ] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — 9 guards, 2 CI scripts, and 13 non-`r2000-`named test files against 19 `r2000-`named ones. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
+- [ ] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
+- [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
+
+## Held for v0.8.0
+
+<!-- v0.6.0's Phases 24 and 26. HELD, not cut: nothing about them was falsified,
+     only their substrate is missing. Numbers reserved, text unchanged. -->
+
+Both phases are blocked behind one thing: **a frame-exact emulator stop**, which
+nothing owns (verification warning W4 on Phase 23; tracked in
+`todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`). Of Phase 23's
+two capture blockers the hex-transcription half is solved with a validated method;
+this is the remaining one.
+
+### Phase 24 — The Two Engines
+
+- **DXA-01..03**, **GHID-01..05**, **OPC-01..03** — text unchanged. Recoverable
+  verbatim from this file at commit `2421f68` (`git show 2421f68:.planning/REQUIREMENTS.md`),
+  and restated per phase in `ROADMAP.md`'s Phase 24 detail, which is not archived
+  precisely because these are held rather than shipped.
+
+### Phase 26 — Automatic Annotation
+
+- **AUTO-01..07** — text unchanged. `AUTO-04`/`AUTO-05` were already recorded as
+  *unvalidated rather than narrowed* at the Phase 23 close.
+
+### The gate itself
+
+- **PROOF-01..03** — recorded `could-not-run`, not `not-exercised` and not a pass.
+  `PROOF-04`/`PROOF-05` are complete.
 
 ## Future Requirements
 
-Deferred to v0.7.0 and beyond. Tracked, not in this roadmap.
+### The rebuild half (v0.9.0 — text unchanged in `milestones/v0.5.0-REQUIREMENTS.md`)
 
-### The rebuild half (v0.7.0 — text unchanged in `milestones/v0.5.0-REQUIREMENTS.md`)
+- **DECOMP-01..04**, **BUILD-01..06**, **EQUIV-01..04**. Re-mapped from v0.7.0 to
+  v0.9.0 on 2026-08-26: each is written against a substrate v0.7.0 now builds, and
+  `DECOMP-01` is precisely what `STORE-01`'s 12-member vocabulary is sized for.
+  `BUILD-01` is already reworded from "per regenerator2000 scope" to "per
+  annotation-store scope".
 
-- **DECOMP-01..04**: Nothing left `Undefined`; every entry point named with a purpose comment; every referenced non-hardware address documented; hardware writes as named enums
-- **BUILD-01..06**: One ACME file per annotation-store scope wired by `!source`; data tables in their own files; every reference through a symbol; the four-class hazard report; provenance-aware rebuild; the reassembly gate existing before the phase it gates
-- **EQUIV-01..04**: `compare.mjs` in original-versus-different-binary mode; behavioural equivalence in VICE with a committed transcript; modifiability demonstrated; the pipeline runnable in CI
+### Deferred with a named trigger, not scoped here
 
-### Carried, unowned by this milestone
-
-- **Sprite bitmap location** — the 8 sprite *pointer* bytes are derivable (screen + `$3F8`); the bitmaps they point at are not, since the pointer values are program data usually written at runtime. Needs a RAM capture or a data-flow trace. Untested either way (`vic-graphics-map-derivation.md`)
-- **The second VIC banking axis** — CIA2 `$DD00` bits 0-1 govern where the VIC *reads* from, independently of the `$01` CPU banking. `$DD00` falls inside the volatile I/O block so the same technique should apply, but it is untested
-- **Loaders beyond `.prg` / `.d64`** — `.t64`, `.crt`, `.vsf`. `.vsf` remains explicitly out of scope as a bootstrap input (see Out of Scope)
+- **`set_immediate_format`** and the **emitted/non-emitted comment flag** — both
+  have named *future* consumers (`BUILD-03`; the exporter) and no caller today.
+- **Analysis built on the xref access-kind field** — the field is stored by
+  `STORE-05` because it is free now and unrecoverable later, but no shipped caller
+  reads it until `GHID-05` unholds.
 
 ## Out of Scope
 
+Explicitly excluded, with reasoning, to prevent re-adding.
+
 | Feature | Reason |
 |---------|--------|
-| A packer/unpacker | Owner decision 2026-08-25. r2000's unpacker is ~5,400 lines including the `cpu.rs` 6502 emulator it needs, with claimed 100% unp64 benchmark parity. Depack-by-running via `c64-ram-capture` is sufficient |
-| cc65 (da65 / ca65 / ld65) as the export path | da65's complete `RANGE TYPE` vocabulary (`ADDRTABLE BYTETABLE CODE DBYTETABLE DWORDTABLE RTSTABLE SKIP TEXTTABLE WORDTABLE`, verified against the binary's own string table) cannot express a split-address table or a struct. Every structural fact Ghidra recovers dies at that boundary — and it emits ca65, not ACME |
-| Byte-perfect reconstruction | Explicitly not the goal (user decision 2026-08-24). Source quality and functionality are; rebuilding a binary is a separate, later step |
-| dxa for banking or VIC knowledge | Checked, not assumed. `grep -in bank` over all 3,417 lines returns zero; dxa's entire C64 knowledge is eight lines testing whether the load address looks like a BASIC start. It is the discovery engine and nothing more |
-| Ghidra's `DataTypeManager` as the structural-fact source | Measured: `getAllComposites()` and `getDefinedData()` return essentially nothing on 6502. Named here because it is the obvious implementation and the single most expensive mistake available in this design |
-| `.vsf` as a bootstrap input | Carried unchanged from v0.3.0 (D-34, closed `wont-fix` by plan 15-12). A `.vsf`'s machine type reads correct only by coincidence. Reverses only if a consumer has `.vsf` captures and cannot re-capture as `.raw` |
-| Removing or deprecating the fork backend | Unchanged. `FORK-01` = **retain**, with the upstream `KEYBOARD_MATRIX_SET` coupling as its named reversal criterion |
-| The two upstream contributions | VICE's `KEYBOARD_MATRIX_SET` opcode and regenerator2000's `--mcp-port` / `--mcp-bind`. Both are pull requests against projects this repo does not own. Standing, not scoped |
+| Parity with regenerator2000's feature set | Owner decision 2026-08-26. r2000 is out of scope and is eliminated; the store is built to what this project needs. This removes v0.6.0's "same facts" deletion gate and `STORE-04`'s `R2000-11` carry-across |
+| A per-edit inverse-command undo journal | `D2`. Zero callers measured; the Phase 19 manifest disposes `r2000_undo` as `omit`; Node's `sqlite` does not expose `sqlite3changeset_invert`. Whole-store snapshot/restore serves the requirement that has a consumer |
+| An entry in `capability-registry.ts` | `D3`. The registry holds only the per-backend delta, and a proxy-local family has none. Adding one would be a factual error, not merely redundant |
+| `better-sqlite3` or any other new runtime dependency | `node:sqlite` is a built-in at this project's Node floor. `better-sqlite3` 13.0.3 needs no install script and ships 8 prebuilds, so the native-build objection is out of date — it loses on 11.4 MB unpacked per consumer and a hard `MODULE_NOT_FOUND` off its eight targets |
+| An interval-tree library | All six surveyed packages return *every* overlap with no narrowest-wins tie-break, and one has no licence field. A paint array resolves in 0.018 µs against SQL's 42.6 µs in ~60-120 owned lines |
+| Bank-qualified addressing as a modelled feature | `PROOF-03` is `could-not-run`, `memmap.json` is flat, and Ghidra's own answer still leaves bank-switch analysis manual. `STORE-05` reserves the field; nothing interprets it |
+| `r2000_delete_project_enum` | Zero callers anywhere. `gen-enums` re-runs via create-then-update |
+| Multi-assembler output (64tass / ca65 / KickAssembler) | r2000 supported all three; this project's fixed target has always been ACME / `!cpu 6510` / cbm. No shipped-skill caller |
+| Byte-perfect binary reconstruction | Owner decision 2026-08-24. Source quality and functionality are the goal |
+| The two upstream contributions | VICE's `KEYBOARD_MATRIX_SET` and regenerator2000's `--mcp-port`/`--mcp-bind`. Pull requests against projects this repo does not own. Standing, not scoped — and the second becomes moot on this milestone's landing |
 
 ## Traceability
 
-Which phases cover which requirements. Every v0.6.0 requirement maps to exactly
-one phase; no requirement is carried by two, and none is orphaned.
+Which phases cover which requirements. Populated during roadmap creation.
 
-| Requirement | Phase | Status | Notes |
-|-------------|-------|--------|-------|
-| PROOF-01 | Phase 23 | Pending | not met — criterion `could-not-run`, no depacked capture (D-03); 23-05/23-07 not dispatched |
-| PROOF-02 | Phase 23 | Pending | not met — criterion `could-not-run` (**not** `not-exercised`); 23-08 not dispatched |
-| PROOF-03 | Phase 23 | Pending | not met — criterion `could-not-run`; 23-09 not dispatched; `AUTO-04`/`AUTO-05` left unvalidated |
-| PROOF-04 | Phase 23 | Complete | 23-04 — offline `analyzer.rs` audit, needed no capture |
-| PROOF-05 | Phase 23 | Complete | 23-01 rules + 23-10 verdict (`no-go`, `R1`), bound by 23-11 |
-| DXA-01 | Phase 24 | Pending | |
-| DXA-02 | Phase 24 | Pending | |
-| DXA-03 | Phase 24 | Pending | |
-| GHID-01 | Phase 24 | Pending | |
-| GHID-02 | Phase 24 | Pending | |
-| GHID-03 | Phase 24 | Pending | |
-| GHID-04 | Phase 24 | Pending | |
-| GHID-05 | Phase 24 | Pending | |
-| OPC-01 | Phase 24 | Pending | |
-| OPC-02 | Phase 24 | Pending | |
-| OPC-03 | Phase 24 | Pending | |
-| STORE-01 | Phase 25 | Pending | |
-| STORE-02 | Phase 25 | Pending | |
-| STORE-03 | Phase 25 | Pending | |
-| STORE-04 | Phase 25 | Pending | |
-| STORE-05 | Phase 25 | Pending | |
-| STORE-06 | Phase 25 | Pending | |
-| CUT-01 | Phase 25 | Pending | |
-| CUT-02 | Phase 25 | Pending | |
-| CUT-03 | Phase 25 | Pending | |
-| AUTO-01 | Phase 26 | Pending | |
-| AUTO-02 | Phase 26 | Pending | |
-| AUTO-03 | Phase 26 | Pending | |
-| AUTO-04 | Phase 26 | Pending | |
-| AUTO-05 | Phase 26 | Pending | |
-| AUTO-06 | Phase 26 | Pending | |
-| AUTO-07 | Phase 26 | Pending | |
-
-**Phase 23 closed 2026-08-26 with 2 of its 5 requirements met.** The verdict is
-`no-go` (rule `R1`, fired by `C0_CORPUS: partial`) and is recorded in
-`docs/phase23-real-release-gate-findings.md` — read the criterion values there, not
-here. `PROOF-04` and `PROOF-05` are the two the phase discharged; `PROOF-01`,
-`PROOF-02` and `PROOF-03` each require the depacked flat-64K capture and the criteria
-measured on it, and no such capture exists, so they stay **Pending** with the reason on
-the row. They are deliberately **not** marked `Complete`: flipping them would make this
-table assert a measurement that was never taken, which is the one thing a traceability
-table exists to prevent. No fourth status value was invented.
-
-Phase 23 executed **6 of its 11 plans** (23-01, 23-02, 23-03, 23-04, 23-10, 23-11);
-23-05 through 23-09 were **deliberately not dispatched** by explicit operator decision,
-because each reads the depacked capture as its substrate (D-03). That is a recorded
-decision, not five failures and not an omission.
-
-**Phase names:**
-
-- **Phase 23** — The Real-Release Gate (Go/Degrade/No-Go)
-- **Phase 24** — The Two Engines
-- **Phase 25** — The Annotation Store and the Cutover
-- **Phase 26** — Automatic Annotation
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| (pending roadmap) | — | — |
 
 **Coverage:**
-
-- v0.6.0 requirements: 32 total
-- Mapped to phases: 32
-- Unmapped: 0 ✓
-
-**Per-phase counts:** Phase 23 — 5 (PROOF-01..05); Phase 24 — 11 (DXA-01..03,
-GHID-01..05, OPC-01..03); Phase 25 — 9 (STORE-01..06, CUT-01..03); Phase 26 — 7
-(AUTO-01..07).
-
-**Not mapped, deliberately.** `DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04`
-are v0.7.0 scope and are not v0.6.0 requirements — see the Scope note above and
-`## Future Requirements`. The two open research questions in
-`research/questions.md` are inputs to Phase 23, not requirements: the first is
-what `PROOF-01..04` measure, and the second (does Ghidra's 6502 decompiler
-degrade on illegal opcodes in real code) is answered deliberately by `OPC-03`
-in Phase 24 rather than carried as its own requirement.
+- v0.7.0 requirements: 28 total
+- Mapped to phases: 0
+- Unmapped: 28 ⚠️
 
 ---
-*Requirements defined: 2026-08-25*
-*Last updated: 2026-08-26 — Phase 23 closed on verdict `no-go` (rule `R1`): PROOF-04 and PROOF-05 Complete; PROOF-01/02/03 left Pending with the reason on the row, because their criteria were never measured (no depacked capture, D-03).*
-*Previously: 2026-08-25 — roadmap created, traceability populated (32/32 mapped to Phases 23-26)*
+*Requirements defined: 2026-08-26*
+*Last updated: 2026-08-26 at the v0.7.0 open*
