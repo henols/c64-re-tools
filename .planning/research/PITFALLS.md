@@ -1,884 +1,1167 @@
 # Pitfalls Research
 
-**Domain:** Binary-to-rebuildable-source pipeline for a mature C64 reverse-engineering
-toolchain (v0.5.0 "The rebuild half — absorbed playbooks, modifiable source")
-**Researched:** 2026-08-23
-**Confidence:** HIGH for 6502/C64 hardware facts, this project's own documented incidents,
-and regenerator2000 0.9.20 source behavior (all verified directly against the installed
-crate this session). MEDIUM for the persistent-session daemon's exact failure surface,
-since that architecture does not exist yet — those pitfalls are inferred from this
-project's own broker precedent plus regenerator2000's confirmed process model, not
-observed live.
+**Domain:** Adding an owned annotation store to a mature MCP-server codebase, and deleting
+a deeply-integrated static-analysis dependency from it (v0.7.0 "Own the Annotation Store")
+**Researched:** 2026-08-26
+**Confidence:** HIGH for everything measured directly against this repository's working tree
+this session — file inventories, line counts, guard scopes, grep-gate blast radius, tool
+schemas, `files[]` contents, CI gate wiring, test-file cross-references. Every number below
+was produced by a command, not recalled. MEDIUM for the store-internals pitfalls
+(interval/typing/undo), which are derived from upstream's own 12-type vocabulary and this
+project's recorded incidents rather than observed against a store that does not exist yet —
+stated at that ceiling per `ENGINEERING_RULES.md` §8.
 
-This document assumes the reader has `.planning/PROJECT.md`, `CLAUDE.md`,
-`.planning/RETROSPECTIVE.md`, `docs/phase9-regenerator2000-probe-findings.md`, and
-`src/skills/c64-ram-capture/{SKILL.md,scripts/compare.mjs}` open. It does not restate
-their content; it extends it.
+**Evidence ceiling, stated plainly.** This is source-and-artifact inspection of a live tree.
+Per the project's own hierarchy that proves *code shape*, not runtime behaviour. Where a
+pitfall's prevention is "run the real external oracle", that is because inspection cannot
+settle it — and this project has been taught six times that the internal check does not
+substitute.
+
+This document assumes `.planning/PROJECT.md` (Current Milestone: v0.7.0), `CLAUDE.md`,
+`.planning/ENGINEERING_RULES.md` and `.planning/notes/auto-annotation-from-ghidra-xrefs.md`
+are open. It does not restate them. It extends the five hazards named in the milestone brief
+rather than rediscovering them.
+
+---
+
+## Measured corrections to the brief (read this first)
+
+The brief's framing is right; six of its figures are not, and a roadmapper sizing phases off
+them will size them wrong.
+
+| Brief says | Measured this session | Why it matters |
+|---|---|---|
+| "Three `ATTRIBUTION (ABS-02)` headers in `src/skills/*/SKILL.md`" | **Five header blocks across three files** — 2 in `c64-program-recon/SKILL.md`, 2 in `c64-memory-mapping/SKILL.md`, 1 in `routine-queue-walker/SKILL.md`. Plus **five more** in the gitignored generated tree `installer/skills/` | The grep-gate exemption set is 10 instances in 2 trees, not 3 in 1. An exemption list of 3 leaves 7 firings that look like real reintroductions |
+| "53, 54 and 21 mentions" of `r2000_*` in three skills | **36 / 27 / 14 tool-name mentions** = 82 total, spread over **5 files** not 3 (`c64-program-recon/SKILL.md`, `.../scripts/packer-finding.mjs`, `.../templates/memory-map.template.md`, `c64-memory-mapping/SKILL.md`, `routine-queue-walker/SKILL.md`), plus **13** `vice-mcp r2000 <verb>` CLI-verb mentions. 17 distinct tool names + `r2000_batch_execute` | One of the five is an **executable `.mjs` script**, not prose. Re-pointing playbooks leaves a runtime hole. And `templates/memory-map.template.md` is a template an agent *copies*, so a stale route propagates into every future project |
+| "Three committed guards are pinned to the subject being deleted" | **13 non-`r2000-`named test files reference r2000**: `docs-r2000-decisions` (8), `hostpath-consumers` (22), `skill-attribution` (20), `stock-dispatch` (21), `vice-proxy` (29, **manual-only**), `docs-dangling-refs` (18), `hop-chain-comments` (8), `capability-registry` (5), `tool-support-table.test.mjs` (5), `disasm-roundtrip` (3), `skill-acme-build-cli` (2), `stock-connect` (1), `audit-integrity` (1) | "Every guard pinned to the deleted subject is given an explicit fate" is a 13-item list plus the 21 `r2000-*.test.ts` files, not a 3-item one |
+| "a whole-tree grep gate" (the `toacme` precedent) | The precedent gate, `scripts/check-skill-fork-honesty.mjs`, walks **`src/skills/`, `README.md`, `docs/stock-vice-parity.md` and `src/mcp/vice/`** — its own comment concedes "this script's own skills walk only covers src/skills/ and README.md". It is **not** whole-tree | Copying the precedent verbatim produces a gate blind to `docs/`, `installer/`, `scripts/`, `.claude-plugin/` and the published tarballs |
+| the removal is `~25,700` lines | **Exactly right**: 10,102 non-test + 15,657 test across `r2000-*.ts` = 25,759. Plus `fixtures/coverage/` (12 fixture dirs, 212 KB, its own generator `make-coverage-fixtures.mjs`), 19 entries in `package.json` `files[]`, ~120 lines of `vice-proxy.ts` wiring, and 3 `scripts/` consumers | The code number is honest; the *satellite* surface is what gets missed |
+| "the existing `--verify` seam" is reusable for ACME verification | `r2000-verify.ts` parses **regenerator2000's `--verify` output** and calls `buildVerifyArgs`/`runR2000` from `r2000-launch.ts`. The **parser** survives the deletion; its **producer does not** | STORE-06 as worded cannot be satisfied by reuse. See Pitfall 9 — this is the single most dangerous item in the milestone |
+
+Additional measured facts a roadmapper needs:
+
+- `git grep -l regenerator2000` = **291 tracked files**; excluding `.planning/` = **55**. So
+  ~236 tracked files legitimately keep the word forever (roadmaps, requirements, milestone
+  records, phase artifacts, decision rows). A gate scoped "whole tree" fires 236 times.
+- `installer/skills/` is **`.gitignore`d generated output** (`/installer/skills/`, line 43)
+  rebuilt by `installer/scripts/sync-skills.mjs`, and it currently contains **11 files**
+  mentioning regenerator2000 in this working tree. A filesystem grep sees them; a `git grep`
+  never does; the **published `@henols/c64-re-tools` tarball ships them**.
+- `capability-registry.ts` contains **zero** r2000 entries and `tools-manifest.json` /
+  `tools-manifest.stock.json` contain **zero** r2000 mentions. The `r2000_*` family was never
+  in the manifest or the registry. STORE-03's "declared in `capability-registry.ts`" is
+  therefore a **new** obligation with new consumers, not a carry-over.
+- `disasm-roundtrip.test.ts` — this project's real-ACME oracle — imports `ACME_BIN`,
+  `acmeSkipReasonFor` and `assertAcmeRequiredIfEnvSet` **from `r2000-test-gate.ts`**, and CI
+  installs ACME and sets `VICE_REQUIRE_ACME=1` against exactly that seam.
+- `r2000-project.ts:339` already implements write-to-`.tmp-$pid-$now`-then-`renameSync`, the
+  idiom shared with `refresh-manifest.ts`, `install-resources.ts`, `incident-record.ts` and
+  `vice-broker.mts`. **None of the five `fsync`s.**
+
+---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Data references to code addresses that no tool marks as addresses
+### Pitfall 1: The seven-type vocabulary is narrower than the store it replaces, and the loss is silent
 
 **What goes wrong:**
-Every `JSR`/`JMP` operand is trivially symbolisable once the target is a known label.
-The hazard is the opposite case: a 16-bit value that *is* a code address but sits inside
-a data byte stream — a pointer stored in a table, an address pushed by hand, a value
-computed as `base + offset` at runtime — where nothing marks the bytes as `Address`
-type. regenerator2000's own cross-reference builder only resolves `JMP ($xxxx)` when the
-*pointer location itself* is already typed `BlockType::Address`
-(`analyzer.rs:504-511`, verified against the installed 0.9.20 source this session); an
-untyped pointer is invisible to it. After relocation, every address baked into an
-unmarked data byte is stale and nothing reassembles wrong — it just silently jumps or
-reads garbage at runtime.
+The milestone text names seven types — code, byte, word, address, PETSCII, screencode,
+**table**. The store being deleted offers **twelve**, and the four it offers that "table"
+collapses are the load-bearing ones: `lo_hi_address`, `hi_lo_address`, `lo_hi_word`,
+`hi_lo_word` (plus `external_file` and `undefined`). Implement seven literally and a split
+pointer table becomes an opaque "table": the byte order is unrecorded, so the exporter must
+guess, and a wrong guess produces a *plausible* pointer set — labels at addresses that exist,
+cross-references that resolve, comments that read correctly — pointing at the wrong targets.
 
 **Why it happens:**
-"The disassembler symbolised it" and "the value is symbol-safe" are different claims.
-Regenerator2000's auto-analysis only symbolises what its own heuristics recognize as
-address-shaped in a place it already expects an address (an instruction operand, or a
-block a human has already typed `Address`/`LoHiAddress`/`HiLoAddress`). A raw `!byte`
-pair that happens to decode to a valid in-range 16-bit value is never promoted
-automatically.
+Seven reads like a complete vocabulary. It is also exactly the trap that killed `cc65` for
+this project: the v0.5.0 close records `da65` rejected because "`RANGE TYPE` vocabulary cannot
+express a split-address table or a struct, so everything Ghidra recovers dies at that export
+boundary." A seven-type store re-creates that boundary **inside this project**, one milestone
+after rejecting a tool for having it.
 
 **How to avoid:**
-Before allowing any region to be declared relocatable, scan every `DataByte`/`DataWord`
-block for byte-pairs that decode to an in-range address AND have at least one incoming
-cross-reference elsewhere in the binary (a strong signal it is read as a pointer, not
-coincidentally address-shaped). Require an explicit human/agent decision — mark it
-`Address`-typed and symbolise it, or record it as a confirmed non-pointer — before the
-byte range it lives in is treated as safe to move.
+Take upstream's vocabulary as the floor, not the ceiling, and record the diff explicitly.
+Minimum additions over the seven: split-table orientation (lo-hi vs hi-lo) and element kind
+(address vs word) as **first-class type variants, not a flag on "table"**; `external_file` for
+blobs exported as-is; `undefined` as an explicit reset state distinct from "never typed". Carry
+forward `r2000-coverage.ts`'s **dispatch-context gate** distinction — a split lo/hi pairing is
+`PROVEN` or `ADVISORY`, never silently promoted — which is 2,292 lines of already-earned
+knowledge sitting on the delete side of the line.
 
 **Warning signs:**
-ACME reassembles clean (every *known* label resolves) but behavior diverges after a
-purely cosmetic file reorganization — the tell that a value the source treats as a
-number was actually consumed as an address at runtime.
+- A `DataType` union with a bare `"table"` member.
+- An exporter that emits `!word` for a split table (structurally impossible — the low bytes
+  and high bytes are not adjacent).
+- A type-setting tool that accepts an odd-length range for a table type. Upstream requires
+  "even count" for all four split variants; the absence of that validation is the tell.
 
-**Phase to address:**
-The relocation-hazard-report phase (before "every branch, JSR/JMP and data reference
-goes through a symbol" is claimed done).
+**This symptom is a confident wrong answer, not an error.** A mis-oriented split table
+reassembles byte-identically (the bytes never changed), so the ACME gate passes. Everything
+downstream — labels, xrefs, the memmap join, DECOMP-03/04 — is wrong.
+
+**Observing the control RED:** a fixture with a known `lo_hi_address` table, typed as
+`hi_lo_address`, must produce a **differing resolved-target set** and the test must fail. If
+your test only asserts "reassembles clean", it cannot go red here and is not the control.
+
+**Phase to address:** Phase 27 (Store core — the type model is the schema decision, and it is
+irreversible once data exists).
 
 ---
 
-### Pitfall 2: Indexed jump tables (`lda table,x` / split lo-hi dispatch) are NOT auto-resolved
+### Pitfall 2: Inclusive range ends, and the off-by-one that repairs itself into a wrong answer
 
 **What goes wrong:**
-Two extremely common C64 dispatch idioms are structurally invisible to
-regenerator2000's own jump-table follower:
-
-- **Operand-patch dispatch:** `ldx state / lda joblo,x / sta $c001 / lda jobhi,x / sta
-  $c002 / jmp $c000` — the JMP target is *computed and written* before the JMP executes.
-  This is simultaneously a jump table *and* self-modifying code (Pitfall 3).
-- **RTS-trick dispatch:** `lda hi,x / pha / lda lo,x / pha / rts` — the table stores each
-  target **minus one**, because RTS pops PC and adds 1. Relocating without accounting for
-  the bias produces a symbol that is byte-plausible and reassembles clean, but executes
-  one byte into the wrong instruction at runtime.
-
-Verified directly against 0.9.20's `follow_indirect_jumps`
-(`regenerator2000-core-0.9.20/src/analyzer.rs:445-528`): it resolves exactly one thing —
-a literal `JMP ($xxxx)` opcode (`0x6C`) whose 16-bit pointer location is already typed
-`Address`, reading **one** fixed target. It has no code path that walks an N-entry table
-indexed by a register, and no way to discover N (table length is implicit, usually
-bounded by a compare/mask instruction elsewhere, never a sentinel value).
-
-**Why especially dangerous to relocate:**
-The table's entry count is never stated anywhere in the binary. Moving any one of the N
-target routines, or moving the table itself, requires updating *every* entry by hand;
-missing one is silent until that specific index is exercised at runtime. Because the
-tool provides zero automatic enumeration, "I symbolised the jump table" is a claim that
-must be checked against the actual index range (found from the bounding compare), not
-against what the tool auto-labeled.
-
-**How to avoid:**
-Treat every `lda table,x` immediately followed by (a) a store into an instruction
-operand, or (b) two PLA-then-RTS, as a jump-table candidate requiring manual boundary
-determination from the bounding compare/mask instruction. For RTS-trick tables, always
-record the target as `entry_value + 1` in the relocation-hazard report and say so
-explicitly — do not let anyone treat the raw table bytes as ordinary pointers. Mark the
-whole table `LoHiAddress`/`HiLoAddress` (the block types 0.9.20 already ships for exactly
-this idiom) only after every entry is accounted for, not after the first one is found.
-
-**Warning signs:**
-Reassembly succeeds and the program boots, but one specific state/enemy-type/menu-item
-is glitched or crashes — the signature of exactly one un-updated table entry.
-
-**Phase to address:**
-Relocation-hazard-report phase for detection and enumeration; the functional-equivalence
-phase must specifically exercise every dispatch index, not just the default path, since a
-byte-level diff of the table itself won't show a wrong-by-one RTS-trick entry unless the
-affected branch actually runs.
-
----
-
-### Pitfall 3: Self-modifying code defeats symbolisation by definition, and nothing detects it automatically
-
-**What goes wrong:**
-Common idioms: patching an instruction's operand byte at runtime (`sta $c001` where
-`$c001` is another instruction's low operand byte — loop-unroll speed hacks,
-self-relocating loaders, IRQ-handler polymorphism); patching a JMP/JSR target (Pitfall
-2's operand-patch variant); an `INC`/`DEC` on an address that is itself an opcode or
-operand byte. Verified: `regenerator2000-core-0.9.20`'s entire source tree has **zero**
-matches for `self-modif`/`smc` — its analyzer has no SMC detection or flagging of any
-kind.
-
-**Why it happens (and why it defeats symbolisation):**
-A symbol names *an address*, not *a moment*. Self-modifying code means the byte at that
-address has two identities depending on when you look — an instruction, and a mutable
-data cell written by something else. Disassembling it once produces a single fixed
-reading that is a lie about at least one point in execution. Relocating the code changes
-the physical distance between the writer and the write target; if the writer computes its
-target as a literal absolute address rather than via a relocatable label, or if the two
-are separated across source files without preserving their relationship, the patch either
-misses its mark or corrupts an unrelated byte after the move.
-
-**How to avoid:**
-This is mechanically detectable even though regenerator2000 does not do it: query every
-`STA`/`STX`/`STY`/`INC`/`DEC` instruction's absolute target address and check whether that
-address falls inside a block currently typed `Code` (this is a straightforward script
-against the annotation store's own cross-reference/block-type data — build it as a
-first-class detector, not a manual review step). Every hit must be pulled into an
-explicitly labeled "patch point," symbolised so the writer targets a label rather than a
-literal address, and — where the milestone's modifiability goal doesn't require
-preserving the exact patching mechanism — considered for rewriting to a variable/indirect
-form that survives relocation cleanly.
-
-**Warning signs:**
-A routine behaves correctly on its first invocation after reset but wrong on repeats (or
-the reverse) — the classic signature of an unrestored patched operand or a
-self-decrementing counter embedded directly in an instruction stream.
-
-**Phase to address:**
-Relocation-hazard-report phase; needs its own detector built and run before any
-region is declared move-safe, not discovered by inspection.
-
----
-
-### Pitfall 4: Page-alignment and cycle-timing dependence are invisible to the assembler
-
-**What goes wrong, three distinct mechanisms:**
-
-1. **Table page-alignment.** Some tables are deliberately kept within one page (so a
-   loop's index math can't wrap awkwardly) or page-aligned so only the high byte needs
-   patching (halving a hot patch's instruction count). Relocating the table into a new
-   source file with no explicit `!align`/origin control silently drops this property —
-   ACME has no way to know it mattered, and the code that assumed high-byte-only patching
-   stays wrong forever, corrupting an adjacent byte at runtime with no assembly error.
-2. **Branch range (`bne`/`beq`/etc., -128..+127 signed byte from the instruction after
-   the branch).** Reordering routines into separate files changes inter-routine
-   distances. ACME will refuse to assemble an out-of-range branch — a *loud*, safe
-   failure — but a branch-plus-trampoline pair already present in the original code to
-   work around this exact limit is easy to remove incorrectly when "cleaning up" during
-   the rebuild.
-3. **Extra-cycle-on-page-cross.** Indexed addressing (`lda $c0f0,x`, `lda ($f0),y`) costs
-   one extra cycle when the effective address's high byte differs from the base's high
-   byte. Cycle-exact code is written assuming a *fixed* number of these crossings per
-   iteration. Relocating a table changes its base address and therefore which indices
-   cross a page — with **zero change to instruction count or source bytes** — silently
-   adding or removing a cycle from a hot loop.
+Upstream's schema is explicit: `start_address` "(inclusive)", `end_address` "(inclusive)" — for
+both `set_data_type` and `add_scope`. Any layer that treats the end as exclusive is off by one
+byte. For a `byte` range that is cosmetic. For a `word`, `address` or split-table range it
+**re-pairs every element**: drop one byte from a 4-entry `lo_hi_address` table and you get a
+3.5-entry table, which either throws (best case) or silently re-pairs into four *different*
+addresses that all look legitimate.
 
 **Why it happens:**
-None of the three is visible to ACME, to a symbol-resolution check, or to a byte-level
-reassembly diff. They are properties of *where in the 64K address space* something ends
-up, not properties of the source text.
+Two conventions coexist in the surrounding code — half-open intervals are the JavaScript
+default (`slice`, `subarray`), and the store's wire contract is closed. The conversion happens
+at every boundary: tool schema → internal model → decoder → renderer → exporter → coverage
+census. Six chances to be inconsistent, and five of them produce plausible output.
 
 **How to avoid:**
-Record page-alignment and addressing-mode-per-table requirements as first-class entries
-in the relocation-hazard report, keyed to the specific tables/buffers involved. Any table
-feeding a cycle-exact loop must either be pinned to its original page or have its
-page-crossing pattern re-proven for every index used after the move. Verify post-move
-with a live VICE run comparing raster/CIA timing (Pitfall 5), not just a memory diff —
-this class of bug is invisible to `compare.mjs` by construction, since final RAM content
-can be identical while *when* it got written differs.
+One named type with one documented convention, asserted at the boundary:
+`interface AddrRange { start: number; endInclusive: number }` — the field name *is* the
+documentation, per this project's naming conventions. Never a bare `end`. Add a
+length-invariant assertion at the seam: `endInclusive - start + 1 === byteLength`, and for
+split types `byteLength % 2 === 0` with the pairing rule named in the error message.
 
 **Warning signs:**
-A visual glitch (flicker line, mistimed color split) appears after a rebuild that touched
-files unrelated to graphics, with a clean assembly and an unremarkable instruction-count
-diff.
+`end`, `stop`, `last`, `limit` used interchangeably in the same module. A test whose fixture
+range length is even *and* whose element count is even (masks the error). A range covering
+`$FFFF` — the classic wrap: `endInclusive = 0x10000` is out of the 16-bit space and
+`start + length` overflows a `uint16`.
 
-**Phase to address:**
-Relocation-hazard-report phase for detection; the functional-equivalence-in-VICE phase
-for the only check that can actually catch it (a timing property, not a byte property).
+**Observing the control RED:** a range `$0400-$0400` (one byte) must report length 1. Change
+the model to exclusive and that test must fail. A boundary test at `$FFFF` must reject or
+handle explicitly, never wrap to `$0000`.
+
+**Phase to address:** Phase 27 (Store core).
 
 ---
 
-### Pitfall 5: Cycle-exact raster code — correctness by every static measure, wrong on screen
+### Pitfall 3: A partially overwritten typed range — shrink, drop, or split
 
 **What goes wrong:**
-Stable raster IRQs depend on an exact, known cycle count from interrupt entry through the
-`$D012`/`$D011` bit-8 comparison-and-adjustment logic, through any NOP-slide used to line
-up a border/background write to a specific horizontal position, through sprite
-multiplexing tables that must complete inside one scanline's budget. Every hazard above
-(branch range, SMC, page-crossing) compounds here: one byte inserted *anywhere* in the
-interrupt-to-effect chain — even in an unrelated routine on a different page, if it
-shifts something's page alignment — can change the cycle count enough to roll the raster
-line, shift a color split by a pixel column, or desync the sprite multiplexer.
-
-**Why it happens — and why "one byte breaks the display, not just the layout":**
-ACME has no cycle-accounting mode at all. A relocation can be 100% correct by symbol
-resolution, address correctness, and opcode equivalence, and still be functionally wrong
-to a human watching the screen, because none of those measures says anything about *when*
-an instruction executes relative to the raster beam.
-
-**How to avoid:**
-Treat the entire interrupt-entry-to-effect chain (register save, comparison logic, NOP
-padding, the write itself) as one atomic, page-and-cycle-pinned unit in the
-relocation-hazard report. "One file per subsystem" is fine for organization; the
-constraint is on not changing anything that shifts the chain's trigger-to-effect cycle
-count, regardless of which file it lives in. This cannot be verified by reassembly or by
-a RAM diff at a single checkpoint — it requires observing `$D012`/border color/screen
-content across a live VICE run.
-
-**Warning signs:**
-Any visual difference observed only via video capture or a live `$D012` trace, with the
-underlying RAM comparison (per `compare.mjs`) reporting PASS — the two checks answer
-different questions and a PASS on one says nothing about the other.
-
-**Phase to address:**
-Relocation-hazard-report phase for flagging cycle-exact chains by name; the
-functional-equivalence-in-VICE phase is the *only* place that can actually detect a
-regression here.
-
----
-
-### Pitfall 6: Illegal-opcode handling that reassembles clean but silently forecloses editability
-
-**What goes wrong:**
-This project's own disassembler already round-trips 221/256 opcodes through real ACME
-0.97 — that is not the risk here. The risk is specific to the **rebuild** pipeline and
-regenerator2000's own confirmed defect: a `.regen2000proj` bootstrapped without
-`settings.use_illegal_opcodes = true` degrades every real illegal opcode to a raw
-`!byte $xx ; Invalid or partial instruction` fallback. This still reassembles
-byte-identical (nothing fails), which means the degradation is **silent** — the export
-looks complete and passes `--verify`, while every illegal-opcode instruction the rebuild
-was supposed to make editable is now an opaque byte blob instead. For a milestone whose
-value proposition is "modifiable source," this is the failure mode that costs the most
-without tripping any existing gate.
+The store types `$1000-$10FF` as `byte`. A later call types `$1040-$104F` as `code`. Three
+implementations are natural and two are wrong:
+- **drop** the old range → `$1000-$103F` and `$1050-$10FF` lose their typing and silently
+  revert to undefined, so the exporter emits them as raw bytes with no comment and the coverage
+  census counts them as unclassified. The annotator's earlier work vanishes with no message.
+- **shrink** to the surviving prefix → `$1050-$10FF` is silently untyped (worse: it is
+  *invisibly* untyped, since the range object still exists and reads as valid).
+- **split** into `$1000-$103F` byte + `$1040-$104F` code + `$1050-$10FF` byte → correct.
 
 **Why it happens:**
-Auto-analysis never flips the setting (confirmed false by direct testing in the Phase 9
-probe); it must be forced explicitly, and that forcing was previously scoped only to the
-original project-synthesis path (`R2000-09`'s synthesiser), not to every project a
-persistent session might open or re-open for this milestone's rebuild work.
+Range storage is usually a flat array with a linear scan; "remove overlapping, insert new" is
+three lines and passes every test written against non-overlapping fixtures. Splitting requires
+deciding the semantics first.
 
 **How to avoid:**
-Force `use_illegal_opcodes: true` on every regenerator2000 project touched by this
-milestone's pipeline, not only ones freshly synthesised — verify the setting at the start
-of any persistent session that will annotate or export code, the same way the existing
-synthesiser already forces it at creation time. Separately, define an explicit convention
-for the ~35 opcodes this project's own disassembler still cannot express as ACME
-mnemonics, so a `!byte` fallback inside an otherwise-named region has a documented status
-(neither silently "covered" nor silently "Undefined") for the coverage metric in
-Pitfall/Section 6. Name VICE's own illegal-opcode emulation as the explicit oracle for any
-equivalence claim that depends on one of the less-standardized illegal opcodes
-(`ANE`/`XAA`-class instructions have documented cross-implementation variance) — do not
-imply hardware-accuracy beyond what was actually checked.
+Make the store's overwrite semantics an explicit, documented decision (split-and-preserve),
+implemented in **one** seam — the project's single-seam convention — and pin it with a
+three-way test: fully-contained overwrite (splits into 3), left-overlap (2), right-overlap (2),
+exact match (1, replaced), and superset (1, replaces). Five cases, and each one must assert
+the *total byte coverage is unchanged*, which is the invariant that catches all five at once.
 
 **Warning signs:**
-`--export_asm` output containing `!byte` fallback lines inside an otherwise densely
-named/labeled region — the signature of a silently-degraded illegal opcode.
+A range table with no split operation anywhere. A `setDataType` that calls `filter()` on the
+range list. Total-typed-byte count that goes **down** after an overwrite that should leave it
+flat.
 
-**Phase to address:**
-The annotate/export pipeline phase (force the setting on every session, not just at
-synthesis) and the coverage-measurement phase (define the fallback convention explicitly).
+**This symptom is silent.** No error is raised; a previously-documented region simply stops
+being documented, and the next session re-derives it (which is the exact failure the store
+exists to prevent — see `CORE-01`'s reversal condition (a)).
+
+**Observing the control RED:** the coverage/byte-accounting assertion is the red-maker. With
+split-on-overwrite removed, "total typed bytes before == total after" must fail for the
+fully-contained case.
+
+**Phase to address:** Phase 27 (Store core).
 
 ---
 
-### Pitfall 7: Overlapping instruction streams and code/data interleaving without a boundary marker
+### Pitfall 4: Address vs offset vs `.prg` load-address header, and decimal vs hex
 
 **What goes wrong:**
-Two related hazards: (a) literal data (a sprite, a table) placed immediately after code
-with the boundary implied only by the code's own fall-through/RTS, so a linear or
-recursive-descent disassembler mis-classifies the data as more code or vice versa unless
-a human sets the block boundary explicitly; (b) genuinely overlapping instruction streams
-— the same bytes decoding to two different instruction sequences depending on entry
-point — which is common in packers, self-decrypting loaders, and cracker-added
-anti-disassembly tricks, and is exactly the class of thing `c64-provenance-diff` already
-exists to identify as non-original.
-
-**How often, and what to do:**
-Overlap load-bearing for *original* game logic is rare but not impossible; it is far more
-common in loader/cracktro regions this milestone's own provenance-awareness requirement
-should already exclude before rebuild is attempted. The practical answer is not "detect
-automatically" — any linear or recursive-descent disassembler, including
-regenerator2000's own auto-analyzer, can get this wrong the same way a human can. The
-practical answer is to treat every routine-boundary claim as a checkable hypothesis: run
-a cross-reference check per routine — does any jump target land strictly inside this
-routine's already-decoded byte range, other than at its declared start? — before treating
-boundaries as final, and route anything flagged through `c64-provenance-diff` first,
-since a rebuild-as-source goal only makes sense for confirmed-original code.
-
-**Warning signs:**
-The same address receives two conflicting block-type or label assignments across two
-analysis passes, or a symbol's decoded meaning changes depending on which entry point was
-walked to reach it first.
-
-**Phase to address:**
-The coverage-measurement phase (cross-reference-based boundary verification is directly a
-coverage-integrity question) and the provenance-aware rebuild phase (excluding
-cracker-added overlap before attempting to rebuild it as source).
-
----
-
-### Pitfall 8: `compare.mjs`'s drift floor answers a different question than "is the rebuild behaviorally equivalent"
-
-**What goes wrong:**
-`compare.mjs` (`src/skills/c64-ram-capture/scripts/compare.mjs`) was built and proven for
-*one binary, multiple captures, proving reproducibility* — its own header says so, and its
-volatile mask (`$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, `$D000-$DFFF`) and one-bit
-"drift"/two-or-more-bit "divergence" heuristic were tuned against that use case's actual
-nondeterminism signature (counter-LSB flips, live I/O register sampling). This milestone
-needs *two different binaries, compared for behavioral equivalence* — a use case this
-comparator has never been exercised against, and several of its design choices produce
-the wrong verdict there:
-
-- **False PASS:** the whole `$D000-$DFFF` mask is volatile-and-excluded. That correctly
-  hides genuinely unstable state (SID envelope/oscillator internals, VIC raster-position
-  read-back) but *also* hides a real regression in registers the program's own logic
-  controls and that should match between original and rebuild — border/background color
-  (`$D020`/`$D021`), sprite enable (`$D015`), sprite position bytes, VIC bank/screen-base
-  bits of `$D018`. A genuine color or sprite-position bug is currently invisible to this
-  comparator by construction.
-- **False FAIL:** the milestone explicitly wants "one behaviour removed and one added,
-  reassembled, both observed taking effect in VICE" — i.e., some differences are the
-  *expected signal*, not error. Run as-is, `compare.mjs` has no allowlist mechanism for an
-  intentional change; the demo's own success condition (a visible behavioral difference)
-  will register as DIVERGENCE and FAIL under the existing verdict logic.
-- **False PASS/FAIL from checkpoint misalignment:** the tool assumes both captures are
-  taken at directly comparable moments. Once code is relocated, a checkpoint keyed to a
-  raw PC literal or cycle count will not land at the same *logical* moment in both
-  binaries — everything downstream will look "wrong" even when behavior is correct, or
-  (worse) will coincidentally look "right" while comparing unrelated moments.
-- **False PASS/FAIL from unpinned nondeterminism sources** not covered by the existing
-  volatile mask at all: VICE's power-on RAM fill pattern (configurable, and only
-  meaningful as "noise" if the same across both launches); reuse of a warm-floor broker
-  instance carrying state from a prior session into what looks like a "fresh" capture
-  (this project's own broker architecture makes "did this really start clean" non-obvious
-  — reuse the existing epoch-drift detection from `c64-ram-capture`'s "Prove the machine
-  did not change under you," applied independently to *each* of the two machines being
-  compared, not just one); drive-emulation timing jitter on any checkpoint reached via a
-  disk `LOAD`; and keyboard/joystick input delivered on a wall-clock schedule rather than
-  a frame/cycle-synchronized one, which can land the same logical input on different
-  frames between two runs purely as a test-harness artifact.
-- **Structurally uncheckable today:** SID state is (correctly) excluded from RAM
-  comparison because it's write-only and non-reproducible — but that also means a broken
-  sound routine is entirely invisible to this comparator. The only way to catch it is a
-  register-write trace/call log for `$D400-$D418` (and other write-only hardware), not a
-  final-state read. `compare.mjs` has no tracing capability at all — only end-state
-  snapshots.
-
-**How to avoid / what "the same" should legitimately mean:**
-Build on `compare.mjs`, do not replace it: keep its bit-count classification (it is
-sound where the underlying assumption holds — same-address, same-binary), but (1) narrow
-the volatile mask specifically for the original-vs-rebuild use case so that
-program-controlled hardware register *choices* are compared while genuinely unstable
-internal state stays excluded; (2) add an explicit, per-comparison allowlist for
-declared intentional differences, so the modifiability demo's own expected change doesn't
-register as a failure; (3) key checkpoints to a logical/behavioral event resolved
-per-binary from its own symbol table, never a raw literal shared across both; (4) add a
-register-write-trace comparison for write-only hardware ranges, distinct from the
-RAM-snapshot comparison; (5) explicitly pin/verify power-on RAM pattern and force a clean
-machine (fresh launch or verified reset, not a reused warm-floor instance) for both sides
-of any equivalence run; (6) compare screen content ($0400-$07E7 / $D800-$DBFF) as its own
-named check, since it's the actual user-visible surface and can diverge without any
-underlying data table changing (e.g., a late-arriving sprite from a desynced multiplexer).
-
-**Warning signs:**
-A PASS verdict on a rebuild that a human watching the screen can see is wrong (raster
-glitch, wrong color, missing sprite) — the surest sign the comparison is checking the
-wrong thing for this use case.
-
-**Phase to address:**
-The functional-equivalence-in-VICE phase. This is the single highest-risk gap in the
-whole milestone: the existing tool's own documentation already states "Full-64K identity
-is impossible in principle," which this milestone correctly does not fight — but nothing
-in the existing tool has been validated against *two different binaries*, and several of
-its design choices (whole-`$D000-$DFFF` exclusion, no allowlist, literal-checkpoint
-assumption) are wrong for exactly that comparison. Do not treat `compare.mjs` as
-"already solved, just call it" — treat extending it as first-class scoped work.
-
----
-
-### Pitfall 9: The persistent regenerator2000 session inherits every session-model lesson this project already paid for once — solving each one twice, slightly differently, is worse than reusing the broker
-
-**What goes wrong (six distinct failure modes, one root cause):**
-
-1. **Unsaved-annotation loss on crash.** `r2000_save_project` is an explicit, separate
-   verb (confirmed in the Phase 9 probe transcripts) — a long-lived session accumulates
-   many annotation writes between explicit saves. A crash or a forced kill of a wedged
-   session loses everything since the last save, and the blast radius is now the whole
-   working session's worth of work, not one call's worth.
-2. **A wedged child that looks alive.** regenerator2000's HTTP MCP mode can accept a TCP
-   connection while its own event loop is blocked on something else (the Phase 9 probe
-   hit exactly this shape of surprise: an unanticipated "Import Context Setup" modal
-   holding focus before the bootstrap could proceed). A naive "can I connect" liveness
-   check will report healthy while every real query hangs — the identical shape of
-   problem `vice-wedge-triage` and `vice-probe.ts`'s deliberately-fragile, no-retry
-   liveness check already exist to solve for VICE.
-3. **Fixed `:3000` port collision.** Confirmed, no workaround upstream (`R2000-04`'s
-   scope note: no `--mcp-port`/`--mcp-bind`). Two projects open at once on one host
-   collide outright. Under spawn-per-call this was rare enough to document rather than
-   detect (v0.3.0's explicit cut rationale); under a persistent session it becomes routine
-   (two terminals, two worktrees, one dev) and the cut decision's premise no longer holds.
-4. **Zombie processes across Claude Code session restarts.** Spawn-per-call means every
-   process naturally exits; a daemon means a Claude Code context reset, crash, or `/clear`
-   leaves an orphaned process bound to port 3000 with nothing tracking it, and the next
-   session cannot tell "is this mine, stale, or someone else's" without an identity file.
-5. **Concurrent access from parallel subagents to ONE session.** Upstream's own
-   orchestration fans out to 7 concurrent subagents against what is, in this project's
-   adoption, a single mutable, non-transactional `AppState` behind one project file. Two
-   subagents both reading "no label here" and both writing one is a lost-update race with
-   no visible conflict signal in the tool surface; nothing found in the source suggests
-   any locking or per-record versioning.
-6. **Stale in-memory state after an external `.regen2000proj` edit.** This project's own
-   `.regen2000proj` synthesiser directly edits the project file as JSON to force
-   `use_illegal_opcodes`/`system`. If a live session has that file open when an external
-   edit happens, the live in-memory state silently diverges, and the next
-   `r2000_save_project` from the live session **overwrites the external edit** — silently
-   reverting exactly the forced settings Phase 9's own Accepted Limits say are required
-   for correct illegal-opcode reassembly (Pitfall 6).
-
-**The concrete prior incident that generalizes directly:** Phase 9's criterion 3(4) found
-that splitting `vice_memory_write` and `vice_snapshot_save` across three separate MCP
-client connections produced a `.vsf` that did **not** contain the written bytes, even
-though a same-connection read-back looked correct moments earlier. The lesson —
-"every causally-related mutate-then-read sequence must happen within one connection" —
-was learned about VICE and is not yet applied to the new regenerator2000 session model,
-where the entire point of persistence is that MANY more mutate-then-read sequences will
-now span a longer-lived, shared connection.
+Three coordinate systems are in play and only one is the store's: **memory address**
+(`$0801…`), **image offset** (byte 0 of the loaded image), and **file offset** (byte 0 of a
+`.prg`, which is the two-byte little-endian load address, so file offset = image offset + 2).
+Mix any two and every annotation lands two bytes — or `$0801` bytes — from where it belongs.
+Separately: upstream's tool schemas take **decimal integers** ("4096 for $1000") while every
+skill playbook, every comment convention and every human writes `$1000`. A store that accepts
+`"1000"` as a string cannot tell 4096 from 0x1000.
 
 **Why it happens:**
-Every one of these six is a session/process-lifecycle problem this project has already
-solved once, for a structurally identical situation (an external process, on-demand,
-single-owner, crash-recoverable) in the VICE broker: `vice-broker.mts`'s single-owner
-`inFlight` guard (built after the real 2026-08-01 triple-launch outage), its verified-kill
-pattern (PID plus argv/identity check, not a bare signal), its epoch-based restart
-detection, and its capability-token-gated control plane. Re-deriving a *different*,
-lighter version of each of these for regenerator2000 is very likely to reproduce a subset
-of the same bugs the broker's design already closes, with none of the broker's own
-regression tests protecting the new code.
+The `.prg` header is invisible once loaded, so a fixture built from a flat 64K capture (no
+header) and a fixture built from a `.prg` (header) disagree by two bytes and both "work" —
+until the other one is used. And this project already has an adjacent recorded landmine:
+VICE's monitor treats bare integer literals as **hex** (`RL == 100` means line 256), so the
+codebase contains two opposite defaults for an unprefixed number.
 
 **How to avoid:**
-Explicitly reuse the broker's patterns rather than re-deriving them: a synchronous
-single-owner acquire guard for launching/attaching to a session; PID+identity-verified
-kill before any recycle; a persisted identity/lease file the next Claude Code session can
-read to decide reuse-vs-recycle; a fragile, short-timeout, no-retry liveness probe
-distinct from the resilient query path; and, for the concurrency question specifically,
-default to **serializing every write** through one owner and restricting concurrent
-subagent fan-out to read-only queries — do not adopt upstream's 7-way concurrent-write
-orchestration model unchanged (see Pitfall 11). For the external-edit hazard, force
-settings only at bootstrap time (before a session opens the file) or through the live
-session's own tool surface, never by direct JSON edit once a session owns the file.
+Store addresses as `number` in a single named domain with the domain in the type or the field
+name (`address` = machine address, always; never a bare `offset`). Do the header stripping in
+exactly one place, at ingest, and record the load address in the store's header so the mapping
+is recoverable. For the MCP surface: accept `integer` (decimal, matching upstream's shape for
+argument-compat) **and** a `$`-prefixed or `0x`-prefixed string, and **reject an unprefixed
+numeric string outright** rather than guessing a base.
 
 **Warning signs:**
-Any skill or procedure written for the persistent session that issues a write and later
-reads it back without explicitly stating "same session" as a precondition — this is
-exactly the assumption Phase 9 found broken once already, in the sibling system.
+A test fixture whose expected addresses are all 2 higher or lower than the assertion. An
+ingest path with `slice(2)` and a sibling path without it. `parseInt(s)` with no radix.
 
-**Phase to address:**
-The persistent-session phase, first — before absorbing procedures that will run against
-it (Pitfall 11 is downstream of getting this right).
+**Observing the control RED:** a `.prg` fixture and a flat-64K fixture of the *same program*
+must produce **identical** annotations. Reintroduce the two-byte skew and that equality test
+fails.
+
+**Phase to address:** Phase 27 (Store core), with the ingest seam pinned before Phase 28's
+tool surface encodes an argument shape that is then compatibility-frozen.
 
 ---
 
-### Pitfall 10: Absorbing procedure text is a different obligation than depending on the binary, and the installed crate does not even contain what's being absorbed
+### Pitfall 5: The store is flat-addressed and the machine is not
 
 **What goes wrong:**
-Verified this session: `regenerator2000`'s `Cargo.toml` explicitly `exclude`s
-`.agent/**/*` from the published crate. The `cargo install regenerator2000` binary this
-project already depends on (0.9.20) **does not ship the five `.agent/skills/` procedures
-at all** — they can only be fetched from the upstream GitHub repository directly, at
-whatever commit `main` (or a tag) happens to be at fetch time. This decouples the
-absorbed *text* from the installed *binary* in a way the existing `THIRD-PARTY-NOTICES.md`
-entry (written for "depends on this binary, dual `MIT OR Apache-2.0`") does not anticipate:
-
-- **Licence/attribution scope.** A repo-wide notice that a binary dependency exists under
-  a given licence is a different, and probably insufficient, obligation than copying
-  substantial original authored prose into this project's own skill files — MIT's licence
-  notice is generally understood to need to travel with copies of the covered material
-  specifically, not just be recorded once for the whole dependency.
-- **Snapshot/version drift.** Whatever commit the absorbed text is pulled from is not
-  mechanically tied to the 0.9.20 binary actually installed and run. A procedure
-  describing tool behavior from a newer or older regenerator2000 than 0.9.20 will read as
-  correct and fail silently or subtly when actually driven against 0.9.20.
-- **Tool-surface mismatch.** Upstream's playbooks are written against upstream's *full*
-  MCP surface and (implicitly) upstream's session model. This project exposes a
-  deliberately curated 17-tool subset, cut by the same "does a shipped skill call it"
-  test used twice before (v0.2.0's manifest cut, v0.3.0's R2000 cut). An absorbed
-  procedure calling a tool outside the curated 17 (or one of the items already cut as
-  surplus, e.g. HTML export) will fail or need re-scoping — and per this project's own
-  explicit v0.5.0 requirement, that gap-finding is *expected*, not a sign something went
-  wrong.
+An annotation store keyed by 16-bit address asserts that an address means one thing. On a C64
+it does not: `$D020` under `$01 = $34` is RAM, under `$35` it is the border colour; `$D000`
+under `$33` is Character ROM, under `$35` it is sprite-0-X. The memmap join already resolves
+bank state *before* the address (rule 3 of the auto-annotation note) and declines where bank
+state is path-dependent. A flat store cannot record the distinction: one label, one comment,
+one type per address. So the *store* becomes the place the banking knowledge is lost, after
+the join went to the trouble of computing it.
 
 **Why it happens:**
-It is tempting to treat "install the tool" and "read its docs" as the same trust
-boundary. They are not: one is a pinned dependency with a recorded version and licence;
-the other is prose fetched from a moving target with no version pin implied by anything
-in this project's existing dependency-tracking machinery.
+Flat addressing is correct for 95% of a program and the failure is concentrated in exactly the
+code that matters most (loaders, IRQ handlers, anything touching ROM). And the milestone is
+corpus-independent by design (`PROOF-03` is held with Phase 24), so no banking fixture is in
+scope — meaning nothing will exercise it during v0.7.0 unless it is deliberately built.
 
 **How to avoid:**
-Attribute at the point of use — a header in each absorbed skill file naming the source
-repo, file path, and the specific commit/tag it was fetched from, plus the licence —
-rather than relying on the existing repo-wide notice to cover it. Pin the fetch to a
-commit/tag verified compatible with the installed 0.9.20 (or note the mismatch
-explicitly if none is available). Extract every tool call each absorbed procedure makes
-and diff it against the curated 17 *before* trusting the procedure, widening the surface
-only for calls with a real, demonstrated caller — the same measured-caller discipline
-this project has already used twice, applied to a new candidate set.
+Do not build bank-aware storage this milestone — that is scope creep against a held phase. Do
+**reserve the dimension** in the schema and make the omission loud rather than silent: an
+optional `bank` qualifier field on labels/comments/types with a documented `null` = "bank-
+agnostic / unqualified", and a schema version that permits adding it. Then, in the store's own
+documentation and in the tool description, state that an unqualified annotation on `$D000-$DFFF`
+or `$A000-$FFFF` is asserted **only** for the bank state the annotator observed. `AUTO-05`'s
+decline-rather-than-guess rule is the correct future consumer of that field.
 
 **Warning signs:**
-An absorbed procedure step that calls a tool name not present in this project's own
-`tools-manifest.json`/curated `r2000_*` list — a mechanically checkable, not a
-judgment-call, signal.
+A schema with no version field. A comment on `$D020` with no bank note. An enum applied to an
+I/O address in a program that writes `$01`.
 
-**Phase to address:**
-The absorption phase itself, as an explicit task (fetch-and-pin, diff-tool-calls,
-attribute), not a byproduct of copying files.
+**This symptom is a confident wrong answer** — the same class as the memmap join's rule-3
+failure, one layer down.
+
+**Phase to address:** Phase 27 (Store core) for the reserved field and the schema version;
+the resolution itself stays with held Phase 26 (`AUTO-04`/`AUTO-05`).
 
 ---
 
-### Pitfall 11: Upstream's 7-way concurrent-subagent orchestration is being absorbed at the exact moment the session model it assumes is being replaced
+### Pitfall 6: Label collisions, non-nested scopes, and identifiers that are almost legal
 
 **What goes wrong:**
-Upstream's own orchestration fans out to 7 concurrent subagents. Whatever concurrency
-guarantees make that safe upstream were validated against upstream's *own* execution
-model — most plausibly either per-subagent ephemeral sessions, or a session/tool
-implementation with locking this project hasn't inspected. This milestone is
-simultaneously (a) absorbing that orchestration structure and (b) moving from
-spawn-per-call to one shared persistent session (Pitfall 9's point 5: one mutable
-`AppState`, no visible locking). Copying the orchestration model unchanged compounds two
-changes that might individually be fine into an interaction nobody has tested: N
-subagents issuing writes concurrently against the one process this milestone is
-deliberately keeping alive specifically so state persists across the session.
+Three distinct failures wearing one coat:
+1. **Sanitising an illegal label.** Upstream is explicit and correct: a name must be a legal
+   ACME identifier and "an illegal name is REJECTED, never sanitized or quoted." Sanitise
+   instead (`init screen` → `init_screen`) and two different user labels silently collapse
+   into one, so one routine's name now points at another's address.
+2. **Mnemonic collision.** `LDA`, `INC`, `ROL` as label names assemble as instructions. Legal
+   identifiers, illegal labels. `r2000-acme-ident.ts` already implements this rejection — and
+   it is **not** in CUT-02's reuse list.
+3. **Scope leakage.** Upstream's scopes are ranges and "nested scopes are not supported". A
+   scope-local name equal to a global name reassembles to *whichever one ACME resolves*, which
+   is a function of emission order, not of the store's intent.
 
 **Why it happens:**
-Absorbing a tested, working procedure feels lower-risk than writing one from scratch —
-but "tested" upstream is silent about what it was tested *against*, and this project has
-direct, dated evidence (the three-separate-connections `.vsf` incident, Phase 9) that its
-own regenerator2000 integration does not tolerate uncoordinated multi-connection access
-to shared state.
+Rejecting a name is user-hostile in the moment and sanitising feels helpful. And a collision
+test needs two labels; single-label tests never see it.
 
 **How to avoid:**
-Treat "absorb the 5 analyze procedures" and "adopt 7-way concurrent orchestration" as
-separable decisions. Default to **not** adopting the concurrency model as-authored:
-serialize every write-capable call through one owner (mirroring the broker's
-single-owner `inFlight` pattern), and if concurrent fan-out is wanted at all, restrict it
-to read-only queries, proven safe against a live persistent session before trusting it —
-not accepted on the strength of upstream's own docs.
+Keep `assertLegalAcmeIdentifier()` — **re-home it, do not delete it** (see Pitfall 12) — and
+extend it with a uniqueness check against the store's live symbol set *scoped by the enclosing
+scope range*, rejecting a duplicate rather than de-duplicating with a suffix. Auto-generated
+names (upstream's `a_D011` shape) must live in a separate namespace from user names so a user
+label can never be silently shadowed by, or shadow, a generated one.
 
 **Warning signs:**
-Any absorbed procedure step described as "N subagents in parallel" without a
-corresponding statement of which of those N calls are read-only versus write-capable
-against the shared session.
+Any `replace(/[^A-Za-z0-9_]/g, "_")` near label handling. A `Map<address, name>` with no
+inverse `Map<name, address>` (no inverse ⇒ no collision detection possible). A label list that
+can contain the same string twice.
 
-**Phase to address:**
-The absorption phase, as an explicit go/no-go question on the concurrency model,
-answered before the orchestration structure is copied — not discovered after two
-subagents corrupt one annotation store.
+**Observing the control RED:** set two different addresses to the same label name; the second
+call must be refused. Then export and reassemble under real ACME — with the rejection removed,
+ACME itself must report a duplicate-symbol error, which is the external oracle confirming the
+internal one.
 
----
-
-### Pitfall 12: Recurrence of "an internal check standing in for an external one" — the lesson this project has been taught six times
-
-**How this specifically recurs in v0.5.0:**
-- The relocation-hazard detectors (jump tables, SMC, page-alignment) being validated only
-  against synthetic fixtures the same pass wrote proves the detector finds what it was
-  told to look for, not that it finds a *real* idiom in a *real* binary. Same defect class
-  as Phase 4's independently-derived-but-still-14-wrong opcode table.
-- The functional-equivalence comparator (Pitfall 8) being trusted after only running
-  against two captures of the *same* binary — which proves reproducibility, not that it
-  distinguishes a real regression in an actually-different rebuilt binary. This is not
-  hypothetical: `compare.mjs` has never been run in original-vs-different-binary mode, and
-  that is exactly the mode this milestone needs.
-- The coverage-measurement tool (Pitfall 13) being validated against its own author's
-  already-well-annotated fixture rather than a real, messy, partially-annotated binary.
-
-**Prevention, concrete for this milestone:**
-Gate all three of the above on a **real** fixture the tool wasn't tuned against — this
-project already has the pattern (`d64-parse.test.mjs`'s corpus sweep over whatever real
-`.d64` images exist). Apply the identical idea to hazard detection and coverage
-measurement. Most importantly: the milestone's own mandatory "modifiability demonstrated"
-step (one behavior removed, one added, both observed in VICE) **is** the first real,
-non-synthetic exercise of the equivalence comparator — do not treat it as a separate demo
-disconnected from validating the verification instrument itself; run the comparator
-extension against it and record whether it caught the right things, not just whether the
-demo "worked."
-
-**Phase to address:**
-Every phase that builds a verification instrument (hazard detector, comparator extension,
-coverage tool) must include "run against a real, unseen fixture" as an explicit
-success criterion, not an implicit assumption.
+**Phase to address:** Phase 27 (Store core) for the rejection and namespacing; Phase 29 (ACME
+export) for the ACME-side confirmation.
 
 ---
 
-### Pitfall 13: Recurrence of "a verification instrument built after the work it should gate"
+### Pitfall 7: Comments and confidence prefixes orphaned when a range is retyped
 
-**How this specifically recurs in v0.5.0:**
-If the relocation-hazard detector, the functional-equivalence comparator extension, or
-the coverage-measurement tool are built in a *later* phase than the decomposition/rebuild
-work they're meant to gate, every finding they would have produced arrives too late to
-change how that work was done — gating nothing retroactively. This is precisely the shape
-of the mistake `4f048bb` made at the v0.3.0 close (a red guard nobody was forced to read
-before declaring success), inverted to design time instead of close time.
+**What goes wrong:**
+A comment is anchored to an address. Retype the range containing it from `code` to `byte` and
+the address is no longer an instruction boundary — it is byte 7 of a 16-byte table. Three
+outcomes, all bad: the comment renders inside a `!byte` run (syntactically fine, semantically
+nonsense); the comment is dropped by a renderer that only emits comments at instruction
+boundaries (silent loss of an annotator's finding); or the comment survives but its
+`[confirmed-code]` prefix now labels data as code, which is a **stated confidence about a
+falsified claim**.
 
-**Prevention, concrete for this milestone:**
-Sequence the relocation-hazard detector and the coverage-measurement tool as early
-phases — before substantial decomposition/annotation work happens against the target
-binary — mirroring the gate-first sequencing this project's own retrospective names as
-its single highest-leverage v0.4.0 choice (Phase 12 before everything else). A binary
-partially decomposed under a hazard detector that doesn't exist yet cannot be
-retroactively checked cheaply; it has to be re-walked.
+**Why it happens:**
+Comments and types are stored in separate tables with no referential integrity between them,
+which is the right storage decision and the wrong *update* decision. And the five-grade
+confidence vocabulary is enforced today by `r2000-confidence.ts` — the ONE authoritative place
+for the `[confirmed-code]`/`[probable-code]`/`[confirmed-data]`/`[probable-data]`/`[unknown]`
+convention — which is **not** in CUT-02's reuse list while `c64-program-recon/SKILL.md` and
+`templates/memory-map.template.md` still instruct agents to write those exact tokens.
 
-**Phase to address:**
-Roadmap ordering itself — this is a sequencing pitfall, not a within-phase one.
-
----
-
-### Pitfall 14: Recurrence of "a guard whose scope is narrower than its subject reports clean for the wrong reason"
-
-**How this specifically recurs in v0.5.0:**
-A coverage checker that only walks addresses regenerator2000's *own* block-type table has
-already assigned will silently treat bytes outside that scan as "not applicable" rather
-than "unclassified" — reporting 100% coverage while genuinely undocumented bytes exist.
-Concretely, and now confirmed by this session's source reading: a "does every referenced
-address resolve to a label" check that trusts regenerator2000's own `follow_indirect_jumps`
-cross-reference output will report clean while an entire indexed jump table's N-1
-untraveled entries (Pitfall 2 — the tool literally cannot enumerate them) are never even
-in scope to check. This is the *exact* shape of the 119-vs-150 finding
-(`docs-review-disposition.test.ts`'s level-3-colon-only parser) one level up: the tool's
-own notion of "everything I've looked at" is being mistaken for "everything there is."
-
-**Prevention, concrete for this milestone:**
-Build the coverage/reference scanner to walk the raw byte range and instruction stream
-independently of what the annotation tool claims it has already classified — a
-derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen
-it specifically to cover the address space regenerator2000's indirect-jump follower does
-not walk (multi-entry indexed dispatch tables), since that gap is now a confirmed,
-specific fact about this dependency rather than a hypothetical.
-
-**Phase to address:**
-The coverage-measurement phase, as the design constraint on the scanner itself.
-
----
-
-### Pitfall 15: Recurrence of "claiming a capability with no measured caller"
-
-**How this specifically recurs in v0.5.0:**
-Two Active requirements are exactly the shape of claim this project has been burned by
-asserting without measuring: "the curated `r2000_*` surface covers what the absorbed
-analyze procedures actually call" is true only if someone extracts every tool call the
-five absorbed procedures make and diffs it against the 17-tool list — writing the sentence
-because it sounds plausible is the same substitution as Phase 9's "8 predicted, 27 found"
-and v0.4.0's four-wire-details-one-refuted. Likewise "modifiability is demonstrated" must
-be an actual committed VICE transcript with before/after evidence, not a description of a
-walkthrough — precisely Phase 8.1's prior mistake, in a new guise.
-
-**Prevention, concrete for this milestone:**
-For every capability claim in this milestone's Active requirements, name the specific
-artifact (a diff file, a transcript, a committed evidence directory) that must exist as
-proof *before* the requirement moves to Validated — the same discipline `FORK-01`/
-`CORE-01`'s decision provenance already established as this project's own standard.
-
-**Phase to address:**
-Every phase closing a requirement with an empirical claim; enforced the way
-`docs-*.test.ts` guards already enforce planning-document claims elsewhere.
-
----
-
-### Pitfall 16: The "well documented" coverage criteria are vacuously satisfiable, and this project's own tooling already provides the honest alternative
-
-**How each structural criterion can be gamed:**
-
-- **"Nothing `Undefined`"** is satisfiable by mechanically retyping every `Undefined`
-  block to `Code`/`DataByte` with an auto-generated label (`sub_C3A2`) and a templated
-  comment ("handles data"). This satisfies a state-machine property of the annotation
-  store while adding zero understanding, and a coverage script counting
-  `block_type != Undefined` over total bytes reads 100% either way.
-- **"Every referenced address documented"** degenerates to "has a non-null comment
-  field" — regenerator2000 already auto-generates comments/labels for every reference it
-  finds (confirmed: `LabelKind::Auto` exists as a distinct, tracked kind alongside
-  `LabelKind::User` in the installed source, `types.rs:353-357`). A script that treats
-  presence of *any* comment as "documented" cannot distinguish a genuinely authored
-  explanation from the tool's own template.
-- **"Hardware writes as named enums"** is already satisfied automatically today by the
-  v0.3.0 `memmap.json` generation, for every write — that mechanism documents what the
-  *hardware register* does generically, never why *this program* sets it here. A coverage
-  metric counting "percentage of hardware writes resolving to a named constant rather
-  than a magic number" is satisfied by the existing generator alone, with nobody having
-  read the surrounding code.
-
-**What makes a coverage metric resistant to this — concrete, not "measure it properly":**
-
-1. **Report the Auto/User label ratio as its own number**, not folded into a single
-   coverage percentage. `LabelKind::Auto` vs `LabelKind::User` is already a real,
-   mechanically available distinction in the tool this project depends on
-   (`types.rs:353-357`) — use it. "X% of labels in this region are still Auto-kind" is a
-   non-vacuous, currently-unused signal.
-2. **Require cross-reference-backed documentation** for any label reached from more than
-   one call/jump site — if two callers reach the same routine and its documentation
-   doesn't distinguish or reconcile their different intents, that's evidence of
-   templated, not authored, coverage.
-3. **Sample-audit, don't trust the aggregate.** Apply this project's own proven
-   falsifiability pattern — Phase 11's sealed-question, genuinely-separate-session test —
-   to coverage *quality*, not just store persistence: periodically pull a random sample of
-   "covered" addresses and require an independent pass (no access to the existing
-   annotations) to reproduce the same understanding from raw bytes alone.
-4. **Tie coverage to reassembly-plus-behavior for at least the modifiability demo's own
-   region.** A region whose documentation is accurate can typically be modified in a
-   small, controlled way and re-verified in VICE; a region whose documentation is
-   template-vacuous will typically fail exactly that kind of edit, because nobody
-   understood what changing it would do. This reuses evidence the milestone is already
-   producing (the modifiability demo) rather than inventing a separate audit.
-
-Measured, not asserted, coverage for this milestone = structural completeness (no
-`Undefined`) **AND** the Auto/User ratio surfaced **AND** a sampled independent
-reproducibility check **AND** the specific region touched by the modifiability demo
-independently re-verified — not a single percentage.
+**How to avoid:**
+On retype, do not delete or silently re-anchor. **Flag**: every comment whose anchor is no
+longer a boundary of the new typing, and every comment whose confidence token contradicts the
+new type (`[confirmed-code]` inside a `byte` range), is returned in the retype call's result as
+an explicit list the caller must resolve. That turns a silent loss into a reported one, which
+is the only difference that matters. Keep the five-grade vocabulary as the store's own
+validated enum — one spelling, per its existing header's own prohibition on a second.
 
 **Warning signs:**
-A coverage report reading 100% with an Auto-label ratio near 100% is not "well
-documented" — it is "well typed." Treat the two numbers as answering different
-questions and report both.
+A retype that returns `void` or a bare success. A renderer with no "orphaned comment" path. A
+confidence token accepted as free text.
 
-**Phase to address:**
-The coverage-measurement phase — this pitfall *is* that phase's design brief, not a
-caveat on it.
+**Observing the control RED:** comment `$1047` `[confirmed-code] loop head`, then type
+`$1040-$104F` as `byte`. The call must report one contradicted comment. Remove the check and
+the call returns clean success — that is the red.
+
+**Phase to address:** Phase 27 (Store core); the vocabulary's survival is a Phase 31 (Removal)
+dependency.
+
+---
+
+### Pitfall 8: The enum applied to the wrong operand
+
+**What goes wrong:**
+`R2000-13`'s validated behaviour is that `lda #$1b` / `sta $d011` renders as
+`lda #D011_YSCROLL3_ROW25_SCREENON_TEXT`. Note where the enum goes: on the **immediate operand
+of the `lda`**, named for the register the *later* `sta` targets. Two ways to get this wrong,
+both silent:
+1. **Apply it to the address operand** — `sta D011_YSCROLL3_…` — which either fails to
+   assemble (loud, fine) or, if the enum value happens to be a legal address, assembles into a
+   store to the wrong address (silent, catastrophic).
+2. **Attribute the immediate to the wrong register.** The `lda #$1b` may be followed by two
+   stores, or the value may reach `$d011` via `tax`/`pha`, or an unrelated `lda #$1b` earlier
+   in the routine gets the enum from a later `sta`. The rendered name is then a confident
+   semantic claim about a value that never reaches that register.
+
+Compounding: which register `$d011` *is* depends on bank state (Pitfall 5). Under `$01 = $34`
+that store goes to RAM and the VIC-II enum name is simply false.
+
+**Why it happens:**
+The join is address-keyed and the enum is value-keyed, so the linking step is a data-flow
+inference — and a one-instruction lookback (`the immediately preceding lda`) works on every
+hand-written fixture.
+
+**How to avoid:**
+Make the immediate→register attribution an **explicit, caller-supplied pair** at the tool
+boundary (upstream's `apply_enum_usage` shape), never an inference the store performs. If a
+future phase infers it, the inference lives in the engine layer (Ghidra's decompiler already
+recovers this) and arrives as a fact, not a heuristic. Reject application to any operand that
+is not an immediate.
+
+**Observing the control RED:** the acceptance test that already exists in spirit —
+`lda #$1b`/`sta $d011` renders with the enum name **and reassembles byte-identical under real
+ACME**. Byte-identity is what catches the wrong-operand case: applying the enum to the address
+operand changes the emitted bytes. Remove the immediate-only restriction and that
+reassembly-identity test must go red.
+
+**Phase to address:** Phase 29 (ACME export and the reassembly gate).
+
+---
+
+### Pitfall 9: "Reuse the `--verify` seam" is not possible as written, and the natural repair reopens D-10
+
+**What goes wrong:**
+This is the most dangerous item in the milestone, because the requirement text
+(`STORE-06`, and the milestone's own "verified by a real ACME through the `--verify` seam")
+describes a reuse that the deletion makes impossible. `r2000-verify.ts` does **not** invoke
+ACME. It invokes **regenerator2000** (`buildVerifyArgs`/`runR2000` from `r2000-launch.ts`) and
+parses regenerator2000's per-assembler result lines. Delete `r2000-launch.ts` and the parser
+has no producer.
+
+The natural repair — call ACME directly and check the exit code — walks straight back into the
+incident `r2000-verify.ts` exists to prevent, recorded verbatim in its header: with ACME absent
+from `PATH` and `ca65` present, a real run printed
+`✗ ACME — ACME not found in PATH (skipped)` / `✓ All roundtrip verifications passed.` /
+`EXIT=0`. Exit zero. An aggregate line reading as a full pass. The one assembler this project
+cares about never ran. A `spawnSync("acme", …).status === 0` check on a *direct* ACME
+invocation has the same shape of hole one level over: ACME missing → `spawnSync` sets `error`
+and `status: null`, and a truthiness check on `status` reads a missing binary as a pass.
+
+**Why it happens:**
+The requirement says "reuse the seam", the seam exists, and its filename does not advertise
+that it is an r2000 output parser. Nobody re-reads a module they were told to reuse.
+
+**How to avoid:**
+Split the seam explicitly in the plan, before the removal:
+- **Keep** the verdict discipline — never derive `ok` from exit status, require unanimity
+  across ACME result lines, refuse to guess when more than one authoritative line is present.
+  Its false-pass transcript fixtures are pinned in `r2000-verify.test.ts` and must move with
+  it.
+- **Replace** the producer with a direct ACME invocation modelled on
+  `src/skills/acme-build/scripts/acme.mjs` (`spawnSync("acme", args, …)` — this repo's one
+  existing direct-ACME call site), and make "ACME did not run" a **third outcome** distinct
+  from pass and fail, exactly as `AssemblerOutcome = "ok" | "skipped" | "failed"` already
+  models it.
+- The byte-diff, not ACME's exit code, is the verdict for "reassembles identically".
+
+**Observing the control RED — two separate reds, both mandatory:**
+1. With `ACME_BIN` pointed at a non-existent path, the store's export verification must report
+   **skipped/failed, never pass**. Restore the exit-code shortcut and this test must fail.
+2. Feed the exporter a deliberately corrupted byte (one operand changed) — the byte-diff must
+   fail while ACME itself still exits 0. This is the direction the v0.3.0 evidence proved in
+   both senses ("an exit-1 run where ACME still passed, an exit-0 run where ACME never ran")
+   and both directions must be re-proved against the new producer.
+
+**Phase to address:** Phase 29 (ACME export), and it must land **before** Phase 31 deletes
+`r2000-launch.ts`. If the removal precedes the exporter, there is a window with no working
+external oracle and every claim made in it is at fixture level.
+
+---
+
+### Pitfall 10: Deleting `r2000-test-gate.ts` turns this project's strongest oracle into a silent skip
+
+**What goes wrong:**
+`r2000-test-gate.ts` (166 lines, name says r2000, sits squarely in the delete set) holds
+**two** gates, not one. The regenerator2000 half is genuinely dead after the removal. The
+**ACME half is not**: `ACME_BIN`, `probeAcme()`, `ACME_AVAILABLE`, `acmeSkipReasonFor()` and
+`assertAcmeRequiredIfEnvSet()`. Nine test files import from it; the one that survives the
+milestone is `disasm-roundtrip.test.ts`, this project's real-ACME round-trip oracle. And CI
+binds to it by name: `.github/workflows/ci.yml` installs the Debian `acme` package, greps its
+own banner to prove the binary really is ACME, and sets `VICE_REQUIRE_ACME: "1"` so a missing
+ACME is a hard **FAIL** rather than a named SKIP.
+
+Delete the file as glue and the `VICE_REQUIRE_ACME` contract has nothing to bind to. The
+store's ACME-verified export claim degrades from "hard fail if ACME is missing" to "silently
+skip", in CI, with a green run.
+
+**Why it happens:**
+The filename. It is 166 lines of test infrastructure with an `r2000-` prefix, and the deletion
+sweep is prefix-driven.
+
+**How to avoid:**
+Re-home the ACME half under a non-r2000 name (`acme-test-gate.ts`) **in the same commit or
+earlier** as the deletion, keeping the env var names byte-identical (`ACME_BIN`,
+`VICE_REQUIRE_ACME`) because CI already sets them and a rename there is a second, silent
+failure mode. Update the `ci.yml` comment that names `disasm-roundtrip.test.ts` if the binding
+changes.
+
+**Warning signs:**
+A CI run where the ACME-dependent test count drops. Any `spawnSync("acme")` appearing in a
+second module (the gate was created precisely because "six-plus hand-copied `probeR2000()`
+bodies is exactly how a gate silently diverges").
+
+**Observing the control RED:** with `VICE_REQUIRE_ACME=1` set and `ACME_BIN` pointed at a
+nonexistent path, the suite must **FAIL**. If it skips, the gate is gone. This is the single
+cheapest red to run and it should be run at every phase boundary in this milestone.
+
+**Phase to address:** Phase 29 (ACME export) at the latest; ideally Phase 27, since new store
+tests will want it.
+
+---
+
+### Pitfall 11: "Save succeeded" proved by a hash delta, which proves neither the mutation nor durability
+
+**What goes wrong:**
+The existing precedent, `saveAndVerify()` in `r2000-mcp-client.ts`, hashes the project file
+before and after the save and throws `R2000SaveNotPersistedError` if the hash is **unchanged**
+— explicitly "refusing to report success on the strength of the child's own text response."
+That is the right instinct and an insufficient control, in both directions:
+- **False negative:** an idempotent save (nothing changed since the last one) legitimately
+  leaves the hash unchanged and is reported as a failure to persist.
+- **False positive, and this is the dangerous one:** a hash that *changed* proves only that
+  bytes moved. A bumped timestamp field, a rewritten header, or a **truncated** write all
+  change the hash. A save that writes 4 KB of a 40 KB store and dies satisfies the control
+  perfectly.
+
+**Why it happens:**
+Hash-delta is one line and reads as rigour. And the milestone's own bar is stated as "mutate →
+kill → reopen must return the mutation", which a hash check superficially resembles.
+
+**How to avoid:**
+Implement exactly the stated bar and nothing weaker: **mutate → `SIGKILL` the process →
+reopen from disk in a fresh process → read the mutation back by value.** Not `close()` then
+reopen (that exercises the flush path the kill is meant to skip). Not same-process reopen (the
+in-memory copy may answer). Not a hash comparison (proves bytes, not content). Keep a
+structural read-back assertion on the *specific* annotation, plus a whole-store parse so a
+truncated file is a parse failure rather than a partial success.
+
+**Observing the control RED (this is the planted violation the milestone names):**
+remove the save call — or, better and sharper, make the save write to the temp file and skip
+the `rename` — and the mutate→kill→reopen test must fail. If it still passes, the test is
+reading in-process state. A second planted violation worth running: truncate the store file to
+half its length between kill and reopen; reopen must **refuse**, not return a partial store.
+
+**Phase to address:** Phase 27 (Store core). This is the milestone's named durability bar and
+it gates everything built on the store.
+
+---
+
+### Pitfall 12: tmp+rename is not `fsync`, and the claim must not exceed it
+
+**What goes wrong:**
+This repo has one atomic-write idiom, used in five places
+(`r2000-project.ts:339`, `refresh-manifest.ts:65`, `install-resources.ts:235`,
+`incident-record.ts:338`, `vice-broker.mts:240`): write to `<target>.tmp-$pid-$now`, then
+`renameSync`. It is the right idiom — a reader never observes a partial file, and a crashed
+writer leaves the old file intact rather than a truncated new one. **None of the five calls
+`fsyncSync`**, on the file or on the parent directory. So the guarantee is: durable against
+*process* death (the data is in the page cache and survives `SIGKILL`); **not** durable against
+machine crash or power loss, where `rename` may be visible while the data blocks are not.
+
+**Why it happens:**
+The distinction is invisible in testing, because the test kills a process, not a kernel.
+
+**How to avoid:**
+Keep the idiom (it is correct for the stated bar and consistent with five existing consumers —
+extending a stable seam beats a parallel one). State the ceiling explicitly in the module header
+and in the plan's verification wording: "durable across process death, proven; durable across
+machine crash, not claimed." If crash durability is ever wanted, it is `fsync(fd)` before
+`rename` plus `fsync(dirfd)` after — and it should be added with a stated reason, not silently.
+
+**Warning signs:**
+A completion claim reading "the store is durable" without a qualifier. A `writeFileSync`
+directly to the target path anywhere (that one *is* torn-read-visible and must not exist).
+
+**Phase to address:** Phase 27 (Store core). Enforce as a wording constraint at the phase gate,
+per `ENGINEERING_RULES.md` §8 — the same discipline `DEBT-04`'s closure note used when it
+declined to claim findings were fixed.
+
+---
+
+### Pitfall 13: Undo that does not survive the restart the durability test just proved
+
+**What goes wrong:**
+The two requirements are stated together — "undo and persistence" — and are usually
+implemented apart. An in-memory undo stack passes every in-session test and is empty after the
+reopen that Pitfall 11's test proves works. So the milestone ships a store where the durability
+control is green, the undo control is green, and "undo the label I set before lunch" cannot be
+done. Worse: an undo stack that persists *positions* but not *prior values* will happily
+"undo" to whatever is there now.
+
+**Why it happens:**
+Undo is naturally a runtime concern and persistence is naturally a file concern, and the two
+tests are written by different tasks.
+
+**How to avoid:**
+Persist the undo log in the store file, as an append-only list of inverse operations with the
+prior value captured at write time, bounded and versioned with the schema. Then run **one**
+combined planted-violation test rather than two separate ones: mutate → undo-able → `SIGKILL`
+→ reopen → **undo** → assert the pre-mutation value. That single test cannot be satisfied by
+in-memory state, cannot be satisfied by a persisted-position-only log, and cannot be satisfied
+by a hash check.
+
+**Observing the control RED:** drop the undo log from the serialised shape (keep it in memory)
+and the combined test must fail. If only the separate tests exist, both stay green.
+
+**Phase to address:** Phase 27 (Store core), as one criterion, not two.
+
+---
+
+### Pitfall 14: Concurrent writers — the in-process mutex is not a cross-process lock, and the staleness check is the thing most likely to be "cleaned up"
+
+**What goes wrong:**
+`r2000-session.ts` holds a coarse FIFO mutex and a synchronous single-owner `inFlight`
+check-and-set — **per proxy process**. That is not a lock on the file. Two real routes write the
+same store from outside that mutex today:
+1. `vice-mcp r2000 <verb>` — a genuinely separate OS process, invoked by a skill's Bash call
+   (13 such mentions across the skills), with no access to the in-memory state at all.
+2. A second `vice-proxy.ts` process (a second Claude Code session on the same project).
+
+The recorded consequence, found live rather than reasoned about: a held session answered a
+later read "from its now-stale in-memory copy, silently missing the import" — the same shape as
+the mutate-then-read-across-connections incident named in the brief. The mitigation in place is
+a cheap `mtimeMs` comparison before every reuse: mismatch ⇒ evict and reopen.
+
+The pitfall for the owned store is that this mitigation looks like child-process bookkeeping.
+The store is in-process now, "we own the file", so the check gets dropped — and the stale read
+returns immediately, confidently, with no error.
+
+**Why it happens:**
+Owning the file feels like owning the writes. It does not: the CLI verbs and the second session
+are still there, and last-writer-wins with tmp+rename produces a *clean* file that has silently
+lost the other writer's annotations. No corruption to notice.
+
+**How to avoid:**
+- Keep a staleness check, and make it stronger than `mtimeMs`: a **monotonic `revision`
+  counter inside the store file**, compared on every read-after-cache and asserted to have
+  advanced on every write. `mtimeMs` has real holes (coarse granularity on some filesystems,
+  and `cp -p`/archive extraction preserves it), and a revision integer has none of them.
+- Refuse a write whose base revision is not the current on-disk revision — optimistic
+  concurrency, one comparison — rather than overwriting. A refused write with a clear message
+  is strictly better than a silent loss.
+- Keep the single-owner check-and-set **synchronous with no `await` in the gap**, per the
+  standing broker constraint (the 2026-08-01 triple-launch outage). Re-derive nothing locally.
+
+**Warning signs:**
+No revision/version field in the store file. A read path that returns cached data with no
+freshness check. Two write paths (tool surface and CLI verb) with different serialisers.
+
+**Observing the control RED:** open the store in process A, mutate it from process B, then read
+from A. A must return B's value or refuse — it must not return the stale one. Remove the
+revision check and this test must fail.
+
+**Phase to address:** Phase 27 (Store core) for the revision field and the refusal; Phase 28
+(MCP surface) for the CLI-verb/tool-surface single-serialiser rule.
+
+---
+
+### Pitfall 15: The grep gate fires on 236 legitimate mentions, or on a `.gitignore`d tree, or on neither
+
+**What goes wrong:**
+The `toacme` precedent is the right pattern and the wrong scope. Measured: **291 tracked files**
+mention regenerator2000; **55** outside `.planning/`. The remaining ~236 are roadmaps,
+requirement documents, milestone records, decision rows and executed-phase artifacts that
+**must** keep the word — permanently, because they are the historical record of a decision.
+Meanwhile the precedent gate (`scripts/check-skill-fork-honesty.mjs`) walks only `src/skills/`,
+`README.md`, `docs/stock-vice-parity.md` and `src/mcp/vice/` — its own comment admits the
+narrow scope. Three distinct failures follow:
+
+- **Too wide:** grep the tree, get 236+ hits, and the gate is switched off within a day. The
+  gate script's own comment already names this dynamic: "Widening the scope to them would
+  produce false positives and the guard would be switched off; keeping it narrow keeps it
+  trusted."
+- **Too narrow:** copy the precedent's scope and the gate never sees `docs/` (3 files),
+  `scripts/` (11 files), `installer/`, `.claude-plugin/`, or the published tarballs — which is
+  exactly the hole that made the `toacme` gate's bite on a **non-`SKILL.md`** file the lesson
+  it was.
+- **Wrong tree:** `installer/skills/` is `.gitignore`d generated output that currently holds
+  **11** files mentioning regenerator2000 and **is shipped in the `@henols/c64-re-tools`
+  tarball**. A filesystem grep fires on stale local output and reads as a real reintroduction;
+  a `git grep` never sees it and the stale route ships to users.
+
+**How to avoid:**
+Define the gate as *tracked files, minus a named exemption set, plus the regenerated installer
+tree*:
+- Scope = `git ls-files`, excluding `.planning/**` (historical record, exempt by class not by
+  file) — plus a `node installer/scripts/sync-skills.mjs` run followed by a grep of
+  `installer/skills/**`, so the shipped copy is checked as generated output rather than as a
+  source file. Equivalently, grep the `npm pack --dry-run` file list, which is what
+  `scripts/check-npm-packages.mjs` already reasons about.
+- Exemption set, named individually with a reason (never a pattern that could grow):
+  the **5** `ATTRIBUTION (ABS-02)` blocks in `src/skills/` and their **5** synced twins;
+  `THIRD-PARTY-NOTICES.md` in both packages (the MIT notice the attribution chain *requires* to
+  stay); `src/skills/c64-program-recon/scripts/packer-finding.mjs`'s provenance strings
+  (`entropySource = "r2000_get_binary_info"` and the paragraph recording why no packer route
+  existed) — these record what an *already-produced* finding was derived from and deleting them
+  destroys provenance.
+- Non-vacuity: assert the exemption set is non-empty **and** that each exemption still matches
+  something. An exemption that matches nothing means the header it protected was deleted — the
+  precise failure the brief warns about, caught mechanically instead of by review.
+
+**Observing the control RED — three separate reds:**
+1. Plant `regenerator2000` in a non-`SKILL.md`, non-exempt file (a `.ts` under `src/mcp/vice/`,
+   a `docs/*.md`, and a `scripts/*.mjs` — one each, since the `toacme` lesson was specifically
+   about the non-obvious location). The gate must bite on all three.
+2. Delete one `ATTRIBUTION (ABS-02)` block. The gate must **also** bite — on the exemption's
+   own non-vacuity assertion — proving that "fixing" a false fire by deleting the header is
+   itself caught.
+3. Plant the string in `installer/skills/` *after* a sync. The gate must bite, proving the
+   generated tree is in scope.
+
+**Phase to address:** Phase 31 (The removal). The gate must be built and its three reds
+observed **before** the deletion commit, not after — the audit-integrity precedent
+(`4f048bb` closed a milestone with a guard already red and nothing forced anyone to notice) is
+the reason.
+
+---
+
+### Pitfall 16: Guards that pass vacuously the moment their subject disappears
+
+**What goes wrong:**
+This is the highest-value removal pitfall in the milestone, because its symptom is a **green
+suite** over an undefended invariant. Three concrete instances, all measured:
+
+1. **`hostpath-consumers.test.ts`** derives the r2000 module family from disk —
+   `topLevelProductionModules().filter(name => /^r2000-.*\.ts$/.test(name))` — and asserts that
+   family is **absent** from the host-path consumer set. It is well-built: it carries a
+   `R2000_MODULE_FLOOR` non-vacuity floor ("an empty or broken glob must fail loudly here
+   rather than let the absence assertion below pass trivially") and a positive-control list of
+   four named modules. So the deletion turns it **red** — correctly. The trap is the *repair*:
+   lowering the floor to 0 and deleting the positive-control list converts a proven-non-vacuous
+   guard into a permanently green one, and the **new** store modules (named
+   `annotation-*`/`store-*`, not `r2000-*`) are then covered by nothing. The container-side
+   invariant this guard exists for applies to the new family identically.
+2. **`scripts/check-skill-tool-coverage.mjs`** imports `CURATED_R2000_TOOLS` from
+   `r2000-tools.ts` and cross-checks it against `r2000_*` names extracted from skill prose,
+   with a `R2000_CLI_VERB_FLOOR` for the CLI verbs parsed out of `r2000-cli.ts`'s own dispatch
+   switch. After the deletion, zero mentions cross-checked against zero curated tools passes
+   trivially — and the **82** re-pointed tool-name mentions in the skills are then validated
+   against nothing.
+3. **`skill-attribution.test.ts`** asserts its 5-row registry's length **equals** the phase-19
+   manifest's absorbed-procedure count — a relation, not a magic number, which is right. It
+   scans `src/skills/` only. Its 5 `destination:` rows all live there. It never looks at
+   `installer/skills/`, so a sync that drops the headers is invisible to it.
+
+**Why it happens:**
+A derived-from-disk set is the correct pattern (it beats a hand-typed list), and it is exactly
+the pattern that empties silently when the disk changes. The floor exists to catch that — and
+the floor is the first thing a red-suite repair deletes.
+
+**How to avoid:**
+Give each of the 13 non-`r2000-`named referencing test files an **explicit, recorded fate**
+before the deletion commit: *re-point* (the invariant survives under a new name), *delete*
+(the invariant is genuinely gone), or *keep-with-adjusted-expectation*. Written down, one line
+each, in the plan. Specifically:
+- Re-point the derived glob to the new family's prefix, **raise** the floor to the new family's
+  size, and replace the positive-control list with modules from the new family. Then re-run the
+  planted violation the guard already ships (a synthetic store-shaped source that *does* import
+  `hostpath.ts` must be reported).
+- Re-point the skill-tool-coverage map to the new store's curated tool list and keep a floor at
+  or above today's 82 mentions / 17 distinct names, so an emptied extraction fails loudly.
+- Extend the attribution guard to the synced `installer/skills/` tree, or add a sync-drift
+  assertion — there is none today.
+
+**Observing the control RED:** for each re-pointed guard, re-run its **own** planted violation
+against the new subject. A guard whose floor was lowered rather than re-pointed will not be
+able to go red, which is the test: if you cannot make it fail, you have not re-pointed it.
+
+**Phase to address:** Phase 31 (The removal), as a gate precondition — the milestone's own
+active requirement says "Every guard pinned to the deleted subject is given an explicit fate
+before the phase gate, not discovered red in CI."
+
+---
+
+### Pitfall 17: CUT-02's reuse list under-names what survives, and each omission silently un-ships a capability
+
+**What goes wrong:**
+The reuse list names `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts`,
+`r2000-d64.ts`, `memmap.json`, `r2000-regbits-gen.ts`, `r2000-enum-gen.ts`. Measured against
+the actual module set, **six** more carry capability the milestone intends to keep while
+sitting on the delete side of the line:
+
+| Module | Lines | What is lost, silently |
+|---|---|---|
+| `r2000-test-gate.ts` | 166 | The ACME hard-fail switch CI binds to (Pitfall 10) |
+| `r2000-acme-ident.ts` | 97 | Legal-ACME-identifier rejection — the reject-never-sanitize rule (Pitfall 6) |
+| `r2000-confidence.ts` | 233 | The ONE five-grade confidence vocabulary the skills' prose and `memory-map.template.md` still instruct agents to emit (Pitfall 7) |
+| `r2000-symbols.ts` | 388 | The VICE label-file round trip — **`R2000-14`/`R2000-15`, a *Validated* requirement**, "demonstrated as one closed loop against genuine unpatched stock `x64sc`" |
+| `r2000-verify.ts` | 184 | The ACME-verdict parser and its two pinned false-pass transcripts (Pitfall 9) |
+| `r2000-memmap-render.ts` | 531 | `render-memmap --check` and the render-digest drift guard behind the Key Decision "make the store canonical and the Markdown memory map a generated view" |
+
+Plus `r2000-coverage.ts` (2,292 lines) whose split-table dispatch-context gate is the
+expressiveness Pitfall 1 needs, even though the coverage *instrument* is correctly superseded.
+
+**Why it happens:**
+The reuse list was written at v0.6.0 scoping time against a different phase shape, and the
+delete criterion is the `r2000-` filename prefix — which these six share with genuine glue.
+Nothing in the tree distinguishes "named r2000 because it talks to r2000" from "named r2000
+because it was written in the r2000 phase".
+
+**How to avoid:**
+Classify all 16 non-test `r2000-*.ts` modules explicitly — *glue* (delete), *capability*
+(re-home under a non-r2000 name), *superseded* (delete, with the superseding thing named) —
+before writing the deletion plan, and check each *capability* row against the Validated
+requirements list in `PROJECT.md`. A module implementing a Validated requirement cannot be
+deleted without a recorded decision to un-ship it.
+
+**Warning signs:**
+A deletion commit whose diff removes a module implementing a `✓`-marked requirement. A
+`files[]` entry removed with no replacement. `THIRD-PARTY-NOTICES.md` losing an entry whose
+attribution chain still needs it.
+
+**Phase to address:** Phase 27–29 for the re-homing (each capability lands where it is used);
+Phase 31 for the deletion, which then removes only glue and superseded code.
+
+---
+
+### Pitfall 18: The reds the deletion *will* produce, mistaken for defects and repaired by weakening
+
+**What goes wrong:**
+Three guards go red by construction when the deletion lands, and each has an obvious wrong fix:
+
+1. **`docs-linerefs.test.ts`** extracts `vice-proxy.ts:<N>` citations from `CLAUDE.md`'s
+   `rewriteArguments()` bullet and asserts the cited line **really is** a call site or function
+   start. The r2000 wiring in `vice-proxy.ts` sits at roughly `:188-310` (subcommand dispatch,
+   `R2000_TOOL_DEFINITIONS` import, drain timeout) and `:3163-3186` (session close) — i.e.
+   ~120 lines *above* the cited `:1507`/`:1531`, and more above `:2987`/`:3052`. Removing them
+   shifts all four. Wrong fix: loosen the guard to a regex-only check. Right fix: re-cite
+   CLAUDE.md — the constraint bullet itself says "treat a mismatch as drift to re-verify, not
+   as evidence the constraint itself changed."
+2. **`docs-dangling-refs.test.ts`** scans a fixed normative document set —
+   `.planning/ROADMAP.md`, `CLAUDE.md`, `README.md`, `docs/roadmap-stock-vice.md`,
+   `docs/stock-vice-parity.md` — and **fails if any of them is missing** ("a missing one FAILS
+   rather than silently shrinking the scanned set"). `CLAUDE.md` currently carries four
+   regenerator2000 constraint bullets that must be rewritten, and `docs/` cleanup may touch a
+   scanned file. Wrong fix: remove the path from the list. Right fix: rewrite the content.
+3. **`docs-r2000-decisions.test.ts`** pins **D-36** (the `r2000_get_address_details`
+   client-side composition) read out of the live `PROJECT.md`, with a stated reversal trigger
+   on an upstream issue. Deleting the subject makes the pinned decision moot but the guard
+   still asserts the text exists. Wrong fix: delete the guard *and* the decision row. Right
+   fix: keep the decision row as history (decisions are dated records, not live config) and
+   give the guard an explicit superseded-by fate — the same treatment `FORK-01` and `CORE-01`
+   get from their own guards.
+
+**Why it happens:**
+A red suite during a large deletion reads as noise, and the cheapest way to green is to narrow
+the assertion. `ENGINEERING_RULES.md` §5 names every variant of this ("never make verification
+green by weakening the verifier"), which is why it is listed as a pitfall rather than assumed
+away.
+
+**Observing the control RED:** these three are *already* the red. The discipline is to record,
+before the deletion, that they are **expected** to go red and how each will be repaired — so a
+red that was *not* predicted is distinguishable from one that was.
+
+**Phase to address:** Phase 31 (The removal), as a pre-declared expected-failure list in the
+plan.
+
+---
+
+### Pitfall 19: Manual-only tests hide the breakage until CI
+
+**What goes wrong:**
+`vice-proxy.test.ts` holds **29** r2000 references and is a member of `MANUAL_ONLY_TESTS`
+(9 files). `npm run test:automated` excludes it. CI runs the **full** `npm test` glob
+deliberately ("CI's set is deliberately wider than `npm run test:automated`"). So a deletion
+that breaks the proxy's r2000 wiring can be locally green through `test:automated` and red in
+CI — after the commit, on a branch, with the removal already landed.
+
+**Why it happens:**
+`test:automated` is the fast loop and the natural thing to run during a 25k-line deletion.
+This project has been bitten before: the recorded lesson is that `test:automated` skips
+`MANUAL_ONLY_TESTS` and therefore hides failures.
+
+**How to avoid:**
+Run the full `npm test` — not `test:automated` — at every task boundary in the removal phase,
+and state which one was run in the completion evidence. Note also that a **live broker**
+reddens an unrelated test deterministically, so stop the broker before trusting a full-suite
+result.
+
+**Warning signs:**
+A completion note citing `test:automated`. A test count that dropped by more than the deleted
+files account for.
+
+**Phase to address:** Phase 31 (The removal) — as a verification-command constraint, since
+`ENGINEERING_RULES.md` §17 already requires the repository's own scripts.
+
+---
+
+### Pitfall 20: Orphaned fixtures, evidence trees, and packaging manifests
+
+**What goes wrong:**
+The satellite surface around 25,759 deleted lines:
+- **`src/mcp/vice/fixtures/coverage/`** — 212 KB, 12 named fixture directories, each a
+  `project.regen2000proj` + `store.json` pair, plus its own generator
+  `make-coverage-fixtures.mjs` and a `README.md`. Owned entirely by `r2000-coverage.test.ts`.
+  Deleting the test and keeping the fixtures leaves 212 KB of unreferenced binary-ish data that
+  the next person cannot classify. Deleting the fixtures and keeping the generator is worse —
+  a generator producing input for nothing.
+- **`package.json` `files[]`** — **19** r2000 entries (`r2000-launch.ts` … `r2000-coverage.ts`,
+  plus `r2000-regbits.json`). npm **silently ignores** a `files[]` entry naming a nonexistent
+  file, so a stale list does not error; the tarball just quietly differs from the manifest.
+  `scripts/check-npm-packages.mjs` validates tarball contents via `npm pack --dry-run --json`
+  against an expected set, so it will catch a *removed* file it still expects — provided its
+  own expectation list is updated in the same commit rather than after.
+- **Live `.planning/phases/` readers** — five tests read paths under `.planning/phases/`:
+  `r2000-upstream-audit.test.ts` and `skill-attribution.test.ts` (both hard-code
+  `phases/19-…/upstream-procedure-manifest.json`), `r2000-answer-key.test.ts`
+  (`phases/11-…/evidence/`, **no existence guard**), `r2000-coverage.test.ts`
+  (`phases/19-…/evidence/coverage-reproducibility`), `r2000-verify.test.ts`
+  (`phases/10-…/evidence/10-verify-transcript.txt`). Three of the five die with their subject;
+  `skill-attribution.test.ts` must survive and keeps its phase-19 dependency. And the
+  milestone's own "derive the tool surface from `upstream-procedure-manifest.json`" makes that
+  phase-19 file an **input to this milestone's design**, not just a test fixture.
+
+**Why it happens:**
+Fixtures and evidence live outside the module tree, so a prefix-driven deletion never touches
+them; and packaging manifests fail *quietly* by design.
+
+**How to avoid:**
+Enumerate the satellite surface in the deletion plan as its own task list: fixture directories,
+`files[]` entries, `check-npm-packages.mjs` expectations, the `.planning/phases/` readers, the
+`scripts/` consumers (`check-skill-tool-coverage.mjs`, `lib/r2000-cli-verbs.mjs`), and
+`THIRD-PARTY-NOTICES.md` in **both** packages. Then re-run `scripts/check-npm-packages.mjs`
+and `scripts/package.sh` as a gate. Do **not** archive phase directories at the v0.7.0 close
+(`--no-archive-phases`), for the same reason recorded as a standing Key Decision — and note the
+reason has grown: the phase-19 manifest is now a design input, not only a guard's fixture.
+
+**Observing the control RED:** delete a file that is still in `files[]` and confirm
+`check-npm-packages.mjs` **fails**. If it passes, its expectation list is stale and the
+packaging gate is vacuous.
+
+**Phase to address:** Phase 31 (The removal).
+
+---
+
+### Pitfall 21: Re-pointing prose and forgetting the script, the template, and the CLI verbs
+
+**What goes wrong:**
+The five absorbed procedures are written against `r2000_*` calls in **five files**, and they
+are not all prose:
+- `c64-program-recon/SKILL.md` (27 mentions) and `c64-memory-mapping/SKILL.md` (36) —
+  playbook prose. Re-pointing is an edit.
+- `routine-queue-walker/SKILL.md` (14) — playbook prose, and the whole skill's *procedure* is
+  a queue walk over store queries; its every step is a tool call.
+- `c64-program-recon/templates/memory-map.template.md` (3) — a **template an agent copies into
+  a project**. A stale route here propagates into every future project's memory map and is not
+  visible in the skill that produced it.
+- `c64-program-recon/scripts/packer-finding.mjs` (2) — **executable code**. One mention is a
+  recorded provenance value (`entropySource = "r2000_get_binary_info"`), the other a paragraph
+  explaining why no packer route existed upstream. Re-pointing prose leaves this script's
+  runtime behaviour and its recorded provenance to be handled separately.
+- Plus **13** `vice-mcp r2000 <verb>` CLI-verb mentions across the skills, which are Bash
+  invocations, not MCP tool calls, and are therefore invisible to a tool-name grep.
+
+**Why it happens:**
+"Re-point the skills" reads as an editing task on three `SKILL.md` files. The measured surface
+is 5 files, 2 mention *kinds* (MCP tool names and CLI verbs), and 3 content kinds (prose,
+template, executable).
+
+**How to avoid:**
+Derive the work list mechanically rather than by reading: `grep -ro "r2000_[a-z_]*"` and
+`grep -rn "vice-mcp r2000"` over `src/skills/`, and treat the union as the checklist. Keep the
+existing coverage gate pointed at the new surface (Pitfall 16) so a mention with no
+corresponding tool is a **failure**, not a documentation bug found later. For the 17 distinct
+tool names, decide each against the phase-19 manifest's `curated`/`omit`/
+`adapt-to-address-input` classification — which is the milestone's stated method, and is a diff
+rather than a judgement call.
+
+**Warning signs:**
+A skill naming a tool that does not exist in the new surface (this is what makes the gate
+load-bearing). `templates/` untouched by the re-pointing diff. `packer-finding.mjs` untouched.
+
+**This symptom is inert knowledge, not an error.** The playbook still reads correctly and the
+heuristics are intact; the procedure simply cannot be executed. Nothing reports it — the agent
+calls a tool, gets "unknown tool", and improvises.
+
+**Phase to address:** Phase 30 (Skill re-pointing), which must precede Phase 31 (The removal) —
+otherwise the removal lands with 82 dangling references and the gate cannot distinguish
+"not yet re-pointed" from "reintroduced".
 
 ---
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|-----------------|------------------|
-| Trusting regenerator2000's auto-generated cross-refs as "the" reference graph | Fast, zero extra code | Misses every indexed jump table (Pitfall 2) and any pointer not already `Address`-typed (Pitfall 1); coverage claims built on it are vacuous (Pitfall 14/16) | Never as the sole source for a coverage or relocation-safety claim; fine as a starting seed for human/agent review |
-| Symbolising every label the moment it's created (auto or user) without distinguishing kind in reporting | Simple 100%-labeled output | Hides the Auto/User ratio that is the one cheap, honest coverage-quality signal this dependency already exposes | Never for the milestone's coverage measurement; acceptable for a quick interim disassembly listing not claimed as "well documented" |
-| Reusing a warm-floor VICE instance for both sides of an equivalence comparison | Faster test cycles | Leaked prior-session state masquerades as a "fresh" capture, producing a false PASS or FAIL with no error (Pitfall 8) | Never for an equivalence run; fine for exploratory, non-recorded manual poking |
-| Copying upstream's 7-subagent orchestration structure verbatim | Ships absorption faster, reuses tested prose | Corrupts the one shared persistent session under concurrent writes with no error surfaced (Pitfall 9/11) | Never as shipped; acceptable only after the concurrency model is independently proven safe against the persistent session |
-| Treating "reassembles clean" as proof a relocation is safe | Cheap, mechanical, always available | Silently misses every hazard in this document except plain branch-range overflow — SMC, jump tables, page-crossing timing, and cycle-exact chains all reassemble clean while being wrong | Acceptable as a *necessary* gate, never as the *sufficient* one |
+|---|---|---|---|
+| Ship the 7-type vocabulary as literally stated | Smaller schema, faster Phase 27 | Re-creates the `da65` expressiveness boundary the project rejected `cc65` for; a schema migration once real data exists | **Never.** The vocabulary is `DECOMP-01`'s sizing input and the one irreversible decision in the milestone |
+| Undo stack in memory only | Undo "works" in one session; no serialisation design | The durability control and the undo control are both green over a store that cannot undo across a restart | Never — the combined planted-violation test costs one test, not one phase |
+| Hash-delta as the persistence proof | One line, reads as rigour | A truncated save passes; an idempotent save fails | Only as a *supplement* to the mutate→kill→reopen read-back, never instead of it |
+| Verify export by string-matching the exporter's own output | No ACME needed, runs in CI unconditionally | This is the same-pass fixture failure the project has been taught six times; the Phase 4 opcode table was internally pinned and still shipped 14 wrong entries | Never for a reassembly claim. Acceptable for *formatting* assertions, labelled as such |
+| Delete `r2000-*`-prefixed modules by prefix | 25,759 lines in one commit | Six capability modules and a Validated requirement go with them (Pitfall 17) | Never. Classify first, delete second |
+| Lower a non-vacuity floor to green a red suite | Immediate green | A permanently-green guard, and `ENGINEERING_RULES.md` §6's "a permanently-green test is not evidence" | Never. Re-point, then re-plant the violation |
+| Keep the store single-process-only, no revision check | No concurrency design | Silent annotation loss across two sessions or a CLI verb; a clean file with missing findings | Only with the limitation stated in the module header and the tool description, and a refusal rather than a silent overwrite |
+| Skip `fsync` | Matches five existing call sites; simpler | Machine-crash durability is not held | **Acceptable** — with the ceiling stated. Consistency with the existing idiom beats a lone divergence |
+| Archive phase directories at the v0.7.0 close | Tidier `.planning/` | Reds `skill-attribution.test.ts` and removes this milestone's own tool-surface derivation input | Never, until both readers can read the archive |
+
+---
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
-|--------------|------------------|-------------------|
-| regenerator2000 persistent session (this milestone's core change) | Assuming spawn-per-call session-safety habits (single connection, single writer) still hold once the process stays up | Re-derive session-safety explicitly for the persistent model; reuse the VICE broker's single-owner/verified-kill/epoch patterns rather than inventing lighter equivalents (Pitfall 9) |
-| `.regen2000proj` direct JSON edits (the existing synthesiser's own technique) | Editing the project file while a live session has it open | Force settings only at bootstrap, before a session opens the file, or via the live session's own tool surface (Pitfall 9, point 6) |
-| Upstream `.agent/skills/` absorption | Treating "read the GitHub repo" as equivalent to "the installed crate documents this" | The installed 0.9.20 crate does not ship `.agent/skills/` at all (`exclude`d from the package) — fetch and pin a specific commit/tag independently, and verify compatibility with 0.9.20 (Pitfall 10) |
-| `c64-ram-capture`'s `compare.mjs` reused for behavioral equivalence | Calling it unmodified and trusting a PASS/FAIL verdict tuned for same-binary reproducibility | Extend its volatile mask, add an intentional-difference allowlist, and add a write-trace comparison before trusting a verdict on two different binaries (Pitfall 8) |
-| `c64-memory-mapping`'s generated enum names | Treating an auto-generated register-name substitution as evidence a write is "documented" | Enum substitution answers "what does this hardware register do," never "why does this program do it here" — require both (Pitfall 16) |
+|---|---|---|
+| **Real ACME 0.97** | Deriving the verdict from the exit code, or from an aggregate "all passed" line | Parse the per-assembler result line; treat "did not run" as a third outcome; byte-diff for identity. Both false-pass directions must be re-proved (Pitfall 9) |
+| **Real ACME — illegal opcodes** | Emitting a mnemonic for an opcode ACME cannot assemble. 221/256 opcodes are assembler-expressible under `!cpu 6510`; the remaining 35 are not | Emit `!byte $xx` with a comment naming the opcode; never invent a mnemonic. Round-trip byte-identity is the check, and it is the exact instrument that caught 14 wrong entries in an internally-verified table |
+| **Real ACME — `=*+$01`** | Treating the mid-instruction label idiom as an origin directive (`*=`) rather than a label definition, or emitting it at the instruction start instead of the operand byte | It names the **operand byte** of a self-modifying write. Emitted wrong it either fails to assemble (fine) or relocates the following code (silent, catastrophic). Verify by byte-identity, on a fixture that *contains* self-modifying code — the pivot fixture has one |
+| **Real ACME — layout** | Assuming reassembly preserves addresses. A label substituted for a zero-page literal changes the addressing mode and the instruction **length**, shifting everything after it | Assert `*` equals the original address at the start of every block, not only at the program start. Byte-identity catches it; a "reassembles clean" assertion does not |
+| **CI's ACME provisioning** | Assuming the `acme` on `PATH` is ACME. CI already greps the binary's own banner because a name is not proof | Keep `probeAcme()`'s banner check; keep `VICE_REQUIRE_ACME` turning absence into a FAIL (Pitfall 10) |
+| **`memmap.json`** | Flat lookup, first-match, or description-length selection; lookup inside the loaded image; address resolved before bank state | All four rules, all four silent. `memmap.json` is **more** load-bearing after the pivot, and is pinned by `memmapSha256` in the enum generator — a store that copies its data instead of joining against it forks the truth |
+| **MCP tool-surface compatibility** | Adding the store to `tools-manifest.json` and reddening the fork's byte-identity regression gate; or registering proxy-locally and never telling the user the tools exist | The `r2000_*` family was in **neither** the manifest nor `capability-registry.ts`. STORE-03's registry declaration is new: check all four registry consumers and the generated `docs/tool-support.md` drift guard before choosing |
+| **`buildViceTool()` / `forwardToVice()`** | Registering a store tool behind `call()`, where `rewriteArguments()` has already host-translated its paths | Register proxy-locally exactly as the `r2000_*` family does, so the constraint is satisfied **by construction**. Both `rewriteArguments()` call sites are then unreachable — and the CLAUDE.md line citations must be re-verified after `vice-proxy.ts` shrinks (Pitfall 18) |
+| **The store's project path** | Accepting a caller-supplied path and resolving it anywhere but the one seam | `resolveStorePath()`'s job today: resolve against `repoRoot()` only, `realpathSync` before use, refuse escape. Container-side, so **no** host-path translation module may be imported — asserted structurally by the derived-from-disk consumer-set guard, which must be re-pointed at the new family (Pitfall 16) |
+
+---
 
 ## Performance Traps
 
+Scale here is a 64 KB address space and a handful of concurrent sessions, so "performance" means
+"a data structure whose wrong shape produces a wrong answer or an unusable latency in an
+interactive agent loop", not throughput.
+
 | Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|-----------------|
-| Full-64K byte-level comparison as the *only* equivalence check | Comparator run time grows with capture count; genuine equivalence buried under a wall of expected-but-unclassified differences | Layer the check: structural (RAM outside the revised volatile mask), behavioral (screen content, hardware write trace), and only then eyeball raw byte counts | Once more than a handful of intentional differences exist per comparison, a flat byte-diff becomes unreadable and gets rubber-stamped instead of read |
-| Re-parsing/re-loading a `.regen2000proj` on every tool call (today's model) | Slow per-call latency motivating the persistent-session move in the first place | This milestone's own persistent-session work is the fix — but see Pitfall 9 for what it must not break to get there | Already breaking today at whatever call volume motivated this milestone |
-| Cross-reference/hazard-detector scans re-run from scratch on every incremental annotation | Slows down interactively as the binary's annotation grows | Cache/derive incrementally where the store supports it, but never skip a full re-scan before a phase's final gate (Pitfall 12's "run against real fixture" applies to the final answer, not every intermediate one) | Once binaries exceed a full 64K with dense annotation, from experience with this project's own `vice-proxy.ts`-scale files |
+|---|---|---|---|
+| One record per byte | 65,536-entry arrays serialised on every save; a multi-MB store file for a 40 KB program; save latency inside an agent's tool call | Store **ranges**, not bytes. The census may expand to bytes in memory; the file never does | Immediately on a full 64 KB image — which is the normal input, not the edge case |
+| Linear scan for range lookup, called per instruction during export | Export time quadratic in annotation count; "the exporter is slow" filed as a UX bug | Sort ranges once and binary-search, or build a boundary index at load. The narrowest-containing-range rule needs an ordered structure anyway | A few thousand ranges — reachable on one real cracked release |
+| Full-store rewrite on every mutation | Every `set_comment` writes the whole file; an agent setting 200 comments writes 200 full stores | Batch, or make the save explicit (upstream's `save_project` shape). Whatever the choice, the durability bar still applies to the last mutation | A `routine-queue-walker` pass, which is exactly the designed workload |
+| Cross-reference search over the whole typed decode, recomputed per query | Multi-second `search_disassembly`; the agent stops using the store and re-derives (the `CORE-01` reversal condition (a) failure) | Cache the decode keyed on `(image hash, revision)`, invalidate on the revision counter that Pitfall 14 already requires | A 64 KB image with a few hundred queries — one recon session |
+| Undo log unbounded | Store file grows without limit; reopen slows; the log dominates the file | Bound it, with the bound in the schema and the drop recorded rather than silent | A long session; harmless until the file is the artifact someone diffs |
+
+---
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
-|---------|------|------------|
-| Binding the persistent regenerator2000 HTTP MCP session on `0.0.0.0` (its likely default, unverified this session) without the broker's capability-token discipline | Any host on the local network segment could read or mutate the analysis session for a binary being reverse-engineered | Apply the same token-gated, `timingSafeEqual`-compared control-plane pattern the VICE broker's control listener already uses, rather than trusting a bare port bind (mirrors `PKG-04`'s accepted-risk analysis — do the analysis explicitly rather than skip it because "it's just a disassembler") |
-| Treating a `.regen2000proj` or absorbed-skill file as trusted input because it's "just documentation" | An externally-fetched skill file or project file could carry a prompt-injection payload interpreted as instructions by a session reading it via a Read/agent flow | Apply the standard untrusted-input boundary discipline to anything fetched from upstream's GitHub repo during absorption, the same as any other external content ingested into an agent's context |
+|---|---|---|
+| Accepting a caller-supplied store path without resolution and containment | An LLM-driven tool writes a file anywhere the process can reach; path traversal via `..`, a symlink, or an absolute path | One seam resolves against `repoRoot()`, `realpathSync` before use, refuse anything outside the workspace — the discipline `resolveStorePath()` already implements and `PathOutOfWorkspaceError` already names |
+| Importing a host-path translation module into the store family | Breaks the container-side invariant and the tested closed consumer set; a path is translated for a process that never leaves the container | The derived-from-disk absence guard, **re-pointed** at the new family with its floor raised (Pitfall 16) |
+| A `tools_call`-shaped meta-tool on the store surface (batch execute) | Nested-argument smuggling past the deny-list — the exact shape `vice.ts`'s `DENY_LIST` exists to close | If a batch tool is offered, gate every inner name through the same curated-name assertion, recursively, before anything executes. One sanctioned exception, guarded, is the existing precedent |
+| Trusting store content as trusted input | Store comments/labels are first-party **untrusted** prose (an agent wrote them). Rendering them into ACME source, or into a shell command, without escaping | Treat store text as data. Labels are validated identifiers (reject, never sanitize); comments are escaped at emit; nothing from the store reaches a shell |
+| Leaving the `--vice` denial removed along with its subject | The invariant becomes moot for r2000 but the *pattern* (a static-analysis surface that must never reach the emulator) transfers to the new store | Record the fate explicitly: the spawn-seam guard's frozen set is genuinely empty after the removal (no child process exists), and the deny-list entry is reviewed rather than reflexively deleted |
 
-## UX Pitfalls
+---
 
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-------------------|
-| A coverage report showing one aggregate percentage | Looks authoritative, hides whether coverage is genuine or templated (Pitfall 16) | Report structural completeness, Auto/User ratio, and sample-audit result as three distinct numbers |
-| A relocation-hazard report that lists hazards without enumerating table lengths/bounding conditions for jump tables | A user "fixes" the reported hazard by symbolising the one entry the tool found and ships with N-1 silently wrong | Require the report to state, for every jump table, how its length/index range was established, not just that a table exists |
-| An equivalence-check verdict of PASS/FAIL with no distinction between "expected intentional difference" and "no difference at all" | A modifiability demo that correctly changed behavior looks identical, in the tool's own output, to total silent failure to build | Surface the allowlist match explicitly in the verdict output: "N intentional differences matched, 0 unexplained" |
+## Agent-UX Pitfalls
+
+The consumer is a Claude session, not a human. The failure modes are about what the agent
+*believes*.
+
+| Pitfall | Agent Impact | Better Approach |
+|---|---|---|
+| A tool answering "saved" from its own return value | The agent reports the finding as durable and moves on; the next session finds nothing. This is `saveAndVerify()`'s founding observation, one layer in | The tool's success path is a read-back, not a report. Never report persistence on the strength of the writer's own message |
+| A retype returning bare success while orphaning comments | The agent believes its earlier annotations survived; they are inert or contradictory | Return the affected-comment list in the result (Pitfall 7). An agent given a list will fix it; an agent given `{ok:true}` cannot |
+| Silent decline where bank state is path-dependent | An agent that gets no comment assumes none was needed | Return an explicit "declined, bank state path-dependent at `$xxxx`" record. `AUTO-05`'s decline must be *visible*, or it reads as coverage |
+| A missing tool answered with "unknown tool" | After the removal, an un-re-pointed playbook step gets an opaque failure and the agent improvises — usually by re-deriving from bytes, the exact cost the store exists to remove | The coverage gate (Pitfall 16) makes a dangling mention a **build** failure. For genuinely retired tools, refuse **by name** with the replacement named — the precedent `capability-registry.ts` sets for the three fork-only capabilities |
+| A stale read after an external write | The agent answers from a store that has moved. Nothing is wrong-looking about the answer | Revision-counter freshness check on every cached read (Pitfall 14) |
+
+---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **"Nothing left Undefined"**: verify the Auto/User label ratio, not just the
-      absence of the `Undefined` block type — a fully auto-renamed binary satisfies the
-      literal wording (Pitfall 16).
-- [ ] **"Every referenced address documented"**: verify the reference graph the coverage
-      check walks includes multi-entry indexed jump tables, which regenerator2000's own
-      cross-reference builder does not enumerate (Pitfall 2, Pitfall 14).
-- [ ] **"Every branch, JSR/JMP and data reference goes through a symbol"**: verify data
-      byte-pairs that decode to in-range addresses with incoming cross-references were
-      scanned, not just instruction operands (Pitfall 1).
-- [ ] **"A relocation-hazard report enumerates what blocks movement"**: verify it names
-      *table lengths* for jump tables (not just "a jump table exists here"), and names
-      SMC write-target-in-Code-block hits from an actual scan, not from manual review
-      (Pitfall 2, Pitfall 3).
-- [ ] **"Behavioural equivalence in VICE via `compare.mjs` is the milestone's final bar"**:
-      verify the volatile mask and checkpoint-alignment logic were actually extended for
-      two-different-binaries comparison — the shipped tool has only ever been run
-      same-binary (Pitfall 8).
-- [ ] **"Modifiability is demonstrated"**: verify a committed VICE transcript exists
-      showing the before/after difference actually observed, not a described walkthrough
-      (Pitfall 15, echoing Phase 8.1).
-- [ ] **"Upstream's five analyze procedures are absorbed"**: verify each absorbed file
-      carries a specific source commit/tag and licence header, and that its tool calls
-      were diffed against the curated 17 (Pitfall 10).
-- [ ] **"A regenerator2000 project stays open across a whole working session"**: verify a
-      crash/kill mid-session was actually exercised and the resulting state-loss/recovery
-      behavior observed, not merely that the happy path was demoed (Pitfall 9).
+- [ ] **Per-range typing:** often missing the split-table orientation and element-kind variants —
+      verify a `lo_hi_address` fixture and a `hi_lo_address` fixture of the same bytes produce
+      **different** resolved targets.
+- [ ] **Range model:** often missing the split-on-overwrite case — verify total typed-byte count
+      is unchanged after a fully-contained retype.
+- [ ] **Persistence:** often proved by a same-process reopen or a hash delta — verify by
+      `SIGKILL` and a **fresh process**, reading the mutation back by value.
+- [ ] **Undo:** often in-memory only — verify undo **after** the kill-and-reopen, in one test.
+- [ ] **Concurrency:** often single-process only — verify a write from a second process is seen
+      or refused, never silently overwritten.
+- [ ] **ACME export:** often verified against the exporter's own string output — verify by real
+      ACME **and** byte-diff, and verify the "ACME absent" path FAILS under
+      `VICE_REQUIRE_ACME=1`.
+- [ ] **Self-modifying write targets:** often absent from the fixture entirely — verify the
+      `=*+$01` idiom on a fixture that actually contains self-modifying code.
+- [ ] **Illegal opcodes:** often only tested on the 221 expressible ones — verify a fixture
+      containing one of the 35 inexpressible bytes round-trips byte-identically as `!byte`.
+- [ ] **Grep gate:** often scoped to playbooks — verify it bites on a planted `.ts`, a planted
+      `docs/*.md`, and a planted `scripts/*.mjs`, and that deleting an `ATTRIBUTION (ABS-02)`
+      block **also** trips it.
+- [ ] **Guard fates:** often "the suite is green" — verify each re-pointed guard can still be
+      made to **fail** against its new subject. A guard you cannot redden is not re-pointed.
+- [ ] **Skill re-pointing:** often prose only — verify `templates/memory-map.template.md`,
+      `scripts/packer-finding.mjs` and the 13 CLI-verb mentions are in the diff.
+- [ ] **Packaging:** often stale `files[]` — verify `scripts/check-npm-packages.mjs` **fails**
+      when a listed file is absent, then verify it passes on the real tree.
+- [ ] **Full suite:** often `test:automated` — verify with `npm test` (the CI glob), with the
+      broker stopped.
+- [ ] **Line citations:** often stale after `vice-proxy.ts` shrinks — verify
+      `docs-linerefs.test.ts` green with the **re-cited** numbers, not a loosened assertion.
+
+---
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|----------------|------------------|
-| A relocation shipped that turns out to have broken a jump table or SMC site | MEDIUM | Bisect via `c64-provenance-diff`-style anchor comparison against the pre-relocation binary at the affected address range; the original `.d64`/binary stays the ground truth to diff against, per this project's existing provenance workflow |
-| A persistent regenerator2000 session crashes with unsaved annotations | LOW–HIGH depending on save discipline | If autosave/frequent-save discipline (Pitfall 9) was followed, reload from the last save; if not, the loss is total for that session — this is the argument for building the save discipline before relying on the persistent model at all |
-| `compare.mjs`-based equivalence check reports a false FAIL on an intentional change | LOW | Add the difference to the run's explicit allowlist (once built, per Pitfall 8) and re-verify; do not silently accept a manual "looks fine to me" override without recording why |
-| Absorbed procedure text found to reference an unavailable tool mid-use | LOW | Fall back to the curated 17-tool surface's nearest equivalent, or file the gap as a scope-widening candidate per the measured-caller test, rather than patching the absorbed prose ad hoc |
-| Coverage report later found to have been gamed by templated auto-labels | HIGH | Requires an actual second-pass annotation effort against the flagged Auto-ratio regions — there is no mechanical shortcut once vacuous coverage has been recorded as complete, which is exactly why Pitfall 16's prevention must run *before* the milestone is declared done, not after |
+|---|---|---|
+| Type vocabulary too narrow, data already exists | **HIGH** | Schema migration over live annotation stores; split-table orientation is unrecoverable from stored data (it was never recorded) and must be re-derived or re-annotated. This is why it is the one decision to get right in Phase 27 |
+| Range model drops instead of splits | MEDIUM | Fix the seam; the lost typing is unrecoverable but re-derivable from the engines later. Add the byte-accounting invariant so it cannot recur |
+| Undo not persisted | LOW | Serialise the log; the missing history for existing stores is simply absent, stated rather than backfilled |
+| Silent annotation loss from concurrent writes | MEDIUM–HIGH | Unrecoverable per-loss. Add the revision refusal, then re-annotate. Detectable retroactively only if the other session's transcript survives |
+| ACME verification was never actually running | MEDIUM | Re-run the full export corpus under real ACME; every claim made in the window drops to fixture level and must be re-worded, per `ENGINEERING_RULES.md` §8 |
+| Guard lowered to green rather than re-pointed | LOW to fix, HIGH if undetected | Restore the floor, re-point the glob, re-plant the violation. The tell is a guard that cannot be made to fail |
+| Deletion removed a capability module | LOW | `git revert` the file; the removal is one commit and the history is intact. Cheap **only if noticed** — which is why the capability/glue classification precedes the deletion |
+| A skill left pointing at a deleted route | LOW | Re-point; but until noticed, every session using that skill re-derives from bytes. The coverage gate is what converts this from "noticed eventually" to "noticed at build" |
+| Phase directories archived at the close | LOW | Restore from git; but note the milestone's own design input lives there |
+
+---
 
 ## Pitfall-to-Phase Mapping
 
-| Pitfall | Prevention Phase | Verification |
-|---------|-------------------|----------------|
-| 1 — unmarked data-as-address | Relocation-hazard-report phase | Scanner output lists every in-range byte-pair with an incoming xref; each has a recorded human/agent disposition |
-| 2 — indexed jump tables | Relocation-hazard-report phase | Every table's index range is documented from its bounding compare/mask, and every entry is individually exercised in the equivalence-verification phase |
-| 3 — self-modifying code | Relocation-hazard-report phase | A STA/STX/STY/INC/DEC-target-in-Code-block scan exists and its output is reviewed, not manually derived |
-| 4 — page-alignment / cycle timing | Relocation-hazard-report phase (flag) + functional-equivalence phase (verify) | Live VICE raster/CIA trace confirms unchanged cycle count for every flagged chain |
-| 5 — cycle-exact raster code | Same as above | Video/`$D012` comparison, not RAM diff alone |
-| 6 — illegal-opcode degradation | Annotate/export pipeline phase | Grep exported `.a` sources for `!byte` fallback lines inside labeled regions; `use_illegal_opcodes` verified set on every session, not just synthesis |
-| 7 — overlapping/interleaved code-data | Coverage-measurement phase + provenance-aware rebuild phase | Cross-reference boundary check run per routine; provenance-diff run before rebuild attempted on flagged regions |
-| 8 — equivalence comparator scope gap | Functional-equivalence-in-VICE phase | Comparator demonstrably run original-vs-different-binary at least once (the modifiability demo) with the extended mask/allowlist/trace, not only same-binary |
-| 9 — persistent-session lifecycle | Persistent-session phase (first, before absorption work depends on it) | Crash/kill/reconnect scenario actually exercised, not only the happy path |
-| 10 — absorption licence/version/tool-surface | Absorption phase | Attribution header per file with pinned commit; tool-call diff against curated 17 committed as evidence |
-| 11 — 7-way concurrency model | Absorption phase (go/no-go on the concurrency question specifically) | A concurrent-write test against the persistent session either passes with evidence or the model is explicitly not adopted |
-| 12 — internal-check-standing-for-external (6th+ instance) | Every phase building a verification instrument | Instrument's own validation includes a real, previously-unseen fixture, cited as evidence |
-| 13 — instrument built after the work it gates | Roadmap sequencing | Hazard detector and coverage tool ship before substantial decomposition work, not after |
-| 14 — guard narrower than its subject | Coverage-measurement phase | Scanner walks raw bytes/instructions independently of the store's own classification bookkeeping |
-| 15 — capability claimed with no measured caller | Every phase closing an empirical requirement | Named artifact (diff, transcript, evidence directory) exists before Validated status is recorded |
-| 16 — vacuous "well documented" | Coverage-measurement phase | Auto/User ratio, sampled independent reproducibility check, and modifiability-demo region re-verification all reported alongside structural completeness |
+Phase numbers are **proposed roles**, not a roadmap — `PROJECT.md` records that v0.7.0
+numbering starts at **27** and that numbers are never reused. A roadmapper should map the roles,
+not the digits.
+
+| Pitfall | Prevention Phase (proposed role) | Verification — and what RED looks like |
+|---|---|---|
+| 1. Narrow type vocabulary | **27 — Store core** | Same-bytes lo-hi vs hi-lo fixtures resolve to different targets. RED: collapse to one `table` type and the target-set inequality fails |
+| 2. Inclusive-end off-by-one | 27 — Store core | One-byte range reports length 1; `$FFFF` handled. RED: switch the model to exclusive |
+| 3. Partial overwrite | 27 — Store core | Total typed bytes unchanged across all five overlap cases. RED: replace split with filter-and-insert |
+| 4. Address/offset/hex | 27 — Store core | `.prg` and flat-64K of one program annotate identically. RED: reintroduce the 2-byte skew |
+| 5. Flat vs banked | 27 (reserved field + schema version); resolution stays with held 26 | Schema carries `bank` and a version; unqualified I/O annotations documented as bank-scoped. RED: n/a this milestone — record the ceiling instead of claiming coverage |
+| 6. Label collisions / sanitising | 27 (rejection) + 29 (ACME confirmation) | Duplicate name refused; real ACME reports duplicate-symbol with the refusal removed |
+| 7. Comment anchoring on retype | 27 — Store core | Retype returns the contradicted-comment list. RED: drop the check and the call returns clean success |
+| 8. Enum on the wrong operand | **29 — ACME export** | `lda #$1b`/`sta $d011` renders with the enum and reassembles byte-identical. RED: allow application to an address operand |
+| 9. The `--verify` seam cannot be reused | **29 — ACME export**, before 31 | Two reds: missing-ACME must not pass; a corrupted byte must fail while ACME exits 0 |
+| 10. `r2000-test-gate.ts`'s ACME half | 27 (earliest) / 29 (latest), before 31 | `VICE_REQUIRE_ACME=1` + bogus `ACME_BIN` must **FAIL**, not skip |
+| 11. Hash-delta as durability | 27 — Store core | mutate → `SIGKILL` → fresh-process reopen → read back. RED: skip the `rename`; also truncate-and-reopen must refuse |
+| 12. tmp+rename ≠ `fsync` | 27 — Store core | Wording gate at the phase boundary: "durable across process death" only |
+| 13. Undo across restart | 27 — Store core | One combined test: mutate → kill → reopen → **undo** → assert prior value. RED: keep the log in memory |
+| 14. Concurrent writers | 27 (revision) + 28 (single serialiser) | Cross-process write is seen or refused. RED: remove the revision check |
+| 15. Grep-gate scope | **31 — The removal**, gate built first | Three plants bite (`.ts`, `docs/`, `scripts/`); a deleted `ATTRIBUTION` block also bites; a plant in the synced `installer/skills/` bites |
+| 16. Vacuous guards | **31 — The removal**, as a gate precondition | Each re-pointed guard re-runs its **own** planted violation. RED: a guard that cannot be made to fail |
+| 17. Under-named reuse list | 27–29 (re-homing) then 31 (deletion) | All 16 non-test modules classified glue/capability/superseded; no `✓`-Validated requirement un-shipped without a decision |
+| 18. Expected reds mistaken for defects | 31 — The removal | A pre-declared expected-failure list; `docs-linerefs` green on **re-cited** numbers |
+| 19. `test:automated` hides it | 31 — The removal | Full `npm test`, broker stopped, command named in the evidence |
+| 20. Orphaned fixtures/manifests | 31 — The removal | `check-npm-packages.mjs` fails on a missing listed file, then passes; `package.sh` green; `--no-archive-phases` at the close |
+| 21. Skills re-pointed incompletely | **30 — Skill re-pointing**, before 31 | Mechanically derived 82-mention + 13-verb checklist fully consumed; coverage gate red on any dangling mention |
+
+**Ordering consequences the roadmapper should treat as hard:**
+
+1. **The removal is last.** Phase 31 after 30, and 30 after the surface exists (28) — otherwise
+   the grep gate cannot distinguish "not yet re-pointed" from "reintroduced", and the milestone's
+   own gate requirement becomes unenforceable.
+2. **The ACME gate module and the ACME producer must be re-homed before the deletion**, not
+   after. Between them there is a window with no working external oracle, and every claim made
+   in it sits at fixture level.
+3. **The store's type vocabulary is the first irreversible decision.** It is `DECOMP-01`'s
+   sizing input (deferred to v0.9.0) and the thing a schema migration cannot recover.
+4. **Build every gate before the thing it gates.** The `4f048bb` precedent — a milestone closed
+   with a guard already red and nothing forcing anyone to notice — is the reason Phase 12 was
+   sequenced first in v0.4.0, and the same argument applies to Phase 31's grep gate and guard
+   fates.
+
+---
 
 ## Sources
 
-- `.planning/PROJECT.md` — Active requirements, Context, Constraints, Key Decisions
-  (v0.4.0 close, v0.5.0 scope opened 2026-08-23).
-- `CLAUDE.md` — project constraint list, encoding prior hard-won protocol/architecture
-  findings.
-- `.planning/RETROSPECTIVE.md` — cross-milestone lessons, especially "an internal check
-  does not substitute for an external one" (verified across three milestones, eight
-  instances) and "a guard's scope is itself a claim to be checked."
-- `.planning/codebase/CONCERNS.md` — broker fragility, the 2026-08-01 triple-launch
-  outage, and the single-owner `inFlight` guard it produced.
-- `docs/phase9-regenerator2000-probe-findings.md` — the go/no-go probe against real
-  regenerator2000 0.9.20; source of the confirmed `.vsf` cross-connection incident, the
-  `use_illegal_opcodes` default defect, and the `.vsf` machine-type auto-detection
-  limitation.
-- `src/skills/c64-ram-capture/SKILL.md` and `scripts/compare.mjs` — the existing drift
-  floor and difference-classification machinery this milestone must extend, read in full
-  this session.
-- `regenerator2000-core-0.9.20/src/analyzer.rs`, `state/types.rs`
-  (`~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`) — read directly this
-  session to confirm `follow_indirect_jumps`'s single-fixed-target limitation (no
-  indexed-jump-table enumeration), the absence of any self-modifying-code detection
-  anywhere in the crate, and the `LabelKind::Auto`/`User`/`System` and `BlockType`
-  (including `LoHiAddress`/`HiLoAddress`) enum shapes.
-- `regenerator2000-0.9.20/Cargo.toml` — confirmed `.agent/**/*` is excluded from the
-  published crate, meaning the installed binary does not carry the skills text this
-  milestone absorbs.
-- General NMOS 6502/6510 hardware facts (relative branch range, indexed-addressing
-  page-crossing cycle penalty, RTS-trick calling convention, raster-IRQ cycle-exactness) —
-  standard, well-established 6502/C64 domain knowledge, cross-checked against this
-  project's own documented C64-specific findings rather than restated from a generic
-  source.
+All findings below were produced by direct inspection of this repository's working tree on
+2026-08-26 — commands, not recall. No external provider was consulted: the question is about
+*this* codebase's integration and removal surface, for which the repository is the primary
+source and the strongest available one.
+
+- **Store semantics and vocabulary:** `src/mcp/vice/r2000-tools.ts` (tool schemas, the 12-type
+  `data_type` enum, inclusive range wording, `CURATED_R2000_TOOLS`, `resolveStorePath()`,
+  batch-recursion gate), `r2000-project.ts:339` (tmp+rename), `r2000-session.ts`
+  (FIFO mutex, `inFlight`, `mtimeMs` staleness, restart budget, the two deliberate absences),
+  `r2000-mcp-client.ts:780-795` (`saveAndVerify()`), `r2000-confidence.ts`
+  (five-grade vocabulary), `r2000-acme-ident.ts`, `r2000-coverage.ts` (census header, the
+  dispatch-context gate, its six named traps).
+- **Export/reassembly:** `r2000-verify.ts` (the D-10 false-pass transcript, the WR-04 unanimity
+  fix, `AssemblerOutcome`), `r2000-test-gate.ts` (both gates, `VICE_REQUIRE_ACME`),
+  `disasm-roundtrip.test.ts`, `src/skills/acme-build/scripts/acme.mjs:124`,
+  `.github/workflows/ci.yml:45-140` (ACME install, banner grep, `VICE_REQUIRE_ACME: "1"`,
+  the deliberate `npm test` over `test:automated`).
+- **Removal surface:** `wc -l` over `r2000-*.ts` (10,102 non-test + 15,657 test);
+  `git grep -l regenerator2000` (291 tracked / 55 outside `.planning/`);
+  `.gitignore:43` (`/installer/skills/`) with 11 mentions in the generated tree;
+  `package.json` `files[]` (19 r2000 entries); `scripts/check-skill-fork-honesty.mjs` (its
+  actual walk scope and its own comment on that scope); `skill-honesty-checks.test.ts`
+  (the `toacme` gate's live child-process plants and its check-ordering regression);
+  `scripts/check-skill-tool-coverage.mjs` + `scripts/lib/r2000-cli-verbs.mjs`
+  (`CURATED_R2000_TOOLS` import, `R2000_CLI_VERB_FLOOR`);
+  `hostpath-consumers.test.ts:173-240` (derived glob, `R2000_MODULE_FLOOR`, positive control,
+  planted violation); `skill-attribution.test.ts` (5-row registry, manifest-length relation,
+  `src/skills/`-only scope); `docs-linerefs.test.ts`, `docs-dangling-refs.test.ts:39-56`,
+  `docs-r2000-decisions.test.ts`; `test-gate.mjs:95-105` (`MANUAL_ONLY_TESTS`);
+  `ci-suite-coverage.test.ts:68-74` (`installer/skills` as gitignored generated output);
+  `src/mcp/vice/fixtures/coverage/` (12 dirs, `store.json` + `project.regen2000proj`,
+  `make-coverage-fixtures.mjs`).
+- **Skill surface:** `grep -ro "r2000_[a-z_]*" src/skills` (82 mentions / 17 distinct names
+  across 5 files), `grep -rn "vice-mcp r2000" src/skills` (13), the five
+  `ATTRIBUTION (ABS-02)` blocks and their five synced twins.
+- **Project record:** `.planning/PROJECT.md` (Current Milestone v0.7.0, the two scope decisions
+  of 2026-08-26, Constraints, Key Decisions incl. `--no-archive-phases`, `FORK-01`, `CORE-01`,
+  `D-36`), `.planning/REQUIREMENTS.md` (`STORE-01..06`, `CUT-01..03`, `AUTO-01..07`),
+  `.planning/ENGINEERING_RULES.md` §§5-8, 11, 17-19, `CLAUDE.md` constraints,
+  `.planning/notes/auto-annotation-from-ghidra-xrefs.md` (the four silent join rules).
 
 ---
-*Pitfalls research for: c64-re-tools v0.5.0 (binary-to-rebuildable-source pipeline)*
-*Researched: 2026-08-23*
+*Pitfalls research for: owning the annotation store and removing regenerator2000 (v0.7.0)*
+*Researched: 2026-08-26*

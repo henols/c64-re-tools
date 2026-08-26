@@ -1,12 +1,36 @@
 # Stack Research
 
-**Domain:** MCP session-lifecycle management + multi-file ACME source emission (v0.5.0, "The rebuild half")
-**Researched:** 2026-08-23
-**Confidence:** HIGH — every claim below is either read directly from the installed `regenerator2000` 0.9.20 crate source at `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/`, the installed binary's live `--help` output, this repo's own committed source, or ACME 0.97 "Zem"'s own shipped documentation (`/usr/share/doc/acme/*.txt`). No claim below is from memory of prior LLM training data about these tools.
+**Domain:** An owned, persistent, undoable annotation store with per-range interval typing over a 64K address space, reached through a proxy-local MCP surface (v0.7.0, "Own the Annotation Store")
+**Researched:** 2026-08-26
+**Confidence:** HIGH — every number, version and API fact below was produced this session by running the real thing on this host, reading the upstream git source, or querying the npm registry API. Nothing is recalled from training data. See "Sources and evidence ceilings" for what each claim rests on and which two claims are weaker.
+
+> **Note on the confidence seam.** `gsd-tools query classify-confidence` has no provider id for "ran the binary locally / read upstream git". Its taxonomy returns `LOW` for `npm`/`registry`/`local` and `MEDIUM` for `context7`. That taxonomy is inverted relative to this project's own normative hierarchy (`ENGINEERING_RULES.md` §7: *real external system / live end-to-end behavior* is the top tier). The confidence tiers stated in this document follow §7, which is the governing rule here, and every claim names its oracle so a reader can re-grade it.
+
+---
 
 ## Headline finding
 
-**No new runtime dependency is needed for either half of this milestone's enabler work.** The persistent session is built by extending `src/mcp/vice/r2000-mcp-client.ts`'s existing hand-rolled `node:child_process`/`node:readline` client (same libraries it already uses) to survive across calls instead of one-shot. The multi-file ACME emission is built entirely in this repo's own TypeScript over regenerator2000's existing `r2000_read_region`/`r2000_get_symbols`/`r2000_get_comments`/`r2000_get_cross_references` tools and ACME's already-supported `!source` mechanism — `src/skills/acme-build/scripts/acme.mjs` needs **zero code changes** to assemble the result. This keeps the milestone inside `ENGINEERING_RULES.md` §4's dependency bar (no new dependency to justify) and inside the "no build step for the shipped server" constraint.
+**No new runtime dependency. One new built-in module.**
+
+The store is built on **`node:sqlite`** — a Node built-in since v22.5.0, out from behind `--experimental-sqlite` since v22.13.0, therefore already unconditionally available at this project's declared floor of `>=22.18.0`. It adds:
+
+- zero entries to `dependencies`
+- zero bytes to either published tarball
+- zero change to `package-lock.json`, so the `SessionStart` lockfile-hash gate stays a no-op
+- zero build step (it is `internalBinding('sqlite')`, not a native addon)
+- zero change to the documented prerequisite story
+
+`ENGINEERING_RULES.md` §4's six-point dependency bar is therefore **not triggered at all** — there is no new dependency to justify. The prior milestone's conclusion ("no new runtime dependency was needed") holds for this milestone too, and for a stronger reason: the capability that previously had to be hand-rolled is now in the runtime.
+
+Three things stay owned code, deliberately, because measurement says the libraries are worse:
+
+| Concern | Decision | Why |
+|---|---|---|
+| Per-range typing / narrowest-wins lookup | **~60–120 lines of owned code** (paint array + run-length) | 0.018 µs/lookup vs 42.6 µs for the SQL formulation and 4.6 µs for a naive scan. Every surveyed interval-tree package returns *all* overlapping intervals with no narrowest-wins tie-break, so you write the deciding logic regardless. Measured, cross-validated. |
+| Undo | **Inverse-command journal in the same SQLite transaction** | SQLite savepoints do not survive process exit; the session/changeset extension is exposed but `sqlite3changeset_invert` is **not**, so inverses cannot be derived mechanically. |
+| Tool-argument validation | **Owned, hand-rolled, named-error** | `vice-proxy.ts:3216-3230` performs *no* argument validation by design (`validate: (value) => ({ value })` always succeeds). Do not add `zod` — it is present only as a transitive `@mastra` dependency. |
+
+---
 
 ## Recommended Stack
 
@@ -14,173 +38,387 @@
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| `regenerator2000 --mcp-server-stdio` | 0.9.20 (installed, `regenerator2000 --version` confirmed live) | The persistent-session transport | The **only** collision-free option. `--mcp-server` hardcodes HTTP port 3000 with no CLI override — confirmed by reading `main.rs:397`, `regenerator2000_core::mcp::http::run_server(3000, mcp_req_tx)`, a literal `3000` passed to a function whose own signature (`http.rs:153`, `pub async fn run_server(port: u16, ...)`) *could* take a different port — the CLI simply never exposes one. `--mcp-server-stdio` has no port at all: it is a plain `spawn()`ed child reading newline-delimited JSON from stdin and writing to stdout (`stdio.rs`'s `run_headless_stdio_loop`), so N concurrent projects/containers each get their own private pipe with no shared listener to collide on. |
-| `node:child_process` (`spawn`, not `spawnSync`) | Node ≥ 22.18 built-in | Spawns and holds the long-lived regenerator2000 child | Already the mechanism `r2000-mcp-client.ts`'s `withR2000Session()` uses. No change of primitive — only a change to *how long the process is held open* (see Session-lifecycle section below). |
-| `node:readline` (`createInterface`) | Node ≥ 22.18 built-in | Frames the child's newline-delimited JSON-RPC stdout | Already used in `r2000-mcp-client.ts`. regenerator2000's own stdio loop is confirmed (read live in `stdio.rs`) to emit exactly one JSON object per `println!` per response — no framing ambiguity to solve. |
-| ACME | 0.97 "Zem" (31 Jan 2021), on `$PATH` | Assembles the multi-file, `!source`-wired rebuild output | Already the project's fixed assembler (`acme-build` skill). No version change and no new flags needed — `!source` and `-I` are already exercised by `acme.mjs`. |
+| `node:sqlite` (`DatabaseSync`) | Built-in. Bundles **SQLite 3.50.4** on the Node 22.22.0 on this host (`SELECT sqlite_version()`, run live). Added Node v22.5.0; flag removed v22.13.0 / v23.4.0 (nodejs/node PR #55890) | The durable store: symbols, comments, typed ranges, scopes, enums, edit journal | The only option that satisfies **all** of: no build step, no dependency, no prerequisite-story change, crash-safe transactions, and a real query language for the search/xref surface. Live-verified: mutate → `SIGKILL` with no `close()` → reopen returns the mutation, `PRAGMA integrity_check` = `ok`. Also verified working under Node's native type-stripping from a `.ts` file, and typechecking clean against the project's already-installed `@types/node` 24.13.3 (`node_modules/@types/node/sqlite.d.ts` exists). |
+| Owned paint-array interval index | new, ~60–120 lines | Narrowest-range-wins address → range lookup over the 64K space | O(1) lookup at **0.018 µs**; full rebuild for 2,700 ranges costs **7.5 ms**, so rebuild-on-mutation is affordable and no incremental-maintenance code is needed. The pattern already exists in this repo: `r2000-coverage.ts`'s `toRuns()` paints a `Uint8Array` then run-length-compacts it. Extend an established seam rather than adding a parallel one (`ENGINEERING_RULES.md` §1). |
+| Owned inverse-command journal | new, one SQLite table | Undo / redo across process restart | Satisfies the milestone's exact durability wording — *mutate → kill → reopen returns the mutation* — because the mutation and its inverse commit in **one** transaction. Measured **1.16 ms/edit** on ext4/NVMe with `synchronous=FULL`, i.e. the same order as a bare `fsync()`: transactional integrity costs nothing above the durability floor. |
+| `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` | existing, 1,042 lines | The typed decode the store annotates, and the ACME rendering | Already model `illegal-opcode` and `acme-unassemblable` as `DisasmNote`s and already round-trip byte-exact through real ACME (`disasm-roundtrip.test.ts`). `decode(bytes, startAddress, opts)` is the seam the store's typed-range engine calls per `code` range. |
+| `memmap.json` + `r2000-regbits-gen.ts` + `r2000-enum-gen.ts` | existing, 995 lines + 959 address entries | Machine knowledge and project enum generation | Retarget, do not rewrite. `r2000-enum-gen.ts` already owns `registerKeyFor()`, `variantNameFor()`, `pairImmediateLoadsToStores()`, `createOrUpdateEnum()` — the whole enum pipeline. Only its I/O tail (which currently talks to a regenerator2000 project) changes. Note `memmap.json` is **duplicated** at `src/skills/c64-memory-mapping/memmap.json` and `installer/skills/c64-memory-mapping/memmap.json`; the installer copy is synced by `installer/scripts/sync-skills.mjs`, so a retarget must not read the installer copy. |
+| ACME | 0.97 "Zem" (31 Jan 2021), at `/home/henrik/.local/bin/acme` on this host | External oracle for the ACME export | The reassembly gate. **See the correction below** — the route is *not* `r2000-verify.ts`. |
+| `r2000-test-gate.ts` → rename | existing, 166 lines | The shared ACME-availability seam (`ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()`) | This is the surviving ACME gate. It carries an `r2000-` name but is **not** regenerator2000 glue — it must be renamed and kept, and the whole-tree grep gate must not eat it. |
 
-### Supporting Libraries (all already-dependencies, none newly added)
+### Supporting Libraries
 
-| Library | Version (as installed in this repo) | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `@mastra/mcp` | 1.15.0 (`src/mcp/vice/package.json`) | Declared dependency that transitively vendors the MCP TypeScript SDK | Do **not** call its `MCPClient` for the persistent session (see Alternatives Considered). Its stdio server side (used by `vice-proxy.ts` to *serve* Claude Code) is unaffected by this milestone. |
-| `@modelcontextprotocol/sdk` | 1.30.0 (confirmed via `node_modules/@modelcontextprotocol/sdk/package.json`, hoisted transitively; `^1.29.0` pinned as a peer/transitive range in `package-lock.json`) | The package `StreamableHTTPClientTransport` lives in | **Not imported directly anywhere in this repo today**, and this milestone should not be the first to do so — `r2000-mcp-client.ts`'s own header already forbids it: "Never import the underlying MCP TypeScript SDK package directly. It is reachable today only as an undeclared transitive dependency of `@mastra/mcp`... a direct import here would be an ENGINEERING_RULES.md §4 phantom-dependency violation waiting for a dedup change to break it." That reasoning is unchanged by persistence. |
+**None.** No `npm install` runs in this milestone.
+
+| Library | Version present | Status for this milestone |
+|---------|---------|-------------|
+| `@mastra/mcp` | 1.15.0 (declared) | Unchanged. Serves the stdio surface; the store's tools register through `buildViceTool()` at `vice-proxy.ts:3263`, exactly as the 17 `r2000_*` tools do at `:3402`. |
+| `@mastra/core` | 1.55.0 (declared) | Unchanged, untouched. |
+| `@modelcontextprotocol/sdk` | 1.30.0 (transitive) | **Precision correction to a carried belief:** the repo *does* already import it directly — `vice-proxy.ts:174` imports `CallToolRequestSchema` from `@modelcontextprotocol/sdk/types.js`. The prohibition in `r2000-mcp-client.ts`'s header is scoped to that module (a *client* transport), not repo-wide. Do not widen the direct-import surface for the store; it needs nothing from the SDK. |
+| `zod` | 4.4.3 (transitive, via `@mastra`) | **Do not import.** Undeclared transitive. See "What NOT to Use". |
+| `@types/node` | 24.13.3 (dev) | Already ships `sqlite.d.ts`. No bump needed. Confirmed: `createSession` / `applyChangeset` typed; **no `invert`** anywhere in it. |
+| `typescript` | 7.0.2 (dev) | Typechecks `node:sqlite` usage clean under `--strict --module nodenext`. Verified. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| Node's built-in test runner (`node --test`) | Testing the new persistent-session module and the multi-file emitter | No new framework. A persistent-session test needs a stub regenerator2000-shaped child (same technique `r2000-mcp-client.test.ts` presumably already uses via `R2000_BIN`/`bin` override) — plus, per `ENGINEERING_RULES.md` §9 (Live-Test Policy) and this project's own repeated "internal check standing in for an external one" lesson, a live test gated behind the real installed binary, mirroring `r2000-spawn-seam.test.ts`'s existing pattern. |
-| Real ACME 0.97 | Verifying multi-file emission actually reassembles | `acme.mjs build <entry>.a -I <dir>` against a synthesized multi-file fixture, exactly as `disasm-roundtrip.test.ts`/`R2000-06`'s `--verify` gate already does for the single-file case. |
+| `node --test '*.test.*'` | All store tests | No new framework. Colocated `*.test.ts`. |
+| Real ACME 0.97 | The reassembly oracle for the export | Extend `disasm-roundtrip.test.ts`'s pattern: spawn `acme` with an **argv array** (never a shell string), byte-diff the result, and never treat an ACME stderr *warning* as failure (ACME 0.97 documents warnings on stderr). Gate through `r2000-test-gate.ts`'s `acmeSkipReasonFor()` / `VICE_REQUIRE_ACME`, so CI fails on a missing ACME while a local run skips visibly. |
+| `--disable-warning=ExperimentalWarning` | Silences the Node-22-only `node:sqlite` warning | Verified working on 22.22.0. **Do not make any test assert stderr is empty** as a proxy for success — see "Version Compatibility". |
+| `db.exec("PRAGMA integrity_check")` | Post-crash assertion in the durability test | Returns `{ integrity_check: 'ok' }` after an uncommitted-close `SIGKILL`. Live-verified. |
+| `node:sqlite`'s exported `backup()` | Pre-destructive safety copy | Mirrors the existing `incident-record.ts` "write evidence before any destructive action" precedent. Not the undo mechanism. |
+
+---
+
+## 1. Persistence format — the decision, and every option measured
+
+### The measurements (real disk, not tmpfs)
+
+Run on `/dev/nvme0n1p4`, ext4 — **not** in `/tmp`, which is a 16 GB tmpfs on this host and makes every `fsync()` nearly free, understating the JSON route's cost by ~2×. Seed store: 6,000 symbols, 3,000 comments, 2,500 typed ranges (561 KB as JSON, 712 KB as SQLite). Workload: 2,000 mutating tool calls, each durable on return (the project's existing `save-before-return` contract, D18-08).
+
+| Route | Per mutating call | Scales with | Notes |
+|---|---|---|---|
+| **`node:sqlite`, WAL + `synchronous=FULL`, one txn per edit incl. journal insert** | **1.16 ms** | edit size | The recommendation. |
+| Append-only NDJSON + `fsync()` per edit | 1.36 ms | edit size | Same order — the cost *is* the fsync. But you then own torn-tail detection, compaction, recovery and index rebuild. |
+| Whole-file JSON + atomic rename (`write` → `fsync` → `rename` → `fsync(dir)`) | **16.03 ms** | **total store size** | 14× slower and getting worse as the project grows. At 766 KB already; a fully annotated 64K program with per-address comments is several MB. |
+| SQLite narrowest-range lookup via SQL | 42.6 µs / lookup | — | 2.8 s for one full 64K pass. See §2. |
+
+### Options, with verdicts
+
+| Option | Version (verified via registry API, 2026-08-26) | Build step? | Verdict |
+|---|---|---|---|
+| **`node:sqlite`** | Built-in; SQLite 3.50.4 on Node 22.22.0 | **None** | **ADOPT** |
+| `better-sqlite3` | **13.0.3**, published 2026-08-05, `engines.node >= 22`, MIT, 159 versions | No compiler on 8 targets — but see below | **REJECT** |
+| `node-sqlite3-wasm` | **0.8.60**, published 2026-07-28, zero deps, MIT | None (WASM) | **NOT NEEDED** — the only reason to reach for it is a platform `node:sqlite` does not exist on, and there is none: it is in the runtime. |
+| `sqlite3` (node-sqlite3) | **6.0.1**, published 2026-03-12, BSD-3, has `install` script, deps on `prebuild-install` + `tar` | Yes (prebuild-install, node-gyp fallback) | **REJECT** — async API, install script, four transitive deps. |
+| Plain JSON + atomic rename | owned | None | **REJECT as primary** — 16 ms/edit scaling with store size, and a *weaker planted violation* (below). Keep the **technique** for the deterministic text export. |
+| Append-only NDJSON + compaction | owned | None | **REJECT** — same durability cost as SQLite, but you hand-build recovery, compaction and every index. `ENGINEERING_RULES.md` §4(2): the platform is not insufficient here. |
+| `lmdb` | **3.5.6**, published 2026-06-18, `gypfile: true`, install script, 6 transitive deps incl. `msgpackr`, `node-addon-api@^6` | Yes | **REJECT** — native, gyp, and a key/value store means you hand-build the query surface anyway. |
+| `classic-level` / `level` | **3.0.0** / **10.0.0**, both published 2025-04-20, `gypfile: true`, `node-gyp-build` | Yes | **REJECT** — same reasons. |
+| `lowdb` | **7.0.1**, published **2023-12-26** (2.7 years stale), deps on `steno@^4.0.2` | None | **REJECT** — it *is* the whole-file-JSON route, plus a dependency, plus staleness. |
+| `write-file-atomic` | **8.0.0**, published 2026-05-08, ISC. `engines.node: "^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0"` | None | **REJECT, and note why:** its engines floor is **above** this project's declared `>=22.18.0`. Adopting it forces an `engines` bump on `@henols/vice-mcp`, i.e. a breaking change to the documented prerequisite for an atomic-rename helper that is ~15 lines of `node:fs`. |
+| `proper-lockfile` | 4.1.2, published **2021-01-25** | None | **REJECT** — 5.5 years stale, and the store is single-writer by construction (container-side, one project, the existing FIFO-queue pattern). SQLite's own locking covers the rest. |
+
+### Why `better-sqlite3` 13.0.3 loses, precisely
+
+This deserves detail because the "native build breaks the no-build-step constraint" intuition is now *out of date* and would be the wrong reason to reject it.
+
+Verified by downloading and unpacking `better-sqlite3-13.0.3.tgz` (11.4 MB) this session:
+
+- `gypfile: false`, **no `install`/`postinstall` script**. It ships **eight prebuilt `.node` binaries** in `prebuilds/`: `linux-{x64,arm64}`, `linuxmusl-{x64,arm64}`, `darwin-{x64,arm64}`, `win32-{x64,arm64}`. On any of those, **no compiler is needed** — the "no build step" constraint is genuinely satisfied.
+- So it must lose on other grounds, and it does:
+  1. **11.4 MB download / 27.3 MB unpacked, per consumer, always.** All eight binaries plus the full SQLite amalgamation (`deps/**`, `src/**`) install unconditionally; there is no `optionalDependencies` platform split. Adding it changes `package-lock.json`, so `scripts/ensure-mcp-deps.sh` fires a real `npm ci` for every existing user's next session.
+  2. **No fallback off the eight targets.** `lib/binding.js` (read this session) falls through to `require(path.join(__dirname,'..','build','Release','better_sqlite3.node'))`. With no install script, that file never exists → a hard `MODULE_NOT_FOUND` on e.g. `linux-armv7`, `freebsd`, `s390x`, `linux-riscv64`. That is *worse* than the old node-gyp behaviour, which at least compiled.
+  3. **It buys nothing.** Everything the store needs — WAL, `synchronous=FULL`, savepoints, user-defined functions, `json_extract`, FTS5, R*Tree, generated columns, session/changeset — is present in `node:sqlite`, all confirmed live (below).
+  4. `ENGINEERING_RULES.md` §4(1) and §4(2) both fail: existing runtime code *does* provide the capability, and the standard library is *not* insufficient.
+
+### What `node:sqlite` on Node 22.22.0 actually has — probed, not assumed
+
+Every line below was executed on this host:
+
+```
+sqlite_version()               3.50.4
+PRAGMA journal_mode = WAL      -> 'wal'          (works)
+PRAGMA synchronous             -> 2 (FULL)       (default!)
+PRAGMA foreign_keys            -> 1 (ON)         (default — unlike the sqlite3 CLI)
+BEGIN / SAVEPOINT / ROLLBACK TO / RELEASE / COMMIT   all work
+db.function("ovl", fn)         user-defined functions work
+json_extract('{"a":5}','$.a')  -> 5              (JSON1 compiled in)
+GENERATED ALWAYS AS (...) VIRTUAL                works
+CREATE VIRTUAL TABLE ... USING rtree(...)        works
+CREATE VIRTUAL TABLE ... USING fts5(...)         works
+DatabaseSync.prototype:  open close prepare exec function location aggregate
+                         createSession applyChangeset enableLoadExtension
+                         loadExtension  + [Symbol.dispose]
+StatementSync.prototype: run get all iterate columns setAllowBareNamedParameters
+                         setAllowUnknownNamedParameters setReadBigInts setReturnArrays
+module exports:          DatabaseSync StatementSync constants backup
+```
+
+Two of these are load-bearing findings:
+
+- **`foreign_keys` defaults to `1`** in `node:sqlite`, unlike raw SQLite/the CLI. So `ON DELETE CASCADE` on the range/scope tables is enforced without an explicit pragma. Rely on it, but set it explicitly anyway so the schema is self-documenting.
+- **FTS5 is compiled in.** The milestone's *"search over the typed decode"* requirement can be an FTS5 virtual table over comments and labels rather than owned substring matching, at zero dependency cost. (Weigh against: FTS5 tokenisation is tuned for prose, and label search wants prefix/identifier matching — `LIKE 'f_%'` on an indexed column may serve better. Both are free; decide at plan time.)
+
+### Recommended pragmas and file layout
+
+```sql
+PRAGMA journal_mode = WAL;      -- crash-safe, and commit cost ≈ one fsync
+PRAGMA synchronous = FULL;      -- already the default; state it explicitly
+PRAGMA foreign_keys = ON;       -- already the default; state it explicitly
+```
+
+**One honest cost of WAL:** it leaves `<name>.db-wal` and `<name>.db-shm` alongside the database. On a clean `close()` they are removed; after a `SIGKILL` they **persist** (observed: 12,392-byte `-wal`, 32,768-byte `-shm`). So the store is *not* single-file at rest after an unclean exit. If single-file-at-rest matters more than throughput, `journal_mode = DELETE` + `synchronous = FULL` gives one file with the same crash guarantee at higher per-commit cost. **Recommendation: keep WAL** and treat the sidecars as what they are — recovery state that the next `open()` consumes.
+
+**Where the file lives.** Not `.vice-supervisor/` — that is gitignored, host-synchronised, and owned by the broker's lifecycle. Mirror the existing `r2000_*` convention instead: the store path is an **explicit tool argument**, resolved through `repo-root.ts`'s `repoRoot()` when relative. Add `*.db-wal` / `*.db-shm` to `.gitignore`.
+
+**Commit the export, not the database.** This project has already decided the shape of this problem — Key Decisions: *"Make the store canonical and the Markdown memory map a generated view … `render-memmap --check` plus a render-digest drift guard makes the divergence mechanical rather than a review item."* Apply the same pattern: SQLite is the working store; a deterministic, sorted, newline-stable text export (written with the atomic-rename technique) is the git-diffable artifact, guarded by an `--check` digest comparison. This is the correct home for the JSON/atomic-rename technique that lost as the primary store.
+
+---
+
+## 2. Interval / range data structure — owned, and the measurements say so
+
+### Measured, on this host, cross-validated
+
+Domain: 2,500 narrow ranges (16 bytes each) plus 200 wide overlapping ranges (2,001 bytes each) — deliberately including overlap, so narrowest-wins is actually exercised.
+
+| Approach | Per lookup | One full 64K pass | Retained memory | Build cost |
+|---|---|---|---|---|
+| **Paint array (`Int32Array(65536)` of winning range ids)** | **0.018 µs** | **1.2 ms** | 256 KB | 7.5 ms for 2,700 ranges |
+| Sorted-by-`lo` array + binary search + bounded forward walk | 0.31 µs | 20 ms | ~0 | O(n log n) sort |
+| Naive O(n) scan over all ranges — *the shape `r2000-coverage.ts`'s `classAt()` already has* | 4.6 µs | **301 ms** | 0 | none |
+| SQL `WHERE lo<=? AND hi>=? ORDER BY (hi-lo) LIMIT 1`, index on `lo` | 42.6 µs | **2.8 s** | 0 | none |
+
+The paint array and the sorted+binary-search implementation were cross-checked against each other on **all 65,536 addresses: 0 disagreements.** That is two independently written implementations agreeing, not one implementation agreeing with itself.
+
+A better-indexed SQL formulation (e.g. a materialised `width` generated column with a composite index) would improve on 42.6 µs — but not by the 2,400× needed to close the gap, and it cannot beat an array index.
+
+### Verdict: ~60–120 lines of owned code. No library.
+
+The deciding fact is that **the domain is bounded at 64K**. An interval tree exists to avoid materialising a sparse or unbounded key space; a C64 address space is neither. A 256 KB `Int32Array` *is* the index, and its lookup is a single array read.
+
+Design, concretely, so a planner does not re-derive it:
+
+- SQLite's `range` table is the **source of truth**; the paint array is a derived in-memory index rebuilt from it.
+- Build: `Int32Array(65536).fill(-1)` for winner range-id, plus a parallel `Int32Array(65536).fill(0x7fffffff)` for winner width. For each range, for each address in it, overwrite iff `width < currentWidth`. **Narrowest-wins is resolved at paint time, not at query time.** Tie-break for equal widths must be explicit (recommend: higher `range.id`, i.e. the more recent edit wins) and pinned by a test — an unspecified tie-break is exactly the kind of thing that produces a non-reproducible export.
+- Rebuild cost is 7.5 ms, so **rebuild on mutation**. Do not write incremental-maintenance code; it is the classic source of index-drift bugs and it buys single-digit milliseconds.
+- Queries the paint array does **not** serve — *"list every range covering address X"*, *"list ranges intersecting [a,b]"* — go against the SQLite table. The paint array answers exactly one question: *which range wins at X*.
+- Run-length compaction for the JSON/tool-response surface: reuse `r2000-coverage.ts`'s `toRuns()` shape (`{start, end, class}`), which already exists and is already tested. Its header states the reason ("the census reports runs rather than a per-byte array so the report stays JSON-safe and stays deep-comparable between two runs") and it applies unchanged.
+- **If the domain ever exceeds 64K** (banked ROM/RAM under I/O, an REU): switch to the sorted+binary-search variant at 0.31 µs and ~0 memory, or paint per bank. Both were measured; neither needs a library. State this so a later banking milestone does not reach for a package.
+
+### Libraries surveyed — all rejected, with dates
+
+| Package | Latest | Published | Status | Why rejected |
+|---|---|---|---|---|
+| `@flatten-js/interval-tree` | 2.0.3 | 2025-11-07 | Maintained; ESM; MIT; deps on `tslib@^2.8.1` | The only genuinely maintained candidate. Returns **all** overlapping intervals with no narrowest-wins tie-break, so the deciding logic is yours regardless — and its lookup can only be slower than an array read. A dependency for the easy half of the problem. |
+| `node-interval-tree` | 2.1.2 | 2022-12-12 | Stale ~3.7y; CJS; deps on `shallowequal` | Same semantics gap, plus staleness and a CJS interop wrinkle. |
+| `interval-tree-1d` | 1.0.4 | 2021-06-03 | Stale ~5.2y; deps on `binary-search-bounds` | Same. |
+| `static-interval-tree` | 1.3.0 | 2016-03-24 | Stale ~10.4y; **no `license` field in the manifest** | Rejected on the licence gap alone; this repo maintains `THIRD-PARTY-NOTICES.md`. |
+| `interval-tree2` | 1.1.0 | 2015-09-23 | Stale ~10.9y; 3 versions ever | Abandoned. |
+| `augmented-interval-tree` | 0.1.0 | 2017-06-25 | **One version, ever** | Abandoned. |
+| `mnemonist` | 0.40.4 | 2026-04-30 | Well maintained; MIT | Excellent general structure library, but has no interval structure with narrowest-wins. Nothing to take. |
+
+---
+
+## 3. Undo model
+
+The requirement is precise and it eliminates most of the field: *"mutate → kill → reopen returns the mutation, and removing the save makes that same test go red."* That is a **durability** requirement on the undo history too — undo must survive the kill, or a session that crashes loses the ability to undo the edits it recovered.
+
+### Recommendation: inverse-command journal, committed in the same transaction as the mutation
+
+```sql
+CREATE TABLE edit_log (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id   TEXT    NOT NULL,   -- one composite tool call = one undoable unit
+  tool       TEXT    NOT NULL,   -- which MCP tool produced it (audit trail)
+  forward    TEXT    NOT NULL,   -- JSON: the op that was applied
+  inverse    TEXT    NOT NULL,   -- JSON: the op that reverses it
+  undone     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX edit_log_group ON edit_log(group_id);
+```
+
+- **One transaction per mutating tool call**: `BEGIN` → apply mutation → insert the `edit_log` row(s) → `COMMIT`. Measured 1.16 ms including the journal insert.
+- **Undo** = highest `seq` with `undone = 0`; apply its `inverse` and set `undone = 1`, all in one transaction. Composite calls undo as a `group_id`, atomically.
+- **Redo** = lowest contiguous `seq` with `undone = 1`; re-apply `forward`. A new edit truncates the redo tail (standard, and the alternative — branching history — is scope this milestone does not have).
+- **Every inverse must be constructible at edit time.** This is the real design constraint, and it is where undo models fail: `set_label(addr, name)` inverts to `set_label(addr, previousName)` *or* `delete_label(addr)` depending on prior state, so the mutation handler must **read the prior state inside the same transaction** before writing. A handler that computes the inverse after the write, or from the arguments alone, is wrong. Make that a reviewed invariant, not an assumption.
+- **Range typing needs an interval-aware inverse.** `set_type([lo,hi], "table")` may split, shadow or fully cover several existing ranges. The honest inverse is *"restore this exact list of prior range rows over [lo,hi]"* — so the inverse payload carries the displaced rows, not a single reverse op. This is the single most likely place for an undo bug; plan a test that types overlapping ranges in three layers, undoes twice, and asserts byte-for-byte equality of the paint array.
+
+### Rejected alternatives, each for a specific reason
+
+| Approach | Verified state | Why rejected |
+|---|---|---|
+| **SQLite `SAVEPOINT`** | Works: `BEGIN; INSERT; SAVEPOINT sp1; INSERT; ROLLBACK TO sp1; RELEASE sp1; COMMIT;` executed live and left exactly the pre-savepoint row | Savepoints are **intra-transaction and in-process**. They do not exist after `close()`, let alone after a `SIGKILL`. They cannot be the undo model. **Do use them** for atomicity *within* one composite tool call (e.g. "type this range and rename every label inside it") so a partial failure leaves no half-applied edit. |
+| **SQLite session / changeset extension** | Exposed and working: `db.createSession({table})`, `session.changeset()` (22-byte changeset for one insert), `session.patchset()`, `db.applyChangeset(cs)` → `true`, applied cleanly to a second database. `constants` exports the eight `SQLITE_CHANGESET_*` conflict codes | **`sqlite3changeset_invert` is not exposed.** No `invert` on the session or changeset, and no `invert` anywhere in `@types/node@24.13.3`'s `sqlite.d.ts` (grepped). Without it you would hand-decode SQLite's changeset binary format to derive an inverse — a large, undocumented-in-Node surface for something a `JSON` column gives free. **Revisit trigger:** if Node exposes `invert`, changesets become a strictly better undo log (they capture *actual* row deltas rather than a hand-maintained inverse, eliminating the "inverse computed wrong" bug class). Worth recording as a named reversal criterion in this project's usual style. |
+| **Snapshot-diff / copy-on-write snapshots** | `backup()` is exported from `node:sqlite` and works | Full snapshots of a 712 KB database per edit is wasteful, and *presenting* what an undo did then requires diffing two databases — work the command log gives for free. **Do use `backup()`** for a single pre-destructive-operation safety copy (bulk retype, import, schema migration), mirroring `incident-record.ts`'s "write evidence before any destructive action" precedent. |
+| **Immutable persistent structures (`immer` 11.1.18, 2026-08-19)** | Maintained, zero deps | In-memory only: the undo stack dies with the process, which is precisely the requirement it must satisfy. Plus a dependency for a data-structure discipline TypeScript already expresses. |
+| **Append-only op log as the *only* store (event sourcing)** | Measured 1.36 ms/edit | This *is* the journal, minus the queryable projection. Keeping both — a queryable current state and a journal — in one transactional file is what SQLite is for. Choosing the log alone means rebuilding all state by replay on every open, and owning compaction. |
+
+### A non-obvious testability argument for SQLite over atomic JSON
+
+`ENGINEERING_RULES.md` §6 requires the durability guard to be **observed failing under a planted violation**. The two routes are not equally testable:
+
+- **SQLite:** the planted violation is "drop the `COMMIT`" or "move the `edit_log` insert outside the transaction." A `SIGKILL` after that reliably loses the mutation, so the guard reliably reddens.
+- **Atomic JSON:** the planted violation is "remove the `fsync()`." That frequently **still passes**, because the page cache serves the subsequent read on the same machine — you only lose the write on a power cut or kernel panic, which a test cannot stage. A guard that cannot be made to fail is not evidence (§6's closing line).
+
+So SQLite is the better choice on *evidence quality*, independent of speed. Worth stating in the plan, because it is the kind of reasoning this project's own history says gets skipped.
+
+---
+
+## Integration with the existing module set
+
+### A correction the roadmapper needs: the `--verify` seam does not survive the deletion
+
+The milestone text says the ACME export is *"verified by a real ACME through the existing `--verify` seam."* Read directly this session, that seam is **regenerator2000's**, not ACME's:
+
+- `r2000-verify.ts` (184 lines) imports `buildVerifyArgs` and `runR2000` from `r2000-launch.ts` and parses **`regenerator2000 --verify`'s stdout** with `VERIFY_LINE_PATTERN = /^[✓✗]\s+(.+?)\s+[—–-]\s+(.+)$/`. It never invokes ACME. When regenerator2000 is deleted, `r2000-verify.ts` and `buildVerifyArgs` die with it.
+
+The genuinely surviving ACME oracle is a different pair of files, and the plan must name them:
+
+| File | Lines | Fate |
+|---|---|---|
+| `r2000-test-gate.ts` | 166 | **Rename and keep.** Owns `ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()` and the `VICE_REQUIRE_ACME` convention. Not regenerator2000 glue despite the name — the grep gate must exempt or the rename must precede it. |
+| `disasm-roundtrip.test.ts` | 427 | **The pattern to extend.** Already spawns real ACME with an argv array, byte-diffs the reassembly, and documents the "never treat a warning as failure" rule. Its "ACME availability gate (D-08)" test always runs and is never skipped. |
+| `src/skills/acme-build/scripts/acme.mjs` | — | The shipped `build` / `sym` / `new` route. Unchanged. |
+| `r2000-verify.ts`, `r2000-launch.ts::buildVerifyArgs` | 184 + part of 357 | **Deleted with the subject.** The store's own verify must be re-built against ACME directly. |
+
+This is a real scope item, not a rename: the store needs a new `verify` path that emits ACME source to a temp dir, spawns ACME, and byte-diffs against the source bytes. `disasm-roundtrip.test.ts` already contains every technique needed.
+
+### The `=*+$01` mid-instruction label idiom — verified against real ACME
+
+The seed asks that this be *preserved rather than rediscovered*. It exists nowhere in the codebase today (grepped), so it must be **built**, and it does work. Verified live with ACME 0.97 on this host:
+
+```asm
+!cpu 6510
+* = $0801
+start
+smc_operand = * + $01
+        lda #$00
+        sta $d020
+        lda #$01
+        sta smc_operand
+        rts
+```
+
+`acme -o smc2.prg -l smc2.lbl` exits 0; the label file reads `smc_operand = $802`; the emitted bytes are `a9 00 8d 20 d0 a9 01 8d 02 08 60` — i.e. `sta smc_operand` assembled as `8d 02 08`, correctly targeting the operand byte of the preceding `lda #$00`. The `= * - 1` form placed *after* the instruction resolves identically. **Confidence: HIGH, real-assembler oracle.**
+
+### Typed label prefixes — already owned, and richer than the seed says
+
+`r2000-coverage.ts:1384` already owns the vocabulary:
+
+```
+AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/
+```
+
+Eleven prefixes, not the five the seed lists (`zpp_`/`zpa_`/`f_`/`a_`/`e_`). `r2000-coverage.test.ts:946` pins all eleven, and `src/skills/routine-queue-walker/SKILL.md:154,200` documents them for users. **Move this regex into the store's naming module; do not re-derive a subset from the seed.** A five-prefix reimplementation would silently stop recognising `p_`, `j_`, `s_`, `b_`, `r_`, `zpf_` as auto-generated — which is exactly the signal `routine-queue-walker` builds its backlog from.
+
+### The model interfaces already exist
+
+`r2000-coverage.ts:192-224` already defines the four record shapes, and they map 1:1 onto the store's tables:
+
+| Existing interface | Becomes |
+|---|---|
+| `R2000Symbol { address, name, kind, type? }` | `symbol` table. `kind` ∈ `User`/`Auto`/`System`; `type` ∈ `Subroutine`/`AbsoluteAddress`/… |
+| `R2000Comment { address, type, comment }` | `comment` table. `type` ∈ `line`/`side` — **keep both**; the ACME renderer needs the distinction. |
+| `R2000BlockEntry { start_address, end_address, type }` | `range` table. **Widen `type`** from r2000's `BlockType` Display strings to the milestone's full seven-value vocabulary: `code`, `byte`, `word`, `address`, `petscii`, `screencode`, `table`. |
+| `R2000CrossReference { address, callers[] }` | `xref` table, or a derived view over the typed decode. |
+
+Rename off the `r2000` prefix, keep the field names (they are already the wire shape the absorbed procedures speak), and note `start_address`/`end_address` are **inclusive** in the existing code — carry that, and document it, because half-open vs closed is the other classic interval bug.
+
+### Where `r2000-coverage.ts`'s `classAt()` must NOT be copied
+
+`classAt()` (line 342) is a linear scan over `classRuns` — the 4.6 µs/lookup shape measured above, 301 ms per full 64K pass. Its own comment says why it is acceptable there ("Linear over runs, which is what keeps the census JSON-safe"), and for a once-per-census lookup it is. **Do not carry that shape into the store's hot path**, which is queried once per decoded instruction across the whole image. Use the paint array. Note this explicitly in the plan, because copying the nearest existing function is the obvious move and it is the wrong one here.
+
+### Tool-surface registration and argument validation
+
+- Register through `buildViceTool()` (`vice-proxy.ts:3263`), following the existing `r2000_*` precedent at `:3402`. This satisfies the architecture constraint **by construction**: neither `rewriteArguments()` call site (`:3029` inside `forwardToVice()`, `:1508` inside `gatherWedgeEvidence()`) is reachable, so there is no interception to forget and the store is backend-agnostic for free. Re-check those line numbers at plan time — `docs-linerefs.test.ts` guards two of them and PROJECT.md warns they drift.
+- **The proxy validates nothing.** `vice-proxy.ts:3216-3230`: `rawJsonSchemaAsStandardSchema()` returns `validate: (value) => ({ value })`, and the header says so plainly — *"this proxy has never validated argument shape itself."* So every store tool receives **unvalidated** arguments. Validate in the store: address range `0x0000–0xFFFF`, `lo <= hi`, `type` in the seven-value set, label matches `assertLegalAcmeIdentifier()` (`r2000-acme-ident.ts`, `MAX_ACME_IDENTIFIER_LENGTH = 200`) — throwing named error subclasses per the existing `ViceError` convention. **Do not add `zod`.**
+- **`r2000-acme-ident.ts` (97 lines) is a keeper.** It already enforces ACME identifier legality, which is what stops an illegal label reaching the exporter and failing the ACME oracle late instead of at the setter.
+
+### The tool surface is a diff, not a design
+
+`.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json` exists and already classifies every verb the five absorbed procedures call as `curated` / `omit` / `adapt-to-address-input`. Derive the store's surface from it. No stack implication — just: the input exists, at that path, and it survives (it is a `.planning/phases/` artifact, which this project deliberately does not archive).
+
+---
 
 ## Installation
 
-No `npm install` is required for this milestone's stack — everything above is either already declared in `src/mcp/vice/package.json`, a Node built-in, or an external binary (`regenerator2000`, `acme`) already documented as a prerequisite.
-
 ```bash
-# Nothing new. Confirm the existing prerequisites are present:
-regenerator2000 --version   # regenerator2000 0.9.20 (verified live on this host)
-acme --version               # This is ACME, release 0.97 ("Zem"), 31 Jan 2021 (verified live)
-node --version                # >= 22.18
+# Core:       nothing. node:sqlite is built in at the project's existing Node floor.
+# Supporting: nothing.
+# Dev:        nothing.
 ```
 
-## Detailed Answers
+`src/mcp/vice/package.json` is unchanged — same two `dependencies`, same two `devDependencies`, same `engines: { node: ">=22.18.0" }`. `package-lock.json` is unchanged, so `scripts/ensure-mcp-deps.sh` stays a no-op for every existing user. Both published tarballs gain only source files, so `scripts/check-npm-packages.mjs` needs new `files[]` entries and nothing else.
 
-### 1. Session transport — hand-roll a persistent stdio client; reject HTTP and `MCPClient`
+The only prerequisite unchanged-but-worth-restating: **real ACME on `$PATH`** for the export oracle, already documented.
 
-**Use `--mcp-server-stdio`, and extend the existing hand-rolled client rather than adopting `StreamableHTTPClientTransport` or `@mastra/mcp`'s `MCPClient`.**
-
-Live-verified facts driving this:
-
-- `regenerator2000 --help` (run on this host) lists `--mcp-server` as *"Run MCP server (HTTP port 3000)"* and `--mcp-server-stdio` as *"Run MCP server (stdio, headless)"* — no `--mcp-port` / `--mcp-bind` flag exists in either the help text or the CLI's `clap` arg struct (`main.rs`, `mcp_server`/`mcp_server_stdio` fields only).
-- The HTTP path's port is a **literal `3000`** baked into the CLI binary, not a configurable default: `main.rs:397` calls `regenerator2000_core::mcp::http::run_server(3000, mcp_req_tx)`. The underlying library function (`regenerator2000-core`'s `http.rs:153`, `pub async fn run_server(port: u16, sender: Sender<McpRequest>)`) *does* accept a port — this is the "known unlanded upstream PR" the milestone context refers to: a five-line CLI change (thread a flag through to the existing parameter) that has not shipped. Until it does, **every concurrently-running `--mcp-server` process on a host collides on `127.0.0.1:3000`**, confirmed structurally, not merely documented.
-- `--mcp-server-stdio` has no such surface at all: `stdio.rs`'s `run_headless_stdio_loop` is a private-pipe `read_line`/`println!` loop with no network listener whatsoever. Each spawned child is a private, per-caller channel by construction — the collision class does not exist for it. This matches CLAUDE.md's existing project-wide preference for solving concurrency by construction, not by detection (compare the `--vice` guard).
-- Both transports dispatch through the **same** `handle_request()` function in `handler.rs` — the Phase 9 probe's live HTTP measurement (28 tools via `StreamableHTTPClientTransport`) and this project's existing stdio client see an identical tool surface. Choosing stdio costs nothing in capability.
-
-**The prior "hand-roll vs. `MCPClient`" decision still applies, and applies with equal or greater force to a persistent session.** That decision (`r2000-mcp-client.ts`'s header, and `docs/phase9-regenerator2000-probe-findings.md`'s live measurement is a separate, HTTP-specific data point, not the client-shape decision itself) measured five properties against `@mastra/mcp` 1.15.0's `MCPClient` and found it lacking exactly one: **no member exists on `MCPClient`'s reflected prototype for retrieving a spawned child's exit code once its session has closed.** For a *persistent* session this property does not become less important — it becomes the load-bearing one. A session that lives across "a whole working session instead of being respawned per tool call" (this milestone's own wording) is a session that can crash, hang, or be killed hours into a recon session; the caller needs exactly the same "is this an unanswered-but-alive call, a dead child, or a clean exit" three-way distinction `R2000TimeoutError`/`R2000ChildExitError`/`R2000SessionFailedError` already encode — the failure surface **grows** with session lifetime, it does not shrink. Recommend: keep the existing three-way distinction, reuse it verbatim, and add a fourth state the current one-shot model has no use for — "session is alive and idle, ready for the next call" — which only a genuinely long-lived client needs to represent at all.
-
-Concretely, this means evolving `r2000-mcp-client.ts` (or a new sibling module, see below) so that:
-- `spawn()` happens once per working session (or once per acquire, if a pool-of-one abstraction is used) instead of once per `withR2000Session()` call.
-- The `pending` map, `nextId` counter, and `readline` interface become held state across many `call()` invocations, not torn down after one.
-- `child.once("exit", ...)` still fires the same `R2000ChildExitError` rejection for anything in flight — unchanged from today — but now it also needs to flip a `sessionAlive` flag the next `call()` checks *before* attempting a write, giving a `R2000ChildExitError`-shaped early rejection instead of a silent `EPIPE` on a dead stdin.
-- `saveAndVerify()`'s file-hash-based "prove it, don't trust the child's own text" pattern is unchanged and remains the correct check for a persistent session's saves.
-
-### 2. Process lifecycle — do not reuse the broker; build a much smaller in-process supervisor
-
-**Do not route the persistent regenerator2000 session through `vice-broker.mts` or the TCP control plane.** The broker's entire reason to exist is a boundary the regenerator2000 case does not have:
-
-- The broker manages **host-side** `x64sc` processes from **container-side** callers — that is why it needs a TCP control plane at all (`vice-broker-client.ts` dials `host.docker.internal`/`127.0.0.1` across the container boundary), why it needs port allocation (many emulator instances, each needing its own binary-monitor port), and why crash supervision is a separate always-running daemon process (`vice-broker.mts`) rather than inline code in the same process that needs the emulator.
-- regenerator2000 is **container-side, same side as the MCP proxy** (`R2000-02`, CLAUDE.md's derived-tool constraint note, and independently re-confirmed live in this research: the `r2000_*` family registers through `buildViceTool()` and never reaches `forwardToVice()`/`hostpath.ts`/`containerpath.ts`). There is no boundary to cross. A persistent regenerator2000 session is a plain child of the *same Node process* that is already running `vice-proxy.ts` — the same relationship `r2000-mcp-client.ts` already has with it today, just held open longer.
-- Reusing the broker's machinery here would mean building a TCP listener, a capability-token auth scheme, and a `broker.json`-shaped state file for a process that never leaves the container and is only ever addressed from inside that same container's own event loop — solving a problem (cross-process, cross-machine addressing) that does not exist for this case, while inheriting a real cost this project has already had to accept once and reason carefully about (`PKG-04`'s `0.0.0.0` control-plane bind risk). Building a second listener with the same risk shape for no structural reason would be a regression, not reuse.
-
-**What genuinely is worth borrowing — as a pattern, not as shared code:**
-
-- **The single-owner, synchronous-check-and-set launch guard.** `broker-launch.mts`'s `inFlight` guard exists because of a real dated outage (2026-08-01, triple-launch) and CLAUDE.md pins it as "must stay a synchronous check-and-set with no `await` between." The identical race is possible here: two `r2000_*` tool calls arriving close together, both seeing "no session yet," both calling `spawn()` against the same project file. The fix is the same shape — a module-level boolean (or a promise-of-the-in-progress-launch, so a second caller awaits the first's result rather than racing it) checked and set synchronously before the first `await`. This is a two-line pattern to copy, not a reason to depend on the broker module.
-- **Incident-before-kill discipline.** `incident-record.ts`'s "write state before any destructive action" principle applies directly if this milestone ever needs to recycle a wedged regenerator2000 session — `saveAndVerify()` should be attempted (with a short timeout) before any forced kill, so an in-progress annotation is not silently lost. This is a principle to apply inside the new module, not a dependency on `incident-record.ts` itself (that module is shaped around VICE snapshots specifically).
-
-**Recommended shape:** a new sibling module (e.g. `r2000-session.ts`, next to `r2000-mcp-client.ts` in `src/mcp/vice/`) that owns exactly one live regenerator2000 child per project path, exposing `acquire(projectPath) -> R2000Call`-shaped access, built from the primitives `r2000-mcp-client.ts` already has (`spawn`, `readline`, the `pending`/`nextId` correlation, the four named error classes), plus the synchronous launch guard above. No new package, no new protocol, no new listener.
-
-**One header comment needs to change as part of this, not be silently outdated:** `r2000-mcp-client.ts`'s own file-level comment states as a settled invariant, "Never keep a child alive between logical operations (D-17)... There is no long-lived child, no supervision, and no second wedge class to add to this project's existing stock-VICE one." This milestone's own opening context calls the reversal of D-17/D-18 out explicitly ("a deliberate reversal of D-17/D-18"). Whichever plan does this work must update that comment (and the "second wedge class" framing needs an honest answer, not silence — a long-lived regenerator2000 child genuinely *is* a second thing that can wedge, and the existing `vice-wedge-triage` skill's playbook does not cover it).
-
-### 3. Multi-file ACME emission — supported by ACME today, unsupported by regenerator2000's exporter; the split is this repo's own new code
-
-**regenerator2000 has no multi-file export of any kind.** Read directly: `exporter/asm.rs`'s `export_asm()` builds one `output: String` and writes it to one `path: PathBuf` — `state.scopes` is threaded into the `DisassemblyContext` only to feed the same single-stream disassembler formatter (e.g. scope-boundary comments), never to decide "start a new file here." There is no per-scope or per-subsystem output path anywhere in `exporter/`. **The one-file-per-subsystem split is entirely new code this project must write** — most naturally as a post-processing pass that, for each subsystem `!zone`/scope, calls `r2000_read_region` (or a symbol-only equivalent built from `r2000_get_symbols`/`r2000_get_comments`) over that scope's address range and writes the result to its own `.a` file, rather than trying to slice regenerator2000's single flat `--export_asm` output textually after the fact.
-
-**ACME 0.97 itself imposes no obstacle to this — confirmed directly against its own shipped documentation, not inferred:**
-
-- **`!source FILENAME` (alias `!src`)** — "Assemble another source code file. After having processed the new file, ACME continues processing the old one." (`AllPOs.txt`, Section: File stuff). Loads relative to the current directory in `"..."` quoting, or from a library path in `<...>` quoting resolved via `-I`/`$ACME` — exactly the mechanism `acme.mjs` already threads through (`-I DIR` → `args.push("-I", i)`). **`acme.mjs` needs zero changes**; the "multi-file project" is just an entry `.a` file whose body is a sequence of `!source "subsystem-x.a"` lines, passed to the existing `build` verb exactly as today.
-- **`* = EXPRESSION` (origin) is a plain statement, valid anywhere a statement is valid — including inside an included file.** ACME's own canonical multi-file example (`AllPOs.txt`, Section: Segment assembly) is literally `!to`, `* = $0801`, `!src "basicmacros.a"`, `+basic_header`, `!src "main.a"`, `* = $1000`, `!bin "music.b"`, `* = $8000`, `!bin "pic.b"` — origin changes interleaved with includes, in the assembler's own reference material. Nothing restricts `*=` to the top-level/entry file.
-- **Label scope crosses `!source` boundaries by default — `!source` does *not* implicitly start a new zone.** Global labels (leading letter/underscore) "can be accessed throughout the whole assembly" regardless of which file defines or references them (`QuickRef.txt`, Section: Example). Local labels (leading `.`) and anonymous labels (`+`/`-`) are scoped to "the current zone" (`!zone`) or macro, **not to the file** — so two subsystem files each using `.loop` as a local label name are safe *only if* each is wrapped in its own `!zone` (or each subsystem's globally-visible entry point is a distinct global name and everything else stays local within an explicit per-file `!zone` block). "Cheap locals" (`@name`) are a third option, automatically scoped between the previous and next *global* label rather than by file or zone, which may suit small per-routine temporaries inside a subsystem file without needing an explicit `!zone` wrapper at all.
-- **Forward references across files are fully supported.** ACME "always takes as many passes as are needed" (`QuickRef.txt`) — a global symbol referenced in a file `!source`d *before* the file that defines it resolves correctly. This is the property that makes "wire subsystem files together with `!source`, referencing each other's exported symbols regardless of load order" actually work, and it needs no special handling from this project beyond making every cross-subsystem-referenced symbol global rather than local.
-- **One `!to`/`-o` output assembled from many `!source`d files is not an edge case — it is the documented, intended use of `!source`.** No special ACME flag or mode is needed; the existing `acme.mjs build <entry>.a -I <libdir>` invocation already produces exactly one `.prg`/`.sym`/`.vs`/`.rep` set regardless of how many files the entry `!source`s.
-
-**Recommendation for how scopes map to files:** treat each regenerator2000 `scope` (`r2000_add_scope`'s `start_address..end_address`, the literal "subsystem" grouping the milestone names) as one `!source`d `.a` file, wrapped in its own `!zone <scope-name>` so each subsystem's internal local/anonymous labels cannot collide with another subsystem's, with every symbol meant to be referenced *across* subsystem boundaries (every entry point, every shared data table) emitted as a plain global label rather than a local one. Data tables get their own files under the same rule (the milestone's own wording — "data tables in their own files").
-
-### 4. Symbolisation and relocation-hazard detection — nothing exists; this must be built
-
-**Direct, unhedged answer: no npm package, no Rust crate, and no feature of regenerator2000 itself converts absolute-addressed disassembly into symbol-only movable source or detects relocation hazards.** Confirmed by exhaustive source search of the installed `regenerator2000-core-0.9.20` crate (`grep -rn "jump_table\|JumpTable\|self.modif\|SelfModif\|page_align\|PageAlign\|relocat\|Relocat"` across the whole crate returned **zero matches**) — regenerator2000 has no concept of a relocation hazard at all. There is no npm ecosystem equivalent either; disassembler-to-source "symbolisation" tools in this space (IDA, Ghidra, capstone-based scripts) are not npm/crates.io packages and are out of scope for this project's dependency policy regardless.
-
-**What regenerator2000 does give this project, as building blocks it must assemble itself:**
-
-| Primitive | What it is | How it feeds hazard detection |
-|-----------|-------------|-------------------------------|
-| `r2000_get_blocks` / `BlockType` enum | Confirmed enum values (`state/types.rs:314`): `Code`, `DataByte`, `DataWord`, `Address`, `PetsciiText`, `ScreencodeText`, `LoHiAddress`, `HiLoAddress`, `LoHiWord`, `HiLoWord`, `ExternalFile`, `Undefined` | `Address`/`LoHiAddress`/`HiLoAddress`-typed blocks are the closest existing primitive to "this is a jump table's entries" — a contiguous run of `Address`-typed words inside a `Code`-adjacent region, cross-referenced by an indirect `JMP (table,x)`-style site, is the detectable shape. `Undefined` is directly the milestone's own coverage metric ("nothing left `Undefined`" is measured, not asserted, precisely by counting this enum value across `r2000_get_blocks`'s output). |
-| `r2000_get_cross_references` | Who references a given address, in both directions | The substrate for **self-modifying-code detection**: cross-reference a `Code`-typed address against every *write*-instruction operand target (`STA`/`STX`/`STY`, decoded from `r2000_read_region`'s disassembly text) landing on that same address. No such check exists in regenerator2000 itself — this project must decode operand targets and intersect them against code ranges. |
-| `r2000_add_scope` / `scopes` (`BTreeMap<Addr, Addr>`) | Named subsystem regions | The natural unit both for the multi-file split (§3) and for scoping a hazard report per subsystem rather than per address, matching the milestone's "relocation-hazard report enumerates what blocks movement" wording. |
-| `r2000_get_symbols` / `r2000_get_comments` | Every label/comment, queryable | The symbol-only rendering substrate: emitting a branch/`JSR`/`JMP`/data-reference target as its symbol name rather than its raw address (the milestone's "every branch, `JSR`/`JMP` and data reference goes through a symbol") is a direct lookup against this, not a new analysis. |
-| `packer_signatures.rs` / `state.detected_packer` | A real signature scanner (Exomizer 1.x/2.x/3.x, and others per its module) already shipped in regenerator2000-core | This is the one piece of the milestone's target list ("which packer a binary used") that regenerator2000 *does* already solve — surface `detected_packer`/the equivalent MCP field as a recon finding rather than reimplementing signature scanning. |
-
-None of the four named hazard classes in this milestone (jump tables with baked-in addresses, self-modifying code, page-alignment dependence, cycle-exact raster code) has a canned detector anywhere in this stack. Each is bespoke analysis code, one narrow heuristic at a time, built on the four primitives above plus `c64-memory-mapping`'s existing register/enum data (for the "is this a raster-timing-sensitive VIC-II write" question specifically — `$D011`/`$D012`/`$D019` etc. are already named there). Say this plainly to whoever plans the phase: **budget it as new analysis code, not as "wire up library X."**
-
-### 5. What NOT to add
-
-Following this project's own repeatedly-applied discipline ("does a shipped skill call it, or does something a skill calls depend on it?" — 17 cuts in v0.2.0, 4 more in v0.3.0):
-
-- **Do not add `StreamableHTTPClientTransport` / `--mcp-server` (HTTP) as the persistent-session transport.** Structurally disqualified by the hardcoded port-3000 collision (confirmed at `main.rs:397`), not merely inconvenient. No measured advantage over stdio exists for a single in-process child — the Phase 9 probe's HTTP measurement was answering a different question (does the tool surface work at all over MCP), not choosing a transport for this milestone.
-- **Do not adopt `@mastra/mcp`'s `MCPClient` for the persistent session.** The disqualifying property from the original five-property measurement (no exit-code reachability after session close) applies with *more* force to a long-lived child, not less — this is the client most likely to need to tell a crash apart from a hang, months into a real recon session.
-- **Do not import `@modelcontextprotocol/sdk` directly**, for the persistent client or anything else in this milestone. It remains an undeclared transitive dependency; a direct import is a phantom-dependency violation under `ENGINEERING_RULES.md` §4, independent of the functional argument above.
-- **Do not route the persistent regenerator2000 session through `vice-broker.mts` / its TCP control plane / port allocation / warm floor.** That machinery solves a container-to-host boundary crossing that does not exist for a container-side child of the same process. Building a second control-plane listener here would import PKG-04's already-accepted bind-exposure risk shape for a problem that has no boundary to guard.
-- **Do not build a general-purpose, pluggable relocation-hazard framework.** Build exactly the four named checks (jump tables, self-modifying code, page alignment, cycle-exact raster) as narrow heuristics over the primitives in §4's table. A generic framework has no measured caller yet and this project's own history (17 + 4 cuts) is explicit that "might be useful generally" is not the bar.
-- **Do not add multi-assembler output (64tass/ca65/KickAssembler).** regenerator2000 supports all three natively, but this project's fixed target has always been ACME/`!cpu 6510`/cbm format (`acme-build`'s whole reason to exist). Scope creep here has no shipped-skill caller.
-- **Do not attempt BASIC token decoding** (`r2000-analyze-basic`). Explicitly named "not in this milestone" in `PROJECT.md`'s own Current Milestone section.
-- **Do not pursue either of the two standing upstream PRs** (`KEYBOARD_MATRIX_SET` for VICE's binary monitor; regenerator2000's `--mcp-port`/`--mcp-bind`) as part of this milestone's stack work. Both remain out-of-repo asks, unchanged from v0.4.0's Out of Scope, and the port-flag one specifically is *why* stdio is this milestone's answer rather than something to wait for.
-- **Do not silently leave `r2000-mcp-client.ts`'s D-17 header comment standing** once a persistent-session path exists beside it. It currently asserts as settled fact exactly what this milestone reverses ("There is no long-lived child, no supervision"); leaving it unedited would let a future reader trust a now-false invariant — this is a same-shape mistake to the "stale claim confidently restated" lesson `PROJECT.md`'s own Context section names twice this project already learned the hard way.
-- **Do not trust `r2000_get_address_details`'s `OutOfRange` verdict for a full-64K project without a client-side workaround.** The upstream `u16`-overflow defect (`raw_data.len() as u16` wrapping 65536→0) is still present in the installed 0.9.20 build — re-confirmed live at `handler.rs:1894` in this research session, not merely carried from the Phase 9 finding. D-32's current refusal is a reasonable stopgap; re-deciding it (the milestone's own stated goal) most likely means a small client-side special-case (detect the full-64K case and answer from `r2000_get_blocks`/`r2000_get_binary_info` instead of trusting the tool's own range check) rather than a new dependency or an upstream wait.
+---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When the alternative would be right |
-|-------------|-------------|--------------------------------------|
-| Extend the hand-rolled stdio client into a persistent-session module | `@mastra/mcp`'s `MCPClient` over stdio | Only if a future `@mastra/mcp` release adds exit-code-after-close to `MCPClient`'s public surface — re-measure the same five properties before switching, do not assume this changed. |
-| `--mcp-server-stdio`, one child per project | `--mcp-server` (HTTP, port 3000) + `StreamableHTTPClientTransport` | Only once the upstream `--mcp-port`/`--mcp-bind` PR lands *and* this project decides multiple simultaneous HTTP sessions are worth the added listener-per-project bookkeeping HTTP would still require even with a port flag — stdio would still be simpler even then, since it needs no port bookkeeping at all. |
-| A small new in-process supervisor for the persistent session | Reusing `vice-broker.mts`'s TCP control plane | Only if regenerator2000 ever needs to run **host-side** (it never will — `--vice` is permanently forbidden and R2000-02 keeps it container-side by construction) or if this project ever needs a genuine pool of *N* simultaneous regenerator2000 sessions rather than one-per-project (no stated requirement for this exists). |
-| Bespoke hazard-detection heuristics over `r2000_get_blocks`/`r2000_get_cross_references` | Waiting for/proposing upstream relocation-hazard detection in regenerator2000 | Only as a separate, explicitly out-of-repo follow-up (same shape as the two existing upstream-PR items already tracked) — not a blocker for this milestone, since regenerator2000's issue tracker was not the target of this research and no such feature is close to landing. |
+| Recommended | Alternative | When the alternative wins |
+|-------------|-------------|---------------------------|
+| `node:sqlite` | `better-sqlite3` 13.0.3 | If a measured hot path needs better-sqlite3's faster statement path, *and* the 11.4 MB install plus the hard failure off its eight prebuild targets are accepted. Neither applies: measured cost is 1.16 ms/edit against a durability floor of one fsync. |
+| `node:sqlite` | `node-sqlite3-wasm` 0.8.60 | Only on a platform lacking `node:sqlite`. None exists — it is in the runtime on every platform Node ships for. |
+| `node:sqlite` | JSON + atomic rename | If the store were tiny and write-rare (< ~50 KB, a handful of edits per session). At 6,000 symbols it is 16 ms/edit and rising. **Keep the technique for the git-diffable text export.** |
+| `node:sqlite` WAL | `node:sqlite` `journal_mode = DELETE` | If single-file-at-rest after an unclean exit is a hard requirement (e.g. a user copies the store while a crashed process's sidecars are on disk). Same crash guarantee, higher commit cost. |
+| Paint array | Sorted array + binary search | If the address space exceeds 64K (banking, REU) or 256 KB of retained memory becomes objectionable. 0.31 µs/lookup, cross-validated against the paint array on all 65,536 addresses. |
+| Owned interval index | `@flatten-js/interval-tree` 2.0.3 | If the domain became unbounded/sparse *and* narrowest-wins were dropped in favour of all-overlaps. Neither is true. |
+| Inverse-command journal | SQLite changesets | If Node exposes `sqlite3changeset_invert`. Record as a named reversal trigger — it would remove the "inverse computed wrong" bug class entirely. |
+| Owned validation | `zod` 4.4.3 | Never, at the current dependency posture: `zod` is an undeclared transitive of `@mastra`. If the project ever declares it directly and deliberately, revisit. |
+| FTS5 for search | `LIKE 'prefix%'` on an indexed column | Both are free (FTS5 is compiled in). FTS5 suits prose comments; `LIKE`/`GLOB` suits identifier and prefix matching, which is what `AUTO_NAME_PREFIX_RE` queries look like. Decide per query at plan time; not a stack decision. |
+
+---
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
-|-------|-----|--------------|
-| `--mcp-server` (HTTP, port 3000) as the persistent-session transport | Hardcoded port, confirmed via `main.rs:397`; collides across concurrent projects/containers on the same host network namespace | `--mcp-server-stdio`, one private pipe per project |
-| `@mastra/mcp`'s `MCPClient` | Missing exit-code-after-close, the exact property a long-lived, occasionally-crashing child needs most | The existing hand-rolled client in `r2000-mcp-client.ts`, extended to persist |
-| Direct `@modelcontextprotocol/sdk` import | Undeclared transitive dependency; phantom-dependency violation per `ENGINEERING_RULES.md` §4 | Same as above — no SDK import needed at all |
-| `vice-broker.mts` / TCP control plane for regenerator2000 supervision | Solves a container/host boundary this process does not have; imports the broker's own accepted attack surface for no structural reason | A small new in-process module borrowing only the *pattern* of the single-owner synchronous launch guard |
-| A generic relocation-hazard-detection framework | No measured caller beyond the four named checks; this project's discipline explicitly rejects speculative generality | Four narrow, named heuristics built directly against `r2000_get_blocks`/`r2000_get_cross_references`/`r2000_read_region` |
+|-------|-----|-------------|
+| `better-sqlite3` 13.0.3 | 11.4 MB / 27.3 MB per consumer, unconditionally; no fallback off its eight prebuild targets (hard `MODULE_NOT_FOUND` on armv7/freebsd/s390x); changes the lockfile hash so every user's next session runs `npm ci`; and fails `ENGINEERING_RULES.md` §4(1) and §4(2) outright | `node:sqlite` |
+| `sqlite3` 6.0.1 | `install` script, `prebuild-install` + `tar` transitive deps, async-callback API | `node:sqlite` |
+| `lmdb` 3.5.6, `classic-level` 3.0.0, `level` 10.0.0 | `gypfile: true` + install scripts (a real build step); and a key/value store means hand-building the entire query surface | `node:sqlite` |
+| `lowdb` 7.0.1 | Last published 2023-12-26; it *is* the whole-file-JSON route (16 ms/edit, scaling with store size) with a dependency attached | Owned atomic-rename for the text export; `node:sqlite` for the store |
+| `write-file-atomic` 8.0.0 | `engines.node: "^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0"` — **above** this project's declared `>=22.18.0` floor. Adopting it forces a breaking `engines` bump for a ~15-line `node:fs` helper | ~15 lines of owned `node:fs`: `open` → `writeFile(fd)` → `fsyncSync(fd)` → `close` → `rename` → `fsync` the directory |
+| `proper-lockfile` 4.1.2 | 5.5 years stale; the store is single-writer by construction and SQLite handles the rest | SQLite locking + the existing FIFO-queue pattern |
+| Any interval-tree package | `static-interval-tree` has **no licence field**; `interval-tree2` and `augmented-interval-tree` are abandoned (2015 / one version ever); `node-interval-tree` and `interval-tree-1d` are 3.7–5.2 years stale; and the one maintained option (`@flatten-js/interval-tree` 2.0.3) still has no narrowest-wins semantics, so you write the deciding logic anyway | ~60–120 lines of owned paint-array code, extending `r2000-coverage.ts`'s existing `toRuns()` pattern |
+| `immer` 11.1.18 | In-memory undo dies at process exit — the exact requirement it must satisfy | Inverse-command journal in SQLite |
+| `zod` 4.4.3 | Present only as an undeclared transitive of `@mastra`; a direct import is the same phantom-dependency defect class `r2000-mcp-client.ts`'s header already names. And the proxy validates nothing anyway, so validation is store-local logic, not a schema layer | Owned validators throwing named `ViceError` subclasses; `r2000-acme-ident.ts` for label legality |
+| `uuid`, `nanoid` | `node:crypto.randomUUID()` is built in | `randomUUID()` for `edit_log.group_id` |
+| Copying `r2000-coverage.ts`'s `classAt()` into the store hot path | Linear over runs: 4.6 µs/lookup, 301 ms per full 64K pass, 250× slower than the paint array | The paint array. Leave `classAt()` where it is — it is correct for the census's once-per-report use. |
+| Keeping `r2000-verify.ts` as "the ACME seam" | It parses **regenerator2000's** `--verify` output and calls `runR2000()`; it dies with the subject | Build the ACME verify path on `disasm-roundtrip.test.ts`'s pattern, gated by the renamed `r2000-test-gate.ts` |
+| A five-prefix reimplementation of the typed label prefixes | `AUTO_NAME_PREFIX_RE` already owns **eleven**; dropping six silently breaks `routine-queue-walker`'s backlog construction | Move the existing regex |
+| A test asserting the store's stderr is empty | `node:sqlite` emits an unconditional `ExperimentalWarning` on the Node 22 line | Assert on results; suppress with `--disable-warning=ExperimentalWarning` if noise matters |
 
-## Stack Patterns by Variant
-
-**If a future milestone needs more than one regenerator2000 project open simultaneously in the same process** (no current requirement):
-- Generalize the new session module to a small keyed map (`projectPath -> session`), still with the same synchronous single-owner guard *per key*.
-- Still do not reach for the broker's TCP control plane — the boundary that justifies it (cross-process/cross-machine) still would not exist.
-
-**If regenerator2000 ever ships `--mcp-port`/`--mcp-bind` upstream** (tracked, not scheduled — same status as `KEYBOARD_MATRIX_SET`):
-- Re-run the same five-property `MCPClient` measurement against the HTTP transport before switching anything — a port flag fixes the collision problem but does not by itself fix `MCPClient`'s missing exit-code-after-close property, which is a client-library gap, not a transport gap.
+---
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
+| Package A | Compatible with | Notes |
 |-----------|-----------------|-------|
-| `regenerator2000` 0.9.20 | rustc ≥ 1.90 (verified floor, not the Cargo.lock-pin-derived 1.88 or the edition-2024 1.85 readings — both superseded, per `docs/phase9-regenerator2000-probe-findings.md`) | Install-time only; irrelevant to this milestone's runtime work since the binary is already installed on this host. |
-| `regenerator2000 --mcp-server-stdio`/`--mcp-server` | Both dispatch through the same `handle_request()` in `handler.rs` | Tool surface is identical (28 tools) regardless of transport chosen — choosing stdio for concurrency safety costs nothing in capability, confirmed by reading the shared dispatch function, not inferred. |
-| `@mastra/mcp` 1.15.0 | `@modelcontextprotocol/sdk` `^1.29.0` (transitive; `1.30.0` resolved in this repo's `node_modules`) | Unrelated to this milestone's recommendation — noted only because the SDK's `StreamableHTTPClientTransport` is what the Phase 9 probe's throwaway harness used to *measure* the HTTP surface, not what this milestone should adopt. |
-| ACME 0.97 "Zem" | This repo's `!cpu 6510` / cbm-format convention, unchanged | `!source`/`!zone`/`*=` behavior confirmed directly against the installed 0.97 binary's own shipped docs (`/usr/share/doc/acme/{QuickRef,AllPOs}.txt`), not a newer/older ACME release — do not assume a newer ACME's `!source` semantics without re-checking, per this project's own standing "re-checked against ACME release 0.97" convention in `acme-build/SKILL.md`. |
-
-## Sources
-
-- `regenerator2000 --version` / `regenerator2000 --help` — run live on this host, 2026-08-23. Confirms `0.9.20`, the exact CLI flag set (`--mcp-server`, `--mcp-server-stdio`, no port flags), and supported file types.
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-0.9.20/src/main.rs` — read directly: `run_server(3000, ...)` at line 397, CLI flag definitions with the literal "HTTP port 3000" doc comment.
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/mcp/{http,stdio,handler}.rs` — read directly: `run_server(port: u16, ...)`'s signature vs. the CLI's hardcoded call site; `run_headless_stdio_loop`'s per-line JSON-RPC loop; the full `r2000_*` tool dispatch table; `get_address_details_impl`'s live `u16`-overflow at line 1894, re-confirmed present in this session.
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/types.rs` — read directly: `BlockType` enum's full variant list.
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/exporter/asm.rs` — read directly: confirms `export_asm()` writes one flat file, no per-scope split.
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/packer_signatures.rs` — read directly: confirms real Exomizer signature detection already shipped.
-- Full-crate `grep` for `jump_table|JumpTable|self.modif|SelfModif|page_align|PageAlign|relocat|Relocat` across `regenerator2000-core-0.9.20/src/` — zero matches, run live this session.
-- `/usr/share/doc/acme/QuickRef.txt` and `/usr/share/doc/acme/AllPOs.txt` (from ACME 0.97 "Zem"'s own shipped documentation, extracted this session) — `!source`/`!src`, `!zone`, `*=`/segment assembly, global/local/cheap-local/anonymous label scoping, all read verbatim.
-- `acme --version` — run live on this host, confirms `ACME, release 0.97 ("Zem"), 31 Jan 2021` matches the version the docs above describe.
-- `src/mcp/vice/r2000-launch.ts`, `src/mcp/vice/r2000-mcp-client.ts` — this repo's own source, read in full; the five-property `MCPClient` decision, the D-17 one-session-per-operation header comment, the `--vice` guard, and the exact error-class taxonomy.
-- `src/skills/acme-build/SKILL.md`, `src/skills/acme-build/scripts/acme.mjs` — this repo's own source; confirms `-I`/entry-file invocation shape needs no change for multi-file `!source` projects.
-- `docs/phase9-regenerator2000-probe-findings.md` — this repo's own prior live-verified research; cited for the HTTP-mode 28-tool confirmation and the still-open `OutOfRange` defect note, both independently re-confirmed against source in this session rather than merely cited.
-- `.planning/PROJECT.md` — this repo's own project record; Current Milestone (v0.5.0 scope, target features, explicit non-goals), Constraints (regenerator2000 dependency/architecture bullets), Key Decisions (the hand-rolled-client precedent), Out of Scope (the two standing upstream PRs, the two prior cut rounds).
-- `.planning/ENGINEERING_RULES.md` §4 (Dependency Policy) — governs the "no new dependency" stance taken throughout this document.
+| `node:sqlite` | Node **>= 22.13.0** without any flag | Added v22.5.0 behind `--experimental-sqlite`; flag removed in **v22.13.0 / v23.4.0** (nodejs/node PR #55890, read from `doc/api/sqlite.md`'s YAML changelog on the `v22.x` branch). The project's `engines` floor of `>=22.18.0` already clears it — **no `engines` bump needed.** |
+| `node:sqlite` stability | **1.1 Active development** on the `v22.x` line; **1.2 Release candidate** since **v24.15.0 / v25.7.0** (PR #61262) | Read from the `v22.x`, `v24.x`, `v25.x` and `main` branches of `doc/api/sqlite.md` this session. Node 22 entered maintenance 2025-10-21 and is EOL **2027-04-30** (`nodejs/Release/schedule.json`); Node 24 is Active LTS. So the *practical* trajectory is toward RC, and a user on Node 24+ already gets RC. |
+| Experimental warning | Emitted on Node 22 only | `lib/sqlite.js` on `v22.x` calls `emitExperimentalWarning('SQLite')` unconditionally at module load. On `v24.x`, `v25.x` and `main` the file is just `module.exports = internalBinding('sqlite')` — **no warning at all.** It goes to stderr, so it cannot corrupt the stdout JSON-RPC channel. Suppress with `--disable-warning=ExperimentalWarning` (verified working on 22.22.0) if `smoke.mjs` or a test is stderr-sensitive. |
+| API drift risk | **Additive only, so far** | Diffing `doc/api/sqlite.md`'s method headings `v22.x` vs `main`: **20 additions, 0 removals.** Only two signature changes, both adding *optional* parameters (`loadExtension(path[, entryPoint])`, `prepare(sql[, options])`). New on `main`: `enableDefensive`, `setAuthorizer`, `limits`, `serialize`/`deserialize`, `createTagStore`, `statement.close()`, `statement.stat()`, `resetStats()`, `[Symbol.dispose]` on session and statement, and the `sqlTagStore` family. This is real evidence that "might change at any time" has, in practice, meant "gains things" — the strongest available answer to the stability objection. Mitigate anyway: **confine `node:sqlite` behind one seam module** (the project's established single-seam pattern) so a future break is a one-file fix, and express the schema in SQL rather than in driver API calls. |
+| `@types/node` 24.13.3 | `node:sqlite` | `sqlite.d.ts` present; `createSession`/`applyChangeset` typed at lines 531/561; **no `invert`**. Typechecks clean under `--strict --module nodenext --target es2022`. Verified by running `tsc`. |
+| Node native type-stripping | `node:sqlite` | Verified: a `.ts` file doing `import { DatabaseSync, type StatementSync } from "node:sqlite"` runs directly on Node 22.22.0 and typechecks clean. No build step. |
+| Statements on Node 22 | No `statement.close()` | `StatementSync.prototype` on 22.22.0 has `run get all iterate columns setAllowBareNamedParameters setAllowUnknownNamedParameters setReadBigInts setReturnArrays` — no `close`. Statements are GC'd. `main` adds `close()` and `[Symbol.dispose]`. Do not write code that depends on explicit statement disposal. |
+| ACME | 0.97 "Zem" (31 Jan 2021) | Unchanged. `label = * + $01` verified working. |
 
 ---
-*Stack research for: c64-re-tools v0.5.0 — persistent regenerator2000 session + multi-file ACME rebuild pipeline*
-*Researched: 2026-08-23*
+
+## Sources and evidence ceilings
+
+Ordered by `ENGINEERING_RULES.md` §7's hierarchy. **HIGH** = real external system, live end-to-end.
+
+**HIGH — run live on this host (Node 22.22.0, ext4/NVMe, ACME 0.97):**
+- `node:sqlite` capability probe: SQLite version, WAL, `synchronous`/`foreign_keys` defaults, savepoints, UDFs, JSON1, FTS5, R*Tree, generated columns, full `DatabaseSync`/`StatementSync` prototype enumeration, `backup` export, `[Symbol.dispose]`.
+- Session/changeset probe: `createSession`, `changeset()` (22 bytes), `patchset()`, cross-database `applyChangeset()` → `true`. **Absence of `invert` confirmed** by prototype enumeration *and* by grepping `@types/node@24.13.3`'s `sqlite.d.ts`.
+- **Durability test:** insert → `process.kill(pid,'SIGKILL')` with no `close()` (exit 137) → reopen → row present → `PRAGMA integrity_check` = `ok`. Sidecar sizes observed.
+- **Persistence benchmark**, 2,000 mutating calls over a 6,000-symbol / 3,000-comment / 2,500-range store, run on ext4/NVMe *and* on tmpfs to quantify the tmpfs distortion (SQLite 0.026 ms on tmpfs vs 1.16 ms on disk — a 45× understatement, which is why the tmpfs run is not quoted).
+- **Interval benchmark:** paint array, sorted+binary-search, naive scan and the SQL formulation, plus a cross-validation of paint vs binary-search across all 65,536 addresses (0 disagreements).
+- **ACME oracle:** `smc_operand = * + $01` and the `= * - 1` variant assembled by real ACME 0.97, exit 0, label file and emitted bytes inspected.
+- `tsc --noEmit --strict --module nodenext` on a `node:sqlite`-using `.ts` file, and the same file executed directly under type-stripping.
+- `better-sqlite3-13.0.3.tgz` downloaded (11.4 MB), unpacked, `lib/binding.js` read for the fallback path, `prebuilds/` enumerated (8 binaries), `files[]`/`scripts`/`optionalDependencies` read from the shipped manifest.
+
+**HIGH — upstream source of truth, read directly:**
+- `doc/api/sqlite.md` and `lib/sqlite.js` on `nodejs/node` branches `v22.x`, `v24.x`, `v25.x`, `main` (stability levels, flag-removal PRs #55890/#61262, warning presence, method-heading diff).
+- `nodejs/Release/schedule.json` (Node 22 maintenance 2025-10-21, EOL 2027-04-30).
+- npm registry API (`registry.npmjs.org`) for every version, publish date, `engines`, `gypfile`, install-script and dependency claim in this document.
+- This repository's own committed source: `vice-proxy.ts` (`buildViceTool` :3263, SDK import :174, no-validation seam :3216-3230, `r2000_*` registration :3402), `r2000-coverage.ts` (`R2000Symbol`/`R2000Comment`/`R2000BlockEntry`/`R2000CrossReference` :192-224, `ClassRun`/`toRuns`/`classAt` :272-347, `AUTO_NAME_PREFIX_RE` :1384), `r2000-verify.ts` (regenerator2000-not-ACME, `VERIFY_LINE_PATTERN`), `disasm-roundtrip.test.ts`, `r2000-test-gate.ts`, `r2000-acme-ident.ts`, `repo-root.ts`, `package.json`, `.gitignore`.
+- `.planning/PROJECT.md`, `.planning/ENGINEERING_RULES.md`, `.planning/seeds/own-the-annotation-store.md`.
+
+**MEDIUM — inference from directly-read evidence, not itself executed:**
+- *"Adopting `better-sqlite3` triggers `npm ci` for every existing user's next session."* Follows from `scripts/ensure-mcp-deps.sh` being gated on a lockfile sha256 (per CLAUDE.md) plus the fact that a new dependency changes the lockfile. The hook was not run.
+- *"No fallback off `better-sqlite3`'s eight prebuild targets."* Read from `lib/binding.js`'s fall-through to a `build/Release` path that no install script creates. Not tested on an armv7/freebsd host — no such host available.
+
+**Gaps, stated rather than smoothed:**
+- Node **24/25/26** were not available on this host, so the "no `ExperimentalWarning` on 24+" claim rests on reading `lib/sqlite.js` on those branches, not on running them. Source-level, high-confidence, but not live.
+- The 1.16 ms/edit figure is one machine's NVMe. A consumer on spinning rust or a network filesystem will be slower — but so will *every* route, since all of them are fsync-bound. The *ratio* between routes is the durable finding, not the absolute.
+- FTS5-vs-`LIKE` for the search surface was confirmed *available* but not benchmarked. Left as a plan-time decision.
+
+---
+*Stack research for: owned annotation store with per-range interval typing, undo and crash-safe persistence (v0.7.0)*
+*Researched: 2026-08-26*

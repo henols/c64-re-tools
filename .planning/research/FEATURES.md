@@ -1,211 +1,316 @@
 # Feature Research
 
-**Domain:** Binary-to-modifiable-source reverse engineering (C64/6502, retro-console disassembly-to-rebuild pipelines)
-**Researched:** 2026-08-23
-**Confidence:** MEDIUM (community/GitHub sources, cross-checked across 3+ independent named projects per claim; no primary-vendor docs exist for this domain — the community itself *is* the source hierarchy's top tier here)
+**Domain:** Annotation stores for binary reverse engineering, consumed by an LLM agent over MCP rather than a human GUI (6502/C64, 64K flat address space)
+**Researched:** 2026-08-26
+**Confidence:** MEDIUM overall — **HIGH** for everything traced to this repository's own source, manifests and skills (read directly this session); **MEDIUM** for the comparable-tool survey (each claim cross-checked across ≥2 independent sources per the confidence seam); **LOW** for any single-page claim, marked inline.
 
-## Context this research answers into
+## What this answers, and the test it applies
 
-v0.5.0 adds the step from *annotated binary* (regenerator2000 store, already built) to *rebuildable, modifiable source*. The milestone's Active requirements already commit to: full decomposition with **measured** coverage, one-file-per-subsystem export wired through ACME's `!source`, symbol-only references everywhere, a **relocation-hazard report**, provenance-awareness (cracker patches excluded), a demonstrated modify-reassemble-observe loop, and **behavioural equivalence in VICE via `compare.mjs`** as the final bar — explicitly *not* byte-identity. This research validates each of those choices against how the wider disassembly community actually works, and flags the one place this project's constraints (no clean original binary; cracked-release provenance) make it structurally different from every named prior-art project.
+v0.7.0 replaces regenerator2000's `state/` with an annotation store this project owns. The consumers **already exist and are specified**: five absorbed analysis procedures live in this repo's skills, written against `r2000_*` calls, and `.planning/phases/19-.../upstream-procedure-manifest.json` classifies every verb each one calls. That manifest is the derived specification.
 
-## Q1 — How the community does full-game disassembly to rebuildable source
+Every feature below is scored against this project's standing measured test:
 
-There is a mature, decades-old practice with a small set of load-bearing conventions repeated across every serious project, independent of target platform:
+> **Does a shipped skill call this, or does something a skill calls depend on it?**
 
-**Named prior art:**
+Applied mechanically, not by judgment. The measurements:
 
-| Project | Platform | Assembler/build | Verification | Notes |
-|---|---|---|---|---|
-| [pret/pokered](https://github.com/pret/pokered) | Game Boy | RGBDS + Makefile | Byte-identical ROM (build fails otherwise) | Canonical reference for the whole "disassembly project" genre; `engine/`, `data/`, `gfx/`, `maps/`, plus `wram.asm`/`hram.asm`/`sram.asm` for memory-area symbol tables; `scan_includes` tool derives the dependency graph from `INCLUDE`/`INCBIN` directives so the Makefile doesn't hand-list every file |
-| [sonicretro/s1disasm](https://github.com/sonicretro/s1disasm) | Sega Mega Drive | AS68k/ASM68k (two dialects kept aligned) | Matching ROM | Long-running (10+ years), CI via GitHub Actions, community-maintained fork-and-PR model |
-| doppelganger's SMBDIS.ASM ([Xkeeper0/smb1](https://github.com/Xkeeper0/smb1), ca65 port at [threecreepio/smb-disassembly](https://github.com/threecreepio/smb-disassembly)) | NES | ca65 | Byte-identical | The most-cited single-file 6502 disassembly in the hobbyist community; later reworked into [6502bench SourceGen](https://6502disassembly.com/nes-smb/) format for cross-referenced browsing |
-| [crystalisdisassembly/crystalisdisassembly](https://github.com/crystalisdisassembly/crystalisdisassembly) | NES | ca65 | Byte-identical diff against a supplied original ROM when present | Uses a **Mesen Code/Data Log (CDL)** to drive both code/data classification and a published completeness percentage (see Q4) |
-| [mwenge/iridisalpha](https://github.com/mwenge/iridisalpha) | **C64** (Jeff Minter, 1986) | 64tass + Exomizer, VICE for validation | Not explicitly stated as byte-identical; framed as educational/buildable | `src/`, `bin/`, `demos/`, `docs/`, `orig/`, `utils/` layout — `orig/` keeps the pristine input alongside the recovered source, a pattern worth copying |
-| [mwenge/gridrunner](https://github.com/mwenge/gridrunner) | **C64** (Jeff Minter, 1982) | 64tass, VICE | **Explicit incremental MD5 byte-for-byte checks** while recovering source | Documents the actual recon workflow: BASIC-stub trace → relocation copy (`$0900`→`$8000`) → char-set extraction via `$D018` → main-loop discovery via repeated `JSR` clusters → renaming (`e84F8` → `UpdateShipPosition`) as understanding solidifies |
-| [Piddewitt/C64-Game-Source-Code](https://github.com/Piddewitt/C64-Game-Source-Code) | **C64** (Loderunner, Championship Loderunner, Castles of Dr Creep) | 64tass, 65xxDis, WinVice | Byte-identical for `originals/`; **explicitly not** for `mods/` | **The single most relevant precedent in this research.** Its stated goal for the pristine tree is "reassembles to an exact copy of the original binary," but it maintains a *parallel* `mods/` tree with the *same file layout* where "source [is] as variable as possible to allow any kind of modifications, data area and code relocation" — i.e., symbolic labels and configurable addresses replace hard-coded ones specifically so a human can move code and swap data without re-deriving addresses by hand |
-| [mist64/c64ref](https://github.com/mist64/c64ref) | C64 KERNAL/BASIC ROM | — | — | Not a game disassembly but the canonical fully-commented ROM reference; useful for symbol-naming conventions this project's `c64-memory-mapping` skill already mirrors |
+**Store verbs called directly by shipped skills** (`grep -rho 'r2000_[a-z_]*' src/skills/`):
 
-**Universal conventions across all of the above, regardless of platform:**
+| Skill | Store verbs it calls |
+|---|---|
+| `c64-memory-mapping` | 13 — `apply_enum_usage`, `batch_execute`, `create_project_enum`, `disassemble`, `get_address_details`, `get_binary_info`, `get_blocks`, `get_cross_references`, `read_region`, `save_project`, `set_comment`, `set_data_type`, `set_label_name` |
+| `c64-program-recon` | 15 — the above minus `disassemble`/`get_address_details`, plus `add_scope`, `get_comments`, `get_symbols`, `search_disassembly` |
+| `routine-queue-walker` | 8 — `get_binary_info`, `get_comments`, `get_cross_references`, `get_symbols`, `read_region`, `save_project`, `set_comment`, `set_label_name` |
+| `acme-build`, `c64-provenance-diff`, `c64-ram-capture`, `vice-wedge-triage` | **none** — these four are store-independent |
 
-1. **One file per subsystem/bank, wired by an include mechanism, never one flat file.** RGBDS's `INCLUDE`, ca65's `.include`, ACME's `!source` all serve the same purpose: let the assembler's own include graph *be* the module boundary, rather than inventing a separate build-config format. This project's Active requirement ("one file per subsystem off r2000 scopes wired by `acme-build`'s `!source`") is exactly this convention, using this project's existing assembler.
-2. **Symbol tables for memory areas are separate from code.** `wram.asm`/`hram.asm` (pret) is the same idea as this project's r2000 scope-derived label store — a place that owns "what does this address mean" independent of which routine references it.
-3. **A pristine/`orig` copy of the source binary is kept alongside recovered source**, never overwritten, so provenance and re-verification stay possible. This project's own architecture already keeps `.bin` dumps immutable per `c64-provenance-diff`'s D-05 ("the `.bin` files are never edited or zeroed").
-4. **Naming starts generic and is promoted only on evidence**, exactly mirroring this project's `[confirmed-code]`/`[probable-code]`/`[unknown]` confidence-grade discipline already built into `c64-program-recon`. Gridrunner's own writeup names this explicitly: labels evolve from `e84F8` to `UpdateShipPosition` as understanding solidifies, never the reverse.
-5. **Code/data separation is empirically driven** — what the PC actually visits, not what a linear decoder guesses. This is already this project's stated method (`c64-program-recon` step 5, "a range never executed is data, whatever a tracer guessed") and matches how Crystalis's CDL and Gridrunner's ASCII-run detection both work.
-6. **The flat original binary is never treated as one address space to hand-carve.** Every project above splits the load image at boot/entry-known boundaries (BASIC stub, loader-copy target, bank switch) before annotating — this project's recon skill already does this (step 1/2, HIRAM/vector derivation).
+**Store verbs reached indirectly**, via the 8 CLI verbs the skills document (`bootstrap`, `export-asm`, `verify`, `gen-enums`, `export-lbl`, `import-lbl`, `render-memmap`, `coverage`). Measured at the only non-test `runR2000Tool(...)` call sites in the tree:
 
-## Q2 — Byte-identity vs functional/behavioural equivalence (the load-bearing question)
-
-**What the byte-identity community gains, concretely, from every project above:** a mechanically checkable, zero-judgment oracle. "Does the reassembled binary's MD5 match?" requires no human review of correctness and catches *any* wrong opcode, wrong operand, or misread byte immediately — Gridrunner's writeup describes this literally as the thing that let false steps be caught immediately during recovery. It is the cheapest possible correctness gate a disassembly project can build, and every named C64 example (Piddewitt, Gridrunner) uses it for exactly that reason during initial recovery.
-
-**What it costs, and where the community's own practice concedes this:**
-
-- **It caps modifiability at zero by construction.** The moment a byte changes on purpose, the oracle you built stops applying — there is no way to "modify a little and still check the whole thing" with an MD5. Piddewitt's own project structure is the community's tacit admission of this: it does not try to extend byte-identity into the `mods/` tree. It builds the `originals/` tree to prove the disassembly is *correct*, then explicitly discards that oracle the moment the goal shifts to *modification*, replacing "provably correct" with "the assembler labels are named and parameterised enough that a human confidently understands what moving them would do."
-- **N64 decompilation projects hit the same wall from the C-decompilation side and named their escape hatch explicitly: `NON_MATCHING`.** Projects like [n64decomp/sm64](https://github.com/n64decomp/sm64) and [zeldaret/oot](https://github.com/zeldaret/oot) target compiler-output-identical (their form of byte-identity) as the default, verified per-function with `asm-differ`, but accept a function tagged `NON_MATCHING` when only *functional* equivalence is achievable or desirable — same observable behaviour and side effects, different compiled bytes. Verification for those functions is not automatic; it is asm-differ's diff read by a human plus test/playthrough coverage. This is a direct precedent for "verify behaviour, not bytes" as a first-class, named, accepted mode within an otherwise byte-obsessed genre — it is not a fringe idea.
-- **The modding fork pattern is the cleanest precedent of all.** [HackerN64/HackerOoT](https://github.com/HackerN64/HackerOoT) forks zeldaret/oot's matched decomp specifically "to provide a flexible, easy-to-use base for creating romhacks." The moment it forks, matching stops being the target at all — the fork's own verification is "does it build, and does it play correctly," checked by running the game, not by any automated equivalence tool. zeldaret's own stated charter is explicit division of labour: *they* do matching decompilation only; downstream teams that want to modify things fork off and stop caring about matching. **This is the community's actual answer to "how do projects that want modifiability verify instead": they build, they run it, they play it, and they trust the fork's provenance (it started from a matched decomp) rather than a mechanical bytewise or behavioural check.**
-- **TASVideos' console-verification practice is the nearest real precedent for automated *behavioural* equivalence checking**, though it verifies emulator-vs-hardware, not source-vs-binary: a recorded, deterministic input sequence is replayed and the resulting state (not the ROM bytes) is what's compared. That is structurally the same shape as this project's own `compare.mjs` bar — replay inputs into a live VICE, compare resulting machine state rather than static bytes.
-
-**Why this project is right to reject byte-identity outright, not merely as a preference but structurally:** every named byte-identity project above (Piddewitt, Gridrunner, pret, Crystalis, s1disasm) has one thing this project's own skills prove it does **not** have — a single clean original binary to match against. `c64-program-recon`'s own text states it plainly: *"no original master exists to strip [loader/cruncher/cracktro layers] for you."* `c64-provenance-diff` exists precisely because determining "what the game originally was" requires cross-referencing multiple independently-cracked releases and still leaves ranges `UNKNOWN` rather than resolved. Byte-identity to *what*, exactly, is not a rhetorical question here — there is no canonical target byte sequence, only a provenance-graded composite with some ranges carrying `HIGH` confidence and others honestly `UNKNOWN`. Chasing an MD5 match would force either (a) inventing a canonical binary that never existed, or (b) reproducing whatever cracker patches happen to sit in whichever release was captured — exactly the trainer-inheritance hazard `c64-provenance-diff` was built to catch. Functional/behavioural equivalence in VICE is therefore not a downgrade from the community's gold standard; it is the *only* target that is even well-defined given this project's own provenance model. This is the strongest, most load-bearing finding of this research: **state it in the roadmap as a structural fact, not a stylistic choice.**
-
-**What "verify instead" concretely looks like, synthesizing the above for this project:** input-replay + state comparison (TASVideos' shape), scoped per-behaviour rather than per-byte (the N64 `NON_MATCHING`-function shape: verify the thing you changed, trust the rest by construction because it round-tripped through `r2000 verify`'s reassembly gate unchanged), gated by "does it build" as a cheap pre-filter before any behavioural check runs (every project above, without exception, gates on a clean assemble first).
-
-## Q3 — What makes disassembled source actually modifiable
-
-| Practice | Table stakes or differentiator | Evidence | Complexity | Depends on (existing) |
-|---|---|---|---|---|
-| Symbol-only references (no raw absolute addresses in branches/JSR/JMP/data refs) | **Table stakes** | Every named project (pret, Piddewitt, Gridrunner); this project's own Active requirement | LOW–MEDIUM | r2000's cross-reference store (`r2000_get_cross_references`), already built |
-| One file per subsystem, wired by assembler include | **Table stakes** | pret's `engine/`/`data/`/`gfx/`, Piddewitt's per-game layout | MEDIUM | r2000 scopes (`r2000_add_scope`, already built), ACME's `!source` (already built) |
-| Data extracted to its own file(s), separate from code | **Table stakes** | pret's `gfx/`/`maps/` split; Crystalis's CDL Code/Data split | MEDIUM | r2000's `set_data_type` block classification (already built) |
-| Macros/constants for hardware registers instead of magic numbers | **Table stakes** | ACME's `<cbm/c64/vic.a>` etc. (already used by `acme-build`); this project already generates register-bit enums (`r2000 gen-enums`, v0.3.0) | LOW (already substantially built) | `c64-memory-mapping`'s `memmap.json`, `r2000 gen-enums` — both existing |
-| Explicit padding/alignment for anything page-sensitive | **Differentiator** — most named projects handle this ad hoc, not systematically | 6502-community consensus (self-modifying code, jump tables, cycle-exact raster code all care about page boundaries) | MEDIUM–HIGH | new: the relocation-hazard report (Active requirement) is exactly where this should be surfaced |
-| Documentation density (comment-per-routine, not comment-per-line) | **Table stakes**, but *density* is a differentiator | Every named project comments at routine/block granularity; Gridrunner shows line-level comments only where genuinely non-obvious | LOW | r2000's comment store, already built |
-| **What breaks first when inserting/removing code in 6502**, per 6502-community sources: | | | | |
-| — Anything computed by *distance* rather than by symbol: relative branches (`BEQ`/`BNE`/etc., ±127 range) silently go out of range and the assembler must catch it, not silently wrap | Table stakes to detect | 6502.org community consensus | LOW (ACME already errors on out-of-range branches) | none new |
-| — Self-modifying code: an instruction's *operand bytes* are also data someone else writes to. Moving the instruction without moving the write-site (or vice versa) breaks it silently, and it will not show up as an assembly error | **The single most dangerous class** | 6502.org "Self modifying code" thread; this is *exactly* what the Active requirement's relocation-hazard report exists to enumerate | HIGH | needs new detection: any write target that falls inside `code`-typed range |
-| — Jump tables built from computed offsets (`page,X` addressing into a table of `JMP`/address pairs) break if the table or the targets move independently | Table stakes to detect | 6502.org jump-table discussion | MEDIUM | r2000's block/data-type store already distinguishes `address`-typed data — this is a query over data already captured |
-| — Page-crossing timing: raster-synchronised code that depends on cycle-exact timing can break *functionally* (visible glitch) even when the reassembled bytes are correct, purely because inserting code shifts a branch across a page boundary and adds a cycle | **Real and C64-specific**, not covered by any of the byte-identity projects above since none of them are raster-critical to the same degree as most C64 games | This project's own constraints file already documents raster-IRQ sensitivity (`CHECKPOINT_INFO` synchronous-emit hazard) | HIGH | flagged, not solved, by the relocation-hazard report |
-
-## Q4 — Coverage and completeness, measured not asserted
-
-The clearest, most reusable precedent is **crystalisdisassembly's published coverage report**, generated from a Mesen Code/Data Log:
-
-> "PRG Analysis 92.19% Complete (18.74% Code, 73.45% Data, 7.81% Unknown)" plus a parallel CHR (graphics-data) percentage.
-
-This is exactly the shape the milestone's Active requirement wants ("nothing left `Undefined`... with coverage measured, not asserted"). It is directly computable from data this project already has:
-
-- **Bytes classified vs total**: `r2000_get_blocks` already returns every block's type (`code`/`byte`/`address`/`petscii`/…) or its absence — `% classified = (total bytes) − (bytes in blocks still Undefined) / (total bytes)`. No new data collection needed, only a report generator over existing store queries.
-- **Entry points / routines named vs auto-named**: `r2000_get_symbols` already distinguishes user labels from generated ones (`export-lbl`'s own "USER labels only" caveat proves the store already knows this distinction).
-- **Hardware writes named vs raw**: `r2000 gen-enums`'s output is exactly this, and it's already built.
-- **Non-hardware referenced addresses without a comment/label**: a query over `r2000_get_cross_references` intersected with `r2000_get_symbols`/`r2000_get_comments` for the referenced-but-undocumented set.
-
-**This is a report-generation feature, not a data-collection feature** — the store already has everything a coverage report needs. Complexity: LOW–MEDIUM (aggregation script over existing `r2000_*` queries), and it should be one of the earliest deliverables in the phase sequence since every other Active requirement ("nothing left Undefined," "every referenced non-hardware address documented") is *itself* a coverage claim that needs this instrument to be checkable rather than asserted — directly mirroring this project's own hard-won lesson (stated in `PROJECT.md`) that an internally-asserted claim is worth less than a mechanically checked one.
-
-## Q5 — Anti-features
-
-| Candidate | Genuinely an anti-feature? | Why |
+| CLI verb | Store verbs it depends on | Source |
 |---|---|---|
-| Producing C or a high-level decompilation instead of assembly | **Yes.** | Every C64-specific named project (Iridis Alpha, Gridrunner, Piddewitt) targets assembly, not C, because ACME/64tass round-trips byte-for-byte and a C decompiler for 6502 does not exist with anything near that fidelity — C decompilation is an N64/PS1-era practice tied to compiled-from-C originals; C64 games are hand-written 6502, so "decompiling to C" would be inventing a compiler-generated shape the source never had. This project's whole toolchain (ACME, `!source`, symbol store) is already assembly-native; a C target would discard all of it. |
-| Attempting automatic relocation/rebasing | **Yes, and the roadmap already agrees.** | The Active requirement list *itself* calls for a **relocation-hazard report** rather than automatic relocation — because self-modifying code, jump tables, page alignment, and cycle-exact raster code (Q3 above) make blind automatic relocation unsafe on 6502 in ways that have no general static solution. Enumerate hazards; let a human decide. Automating the move itself would be building the wrong tool for a problem this domain has never solved generally. |
-| Auto-renaming everything with LLM-guessed names and no evidence | **Yes.** | Directly contradicts this project's own established discipline: `c64-program-recon`'s confidence-grade prefixes (`[confirmed-code]`, `[probable-code]`, `[unknown]`) exist specifically so a name or classification is never asserted without a stated evidence bar, and "promote by re-logging with new evidence, never by editing a grade in place" is already a hard convention across every skill in this repo. An LLM guessing plausible names en masse without evidence is exactly the "confident nonsense" `c64-provenance-diff`'s own header warns against, applied to a different axis. |
-| A GUI | **Yes.** | No existing skill in this project has one; the entire interaction model is Claude Code driving CLI/MCP tools. A GUI would be new surface with no consumer (an LLM doesn't use one) and no precedent — pure scope creep. |
-| HTML export | **Yes — and this is a repeat decision, not a new one.** | v0.3.0 already cut this exact feature (`R2000-07`, HTML export with clickable xrefs) with the rationale "a shareable artifact no skill produces or consumes." Nothing about v0.5.0 changes that calculus; regenerator2000's `--export_html` remains available ad hoc outside this pipeline. Re-litigating it would be re-adding scope this project already measured and rejected once. |
-| Supporting non-C64 targets | **Yes.** | The entire stack (VIC-II/SID/CIA register maps, ACME's `cbm/c64/*` includes, the 6510 illegal-opcode set, regenerator2000's C64 project defaults) is C64-specific by construction; generalizing to other 6502 platforms (NES, Apple II) would multiply the memory-map and register surface for zero demand — no requirement, issue, or prior milestone names another target. |
-| **Byte-identical rebuild as an acceptance bar** (for completeness, though not literally asked as a candidate — it is this milestone's central rejected option) | **Confirmed correctly rejected**, and confirmed *structurally* rejected, not just stylistically — see Q2. | — |
+| `gen-enums` | `search_disassembly` ×2, `create_project_enum`, **`update_project_enum`**, `apply_enum_usage` | `r2000-enum-gen.ts:304,318,419,431,446` |
+| `import-lbl` | `set_label_name` | `r2000-symbols.ts:378` |
+| `coverage` | `get_blocks` (divergence sub-report **only**), `get_symbols` (label ratio), `get_comments` (comment vacuity) | `r2000-coverage.ts:186-187` |
+| `export-asm` / `verify` | the whole model — labels, comments, blocks, scopes, enums — rendered to ACME | `r2000-cli.ts`, `r2000-verify.ts` |
+| `export-lbl` | labels, **user kind only** (measured: auto `a_`/`e_` externals are not exported) | `r2000-symbols.ts:16-23` |
+| `bootstrap` | store creation / open | `r2000-project.ts` |
+| `render-memmap` | **none** — reads `memmap.json`, never the store | `r2000-memmap-render.ts` (no `runR2000Tool` call site) |
 
-**One candidate worth flagging as genuinely fine, not an anti-feature, contrary to how it might first read:** *keeping a byte-identical check as an optional, early-phase sanity gate on the un-modified export* (i.e., before any deliberate change is made, prove the freshly-exported source reassembles to something behaviourally — and, where a clean baseline exists, bytewise — equivalent to the captured RAM image it came from). This is not the acceptance bar the milestone rejected (that bar is about *modified* source matching original *bytes*, which this project structurally cannot even define — see Q2). It is a much narrower, cheap, one-time confidence check on the *unmodified* export, in the same spirit as `r2000 verify`'s existing reassembly gate, and every named project in Q1 does something like it as a first correctness pass before any modification begins. Recommend keeping it in scope as a pre-modification sanity step, distinct from and strictly weaker than the rejected acceptance bar.
+**Result of applying the test to the current 19-verb curated surface:** 18 verbs have a named consumer. **One does not: `r2000_delete_project_enum`** — no shipped skill calls it, and no skill-called module calls it (`gen-enums` uses create-then-update, never delete). It is surplus and should not be rebuilt.
 
-## Q6 — BASIC handling: confirmed, not challenged
+## How comparable tools model this
 
-The exclusion of BASIC token decoding is validated by both the research and this project's own already-built recon method. `c64-program-recon`'s own step 1 states the C64-community-standard pattern directly: *"Post-depack: wherever the PC sits at the decrunch checkpoint. There is no BASIC stub to find"* for a post-loader captured image, and separately documents the canonical stub shape when one exists (`c64-provenance-diff`/`acme-build`'s scaffold: a one-line `SYS <address>` BASIC program whose sole job is to transfer control to machine code). Community sources on C64 program structure (Lemon64 threads on BASIC loaders, `restore64.dev`'s auto-depack tooling) confirm this is close to universal practice for commercial C64 games: the BASIC "program" is a single `10 SYS xxxxx`-shaped line (or occasionally two — one `SYS` line plus a `POKE`/`REM` line for a loader parameter), never a meaningful *program* written in BASIC. Games with substantial BASIC logic beyond a stub exist (a minority of budget/type-in titles, and some earlier titles that fell back to BASIC for menu-only screens), but they are not the profile this project's toolchain targets (cracked commercial releases reached via VICE/regenerator2000, per `c64-provenance-diff`'s worked examples). **Verdict: the exclusion is correct.** Decoding a one-line `SYS` stub, when it needs handling at all, is a two-second manual read, not a subsystem — building or absorbing a BASIC tokenizer for this would be solving a problem the corpus this project actually targets does not present.
+**MEDIUM confidence** — cross-checked per tool.
+
+| Concern | Ghidra | IDA Pro | rizin/radare2 | Binary Ninja | SourceGen (6502) | Regenerator / regenerator2000 (C64) |
+|---|---|---|---|---|---|---|
+| Labels | Symbols + namespaces | Names, local labels | Flags (`f`, `fr`, `f-`) | Symbols | user / auto, tagged non-unique-local / unique-local / global / exported | user labels; auto `a_`/`e_`/`s_` prefixes |
+| Comment kinds | **5** — EOL, PRE, POST, PLATE, REPEATABLE | **5** — regular, repeatable, function, anterior, posterior | **1** (`CC`) | **1** + a separate *tags* axis | **3** — end-of-line, long comment (emitted), note (**never** emitted) | **2** — line, side |
+| Range typing | Data types over ranges via `Listing` | Per-item (code/data/array/string) | `Cd` data, `Cs` string metadata | Types | Data format descriptors incl. PETSCII and C64 screen codes | 12-variant `BlockType` |
+| Xref access kind | **First class** — `RefType.READ` / `WRITE` / `READ_WRITE`, `FlowType.COMPUTED_JUMP` | code vs data, with read/write/offset subtypes | weaker | weaker | operand-target driven | **address list only, no kind** |
+| Undo | transactional, multi-level | none until **7.3** (2019), then database-level + redo | **none** (edit and re-save) | `BeginUndoActions`/`Commit`, user actions only — *auto actions are not undoable* | yes | yes |
+| Persistence | ProgramDB (binary) | `.idb`/`.i64` | explicit projects (`Ps`/`Po`) | `.bndb` via `FileMetadata` | **JSON + a CRC of the data file, user data only** | `.regen2000proj` |
+| Banked memory | overlay blocks; **no** automatic bank-switch analysis | manual segments | manual | manual | address regions | flat |
+
+### What is genuinely conventional
+
+Six things every tool in the table has, in the same shape:
+
+1. A **named label keyed by address**.
+2. **Free-text comments keyed by address**.
+3. A **code-vs-data range classification** the disassembler obeys.
+4. **Cross-references *to* an address**.
+5. **Project persistence to a file**, separate from the binary.
+6. A **user-vs-auto provenance distinction on names** (Ghidra symbol source, SourceGen user/auto labels, Binary Ninja user/auto actions, `get_symbols`' `kind: user|system|auto`). This one is load-bearing here and easy to drop by accident: `routine-queue-walker`'s entire premise is a backlog of *auto-named* symbols, and `export-lbl` exports *user* labels only.
+
+### Where they disagree, and whether it matters here
+
+**Comment multiplicity — disagreement is real, and mostly does not matter.** Five kinds (Ghidra, IDA) down to one (rizin, Binary Ninja). The **line / side** pair is C64-native, not a regenerator2000 invention — the original Regenerator advertised full-line and side comments plus user labels years earlier. Two kinds is defensible and is what every caller uses. The **one distinction worth stealing** is SourceGen's *note* vs *long comment*: a note is multi-line and **never emitted into generated source**, a long comment is. No C64 tool has it, and an ACME exporter is exactly where the difference bites — a triage note like `[unknown] looks like a decrunch stub, unverified` should not land in shipped source. Cheap: one enum value, no new storage.
+
+**Undo — genuinely contested, and the LLM consumer breaks the tie.** See the anti-features table.
+
+**Xref access kind — matters, and is the one place regenerator2000 is behind.** `r2000_get_cross_references` returns bare addresses. Ghidra keeps `READ`/`WRITE`/`READ_WRITE`/`COMPUTED_JUMP` as a field, and v0.6.0's held `GHID-05` already states the reason: *"the annotation join consumes the kind and not only the address."* The honest measured position: **no shipped skill or skill-called module consumes an access kind today** — `r2000-coverage.ts` derives dispatch idioms from bytes itself and does not read xref kinds. So the *classifier* is surplus, but the *field* is nearly free, because the decoder already knows `sta $d020` is a write at decode time and cannot recover it later without re-decoding. Recommendation: **store the kind, do not build analysis on it**, and say plainly it is speculative-but-cheap rather than caller-driven.
+
+**Flat vs banked address space — does not matter for v0.7.0, and the reason is on the record.** Ghidra's answer is overlay memory blocks with *no automatic bank-switch analysis* (GhidraNes maps each bank to its own overlay block and documents bank handling as manual). Everyone else is flat. For the C64 the real cases are RAM under I/O at `$D000-$DFFF` and KERNAL/BASIC ROM shadowing at `$A000`/`$E000`. `PROOF-03` — the requirement that would have measured where a forward-carried `$01` value becomes wrong — is recorded **`could-not-run`** at the Phase 23 `no-go`, and `memmap.json` is a flat address model. So: **keep addresses flat and unqualified in v0.7.0, and record the assumption at the store's own seam** so a future milestone finds it instead of discovering it. Adding a bank qualifier now would be modelling for an unmeasured requirement.
+
+## Feature Landscape
+
+### Table Stakes (every comparable tool has it; every consumer needs it)
+
+| Feature | Why Expected | Complexity | Notes |
+|---|---|---|---|
+| **Label at an address** (`set_label_name`) | Universal. Present in all 6 surveyed tools plus the original Regenerator | **LOW** | Consumers: 3 of 5 absorbed procedures (`blocks`, `routine`, `symbol`), all 3 store-using skills, `import-lbl`. Depends on `r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier` — **REJECT, never sanitize**, already the convention |
+| **Label kind: user / system / auto** (`get_symbols` filter) | Conventional in 4 of 6 tools | **LOW** | Consumers: `routine-queue-walker`'s backlog *is* the `auto` set; `export-lbl` exports `user` only; `coverage`'s two label ratios. Do not collapse to one kind |
+| **Comment at an address, line + side** (`set_comment` / `get_comments`) | Universal; the line/side pair is C64-native | **LOW** | Consumers: **all 5** absorbed procedures, all 3 skills. Multi-line must work on `line` (upstream's does). Carrier for the `[confirmed-code]`-style confidence prefix — see differentiators |
+| **Per-range data typing, inclusive both ends** (`set_data_type`) | Universal | **MEDIUM** | Consumers: `analyze-basic`, `analyze-blocks`, `c64-memory-mapping`, `c64-program-recon`. v0.7.0 mandates the *full* `DECOMP-01` vocabulary — code, byte, word, address, PETSCII, screencode, table — not the subset this milestone exercises. Upstream's 12 variants include 4 split-table forms (`lo_hi_address`, `hi_lo_address`, `lo_hi_word`, `hi_lo_word`), `external_file` and `undefined`; the split forms have a real 6502 caller (SID frequency tables, jump tables) and an even-count validation rule |
+| **Block enumeration** (`get_blocks`) | Universal — the derived range table is how any listing is rendered | **MEDIUM** | Consumers: `analyze-blocks`, `c64-program-recon`, `coverage`'s divergence sub-report. **Ranges must be stored explicitly, not merged on adjacency** — see the splitter note below |
+| **Cross-references to an address** (`get_cross_references`) | Universal | **MEDIUM–HIGH** | Consumers: `analyze-blocks`, `analyze-routine`, `analyze-symbol`, all 3 skills, `get_address_details`'s composition. Requires the decode plus `address`-typed data ranges to yield pointer xrefs (which is *why* `address` typing "creates X-Refs" in the current description) |
+| **Search over labels + comments + instructions** (`search_disassembly`) | Present in all 6 | **MEDIUM** | Consumers: `c64-program-recon`'s `[unknown]` query; `gen-enums` (two passes). Keep the existing hard decision: **`max_results` REQUIRED with no default** — upstream's silent default of 50 truncated a full-program pass — and return the count so truncation is detectable |
+| **Persistence: open, save, survive process death** (`save_project`) | Universal | **MEDIUM** | Consumers: 4 of 5 absorbed procedures end with it. `STORE-02` requires proof by planted violation (mutate → kill → reopen; then remove the save and prove the test reddens). Keep the existing rule: **never report persisted on the strength of the store's own success text** — re-read the file's content hash |
+| **Read a region as disasm *or* hexdump** (`read_region`) | Both views exist in every tool | **LOW** | Consumers: `analyze-basic`, `analyze-blocks`, `analyze-routine`, all 3 skills. Reuses the owned decoders. Keep the byte cap that **refuses by name** rather than truncating silently |
+| **Binary info** (`get_binary_info`) | Conventional (origin, size, platform) | **LOW** | Consumers: **4 of 5** absorbed procedures. Fields in use: origin, size, platform, filename, description, **entropy** (the >7.5 packed gate `analyze-program` relies on after `unpack_binary` was omitted), illegal-opcode hint |
+| **Batch execution** (`batch_execute`) | Conventional in the LLM-facing generation (ida-pro-mcp, ghidra-mcp) | **MEDIUM** | Consumers: `analyze-basic`, `analyze-blocks`. Preserve the **measured** upstream semantics this repo already documents: the loop does **not** abort on first failure; each entry returns `{status:success|error}` — see the LLM section |
+| **Address details** (`get_address_details`) | Conventional | **LOW** | Consumer: `analyze-symbol`. Already a client-side composition of four reads (D-36), carrying `composed_client_side:true` and `composed_from`. Owning the store makes this a native read — but **keep the marker convention** for any answer that is still composed |
+
+### Differentiators (this project's competitive advantage)
+
+| Feature | Value Proposition | Complexity | Notes |
+|---|---|---|---|
+| **Project enums generated from `memmap.json`** (`create_project_enum`, `update_project_enum`, `apply_enum_usage`) | *"Neither project can do this alone."* `lda #$1b / sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME | **MEDIUM** (retarget, not rebuild) | Consumers: `analyze-routine`, `analyze-symbol`, `c64-memory-mapping`, `c64-program-recon`, the `gen-enums` verb. Depends on `memmap.json` (959 entries), `r2000-regbits-gen.ts`, `r2000-enum-gen.ts`. `update` is required for re-runnable generation; `delete` is not (see surplus) |
+| **Confidence grade as a queryable axis** | No surveyed tool has a confidence dimension on a block type. `Code` cannot distinguish "PC observed executing" from "reachable via a JSR, never run" — the distinction the recon template exists to keep | **LOW** (already built) | Consumers: `c64-program-recon`'s memory-map template, `coverage`'s comment-vacuity measure. Lives as a bracket-token prefix inside a line comment (`r2000-confidence.ts`, five grades) with **zero new storage** and a typo'd-near-miss parser. Promoting it to a first-class column is optional and has no caller — keep it as a comment convention |
+| **Store ↔ live-emulator symbol round trip** (`export-lbl` / `import-lbl`) | No surveyed RE tool talks to a running emulator's symbol table. Annotate statically → resolve live addresses to those names → new live findings flow back | **LOW–MEDIUM** (adapter exists) | Consumers: `c64-memory-mapping`, `c64-program-recon`, `routine-queue-walker`. Depends on `r2000-symbols.ts` + `stock-symbols.ts`'s `parseViceLabelFile()` (this repo's *only* sanctioned second consumer of that format) |
+| **ACME export verified by a real ACME** | Verification by external oracle, not by internal fixture — this project's most-repeated lesson | **HIGH** | Consumers: `export-asm`, `verify`, `acme-build`. v0.7.0 requires the `=*+$01` mid-instruction label idiom for self-modifying write targets and typed label prefixes (`zpp_`/`zpa_`/`f_`/`a_`/`e_`) — both preserved deliberately rather than rediscovered. Depends on `r2000-verify.ts`'s parse of ACME's own result line |
+| **Derived-from-bytes coverage census the store cannot move** | Asking the store how much it has classified is provably circular. The census is a pure function of raw bytes + caller seeds; the block table is read at exactly one site and feeds a *divergence* sub-report explicitly named as a comparison | **HIGH** (already built; retarget) | Consumer: the `coverage` verb, documented by `c64-program-recon`. Retarget cost is low; the *conceptual* boundary (`r2000-coverage.test.ts` rewrites every block entry to one type and asserts no census byte count moves) must survive the port intact |
+| **Explicitly stored ranges, so adjacency never auto-merges** | Removes the need for a `toggle_splitter` primitive **by construction**. Upstream auto-merges two adjacent same-type tables, which is why the manifest holds `toggle_splitter` as a future-surface proposal blocking `DECOMP-01` and `BUILD-02` | **LOW if designed in; MEDIUM to retrofit** | Named future consumers: `DECOMP-01` ("every byte is code, byte, word, address, PETSCII, screencode or table" cannot distinguish two merged tables), `BUILD-02` ("data tables extracted to their own files" has no boundary to cut on). Also removes the named bias the manifest predicts for `COV-01`'s divergence report. **The single largest free win available from owning the store** |
+| **`{available:false, reason}` instead of a plausible zero** | Existing project convention at three named sites (`stock-cia.ts:494`, `stock-vicii.ts:239`, `incident-record.ts:115`). Aligns with the MCP guidance to return errors *inside* the result so the model can recover | **LOW** | Consumer: every skill that reads a possibly-absent capability. Apply to the store's own gaps — an unclassified range, an absent xref set, an unopened store |
+| **Emitted vs non-emitted comment kinds** (SourceGen's *note*) | A triage note must not reach shipped source; a long comment must | **LOW** | No shipped caller **today** — marked speculative. Recommended only because the exporter is being built this milestone and adding the enum value later means re-typing existing comments |
+
+### Anti-Features (commonly requested, actively harmful here)
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---|---|---|---|
+| **Undo / redo journal** | Every GUI tool has one — Ghidra transactions, Binary Ninja `BeginUndoActions`, IDA since 7.3, regenerator2000's own. And v0.7.0's Active list plus `STORE-02` both say "undo" | The manifest already disposes `r2000_undo` as **`omit`**, with the reason: `set_data_type` is idempotent over a range, so *"if a conversion was wrong, undo it and redo it correctly"* collapses to *"set it correctly"*. **No absorbed procedure and no shipped skill calls undo.** An agent also has no cursor or selection for "the last action" to be relative to, and retries make "whose last action?" genuinely ambiguous. A per-edit inverse-operation journal is the single largest structural cost in the store | Satisfy the requirement with the **cheapest form that has a consumer**: a whole-store snapshot/restore save-point (the store is a JSON document — copy it), not a per-edit inverse journal. Note it honestly: the *durability* half of `STORE-02` has a hard planted-violation test; the *undo* half has no caller and should be scoped to what the test can actually prove |
+| **A cursor / "current address"** | It is how every GUI works, and upstream ships `get_disassembly_cursor` | Upstream's **own procedure text** forbids it in exactly this situation: *"Always launch each subagent with an explicit target address … **NEVER** use the 'current cursor address'."* This project has no editor. The manifest disposition is `adapt-to-address-input` | Explicit address (or explicit inclusive range) on **every** call, always. Already the shape of all 19 curated verbs |
+| **Rejecting no-op writes** | Reads as discipline; a real MCP server does it (`ghidra-mcp` rejects "type unchanged" with an explanation) | It **breaks idempotency**, and agents retry on timeout. A retried `set_label_name` that already succeeded would surface as an error the model has to reason about | Succeed, and return `changed: true|false`. Last-writer-wins over an explicit range |
+| **The full 5-kind comment taxonomy** | Ghidra and IDA both have five; parity looks like completeness | Only `line` and `side` have callers, across all five absorbed procedures. Three more kinds is three more enum values in every prompt for zero measured benefit | Keep `line` + `side`. Add the emitted/non-emitted flag if the exporter needs it — one bit, not three kinds |
+| **Repeatable comments** (echo at every referencing site) | Genuinely attractive for hardware registers | `memmap.json` already answers "what does `$D020` mean" for all 959 documented addresses, and an echoing comment makes rendered output non-local and hard to diff — which fights the ACME export and the provenance workflow | `memmap.json` + generated enums for hardware; a plain comment for everything else |
+| **Nested scopes** | Natural if you think in program structure | Upstream explicitly does not support them and no caller wants them. `add_scope` has exactly **one** site in the whole skill tree (`c64-program-recon/SKILL.md:177`) | Flat, non-overlapping scopes only, sized to be the `!source`/zone boundary the one-file-per-subsystem exporter needs |
+| **Tags / bookmarks as a separate axis** | Binary Ninja tags, IDA bookmarks; feels like the right home for triage state | No caller. The confidence-prefix convention already occupies this niche with **zero new storage**, and is already searchable | The `[confirmed-code]`-style prefix inside a line comment |
+| **Local-variable / stack-relative symbol tables** | SourceGen and IDA both have them | 6502 game code has no meaningful stack frames; zero callers | Zero-page symbols are just labels, already covered by the `zpp_`/`zpa_` typed prefixes |
+| **Bank-qualified addresses / overlay address spaces** | ROM banking is real on the C64, and `PROOF-03` names it as the pivot's highest-risk item | `PROOF-03` is recorded **`could-not-run`** — no capture existed, nothing was measured. `memmap.json` is flat. No absorbed procedure asks for a bank qualifier. Modelling it now is modelling for an unmeasured requirement, and Ghidra's own answer (overlay blocks) still leaves bank-switch analysis manual | Flat, unqualified addresses; **record the assumption at the store's own seam** with a pointer to `PROOF-03` so a future milestone finds it rather than discovering it |
+| **A `tools_call`-shaped meta-tool, or script eval** | `ida-pro-mcp` ships `py_eval`; it is the most powerful single tool you can add | Explicitly forbidden by this repo's own convention: it is the nested-argument smuggling shape `vice.ts`'s `DENY_LIST` exists to close. `batch_execute` is the **one** sanctioned exception, and only because every inner name is validated before anything executes | `batch_execute` with pre-flight validation of every inner name |
+| **Destructive in-place unpacking** | It is the fast path to a depacked image | Manifest disposition: **`omit`, permanent**. Destructive by upstream's own description (clears comments/labels/blocks) and this project has a non-destructive route to the same answer | `c64-ram-capture` runs the program in the real emulator past the decrunch; the packer identity is a recon finding. The entropy gate **survives** the omission because entropy is a `get_binary_info` field |
+| **HTML export with clickable xrefs** | Shareable artifact | Already cut in v0.3.0 as `R2000-07` — no skill produces or consumes it | Nothing. Stay cut |
+| **Byte-or-behaviour parity with regenerator2000's store** | It is the thing being replaced, so parity feels like the safe bar | v0.7.0's own requirement text forecloses it: cross-references and search must be *"built on the surviving `disasm-*` decoders rather than carried across as a parity obligation."* Parity would measure an unpromised property — the exact mistake v0.2.0's dropped `VERIF-03` harness made | The manifest's per-procedure tool list is the bar. A procedure that runs is the test |
+| **`delete_project_enum`** | It exists upstream and completes the CRUD set | **Zero callers anywhere.** `gen-enums` re-runs via create-then-update | Do not build it. Re-runnable generation needs `create` + `update` only |
 
 ## Feature Dependencies
 
 ```
-Coverage report (Q4)
-    └──requires──> r2000 block/symbol/xref queries (existing, v0.3.0)
+Persistence (open / save / restore)
+    └──required by──> every mutating verb
+                          └──required by──> all 5 absorbed procedures
 
-One-file-per-subsystem export
-    └──requires──> r2000 scopes (existing) + ACME !source (existing)
-    └──enhances──> modifiability demonstration (Active requirement)
+Owned 6510 decoders (disasm-opcodes / decoder / renderer, 1,042 non-test lines)
+    ├──required by──> read_region (disasm view)
+    ├──required by──> block classification / get_blocks
+    ├──required by──> cross-reference derivation ──requires──> `address` range typing
+    ├──required by──> xref access kind (free at decode time, unrecoverable later)
+    └──required by──> ACME export ──verified by──> real ACME (r2000-verify.ts seam)
 
-Relocation-hazard report
-    └──requires──> code/data block classification (existing)
-    └──requires──> new: self-modifying-code write-target detection (code range vs write-target overlap)
-    └──requires──> new: jump-table / address-table detection over existing "address"-typed data
-    └──requires──> new: raster/cycle-sensitivity flagging (informed by existing checkpoint/timing constraints)
-    └──gates──> "modifiability demonstrated" (Active requirement) — do not attempt automatic
-                relocation before this exists; it is the safety check, not an afterthought
+Explicitly-stored ranges (no adjacency auto-merge)
+    ├──removes need for──> toggle_splitter
+    ├──required by──> DECOMP-01 (7-type vocabulary must distinguish adjacent tables)
+    ├──required by──> BUILD-02 (per-table file extraction needs a boundary)
+    └──removes──> COV-01's predicted over-merge divergence bias
 
-Behavioural-equivalence verification (compare.mjs)
-    └──requires──> a live VICE session (existing MCP surface)
-    └──requires──> deterministic input replay (new, TASVideos-shaped: recorded inputs + state diff)
-    └──conflicts with──> byte-identical acceptance bar (deliberately, per Q2 — do not build both
-                          as competing gates; the pre-modification sanity check described in
-                          Q5 is a distinct, narrower, optional thing)
+memmap.json (959 entries) + regbits-gen + enum-gen
+    └──required by──> project enums ──required by──> apply_enum_usage
+                          └──required by──> analyze-routine, analyze-symbol, gen-enums
 
-Provenance-aware rebuild
-    └──requires──> c64-provenance-diff's verdict ledger (existing)
-    └──enhances──> coverage report (an UNKNOWN-classified range should read differently in
-                    coverage than a cracker-patch-excluded range)
+Labels (with user/auto kind preserved)
+    ├──required by──> export-lbl (user kind ONLY — measured)
+    ├──required by──> routine-queue-walker's backlog (auto kind IS the queue)
+    └──required by──> coverage's two label ratios
 
-Packer detection (recon finding)
-    └──independent of the above──> can land in any phase; informs Step 0 scoping
-                                    (c64-program-recon already owns "which bytes are the game")
+Comments (line + side, multi-line on line)
+    ├──carries──> confidence-grade prefix ──consumed by──> recon template, coverage vacuity
+    └──required by──> search over comments ──required by──> "[unknown]" query, gen-enums
+
+Scopes (flat, non-overlapping)
+    └──enhances──> ACME export (the !source / zone boundary)
+
+batch_execute ──requires──> single-owner write path (r2000-session.ts's FIFO discipline)
+undo journal ──conflicts with──> idempotent range typing (each makes the other pointless)
+bank-qualified addresses ──conflicts with──> memmap.json's flat address model
+no-op rejection ──conflicts with──> agent retry semantics
 ```
 
 ### Dependency Notes
 
-- **Coverage report requires nothing new from regenerator2000** — it is purely an aggregation script over `r2000_get_blocks`/`r2000_get_symbols`/`r2000_get_cross_references`/`r2000_get_comments`, all already built and callable. This should be sequenced early: every other completeness claim in the Active requirements list needs this instrument to be checkable.
-- **Relocation-hazard report gates the modifiability demonstration.** Do not sequence "demonstrate one behaviour removed and one added" before the hazard report exists — the whole point of the report is to tell you *where it is safe* to make that demonstration change, and picking a spot blind risks landing on self-modifying code or a jump-table entry by accident.
-- **Behavioural-equivalence verification conflicts with (deliberately excludes) a byte-identical acceptance bar** — see Q2 and Q5's closing note. Building both as parallel gates would reintroduce the exact target the milestone rejected, alongside the one it chose; pick one bar for "did the rebuild succeed" and one narrower, separate, optional pre-modification sanity check.
-- **Provenance-awareness enhances rather than blocks the coverage report** — an `UNKNOWN` provenance range and a genuinely un-analysed range are different kinds of gaps and the coverage report should be able to say which is which, but neither blocks the other from shipping.
+- **Cross-references require `address` range typing, not just the decoder.** A pointer table is only a set of xrefs once its range is typed `address` (or a split lo/hi variant). This is why typing and xrefs cannot be split across distant phases: typing with no xref consumer looks complete and proves nothing.
+- **`batch_execute` requires the single-owner write path.** `r2000-session.ts`'s FIFO call queue and save-before-return persistence are what make a batch safe. Porting the batch verb without that discipline reintroduces the interleaved-write failure mode.
+- **`export-lbl` depends on the user/auto label *kind*, not merely on labels.** Measured: an annotated project emits exactly the labels a caller set; auto `a_D011`/`e_FFD2` externals are **not** exported. A test asserting an `a_`-prefixed name appears in an export result is testing the wrong thing — that trap is already documented at `r2000-symbols.ts:16-23` and must survive the port.
+- **`render-memmap` has no store dependency at all.** It reads `memmap.json` and writes Markdown. It can be re-pointed independently of the store, or not at all.
+- **`coverage` depends on the store only at its divergence sub-report** (plus label ratio and comment vacuity). Its census reads raw bytes and caller seeds. This boundary is *the* thing to preserve across the port; the existing test pins it by rewriting every block entry to one type and asserting no census byte count moves.
+- **Undo conflicts with idempotent range typing.** Making typing idempotent is what makes undo unnecessary; building undo is what makes idempotency uninteresting. Pick idempotency — it is the one the callers already assume.
+
+### Sizing correction (measured this session)
+
+The seed `own-the-annotation-store.md` states figures that no longer hold. Recorded here rather than restated:
+
+| Seed claim | Measured 2026-08-26 | Note |
+|---|---|---|
+| `disasm-*` = 2,555 lines to reuse | **1,042** non-test; 2,555 is the total **including tests** | Reuse target is ~1k lines, not ~2.5k |
+| Delete 19,181 lines (9,087 non-test + 9,928 test) | **25,759** across `r2000-*.ts` (10,102 non-test + **15,657** test) | Test surface is ~58% larger than the seed assumed; the deletion phase is materially bigger than sized |
+| `r2000-d64.ts` = 310 lines, standalone | 310, standalone — **holds** | Keep as-is |
+
+**20 test files** are pinned to the deleted subject (`r2000-*.test.ts` ×19 plus `docs-r2000-decisions.test.ts`). Each needs an explicit fate before the phase gate — already an Active requirement, and the sizing above says why it is not a footnote. Two need particular care: `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard, and `docs-r2000-decisions.test.ts` pins D-36, a decision about a tool that is being deleted.
 
 ## MVP Definition
 
-### Launch With (v1 of this milestone's rebuild pipeline)
+### Launch With (v0.7.0)
 
-- [ ] Coverage report over existing r2000 store queries — essential because every other completeness claim in this milestone is unverifiable without it
-- [ ] One-file-per-subsystem export wired by `!source`, off existing r2000 scopes — essential because it is the literal definition of "rebuildable source" this milestone targets
-- [ ] Symbol-only references end to end (branches, JSR/JMP, data refs) — essential; without it "source you can modify" is false advertising, since every address is still a magic number
-- [ ] Relocation-hazard report (self-modifying-code write-target overlap, jump-table detection at minimum) — essential as the safety gate before any modification demo
-- [ ] Provenance-aware exclusion of cracker patches at export time — essential; skipping this risks shipping a "rebuild" that silently reproduces a trainer
+The 18 caller-backed verbs, grouped by what the roadmapper can phase independently:
 
-### Add After Validation (v1.x within this milestone)
+- [ ] **Store core + persistence** — open/save, durability proven by planted violation (`STORE-02`), the JSON document, `get_binary_info` — *every procedure depends on it*
+- [ ] **Labels** — `set_label_name` (REJECT-not-sanitize validation), `get_symbols` with the `user|system|auto` kind filter — *3 procedures, 3 skills, `export-lbl`, `import-lbl`, `routine-queue-walker`'s queue*
+- [ ] **Comments** — `set_comment` / `get_comments`, `line` + `side`, multi-line on `line` — *all 5 procedures*
+- [ ] **Range typing** — `set_data_type` / `get_blocks`, **full `DECOMP-01` vocabulary**, explicitly-stored ranges with no adjacency auto-merge, even-count validation on split forms — *4 procedures*
+- [ ] **Reads over the typed decode** — `read_region` (disasm|hexdump, refuse-over-cap), `disassemble`, `get_cross_references`, `get_address_details` — *4 procedures*
+- [ ] **Search** — `search_disassembly`, `max_results` required with no default, count returned — *`c64-program-recon`, `gen-enums`*
+- [ ] **Project enums** — `create_project_enum`, `update_project_enum`, `apply_enum_usage`, generated from `memmap.json` — *2 procedures, `gen-enums`*
+- [ ] **Scopes** — `add_scope`, flat and non-overlapping — *`c64-program-recon`; the exporter's zone boundary*
+- [ ] **Batch** — `batch_execute` over the single-owner write path, pre-flight validation of every inner name, per-item status on execution — *2 procedures*
+- [ ] **ACME export + real-ACME verification** — `=*+$01` mid-instruction labels, typed label prefixes — *`export-asm`, `verify`, `acme-build`*
+- [ ] **Symbol round trip** — `export-lbl` (user kind only), `import-lbl` — *3 skills*
+- [ ] **Save-point restore** — the scoped form of "undo": whole-store snapshot/restore, not an inverse-operation journal
 
-- [ ] Raster/cycle-sensitivity flagging in the hazard report — genuinely hard to get right generally; land the simpler hazard classes first and add this once the report format is proven useful
-- [ ] Packer-detection-as-recon-finding — independent, can land any time, lower risk
+### Add After Validation (v0.7.x)
 
-### Future Consideration (beyond this milestone)
+- [ ] **Xref access kind** (`READ`/`WRITE`/`READ_WRITE`/`COMPUTED_JUMP`) — trigger: `GHID-05` unheld. **Store the field now** (free at decode time, unrecoverable later); build nothing on it until there is a consumer
+- [ ] **`set_immediate_format`** (low/high-byte pointer → symbol reference) — trigger: `BUILD-03` ("every branch, JSR/JMP and data reference goes through a symbol so code can move"). Named in the manifest as a future-surface proposal, not a permanent omission. Must go through the FIFO write path
+- [ ] **Emitted vs non-emitted comment flag** (SourceGen's *note*) — trigger: the exporter emitting a triage note into shipped source, once
+- [ ] **Confidence as a first-class field** rather than a comment prefix — trigger: a caller that needs to filter on it without a text scan. None exists today
 
-- [ ] A pre-modification byte-identical sanity check on the unmodified export (Q5's "genuinely fine" candidate) — valuable but strictly optional relative to the behavioural bar this milestone already committed to; do not let it become a second acceptance bar by accident
+### Future Consideration (v0.8+)
+
+- [ ] **Bank-qualified addressing** — defer until `PROOF-03` is actually measured. Today it is modelling for an unmeasured requirement
+- [ ] **Cross-release block-classification diffing** (`c64-provenance-diff` comparing *classifications* rather than byte offsets) — attractive, and the one-project-at-a-time limit that blocked it is gone once the store is ours. But `c64-provenance-diff` calls zero store verbs today, so it is a new consumer, not a re-pointing
+- [ ] **`delete_project_enum`** — only if something ever needs it. Nothing does
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Coverage report | HIGH | LOW | P1 |
-| One-file-per-subsystem export | HIGH | MEDIUM | P1 |
-| Symbol-only references | HIGH | MEDIUM | P1 |
-| Relocation-hazard report (SMC + jump tables) | HIGH | HIGH | P1 |
-| Provenance-aware export | HIGH | LOW–MEDIUM | P1 (dependency already built, this is wiring) |
-| Behavioural-equivalence verification (`compare.mjs`) | HIGH | MEDIUM–HIGH | P1 |
-| Raster/cycle-sensitivity hazard flagging | MEDIUM | HIGH | P2 |
-| Packer-detection recon finding | MEDIUM | LOW–MEDIUM | P2 |
-| Pre-modification byte-identical sanity check | LOW–MEDIUM | LOW | P3 |
+| Feature | Consumer count | Implementation Cost | Priority |
+|---|---|---|---|
+| Persistence + durability proof | 5 procedures + 3 skills | MEDIUM | **P1** |
+| Comments (line + side) | 5 procedures | LOW | **P1** |
+| Labels + user/auto kind | 3 procedures, 3 skills, 2 CLI verbs | LOW | **P1** |
+| Range typing, full vocabulary, no auto-merge | 4 procedures + 2 held requirements | MEDIUM | **P1** |
+| `read_region` / `disassemble` | 4 procedures | LOW (decoders exist) | **P1** |
+| `get_blocks` | 2 procedures + `coverage` | MEDIUM | **P1** |
+| Cross-references | 3 procedures, 3 skills | MEDIUM–HIGH | **P1** |
+| `get_binary_info` (incl. entropy) | 4 procedures | LOW | **P1** |
+| `batch_execute` + single-owner write path | 2 procedures | MEDIUM | **P1** |
+| Search with required `max_results` | 1 skill + `gen-enums` | MEDIUM | **P1** |
+| Project enums (create/update/apply) | 2 procedures + `gen-enums` | MEDIUM (retarget) | **P1** |
+| ACME export verified by real ACME | 3 CLI verbs + `acme-build` | HIGH | **P1** |
+| `get_address_details` | 1 procedure | LOW (composition) | **P1** |
+| Symbol round trip (export/import-lbl) | 3 skills | LOW–MEDIUM (adapter exists) | **P1** |
+| Scopes (flat) | 1 skill + exporter | LOW | **P1** |
+| Save-point restore (scoped "undo") | `STORE-02` requirement text | LOW | **P1** |
+| Coverage census re-point | 1 CLI verb, 1 skill | LOW (already built) | **P1** |
+| Confidence prefix (retarget as-is) | recon template + `coverage` | LOW (already built) | **P1** |
+| Xref access kind — **field only** | none today; `GHID-05` held | LOW now / HIGH later | **P2** |
+| Emitted/non-emitted comment flag | none today | LOW | **P2** |
+| `set_immediate_format` | none today; `BUILD-03` | MEDIUM | **P2** |
+| Undo journal (inverse operations) | **none** | HIGH | **P3 — recommend not building** |
+| Splitter primitive | obviated by explicit ranges | — | **P3 — designed out** |
+| `delete_project_enum` | **none** | LOW | **P3 — surplus, cut** |
+| Bank-qualified addresses | none; `PROOF-03` unmeasured | HIGH | **P3 — defer** |
+| Cursor / current-address | forbidden by upstream's own text | — | **Never** |
+| `py_eval`-style meta-tool | — | — | **Never** |
 
-**Priority key:**
-- P1: Must have for this milestone's stated Active requirements
-- P2: Should have, strengthens the hazard report / recon findings but not blocking
-- P3: Nice to have, deliberately not the acceptance bar
+## Competitor Feature Analysis
 
-## Competitor / Prior-Art Feature Analysis
+| Feature | Ghidra | IDA Pro | Binary Ninja | SourceGen (6502) | **Our approach** |
+|---|---|---|---|---|---|
+| Comment kinds | 5 typed | 5 typed | 1 + tags | 3 (one never emitted) | **2** (`line`, `side`), plus an emitted flag when the exporter demands it |
+| Undo | transactional | database-level since 7.3 | user actions only | yes | **Save-point restore, no inverse journal** — no caller for undo |
+| Xref access kind | first-class `RefType` | code/data + subtypes | weaker | operand-driven | **Store the kind, build no analysis on it yet** |
+| Range typing | data types over ranges | per-item | types | descriptors incl. PETSCII + screen codes | **Explicit stored ranges, 7+ type vocabulary, no adjacency merge** |
+| Persistence | ProgramDB (binary) | `.idb` | `.bndb` | **JSON + data-file CRC, user data only** | **JSON, user data only** — SourceGen's model, because it diffs and it is the shape the provenance workflow already assumes |
+| Banked memory | overlay blocks, manual analysis | manual segments | manual | address regions | **Flat, assumption recorded at the seam** |
+| Name provenance | symbol source | — | user vs auto actions | user vs auto labels | **`kind: user\|system\|auto`** — load-bearing for `routine-queue-walker` and `export-lbl` |
+| Agent addressing | GUI cursor + API | GUI cursor + API | GUI cursor + API | GUI cursor | **Explicit address on every call, no cursor, ever** |
+| Batch failure mode | — | per-item status array (`ida-pro-mcp`) | — | — | **Pre-flight refuse-whole on validation; per-item status on execution** |
+| No-op write | accepted | accepted | accepted | accepted | **Accepted, with `changed:false`** — `ghidra-mcp` rejects; that is the wrong call for a retrying agent |
 
-| Feature | pret (Game Boy) | zeldaret/HackerOoT (N64) | Piddewitt (C64) | This project's plan |
-|---------|--------------|--------------|--------------|--------------|
-| Acceptance bar | Byte-identical ROM | Byte/compiler-identical (matching), `NON_MATCHING` escape hatch | Byte-identical for `originals/`, none for `mods/` | Behavioural equivalence via `compare.mjs` — structurally forced by no-clean-original (Q2) |
-| File split | One file per engine subsystem/bank | One file per game subsystem (C translation units) | One file per game, per variant tree | One file per r2000 scope, `!source`-wired |
-| Coverage measurement | Implicit (build either succeeds fully or doesn't; no partial-completion project ships) | Per-function matching percentage tracked publicly | Not published | Explicit `%` report over classified bytes/named routines/documented references (new) |
-| Modifiability path | N/A (matching-only project; downstream forks do this) | Separate forks (HackerOoT) do the modifying, upstream stays matching | Separate `mods/` tree in the *same* repo | Single pipeline, single repo, modifiability built in from the start rather than forked later |
-| Relocation safety | Not needed (GB has no equivalent SMC/raster-timing hazard class at this severity) | Not applicable (recompiled C, not relocated machine code) | Ad hoc / by convention only | Explicit relocation-hazard report (new — no named prior art does this as a first-class artifact) |
+## What changes because the consumer is an LLM over MCP
+
+Eight rules, each traced to something already decided in this repo or cross-checked in the survey:
+
+1. **Address in, always. No cursor.** Upstream's own procedure text says *"**NEVER** use the 'current cursor address'"*; the manifest disposition is `adapt-to-address-input`; this project has no editor. Ranges are inclusive on both ends, stated in every description.
+2. **Idempotent writes, `changed:true|false`, never a no-op error.** Agents retry on timeout. The MCP design consensus is explicit: if the resource already exists, return success rather than a blocking error. This is also what lets undo be omitted.
+3. **Two distinct failure modes, not one.** *Pre-flight validation* failures (uncurated inner name, illegal ACME identifier, odd byte count on a split table, range over cap) refuse the **whole** call, by name, before anything executes — the existing D-33 posture. *Execution* failures inside a batch report **per item** and the loop runs to completion — the measured upstream semantics, and `ida-pro-mcp`'s shape. `ghidra-mcp` chose all-or-nothing atomicity; that is the wrong trade, because an agent recovers from "3 of 40 failed at these addresses" and cannot recover from "the batch was rejected".
+4. **REJECT, never sanitize.** A malformed label name is a bug to surface, not a string to quote. Already the convention (`assertLegalAcmeIdentifier`); extend it to every ambiguous input.
+5. **Refuse rather than truncate, and refuse *by name*.** The existing over-cap `read_region` refusal names the requested size and the valid range. `search_disassembly`'s `max_results` is required with no default because the silent default of 50 truncated a full-program pass; return the count so truncation is detectable rather than invisible.
+6. **`{available:false, reason}` rather than a plausible zero.** The project convention at `stock-cia.ts:494`, `stock-vicii.ts:239`, `incident-record.ts:115`. Errors go *inside* the result so the model can see and recover from them, and the reason names the next thing to try.
+7. **Mark composed and derived answers.** `get_address_details` already carries `composed_client_side:true` and `composed_from`. Keep the convention for anything not read straight out of storage — it is what stops a composed answer being mistaken for primary evidence.
+8. **Do not grow the surface.** 19 verbs is already well past the cited 5–8-per-toolset sweet spot, and every schema consumes context. The manifest's resync trigger already enforces the discipline: adding a verb requires updating its disposition entry in the same commit, so the manifest cannot silently disagree with the code. Keep that gate pointed at the new store.
+
+## Confidence and gaps
+
+| Area | Level | Reason |
+|---|---|---|
+| Consumer trace (which verb has which caller) | **HIGH** | Measured directly: `grep` over `src/skills/`, every non-test `runR2000Tool` call site, the committed manifest |
+| Sizing figures | **HIGH** | `wc -l` this session; the seed's figures are corrected above |
+| Comparable-tool models | **MEDIUM** | Cross-checked per tool across ≥2 sources; official docs for Ghidra/Binary Ninja/SourceGen, vendor docs for IDA |
+| C64-specific tools other than regenerator2000 | **LOW** | Infiltrator (2011), jc64dis and C64 Studio are GUI/one-shot decompilers; no primary documentation of an annotation model was found. Treated as evidence of *absence* of prior art, not as a model to follow |
+| MCP-for-RE prior art | **MEDIUM** | `ida-pro-mcp`, `re-mcp`, `bethington/ghidra-mcp` READMEs read directly; the batch/convention/idempotency claims are their own documentation, not independently exercised |
+| Whether a bank qualifier is needed | **LOW — and honestly so** | `PROOF-03` is `could-not-run`. Nothing is known. Recommendation is to record the assumption, not to model it |
+
+**Gaps a phase will have to close, not this document:**
+- Whether the split-table forms (`lo_hi_address` etc.) need all four variants or whether two plus an orientation flag suffices. No procedure exercises all four; `coverage`'s dispatch-context gate already reasons about lo/hi orientation and is the place to look.
+- Whether `disassemble` (control-flow trace that *converts regions to Code*) and `set_data_type` should remain separate verbs once the store is ours — `disassemble` is a mutating read, which is exactly the shape an agent gets wrong.
+- The exact fate of each of the 20 guard files pinned to the deleted subject. Named as an Active requirement; the sizing table says why it deserves its own plan rather than a task.
 
 ## Sources
 
-- [pret/pokered](https://github.com/pret/pokered) — build system, DeepWiki summary of the Makefile/RGBDS toolchain
-- [pret/pokered INSTALL.md](https://github.com/pret/pokered/blob/master/INSTALL.md), [pret/pokered Makefile](https://github.com/pret/pokered/blob/master/Makefile)
-- [sonicretro/s1disasm](https://github.com/sonicretro/s1disasm)
-- [Xkeeper0/smb1](https://github.com/Xkeeper0/smb1), [threecreepio/smb-disassembly](https://github.com/threecreepio/smb-disassembly), [6502disassembly.com SMB annotated source](https://6502disassembly.com/nes-smb/SuperMarioBros.html)
-- [crystalisdisassembly/crystalisdisassembly](https://github.com/crystalisdisassembly/crystalisdisassembly)
-- [mwenge/iridisalpha](https://github.com/mwenge/iridisalpha)
-- [mwenge/gridrunner](https://github.com/mwenge/gridrunner), [Disassembling.md](https://github.com/mwenge/gridrunner/blob/master/Disassembling.md)
-- [Piddewitt/C64-Game-Source-Code](https://github.com/Piddewitt/C64-Game-Source-Code)
-- [mist64/c64ref](https://github.com/mist64/c64ref)
-- [n64decomp/sm64](https://github.com/n64decomp/sm64), [Awesome N64 Development](https://n64.dev/)
-- [zeldaret/oot](https://github.com/zeldaret/oot), [HackerN64/HackerOoT](https://github.com/HackerN64/HackerOoT), [duskport.com Zelda decomp ranking](https://duskport.com/decomp/zeldaret-projects/)
-- [TASVideos Console Verification Guide](https://tasvideos.org/ConsoleVerification/Guide), [TASVideos Emulator Resources / Features](https://tasvideos.org/EmulatorResources/Features)
-- [restore64.dev](https://restore64.dev/) (C64 auto-depack packer database, relevant to packer-detection anti-feature/differentiator assessment)
-- Lemon64 forum threads on C64 BASIC loader/SYS stub conventions
-- This project's own `src/skills/c64-program-recon/SKILL.md`, `src/skills/c64-provenance-diff/SKILL.md`, `src/skills/acme-build/SKILL.md`, `.planning/PROJECT.md` — used as the ground truth for what already exists and what the milestone has already committed to
+**This repository, read directly (HIGH):** `.planning/PROJECT.md`; `.planning/REQUIREMENTS.md`; `.planning/seeds/own-the-annotation-store.md`; `.planning/notes/regenerator2000-integration.md`; `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`; `src/mcp/vice/r2000-tools.ts`, `r2000-enum-gen.ts`, `r2000-symbols.ts`, `r2000-confidence.ts`, `r2000-coverage.ts`, `r2000-cli.ts`, `r2000-memmap-render.ts`, `stock-cia.ts`, `stock-vicii.ts`, `incident-record.ts`; `src/skills/*/SKILL.md`.
+
+**Comparable tools (MEDIUM):**
+- [Ghidra `CommentType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/listing/CommentType.html), [`Listing`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/listing/Listing.html), [`RefType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/symbol/RefType.html), [`FlowType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/symbol/FlowType.html), [Comments help topic](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/help/help/topics/CommentsPlugin/Comments.htm), [Ghidra Tip 0x0A: Comments](https://maxkersten.nl/2025/04/15/ghidra-tip-0x0a-comments/)
+- [Ghidra `Memory` (overlay blocks)](https://ghidra.re/ghidra_docs/api/ghidra/program/model/mem/Memory.html), [Handling banked ROM (discussion #6651)](https://github.com/NationalSecurityAgency/ghidra/discussions/6651), [GhidraNes](https://github.com/pudge62/GhidraNes), [C64-Wiki: Bank Switching](https://www.c64-wiki.com/wiki/Bank_Switching)
+- [IDA: Comments](https://www.hex-rays.com/products/ida/support/idadoc/481.shtml), [Igor's tip #14: Comments in IDA](https://hex-rays.com/blog/igor-tip-of-the-week-14-comments-in-ida), [IDA 7.3 Undo release note](https://docs.hex-rays.com/release-notes/7_3/undo), [Undo an action](https://hex-rays.com/products/ida/support/idadoc/1710.shtml)
+- [Rizin Handbook: Adding Metadata to Disassembly](https://book.rizin.re/src/disassembling/adding_metadata.html), [Introducing Projects in Rizin](https://rizin.re/posts/introducing-projects/)
+- [Binary Ninja `FileMetadata`](https://api.binary.ninja/binaryninja.filemetadata-module.html), [Important Concepts (user vs auto actions)](https://docs.binary.ninja/dev/concepts.html), [`BinaryView` C++ API](https://api.binary.ninja/cpp/group__binaryview.html)
+- [6502bench SourceGen: More Details](https://6502bench.com/sgmanual/intro-details.html), [Editors](https://6502bench.com/sgmanual/editors.html), [Instruction and Data Analysis](https://6502bench.com/sgmanual/analysis.html), [fadden/6502bench](https://github.com/fadden/6502bench)
+- [Regenerator 2000 docs](https://regenerator2000.readthedocs.io/en/latest/), [Regenerator (n0stalgia) v1.3 release notes](https://www.nightfallcrew.com/16/05/2013/regenerator-disassembler-v1-3-by-n0stalgia/), [Infiltrator Disassembler V1.0 (CSDb)](https://csdb.dk/release/?id=100129)
+
+**LLM/MCP consumer shaping (MEDIUM):**
+- [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp), [jtsylve/re-mcp](https://github.com/jtsylve/re-mcp) and [its announcement](https://jtsylve.blog/post/2026/05/04/ida-mcp-becomes-re-mcp), [bethington/ghidra-mcp](https://github.com/bethington/ghidra-mcp)
+- [54 Patterns for Building Better MCP Tools (Arcade.dev)](https://www.arcade.dev/blog/mcp-tool-patterns/), [MCP Tool Annotations](https://mcpblog.dev/blog/2026-03-13-mcp-tool-annotations), [Design Patterns for Deploying AI Agents with MCP (arXiv)](https://arxiv.org/html/2603.13417v1), [MCP Toolbox Style Guide](https://mcp-toolbox.dev/reference/style-guide/)
 
 ---
-*Feature research for: binary-to-modifiable-source C64 reverse engineering (v0.5.0)*
-*Researched: 2026-08-23*
+*Feature research for: an owned annotation store serving an LLM agent over MCP (C64/6502)*
+*Researched: 2026-08-26*
