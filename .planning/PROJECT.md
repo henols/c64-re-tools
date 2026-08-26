@@ -168,13 +168,13 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 
 - [ ] An annotation store this project owns holds labels, comments, per-range typing, scopes, project enums, undo and persistence, reached through an MCP surface registered proxy-locally so it never reaches `forwardToVice()`
 - [ ] The store's tool surface is derived from Phase 19's `upstream-procedure-manifest.json` rather than guessed, so every already-absorbed analysis step has a route instead of a hole
-- [ ] Per-range typing covers the full vocabulary `DECOMP-01` will need — code, byte, word, address, PETSCII, screencode, table — not the minimum this milestone happens to exercise
+- [ ] Per-range typing covers the full vocabulary `DECOMP-01` will need — **12 members**, read off `r2000_set_data_type`'s own schema, not the 7 previously named here: "table" is four distinct split layouts, and split-table orientation is unrecoverable from stored data because it was never recorded. This is the milestone's one irreversible decision
 - [ ] Durability and undo are proven by planted violation: mutate → kill → reopen returns the mutation, and removing the save makes that same test go red
-- [ ] The store exports ACME source verified by a real ACME through the existing `--verify` seam, carrying the `=*+$01` mid-instruction label for self-modifying write targets and typed label prefixes
+- [ ] The store exports ACME source verified by **a real ACME invoked by a verify path built for this purpose** — the existing `--verify` seam invokes regenerator2000, not ACME, so only its discipline survives (never trust the exit code; unanimity; skipped is not ok). The export carries the `=*+$01` mid-instruction label for self-modifying write targets, and the **11** typed label prefixes `r2000-coverage.ts`'s `AUTO_NAME_PREFIX_RE` already owns
 - [ ] Cross-references and search over the typed decode stay answerable, built on the surviving `disasm-*` decoders rather than carried across as a parity obligation to regenerator2000
 - [ ] The five absorbed analysis procedures are re-pointed onto the new surface with their heuristics intact — block classification, symbol data-flow patterns, the BASIC V2 token table — and their `ABS-02` attribution headers preserved rather than stripped with the code
-- [ ] The regenerator2000 integration glue is deleted behind a whole-tree grep gate observed biting on a planted reintroduction, with the attribution headers explicitly exempted from that gate
-- [ ] Every guard pinned to the deleted subject is given an explicit fate before the phase gate, not discovered red in CI
+- [ ] The regenerator2000 integration glue is deleted behind a grep gate observed biting on a planted reintroduction in each tree it covers, with the attribution instances explicitly exempted and that exemption carrying its own non-vacuity assertion
+- [ ] Every guard and CI script pinned to the deleted subject is given an explicit fate before the phase gate, not discovered red in CI — and each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed
 
 
 ### Out of Scope
@@ -304,7 +304,7 @@ of the planning label at any time.
 ## Constraints
 
 - **Compatibility**: The stdio MCP surface is **trimmed per backend** — stock advertises only the tools it implements, so the two backends expose different tool lists (Phase 2, D-07). A tool advertised on both keeps the same name and a backward-compatible argument shape — stock may add optional parameters but never removes, retypes, or newly-requires one — and the fork's list is unchanged from v0.1.x. A skill written against the full fork surface therefore *breaks* on stock rather than degrading; the playbooks must name the stock route or the fork requirement (SKILL-01). *(Supersedes the original "the surface must not change" constraint, and is pinned by `manifest-arg-compat.test.ts`.)*
-- **Architecture**: The transport swap happens behind `vice.ts`'s `call()` seam for *direct* tools. **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`** — `rewriteArguments()` runs at `vice-proxy.ts:3029` inside `forwardToVice()` (which starts at `:2964`) and before `call()`, so a derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container. Second site with the same cause: `gatherWedgeEvidence()` calls `rewriteArguments()` itself, at `vice-proxy.ts:1508` (the function starts at `:1484`). The `r2000_*` family (v0.3.0 Phase 11) is registered through `buildViceTool()` and never reaches `forwardToVice()`, so neither call site is reachable from it — the constraint is satisfied by construction for that family, not by an interception. (Line numbers in this bullet are checked against the source at each phase and drift between phases; treat a mismatch as drift to re-verify, not as evidence the constraint itself changed. `docs-linerefs.test.ts` mechanically checks the two `rewriteArguments()` citations — the figures above were stale at `:2889`/`:1368` until the v0.3.0 close.)
+- **Architecture**: The transport swap happens behind `vice.ts`'s `call()` seam for *direct* tools. **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`** — `rewriteArguments()` runs at `vice-proxy.ts:3052` inside `forwardToVice()` (which starts at `:2987`) and before `call()`, so a derived tool sitting behind `call()` receives host-translated paths and acts on them inside the container. Second site with the same cause: `gatherWedgeEvidence()` calls `rewriteArguments()` itself, at `vice-proxy.ts:1531` (the function starts at `:1507`). The `r2000_*` family (v0.3.0 Phase 11) is registered through `buildViceTool()` and never reaches `forwardToVice()`, so neither call site is reachable from it — the constraint is satisfied by construction for that family, not by an interception. (Line numbers in this bullet are checked against the source at each phase and drift between phases; treat a mismatch as drift to re-verify, not as evidence the constraint itself changed. `docs-linerefs.test.ts` mechanically checks the two `rewriteArguments()` citations — the figures above were stale at `:2889`/`:1368` until the v0.3.0 close, and stale again at `:3029`/`:2964`/`:1508`/`:1484` until the v0.7.0 open, when `docs-linerefs.test.ts` was found to read only CLAUDE.md and not this copy.)
 - **Protocol (settled, normative)**: 11-byte request header / 12-byte response header, all multi-byte values little-endian. Confirmed opcode set and error codes per `docs/phase0-binmon-findings.md` §5.
 - **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three: `STOPPED` (0x62), `RESUMED` (0x63), `JAM` (0x61), plus `CHECKPOINT_INFO` (0x11) on every checkpoint hit and `REGISTER_INFO` (0x31) on every monitor open. The last two **share a response type with a legitimate command reply**, so demux must key on request-id and never resolve a pending request with an event.
 - **Protocol**: `JAM` (0x61) has a **zero-length body**. `monitor_binary.c:384-394` computes the PC then passes `length = 0`, so no PC is sent. Every client surveyed assumes 2 bytes and breaks on it.
@@ -658,18 +658,21 @@ it, and no procedural knowledge lost with it.
   `upstream-procedure-manifest.json`**, which already classifies every verb the
   five absorbed procedures call as `curated` / `omit` /
   `adapt-to-address-input` — a diff, not a judgement call
-- Per-range typing at the full vocabulary `DECOMP-01` will need later: code,
-  byte, word, address, PETSCII, screencode, table
+- Per-range typing at the full vocabulary `DECOMP-01` will need later — **12
+  members**, read off `r2000_set_data_type`'s own schema. Not the 7 first named
+  here: "table" is four distinct split layouts, the one structure the pivot
+  notes record `da65` as unable to express
 - Durability and undo proven by planted violation, not a passing happy path
-- ACME export verified by a real ACME through the `--verify` seam that keys
-  strictly on ACME's own result line, carrying the `=*+$01` mid-instruction
-  label and typed label prefixes
+- ACME export verified by a real ACME through **a verify path built for this
+  purpose**, carrying the `=*+$01` mid-instruction label and the 11 typed label
+  prefixes already owned by `AUTO_NAME_PREFIX_RE`
 - Cross-references and search over the typed decode, on the surviving
   `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts`
 - The five absorbed procedures re-pointed onto the new surface with their
   heuristics intact, and their attribution headers preserved
-- The regenerator2000 integration glue deleted behind a whole-tree grep gate
-  observed biting on a planted reintroduction — the `toacme` pattern
+- The regenerator2000 integration glue deleted behind a grep gate observed
+  biting in each tree it covers — the `toacme` pattern, whose own gate was
+  **not** whole-tree
 - Every guard pinned to the deleted subject given an explicit fate before the
   gate
 
@@ -707,24 +710,89 @@ project's is the route underneath it: every absorbed step is written against
 the knowledge intact and the procedure inert — which is the failure this
 milestone's skill half exists to prevent.
 
+**That surface is wider than the three playbooks.** Measured at the v0.7.0 open:
+**82 tool names and 13 CLI verbs across five files** — not the 53/54/21 across
+three first counted here. One of the five is an executable `.mjs`, and another is
+a template this project's agents copy into consuming projects, so re-pointing is
+not a documentation-only edit.
+
 **Two consequences worth stating before planning, because both fail silently:**
 
-- **The whole-tree grep gate must exempt the attribution headers.** Three
-  `ATTRIBUTION (ABS-02)` blocks legitimately keep the word "regenerator2000"
-  after the code is gone, because the prose is still adapted from it. A naive
-  gate fires on them, and "fixing" that by deleting the headers breaks a chain
-  two mechanical guards exist to hold shut.
-- **Deleting r2000 also deletes what several committed guards read.**
-  `r2000-spawn-seam.test.ts`, `docs-r2000-decisions.test.ts` and
-  `r2000-answer-key.test.ts` — the last reading `.planning/phases/11-*/evidence/`
-  with no existence guard — are pinned to the thing being removed. Their fate is
-  planned, not discovered at the gate.
+- **The grep gate's scope is the hard part, and it is measured.** 291 tracked
+  files mention regenerator2000; **55** outside `.planning/`. So roughly 236
+  legitimately keep the word permanently, and the gate must be neither
+  whole-tree (236 false fires, and it gets switched off) nor `src/skills/`-only
+  (blind to `docs/`, `scripts/`, `installer/` and both tarballs). The `toacme`
+  precedent is not the whole-tree gate this project has been citing — its own
+  comment concedes it walks `src/skills/` + `README.md` + `src/mcp/vice/` +
+  `docs/stock-vice-parity.md`.
+- **The exemption set is 10 instances across two trees, not three headers.**
+  Five `ATTRIBUTION (ABS-02)` blocks live in three files under `src/skills/`,
+  each carrying two "regenerator2000" lines, and five more sit in the
+  gitignored-but-shipped `installer/skills/` tree. Separately,
+  `routine-queue-walker/SKILL.md:3`'s YAML `description:` names regenerator2000
+  and must change **substantively** rather than be exempted — which re-triggers
+  the pairwise trigger-collision gate across all seven skill descriptions
+  (`ABS-03`). The exemption needs its own non-vacuity assertion: deleting an
+  attribution block must trip it.
+- **Nine guards and two CI scripts are pinned to the deleted subject**, not the
+  three first named here, and 13 non-`r2000-`named test files reference it. Two
+  break on *registration* rather than deletion:
+  `generate-tool-support-table.mjs:104` hard-codes a regex matching
+  `R2000_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
+  documented throw branch, and reddens `docs/tool-support.md`'s byte-identity
+  guard — and that regex is deliberately triplicated in two more files.
+  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_R2000_TOOLS`
+  and throws `ERR_MODULE_NOT_FOUND` on deletion. `hostpath-consumers.test.ts`
+  itself goes red on three tests, one via a hard-coded `R2000_MODULE_FLOOR = 14`.
+- **`r2000-test-gate.ts` is a keeper with a glue-shaped name.** It owns the ACME
+  hard-fail switch CI binds to by name (`ci.yml:45-140`) — `ACME_BIN`,
+  `VICE_REQUIRE_ACME`, `assertAcmeRequiredIfEnvSet` — imported by
+  `disasm-roundtrip.test.ts`, this project's real-ACME oracle. Deleted as
+  prefix-matched glue, the export claim degrades from "hard FAIL if ACME
+  missing" to "silent skip", in CI, green. It must be renamed **before** the
+  grep gate lands.
+- **Prefix-driven deletion would silently un-ship six more survivors than
+  `CUT-02` names**: `r2000-test-gate`, `-acme-ident`, `-confidence`,
+  `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol
+  round trip), `-verify` and `-memmap-render` (behind a live Key Decision). The
+  delete criterion is capability, not the name prefix.
 
 **Reuse rather than rebuild:** `disasm-opcodes.ts` / `disasm-decoder.ts` /
-`disasm-renderer.ts` already decode 6502 including illegal opcodes;
+`disasm-renderer.ts` already decode 6502 including illegal opcodes
+(**1,042 non-test lines** — the seed's 2,555 is the total including tests);
 `r2000-d64.ts` is standalone; `memmap.json` plus `r2000-regbits-gen.ts` plus
 `r2000-enum-gen.ts` already own the machine knowledge and enum generation. All
 of it survives, under names that no longer say `r2000`.
+
+**The deletion is smaller than it looks, and the difference matters.** The
+`r2000-*.ts` surface measures **25,759** lines (10,102 non-test + 15,657 test) —
+itself a correction to the 19,181 `CUT-01` and `CUT-02` assert. But roughly
+**12.9k of that survives under new names**, so the net deletion is about
+**12.4k**. `r2000-coverage.ts` (2,292 lines + 6,484 test) needs only two
+functions repointed. A phase sized at 25.7k deletes the coverage instrument and
+the enum generator.
+
+**No new dependency is required.** `node:sqlite` is a Node built-in, unflagged
+since v22.13.0 and therefore unconditional at this project's `>=22.18.0` floor:
+no lockfile change, no build step, no prerequisite-story change, and
+`ENGINEERING_RULES.md` §4's dependency bar is not triggered at all. Verified
+live on this host, including the durability case that matters — insert,
+`SIGKILL` with no `close()`, reopen returns the row, `integrity_check: ok`.
+Confine it behind one seam module per this project's established pattern.
+Narrowest-range-wins lookup over 64K is **not** a library case: a paint array
+(`Int32Array(65536)`) resolves in 0.018 µs against 42.6 µs for SQL and rebuilds
+in 7.5 ms, and all six surveyed interval-tree packages return every overlap with
+no narrowest-wins tie-break.
+
+**The store needs no `capability-registry.ts` entry, and adding one would be a
+factual error.** That registry holds only the per-backend *delta*, and a
+proxy-local family has none — the precedent named in its own header is
+`vice_diagnose` / `vice_recycle`. `STORE-03`'s registry clause is therefore
+wrong as written and is corrected in `REQUIREMENTS.md`. Backend-agnosticism is
+made structural instead by `stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS`
+ordered allow-list, and by the same file's assertion that the tool runner's body
+contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`.
 
 **Phase numbering starts at 27.** Phases 24-26 are held with their numbers
 reserved; 20-22 are cut. Numbers are never reused across milestones.
@@ -1218,3 +1286,22 @@ removed), and the Phase 24 engine coupling dropped with it; the frame-exact
 emulator stop named in "Next Milestone Goals" as the unowned single gate on the
 held phases; and `DECOMP-*`/`BUILD-*`/`EQUIV-*` re-mapped from v0.7.0 to
 v0.9.0. Phase numbering continues at 27.*
+
+*Corrected the same day, after v0.7.0's four research agents measured against the
+tree what this section had asserted from reading. Eight premises were wrong and
+are fixed above: the data-type vocabulary is 12 members, not 7; the existing
+`--verify` seam invokes regenerator2000 rather than ACME, so an ACME verify path
+is real scope and not a rename; the `=*+$01` idiom works under real ACME 0.97 but
+exists nowhere in this codebase, so it must be built rather than preserved; typed
+label prefixes number 11 and are already owned by `AUTO_NAME_PREFIX_RE`; the
+attribution exemption is 10 instances across two trees, not three headers, and
+`routine-queue-walker`'s YAML description must change substantively rather than be
+exempted; nine guards and two CI scripts are pinned to the deleted subject, two of
+them breaking on registration rather than deletion; the skill re-pointing surface
+is 82 tool names and 13 CLI verbs across five files, one an executable and one a
+template; and the store needs no `capability-registry.ts` entry at all. Also
+corrected: the `r2000-*` surface is 25,759 lines against `CUT-01`/`CUT-02`'s
+19,181, of which ~12.9k survives renamed, so the net deletion is ~12.4k; the
+`disasm-*` reuse is 1,042 non-test lines, not 2,555; and this file's
+`rewriteArguments()` citations had drifted to `:3029`/`:2964`/`:1508`/`:1484`,
+since `docs-linerefs.test.ts` pins CLAUDE.md's copy and not this one.*
