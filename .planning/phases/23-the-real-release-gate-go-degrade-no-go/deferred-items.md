@@ -89,3 +89,31 @@ whose identity varies".
 
 **Not fixed here.** Phase 23 is forbidden from modifying anything under `src/`, and these
 are pre-existing test-suite defects unrelated to any task in this plan.
+
+## 4. `vice-proxy.test.ts:6382` (`2408`, BACK-05 D-G ordering) fails on a **live-broker host**, not only under load
+
+**Found during:** 23-10, running the `cd src/mcp/vice && npm test` acceptance gate three
+times (fail counts 6, 4, 1 — see the run log in this plan's SUMMARY).
+
+**What happens:** the test asserts `vice_diagnose must never be treated as a capability
+gap`, and the actual answer is
+`vice_diagnose: diagnosis_unavailable (session_refused)` carrying a **backend mismatch**:
+*"This process resolved \"stock\" (source: override, binary: /usr/local/bin/x64sc) while the
+broker resolved \"fork\" (binary: x64sc)"*. It reproduces **in isolation**
+(`node --test vice-proxy.test.ts` → 118 pass / 1 fail, same test), so for this identity the
+cause is **host state, not suite parallelism**: a live fork-backend broker owns the port
+while the test process resolves the stock binary.
+
+**Why this refines item 3 rather than duplicating it.** Item 3 recorded `2408` as one of four
+load-sensitive identities whose failure *identity* varies run to run. That remains true of
+`159`, `916` and `2410`. For `2408` specifically, the trigger observed here is a running
+broker with a different backend — which is why it was the sole survivor of run 3 and why it
+still fails alone. A reader triaging a red `2408` should check for a live broker before
+concluding parallelism.
+
+**Not fixed here.** Phase 23 is forbidden from modifying anything under `src/`, and this plan
+touched only `.planning/` and `docs/` — no change it made can reach a `vice-proxy` code path.
+
+**Candidate fix for whoever owns it:** have the test pin the resolved backend for its own
+subprocess (or skip under a detected live broker of the other backend) rather than inheriting
+whatever the host's broker happens to own.
