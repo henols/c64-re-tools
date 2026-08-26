@@ -5,11 +5,11 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: 23-03 Task 3 blocked — vice MCP tool surface unreachable
-last_updated: "2026-08-26T11:39:37.510Z"
+stopped_at: 23-03 Task 3 — resuming, vice MCP broker restarted and reachable
+last_updated: "2026-08-26T12:21:25.538Z"
 last_activity: 2026-08-26
-last_activity_desc: Phase 23 waves 1-2 executed; 23-03 halted awaiting vice MCP
-state_head: 990b24fde0547f91d591944437bf0def41d454cf
+last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
+state_head: e6748e106fae3146dcffc01433227b4f513770ad
 progress:
   total_phases: 4
   completed_phases: 0
@@ -81,10 +81,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 3 of 11 complete (23-01, 23-02, 23-04); 23-03 halted at Task 3
-Status: BLOCKED — 23-03 Task 3 needs the `vice` MCP tool surface, which is not reachable
+Plan: 3 of 11 complete (23-01, 23-02, 23-04); 23-03 resuming at Task 3
+Status: Executing Phase 23 — vice MCP broker restarted 2026-08-26, 23-03 blocker cleared
 Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 3 of 11 done
-Last activity: 2026-08-26 — Waves 1-2 executed; 23-03 halted at a blocking-human precondition (no vice_* tools), stalling waves 3-6
+Last activity: 2026-08-26 — Waves 1-2 done (23-01, 23-02, 23-04); vice broker restarted, resuming 23-03 Task 3 then waves 3-6
 
 ## Performance Metrics
 
@@ -476,7 +476,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-2 pending (2 files in `.planning/todos/pending/` + 0 UAT-gap rows = 2) — see
+3 pending (3 files in `.planning/todos/pending/` + 0 UAT-gap rows = 3) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -590,7 +590,7 @@ Phase 18 deliberately: reaping is a change to broker lifetime semantics, not
 part of Phase 18's goal. Filing it re-armed
 `docs-deferred-ledger.test.ts` direction A, which had been inert for as long as
 the tree was empty — hence the matching row added to `## Deferred Items` below
-in the same change. This section's opening figure above (`2 pending`) is
+in the same change. This section's opening figure above (`3 pending`) is
 derived from, and must always equal, `## Deferred Items`'s table row count
 below — a discipline that has gone stale twice before and is not itself
 guarded.
@@ -607,6 +607,20 @@ and correct thing, so the repo contradicts itself with the wrong version in the
 file `gsd-phase-researcher` reads first. Deferred out of the discussion rather
 than fixed inline because it is a documentation correction, not a phase-context
 decision — but it should land before `/gsd-plan-phase 23` runs.
+
+**A third todo was filed 2026-08-26**, also outside phase work, via
+`/gsd-capture`:
+`2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it`.
+`buildViceArgs()` (`broker-launch.mts:153`) emits one fixed argv per backend
+with no display or speed flag, so every broker-launched `x64sc` boots as a full
+interactive, real-time emulator — correct for a human watching the screen,
+wasteful for the live suites, corpus sweeps and capture runs where nobody
+looks. The only existing escape hatch, `VICE_ARGS`, is a whole-argv override
+(it would drop the monitor flags too), so it cannot serve as an additive knob.
+Warp in particular has to be launch-time on stock (CLAUDE.md's settled
+no-runtime-`WarpMode` constraint), and any implementation has to keep
+`-default` at index 0 ahead of `-binarymonitor` and re-check the real-time
+timeouts in `probeReady`/`vice-sync.ts` under warp.
 
 ### Quick Tasks Completed
 
@@ -871,14 +885,15 @@ by `.planning/quick/260823-kf6`.
 |----------|------|----------|--------|
 | broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
 | planning | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md | major | Pending |
+| broker | 2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it | minor | Pending |
 
-*The ledger was empty at the v0.4.0 close; the one row above was filed
-2026-08-24, after that close, and is the first pending todo since Phase 17
-plan 17-01 emptied the tree. It is not optional bookkeeping:
+*The ledger was empty at the v0.4.0 close; the three rows above were all filed
+after that close (2026-08-24, 2026-08-26 and 2026-08-26), the first of them the
+first pending todo since Phase 17 plan 17-01 emptied the tree. It is not optional bookkeeping:
 `docs-deferred-ledger.test.ts` direction A requires an own-table-cell row here
 for every file in `.planning/todos/pending/`, and that guard's own comment
 recorded itself as "inert only because the pending tree is empty; a live risk
-the moment a new pending todo is added". This row is what keeps it green now
+the moment a new pending todo is added". These rows are what keep it green now
 that the tree is no longer empty.*
 
 Not counted above, because they are complete on disk: all nine
