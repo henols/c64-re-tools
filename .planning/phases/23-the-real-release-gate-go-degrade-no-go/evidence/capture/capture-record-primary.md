@@ -233,3 +233,75 @@ longer at any defined instant. No capture artifact was written from it, so there
 nothing to rename `.VOID-`; the void is recorded here, per `c64-ram-capture`
 § *Void a run*. Nothing measured below descends from it.
 
+---
+
+### Run 1 — cold autostart, capture at the first `$1BC2`
+
+The procedure below is executed identically for run 1 and run 2, and identically again
+for the secondary release in `capture-record-secondary.md`. Nothing is tuned per run.
+
+$ mcp vice_checkpoint_delete {"checkpoint_num":1}   # clear the calibration run's checkpoint
+{"status":"ok","checkpoint_num":1}
+
+$ mcp vice_checkpoint_list                          # zero armed before the cold start
+{"checkpoints":[],"count":0}
+
+$ mcp vice_machine_reset {"mode":"hard","run_after":true}
+{"status":"ok","mode":"hard","run_after":true,"message":"Machine power cycled"}
+
+$ mcp vice_checkpoint_add {"start":"$1BC2","exec":true,"stop":true}
+{"status":"ok","checkpoint_num":1,"start":7106,"end":7106,"stop":true,"load":false,"store":false,"exec":true}
+vice hazard (repeat): a stopping exec checkpoint was armed again at $1BC2 -- the full hazard note for this address was already issued earlier this session; see that note.
+
+$ mcp vice_autostart {"path":"<workspace>/.../evidence/corpus/danish.d64","run":true}
+{"status":"ok","path":".../evidence/corpus/danish.d64","run":true,"index":0,"message":"Autostart initiated - program will load and run"}
+
+(real time: ~95 s to the crack intro, ~40 s more to the handoff — WarpMode is
+unavailable, `handoff-identification.txt` § 7)
+
+$ mcp vice_checkpoint_list                          # t+100 s
+{"checkpoints":[{"checkpoint_num":1,...,"hit_count":0,...}],"count":1}
+
+$ mcp vice_keyboard_matrix {"key":"SPACE","hold_frames":12}
+{"status":"ok","row":7,"col":4,"pressed":true,"hold_frames":12,"auto_release_scheduled":true}
+
+$ mcp vice_checkpoint_list                          # t+145 s
+{"checkpoints":[{"checkpoint_num":1,...,"hit_count":0,...}],"count":1}
+
+$ mcp vice_display_screenshot {"path":"<workspace>/dist/shot.png"}
+Screen: gameplay — "1UP 000000  TOP 000000  FALLS 04", the first Bruce Lee room, with
+Bruce, a lantern and the two guards' scenery. This is the title screen's **attract
+demo**, reached by the menu timing out, not by any key this run pressed.
+
+**Run 1 is VOIDED.** The machine ran clean past the instant the capture is defined at:
+the keypress landed later relative to the load than in the calibration run, the title
+menu timed out into attract mode, and `hit_count` never left 0. A capture taken here
+would not be at the first execution of `$1BC2` — it would not be at any defined instant
+at all. No artifact was written, so there is nothing to rename `.VOID-`; the void is
+recorded here per `c64-ram-capture` § *Void a run*.
+
+$ mcp vice_diagnose                                 # is the instrument still sound?
+vice_diagnose verdict: live
+Load-bearing evidence: ... bracket 1 retired 0 cycles, bracket 2 retired 38052 cycles
+(2 brackets run, 2 resume calls).
+Machine state left: paused, after the bracket that reached this verdict.
+
+$ mcp vice_registers_get
+{"PC":64878,"A":0,"X":0,"Y":48,"SP":253,...,"I":true,...}     # $FD6E, KERNAL, I set
+$ mcp vice_display_screenshot ...                   # black screen
+
+The machine had left the game entirely by this point and was executing KERNAL boot code
+with a blank screen. Recorded as observed rather than explained: nothing in this run's
+own transcript accounts for it, and it is a second, independent reason the run cannot
+carry a capture. `vice_diagnose` reports `live` with the epoch unchanged, so this is not
+a crash-and-respawn and not a wedge; per `vice-wedge-triage` no `vice_recycle` is
+warranted and none was called.
+
+**Procedure correction carried into every run below**, recorded because it is the
+difference between a run that reaches the instant and one that does not: the keypress is
+sent only after a screenshot has **confirmed the intro's "hit any key" gate is on
+screen**, and `hit_count` is polled every 10 s from the moment of autostart rather than
+after a single long wait. The calibration run, which did reach `hit_count == 1`, did
+confirm the screen first; this run did not. Timing against a real-time load is the
+variable, and it is removed by observing instead of assuming.
+
