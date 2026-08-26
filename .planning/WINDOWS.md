@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 0
 fixed_count: 3
-total_count: 12
-last_updated: 2026-08-26T10:58:18.286Z
+total_count: 13
+last_updated: 2026-08-26T11:40:12.713Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-08-26T10:58:18.286Z
 | 10 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | trueReturnGuardChains() cut for-header semicolons; fixed in the same commit by tracking parenthesis depth | fixed |  | 2026-08-25T11:57:33.035Z | 2026-08-25T11:58:16.142Z |
 | 11 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | PUSH_IDIOM_WINDOW_EDGE declared interior to (zeropage-vector-jumped-through, class-3-pass) rather than OUTSIDE as plan 19-18 specified; the plan's position was factually false | fixed |  | 2026-08-25T13:22:44.057Z | 2026-08-25T13:23:33.194Z |
 | 12 | 23 | deviation | .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-as-planned.bash |  | 23-02 task 1 <verify> is unsatisfiable as written: it asserts DXA_TARBALL_SHA256_VERIFIED: pass and a bare-decimal FIXTURE_DATA_RECOVERY_PCT, both of which SCHEMA.md's frozen domains forbid. Evidence follows SCHEMA.md; the check is recorded failing, not repaired. | open |  | 2026-08-26T10:58:18.286Z |  |
+| 13 | 23 | deviation | src/mcp/vice/r2000-session.test.ts | 615 | Load-flaky: crash-counter assertion fails under full-suite parallelism, green in isolation and on re-run; logged in phase 23 deferred-items, not fixed (evidence convention 9 forbids touching src/) | open |  | 2026-08-26T11:40:12.713Z |  |
 
 ````json
 [
@@ -172,6 +173,18 @@ last_updated: 2026-08-26T10:58:18.286Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-26T10:58:18.286Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "23",
+    "file": "src/mcp/vice/r2000-session.test.ts",
+    "line": 615,
+    "description": "Load-flaky: crash-counter assertion fails under full-suite parallelism, green in isolation and on re-run; logged in phase 23 deferred-items, not fixed (evidence convention 9 forbids touching src/)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-26T11:40:12.713Z",
     "resolved_at": null
   }
 ]

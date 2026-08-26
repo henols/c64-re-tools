@@ -5,16 +5,16 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-08-26T11:01:35.895Z"
+stopped_at: Completed 23-04-PLAN.md
+last_updated: "2026-08-26T11:39:37.510Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 23 execution started
-state_head: 822096c077bf99c692a84ff045cf3f07ba1779c1
+state_head: 990b24fde0547f91d591944437bf0def41d454cf
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -81,7 +81,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 3 of 11
+Plan: 4 of 11
 Status: Ready to execute
 Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plan 2 of 11 done
 Last activity: 2026-08-26 — Phase 23 execution started
@@ -215,6 +215,7 @@ Last activity: 2026-08-26 — Phase 23 execution started
 | Phase 19 P19 | 20 min | 2 tasks | 2 files |
 | Phase 23 P01 | 9 min | 3 tasks | 4 files |
 | Phase 23 P02 | 34 min | 3 tasks | 16 files |
+| Phase 23 P04 | 33 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -469,6 +470,9 @@ Recent decisions affecting current work:
 - [Phase 23]: PROOF-05 ordering is asserted over evidence/ only, never over the phase directory — The phase directory already carries the CONTEXT, RESEARCH, VALIDATION and PLAN commits made before execution began, so a primacy check scoped to it can only ever name the context commit and is unsatisfiable by construction
 - [Phase 23]: The 279-byte fixture's published 141-code / 138-data ground truth is NOT source-derivable: re-deriving it byte by byte from acme's own report gives 145 code / 131 data / 3 assembler-pad, so FIXTURE_REPRODUCED is `no` and the baseline is the source-derived 72.39% recovery / 3 false positives / 27.61% false negatives — The four-byte reclassification that reproduces all four published figures exactly ($0869-$086b, the second `jsr print` dxa typed as data, and $08a6, the self-modified operand cell) was FITTED and is recorded as a hypothesis, not as the baseline. The direction of the divergence matters: the pivot's ground truth counts three bytes dxa got wrong as data, which is exactly what produces its headline 0-false-positive claim, so D-11's side-by-side against the corpus's inventory-derived numbers is not apples-to-apples. 23-10 needs an operator ruling on which figures D-11 prints.
 - [Phase 23]: Where 23-02-PLAN.md and the frozen SCHEMA.md disagree on an outcome-line value domain, SCHEMA.md wins and the plan's own verify is recorded failing rather than repaired — Four divergences resolved as ACCEPTED LIMITs in evidence/fixture/fixture-baseline.txt: DXA_TARBALL_SHA256_VERIFIED reads `yes` not `pass`; FIXTURE_REPRODUCED reads `no` not `fail`; both percentage lines carry the full `<decimal> (<num>/<den>)` shape; and evidence/tools/TOOLS.txt is written as SCHEMA.md's declared outcome-line home alongside the plan-named transcripts. Both the failing as-planned check and the SCHEMA-domain-substituted one are committed as runnable files under evidence/tools/verify/.
+- [Phase 23]: Criterion 4 records C4_UNREPLACED_CAPABILITIES: 0 — no analyzer.rs capability is both unreplaced and depended on, so rule R8 does not fire — The zero was reported adversarially: the audit names E6 follow_indirect_jumps as the single row whose reclassification would move the count, and the two conditions that would justify it, so a non-firing rule input is auditable rather than merely banked
+- [Phase 23]: BlockType::HiLoAddress is lost-accepted, not replaced-by — the pivot fixture had no HiLo table, so the CONCAT11 observation covers the LoHi byte order only — This plan forbids a replaced-by disposition on the strength of a plausible feature name; the mirrored case is likely but unobserved, and the uncertainty is stated in the cost instead
+- [Phase 23]: Ghidra CONCAT11 is ruled NOT sufficient for STORE-01 per-range typing of split pointer tables — Phase 25 must carry the range as declared store state with a byte-order flag — Observed: the contiguous table got a range type (08b7 pointer[4] len=8) while the split arrays got 08ad/08b0 undefined1 len=1 — one byte each, no extent, pair count or stride; the decompiler reports a per-use-site expression, not a range
 
 ### Pending Todos
 
@@ -984,8 +988,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T11:01:26.696Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-08-26T11:39:37.455Z
+Stopped at: Completed 23-04-PLAN.md
   Plan **23-02** provisioned the three instruments and ran the phase's tracer:
   one thin path through every layer — fetch, sha256 verify, build, assemble,
   run dxa, parse the listing, count bytes, run Ghidra headless, carve volatile
