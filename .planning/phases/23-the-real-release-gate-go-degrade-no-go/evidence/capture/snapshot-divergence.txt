@@ -1,0 +1,96 @@
+# Phase 23 — snapshot-derived divergence between the two danish handoff runs
+#
+# Convention 1 (transcript: the command is appended before it runs and its output pasted
+# immediately beneath), 7 (outcome lines at column 0, final occurrence wins).
+#
+# PROVENANCE — READ THIS FIRST. This measurement was taken by the execute-phase
+# ORCHESTRATOR at phase close, not by a dispatched plan. Plan 23-09, which would have
+# owned bank-divergence measurement, was never dispatched (no capture substrate, D-03).
+# The file exists because the `201 multi-bit divergences` figure had already been carried
+# into STATE.md, ROADMAP.md and docs/phase23-real-release-gate-findings.md while appearing
+# nowhere under evidence/ — a breach of this tree's own rule that every cited value is
+# transcribed from a named outcome line. Code review finding CR-02. The number was
+# re-measured from scratch here rather than copied forward.
+#
+# WHAT THIS DOES NOT DO. It does not produce a capture and it does not change the verdict.
+# C0_CORPUS stays `partial` and rule R1 still fires `no-go`. This measurement is the
+# evidence for *why* the two runs are not equivalent, not a route around it.
+
+## 0. The instrument
+
+`evidence/vsf-ram-extract.mjs`, added alongside this transcript. It reads a VICE `.vsf`
+snapshot file and never contacts the emulator. Difference classification follows
+`compare.mjs`'s published rule and does not reimplement it beyond the stated popcount
+split: exactly one differing bit is drift (passes), two or more bits is divergence (fails).
+
+A `.vsf` is `"VICE Snapshot File\x1a"` (19 bytes) + 2 version bytes + a 16-byte machine
+name, then modules; each module is a 16-byte NUL-padded name, 1 major, 1 minor, and a
+4-byte little-endian size covering the whole module including its 22-byte header. The
+`C64MEM` module body is 4 bytes of port/PLA state followed by exactly 65536 bytes of RAM.
+
+## 1. The extraction is correct — cross-checked against 23-03's own hand-transcribed hex
+
+Before trusting any number derived from a snapshot, the snapshot route was checked against
+the independent hex 23-03 transcribed out of the same instant via `vice_memory_read`.
+
+$ node vsf-ram-extract.mjs ~/.config/vice/mcp_snapshots/danish_r2_handoff.vsf --write-bin /tmp/v.bin
+SNAPSHOT_A: /home/henrik/.config/vice/mcp_snapshots/danish_r2_handoff.vsf
+SNAPSHOT_A_SIZE: 65536
+SNAPSHOT_A_SHA256: 626db182bb13fdf5197840854738663a4a74eeeec19145058faf8cb3f6a3851b
+WROTE_BIN: /tmp/v.bin
+
+$ node -e '<compare /tmp/v.bin against $PROBE_DIR/capture-work/danish-run2/c*.hex>'
+XCHECK_C0000: 8192 bytes, differences=2 at $0000,$0001
+XCHECK_C2000: 8192 bytes, differences=0
+XCHECK_C4000: 8192 bytes, differences=0
+XCHECK_C6000: 8187 bytes, differences=1679 (transcript ODD-LENGTH: corrupt) first=$7871
+
+Two 8 KB chunks are **byte-identical**. `$0000-$1FFF` differs at exactly two addresses,
+`$0000` and `$0001`, which is expected and not an error: those hold the underlying RAM
+bytes in a snapshot, while a CPU-view `vice_memory_read` returns the 6510 processor-port
+registers layered over them. `$6000-$7FFF` agrees to `$7871` and is shifted thereafter —
+that chunk's transcript has an odd hex length, independently localising the ten dropped
+characters 23-03 reported to `$7871`.
+
+XCHECK_VERDICT: pass — the snapshot route reproduces the transcript everywhere the
+transcript is itself intact, and the only systematic difference is the documented
+two-byte port overlay.
+
+## 2. The measurement
+
+$ node vsf-ram-extract.mjs ~/.config/vice/mcp_snapshots/danish_r1_handoff.vsf ~/.config/vice/mcp_snapshots/danish_r2_handoff.vsf
+SNAPSHOT_A: /home/henrik/.config/vice/mcp_snapshots/danish_r1_handoff.vsf
+SNAPSHOT_A_SIZE: 65536
+SNAPSHOT_A_SHA256: 3aafc99fb7ab5557dbec578f11a46e04aefe951cf3b4e9d13066dbc776820419
+SNAPSHOT_B: /home/henrik/.config/vice/mcp_snapshots/danish_r2_handoff.vsf
+SNAPSHOT_B_SIZE: 65536
+SNAPSHOT_B_SHA256: 626db182bb13fdf5197840854738663a4a74eeeec19145058faf8cb3f6a3851b
+DIFF_TOTAL_BYTES: 350
+DIFF_DRIFT_ONE_BIT: 149
+DIFF_DIVERGENCE_MULTI_BIT: 201
+DIFF_DIVERGENCE_IN_IO_SHADOW: 1
+DIFF_FIRST_DIVERGENCES: $0000 $0001 $000e $000f $0016 $0052 $007f $009b $00b9 $00c5 $00cb $00ce
+DIFF_VERDICT: not-equivalent
+
+## 3. What it establishes
+
+The two `danish` runs are **not equivalent**, and they are not equivalent for a reason that
+has nothing to do with how the bytes were read out. Both sides of this comparison came from
+snapshot files; there is no transcription anywhere in it. 23-03 had already separated the
+two causes and this measurement isolates the surviving one:
+
+- Hex-transcription unreliability is **removed** here — § 1 proves the route.
+- The runs still diverge at 201 multi-bit addresses, because the fork's stopping exec
+  checkpoint is not frame-exact: it reports the hit but pauses roughly a frame later at a
+  wall-clock-determined instruction, and these two runs landed on different frames
+  (`hit_count` 1 and 2). `saeger`'s two runs, which both landed on `hit_count` 1, diverged
+  at exactly one byte — `$00F6`, the KERNAL keyboard-decode-table pointer — which is the
+  contrast that identifies frame index as the dominant term rather than intra-frame
+  position.
+
+A frame-exact stop is therefore the single remaining gate on rule R1's "secure a corpus
+first" branch.
+
+SNAPSHOT_DIVERGENCE: not-equivalent
+SNAPSHOT_DIVERGENCE_CAUSE: frame-index-nondeterminism
+SNAPSHOT_TRANSCRIPTION_ELIMINATED: yes
