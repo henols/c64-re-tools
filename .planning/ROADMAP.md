@@ -10,6 +10,7 @@
   its own gate: Phase 23 recorded `no-go`, rule `R1`). Phase 23 shipped;
   **Phases 24 and 26 are HELD** with their requirement text live for v0.8.0;
   **Phase 25 was TAKEN FORWARD** as the whole of v0.7.0
+
 - 🚧 **v0.7.0 Own the Annotation Store** — Phases 27-32 (in progress, opened 2026-08-26)
 
 *v0.7.0 continues phase numbering from Phase 26 — it starts at Phase **27**.
@@ -344,6 +345,7 @@ implicit:
    substrate swap rather than lost in it"* are both **removed**. The store is
    built to what this project needs; the Phase 19 manifest's per-procedure tool
    list is the bar, and a procedure that runs is the test.
+
 2. **The Phase 24 engine coupling is dropped with it** — Phase 25's *"populated
    from the engines' output"* dependency and its criterion 3's *"against a program
    analysed by the new engines"*. The store stands on the `disasm-*` decoders this
@@ -400,10 +402,18 @@ on the record — before a line of store code exists.
 **Plans**: 5 plans in 3 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 27-01-PLAN.md — Extract the ACME availability gate into `acme-gate.ts`, repoint its four importers, and prove the missing-ACME hard-FAIL by a committed child-process observation (SEAM-01)
 - [ ] 27-02-PLAN.md — Reduce the coverage census's store contact to one named boundary, `block-class.ts`, and prove it substitutable with a zero-overlap second vocabulary (SEAM-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 27-03-PLAN.md — Move `parsePrg`, `flatImageOrigin` and `decodeRawData` into a shipped `prg-image.ts` and repoint all nine consumers (SEAM-02, SEAM-03)
 - [ ] 27-04-PLAN.md — Extract the four hand-copied `shippedTsModules()` enumerators and `codeOnly()` into `shipped-modules.ts`, and rewrite both recorded statements of the sharing convention (SEAM-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 27-05-PLAN.md — Record the capability-or-glue classification in `module-classification.ts` with its enforcing guard, then produce criterion 4's full-glob green-run evidence (SEAM-02)
 
 Waves: 1 = 27-01, 27-02 (disjoint file sets) · 2 = 27-03, 27-04 · 3 = 27-05
@@ -577,22 +587,29 @@ count, are what the sequence exists to satisfy:
 1. **The ACME gate split precedes the deletion** (27 → 32), in the same commit or
    earlier, with `ACME_BIN` / `VICE_REQUIRE_ACME` byte-identical because CI binds
    them by name.
+
 2. **An ACME oracle exists before the deletion window opens** (30 → 32), or every
    claim made inside that window sits at fixture level.
+
 3. **The removal follows the skill re-pointing** (31 → 32), or the grep gate
    cannot distinguish "not yet re-pointed" from "reintroduced" and the
    milestone's own gate requirement becomes unenforceable.
+
 4. **The registration-time guards move in the registration phase** (29) — *the
    single most important sequencing fact in the architecture research.* Two CI
    gates break on the **rename**, not on the deletion.
+
 5. **Every gate is built before the thing it gates.** The `4f048bb` precedent is a
    milestone closed over an already-red guard with nothing forcing anyone to
    notice.
+
 6. **The type vocabulary is decided in the store core** (28) **and never
    revisited.** Split-table orientation is unrecoverable from data that never
    recorded it.
+
 7. **Phase directories are not archived at the close**, and the reason has grown:
    Phase 19's manifest is now a design input, not merely a guard's fixture.
+
 8. **The expected reds are pre-declared.** Three guards go red by construction on
    the deletion, so an unpredicted red must be distinguishable from a predicted
    one.
