@@ -226,3 +226,350 @@ $ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-rel
 $ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-schema-domains.sh
 TRACER-OK
 [exit 0]
+
+
+## 3. FlatVolatile.java rehearsal (task 2)
+
+Two runs from ONE script, because the phase needs both routes: the flat-64K raw
+import that the corpus capture will use, and the .prg import the fixture uses.
+
+### 3a. An operational constraint found here, recorded for later waves
+
+analyzeHeadless REFUSES a project directory containing a path element that
+starts with a dot. PROBE_DIR is $HOME/.cache/c64-re-tools/phase23, so the
+obvious `-deleteProject` location inside PROBE_DIR is rejected outright:
+
+$ /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/support/analyzeHeadless /home/henrik/.cache/c64-re-tools/phase23/ghidra/proj pathprobe -import /home/henrik/.cache/c64-re-tools/phase23/ghidra/flat64k.bin -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x0 -noanalysis -deleteProject
+openjdk version "21.0.12.1" 2026-08-18
+OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode)
+INFO  Using log config file: jar:file:/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1890 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (5420 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 211 extension points (114 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+ERROR Abort due to Headless analyzer error: Path element starting with '.' is not permitted (HeadlessAnalyzer) java.lang.IllegalArgumentException: Path element starting with '.' is not permitted
+	at ghidra.util.NamingUtilities.checkName(NamingUtilities.java:108)
+	at ghidra.framework.protocol.ghidra.GhidraURL.checkValidProjectPath(GhidraURL.java:440)
+	at ghidra.framework.protocol.ghidra.GhidraURL.checkLocalAbsolutePath(GhidraURL.java:421)
+	at ghidra.framework.model.ProjectLocator.<init>(ProjectLocator.java:75)
+	at ghidra.framework.model.ProjectLocator.<init>(ProjectLocator.java:60)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processLocal(HeadlessAnalyzer.java:420)
+	at ghidra.app.util.headless.AnalyzeHeadless.launch(AnalyzeHeadless.java:199)
+	at ghidra.GhidraLauncher.launch(GhidraLauncher.java:81)
+	at ghidra.Ghidra.main(Ghidra.java:54)
+ 
+[exit 1]
+
+The Ghidra PROJECT directory therefore lives at $HOME/c64-re-tools-phase23-ghidra
+for every headless run in this phase, and is passed `-deleteProject` so nothing
+survives it. Everything that MATTERS -- the image, the entry-point file, the
+scripts and the run logs -- stays under PROBE_DIR as convention 2 requires; the
+project location is scratch that Ghidra deletes on exit, not a cross-wave
+artifact. Later plans running analyzeHeadless must do the same, or they will hit
+this abort with a message that names neither PROBE_DIR nor the offending element.
+
+### 3b. Flat 64K raw import -- the split route
+
+Synthetic 65536-byte image, sha256
+d60f4994592d98235b20638996144125646bfeed87af16b17276983e153073c5, with the
+processor port planted at offset 0 ($2F $37) and a 17-byte instruction run at
+$4000 that writes $D020 twice with a read-modify-write of $01 after it -- the
+exact shape dead-store elimination eats when volatility is wrong.
+
+Note the two `Failed to add language defined memory block due to conflict` lines
+for ZERO_PAGE and STACK near the top of the log. They are INFO lines, not errors:
+the 6502 language wants to create those blocks and the flat image already
+occupies $0000-$01FF. They are named here explicitly so a later plan that greps
+its run log for a failure keyword does not misread them as a failed run. They
+appear in the flat-64K route only; run 3c below, being a .prg at $0801, does not
+produce them.
+
+$ analyzeHeadless $HOME/c64-re-tools-phase23-ghidra flat64k -import flat64k.bin -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x0 -noanalysis -scriptPath $PROBE_DIR/ghidra -preScript FlatVolatile.java $PROBE_DIR/ghidra/entrypoints.txt -deleteProject
+openjdk version "21.0.12.1" 2026-08-18
+OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode)
+INFO  Using log config file: jar:file:/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1951 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (5985 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 211 extension points (114 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/henrik/.cache/c64-re-tools/phase23/ghidra
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Creating temporary project: /home/henrik/c64-re-tools-phase23-ghidra/flat64k (HeadlessAnalyzer)  
+INFO  Creating project: /home/henrik/c64-re-tools-phase23-ghidra/flat64k (DefaultProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: /home/henrik/c64-re-tools-phase23-ghidra/flat64k (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///home/henrik/.cache/c64-re-tools/phase23/ghidra/flat64k.bin (HeadlessAnalyzer)  
+INFO  Successfully applied "-loader-baseAddr" to "Base Address" (old: "null", new: "0x0") (ProgramLoader)  
+INFO  Using Loader: Raw Binary (ProgramLoader)  
+INFO  Using Language/Compiler: 6502:LE:16:default:default (ProgramLoader)  
+INFO  Using Library Search Path: [., /bin, /lib, /lib64, /lib/x86_64-linux-gnu, /lib/aarch64-linux-gnu, /usr/bin, /usr/lib, /usr/X11R6/bin, /usr/X11R6/lib, /usr/java/packages/lib, /usr/lib/x86_64-linux-gnu/jni, /usr/lib/x86_64-linux-gnu, /usr/lib/jni] (ProgramLoader)  
+INFO  Additional info:
+Failed to add language defined memory block due to conflict: ZERO_PAGE: start_address=0x0000, uninitialized, length=0x100
+Failed to add language defined memory block due to conflict: STACK: start_address=0x0100, uninitialized, length=0x100
+ (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FlatVolatile.java '/home/henrik/.cache/c64-re-tools/phase23/ghidra/entrypoints.txt'  (HeadlessAnalyzer)  
+INFO  SCRIPT: /home/henrik/.cache/c64-re-tools/phase23/ghidra/FlatVolatile.java (HeadlessAnalyzer)  
+INFO  FlatVolatile.java> BLOCKS-BEFORE: (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0000-ffff vol=false (GhidraScript)  
+INFO  FlatVolatile.java> NAIVE-BLOCK-AT-D000: RAM 0000-ffff size=65536 (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-OK at 2 (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-OK at d000 (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-OK at e000 (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-SET: RAM 0000-0001 (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-SET: RAM.split.split d000-dfff (GhidraScript)  
+INFO  FlatVolatile.java> BLOCKS-AFTER: (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0000-0001 vol=true (GhidraScript)  
+INFO  FlatVolatile.java>   RAM.split 0002-cfff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   RAM.split.split d000-dfff vol=true (GhidraScript)  
+INFO  FlatVolatile.java>   RAM.split.split.split e000-ffff vol=false (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-BLOCK-COUNT: 2 (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINTS: 1 from /home/henrik/.cache/c64-re-tools/phase23/ghidra/entrypoints.txt (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINT-SEEDED: 4000 (GhidraScript)  
+INFO  Packed database cache: /var/tmp/henrik-ghidra/packed-db-cache (PackedDatabaseCache)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+INFO  -----------------------------------------------------
+    ASCII Strings                              1.102 secs
+    Apply Data Archives                        2.278 secs
+    Basic Constant Reference Analyzer          0.048 secs
+    Call Convention ID                         0.001 secs
+    Call-Fixup Installer                       0.001 secs
+    Create Function                            0.000 secs
+    Decompiler Switch Analysis                 0.000 secs
+    Demangler GNU                              0.033 secs
+    Disassemble Entry Points                   0.026 secs
+    Embedded Media                             0.036 secs
+    External Entry References                  0.001 secs
+    Function ID                                0.054 secs
+    Non-Returning Functions - Discovered       0.001 secs
+    Shared Return Calls                        0.002 secs
+    Stack                                      0.006 secs
+    Subroutine References                      0.002 secs
+-----------------------------------------------------
+     Total Time   3 secs
+-----------------------------------------------------
+ (AutoAnalysisManager)  
+INFO  FlatVolatile.java> ANALYZE-ALL: complete (GhidraScript)  
+INFO  /flat64k.bin: file created (henrik) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /flat64k.bin (flat64k:/flat64k.bin) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  
+[exit 0]
+
+The post-carve block dump above lists FOUR blocks -- RAM 0000-0001,
+RAM.split 0002-cfff, RAM.split.split d000-dfff, RAM.split.split.split e000-ffff
+-- of which EXACTLY TWO report vol=true, and those two are the $0000-$0001
+processor port and the $D000-$DFFF I/O page. That is the whole point of the
+task: BankProbe3.java's getBlock()-first guard would have printed
+`volatile(existing): RAM` once and marked all 65536 bytes volatile, and the
+NAIVE-BLOCK-AT-D000 line above shows exactly that block it would have caught
+(RAM 0000-ffff size=65536).
+
+### 3c. .prg import -- the createUninitializedBlock route, and an empty entry-point file
+
+Same script, no edits. The fixture's 279-byte image (the .prg with its two-byte
+CBM load-address header stripped) based at $0801, and a deliberately EMPTY
+entry-point file.
+
+$ analyzeHeadless $HOME/c64-re-tools-phase23-ghidra fixture-prg-emptyep -import fixture-image.bin -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x801 -noanalysis -scriptPath $PROBE_DIR/ghidra -preScript FlatVolatile.java $PROBE_DIR/ghidra/entrypoints-empty.txt -deleteProject
+openjdk version "21.0.12.1" 2026-08-18
+OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode)
+INFO  Using log config file: jar:file:/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (2108 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (5665 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 211 extension points (114 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/henrik/.cache/c64-re-tools/phase23/ghidra
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Creating temporary project: /home/henrik/c64-re-tools-phase23-ghidra/fixture-prg-emptyep (HeadlessAnalyzer)  
+INFO  Creating project: /home/henrik/c64-re-tools-phase23-ghidra/fixture-prg-emptyep (DefaultProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: /home/henrik/c64-re-tools-phase23-ghidra/fixture-prg-emptyep (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-image.bin (HeadlessAnalyzer)  
+INFO  Successfully applied "-loader-baseAddr" to "Base Address" (old: "null", new: "0x801") (ProgramLoader)  
+INFO  Using Loader: Raw Binary (ProgramLoader)  
+INFO  Using Language/Compiler: 6502:LE:16:default:default (ProgramLoader)  
+INFO  Using Library Search Path: [., /bin, /lib, /lib64, /lib/x86_64-linux-gnu, /lib/aarch64-linux-gnu, /usr/bin, /usr/lib, /usr/X11R6/bin, /usr/X11R6/lib, /usr/java/packages/lib, /usr/lib/x86_64-linux-gnu/jni, /usr/lib/x86_64-linux-gnu, /usr/lib/jni] (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FlatVolatile.java '/home/henrik/.cache/c64-re-tools/phase23/ghidra/entrypoints-empty.txt'  (HeadlessAnalyzer)  
+INFO  SCRIPT: /home/henrik/.cache/c64-re-tools/phase23/ghidra/FlatVolatile.java (HeadlessAnalyzer)  
+INFO  FlatVolatile.java> BLOCKS-BEFORE: (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE 0000-00ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   STACK 0100-01ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0801-0917 vol=false (GhidraScript)  
+INFO  FlatVolatile.java> NAIVE-BLOCK-AT-D000: none (.prg route) (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-OK at 2 (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-SKIP at d000: no block covers this address (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-SKIP at e000: no block covers this address (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-SET: ZERO_PAGE 0000-0001 (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-NEW: VOL_d000 d000-dfff (.prg route -- no existing block covered this address) (GhidraScript)  
+INFO  FlatVolatile.java> BLOCKS-AFTER: (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE 0000-0001 vol=true (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE.split 0002-00ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   STACK 0100-01ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0801-0917 vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   VOL_d000 d000-dfff vol=true (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-BLOCK-COUNT: 2 (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINTS: none (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINTS-REASON: file /home/henrik/.cache/c64-re-tools/phase23/ghidra/entrypoints-empty.txt contained no addresses (GhidraScript)  
+INFO  Packed database cache: /var/tmp/henrik-ghidra/packed-db-cache (PackedDatabaseCache)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+INFO  -----------------------------------------------------
+    ASCII Strings                              1.098 secs
+    Apply Data Archives                        1.894 secs
+    Create Function                            0.000 secs
+    Demangler GNU                              0.002 secs
+    Disassemble Entry Points                   0.004 secs
+    Embedded Media                             0.020 secs
+    External Entry References                  0.001 secs
+    Function ID                                0.038 secs
+-----------------------------------------------------
+     Total Time   3 secs
+-----------------------------------------------------
+ (AutoAnalysisManager)  
+INFO  FlatVolatile.java> ANALYZE-ALL: complete (GhidraScript)  
+INFO  /fixture-image.bin: file created (henrik) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /fixture-image.bin (fixture-prg-emptyep:/fixture-image.bin) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  
+[exit 0]
+
+Both branches proven from one file: the flat route split and set volatility on
+carved blocks; the .prg route found no block at $D000, took
+createUninitializedBlock, and produced VOL_d000 d000-dfff vol=true. The empty
+entry-point file printed `ENTRYPOINTS: none` with an explicit reason and the run
+continued to ANALYZE-ALL, so an empty entry-point set is a recorded fact rather
+than a silent no-op -- which matters because Ghidra alone on a headerless 6502
+image produced 0 functions and 0 code bytes on the pivot fixture.
+
+Note also that the .prg route split ZERO_PAGE at $0002 rather than skipping: the
+6502 language's own ZERO_PAGE block covers $0000-$00FF there, so the carve is
+still needed and still correct on that route. The script did not have to be told
+which route it was on; it branched on what the memory actually contained.
+
+### 3d. Task 2's own automated verify
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task2-verify-as-planned.sh
+VOLATILE-OK
+[exit 0]
+
+### 3e. A regression this plan caused, and fixed
+
+Committing the two task-1 verify checks as `*.sh` red the test suite. The full
+`npm test` after task 1 was green (2593 pass / 0 fail); the next full run went to
+2592 pass / 1 fail on:
+
+  not ok 470 - structural: git ls-files enumerates the tracked shell-script set
+               as exactly EXPECTED_TRACKED_SHELL_SCRIPTS
+
+That gate (src/mcp/vice/host-scripts.test.ts:187-208) pins the tracked
+shell-script set with `git ls-files -- "*.sh"` to exactly four paths, on purpose,
+so a stray script cannot appear unnoticed. It was doing its job; the fault was
+this plan's.
+
+It is NOT fixed by adding the files to EXPECTED_TRACKED_SHELL_SCRIPTS -- that
+array is under src/, and evidence convention 9 forbids this phase touching src/.
+The checks were renamed to `*.bash`, which names their interpreter accurately and
+falls outside the pinned glob. The transcript in section 2 above still shows the
+original `.sh` paths because it records what actually ran and is not rewritten;
+the same two checks under their new names are re-run below.
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-as-planned.bash
+[exit 1]
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-schema-domains.bash
+TRACER-OK
+[exit 0]
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task2-verify-as-planned.bash
+VOLATILE-OK
+[exit 0]
