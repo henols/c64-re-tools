@@ -1,0 +1,25 @@
+# Phase 23 corpus directory — metadata is tracked, the image never is.
+#
+# D-04: the corpus is operator-supplied and its identity in the verdict is
+# release name plus sha256. The binary itself is NEVER committed to this
+# repository. These rules exist so that cannot happen by accident.
+#
+# This file lives inside the evidence tree rather than in the repository root
+# .gitignore on purpose: the phase's no-product-code invariant is that
+# `git diff --name-only <phase-base>..HEAD` touches only .planning/ and docs/,
+# and a root-level edit would break it for no benefit.
+
+# Every binary image form the corpus can arrive as.
+*.d64
+*.prg
+*.bin
+*.t64
+*.crt
+*.zip
+*.gz
+
+# Identity and metadata are tracked.
+!.gitignore
+!*.md
+!*.txt
+!*.json
