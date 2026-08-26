@@ -6,10 +6,10 @@ current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
 stopped_at: "Completed 23-10-PLAN.md — verdict recorded: no-go, rule R1; docs/phase23-real-release-gate-findings.md"
-last_updated: "2026-08-26T15:32:04.364Z"
+last_updated: "2026-08-26T15:44:39.331Z"
 last_activity: 2026-08-26
 last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
-state_head: 594c85866854cecf09059f6b7c96b7b8fc3256fc
+state_head: edad925026a3a22ed64d0c85c59fb7a890086a9a
 progress:
   total_phases: 4
   completed_phases: 0
@@ -80,11 +80,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 5 of 11 complete (23-01, 23-02, 23-03, 23-04, 23-10) — 23-05..23-09 deliberately NOT dispatched (no depacked capture substrate, D-03); their criteria are `could-not-run`
-Status: Executing Phase 23 — verdict recorded: **no-go**, rule **R1** fired (`C0_CORPUS: partial`). See `docs/phase23-real-release-gate-findings.md`. Next and last: 23-11 (ROADMAP/STATE pointers gating Phase 24, PROOF traceability flip).
+Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — COMPLETE (verdict recorded)
+Plan: 6 of 11 executed (23-01, 23-02, 23-03, 23-04, 23-10, 23-11) — 23-05..23-09 **deliberately NOT dispatched** by explicit operator decision (each reads the depacked flat-64K capture as its substrate, D-03, and 23-03 could not produce one); their criteria are `could-not-run`. This is 6 of 11 executed and 5 deliberately not dispatched — **not** 11/11, and **not** five failures.
+Status: **Phase 23 COMPLETE.** Verdict recorded: **`no-go`**, rule **`R1`** fired on the single input `C0_CORPUS: partial`, and bound by 23-11 into ROADMAP.md, this file and REQUIREMENTS.md. Next: **Phase 24 (The Two Engines) is verdict-gated** — read `docs/phase23-real-release-gate-findings.md` frontmatter `verdict` / `verdict_rule_applied` before writing any plan there. `R1`'s own recorded consequence: *secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only.* The frontmatter progress counters below are handler-derived and read 6/11 plans and 0/4 phases because five plans were deliberately not dispatched — the phase is complete in fact while incomplete by plan count.
 Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 5 of 11 done
-Last activity: 2026-08-26 — 23-10 complete: `docs/phase23-real-release-gate-findings.md` records verdict **no-go** / rule **R1**, derived from the pre-committed rule; the rule reproduced verbatim, the five non-dispatched plans named, 8 accepted limits and 15 corrections collected
+Last activity: 2026-08-26 — 23-11 complete: the verdict now gates Phase 24 through the ROADMAP `**Depends on**` line and Notes its planner reads first, `R1`'s consequence is written beside (never over) the Phases 24/25/26 success criteria, and the PROOF traceability reflects reality — PROOF-04 and PROOF-05 Complete, PROOF-01/02/03 recorded **not met** with their reason. Previously: 23-10 complete: `docs/phase23-real-release-gate-findings.md` records verdict **no-go** / rule **R1**, derived from the pre-committed rule; the rule reproduced verbatim, the five non-dispatched plans named, 8 accepted limits and 15 corrections collected
 
 ## Performance Metrics
 
@@ -287,6 +287,19 @@ Last activity: 2026-08-26 — 23-10 complete: `docs/phase23-real-release-gate-fi
   bank-parameterised and narrowest-range-wins; dxa is the discovery engine and
   nothing more.
 
+- **v0.6.0: the gate fired, and it returned `no-go` (2026-08-26).** The second time
+  this project made the assumption probe a phase rather than a criterion, and the
+  second time the pre-committed rule bit: Phase 9's `R4` returned `degrade` and
+  shipped a smaller correct milestone; Phase 23's `R1` returned **`no-go`** on
+  `C0_CORPUS: partial`, five plans before the measurement it gates existed. `R1`'s own
+  text names what the milestone becomes — *secure a corpus first, or re-scope v0.6.0 to
+  a claim explicitly qualified as fixture-only* — and that decision is deliberately
+  **not** taken here: it belongs to whoever plans Phase 24. Six of Phase 23's eleven
+  plans executed; 23-05..23-09 were deliberately not dispatched for want of the
+  depacked capture substrate (D-03). Verdict at
+  `docs/phase23-real-release-gate-findings.md`; Phases 24, 25 and 26 carry the
+  amendment beside their success criteria, which are unchanged.
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
@@ -481,6 +494,10 @@ Recent decisions affecting current work:
 - [Phase 23]: Phase 23 verdict recorded: **no-go**, rule **R1** fired (input `C0_CORPUS: partial`). Full derivation, the rule reproduced verbatim, all five criteria and the collected limits/corrections live in one place: `docs/phase23-real-release-gate-findings.md` (frontmatter `verdict`/`verdict_rule_applied`/`criteria`) — read there, not restated here.
 - [Phase 23]: R1 is the FIRST rule under first-match-wins, so the derivation reads one input and stops. No earlier-rule walk exists to show, and the six unevaluated inputs (five with no evidence file, because 23-05..23-09 were deliberately not dispatched for want of a depacked capture, D-03) cannot flatter the verdict because the derivation never reads them.
 - [Phase 23]: No override was taken, and `corpus.releases[].capture_sha256` is written `could-not-run` rather than a fabricated 64-hex value — so 23-10-PLAN.md Task 1 own verify is recorded as unsatisfiable, following the operator-confirmed phase-wide precedent that SCHEMA.md and the facts win over a plan regex.
+- [Phase 23]: 23-11: the verdict is bound into the tracking artifacts as a **pointer, never a copy**: `verdict: no-go`, `verdict_rule_applied: R1`, fired by the single input `C0_CORPUS: partial`, read at `docs/phase23-real-release-gate-findings.md` — that document's frontmatter is the single source of truth for every criterion value and none is restated here. The finding is qualified by the corpus it was measured against: two independently-cracked Bruce Lee (Datasoft, 1984) releases, canonical `danish` (`file_sha256` `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5`, `capture_sha256` **`could-not-run`** — no flat 64K capture was ever assembled) and `saeger` (`file_sha256` `b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5`, `capture_sha256` **`could-not-run`**), neither image committed; and by the instrument pins dxa `0.1.5` (tarball sha256 `8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799`), Ghidra `12.1.3 PUBLIC` build 2026-Aug-17, and the **fork** VICE backend `3.10`. — A second copy of the outcome values is a second thing that can drift out of agreement with the first; the pointer says where to read them, not what they are. Phase 24's ROADMAP `**Depends on**` line and Notes name the file and the `verdict` field literally, which — with D-08 having declined a test guard deliberately — is the entire enforcement mechanism for the gate.
+- [Phase 23]: 23-11: `R1` carries **no pre-mapped per-requirement narrowing**, so no `DXA-*`, `GHID-*`, `OPC-*`, `STORE-*`, `CUT-*` or `AUTO-*` requirement is narrowed by name — the pre-mapped narrowings belong to `R6` and `R7`, and under first-match-wins neither was ever evaluated. The consequence written beside Phases 24, 25 and 26 is `R1`'s own text, reproduced rather than re-authored, and every downstream success criterion is left **byte-identical**. — `AUTO-04`/`AUTO-05` are therefore **unvalidated rather than narrowed**: `PROOF-03`'s criterion was never measured, so nothing was observed about where a single forward-carried `$01` value stops being correct, in either direction. Recording a narrowing that no fired rule authorises would be scope drift dressed as a verdict.
+- [Phase 23]: 23-11: PROOF-01, PROOF-02 and PROOF-03 are recorded **NOT met** in REQUIREMENTS.md — not `Complete` — with the reason on the row; only PROOF-04 (criterion 4, whose recorded outcome is at `evidence/criterion4-analyzer-audit.md` and which needed no capture because the audit ran offline against crate source) and PROOF-05 (the machine-readable verdict derived from the pre-committed rule) are honestly discharged. — 23-11-PLAN.md asked for all five to flip; that instruction was written before the verdict existed and assumed the criteria had been measured. They were not: PROOF-01/02/03 each require the depacked flat-64K capture and the criteria measured on it, and no capture exists. Flipping them would make the traceability table assert a measurement that was never taken, which is the one thing a traceability table exists to prevent. 23-10 had already, correctly, left the file untouched when `requirements.ready-ids` returned 0/5 ready.
+- [Phase 23]: 23-11: the remaining obstacle to a real measurement is **one** thing, not two — the fork's stopping exec checkpoint is not frame-exact. Snapshot-to-snapshot, with no transcription anywhere, the two `danish` runs still diverge at 201 multi-bit addresses. The hex-transcription half is **solved** (extract the 64K from a VICE `.vsf` `C64MEM` module body; validated against 23-03's own transcript, todo `2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md`) and it **did not change the verdict** and must not be read as though it did. — A frame-exact stop is the single gate on `R1`'s "secure a corpus first" branch, so the re-scope decision can be taken on evidence rather than re-derived. The second pending todo (`back-05-test-fails-deterministically-on-a-live-broker-host`) is a test-isolation defect, unrelated to the verdict.
 
 ### Pending Todos
 
