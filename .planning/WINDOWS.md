@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 3
-total_count: 11
-last_updated: 2026-08-25T13:23:33.194Z
+total_count: 12
+last_updated: 2026-08-26T10:58:18.286Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,7 @@ last_updated: 2026-08-25T13:23:33.194Z
 | 9 | 19 | deviation | src/mcp/vice/skill-attribution.test.ts |  | 19-07 deferred WR-12: manifestEntryFor() lies to the type system and can throw a TypeError instead of its intended message; not called by 19-07's guard | open |  | 2026-08-24T21:56:23.308Z |  |
 | 10 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | trueReturnGuardChains() cut for-header semicolons; fixed in the same commit by tracking parenthesis depth | fixed |  | 2026-08-25T11:57:33.035Z | 2026-08-25T11:58:16.142Z |
 | 11 | 19 | deviation | src/mcp/vice/r2000-coverage.test.ts |  | PUSH_IDIOM_WINDOW_EDGE declared interior to (zeropage-vector-jumped-through, class-3-pass) rather than OUTSIDE as plan 19-18 specified; the plan's position was factually false | fixed |  | 2026-08-25T13:22:44.057Z | 2026-08-25T13:23:33.194Z |
+| 12 | 23 | deviation | .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-as-planned.bash |  | 23-02 task 1 <verify> is unsatisfiable as written: it asserts DXA_TARBALL_SHA256_VERIFIED: pass and a bare-decimal FIXTURE_DATA_RECOVERY_PCT, both of which SCHEMA.md's frozen domains forbid. Evidence follows SCHEMA.md; the check is recorded failing, not repaired. | open |  | 2026-08-26T10:58:18.286Z |  |
 
 ````json
 [
@@ -160,6 +161,18 @@ last_updated: 2026-08-25T13:23:33.194Z
     "reason": "",
     "recorded_at": "2026-08-25T13:22:44.057Z",
     "resolved_at": "2026-08-25T13:23:33.194Z"
+  },
+  {
+    "id": 12,
+    "kind": "deviation",
+    "phase": "23",
+    "file": ".planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task1-verify-as-planned.bash",
+    "line": null,
+    "description": "23-02 task 1 <verify> is unsatisfiable as written: it asserts DXA_TARBALL_SHA256_VERIFIED: pass and a bare-decimal FIXTURE_DATA_RECOVERY_PCT, both of which SCHEMA.md's frozen domains forbid. Evidence follows SCHEMA.md; the check is recorded failing, not repaired.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-26T10:58:18.286Z",
+    "resolved_at": null
   }
 ]
 ````
