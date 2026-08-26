@@ -19,7 +19,7 @@ affects: [23-02, 23-03, 23-04, 23-05, 23-06, 23-07, 23-08, 23-09, 23-10, 23-11, 
 actuals:
   tokens: 9081
   tasks: 3
-  commits: 3
+  commits: 4
 
 tech-stack:
   added: []
@@ -135,7 +135,7 @@ status: complete
 2. **Task 2: Write the binding decision rule and the outcome-line schema** — `474c37c` (docs)
 3. **Task 3: Publish the evidence conventions and bank the ordering proof** — `edc527b` (docs)
 
-**Plan metadata:** see the `docs(23-01): complete pre-commit the gate plan` commit.
+**Plan metadata:** `3ef3045` (docs: complete plan) and `7cb72b2` (docs: log the npm-test evidence-file side effect as a deferred item — see `deferred-items.md`).
 
 ## Files Created/Modified
 
