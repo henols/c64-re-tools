@@ -324,3 +324,22 @@ None — no external service configuration required.
   about dxa's error rate, Ghidra's computed-dispatch resolution, or where a forward-carried `$01`
   stops being correct, against real code. Any later document that reads this phase as having
   partially validated those is reading it wrong.
+
+## Self-Check: PASSED
+
+All four created/modified files exist on disk; all five task commits are in `git log --all`.
+
+Plan verifies, re-run at close:
+
+- Task 1 (`VERDICT-OK`): `verdict: no-go`, `verdict_rule_applied: R1`, `## Verdict` present,
+  the rule blockquote reaches `R9`, `file_sha256` 64-hex count 2, `canonical: true` count 1.
+  **One clause of this verify is not satisfied and cannot be** — the 64-hex `capture_sha256`
+  grep — because no capture exists; recorded as a limit in the findings document and as
+  deviation 2 in this SUMMARY rather than satisfied by fabrication.
+- Task 2 (`BODY-OK`): passes in full.
+- Task 3 (`CORRECTIONS-OK`): passes in full, including `! grep -qE "^src/"` over
+  `evidence/README.md`.
+
+Regression gate: run 3 reported — 2592/2638 pass, 1 fail (`2408`), root-caused to a
+live-broker backend mismatch and logged as `deferred-items.md` item 4. Not green, reported as
+it is.
