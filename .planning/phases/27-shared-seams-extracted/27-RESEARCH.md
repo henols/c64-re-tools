@@ -1725,9 +1725,23 @@ Ground Truth, or Coverage Boundary sections rests on an assumption** — every c
 there carries a `[VERIFIED: path:lines]` tag with a verbatim quote from a file
 opened this session.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-### OQ-1: Extract `codeOnly()` at all, given it has exactly one consumer?
+> **All four questions below were resolved during phase planning (2026-08-27) and
+> are recorded here for provenance only — nothing in this section is still open.**
+> Each `**Recommendation:**` was adopted, in executable plan content with its
+> rationale, and each OQ heading now carries a `— RESOLVED in …` back-annotation
+> naming where. The analysis itself is left exactly as written: the record of what
+> was unclear at research time is the point of keeping it.
+>
+> | OQ | Resolution | Where |
+> |---|---|---|
+> | OQ-1 | Extract `codeOnly()`, on a **survival** rationale rather than a divergence one; comment-extractor family explicitly out of scope | `27-04-PLAN.md` |
+> | OQ-2 | Record `r2000-verify.ts` as `capability`, basis = the surviving *discipline*; tension flagged in the entry's own `note` | `27-05-PLAN.md` |
+> | OQ-3 | **Move** `decodeRawData` (option 2), not record-and-defer | `27-03-PLAN.md` |
+> | OQ-4 | Two `scripts/lib/` files carried as registry **data** with an `out-of-enumeration` marker; enforcing test's enumeration stays inside `src/mcp/vice/` | `27-05-PLAN.md` |
+
+### OQ-1: Extract `codeOnly()` at all, given it has exactly one consumer? — RESOLVED in `27-04-PLAN.md`
 
 - **What we know:** `codeOnly()` has one definition (`r2000-spawn-seam.test.ts:65`)
   and one consuming file (itself, `:276` and `:493`). The four "variants" D-15
@@ -1754,7 +1768,7 @@ opened this session.
   instruction to keep *that* duplication — respecting it is consistent, not
   inconsistent.
 
-### OQ-2: Is `r2000-verify.ts` a capability, and if so on what basis?
+### OQ-2: Is `r2000-verify.ts` a capability, and if so on what basis? — RESOLVED in `27-05-PLAN.md`
 
 - **What we know:** criterion 2 names `-verify` among the ten modules "provably
   not deletable by prefix". But `REQUIREMENTS.md:100-104` (`EXPORT-01` and its
@@ -1776,7 +1790,7 @@ opened this session.
   keeps criterion 2 satisfied. **Flag it in the plan** so Phase 32 reads a basis
   it can act on rather than a verdict it will contest.
 
-### OQ-3: Does `decodeRawData` move, or is it only recorded? (Correction C-1)
+### OQ-3: Does `decodeRawData` move, or is it only recorded? (Correction C-1) — RESOLVED in `27-03-PLAN.md`
 
 - **What we know:** it is generic in implementation, and a criterion-2 capability
   module statically imports it from a `glue-with-extractable` module. CONTEXT's
@@ -1791,7 +1805,7 @@ opened this session.
   Silently following CONTEXT's parenthetical is the only route that leaves the
   census breakable by a prefix deletion.
 
-### OQ-4: Does the registry cover `scripts/lib/r2000-cli-verbs.*`?
+### OQ-4: Does the registry cover `scripts/lib/r2000-cli-verbs.*`? — RESOLVED in `27-05-PLAN.md`
 
 - **What we know:** both files exist and match `r2000-*` by name but not by
   location; `CUT-04` names `scripts/lib/r2000-cli-verbs.mjs` explicitly as a
