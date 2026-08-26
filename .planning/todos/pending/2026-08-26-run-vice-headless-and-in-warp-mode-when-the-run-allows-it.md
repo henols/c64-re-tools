@@ -5,7 +5,13 @@ area: broker
 severity: minor
 files:
   - src/mcp/vice/broker-launch.mts:153-218
+  - src/mcp/vice/broker-launch.mts:850
+  - src/mcp/vice/broker-launch.mts:953
+  - src/mcp/vice/vice-broker.mts:169
   - src/mcp/vice/vice-broker.mts:401
+  - src/mcp/vice/vice-broker.mts:473
+  - src/mcp/vice/vice-broker.mts:929
+  - src/mcp/vice/vice-broker-client.ts:372
   - src/mcp/vice/capability-registry.ts:283-285
 ---
 
@@ -31,7 +37,7 @@ sweeps, `vice_run_until` / checkpoint-wait brackets, depack-and-capture RAM runs
 and any CI-ish batch. Those pay real-time emulation speed and open a window on the
 host's display for no benefit — and they cannot run at all on a display-less host.
 
-Two related capabilities, which is why this is one todo and not two:
+Three related capabilities, which is why this is one todo and not three:
 
 1. **Headless** — VICE's `-VICIIdsize`/video and sound flags, or a `-default`-safe
    equivalent, so no window is mapped and no audio device is opened. Needs to be
@@ -42,6 +48,31 @@ Two related capabilities, which is why this is one todo and not two:
    launch-time `-warp` / `InitialWarpMode`. `capability-registry.ts:283-285` already
    records that the fork advertises a `WarpMode` resource stock does not have. That
    asymmetry means the knob has to be expressed at launch, per backend, not as a tool.
+3. **On-demand lifecycle, so the mode can be chosen per run** (added 2026-08-26) —
+   VICE does not have to be pre-started at all; it should be launched when a run
+   needs it, in the mode that run wants, and shut down when the run is done.
+   Teardown is already right: `handleRelease()` (`vice-broker.mts:929`) is
+   kill-never-recycle — it marks the death deliberate, drops the instance record,
+   returns the port and `verifiedKill()`s the pid. The *start* side is the gap, and
+   it is structural rather than a missing flag:
+
+   - The warm floor defaults to **1** (`vice-broker.mts:169`,
+     `broker-launch.mts:850`, both defaulting to 1 since D-06), so
+     `maintainWarmFloor()` (`broker-launch.mts:953`) keeps one `x64sc` alive
+     *before any request exists*. That instance was necessarily launched with the
+     one fixed argv `buildViceArgs()` emits, i.e. before the mode for the run that
+     will eventually claim it is known.
+   - `selectWarmInstance()` (`vice-broker.mts:473`) then runs *first* on the
+     acquire path, before the cold-launch arm is ever consulted. So a warm
+     instance wins the grant, and a caller that asked for headless+warp silently
+     gets the interactive real-time instance that was already sitting there.
+   - The acquire request has nowhere to say what it wants: the wire frame is
+     `{ op: "acquire", id, token }` (`vice-broker-client.ts:372`) — no mode field.
+
+   Net: capabilities 1 and 2 are not implementable as a per-run choice by adding
+   flags alone. A mode knob is inert on a warm instance, so the mode has to become
+   part of the acquire request *and* part of warm-instance eligibility, or the warm
+   floor has to be off for mode-sensitive callers.
 
 Constraints any implementation has to respect:
 
@@ -54,6 +85,20 @@ Constraints any implementation has to respect:
   warp before this is turned on by default anywhere.
 - `vice-sync.ts`'s invariants (exactly one resume per wait; poll on `hit_count`,
   never on paused state) are deliberately untested and must survive the change.
+- A warm instance is a real, already-booted process, so it can never be
+  retro-fitted to a mode: the only two honest options are to treat launch mode as
+  part of warm-instance eligibility (a mismatched warm candidate is skipped, not
+  handed out) or to bypass the warm floor entirely for a mode-sensitive acquire.
+  Silently downgrading the caller to whatever was already warm is the one outcome
+  to rule out.
+- Dropping the warm floor to 0 for these callers gives up what the floor buys —
+  a cold launch plus `probeReady` on the request's hot path. That trade is
+  acceptable for batch runs (they are already long) but must be a deliberate,
+  per-caller choice, not a new global default.
+- The single-owner `inFlight` launch guard (synchronous check-and-set, no `await`
+  between — it exists because of the 2026-08-01 triple-launch outage and is
+  regression-tested) must not be perturbed by adding a mode dimension to the
+  launch key.
 
 ## Solution
 
@@ -64,6 +109,16 @@ TBD in detail; the shape that fits the existing seams:
   `VICE_WARP=1` — that `buildViceArgs()` reads *in addition to* the backend shape,
   rather than a `VICE_ARGS` full override. Keep the flags backend-specific: the fork
   can also flip warp at runtime, stock cannot.
+- Carry the mode on the acquire request itself (a field on the
+  `{ op: "acquire", id, token }` frame) so it is per-run rather than per-broker, and
+  make `selectWarmInstance()` mode-aware: record each instance's launch mode in its
+  instance record, and skip a warm candidate whose mode does not match the request.
+  A mode-sensitive acquire that finds no matching warm instance falls through to the
+  existing cold-launch arm — which is the on-demand start this todo asks for, with
+  `handleRelease()`'s existing kill-never-recycle already supplying the shutdown.
+- Decide what the warm floor pre-warms once modes exist. Simplest defensible answer:
+  the floor keeps warming the interactive default only, and mode-sensitive callers
+  always cold-launch; revisit only if cold-launch latency actually hurts.
 - Decide the default: almost certainly still interactive/real-time, with the batch
   callers (live test suites, corpus/capture sweeps) opting in explicitly, so no
   existing interactive session silently loses its window.

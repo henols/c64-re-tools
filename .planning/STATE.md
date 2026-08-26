@@ -626,6 +626,23 @@ no-runtime-`WarpMode` constraint), and any implementation has to keep
 `-default` at index 0 ahead of `-binarymonitor` and re-check the real-time
 timeouts in `probeReady`/`vice-sync.ts` under warp.
 
+**That same todo was widened 2026-08-26** (same `/gsd-capture` route, merged
+rather than filed separately because it is the same implementation): VICE does
+not have to be pre-started at all — it should start on demand in the mode the
+run wants and shut down after. Teardown already behaves that way
+(`handleRelease()`, `vice-broker.mts:929`, is kill-never-recycle). The start
+side is the blocker, and it is structural, not a missing flag: the warm floor
+defaults to 1 (`vice-broker.mts:169`, `broker-launch.mts:850`), so
+`maintainWarmFloor()` boots an instance before any request exists and therefore
+before its mode is known; `selectWarmInstance()` (`vice-broker.mts:473`) then
+runs ahead of the cold-launch arm, so that pre-warmed interactive instance wins
+the grant; and the acquire frame (`{ op: "acquire", id, token }`,
+`vice-broker-client.ts:372`) has no field in which to ask for a mode. Net: the
+headless/warp flags are inert as a per-run choice until launch mode becomes part
+of both the acquire request and warm-instance eligibility. **Anyone triaging by
+slug should note the on-demand-lifecycle ask lives inside this
+headless/warp-titled todo, not in a separate row.**
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Status | Directory |
