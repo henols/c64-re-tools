@@ -233,3 +233,38 @@ See `key-decisions` in the frontmatter. The load-bearing one: **the 64K images w
 ---
 *Phase: 23-the-real-release-gate-go-degrade-no-go*
 *Completed: 2026-08-26*
+
+## Self-Check: PASSED (with two declared gaps)
+
+All seven `key-files` exist on disk, and all eleven commits are in history:
+
+```
+FOUND: evidence/corpus/corpus-intake.txt            FOUND: be44890  FOUND: 308c566
+FOUND: evidence/capture/RELEASES.json               FOUND: b7742a1  FOUND: e18c809
+FOUND: evidence/capture/handoff-identification.txt  FOUND: 5005c6f  FOUND: a09959b
+FOUND: evidence/capture/capture-record-primary.md   FOUND: 2fb7736  FOUND: 4075cd5
+FOUND: evidence/capture/capture-record-secondary.md FOUND: 9df632f  FOUND: 99edd30
+FOUND: evidence/capture/CAPTURE-SUMMARY.txt         FOUND: 6c8d5e8
+FOUND: 23-03-SUMMARY.md
+```
+
+`must_haves.artifacts` minimum line counts, all exceeded:
+`corpus-intake.txt` 1090 (min 30), `capture-record-primary.md` 662 (min 40),
+`capture-record-secondary.md` 293 (min 40), `CAPTURE-SUMMARY.txt` 152 (min 20).
+
+Prohibition checks:
+- `grep -cE '^C0_CORPUS: (pass|partial|could-not-run)$'` → **1** (exactly one line).
+- `git status --porcelain | grep -E '\.(bin|d64|prg|t64|crt)$'` → **none**. No image and
+  no capture is committed or staged.
+- `git diff --name-only` across this plan's commits touches only `.planning/`.
+- Nothing under `src/` was created or modified; the three skill scripts were invoked
+  as they stand and never edited.
+
+**Declared gap 1 — the plan's own Task 3 `<verify>` does not pass.** Its regex requires
+`^C0_CORPUS: (pass|fail|could-not-run)$` and `^CAPTURE_EQUIVALENT: .+ (pass|fail|could-not-run)$`;
+the file carries the SCHEMA.md-legal `partial` and `no`. This is the phase-wide vocabulary
+resolution, not an oversight — see `## Deviations` and `corpus-intake.txt` ACCEPTED LIMIT 2.
+
+**Declared gap 2 — two acceptance criteria are unmet**, as set out under
+`## Issues Encountered`: no 64-hex `CAPTURE_SHA256` / `CAPTURE_SIZE: 65536`, and the
+two-run comparison ran through `vice_memory_compare` rather than `compare.mjs compare`.
