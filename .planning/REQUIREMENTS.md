@@ -24,10 +24,15 @@ does not exist yet. Their text stands unchanged in
      out before four phases are built on it. -->
 
 - [ ] **PROOF-01**: dxa's data-recovery rate and false-positive count are measured on real cracked releases from the `c64-provenance-diff` fixtures, reported as numbers against a named binary — and stated *beside* the 279-byte fixture's 72%-data / 0-false-positive claim rather than silently replacing it
+  - **NOT met at the Phase 23 close (2026-08-26).** The corpus was secured but no depacked flat-64K capture exists (the fork's stopping exec checkpoint is not frame-exact), so criterion 1 was never measured — recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Plans 23-05 and 23-07 were deliberately not dispatched rather than run against the 279-byte self-authored fixture, which is the exact defect this requirement exists to remove. Left **Pending**, deliberately: this is unmeasured, not failed.
 - [ ] **PROOF-02**: Ghidra's indirect-dispatch resolution is tested where the dispatch index is **computed** rather than an immediate `ldx #$02` — the case the pivot fixture never exercised — with the result recorded whichever way it comes out
+  - **NOT met at the Phase 23 close (2026-08-26).** Criterion 2 reads the depacked capture as its substrate (D-03); no capture exists, 23-08 was not dispatched, and the criterion is recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Note the distinction the findings document is emphatic about: this is **not** `not-exercised` — no corpus was ever searched for a computed dispatch, so nothing is known about whether the construct is present. Left **Pending**.
 - [ ] **PROOF-03**: The `memmap.json` join is run against code that banks ROM in and out, and the point where a single forward-carried `$01` value becomes wrong is established rather than assumed: path-dependent bank state is the highest-risk item on the pivot's own record
-- [ ] **PROOF-04**: The dropped `analyzer.rs` work is checked for anything the dxa+Ghidra pair does not replace, so dropping it is a measured decision rather than an inference from one fixture
-- [ ] **PROOF-05**: The milestone's verdict is a recorded go / degrade / no-go against named rules, produced **before** any engine or store code is written — the pattern Phase 9 used, where `degrade` shipped a smaller, correct milestone
+  - **NOT met at the Phase 23 close (2026-08-26).** 23-09 was not dispatched for want of the capture substrate (D-03); criterion 3 is recorded `could-not-run` in `docs/phase23-real-release-gate-findings.md`. Consequence carried into Phase 26's ROADMAP notes: `AUTO-04` and `AUTO-05` are **unvalidated rather than narrowed** — the pre-mapped narrowing belongs to rule `R7`, which was never evaluated under first-match-wins. Left **Pending**.
+- [x] **PROOF-04**: The dropped `analyzer.rs` work is checked for anything the dxa+Ghidra pair does not replace, so dropping it is a measured decision rather than an inference from one fixture
+  - **Met (2026-08-26), plan 23-04.** Criterion 4 needed no capture — the audit ran offline against crate source — and every audited capability carries one of three dispositions. Outcome lines at `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/criterion4-analyzer-audit.md`; summarised in `docs/phase23-real-release-gate-findings.md` § *Criterion 4*. Reported adversarially: the audit names the single row whose reclassification would move the count, and the two conditions that would justify it.
+- [x] **PROOF-05**: The milestone's verdict is a recorded go / degrade / no-go against named rules, produced **before** any engine or store code is written — the pattern Phase 9 used, where `degrade` shipped a smaller, correct milestone
+  - **Met (2026-08-26), plans 23-01 (rules) and 23-10 (verdict), bound by 23-11.** `docs/phase23-real-release-gate-findings.md` carries machine-readable frontmatter `verdict: no-go` and `verdict_rule_applied: R1`, derived from rules committed to git before any measurement existed (23-01), with no judgement step. Zero product code was written anywhere in the phase. The gate is enforced through Phase 24's ROADMAP `**Depends on**` line and Notes, which name the file and the `verdict` field literally — D-08 declined a test guard deliberately.
 
 ### Discovery Engine
 
@@ -108,40 +113,55 @@ Deferred to v0.7.0 and beyond. Tracked, not in this roadmap.
 Which phases cover which requirements. Every v0.6.0 requirement maps to exactly
 one phase; no requirement is carried by two, and none is orphaned.
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| PROOF-01 | Phase 23 | Pending |
-| PROOF-02 | Phase 23 | Pending |
-| PROOF-03 | Phase 23 | Pending |
-| PROOF-04 | Phase 23 | Pending |
-| PROOF-05 | Phase 23 | Pending |
-| DXA-01 | Phase 24 | Pending |
-| DXA-02 | Phase 24 | Pending |
-| DXA-03 | Phase 24 | Pending |
-| GHID-01 | Phase 24 | Pending |
-| GHID-02 | Phase 24 | Pending |
-| GHID-03 | Phase 24 | Pending |
-| GHID-04 | Phase 24 | Pending |
-| GHID-05 | Phase 24 | Pending |
-| OPC-01 | Phase 24 | Pending |
-| OPC-02 | Phase 24 | Pending |
-| OPC-03 | Phase 24 | Pending |
-| STORE-01 | Phase 25 | Pending |
-| STORE-02 | Phase 25 | Pending |
-| STORE-03 | Phase 25 | Pending |
-| STORE-04 | Phase 25 | Pending |
-| STORE-05 | Phase 25 | Pending |
-| STORE-06 | Phase 25 | Pending |
-| CUT-01 | Phase 25 | Pending |
-| CUT-02 | Phase 25 | Pending |
-| CUT-03 | Phase 25 | Pending |
-| AUTO-01 | Phase 26 | Pending |
-| AUTO-02 | Phase 26 | Pending |
-| AUTO-03 | Phase 26 | Pending |
-| AUTO-04 | Phase 26 | Pending |
-| AUTO-05 | Phase 26 | Pending |
-| AUTO-06 | Phase 26 | Pending |
-| AUTO-07 | Phase 26 | Pending |
+| Requirement | Phase | Status | Notes |
+|-------------|-------|--------|-------|
+| PROOF-01 | Phase 23 | Pending | not met — criterion `could-not-run`, no depacked capture (D-03); 23-05/23-07 not dispatched |
+| PROOF-02 | Phase 23 | Pending | not met — criterion `could-not-run` (**not** `not-exercised`); 23-08 not dispatched |
+| PROOF-03 | Phase 23 | Pending | not met — criterion `could-not-run`; 23-09 not dispatched; `AUTO-04`/`AUTO-05` left unvalidated |
+| PROOF-04 | Phase 23 | Complete | 23-04 — offline `analyzer.rs` audit, needed no capture |
+| PROOF-05 | Phase 23 | Complete | 23-01 rules + 23-10 verdict (`no-go`, `R1`), bound by 23-11 |
+| DXA-01 | Phase 24 | Pending | |
+| DXA-02 | Phase 24 | Pending | |
+| DXA-03 | Phase 24 | Pending | |
+| GHID-01 | Phase 24 | Pending | |
+| GHID-02 | Phase 24 | Pending | |
+| GHID-03 | Phase 24 | Pending | |
+| GHID-04 | Phase 24 | Pending | |
+| GHID-05 | Phase 24 | Pending | |
+| OPC-01 | Phase 24 | Pending | |
+| OPC-02 | Phase 24 | Pending | |
+| OPC-03 | Phase 24 | Pending | |
+| STORE-01 | Phase 25 | Pending | |
+| STORE-02 | Phase 25 | Pending | |
+| STORE-03 | Phase 25 | Pending | |
+| STORE-04 | Phase 25 | Pending | |
+| STORE-05 | Phase 25 | Pending | |
+| STORE-06 | Phase 25 | Pending | |
+| CUT-01 | Phase 25 | Pending | |
+| CUT-02 | Phase 25 | Pending | |
+| CUT-03 | Phase 25 | Pending | |
+| AUTO-01 | Phase 26 | Pending | |
+| AUTO-02 | Phase 26 | Pending | |
+| AUTO-03 | Phase 26 | Pending | |
+| AUTO-04 | Phase 26 | Pending | |
+| AUTO-05 | Phase 26 | Pending | |
+| AUTO-06 | Phase 26 | Pending | |
+| AUTO-07 | Phase 26 | Pending | |
+
+**Phase 23 closed 2026-08-26 with 2 of its 5 requirements met.** The verdict is
+`no-go` (rule `R1`, fired by `C0_CORPUS: partial`) and is recorded in
+`docs/phase23-real-release-gate-findings.md` — read the criterion values there, not
+here. `PROOF-04` and `PROOF-05` are the two the phase discharged; `PROOF-01`,
+`PROOF-02` and `PROOF-03` each require the depacked flat-64K capture and the criteria
+measured on it, and no such capture exists, so they stay **Pending** with the reason on
+the row. They are deliberately **not** marked `Complete`: flipping them would make this
+table assert a measurement that was never taken, which is the one thing a traceability
+table exists to prevent. No fourth status value was invented.
+
+Phase 23 executed **6 of its 11 plans** (23-01, 23-02, 23-03, 23-04, 23-10, 23-11);
+23-05 through 23-09 were **deliberately not dispatched** by explicit operator decision,
+because each reads the depacked capture as its substrate (D-03). That is a recorded
+decision, not five failures and not an omission.
 
 **Phase names:**
 
@@ -169,4 +189,5 @@ in Phase 24 rather than carried as its own requirement.
 
 ---
 *Requirements defined: 2026-08-25*
-*Last updated: 2026-08-25 — roadmap created, traceability populated (32/32 mapped to Phases 23-26)*
+*Last updated: 2026-08-26 — Phase 23 closed on verdict `no-go` (rule `R1`): PROOF-04 and PROOF-05 Complete; PROOF-01/02/03 left Pending with the reason on the row, because their criteria were never measured (no depacked capture, D-03).*
+*Previously: 2026-08-25 — roadmap created, traceability populated (32/32 mapped to Phases 23-26)*
