@@ -5,16 +5,16 @@ milestone_name: Own the substrate (Phases 23-26)
 current_phase: 23
 current_phase_name: The Real-Release Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: 23-03 Task 3 — resuming, vice MCP broker restarted and reachable
-last_updated: "2026-08-26T12:21:25.538Z"
+stopped_at: "Completed 23-03-PLAN.md — C0_CORPUS: partial, R1 fires (no-go)"
+last_updated: "2026-08-26T14:53:35.874Z"
 last_activity: 2026-08-26
 last_activity_desc: Resuming Phase 23 at 23-03 Task 3 after vice MCP broker restart
-state_head: e6748e106fae3146dcffc01433227b4f513770ad
+state_head: 77a4dab853033a3c4d5b5ad6e2fec6ee418012b7
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 11
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -81,10 +81,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 23 (The Real-Release Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 3 of 11 complete (23-01, 23-02, 23-04); 23-03 resuming at Task 3
-Status: Executing Phase 23 — vice MCP broker restarted 2026-08-26, 23-03 blocker cleared
-Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 3 of 11 done
-Last activity: 2026-08-26 — Waves 1-2 done (23-01, 23-02, 23-04); vice broker restarted, resuming 23-03 Task 3 then waves 3-6
+Plan: 4 of 11 complete (23-01, 23-02, 23-03, 23-04)
+Status: Executing Phase 23 — 23-03 done; C0_CORPUS: partial, so rule R1 fires (no-go). Waves 3-6 unblocked for planning but criteria 1-3 have no capture substrate.
+Progress: [░░░░░░░░░░] 0% — 0/4 phases complete (v0.6.0); Phase 23 plans 4 of 11 done
+Last activity: 2026-08-26 — 23-03 complete: corpus secured, $1BC2 handoff proven per release, C0_CORPUS: partial (no reproducible 64K capture; the fork checkpoint is not frame-exact)
 
 ## Performance Metrics
 
@@ -216,6 +216,7 @@ Last activity: 2026-08-26 — Waves 1-2 done (23-01, 23-02, 23-04); vice broker 
 | Phase 23 P01 | 9 min | 3 tasks | 4 files |
 | Phase 23 P02 | 34 min | 3 tasks | 16 files |
 | Phase 23 P04 | 33 min | 2 tasks | 2 files |
+| Phase 23 P03 | 1h 55m | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -473,6 +474,9 @@ Recent decisions affecting current work:
 - [Phase 23]: Criterion 4 records C4_UNREPLACED_CAPABILITIES: 0 — no analyzer.rs capability is both unreplaced and depended on, so rule R8 does not fire — The zero was reported adversarially: the audit names E6 follow_indirect_jumps as the single row whose reclassification would move the count, and the two conditions that would justify it, so a non-firing rule input is auditable rather than merely banked
 - [Phase 23]: BlockType::HiLoAddress is lost-accepted, not replaced-by — the pivot fixture had no HiLo table, so the CONCAT11 observation covers the LoHi byte order only — This plan forbids a replaced-by disposition on the strength of a plausible feature name; the mirrored case is likely but unobserved, and the uncertainty is stated in the cost instead
 - [Phase 23]: Ghidra CONCAT11 is ruled NOT sufficient for STORE-01 per-range typing of split pointer tables — Phase 25 must carry the range as declared store state with a byte-order flag — Observed: the contiguous table got a range type (08b7 pointer[4] len=8) while the split arrays got 08ad/08b0 undefined1 len=1 — one byte each, no extent, pair count or stride; the decompiler reports a per-use-site expression, not a range
+- [Phase 23]: 23-03: C0_CORPUS is `partial`, not `pass` — no flat 64K capture was assembled and neither release's two runs compare as equivalent, so rule R1 fires and the phase verdict is no-go. — Three of the aggregation rule's five conjuncts fail: CAPTURE_SHA256 and CAPTURE_SIZE are could-not-run for both releases, and CAPTURE_EQUIVALENT is `no` for both. `could-not-run` does not apply — the emulator WAS driven to the handoff four times. This is the pre-committed rule doing what it was written for, five plans before the measurement existed.
+- [Phase 23]: 23-03: the fork's stopping exec checkpoint is neither instruction-exact nor frame-exact — it reports the hit but pauses about a frame of work later, at a wall-clock-determined instruction, and can straddle a frame boundary. — Measured, not inferred: danish's two runs stopped at hit_count 1 and 2 (different frames) and diverge at 100 non-volatile multi-bit addresses; saeger's both stopped at hit_count 1 (same frame) and diverge at exactly one, $00F6. vice_run_until inherits the same mechanism and vice_execution_step advances nothing observable, so no precise-stop primitive is reachable from this surface. Any later plan needing a reproducible capture must solve this first.
+- [Phase 23]: 23-03: re-emitting a 64K capture as hex through the agent is not reliable — one oversized write truncated mid-payload and one in-size write silently dropped 10 characters, caught only by an explicit length assertion. — c64-ram-capture names this as the only route, because the MCP surface returns text and the agent must re-emit every byte it fetched. Nothing available catches a substituted character, and four 64K images are 32-64 such writes; one undetected substitution would put a wrong byte into the substrate every later criterion is measured on. Recording the gap was judged strictly better than shipping an unverifiable substrate.
 
 ### Pending Todos
 
@@ -1003,8 +1007,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T11:39:37.455Z
-Stopped at: Completed 23-04-PLAN.md
+Last session: 2026-08-26T14:53:35.834Z
+Stopped at: Completed 23-03-PLAN.md — C0_CORPUS: partial, R1 fires (no-go)
   Plan **23-02** provisioned the three instruments and ran the phase's tracer:
   one thin path through every layer — fetch, sha256 verify, build, assemble,
   run dxa, parse the listing, count bytes, run Ghidra headless, carve volatile
