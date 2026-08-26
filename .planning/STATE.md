@@ -75,7 +75,7 @@ full detail in `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md`,
 `milestones/v0.4.0-ROADMAP.md` and `milestones/v0.5.0-ROADMAP.md`.
 **Phase numbering starts at 23 — Phases 20, 21 and 22 were cut on 2026-08-25
 and are never reused**, and no number is ever reused, including the dissolved
-ones. The Deferred Items ledger below reads **5 open** pending todos (it read 0 at the v0.4.0 close; all five were filed after it); the
+ones. The Deferred Items ledger below reads **6 open** pending todos (it read 0 at the v0.4.0 close; all five were filed after it); the
 suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
@@ -948,6 +948,7 @@ by `.planning/quick/260823-kf6`.
 | broker | 2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it | minor | Pending |
 | capture | 2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex | major | Pending |
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
+| capture | 2026-08-26-frame-exact-emulator-stop-is-unowned | major | Pending |
 
 *The ledger was empty at the v0.4.0 close; the five rows above were all filed
 after that close (2026-08-24, and four on 2026-08-26), the first of them the

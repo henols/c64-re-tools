@@ -136,9 +136,15 @@ What IS established, and what a re-run would not have to redo:
   - At that instant both releases show `$01 = $35` (BASIC and KERNAL banked out, RAM live
     under both), `$DD00 = $C1` -> vic_bank 2, `$D018 = $33` -> screen_base `$8C00`,
     charset_base `$8800`, identical sprite pointers, and PAL raster 311.
-  - Four instants are banked as VICE snapshots outside the checkout
-    (`danish_r1_handoff`, `danish_r2_handoff`, `saeger_r1_handoff`) and each was proven
-    faithful on reload.
+  - THREE instants are banked as VICE snapshots outside the checkout, in
+    `~/.config/vice/mcp_snapshots/`: `danish_r1_handoff`, `danish_r2_handoff` and
+    `saeger_r1_handoff`. There is no `saeger_r2_handoff` -- saeger's second run was
+    compared LIVE against run 1's snapshot rather than being banked itself, so the two
+    releases were not handled identically and only danish has both runs on disk.
+    Reload faithfulness was proven for danish; it is not claimed for all three.
+    CORRECTED 2026-08-26 (code review CR-03, warning W1): this line previously said
+    "Four instants" while naming three, and generalised the reload proof to each. The
+    count contradicted its own list. Convention 7 -- final occurrence wins.
   - The two intros need DIFFERENT keypress routes: danish polls `$DC01` directly and needs
     `vice_keyboard_matrix` (fork-only); saeger spins on KERNAL `GETIN` and needs
     `vice_keyboard_petscii`. Each was established by disassembling the gate.
