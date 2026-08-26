@@ -643,6 +643,23 @@ of both the acquire request and warm-instance eligibility. **Anyone triaging by
 slug should note the on-demand-lifecycle ask lives inside this
 headless/warp-titled todo, not in a separate row.**
 
+**A fourth todo was filed 2026-08-26**, during Phase 23's execution tail:
+`2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex`.
+23-03 could not produce a verified flat 64K capture and named two independent
+causes; this todo removes one of them with a validated method. A VICE `.vsf`
+snapshot already contains the exact 64K — the `C64MEM` module body is 4 bytes of
+port/PLA state followed by 65536 bytes of RAM — so the image is a slice with no
+transcription step, which is where 23-03 lost a 32 KB write to truncation and an
+8 KB write to ten silently dropped characters. Validated against 23-03's own
+hand-transcribed hex: two 8 KB chunks byte-identical, one differing only at
+`$0000`/`$0001` (the 6510 port overlay the snapshot stores beneath), and the
+fourth independently localising the dropped characters to `$7871`. **It does not
+fix the second cause** — the fork's stopping exec checkpoint is not frame-exact,
+and two `danish` snapshots diffed directly still show 201 multi-bit divergences
+— so it did **not** change Phase 23's `no-go` verdict and must not be read as
+though it did. Carried as a pending todo rather than acted on because Phase 23 is
+forbidden from modifying anything under `src/`.
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Status | Directory |
@@ -907,9 +924,10 @@ by `.planning/quick/260823-kf6`.
 | broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
 | planning | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md | major | Pending |
 | broker | 2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it | minor | Pending |
+| capture | 2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex | major | Pending |
 
-*The ledger was empty at the v0.4.0 close; the three rows above were all filed
-after that close (2026-08-24, 2026-08-26 and 2026-08-26), the first of them the
+*The ledger was empty at the v0.4.0 close; the four rows above were all filed
+after that close (2026-08-24, and three on 2026-08-26), the first of them the
 first pending todo since Phase 17 plan 17-01 emptied the tree. It is not optional bookkeeping:
 `docs-deferred-ledger.test.ts` direction A requires an own-table-cell row here
 for every file in `.planning/todos/pending/`, and that guard's own comment
