@@ -1,0 +1,152 @@
+# Phase 23 / 23-03 Task 3 — the capture outcome lines, and rule R1's only input
+#
+# Conventions: evidence/README.md § Evidence conventions 7 — every rule input is a bare
+# NAME: value at column 0, and where a line is written more than once in one file the
+# FINAL occurrence wins. Canonical release first, per SCHEMA.md § 3.
+#
+# The transcripts these values come from are capture-record-primary.md (canonical,
+# `danish`), capture-record-secondary.md (secondary, `saeger`) and
+# handoff-identification.txt (how $1BC2 was identified, and the two voided runs that
+# preceded these). Nothing below is a paraphrase of a summary: every value traces to a
+# pasted tool output in one of those three files.
+
+## The corpus lines, reproduced in SCHEMA.md's declared home
+
+SCHEMA.md § 3 places CORPUS_RELEASES, CORPUS_CANONICAL and CORPUS_FILE_SHA256 in THIS
+file. 23-03-PLAN.md Task 2 emitted them from ../corpus/corpus-intake.txt instead, and that
+divergence is recorded there as its ACCEPTED LIMIT 1. They are reproduced here verbatim
+from that file — derived, not recomputed — so both documents are satisfied without any
+name being invented and without either being edited.
+
+CORPUS_RELEASES: 2
+CORPUS_CANONICAL: danish
+CORPUS_FILE_SHA256: danish 1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5
+CORPUS_FILE_SHA256: saeger b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5
+
+## Value vocabulary — SCHEMA.md wins, per the phase-wide resolution
+
+23-03-PLAN.md Task 3 directs `C0_CORPUS: fail` and a CAPTURE_EQUIVALENT of `pass`/`fail`,
+and its automated verify regex encodes `(pass|fail|could-not-run)` for both. SCHEMA.md § 3
+declares narrower and different domains, frozen before any measurement existed:
+
+  C0_CORPUS           pass | partial | could-not-run      (the plan says `fail`)
+  CAPTURE_EQUIVALENT  yes  | no      | could-not-run      (the plan says `pass`/`fail`)
+
+The plan's own regex would REJECT the schema-legal value `yes`. The resolution was settled
+phase-wide and is recorded in ../corpus/corpus-intake.txt § ACCEPTED LIMIT 2, confirmed by
+the operator, and applied by plan 23-02 to four divergences of the same kind: **SCHEMA.md
+wins.** The schema-legal values are written below; SCHEMA.md is not edited; the evidence is
+not bent to satisfy a regex the frozen pre-commitment contradicts. The plan's verify-regex
+mismatch is logged as a deviation in this plan's SUMMARY.
+
+No rule input is affected in substance: DECISION-RULE.md R1 fires on "`c0_corpus` is not
+`pass`", which evaluates identically under either vocabulary.
+
+## Per-release outcome lines
+
+CAPTURE_HANDOFF_PC and CAPTURE_PORT01 are established facts, read in the same paused window
+as everything else at each release's instant. CAPTURE_SHA256 and CAPTURE_SIZE are NOT
+established: the 64K image was never assembled, for the reason recorded in
+capture-record-primary.md § ACCEPTED LIMIT 1 (re-emitting 64K of hex through this agent
+truncated once outright and once silently dropped 10 characters, caught only by an explicit
+length assertion; nothing available catches a substituted character, and a single
+undetected substitution would put a wrong byte into the substrate every later criterion is
+measured on). `could-not-run` is written rather than the line being left absent, per
+DECISION-RULE.md § Inputs.
+
+CAPTURE_HANDOFF_PC: danish $1BC2
+CAPTURE_HANDOFF_PC: saeger $1BC2
+CAPTURE_PORT01: danish $35
+CAPTURE_PORT01: saeger $35
+CAPTURE_SIZE: danish could-not-run
+CAPTURE_SIZE: saeger could-not-run
+CAPTURE_SHA256: danish could-not-run
+CAPTURE_SHA256: saeger could-not-run
+CAPTURE_EQUIVALENT: danish no
+CAPTURE_EQUIVALENT: saeger no
+
+Both CAPTURE_EQUIVALENT values are the comparison tool's own result, not a narrative
+judgement, and both comparisons are pasted verbatim in the capture records:
+
+  danish  — two independent cold runs stopped at hit_count 1 and hit_count 2, i.e. in
+            DIFFERENT game frames. 231 differing addresses in $0000-$CFFF, of which 100 lie
+            outside every compare.mjs volatile region and differ by two or more bits
+            (e.g. $00E9 $A7/$0C, the 45-address $CAE7-$CB71 sprite-shift block, the
+            28-address $8183-$81FC sprite bitmaps). A comparison with 100 non-volatile
+            multi-bit differences cannot return PASS.
+  saeger  — both runs stopped at hit_count 1, i.e. in the SAME game frame. 41 one-bit
+            drifts (12 in $0400-$CFFF, 29 in $E000-$FFFF) which pass, and exactly ONE
+            non-volatile multi-bit difference: $00F6, $00 against $EB, the KERNAL's
+            keyboard-decoding-table pointer, loader/KERNAL scratch sitting on the very
+            boundary the instant is defined at. One divergence still fails the comparison.
+
+The two results together isolate the cause: frame-index nondeterminism in the fork's
+stopping checkpoint — it reports the hit but pauses ~a frame of work later, at a
+wall-clock-determined instruction, and can straddle a frame boundary — is what produces a
+structural divergence. Intra-frame position costs only one-bit drift. Neither is a fact
+about the corpus.
+
+## The aggregation rule, reproduced so a reader re-derives C0_CORPUS
+
+From 23-03-PLAN.md Task 3, with the plan's `fail` mapped to SCHEMA.md's `partial` per the
+resolution above:
+
+  `pass`           if and only if CORPUS_RELEASES >= 1, AND every release has a 64-hex
+                   CORPUS_FILE_SHA256 and a 64-hex CAPTURE_SHA256, AND every CAPTURE_SIZE
+                   is 65536, AND every CAPTURE_EQUIVALENT is `yes`.
+  `partial`        if any capture is void or short.   (the plan's `fail`)
+  `could-not-run`  if the emulator could not be driven to a handoff at all.
+
+Walking the recorded values through it:
+
+  CORPUS_RELEASES = 2                              >= 1                        -> satisfied
+  CORPUS_FILE_SHA256 64-hex for both releases                                  -> satisfied
+  CAPTURE_SHA256 64-hex for both releases           could-not-run, both        -> NOT satisfied
+  CAPTURE_SIZE = 65536 for both releases            could-not-run, both        -> NOT satisfied
+  CAPTURE_EQUIVALENT = yes for both releases        no, both                    -> NOT satisfied
+
+`pass` therefore fails on three of its five conjuncts. `could-not-run` does not apply: the
+emulator WAS driven to the handoff, four times over two releases, and each instant was read
+in a paused window and banked as a snapshot. Every capture is void — both runs of both
+releases are voided in their own records under the template's rule — which is exactly the
+`partial` branch.
+
+C0_CORPUS: partial
+
+## What that means downstream, stated so it is not mistaken for an accident
+
+DECISION-RULE.md R1 is the first rule and fires on "`c0_corpus` is not `pass`", so R1
+matches and the phase verdict is **no-go**. That is the pre-committed rule doing what it
+was written to do, five plans before this measurement existed: without a capture proven
+equivalent across two runs, the phase would be measuring another self-authored fixture,
+which is the exact defect PROOF-01 exists to remove.
+
+R1's own text names the consequence: the milestone becomes "secure a corpus first, or
+re-scope v0.6.0 to a claim explicitly qualified as fixture-only". This file does not
+narrow, refine or re-scope anything — DECISION-RULE.md is frozen and 23-10 owns the
+findings document.
+
+What IS established, and what a re-run would not have to redo:
+
+  - Two named, hashed, independently-cracked releases of Bruce Lee (Datasoft, 1984) are on
+    this host, identified by release id plus sha256, neither committed (D-04).
+  - The loader/game handoff is `$1BC2`, the head of the game's own frame loop, identified by
+    disassembling the running machine and re-verified per release on that release's own
+    fresh machine. No fact used here came from dxa or Ghidra (D-06).
+  - At that instant both releases show `$01 = $35` (BASIC and KERNAL banked out, RAM live
+    under both), `$DD00 = $C1` -> vic_bank 2, `$D018 = $33` -> screen_base `$8C00`,
+    charset_base `$8800`, identical sprite pointers, and PAL raster 311.
+  - Four instants are banked as VICE snapshots outside the checkout
+    (`danish_r1_handoff`, `danish_r2_handoff`, `saeger_r1_handoff`) and each was proven
+    faithful on reload.
+  - The two intros need DIFFERENT keypress routes: danish polls `$DC01` directly and needs
+    `vice_keyboard_matrix` (fork-only); saeger spins on KERNAL `GETIN` and needs
+    `vice_keyboard_petscii`. Each was established by disassembling the gate.
+  - The single blocking defect is named and measured: the fork's stopping exec checkpoint is
+    neither instruction-exact nor frame-exact.
+
+## Lines deliberately NOT written here
+
+No CAPTURE_* name outside SCHEMA.md § 3's declared set is minted. No `.bin` and no disk
+image is committed; `git status --porcelain` carries no binary under this phase directory.
+The capture artifacts that would have existed live nowhere: they were never written.
