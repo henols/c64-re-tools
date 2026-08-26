@@ -124,7 +124,12 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 - [ ] **CUT-01**: The regenerator2000 integration is deleted — a **net ~12.4k lines** of the 25,759-line `r2000-*.ts` surface (10,102 non-test + 15,657 test), the remaining ~12.9k surviving under new names. Both figures correct v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181; a phase sized at 25.7k deletes the coverage instrument and the enum generator
 - [ ] **CUT-02**: The grep gate's scope is chosen against measured blast radius and defended in both directions. 291 tracked files mention regenerator2000, **55 outside `.planning/`**, so ~236 legitimately keep the word permanently: a whole-tree gate produces 236 false fires and gets switched off, while the `toacme` precedent's real scope (`src/skills/` + `README.md` + `src/mcp/vice/` + `docs/stock-vice-parity.md`) is blind to `docs/`, `scripts/`, `installer/` and both tarballs. Proven by **three plants** — a `.ts`, a `docs/` file and a `scripts/` file — each observed biting
 - [ ] **CUT-03**: The gate's exemption set carries its own **non-vacuity assertion**: deleting an attribution block must trip it. An exemption nothing can violate is not an exemption
-- [ ] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — 9 guards, 2 CI scripts, and 13 non-`r2000-`named test files against 19 `r2000-`named ones. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
+- [ ] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — measured mechanically at the v0.7.0 open, resolving the research documents'
+  disagreement: **32 test files** (19 `r2000-`named plus 13 non-`r2000-`named that
+  reference it) and **11 files under `scripts/`**, not the 2 CI scripts first
+  named — the extras include `scripts/lib/r2000-cli-verbs.mjs` and two `.d.mts`
+  declarations, `audit-gate.mjs`, `check-npm-packages.mjs`,
+  `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
 - [ ] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
 - [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
 
@@ -193,17 +198,65 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements. Populated at roadmap creation,
+2026-08-26. Every v0.7.0 requirement maps to **exactly one** phase; the mapping is
+`ROADMAP.md`'s per-phase `**Requirements**:` lines, and this table is the index
+over them.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | — |
+| SEAM-01 | Phase 27 | Pending |
+| SEAM-02 | Phase 27 | Pending |
+| SEAM-03 | Phase 27 | Pending |
+| STORE-01 | Phase 28 | Pending |
+| STORE-02 | Phase 28 | Pending |
+| STORE-03 | Phase 28 | Pending |
+| STORE-04 | Phase 28 | Pending |
+| STORE-05 | Phase 28 | Pending |
+| STORE-07 | Phase 28 | Pending |
+| MCP-01 | Phase 29 | Pending |
+| MCP-02 | Phase 29 | Pending |
+| MCP-03 | Phase 29 | Pending |
+| MCP-04 | Phase 29 | Pending |
+| MCP-05 | Phase 29 | Pending |
+| STORE-06 | Phase 29 | Pending |
+| EXPORT-01 | Phase 30 | Pending |
+| EXPORT-02 | Phase 30 | Pending |
+| EXPORT-03 | Phase 30 | Pending |
+| REPOINT-01 | Phase 31 | Pending |
+| REPOINT-02 | Phase 31 | Pending |
+| REPOINT-03 | Phase 31 | Pending |
+| REPOINT-04 | Phase 31 | Pending |
+| CUT-01 | Phase 32 | Pending |
+| CUT-02 | Phase 32 | Pending |
+| CUT-03 | Phase 32 | Pending |
+| CUT-04 | Phase 32 | Pending |
+| CUT-05 | Phase 32 | Pending |
+| CUT-06 | Phase 32 | Pending |
 
 **Coverage:**
 - v0.7.0 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28 ⚠️
+- Mapped to phases: 28
+- Unmapped: 0 ✓
+
+**Two mappings worth explaining, because a family name does not decide a phase.**
+
+- **`STORE-06` maps to Phase 29, not Phase 28.** It is answerability — *which
+  addresses reference this address*, and search across labels, comments and
+  instructions — which is only observable through the tool surface, and it is
+  derived on every query from the surviving `disasm-*` decoders rather than stored.
+  Research places `anno-xref`-class code in the surface phase for that reason. The
+  store core (Phase 28) owns what is *stored*; Phase 29 owns what is *asked*.
+- **`STORE-07` maps to Phase 28, with `STORE-06` its only family sibling
+  elsewhere.** The one-seam confinement of `node:sqlite` is a property of the
+  persistence layer and is asserted structurally there, before any surface exists
+  to spread it across.
+
+**Held and future requirements are deliberately unmapped here.** `DXA-*`,
+`GHID-*`, `OPC-*`, `AUTO-*` and `PROOF-*` stay held with v0.6.0's Phases 24 and 26
+(see "Held for v0.8.0" above), and `DECOMP-*`, `BUILD-*` and `EQUIV-*` are v0.9.0.
+Neither set is in this milestone's denominator.
 
 ---
 *Requirements defined: 2026-08-26*
-*Last updated: 2026-08-26 at the v0.7.0 open*
+*Last updated: 2026-08-26 — traceability populated at roadmap creation (Phases 27-32, 28/28 mapped)*

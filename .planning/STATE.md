@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
 status: planning
-last_updated: "2026-08-26T19:47:51.671Z"
+last_updated: "2026-08-26T20:47:32.000Z"
 last_activity: 2026-08-26
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,7 +17,7 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-25 at the start of milestone v0.6.0)
+See: .planning/PROJECT.md (updated 2026-08-26 at the start of milestone v0.7.0)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -29,6 +29,18 @@ the verdict, and a specific reversal condition. Pinned by
 `docs-core-value-decision.test.ts`. It still says nothing about findings that
 outlive the session; that omission is now a decision rather than a default.*
 
+**Closed incomplete:** v0.6.0 Own the substrate — 2026-08-26, after 1 of 4
+phases. Phase 23 was written as a pre-committed go / degrade / no-go gate with the
+authority to narrow or cancel every phase after it, and it **fired**: `no-go`,
+rule `R1`, on the input `C0_CORPUS: partial`
+(`docs/phase23-real-release-gate-findings.md`). Six of its eleven plans executed
+and five were deliberately not dispatched. **Phases 24 and 26 are held** with live
+requirement text for v0.8.0, blocked on a frame-exact emulator stop that nothing
+owns; **Phase 25 was taken forward** as the whole of v0.7.0. No milestone audit was
+run, and that is a statement rather than an omission — the gate had already
+recorded, under three accepted overrides, that the intent was not delivered, and
+Phase 23's findings document is the audit of record. Neither `ROADMAP.md` nor
+`REQUIREMENTS.md` was archived, because Phases 24 and 26 are held with live text.
 **Shipped:** v0.5.0 Persistent Session and the Coverage Instrument —
 2026-08-25 (2 executed phases, 27 plans, 61 tasks, 13/27 requirements,
 `override_closeout`). A regenerator2000 session now survives many tool calls
@@ -55,36 +67,83 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 23 — The Real-Release Gate (Go/Degrade/No-Go)
-Milestone **v0.6.0 Own the substrate**, opened 2026-08-25. 32 requirements
-(PROOF/DXA/GHID/OPC/STORE/CUT/AUTO), all 32 mapped to four phases in
-`.planning/ROADMAP.md` (Phases **23-26**) — Phase 23 is a standalone
-go / degrade / no-go gate whose deliverable is evidence, not product code, on
-the pattern Phase 9 used. Phases 24-26 build the two engines, the annotation
-store and cutover, and automatic annotation respectively. **Nothing in Phases
-24-26 may be planned as though Phase 23's verdict is already known** — a
-`degrade` narrows scope and a `no-go` changes what the milestone is.
-**As of 2026-08-26 the verdict IS known and it is `no-go`** (rule `R1`,
-`docs/phase23-real-release-gate-findings.md`), so that guard is now discharged into a
-live decision rather than a caution: `R1` says *secure a corpus first, or re-scope
-v0.6.0 to a claim explicitly qualified as fixture-only*, and neither branch has been
-taken yet. Phase 23 measured criterion 4 only; criteria 1, 2 and 3 are `could-not-run`
-for want of a depacked capture.
-`DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04` are deliberately v0.7.0 and
-are not mapped. ROADMAP.md carries all four shipped milestones collapsed, with
-full detail in `milestones/v0.2.0-ROADMAP.md`, `milestones/v0.3.0-ROADMAP.md`,
-`milestones/v0.4.0-ROADMAP.md` and `milestones/v0.5.0-ROADMAP.md`.
-**Phase numbering starts at 23 — Phases 20, 21 and 22 were cut on 2026-08-25
-and are never reused**, and no number is ever reused, including the dissolved
-ones. The Deferred Items ledger below reads **6 open** pending todos (it read 0 at the v0.4.0 close; all five were filed after it); the
-suppressed/acknowledged rows are recorded in their own sections.
+**Current focus:** Phase 27 — Shared Seams Extracted
+Milestone **v0.7.0 Own the Annotation Store**, opened 2026-08-26. 28 requirements
+(`SEAM-*`, `STORE-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*`), all 28 mapped to
+**six** phases in `.planning/ROADMAP.md` (Phases **27-32**) — one requirement to
+one phase, no orphans and no duplicates, verified mechanically against the
+roadmap's own per-phase `**Requirements**:` lines rather than by eye. What the
+milestone delivers: this project owns the annotation state it has been renting
+from regenerator2000, the five already-absorbed analysis procedures run on that
+store, and regenerator2000 is deleted outright behind a gate observed biting.
+
+**Two owner decisions taken at the open**, both narrowing v0.6.0's Phase 25 text:
+**no parity is owed to regenerator2000** — the "same facts" deletion gate and
+`STORE-04`'s `R2000-11` carry-across are both removed — and **the Phase 24 engine
+coupling is dropped**, so the store stands on the `disasm-*` decoders this project
+already owns.
+
+**This milestone carries no corpus dependency, which is why it is reachable while
+Phase 23's recorded `no-go` (rule `R1`) stands.** That verdict is **not**
+overridden here: it gates work needing a depacked real-release capture, and
+nothing in Phases 27-32 needs one. Every external oracle this milestone leans on
+is already installed and was run live during research — a real ACME 0.97,
+`node:sqlite` at the declared Node floor, and this repository's own tree at HEAD.
+
+**The sequence is constrained, not preferred.** Eight hard ordering constraints,
+each derived from code, are recorded per phase in `ROADMAP.md` and collected in
+its `## Sequencing Rationale (v0.7.0)`. The two most easily got wrong: the
+**registration-time** guards move in **Phase 29**, because two CI gates break on
+the *rename* and not on the deletion (research calls this the single most
+important sequencing fact); and the real-ACME oracle must stand at **Phase 30**,
+before the deletion window opens at **Phase 32**, or every claim made inside that
+window sits at fixture level.
+
+**Held and future scope, deliberately unmapped and not in this milestone's
+denominator.** `DXA-*`, `GHID-*`, `OPC-*`, `AUTO-*` and `PROOF-*` stay held with
+v0.6.0's **Phases 24 and 26**, whose numbers are reserved and whose requirement
+text is live for v0.8.0 — blocked on one thing, a **frame-exact emulator stop**,
+which nothing owns
+(`todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`).
+`DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04` were re-mapped to **v0.9.0** on
+2026-08-26; `DECOMP-01` is precisely what `STORE-01`'s 12-member type vocabulary
+is sized for, which is why that vocabulary is the milestone's one irreversible
+decision and is settled in Phase 28.
+**Phase numbering starts at 27**, and no number is ever reused: Phases 20-22 were
+cut, Phases 24 and 26 are held with their numbers reserved, and Phase 25's
+*content* was taken forward into v0.7.0 while its *number* retired with v0.6.0.
+**Phase directories are NOT archived**, and the reason has grown rather than
+weakened: five committed tests read live paths under `.planning/phases/`, two of
+them by hard-coded relative path to Phase 19's `upstream-procedure-manifest.json`
+— which is a **design input** to this milestone, not merely a guard's fixture.
+Every close therefore passes `--no-archive-phases`.
+**What became of `R1`'s two named branches, recorded precisely rather than
+smoothed over.** `R1` said *secure a corpus first, or re-scope v0.6.0 to a claim
+explicitly qualified as fixture-only.* **Neither branch was literally taken.**
+v0.6.0 was closed incomplete instead, and the one part of it with no corpus
+dependency — its Phase 25 — was taken forward as v0.7.0, with Phases 24 and 26
+held against the unowned frame-exact-stop blocker. That is a third resolution, not
+one of the two the rule pre-named, and it is written down here rather than
+presented as though the rule anticipated it.
+
+**Collapsed history.** `ROADMAP.md` carries all four shipped milestones collapsed,
+with full detail in `milestones/v0.2.0-ROADMAP.md`,
+`milestones/v0.3.0-ROADMAP.md`, `milestones/v0.4.0-ROADMAP.md` and
+`milestones/v0.5.0-ROADMAP.md`. v0.6.0 is **not** collapsed and **not** archived —
+its phase details live in `ROADMAP.md` under
+`## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
+because Phases 24 and 26 are held with live requirement text.
+
+The Deferred Items ledger below reads **6 open** pending todos (it read 0 at the
+v0.4.0 close; all six were filed after it); the suppressed/acknowledged rows are
+recorded in their own sections.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-08-26 — Milestone v0.7.0 started
+Phase: 27 — Shared Seams Extracted (not started)
+Plan: — (no plans written yet)
+Status: Roadmap complete — 6 phases, 28/28 requirements mapped. Awaiting `/gsd-plan-phase 27`
+Last activity: 2026-08-26 — v0.7.0 roadmap created (Phases 27-32); `REQUIREMENTS.md` traceability populated
 
 ## Performance Metrics
 
