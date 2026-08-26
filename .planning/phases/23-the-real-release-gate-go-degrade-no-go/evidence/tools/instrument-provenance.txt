@@ -573,3 +573,196 @@ TRACER-OK
 $ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task2-verify-as-planned.bash
 VOLATILE-OK
 [exit 0]
+
+
+## 4. ExportAnalysis23.java rehearsal (task 3)
+
+### 4a. The fixture, end to end: FlatVolatile pre-script + ExportAnalysis23 post-script
+
+$ analyzeHeadless $HOME/c64-re-tools-phase23-ghidra fixture-export -import fixture-image.bin -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x801 -noanalysis -scriptPath $PROBE_DIR/ghidra -preScript FlatVolatile.java entrypoints-fixture.txt -postScript ExportAnalysis23.java fixture-export.txt -deleteProject
+INFO  FlatVolatile.java> BLOCKS-BEFORE: (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE 0000-00ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   STACK 0100-01ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0801-0917 vol=false (GhidraScript)  
+INFO  FlatVolatile.java> NAIVE-BLOCK-AT-D000: none (.prg route) (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-OK at 2 (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-SKIP at d000: no block covers this address (GhidraScript)  
+INFO  FlatVolatile.java> SPLIT-SKIP at e000: no block covers this address (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-SET: ZERO_PAGE 0000-0001 (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-NEW: VOL_d000 d000-dfff (.prg route -- no existing block covered this address) (GhidraScript)  
+INFO  FlatVolatile.java> BLOCKS-AFTER: (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE 0000-0001 vol=true (GhidraScript)  
+INFO  FlatVolatile.java>   ZERO_PAGE.split 0002-00ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   STACK 0100-01ff vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   RAM 0801-0917 vol=false (GhidraScript)  
+INFO  FlatVolatile.java>   VOL_d000 d000-dfff vol=true (GhidraScript)  
+INFO  FlatVolatile.java> VOLATILE-BLOCK-COUNT: 2 (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINTS: 1 from /home/henrik/.cache/c64-re-tools/phase23/ghidra/entrypoints-fixture.txt (GhidraScript)  
+INFO  FlatVolatile.java> ENTRYPOINT-SEEDED: 0810 (GhidraScript)  
+INFO  FlatVolatile.java> ANALYZE-ALL: complete (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_FILE: /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export.txt (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_LINES: 4887 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_REFERENCE_COUNT: 13 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_ASSERTED: no (no expected line count given as script argument 1) (GhidraScript)  
+[exit 0]  (full log: /home/henrik/.cache/c64-re-tools/phase23/ghidra/run-fixture-export.log)
+
+$ grep -n ^##  /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export.txt
+1:## CLASSIFICATION
+4889:## CLASSIFICATION_LINES 4887
+4890:## REFERENCES
+4904:## REFERENCE_COUNT 13
+[exit 0]
+
+$ sed -n /^## REFERENCES/,$p /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export.txt
+## REFERENCES
+0812 -> d020 WRITE
+0817 -> 08bf READ
+0817 -> 08c0 READ
+081a -> 08df WRITE
+081a -> 08e0 WRITE
+0820 -> 0817 CONDITIONAL_JUMP
+0824 -> 08ad READ
+0827 -> 00fb WRITE
+0829 -> 08b0 READ
+082c -> 00fc WRITE
+082e -> 00fb READ
+082e -> 089a COMPUTED_JUMP
+089c -> d021 WRITE
+## REFERENCE_COUNT 13
+[exit 0]
+
+`082e -> 089a COMPUTED_JUMP` is present, which is what task 3 asks this
+rehearsal to show.
+
+READ THIS BEFORE CITING THAT LINE AS CRITERION 2's ANSWER. IT IS NOT.
+$082e is `jmp ($fb)` and the pointer at $fb/$fc was built three instructions
+earlier from `ldx #$02` -- an IMMEDIATE index, a constant Ghidra's own value
+propagation folds without difficulty. That is the EASY case. Criterion 2 asks
+whether Ghidra resolves a *computed*-index dispatch, and SCHEMA.md § 7 defines a
+site as computed only if it dispatches through TWO OR MORE distinct values at
+the same program address across an observed VICE run. This site has exactly one
+target across every hit. Its presence here proves the EXPORT works -- that a
+COMPUTED_JUMP reference survives the ReferenceManager iterator and lands in the
+file -- and nothing whatever about Ghidra's dispatch resolution. A later plan
+that reads this section as evidence for `C2_COMPUTED_DISPATCH: resolved` has
+misread it.
+
+Two further notes on this run:
+
+  - 13 references, where the pivot's ghidra3.txt recorded 43. The pivot ran
+    ApplyHints2.java first, feeding Ghidra dxa's full set of discovered routines
+    and data ranges; this rehearsal seeds ONE entry point ($0810) and nothing
+    else. The difference is the hint set, not the export. Not a defect, and not
+    a number to compare against anything.
+
+  - CLASSIFICATION_LINES is 4887, not 279. On the .prg route the 6502 language
+    contributes its own ZERO_PAGE and STACK blocks and FlatVolatile adds
+    VOL_d000, so the address ranges the export walks total 4887, not the image's
+    279 bytes. On the flat-64K route the blocks tile $0000-$ffff exactly and the
+    count IS the image size -- see 4c. A later plan must pass the total across
+    all blocks, not the image size, or the assertion fires on a correct export.
+
+### 4b. The classification assertion, fired both ways
+
+Passing the true count asserts and passes; passing a wrong one refuses loudly
+with both counts named.
+
+$ analyzeHeadless ... -postScript ExportAnalysis23.java fixture-export-4887.txt 4887 -deleteProject
+INFO  ExportAnalysis23.java> EXPORT_FILE: /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export-4887.txt (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_LINES: 4887 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_REFERENCE_COUNT: 13 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_ASSERTED: yes (4887 lines == 4887 bytes) (GhidraScript)  
+[exit 0]
+
+$ analyzeHeadless ... -postScript ExportAnalysis23.java fixture-export-279.txt 279 -deleteProject
+INFO  ExportAnalysis23.java> EXPORT_FILE: /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export-279.txt (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_LINES: 4887 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_REFERENCE_COUNT: 13 (GhidraScript)  
+ERROR REPORT SCRIPT ERROR:  (HeadlessAnalyzer) java.lang.IllegalStateException: ExportAnalysis23: exported 4887 classification lines but the image is 279 bytes. Refusing a short export. classification_lines=4887 expected=279
+[exit 0]
+
+NOTE THE EXIT CODE ON THE FAILING RUN: analyzeHeadless returned 0 even though
+the post-script threw. A later plan must grep its run log for
+`ERROR REPORT SCRIPT ERROR` and must NOT trust analyzeHeadless's exit status to
+report a script failure. Recorded here because the assertion is worthless if the
+harness swallows it.
+
+### 4c. The flat-64K route: 65536 classification lines, and volatility proven
+
+$ analyzeHeadless $HOME/c64-re-tools-phase23-ghidra flat-export -import flat64k.bin -processor 6502:LE:16:default -loader BinaryLoader -loader-baseAddr 0x0 -noanalysis -scriptPath $PROBE_DIR/ghidra -preScript FlatVolatile.java entrypoints.txt -postScript ExportAnalysis23.java flat-export.txt 65536 -deleteProject
+INFO  ExportAnalysis23.java> EXPORT_FILE: /home/henrik/.cache/c64-re-tools/phase23/ghidra/flat-export.txt (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_LINES: 65536 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_REFERENCE_COUNT: 4 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_ASSERTED: yes (65536 lines == 65536 bytes) (GhidraScript)  
+[exit 0]
+
+$ ls -l /home/henrik/.cache/c64-re-tools/phase23/ghidra/flat-export.txt
+-rw-r----- 1 henrik henrik 721030 26 aug 12.52 /home/henrik/.cache/c64-re-tools/phase23/ghidra/flat-export.txt
+[exit 0]
+
+$ sed -n /^## REFERENCES/,$p /home/henrik/.cache/c64-re-tools/phase23/ghidra/flat-export.txt
+## REFERENCES
+4002 -> d020 WRITE
+4007 -> d020 WRITE
+400a -> 0001 READ
+400e -> 0001 WRITE
+## REFERENCE_COUNT 4
+[exit 0]
+
+65536 classification lines on a 65536-byte image, asserted and passing: the
+count IS the image size on this route, which is the route the corpus capture
+uses. The exported file is 721030 bytes, not the ~1.5 MB 23-RESEARCH.md Pitfall
+5 estimated -- four-hex-digit addresses make each line about 11 bytes. Still
+large enough that a later plan should store it compressed.
+
+And the volatility carve is proven to have DONE something, not merely to have
+printed that it did: both `4002 -> d020 WRITE` and `4007 -> d020 WRITE` survive
+in the reference dump. The planted instruction run writes $D020 twice in a row
+with no read between, which is exactly the dead store the decompiler eliminates
+when $D000-$DFFF is not volatile. The `400a -> 0001 READ` / `400e -> 0001 WRITE`
+pair shows the same for the processor port.
+
+### 4d. Task 3's own automated verify
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task3-verify-as-planned.bash
+[exit 1]
+
+### 4e. Re-run after a comment-only edit, so the committed script is the one that ran
+
+Task 3's own check greps this file for the old cap expression, and the header
+comment quoted it verbatim while explaining its removal -- so the comment tripped
+the check on a script that had no cap. The comment was reworded to describe the
+bound in prose instead. Java behaviour is unchanged, but the rehearsal above ran
+the pre-edit file, so it is re-run here against the exact bytes committed.
+
+$ sha256sum /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/ExportAnalysis23.java /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/FlatVolatile.java
+1a03317869fa571da76d773b6739dd23810f83286e5a0e322578297b6a457513  /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/ExportAnalysis23.java
+f19e46f52edc031c26cc724b2401b5e6aa960e15959018913c1a43605c237e9b  /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/FlatVolatile.java
+[exit 0]
+
+$ analyzeHeadless ... -preScript FlatVolatile.java -postScript ExportAnalysis23.java fixture-export-final.txt 4887 -deleteProject
+INFO  ExportAnalysis23.java> EXPORT_FILE: /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export-final.txt (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_LINES: 4887 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_REFERENCE_COUNT: 13 (GhidraScript)  
+INFO  ExportAnalysis23.java> EXPORT_CLASSIFICATION_ASSERTED: yes (4887 lines == 4887 bytes) (GhidraScript)  
+[exit 0]
+
+$ diff -q /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export.txt /home/henrik/.cache/c64-re-tools/phase23/ghidra/fixture-export-final.txt
+[exit 0]
+
+$ bash /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task3-verify-as-planned.bash
+EXPORT-OK
+[exit 0]
+
+### 4f. Suite and scope, at the close of task 3
+
+`cd src/mcp/vice && npm test` -> 2638 tests, 2593 pass, 0 fail, 40 skipped,
+5 todo (the same skip/todo counts as before this plan). The full run rewrites
+the committed Phase 18 evidence file
+.planning/phases/18-persistent-session-and-tool-surface/evidence/18-session-reuse-transcript.json
+with fresh timestamps, temp paths and PIDs; it is a known, deferred item, it was
+restored with `git checkout --` after each run, and nothing from it is staged.
+
+`git diff --name-only <plan-base>..HEAD` across this plan's commits touches
+.planning/ only -- no path under src/, no manifest entry, nothing shipped.
+Evidence convention 9 holds.
