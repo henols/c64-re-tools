@@ -479,3 +479,18 @@ The last command is the reference-kind histogram every `replaced-by:` claim in t
 against. It sums to 43, matching the pivot note's "43 typed xrefs", and the eight kinds it
 lists are the complete observed vocabulary — no `replaced-by:` in this file names a Ghidra
 reference kind absent from it.
+
+---
+
+## Self-Check: PASSED
+
+- `evidence/criterion4-analyzer-audit.md` exists on disk (481 lines at the time of the check,
+  against a floor of 80).
+- Both plan commits exist in `git log`: `edbffc7` (Task 1, the tables) and `2e0e416`
+  (Task 2, the outcome lines).
+- `git diff --name-only edbffc7~1..2e0e416` lists no path under `src/` — evidence convention 9
+  holds. It lists two paths under `.planning/`: this file, and `deferred-items.md`, where the
+  one out-of-scope discovery was logged rather than fixed.
+- `23-RESEARCH.md` is not among the paths this plan's commits touch (evidence convention 8 —
+  plan 23-10 is its single owner).
+- `cd src/mcp/vice && npm test` → `# fail 0` (2593 pass, 40 skipped, 5 todo).
