@@ -159,22 +159,22 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 
 ### Active
 
-<!-- v0.6.0 scope, opened 2026-08-25. REQ-IDs live in `.planning/REQUIREMENTS.md`;
+<!-- v0.7.0 scope, opened 2026-08-26. REQ-IDs live in `.planning/REQUIREMENTS.md`;
      this list is the human-readable restatement and moves to Validated at the
-     v0.6.0 close. The milestone is scoped to the substrate only — DECOMP-01..04,
-     BUILD-01..06 and EQUIV-01..04 stay re-mapped to v0.7.0, deliberately not
-     rewritten against a store that does not exist yet. -->
+     v0.7.0 close. The milestone is scoped to the annotation store and the
+     regenerator2000 removal. It carries no corpus dependency, so Phase 23's
+     recorded `no-go` does not gate it. `DXA-*`, `GHID-*`, `OPC-*` and `AUTO-*`
+     stay held with v0.6.0's Phases 24 and 26 — see "Held: v0.6.0" below. -->
 
-- [ ] The pivot's numbers are re-measured against real cracked releases rather than the one 279-byte self-authored fixture, as a go/no-go gate before anything is built on them
-- [ ] The `memmap.json` flat address model is tested against code that banks ROM in and out, where an address's meaning becomes bank-dependent
-- [ ] dxa is vendored and its human-readable listing is parsed into a machine-readable code/data map — it has no machine-readable output, so that parser is this project's to own
-- [ ] Ghidra runs headless under this project's harness, handed dxa's map plus volatile `$0000-$0001` / `$D000-$DFFF` memory blocks before `analyzeAll()`, so the decompiler cannot delete hardware writes as dead stores
-- [ ] Structural facts are exported from Ghidra's **decompiler** layer via `DecompInterface` — array bounds, the split-pointer `CONCAT11` idiom, record strides, resolved computed jumps — not from the listing's data types, which return essentially nothing on 6502
-- [ ] Undocumented NMOS opcodes are decodable by Ghidra: all 105 opcode bytes stock's `6502.slaspec` omits, as a SLEIGH extension
-- [ ] An annotation store this project owns holds labels, comments, per-range typing, scopes, enums, undo and persistence, reached through an MCP surface
-- [ ] The store exports ACME source, carrying the two idioms worth stealing rather than rediscovering — the `=*+$01` mid-instruction label for self-modifying write targets, and typed label prefixes
-- [ ] The 19,181 lines of regenerator2000 integration glue are deleted, not left beside their replacement
-- [ ] Annotation is automatic where it can be: the `memmap.json` join and its three selection rules, `$01` bank-state derivation, and VIC graphics-map derivation
+- [ ] An annotation store this project owns holds labels, comments, per-range typing, scopes, project enums, undo and persistence, reached through an MCP surface registered proxy-locally so it never reaches `forwardToVice()`
+- [ ] The store's tool surface is derived from Phase 19's `upstream-procedure-manifest.json` rather than guessed, so every already-absorbed analysis step has a route instead of a hole
+- [ ] Per-range typing covers the full vocabulary `DECOMP-01` will need — code, byte, word, address, PETSCII, screencode, table — not the minimum this milestone happens to exercise
+- [ ] Durability and undo are proven by planted violation: mutate → kill → reopen returns the mutation, and removing the save makes that same test go red
+- [ ] The store exports ACME source verified by a real ACME through the existing `--verify` seam, carrying the `=*+$01` mid-instruction label for self-modifying write targets and typed label prefixes
+- [ ] Cross-references and search over the typed decode stay answerable, built on the surviving `disasm-*` decoders rather than carried across as a parity obligation to regenerator2000
+- [ ] The five absorbed analysis procedures are re-pointed onto the new surface with their heuristics intact — block classification, symbol data-flow patterns, the BASIC V2 token table — and their `ABS-02` attribution headers preserved rather than stripped with the code
+- [ ] The regenerator2000 integration glue is deleted behind a whole-tree grep gate observed biting on a planted reintroduction, with the attribution headers explicitly exempted from that gate
+- [ ] Every guard pinned to the deleted subject is given an explicit fate before the phase gate, not discovered red in CI
 
 
 ### Out of Scope
@@ -529,7 +529,52 @@ export boundary.
 (STATE.md → Deferred Items), plus Phase 19's own SC4/COV-01 override — accepted
 because the replacement plan for the coverage instrument *is* this pivot.
 
-## Current Milestone: v0.6.0 Own the substrate
+## Held: v0.6.0 Own the substrate — Phase 23 shipped, Phases 24 and 26 held
+
+**Opened 2026-08-25. Closed 2026-08-26 without completing, by its own gate.**
+
+Phase 23 was written as a pre-committed go/degrade/no-go gate able to narrow or
+cancel everything after it, and it fired. The recorded verdict is **`no-go`,
+rule `R1`**, in `docs/phase23-real-release-gate-findings.md` — `R1` matched on
+the first input (`C0_CORPUS: partial`) under first-match-wins, so no later rule
+was reached. `R1` names its own consequence: *"secure a corpus first, or
+re-scope v0.6.0 to a claim explicitly qualified as fixture-only."*
+
+**What shipped:** Phase 23 alone — 6 plans, the gate, its evidence tree under
+`.planning/phases/23-*`, and the findings document.
+
+**What is held, not cut.** Phases 24 (The Two Engines) and 26 (Automatic
+Annotation) keep their numbers, which are never reused, and their requirement
+text stands unchanged in `.planning/REQUIREMENTS.md` at the close —
+`DXA-01..03`, `GHID-01..05`, `OPC-01..03`, `AUTO-01..07`, `PROOF-01..03`. Both
+consume real depacked code, so both are blocked behind the same single gate.
+They are held rather than dissolved because nothing about them was falsified;
+only their substrate is missing. This is a different disposition from v0.5.0's
+Phases 20-22, which were **cut** — dissolved by a pivot that made them wrong.
+
+**Phase 25 was taken forward instead**, as v0.7.0, because its own goal carries
+no corpus dependency — see below.
+
+**The single gate, named.** Of Phase 23's two capture blockers, one is solved
+and one is not:
+
+| blocker | state |
+|---|---|
+| Flat 64K read out as hex through the tool surface, losing a 32 KB write to truncation and an 8 KB write to ten dropped characters | **solved** — extract the 64K from a `.vsf` snapshot's `C64MEM` module body instead; validated 2026-08-26 against 23-03's own transcript |
+| The fork's stopping exec checkpoint is not frame-exact | **unsolved** — snapshot-to-snapshot with no transcription anywhere, the two `danish` runs still diverge at 201 multi-bit addresses |
+
+Frame index is the dominant term: `saeger`'s two runs both landed on the same
+`hit_count` and diverged at exactly one byte (`$00F6`, the KERNAL
+keyboard-decode-table pointer). Land two runs on the same frame and they are one
+transient pointer from equivalent. Nothing owns this — raised as verification
+warning W4 on Phase 23, and tracked in
+`.planning/todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`.
+Any fix touches `src/`, which Phase 23 was forbidden from doing, which is why it
+is a todo rather than a Phase 23 deliverable.
+
+<details>
+<summary>v0.6.0 as it was scoped at the open, 2026-08-25 — retained as the record the verdict acted on</summary>
+
 
 **Opened 2026-08-25.** Decided at the v0.5.0 close and scoped in this session.
 
@@ -592,18 +637,129 @@ that banks ROM in and out an address's meaning becomes bank-dependent. See
 functionality are; rebuilding a binary is a separate, later step (user decision,
 2026-08-24).
 
+</details>
+
+## Current Milestone: v0.7.0 Own the Annotation Store
+
+**Opened 2026-08-26.** Decided in this session, after Phase 23's `no-go`.
+
+**Goal:** This project owns the annotation state it has been renting from
+regenerator2000, and the analysis procedures already absorbed from it run on
+that store instead — with regenerator2000 deleted outright, no parity owed to
+it, and no procedural knowledge lost with it.
+
+**Target features:**
+- An annotation store this project owns — labels, comments, per-range data
+  typing, scopes, project enums, undo, persistence — reached through an MCP
+  surface registered via `buildViceTool()`, so it never reaches
+  `forwardToVice()` and backend-agnosticism is structural rather than tested
+  once per backend
+- The store's tool surface **derived from Phase 19's
+  `upstream-procedure-manifest.json`**, which already classifies every verb the
+  five absorbed procedures call as `curated` / `omit` /
+  `adapt-to-address-input` — a diff, not a judgement call
+- Per-range typing at the full vocabulary `DECOMP-01` will need later: code,
+  byte, word, address, PETSCII, screencode, table
+- Durability and undo proven by planted violation, not a passing happy path
+- ACME export verified by a real ACME through the `--verify` seam that keys
+  strictly on ACME's own result line, carrying the `=*+$01` mid-instruction
+  label and typed label prefixes
+- Cross-references and search over the typed decode, on the surviving
+  `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts`
+- The five absorbed procedures re-pointed onto the new surface with their
+  heuristics intact, and their attribution headers preserved
+- The regenerator2000 integration glue deleted behind a whole-tree grep gate
+  observed biting on a planted reintroduction — the `toacme` pattern
+- Every guard pinned to the deleted subject given an explicit fate before the
+  gate
+
+**Two scope decisions taken at the open, 2026-08-26, both owner decisions.**
+
+1. **No parity is owed to regenerator2000.** v0.6.0's Phase 25 carried a gate —
+   *"nothing may delete r2000 before a replacement demonstrably produces the
+   same facts"* — and `STORE-04` was worded as *"the capability `R2000-11`
+   shipped, carried across the substrate swap rather than lost in it"*. Both are
+   **removed**. regenerator2000 is out of scope and is eliminated; the store is
+   built to what this project needs, not to upstream's feature set.
+2. **The engine coupling is dropped with it.** Phase 25's *"populated from the
+   engines' output"* dependency on Phase 24, and its criterion 3's *"against a
+   program analysed by the new engines"*, both go. The store stands on the
+   `disasm-*` decoders this project already owns. This is what makes the
+   milestone corpus-independent, and therefore reachable while Phase 23's
+   `no-go` stands.
+
+**The absorption already happened, and that is what makes the removal
+delicate.** All five upstream analyze procedures were absorbed in v0.5.0 Phase
+19 (`ABS-01..04`, complete) at pinned commit `493f840`, with a six-field
+attribution header per destination:
+
+| upstream procedure | absorbed into | what it carries |
+|---|---|---|
+| `r2000-analyze-blocks` | `c64-memory-mapping` | code / data-byte / word / address-table / lo-hi-split-table recognition heuristics |
+| `r2000-analyze-symbol` | `c64-memory-mapping` | hardware-register / global-block / ROM-routine / pointer / flag / counter / state-variable patterns |
+| `r2000-analyze-routine` | `c64-program-recon` | the seven-step routine procedure and its pitfalls |
+| `r2000-analyze-basic` | `c64-program-recon` | BASIC V2 keyword token table and line anatomy |
+| `r2000-analyze-program` | `routine-queue-walker` | full-program orchestration, adapted away from upstream's parallel fan-out |
+
+The prose is therefore already this project's. What is **not** already this
+project's is the route underneath it: every absorbed step is written against
+`r2000_*` tool calls. Deleting the tool surface without re-pointing them leaves
+the knowledge intact and the procedure inert — which is the failure this
+milestone's skill half exists to prevent.
+
+**Two consequences worth stating before planning, because both fail silently:**
+
+- **The whole-tree grep gate must exempt the attribution headers.** Three
+  `ATTRIBUTION (ABS-02)` blocks legitimately keep the word "regenerator2000"
+  after the code is gone, because the prose is still adapted from it. A naive
+  gate fires on them, and "fixing" that by deleting the headers breaks a chain
+  two mechanical guards exist to hold shut.
+- **Deleting r2000 also deletes what several committed guards read.**
+  `r2000-spawn-seam.test.ts`, `docs-r2000-decisions.test.ts` and
+  `r2000-answer-key.test.ts` — the last reading `.planning/phases/11-*/evidence/`
+  with no existence guard — are pinned to the thing being removed. Their fate is
+  planned, not discovered at the gate.
+
+**Reuse rather than rebuild:** `disasm-opcodes.ts` / `disasm-decoder.ts` /
+`disasm-renderer.ts` already decode 6502 including illegal opcodes;
+`r2000-d64.ts` is standalone; `memmap.json` plus `r2000-regbits-gen.ts` plus
+`r2000-enum-gen.ts` already own the machine knowledge and enum generation. All
+of it survives, under names that no longer say `r2000`.
+
+**Phase numbering starts at 27.** Phases 24-26 are held with their numbers
+reserved; 20-22 are cut. Numbers are never reused across milestones.
+
 ## Next Milestone Goals
 
-**v0.7.0 — the rebuild half, on the owned substrate.** v0.5.0's three cut
+**The frame-exact emulator stop, wherever it lands.** It is the single gate on
+Phase 23's `R1` "secure a corpus first" branch and therefore on held Phases 24
+and 26, and **nothing owns it** — raised as verification warning W4 and tracked
+in `.planning/todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`.
+It was kept out of v0.7.0 deliberately: it is research-shaped with an uncertain
+outcome (`vice_execution_step` advances nothing observable, there is no
+monotonic cycle register, and `LIN`/`CYC` are not monotonic, so a constructed
+frame counter is needed rather than a register read), and pairing that with a
+removal milestone risks the removal. It is one `/gsd-phase` insert away if it
+should come sooner.
+
+**v0.8.0 — the two engines and automatic annotation**, once a corpus exists:
+v0.6.0's held Phases 24 and 26, carrying `DXA-01..03`, `GHID-01..05`,
+`OPC-01..03`, `AUTO-01..07` and `PROOF-01..03` unchanged. The SLEIGH source
+already exists in full — `docs/undocumented-opcodes-ghidra.md`, 776 lines, all
+105 bytes, unstable instructions modelled as black-box userops and the
+`65c02.slaspec` collision already handled — so that work integrates and verifies
+rather than writes from scratch.
+
+**v0.9.0 — the rebuild half, on the owned substrate.** v0.5.0's three cut
 phases, rewritten: decomposition to closure, rebuildable source and the
 reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
-`BUILD-01..06` and `EQUIV-01..04` unchanged except for `BUILD-01`, already
-reworded from "per regenerator2000 scope" to "per annotation-store scope". They
-were held out of v0.6.0 deliberately: each is written against a substrate that
-v0.6.0 builds, so scoping them before Phase 25 lands would mean writing them
-twice. Their text stands in
+`BUILD-01..06` and `EQUIV-01..04`, whose text stands in
 [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md).
-
+`BUILD-01` is already reworded from "per regenerator2000 scope" to "per
+annotation-store scope". These were re-mapped from v0.7.0 to v0.9.0 on
+2026-08-26: each is written against a substrate v0.7.0 now builds, and
+`DECOMP-01` in particular is what `STORE-01`'s typing vocabulary is sized for,
+so scoping them before the store lands would still mean writing them twice.
 ---
 
 **v0.4.0 took four of the five candidates standing at the v0.3.0 close** — the
@@ -1048,10 +1204,17 @@ written).
 
 ---
 
-*Last updated: 2026-08-25 at the **start of milestone v0.6.0 — Own the
-substrate**. v0.5.0's delivered scope moved from Active to Validated; Active was
-replaced with v0.6.0's substrate scope; "Next Milestone Goals" became "Current
-Milestone: v0.6.0" with a fourth phase (23, the real-release gate) added ahead of
-the three decided at the v0.5.0 close; and the three rewritten cut phases —
-`DECOMP-*`, `BUILD-*`, `EQUIV-*` — moved to a new "Next Milestone Goals" for
-v0.7.0 rather than being scoped now against a store that does not exist yet.*
+*Last updated: 2026-08-26 at the **start of milestone v0.7.0 — Own the
+Annotation Store**. Written after Phase 23's pre-committed gate returned
+`no-go` (rule `R1`). Changes at this open: v0.6.0 moved from "Current
+Milestone" to "Held", shipping Phase 23 alone, with Phases 24 and 26 **held**
+rather than cut — their numbers reserved and their requirement text unchanged,
+because nothing about them was falsified, only their substrate is missing;
+v0.6.0's Phase 25 taken forward as the whole of v0.7.0, since its own goal
+carries no corpus dependency and is therefore reachable while the `no-go`
+stands; two owner decisions recorded — no parity is owed to regenerator2000
+(Phase 25's "same facts" gate and `STORE-04`'s `R2000-11` carry-across both
+removed), and the Phase 24 engine coupling dropped with it; the frame-exact
+emulator stop named in "Next Milestone Goals" as the unowned single gate on the
+held phases; and `DECOMP-*`/`BUILD-*`/`EQUIV-*` re-mapped from v0.7.0 to
+v0.9.0. Phase numbering continues at 27.*

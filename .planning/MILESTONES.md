@@ -1,5 +1,78 @@
 # Milestones
 
+## v0.6.0 Own the substrate — CLOSED INCOMPLETE by its own gate, 2026-08-26
+
+**Opened 2026-08-25. Closed 2026-08-26 after 1 of 4 phases.**
+
+**Verdict:** Phase 23 was written as a pre-committed go/degrade/no-go gate with
+the authority to narrow or cancel every phase after it, and it fired.
+**`no-go`, rule `R1`** — recorded in
+[`docs/phase23-real-release-gate-findings.md`](../docs/phase23-real-release-gate-findings.md).
+`R1` is the first rule under first-match-wins and it matched on the first input
+(`C0_CORPUS: partial`), so no later rule was reached. `R1` names its own
+consequence: *"secure a corpus first, or re-scope v0.6.0 to a claim explicitly
+qualified as fixture-only."*
+
+**Delivered:** Phase 23 only — 6 plans executed, 5 retired unexecuted
+(`status: superseded`, no substrate), closed `passed` with **three accepted
+overrides recording criteria 1-3 as NOT MET**. The "re-measure against real
+cracked releases" half of the phase goal was not achieved and is accepted as not
+met rather than reclassified.
+
+- [x] Phase 23: The Real-Release Gate (Go/Degrade/No-Go) (6/6 plans) — completed 2026-08-26 — verdict `no-go`, rule `R1`
+- [ ] Phase 24: The Two Engines — **HELD** 2026-08-26 (blocked on a corpus; requirement text unchanged)
+- [ ] Phase 25: The Annotation Store and the Cutover — **TAKEN FORWARD** as the whole of v0.7.0
+- [ ] Phase 26: Automatic Annotation — **HELD** 2026-08-26 (blocked on a corpus; requirement text unchanged)
+
+**Held, not cut — and the distinction is deliberate.** Phases 24 and 26 keep
+their numbers, which are never reused, and their requirements stand unchanged:
+`DXA-01..03`, `GHID-01..05`, `OPC-01..03`, `AUTO-01..07`, `PROOF-01..03`. They
+are held because nothing about them was falsified — only their substrate is
+missing. That is a different disposition from v0.5.0's Phases 20-22, which were
+**cut** because a pivot made them wrong.
+
+**Phase 25 was taken forward instead**, because its own goal carries no corpus
+dependency once the Phase 24 engine coupling is dropped. It became v0.7.0.
+
+**The single gate on reviving 24 and 26.** Of Phase 23's two capture blockers,
+one is solved and one is not:
+
+| blocker | state |
+|---|---|
+| The flat 64K read out as hex through the tool surface — a 32 KB write lost to truncation, an 8 KB write to ten silently dropped characters | **solved** — extract it from a `.vsf` snapshot's `C64MEM` module body instead (4 bytes of port/PLA state, then exactly 65536 bytes of RAM); validated 2026-08-26 against 23-03's own transcript, which it independently localised |
+| The fork's stopping exec checkpoint is not frame-exact | **unsolved** — snapshot-to-snapshot with no transcription anywhere, the two `danish` runs still diverge at 201 multi-bit addresses |
+
+Frame index is the dominant term, and the contrast is the useful part:
+`saeger`'s two runs both landed on the same `hit_count` and diverged at exactly
+one byte — `$00F6`, the KERNAL keyboard-decode-table pointer. Land two runs on
+the same frame and they are one transient pointer from equivalent. **Nothing
+owns this.** Raised as verification warning W4 on Phase 23 and tracked in
+[`todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`](todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md).
+Any fix touches `src/`, which Phase 23 was forbidden from doing.
+
+**Phase directories are deliberately not archived at this close.** Five
+committed tests read live paths under `.planning/phases/` — two of them by
+hard-coded relative path to
+`phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`
+(`r2000-upstream-audit.test.ts`, `skill-attribution.test.ts`), plus
+`r2000-answer-key.test.ts` (`phases/11-*/evidence/`, no existence guard),
+`r2000-coverage.test.ts` (`phases/19-*/evidence/`) and `r2000-verify.test.ts`
+(`phases/10-*/evidence/`). `.planning/milestones/` holds no `*-phases/` archive
+because this project has never archived them, for that reason. Archiving here
+would also mislabel Phases 1-19 under the v0.6.0 label. If phase archival is
+ever wanted, those five path dependencies are what must move first.
+
+**No milestone audit was run**, and that is a statement rather than an omission:
+a milestone audit checks delivery against intent, and v0.6.0's own gate already
+recorded — with three accepted overrides — that its intent was not delivered.
+Phase 23's findings document is the audit of record.
+
+**Not archived:** `ROADMAP.md` and `REQUIREMENTS.md` are left in place rather
+than snapshotted to `milestones/v0.6.0-*`, because Phases 24 and 26 are held
+with live requirement text that v0.8.0 will carry forward unchanged.
+
+---
+
 ## v0.5.0 Persistent Session and the Coverage Instrument (Shipped: 2026-08-25)
 
 **Phases completed:** 2 phases, 27 plans, 61 tasks

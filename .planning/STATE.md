@@ -1,21 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.6.0
-milestone_name: Own the substrate (Phases 23-26)
-current_phase: 24
-current_phase_name: The Two Engines
+milestone: v0.7.0
+milestone_name: Own the Annotation Store
 status: planning
-stopped_at: Phase 23 complete, ready to plan Phase 24
-last_updated: "2026-08-26T18:48:03.724Z"
+last_updated: "2026-08-26T19:47:51.671Z"
 last_activity: 2026-08-26
-last_activity_desc: Phase 23 complete, transitioned to Phase 24
-state_head: 9320279a543cc21a6eeaf842a071c7fe19584ec3
 progress:
-  total_phases: 4
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 6
-  percent: 25
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -86,11 +81,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 24 — The Two Engines
-Plan: Not started
-Status: **BLOCKED ON A MILESTONE DECISION — do not plan Phase 24 as scoped.** Phase 23 closed with the recorded verdict **`no-go`** (rule **`R1`**, fired on `C0_CORPUS: partial`). `R1`'s own consequence: *secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only.* That choice has not been made. Read `docs/phase23-real-release-gate-findings.md` frontmatter (`verdict`, `verdict_rule_applied`) before writing any plan here — Phases 24, 25 and 26 all carry the same Verdict-gated line in ROADMAP.md.
-Progress: [██░░░░░░░░] 25% — 1/4 phases complete (v0.6.0). Phase 23: 6 plans executed, 5 retired unexecuted (`status: superseded`, no substrate — see each plan's `superseded_reason`), closed `passed` with **3 accepted overrides recording criteria 1-3 as NOT MET**.
-Last activity: 2026-08-26 — Phase 23 complete on a no-go verdict; the "re-measure against real cracked releases" half of its goal was not achieved and is accepted as not met, not reclassified. The single gate on reviving it is a frame-exact emulator stop (todo `2026-08-26-frame-exact-emulator-stop-is-unowned.md`), which nothing owns.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-08-26 — Milestone v0.7.0 started
 
 ## Performance Metrics
 
