@@ -58,3 +58,34 @@ suite load and does not reproduce reliably.
 **Candidate fix for whoever owns it:** await the observable state transition (poll the crash
 counter to the expected value with a bounded deadline) rather than sampling it once after a
 fixed timeout, so the assertion does not race the suite's scheduler.
+
+## 3. The full `npm test` suite has a load-sensitive flake set, not a single flake
+
+**Found during:** 23-03 Task 3, running the phase regression gate four times in a row
+while a VICE instance was live and the broker busy.
+
+**What happens:** the suite's failing set is not stable across runs of the same tree.
+
+| Run | fail count | failing tests |
+|---|---|---|
+| 1 | 1 | (not captured) |
+| 2 | 4 | `159` wired disconnect-while-queued; `916` r2000 call-timeout/crash-counter; `2408` BACK-05 D-G ordering at the wire; `2410` IN-01 bounded drain |
+| 3 | 1 | (not captured) |
+| 4 | 1 | `2408` BACK-05 D-G ordering at the wire |
+
+2592 of 2638 pass in every run; the variance is 1-4 tests out of 2638 and the *identity*
+of the failures changes between runs. Item 2 above already logs `r2000-session.test.ts:615`
+(test `916`) as a known load-sensitive flake; this entry records that it is **not the only
+one** — `159`, `2408` and `2410` join it, and all four are timing- or concurrency-shaped
+(a queued-acquire race, a call-timeout assertion, a wire-ordering assertion, and a
+bounded-drain timing assertion).
+
+**Why it matters to this phase:** every plan in phase 23 runs the full suite as its gate.
+A gate whose failing set varies run to run cannot distinguish "this plan broke something"
+from "the host was busy". This plan's own changes touch only `.planning/`, so no failure
+here can be attributed to it — but a later plan needs to know that a single red run is not
+evidence, and that the honest gate result is "2592/2638 pass, 1-4 load-sensitive failures
+whose identity varies".
+
+**Not fixed here.** Phase 23 is forbidden from modifying anything under `src/`, and these
+are pre-existing test-suite defects unrelated to any task in this plan.
