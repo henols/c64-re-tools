@@ -1,0 +1,1090 @@
+# Phase 23 — Corpus intake transcript (23-03 Task 2)
+#
+# Identity, hashes and a directory parse recorded BEFORE anything boots.
+# Convention: evidence/README.md § Evidence conventions 1 (transcript), 3 (argv
+# arrays), 7 (outcome lines at column 0, final occurrence wins), 10 (the corpus
+# image is never committed).
+#
+# The two images are operator-supplied (D-04) and live OUTSIDE this checkout.
+# They are referenced by absolute path and sha256 only. evidence/corpus/.gitignore
+# refuses every binary image form so neither can enter the repository by accident.
+
+## Operator statement (23-03 Task 1, blocking-human checkpoint — transcribed verbatim)
+
+Title: Bruce Lee (Datasoft, 1984).
+
+Two independently-cracked releases of that one title, supplied by the operator:
+
+  release id `danish`
+    path   /home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64
+    sha256 1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5
+    size   174848
+    on-disk evidence stated by the operator: disk header name blank;
+    single directory entry, PRG, "BRUCE LEE   (DC)"
+
+  release id `saeger`
+    path   /home/henrik/dev/henrik/git/bruce_lee/disks/saeger.d64
+    sha256 b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5
+    size   174848
+    on-disk evidence stated by the operator: disk header name "XIDEX";
+    single directory entry, PRG, "BRUCE LEE"
+
+Release ids carried into the verdict are the operator-supplied filenames,
+`danish` and `saeger`. The operator directed explicitly that no CSDb id and no
+group attribution be invented: `(DC)` and `XIDEX` are recorded below as the
+literal on-disk strings they are, and are NOT expanded into group names.
+
+Every sha256 and every directory field quoted in this operator statement is
+independently recomputed below from the files themselves. Where this section and
+a transcript below disagree, the transcript is the evidence.
+
+## Canonical designation, and the rule that produced it
+
+CANONICAL: `danish`.
+
+The selection rule, stated by the orchestrator BEFORE any measurement of these
+images exists, and recorded here together with the choice it produced so the
+choice cannot have been influenced by a result:
+
+  the release whose sha256 is lexicographically smaller is canonical.
+
+  1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5  (danish)
+  b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5  (saeger)
+
+  "1a9d29..." < "b45e53...", so `danish` is canonical.
+
+This matters because SCHEMA.md § 1 makes exactly one element of corpus.releases[]
+carry `canonical: true`, and that element is the one criterion 1's gating rule
+inputs are computed over. The secondary release's numbers never gate
+(DECISION-RULE.md § Hold-out precedence contract).
+
+## 1. Identity — sha256 via the project's only hashing seam
+
+No hashing helper is hand-rolled here. `compare.mjs digest` is the seam
+c64-ram-capture/SKILL.md names for the capture record, and it is used unchanged.
+
+$ node src/skills/c64-ram-capture/scripts/compare.mjs digest /home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64 /home/henrik/dev/henrik/git/bruce_lee/disks/saeger.d64
+1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5  174848 bytes  *** NOT 65536 — not a full image ***  danish.d64
+b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5  174848 bytes  *** NOT 65536 — not a full image ***  saeger.d64
+(exit 0)
+
+Reading of that output: both digests reproduce the operator's stated sha256
+byte-for-byte. The `*** NOT 65536 — not a full image ***` annotation is the
+tool correctly observing that a 174848-byte `.d64` is not a flat 64K capture;
+these are shipped disk images, and their flat 64K captures are a separate
+artifact produced in Task 3. It is not a failure and does not affect the digest.
+Both files are 174848 bytes = 35 tracks, no error bytes.
+
+## 2. Parse before booting — the corpus is untrusted input
+
+The corpus arrives from outside the project and is about to be executed in an
+emulator. `d64-parse.mjs` reads the bytes directly and answers what is on the
+disk without booting anything. It reports a `chain_error` instead of hanging on a
+directory chain that leaves the image or loops, and sets `suspicious` /
+`suspicious_reasons` on an entry whose block count is 0, whose first track/sector
+falls outside the image, or which points into a track the BAM reports entirely
+free — the signature of an entry claiming a file never written to disk.
+
+This addresses threat T-23-01 (Denial of Service — malicious or corrupt .d64).
+Whatever it reports is recorded here as a fact about the corpus and is NOT
+worked around. Per threat T-23-04, every string recovered below is evidence text
+only: no directory string is ever interpolated into a path or a shell command.
+
+### 2.1 `danish` — directory
+
+$ node src/skills/c64-ram-capture/scripts/d64-parse.mjs directory --image /home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64 --json
+{
+  "entries": [
+    {
+      "dir_track": 18,
+      "dir_sector": 1,
+      "entry_index": 0,
+      "type": "PRG",
+      "closed": true,
+      "locked": false,
+      "name": "BRUCE LEE   (DC)",
+      "first_track": 17,
+      "first_sector": 0,
+      "blocks": 178,
+      "suspicious": false,
+      "suspicious_reasons": []
+    }
+  ],
+  "chain_error": null
+}
+(exit 0)
+
+### 2.2 `danish` — BAM
+
+$ node src/skills/c64-ram-capture/scripts/d64-parse.mjs bam --image /home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64 --json
+{
+  "first_dir_track": 18,
+  "first_dir_sector": 1,
+  "dos_version": 65,
+  "disk_name": "",
+  "disk_id": "00",
+  "dos_type": "2A",
+  "per_track": [
+    {
+      "track": 1,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 2,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 3,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 4,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 5,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 6,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 7,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 8,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 9,
+      "free": 11,
+      "sectors_per_track": 21,
+      "bitmap": [
+        84,
+        83,
+        29
+      ]
+    },
+    {
+      "track": 10,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 11,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 12,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 13,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 14,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 15,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 16,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 17,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 18,
+      "free": 17,
+      "sectors_per_track": 19,
+      "bitmap": [
+        252,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 19,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 20,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 21,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 22,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 23,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 24,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 25,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 26,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 27,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 28,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 29,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 30,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 31,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 32,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 33,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 34,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 35,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    }
+  ],
+  "occupied_tracks": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18
+  ],
+  "occupied_ranges": [
+    {
+      "start": 9,
+      "end": 18
+    }
+  ]
+}
+(exit 0)
+
+### 2.3 `saeger` — directory
+
+$ node src/skills/c64-ram-capture/scripts/d64-parse.mjs directory --image /home/henrik/dev/henrik/git/bruce_lee/disks/saeger.d64 --json
+{
+  "entries": [
+    {
+      "dir_track": 18,
+      "dir_sector": 1,
+      "entry_index": 0,
+      "type": "PRG",
+      "closed": true,
+      "locked": false,
+      "name": "BRUCE LEE",
+      "first_track": 1,
+      "first_sector": 0,
+      "blocks": 186,
+      "suspicious": false,
+      "suspicious_reasons": []
+    }
+  ],
+  "chain_error": null
+}
+(exit 0)
+
+### 2.4 `saeger` — BAM
+
+$ node src/skills/c64-ram-capture/scripts/d64-parse.mjs bam --image /home/henrik/dev/henrik/git/bruce_lee/disks/saeger.d64 --json
+{
+  "first_dir_track": 18,
+  "first_dir_sector": 1,
+  "dos_version": 65,
+  "disk_name": "XIDEX",
+  "disk_id": "1a",
+  "dos_type": "2A",
+  "per_track": [
+    {
+      "track": 1,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 2,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 3,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 4,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 5,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 6,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 7,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 8,
+      "free": 0,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "track": 9,
+      "free": 3,
+      "sectors_per_track": 21,
+      "bitmap": [
+        0,
+        0,
+        28
+      ]
+    },
+    {
+      "track": 10,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 11,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 12,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 13,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 14,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 15,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 16,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 17,
+      "free": 21,
+      "sectors_per_track": 21,
+      "bitmap": [
+        255,
+        255,
+        31
+      ]
+    },
+    {
+      "track": 18,
+      "free": 17,
+      "sectors_per_track": 19,
+      "bitmap": [
+        252,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 19,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 20,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 21,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 22,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 23,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 24,
+      "free": 19,
+      "sectors_per_track": 19,
+      "bitmap": [
+        255,
+        255,
+        7
+      ]
+    },
+    {
+      "track": 25,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 26,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 27,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 28,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 29,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 30,
+      "free": 18,
+      "sectors_per_track": 18,
+      "bitmap": [
+        255,
+        255,
+        3
+      ]
+    },
+    {
+      "track": 31,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 32,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 33,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 34,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    },
+    {
+      "track": 35,
+      "free": 17,
+      "sectors_per_track": 17,
+      "bitmap": [
+        255,
+        255,
+        1
+      ]
+    }
+  ],
+  "occupied_tracks": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    18
+  ],
+  "occupied_ranges": [
+    {
+      "start": 1,
+      "end": 9
+    },
+    {
+      "start": 18,
+      "end": 18
+    }
+  ]
+}
+(exit 0)
+
+## 3. What the parse established
+
+Neither image is flagged. Both entries carry `"suspicious": false` with an empty
+`suspicious_reasons`, and both directory chains carry `"chain_error": null`. No
+faked directory entry and no looping or out-of-image chain is present in either
+release, so nothing here has to be worked around and no corpus hazard is being
+recorded as accepted. T-23-01's mitigation ran and found nothing to mitigate.
+
+Side by side, from the transcripts above and from nothing else:
+
+| Field | `danish` | `saeger` |
+|---|---|---|
+| disk header name | "" (blank) | "XIDEX" |
+| disk id | "00" | "1a" |
+| DOS type / version | 2A / 65 | 2A / 65 |
+| directory entries | 1 | 1 |
+| entry name | "BRUCE LEE   (DC)" | "BRUCE LEE" |
+| entry type | PRG, closed, unlocked | PRG, closed, unlocked |
+| first track/sector | 17/0 | 1/0 |
+| blocks | 178 | 186 |
+| BAM occupied ranges | 9-18 | 1-9, 18 |
+| suspicious | false, no reasons | false, no reasons |
+| chain_error | null | null |
+
+`(DC)` and `XIDEX` are recorded above exactly as the bytes read: a suffix inside
+the danish image's directory entry name, and the saeger image's disk header name.
+Neither is expanded into a group attribution, per the operator's explicit
+direction and because no such expansion is present on either disk to read.
+
+## 4. The independence claim, at the confidence the evidence supports
+
+  INDEPENDENCE: no-shared-ancestor-indicator-found   (stated as prose here; the outcome line itself is in ## Outcome lines below)
+
+Stated at that strength deliberately, and NOT as "proven independent".
+
+What the evidence above does support: the two images are not the same artifact
+and are not a re-labelled copy of one another. They differ in sha256, in disk
+header name, in disk id, in directory entry name, and — the substantive part —
+in physical layout. The payload starts at track 17 on one disk and track 1 on the
+other, runs to a different block count (178 vs 186), and occupies disjoint track
+ranges (9-18 vs 1-9 plus 18). Two releases derived from a common cracked master by
+re-writing the same file would not relocate the payload across the disk and change
+its length.
+
+What it does NOT support, and what must not be read into it: that the *game code
+inside* the two payloads has no shared ancestor. A directory and BAM comparison
+speaks to how each disk was written, not to what the depacked bytes are. Two
+crackers working from the same original tape or cartridge dump will legitimately
+produce near-identical game bytes with entirely different disk layouts — that is
+the expected case, not a defect, and it is the whole reason the provenance diff
+in 23-06/23-07 anchors before it diffs.
+
+The claim recorded here is therefore the negative one it is entitled to be: a
+search for a shared-ancestor indicator was made against the evidence available
+before booting, and none was found. Should the provenance diff later find the two
+payloads byte-identical outside the loader, THAT is the fact that would retire
+this claim, and it is measured downstream rather than assumed here.
+
+## 5. The scratch release registry
+
+`dump-artifacts.mjs write-set` resolves its `--release` id through `releases.mjs`,
+which reads a registry file. There is no `RELEASES.json` anywhere in this
+repository (23-RESEARCH.md § Pitfall 6), so `write-set` would refuse with a
+known-id list. The toolkit is pointed at a scratch registry inside the evidence
+tree instead of one being created in `recovery/`:
+
+  export C64RE_DATA_DIR=<phase>/evidence/capture
+  export C64RE_REGISTRY="$C64RE_DATA_DIR/RELEASES.json"
+  export C64RE_DISKS_ROOT=/home/henrik/dev/henrik/git/bruce_lee
+
+`C64RE_DISKS_ROOT` is set because `disk_image` is resolved relative to
+`disksRoot()`, which defaults to this repository's own root; the images live in a
+different repository entirely and must not be copied into this one.
+
+THIS REGISTRY IS SCRATCH STATE FOR ONE PROBE. It is not the `recovery/` tree a
+consuming project would have, it is not a fixture, and nothing outside phase 23
+reads it. It exists so that one toolkit entry point can resolve two ids.
+
+It follows the release-centric shape c64-ram-capture/SKILL.md § Release registry
+shape documents: `canonical` is a boolean on exactly one of N entries, never a
+privileged singular image. `dumps` is present as an array on every entry even
+while empty — an absent key throws `TypeError` in `releases.mjs list`, which
+reads `r.dumps.length` with no guard.
+
+The registry as created, read back through the toolkit itself rather than
+re-asserted by this transcript:
+
+$ env C64RE_DATA_DIR=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture C64RE_REGISTRY=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture/RELEASES.json C64RE_DISKS_ROOT=/home/henrik/dev/henrik/git/bruce_lee node src/skills/c64-ram-capture/scripts/project-paths.mjs
+project root: /home/henrik/dev/henrik/git/c64-re-tools
+data root:    /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture
+disks root:   /home/henrik/dev/henrik/git/bruce_lee
+registry:     /home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture/RELEASES.json
+(exit 0)
+
+$ env C64RE_DATA_DIR=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture C64RE_REGISTRY=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture/RELEASES.json C64RE_DISKS_ROOT=/home/henrik/dev/henrik/git/bruce_lee node src/skills/c64-ram-capture/scripts/releases.mjs list
+danish  canonical=true  disk_image=disks/danish.d64  dumps=0
+saeger  canonical=false  disk_image=disks/saeger.d64  dumps=0
+(exit 0)
+
+$ env C64RE_DATA_DIR=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture C64RE_REGISTRY=/home/henrik/dev/henrik/git/c64-re-tools/.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/capture/RELEASES.json C64RE_DISKS_ROOT=/home/henrik/dev/henrik/git/bruce_lee node src/skills/c64-ram-capture/scripts/releases.mjs show danish
+{
+  "id": "danish",
+  "canonical": true,
+  "disk_image": "disks/danish.d64",
+  "dumps": []
+}
+(exit 0)
+
+`disks root` above resolves `disks/danish.d64` to
+/home/henrik/dev/henrik/git/bruce_lee/disks/danish.d64 — the operator-supplied
+path, outside this checkout. No image is copied in, and none is staged.
+
+## ACCEPTED LIMIT 1 — where the corpus outcome lines live
+
+SCHEMA.md § 3 declares the corpus outcome lines under the heading
+"Corpus and capture — `evidence/capture/CAPTURE-SUMMARY.txt`", which places
+ CORPUS_RELEASES, CORPUS_CANONICAL and CORPUS_FILE_SHA256 in that file.
+23-03-PLAN.md Task 2 instead directs this plan to emit them from
+`evidence/corpus/corpus-intake.txt`, and its automated verify greps this file
+for them.
+
+Recorded as an accepted limit rather than resolved by editing either document:
+SCHEMA.md is the frozen pre-commitment and may not be edited, and the plan's
+gate is a real gate. Both are satisfied without inventing a name: the lines are
+emitted here, where the identities are actually established and where the
+transcript proving them lives, and Task 3 reproduces the same three lines
+verbatim in CAPTURE-SUMMARY.txt as SCHEMA's declared home, derived from these
+values rather than recomputed.
+
+No rule input is affected. DECISION-RULE.md § Inputs reads exactly one line from
+CAPTURE-SUMMARY.txt — `C0_CORPUS` — and reads none of the three from anywhere.
+
+## ACCEPTED LIMIT 2 — outcome-line VALUE vocabulary: SCHEMA.md wins
+
+23-03-PLAN.md Task 3 directs writing `C0_CORPUS: fail` and a
+ CAPTURE_EQUIVALENT of `pass`/`fail`, and its automated verify regex encodes
+`(pass|fail|could-not-run)` for both. SCHEMA.md § 3 declares narrower and
+different domains, frozen before any measurement existed:
+
+  C0_CORPUS          pass | partial | could-not-run     (plan says `fail`)
+  CAPTURE_EQUIVALENT yes  | no      | could-not-run     (plan says `pass`/`fail`)
+
+The plan's own regex would REJECT the schema-legal value `yes`.
+
+Resolution, confirmed by the operator and applying phase-wide: SCHEMA.md wins.
+The schema-legal values are written; SCHEMA.md is not edited; the evidence is not
+bent to satisfy a regex the frozen pre-commitment contradicts. The plan's verify
+regex mismatch is logged as a deviation in this plan's SUMMARY rather than being
+silently accommodated. Plan 23-02 hit four divergences of the same kind and
+resolved them the same way; that is the established precedent.
+
+Recorded here as well as in CAPTURE-SUMMARY.txt because it is a phase-wide
+resolution and this file is the earlier of the two to exist.
+
+No rule input is affected in substance: DECISION-RULE.md R1 fires on
+"`c0_corpus` is not `pass`", which is evaluated identically under either
+vocabulary.
+
+## Outcome lines
+
+Per evidence/README.md convention 7: bare NAME: value at column 0; where a line
+is written more than once in a file the final occurrence wins. Canonical first,
+per SCHEMA.md § 3.
+
+CORPUS_RELEASES: 2
+CORPUS_CANONICAL: danish
+CORPUS_FILE_SHA256: danish 1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5
+CORPUS_FILE_SHA256: saeger b45e53e602fe94654934beffaa483f59989a6d3973ef054afaeea4ea4bc2b8f5
+INDEPENDENCE: no-shared-ancestor-indicator-found
+
+# INDEPENDENCE is NOT a name declared in SCHEMA.md § 3 and is NOT a rule input in
+# DECISION-RULE.md. It is recorded as a corpus fact because the plan's must_haves
+# require the independence basis to be recorded, and it is named here rather than
+# left as prose so a later reader can find it mechanically. It gates nothing.
+
+## What is deliberately NOT here
+
+Neither `.d64` is committed, and neither is staged. Identity is release name plus
+sha256 (D-04, evidence convention 10). The flat 64K captures, their sha256s and
+the capture equivalence proof are Task 3's and land in evidence/capture/.

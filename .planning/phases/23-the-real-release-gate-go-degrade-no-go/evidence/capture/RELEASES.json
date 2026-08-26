@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "schema_notes": "Scratch registry for phase 23's real-release gate probe -- NOT a recovery/ tree. Two operator-supplied Bruce Lee releases, identified by sha256 in ../corpus/corpus-intake.txt; the .d64 images live outside this repository and are never committed (D-04). Adding a release is one releases[] entry.",
+  "releases": [
+    {
+      "id": "danish",
+      "canonical": true,
+      "disk_image": "disks/danish.d64",
+      "dumps": []
+    },
+    {
+      "id": "saeger",
+      "canonical": false,
+      "disk_image": "disks/saeger.d64",
+      "dumps": []
+    }
+  ]
+}
