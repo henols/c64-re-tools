@@ -113,9 +113,16 @@
 //      the one failure direction the revert path cannot survive. Pruning after
 //      the commit inverts that failure deliberately: a kill in the window
 //      between the commit and the prune leaves EXTRA files, which are harmless
-//      and reconcilable by revision number. The file is deleted before its
-//      pointer row for the same reason -- the opposite order can produce the
-//      bad state and this one cannot. And a revert that SUBSTITUTES the nearest
+//      and reconcilable by revision number. INSIDE the prune loop the SAME
+//      premise decides the SAME way: the POINTER ROW is deleted first and the
+//      file second, because a kill landing between those two adjacent
+//      statements is what chooses between the two half-states, and
+//      row-then-file is the arrangement that produces the harmless one.
+//      RECORDED RATHER THAN QUIETLY DELETED, because a rationale that became
+//      false is evidence: this paragraph previously concluded the reverse --
+//      that the file is deleted before its pointer row -- which contradicted
+//      its own premise, and the loop was written to match the inverted
+//      conclusion. And a revert that SUBSTITUTES the nearest
 //      retained revision for the one asked for changes the caller's intent with
 //      nothing recording that it happened, so a revert past the bound is
 //      refused BY NAME instead (`STORE-04`).
@@ -549,13 +556,20 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
 /**
  * Bounds the `snapshots/` sibling directory at `MAX_SNAPSHOT_REVISIONS` by
  * deleting every snapshot older than the newest `MAX_SNAPSHOT_REVISIONS`
- * revisions -- THE FILE FIRST, ITS POINTER ROW SECOND.
+ * revisions -- ITS POINTER ROW FIRST, THE FILE SECOND.
  *
  * MUST BE CALLED AFTER THE COMMIT AND OUTSIDE THE TRANSACTION. Trap 10 in the
  * module header carries the whole argument; the short form is that an unlink is
  * not transactional, so the ordering around the commit CHOOSES which failure a
  * kill in the window produces -- and the choice made here is "extra files"
  * over "a pointer row aimed at a deleted file".
+ *
+ * THE SAME CHOICE IS MADE AGAIN INSIDE THE LOOP, between its two statements,
+ * and for the same reason. A kill landing there leaves an orphan FILE -- which
+ * trap 10's premise already calls harmless and reconcilable by revision
+ * number -- and never an orphan ROW. The ordering is pinned by a source-order
+ * control in `anno-store.test.ts`, because both statements are present in
+ * either arrangement and a presence assertion cannot see the difference.
  *
  * The bound itself lives in `anno-types.ts` and is imported, never copied: a
  * second literal would drift the moment the first one is edited, silently, and
@@ -577,18 +591,29 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
   }[];
 
   for (const row of doomed) {
+    // THE POINTER ROW GOES FIRST, AND THE ORDER IS THE GUARANTEE. The prune
+    // runs outside any transaction (correctly -- see above), so a kill BETWEEN
+    // these two statements decides which half-state survives. Row-then-file
+    // leaves an orphan FILE, which trap 10's own premise calls harmless and
+    // reconcilable by revision number. File-then-row -- the arrangement this
+    // loop used to be written in -- leaves a POINTER ROW AIMED AT A DELETED
+    // FILE, which is the one failure direction the revert path cannot survive.
+    // Deliberately NOT swallowed: the row delete is the half that must be loud.
+    handle.db.prepare("delete from anno_snapshot where revision = ?").run(row.revision);
+
     // Swallowed on purpose, and ONLY here: an interrupted earlier prune may
     // already have removed this file, and a prune that threw on an
     // already-absent file would make the store unwritable after a single kill
-    // in the window. The pointer-row delete below is deliberately NOT
-    // swallowed -- a pointer row surviving its file is the exact state trap 10
-    // exists to prevent, so it has to be loud.
+    // in the window. With the row already gone, a file this fails to unlink is
+    // an orphan FILE -- which the reconciliation at the top of the NEXT prune
+    // can still see and retry. Under the earlier arrangement the row was
+    // deleted unconditionally after a swallowed failure, so the file became
+    // invisible to the bound forever (WR-01's secondary point).
     try {
       rmSync(row.path, { force: true });
     } catch {
       // deliberately ignored -- see above
     }
-    handle.db.prepare("delete from anno_snapshot where revision = ?").run(row.revision);
   }
 }
 

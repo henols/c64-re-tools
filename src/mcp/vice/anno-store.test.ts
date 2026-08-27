@@ -49,7 +49,10 @@ import {
   oldestRetainedRevision,
   openStore,
   paintIndexOf,
+  pruneSnapshots,
   putXref,
+  reconcileSnapshotRing,
+  retainedRevisions,
   revertTo,
   setComment,
   setDataType,
@@ -1394,6 +1397,231 @@ test("STORE-02 non-vacuity: the code this gap closure adds is inside the source 
   assert.ok(stripped.includes("reconcileSnapshotRing"), "and so must the one half-state resolver");
   const offenders = ["coalesc", "merg", "splitter"].filter((needle) => stripped.toLowerCase().includes(needle));
   assert.deepEqual(offenders, [], "and neither new identifier -- nor anything else in the file -- may name a merging or splitting primitive");
+});
+
+// ---------------------------------------------------------------------------
+// THE TWO PRUNE HALF-STATES, AND THE SOURCE ORDER THAT DECIDES WHICH ONE A
+// KILL CAN REACH (gap 2 = WR-01).
+//
+// `pruneSnapshots` deletes a doomed revision's POINTER ROW and then unlinks its
+// FILE, outside any transaction. A kill landing between those two adjacent
+// statements therefore produces one of exactly two states, and the ORDER is
+// what chooses which:
+//
+//   * row-then-file (what the loop does now) can only leave an orphan FILE --
+//     harmless, and reconcilable by revision number from the filename alone;
+//   * file-then-row (what it used to do) can leave an orphan ROW -- a pointer
+//     aimed at a file that is already gone, which is the one failure direction
+//     the revert path cannot survive.
+//
+// WHY THE TWO STATES ARE CONSTRUCTED RATHER THAN TIMED. The real interleaving
+// is a kill between two adjacent statements inside a loop, and reaching it
+// from a test would require a hook planted inside `anno-store.ts` itself.
+// Planting test scaffolding in a shipped module is REFUSED here: it converts
+// the code under test into code that exists only for the test, so the control
+// would no longer be measuring the shipped path. The guarantee is therefore
+// proven as the two states the kill can produce, constructed directly, PLUS
+// the source-order control below that pins which of the two a kill can
+// actually reach. `28-REVIEW.md` and `28-VERIFICATION.md` both reproduced
+// CR-02's interleaving the same way -- by performing the losing writer's
+// statements directly.
+// ---------------------------------------------------------------------------
+
+test("prune half-state A, the orphan ROW (the forbidden direction): a pointer row whose file is gone is never retained, never published as the floor, refused BY NAME rather than crashed on, and swept by the next accepted write", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+
+      const retainedBefore = retainedRevisions(store);
+      assert.equal(retainedBefore.length, MAX_SNAPSHOT_REVISIONS, "the ring is full before the half-state is constructed");
+      // The state a kill between the two statements CANNOT produce under the
+      // present order, constructed directly: the file removed, the row left.
+      const victim = retainedBefore[retainedBefore.length - 1];
+      rmSync(snapshotPathFor(store, victim), { force: true });
+      const rowStillThere = store.db.prepare("select revision from anno_snapshot where revision = ?").get(victim) as
+        | { revision: number }
+        | undefined;
+      assert.ok(rowStillThere, "the construction really did leave the pointer row behind -- that is the half-state under test");
+
+      assert.ok(!retainedRevisions(store).includes(victim), "a row without its file is NOT retained -- both halves are required");
+      assert.notEqual(oldestRetainedRevision(store), victim, "and it is never published as the floor");
+
+      assert.throws(
+        () => revertTo(store, victim),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.ok(e instanceof ViceError, "the refusal stays inside the ViceError family -- never a bare ENOENT out of copyFileSync");
+          assert.match(e.message, new RegExp(`cannot revert to revision ${victim}`), "and it names the revision that was asked for");
+          return true;
+        },
+      );
+      assert.equal(currentRevision(store), writes, "the refused revert left the handle open and answering");
+      assert.ok(listRanges(store).length > 0, "and the rows still readable through it");
+
+      // One further accepted write, whose prune reconciles first.
+      setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
+      const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+        (row) => row.revision,
+      );
+      assert.ok(!rowsAfter.includes(victim), `the orphan ROW must be gone after one accepted write, rows are ${JSON.stringify(rowsAfter)}`);
+      assert.deepEqual(orphanRowRevisions(store), [], "and no orphan row survives at all");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("prune half-state B, the orphan FILE (the harmless direction): the store stays fully usable, a revert to a genuinely retained revision still succeeds, and the next accepted write sweeps the file so the directory bound still holds", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+
+      const retainedBefore = retainedRevisions(store);
+      assert.equal(retainedBefore.length, MAX_SNAPSHOT_REVISIONS, "the ring is full before the half-state is constructed");
+      // The state a kill between the two statements CAN produce under the
+      // present order, constructed directly: the row removed, the file left.
+      const victim = retainedBefore[0];
+      store.db.prepare("delete from anno_snapshot where revision = ?").run(victim);
+      assert.ok(existsSync(snapshotPathFor(store, victim)), "the construction really did leave the file behind -- that is the half-state under test");
+
+      // THE HARMLESS DIRECTION: nothing about the store stops working.
+      assert.equal(currentRevision(store), writes, "currentRevision still answers");
+      assert.equal(listRanges(store).length, writes, "and every row is still readable");
+
+      // AND THE BOUND HOLDS THROUGH IT. The prune iterates ROWS, so without
+      // the directory sweep at the top of `reconcileSnapshotRing` an unclaimed
+      // file is invisible to the bound forever and `snapshots/` grows past it
+      // -- which is exactly what a revert does thirty-two times over
+      // (CR-01 consequence 4). The sweep is asserted here, on the ONE
+      // orphan this construction plants, before anything re-adopts it.
+      const constructed = ringHalves(store, dir);
+      assert.equal(constructed.fileRevisions.length, MAX_SNAPSHOT_REVISIONS, "the file half of the ring is untouched by the construction");
+      assert.equal(
+        constructed.rowRevisions.length,
+        MAX_SNAPSHOT_REVISIONS - 1,
+        "and the row half is one short -- the two halves genuinely disagree, which is the state under test",
+      );
+      setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
+      assert.ok(
+        !existsSync(snapshotPathFor(store, victim)),
+        `the orphan FILE for r${victim} must be swept by the next accepted write's prune`,
+      );
+      const files = readdirSync(join(dir, "snapshots"));
+      assert.ok(
+        files.length <= MAX_SNAPSHOT_REVISIONS,
+        `the directory bound must hold THROUGH the half-state, found ${files.length} files: ${files.sort().join(", ")}`,
+      );
+      const halves = ringHalves(store, dir);
+      assert.ok(halves.rowRevisions.length > 0, "the ring is not empty, so the agreement below is not trivially satisfied");
+      assert.deepEqual(halves.fileRevisions, halves.rowRevisions, "and the two halves of the ring agree again");
+
+      // AND A REVERT TO A GENUINELY RETAINED REVISION STILL SUCCEEDS, which is
+      // the other half of "harmless": the half-state cost the store nothing it
+      // was still advertising.
+      const survivor = oldestRetainedRevision(store);
+      assert.notEqual(survivor, NO_RETAINED_REVISION, "a genuinely retained revision is still published");
+      assert.notEqual(survivor, victim, "and it is not the one whose row was removed");
+      store = revertTo(store, survivor);
+      assert.equal(currentRevision(store), survivor, "a revert to a genuinely retained revision still succeeds through the half-state");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("the prune's SOURCE ORDER is the guarantee: inside pruneSnapshots the pointer-row delete precedes the unlink, asserted over the module's own stripped source", () => {
+  // A BEHAVIOURAL assertion cannot see this. Both statements are present in
+  // either arrangement and both leave the same end state when nothing kills
+  // the process, so only the ORDER distinguishes the harmless half-state from
+  // the forbidden one. This is the assertion a future reader who "tidies" the
+  // loop back to file-then-row will trip.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement is SQL
+  // text inside a string literal, which strict mode blanks.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+  const start = stripped.indexOf("export function pruneSnapshots");
+  assert.ok(start >= 0, "pruneSnapshots must be findable in the stripped source");
+  const end = stripped.indexOf("\n}", start);
+  assert.ok(end > start, "and its body must terminate at a column-zero closing brace");
+  const body = stripped.slice(start, end);
+
+  // NON-VACUITY FIRST: a failed extraction, or a body missing either
+  // statement, would satisfy an ordering comparison trivially.
+  assert.ok(body.length > 200, `the extracted pruneSnapshots body must be substantial, got ${body.length} characters`);
+  const rowDelete = body.indexOf("delete from anno_snapshot");
+  const unlink = body.indexOf("rmSync");
+  assert.ok(rowDelete >= 0, "the pointer-row delete must be present in the extracted body");
+  assert.ok(unlink >= 0, "and so must the unlink");
+
+  assert.ok(
+    rowDelete < unlink,
+    "the POINTER ROW must be deleted BEFORE the file is unlinked: a kill between the two then leaves an orphan FILE -- harmless and " +
+      `reconcilable by revision number -- and never an orphan ROW (row delete at ${rowDelete}, unlink at ${unlink})`,
+  );
+});
+
+test("STORE-04 idempotency across the half-states: a second pruneSnapshots reports nothing dropped in either direction and changes neither the files nor the rows, and a second revertTo(r) leaves the same rows and the same revision", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+
+      // FIRST PRUNE, over a deliberately constructed half-state in BOTH
+      // directions at once, so the "nothing dropped" claim below is about a
+      // reconciled ring rather than one that never had anything to reconcile.
+      const retained = retainedRevisions(store);
+      assert.equal(retained.length, MAX_SNAPSHOT_REVISIONS, "the ring is full before the half-states are constructed");
+      rmSync(snapshotPathFor(store, retained[retained.length - 1]), { force: true }); // an orphan ROW
+      store.db.prepare("delete from anno_snapshot where revision = ?").run(retained[0]); // an orphan FILE
+      pruneSnapshots(store);
+
+      const filesAfterFirst = readdirSync(join(dir, "snapshots")).sort();
+      const rowsAfterFirst = ringHalves(store, dir).rowRevisions;
+      assert.ok(rowsAfterFirst.length > 0, "the reconciled ring is not empty, so the second prune has something it could wrongly touch");
+
+      // SECOND PRUNE, back to back. Nothing may move in either direction.
+      const second = reconcileSnapshotRing(store);
+      assert.deepEqual(second.droppedRows, [], "a reconciled ring has no row left to drop");
+      assert.deepEqual(second.droppedFiles, [], "and no file left to sweep");
+      pruneSnapshots(store);
+      assert.deepEqual(readdirSync(join(dir, "snapshots")).sort(), filesAfterFirst, "the second prune left the files exactly as the first did");
+      assert.deepEqual(ringHalves(store, dir).rowRevisions, rowsAfterFirst, "and the pointer rows exactly as the first did");
+
+      // DOUBLE REVERT. The observable store state after "revert to r" and
+      // after "revert to r, then attempt it again" must be identical.
+      const floor = oldestRetainedRevision(store);
+      assert.notEqual(floor, NO_RETAINED_REVISION, "there is still a reachable revision to revert to");
+      store = revertTo(store, floor);
+      const rowsAfterRevert = listRanges(store);
+      const revisionAfterRevert = currentRevision(store);
+      assert.throws(
+        () => revertTo(store, floor),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.match(e.message, new RegExp(`cannot revert to revision ${floor}`));
+          return true;
+        },
+      );
+      assert.deepEqual(listRanges(store), rowsAfterRevert, "the refused second revert left every row exactly as the first revert left it");
+      assert.equal(currentRevision(store), revisionAfterRevert, "and left the revision alone");
+    } finally {
+      closeStore(store);
+    }
+  });
 });
 
 test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {
