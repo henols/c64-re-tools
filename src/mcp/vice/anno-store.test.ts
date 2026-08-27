@@ -20,17 +20,20 @@ import { fileURLToPath } from "node:url";
 
 import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
 import {
+  AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
   AnnoStoreCorruptError,
   AnnoStorePathError,
   AnnoStoreStaleRevisionError,
   AnnoTypeError,
+  DATA_TYPES,
   SCHEMA_VERSION,
 } from "./anno-types.ts";
 import {
   addScope,
   closeStore,
+  contradictedCommentsFor,
   createProjectEnum,
   currentRevision,
   listComments,
@@ -47,7 +50,9 @@ import {
   setLabel,
   updateProjectEnum,
 } from "./anno-store.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
 import { codeOnly } from "./shipped-modules.ts";
+import { ViceError } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -731,4 +736,173 @@ test("the reserved bank field is never READ: every list function returns bank nu
     // ...and the local row-shape casts that name the column's type.
     .filter((line) => !/^\s*bank: number \| null;$/.test(line));
   assert.deepEqual(offenders, [], "no code outside the row mappers may read a bank value -- nothing knows what one would mean");
+});
+
+// ---------------------------------------------------------------------------
+// THE CONTRADICTED-COMMENT RULE (STORE-03).
+//
+// A retype that makes an existing GRADED comment false reports that comment
+// back on the SUCCESSFUL result. It is data, never an error and never a
+// refusal: refusing would push a caller toward deleting the comment to get the
+// retype through, which converts a reported loss into a silent one.
+//
+// "Contradicts" means the retype makes the comment FALSE -- not merely that a
+// comment happens to sit at a retyped address. The broad reading (any comment
+// at all is contradicted) was considered and rejected: it would make every
+// retype of a commented range report, and a report that fires every time is a
+// report nobody reads.
+// ---------------------------------------------------------------------------
+
+/** Opens a fresh store, runs `body`, and closes it unconditionally. */
+function inFreshStore(body: (store: ReturnType<typeof openStore>) => void): void {
+  inTempDir((dir) => {
+    const store = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    try {
+      body(store);
+    } finally {
+      closeStore(store);
+    }
+  });
+}
+
+test("a confirmed-code graded comment inside a range retyped to byte is REPORTED on the successful result, and the retype still happens", () => {
+  inFreshStore((store) => {
+    setDataType(store, { start: 0x0810, endInclusive: 0x081f, dataType: "code" });
+    setComment(store, { address: 0x0812, commentType: "line", text: "[confirmed-code] observed executing at $0812" });
+
+    const write = setDataType(store, { start: 0x0810, endInclusive: 0x081f, dataType: "byte" });
+
+    assert.equal(write.changed, true, "the write is not refused -- the range really is retyped");
+    assert.equal(write.contradictedComments.length, 1, "the contradicted comment comes back as data on the successful result");
+    assert.deepEqual(write.contradictedComments[0], {
+      address: 0x0812,
+      commentType: "line",
+      text: "[confirmed-code] observed executing at $0812",
+      grade: "[confirmed-code]",
+      contradictedBy: "byte",
+    });
+
+    const rows = listRanges(store);
+    assert.equal(rows.length, 1, "the retype was applied, not rolled back");
+    assert.equal(rows[0].dataType, "byte", "and it applied the type the caller asked for");
+  });
+});
+
+test("a probable-code graded comment is reported by the same rule", () => {
+  inFreshStore((store) => {
+    setComment(store, { address: 0x0900, commentType: "side", text: "[probable-code] reachable via the JSR at $0880" });
+    const write = setDataType(store, { start: 0x0900, endInclusive: 0x090f, dataType: "petscii" });
+    assert.equal(write.contradictedComments.length, 1);
+    assert.equal(write.contradictedComments[0].grade, "[probable-code]");
+    assert.equal(write.contradictedComments[0].commentType, "side");
+    assert.equal(write.contradictedComments[0].contradictedBy, "petscii");
+  });
+});
+
+test("a data-graded comment is contradicted by a retype to code and NOT by a retype to another data member", () => {
+  inFreshStore((store) => {
+    setComment(store, { address: 0x2000, commentType: "line", text: "[confirmed-data] never hit as an instruction stream" });
+    setComment(store, { address: 0x2001, commentType: "line", text: "[probable-data] indexed-load target" });
+
+    const toWord = setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "word" });
+    assert.deepEqual(toWord.contradictedComments, [], "word is another way of saying data -- neither comment becomes false");
+
+    const toCode = setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+    assert.deepEqual(
+      toCode.contradictedComments.map((c) => c.grade),
+      ["[confirmed-data]", "[probable-data]"],
+      "both data grades are contradicted by code, and the report is in ascending address order",
+    );
+  });
+});
+
+test("an unknown-graded comment and an ungraded comment are never reported, under any retype", () => {
+  inFreshStore((store) => {
+    setComment(store, { address: 0x3000, commentType: "line", text: "[unknown] no reliable interpretation yet" });
+    setComment(store, { address: 0x3001, commentType: "line", text: "plain prose with no bracket token at all" });
+
+    for (const dataType of ["code", "byte", "word", "screencode", "lo_hi_address", "external_file"]) {
+      const write = setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType });
+      assert.deepEqual(write.contradictedComments, [], `neither an unknown grade nor an ungraded comment is contradicted by ${dataType}`);
+    }
+  });
+});
+
+test("a comment whose bracket token is not one of the five makes the retype throw AnnoCommentGradeError carrying the original message verbatim", () => {
+  inFreshStore((store) => {
+    // `setComment` accepts it -- the grade convention is not a comment-text
+    // validity rule, and refusing it there would make an existing store
+    // unreadable. The refusal belongs to the path that has to INTERPRET it.
+    setComment(store, { address: 0x4000, commentType: "line", text: "[maybe-code] a near-miss token" });
+
+    let thrown: unknown;
+    try {
+      setDataType(store, { start: 0x4000, endInclusive: 0x400f, dataType: "byte" });
+    } catch (e) {
+      thrown = e;
+    }
+
+    assert.ok(thrown instanceof AnnoCommentGradeError, `expected AnnoCommentGradeError, got ${String(thrown)}`);
+    assert.ok(thrown instanceof ViceError, "everything the store throws must be a ViceError, which R2000ConfidenceGradeError is not");
+    let originalMessage = "";
+    try {
+      parseConfidencePrefix("[maybe-code] a near-miss token");
+    } catch (e) {
+      originalMessage = (e as Error).message;
+    }
+    assert.ok(originalMessage.length > 0, "the original parser really does throw on a near-miss token");
+    assert.ok(
+      (thrown as Error).message.includes(originalMessage),
+      "the original diagnostic is preserved VERBATIM inside the wrapper, so nothing is lost by the wrap",
+    );
+    assert.equal((thrown as AnnoCommentGradeError).comment, "[maybe-code] a near-miss token", "the offending comment text rides on the error");
+  });
+});
+
+test("the contradicted-comment list is EMPTY rather than absent when no comment is in range, so a caller reads the field unconditionally", () => {
+  inFreshStore((store) => {
+    const write = setDataType(store, { start: 0x5000, endInclusive: 0x500f, dataType: "byte" });
+    assert.ok(Array.isArray(write.contradictedComments), "the field is always an array");
+    assert.equal(write.contradictedComments.length, 0);
+  });
+});
+
+test("a comment OUTSIDE the retyped range is never reported, even when its grade would contradict", () => {
+  inFreshStore((store) => {
+    setComment(store, { address: 0x0fff, commentType: "line", text: "[confirmed-code] one byte below the range" });
+    setComment(store, { address: 0x1010, commentType: "line", text: "[confirmed-code] one byte above the range" });
+    setComment(store, { address: 0x1000, commentType: "line", text: "[confirmed-code] the low boundary, inclusive" });
+    setComment(store, { address: 0x100f, commentType: "line", text: "[confirmed-code] the high boundary, inclusive" });
+
+    const write = setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+    assert.deepEqual(
+      write.contradictedComments.map((c) => c.address),
+      [0x1000, 0x100f],
+      "both ends are INCLUSIVE and nothing outside them is reported",
+    );
+  });
+});
+
+test("contradictedCommentsFor is the ONE definition of the rule, and it is derived from the five-grade vocabulary", () => {
+  const codeGrades = CONFIDENCE_GRADES.filter((g) => g.token.endsWith("-code"));
+  const dataGrades = CONFIDENCE_GRADES.filter((g) => g.token.endsWith("-data"));
+  assert.equal(codeGrades.length, 2, "the vocabulary has exactly two code grades");
+  assert.equal(dataGrades.length, 2, "the vocabulary has exactly two data grades");
+
+  for (const grade of codeGrades) {
+    assert.equal(contradictedCommentsFor(grade.bracket, "code"), false, `${grade.bracket} agrees with code`);
+    for (const dataType of DATA_TYPES.filter((t) => t !== "code")) {
+      assert.equal(contradictedCommentsFor(grade.bracket, dataType), true, `${grade.bracket} is contradicted by ${dataType}`);
+    }
+  }
+  for (const grade of dataGrades) {
+    assert.equal(contradictedCommentsFor(grade.bracket, "code"), true, `${grade.bracket} is contradicted by code`);
+    for (const dataType of DATA_TYPES.filter((t) => t !== "code")) {
+      assert.equal(contradictedCommentsFor(grade.bracket, dataType), false, `${grade.bracket} is not contradicted by ${dataType}`);
+    }
+  }
+  for (const dataType of DATA_TYPES) {
+    assert.equal(contradictedCommentsFor("[unknown]", dataType), false, `[unknown] is never contradicted, not even by ${dataType}`);
+    assert.equal(contradictedCommentsFor(null, dataType), false, `an ungraded comment is never contradicted, not even by ${dataType}`);
+  }
 });

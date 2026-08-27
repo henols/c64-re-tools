@@ -284,6 +284,25 @@ export interface CommentRow {
   bank: number | null;
 }
 
+/**
+ * One stored comment that a retype has just made FALSE (STORE-03).
+ *
+ * The caller needs all four facts to act on the report without a second query:
+ * WHERE the comment is, WHAT it says, WHICH grade fired, and WHICH data type
+ * contradicted it. A bare address list would send every recipient straight back
+ * to `listComments()`.
+ *
+ * `grade` is the bracket token verbatim, as `r2000-confidence.ts` spells it --
+ * this store never writes a second spelling of one.
+ */
+export interface ContradictedComment {
+  address: number;
+  commentType: CommentType;
+  text: string;
+  grade: string;
+  contradictedBy: DataType;
+}
+
 /** One scope as the store holds it. Both ends are INCLUSIVE, matching the
  * schema's own two sentences (`r2000-tools.ts:322-331`). There is no name field
  * and no nesting: the schema says nested scopes are unsupported, and the store
@@ -520,6 +539,49 @@ export class AnnoCommentError extends AnnoStoreError {
     this.name = "AnnoCommentError";
     this.reason = reason;
     this.byteLength = byteLength;
+  }
+}
+
+export interface AnnoCommentGradeErrorOptions {
+  /** The offending comment text, verbatim. */
+  comment?: string;
+  /** The original refusal this one wraps, kept so the diagnostic chain is not
+   * broken by the wrap. */
+  cause?: unknown;
+}
+
+/**
+ * A stored comment carries a leading bracket token that is not one of the five
+ * confidence grades, so the store cannot say whether a retype contradicts it.
+ *
+ * THIS CLASS EXISTS TO WRAP, AND THE WRAP IS THE DECISION. The parser that
+ * detects the malformed token throws a class extending `Error` DIRECTLY, not
+ * `ViceError` -- so a caller writing a single
+ * `catch (e) { if (e instanceof ViceError) ... }` at the store boundary would
+ * miss it, and a real refusal would escape as an unhandled rejection. The store
+ * catches it and rethrows this instead, so everything the store throws is a
+ * `ViceError`.
+ *
+ * THE COST, STATED RATHER THAN LEFT TO BE DISCOVERED: the original class is no
+ * longer visible to `instanceof` at the store boundary. That is why the original
+ * message is preserved VERBATIM inside this one and the original error rides on
+ * `cause` -- nothing is lost from the diagnostic, only from the type. The
+ * alternative -- rethrow unchanged and document the asymmetry -- was rejected
+ * because it puts the burden on every future caller instead of on this one site.
+ *
+ * It is NEVER correct to swallow the original and treat the comment as ungraded:
+ * that would quietly exempt a malformed comment from contradiction reporting,
+ * which is the same silent un-documenting `STORE-03` exists to prevent.
+ */
+export class AnnoCommentGradeError extends AnnoStoreError {
+  comment?: string;
+  cause?: unknown;
+
+  constructor(message: string, { comment, cause }: AnnoCommentGradeErrorOptions = {}) {
+    super(message);
+    this.name = "AnnoCommentGradeError";
+    this.comment = comment;
+    this.cause = cause;
   }
 }
 

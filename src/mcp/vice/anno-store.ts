@@ -98,6 +98,14 @@
 //   8. NEVER cache a derived index, census or xref on disk. A cached
 //      derivation is a second truth that can disagree with the rows; see
 //      `anno-index.ts`'s trap 2.
+//   9. NEVER turn the contradicted-comment report into an error or a refusal,
+//      and never widen the rule to "any comment at the address". Both changes
+//      look like tightening and are the opposite. A REFUSAL would push a caller
+//      toward deleting the comment to get the retype through, converting a
+//      reported loss into a silent one -- the exact outcome the report exists to
+//      prevent (`STORE-03`). A WIDENED rule would fire on every retype of a
+//      commented range, and a report that fires every time is a report nobody
+//      reads, so the one case that matters stops being noticed (`STORE-01`).
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -112,6 +120,7 @@ import {
   assertLabelKind,
   assertLegalLabel,
   assertRangeShape,
+  AnnoCommentGradeError,
   AnnoLabelError,
   AnnoStoreCorruptError,
   AnnoStoreError,
@@ -124,6 +133,7 @@ import {
   SCHEMA_VERSION,
   type CommentRow,
   type CommentType,
+  type ContradictedComment,
   type DataType,
   type LabelKind,
   type LabelRow,
@@ -133,6 +143,7 @@ import {
   type XrefAccessKind,
   type XrefRow,
 } from "./anno-types.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix, R2000ConfidenceGradeError } from "./r2000-confidence.ts";
 
 /**
  * What every write entry point in this module returns.
@@ -530,6 +541,109 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
   return true;
 }
 
+/** The two grade brackets that assert the addresses are CODE, and the two that
+ * assert they are DATA -- derived from the five-grade vocabulary by their
+ * token's suffix rather than restated here. The vocabulary has exactly one home
+ * and this module is not it: a second copy of the four bracket strings would
+ * drift the moment the first one is edited, and the drift is silent. */
+const CODE_GRADE_BRACKETS: readonly string[] = CONFIDENCE_GRADES.filter((grade) => grade.token.endsWith("-code")).map((grade) => grade.bracket);
+const DATA_GRADE_BRACKETS: readonly string[] = CONFIDENCE_GRADES.filter((grade) => grade.token.endsWith("-data")).map((grade) => grade.bracket);
+
+/**
+ * Does retyping a region to `dataType` make a comment graded `gradeBracket`
+ * FALSE? The ONE definition of "contradicted" in this repo; the query path below
+ * calls it, and so does its test, so the rule and its proof cannot drift.
+ *
+ * The rule:
+ *   * a code-asserting grade is contradicted by any data type other than
+ *     `code` -- the comment says the bytes execute and the retype says they do
+ *     not;
+ *   * a data-asserting grade is contradicted by `code`, and by nothing else --
+ *     every other member of the vocabulary is another way of saying data, so a
+ *     `byte` region retyped to `word` leaves such a comment true;
+ *   * the no-reliable-interpretation grade, and an ungraded comment
+ *     (`gradeBracket` null), are NEVER contradicted. Neither one asserted
+ *     anything a retype could falsify.
+ *
+ * THE DECISION, WITH THE ALTERNATIVE NOT TAKEN. "Contradicts" means the retype
+ * makes the comment FALSE -- not merely that a comment happens to sit at a
+ * retyped address. The broad reading -- any comment at all at a retyped address
+ * is contradicted -- was considered and REJECTED, because it would make every
+ * retype of a commented range report, and a report that fires every time is a
+ * report nobody reads. The report exists so a human notices the one case that
+ * matters. A later reader must NOT "simplify" this predicate back into the broad
+ * form; that is a regression wearing the clothes of a cleanup.
+ */
+export function contradictedCommentsFor(gradeBracket: string | null, dataType: DataType): boolean {
+  if (gradeBracket === null) return false;
+  if (CODE_GRADE_BRACKETS.includes(gradeBracket)) return dataType !== "code";
+  if (DATA_GRADE_BRACKETS.includes(gradeBracket)) return dataType === "code";
+  return false;
+}
+
+/**
+ * Every stored comment inside `start..endInclusive` that retyping to `dataType`
+ * makes false, in ascending address order.
+ *
+ * MUST RUN INSIDE THE RETYPE'S OWN TRANSACTION. Run outside it, a comment
+ * written by another connection between the query and the retype would be
+ * missed, and the report would be silently short by one -- which is the failure
+ * mode a report is supposed to close, not open. `begin immediate` serialises the
+ * pair.
+ *
+ * A malformed bracket token is REFUSED here, never read as ungraded: swallowing
+ * it would quietly exempt that comment from the report forever.
+ */
+function collectContradictedComments(db: DatabaseSync, start: number, endInclusive: number, dataType: DataType): ContradictedComment[] {
+  const rows = db
+    .prepare("select address, comment_type, text from anno_comment where address >= ? and address <= ? order by address, comment_type")
+    .all(start, endInclusive) as { address: number; comment_type: string; text: string }[];
+
+  const out: ContradictedComment[] = [];
+  for (const row of rows) {
+    let grade: string | null;
+    try {
+      const parsed = parseConfidencePrefix(row.text);
+      grade = parsed.grade === null ? null : parsed.grade.bracket;
+    } catch (e) {
+      if (e instanceof R2000ConfidenceGradeError) {
+        throw new AnnoCommentGradeError(
+          `the comment at address ${row.address} ($${row.address.toString(16).padStart(4, "0")}) carries a bracket token the store cannot ` +
+            `interpret, so it cannot say whether typing that address as ${dataType} makes the comment false: ${e.message}`,
+          { comment: row.text, cause: e },
+        );
+      }
+      throw e;
+    }
+    if (contradictedCommentsFor(grade, dataType)) {
+      out.push({
+        address: row.address,
+        commentType: row.comment_type as CommentType,
+        text: row.text,
+        grade: grade as string,
+        contradictedBy: dataType,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * What `setDataType()` returns: `AnnoWriteResult` plus the comments this retype
+ * has just made false.
+ *
+ * `contradictedComments` IS ALWAYS PRESENT AND OFTEN EMPTY, never absent, so a
+ * caller reads the field unconditionally instead of guarding on it.
+ *
+ * THE CONTRADICTION IS DATA ON A SUCCESSFUL RESULT -- never an error, never a
+ * refusal, and there is no option to make it one. See the module header's trap 9
+ * for why: a refusal would push a caller toward deleting the comment to get the
+ * retype through, which converts a REPORTED loss into a SILENT one.
+ */
+export interface SetDataTypeResult extends AnnoWriteResult {
+  contradictedComments: readonly ContradictedComment[];
+}
+
 /**
  * Types the inclusive range `start..endInclusive` as `dataType`, preserving
  * whatever the overlapping rows said about the addresses outside it.
@@ -540,7 +654,7 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
 export function setDataType(
   handle: AnnoStoreHandle,
   args: { start: number | string; endInclusive: number | string; dataType: unknown; baseRevision?: number },
-): AnnoWriteResult {
+): SetDataTypeResult {
   const dataType = assertDataType(args.dataType);
   // ORDERING IS LOAD-BEARING: `parseStoreAddress` owns the STRING forms only
   // -- what base is this text in, and is it a form the store accepts at all --
@@ -553,10 +667,19 @@ export function setDataType(
   const endInclusive = typeof args.endInclusive === "string" ? parseStoreAddress(args.endInclusive, { what: "endInclusive" }) : args.endInclusive;
   assertRangeShape(start, endInclusive, dataType);
 
-  const { revision, result } = applyWrite(handle, (db) => retype(db, start, endInclusive, dataType), {
-    baseRevision: args.baseRevision,
-  });
-  return { revision, changed: result };
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      // The query precedes the mutation and shares its transaction: the rows it
+      // reads are the ones the retype is about to contradict, and no concurrent
+      // writer can slip a comment in between the two.
+      const contradictedComments = collectContradictedComments(db, start, endInclusive, dataType);
+      const changed = retype(db, start, endInclusive, dataType);
+      return { changed, contradictedComments };
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result.changed, contradictedComments: result.contradictedComments };
 }
 
 /** Every typed range, in insertion order. The `bank` column is read HERE and
