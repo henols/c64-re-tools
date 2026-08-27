@@ -29,10 +29,32 @@
 // does not. That is the whole point: the boundary is the module, never an
 // argument threaded through the census.
 //
-// The neutral classes are LOWERCASE on purpose. The store's vocabulary is
-// capitalised, so a comparison site left behind somewhere else cannot
-// accidentally still agree -- it gets a different answer and moves a
-// measured number, loudly.
+// The neutral classes are LOWERCASE. That lowercase-ness was once claimed as
+// a protection in its own right -- the argument being that a capitalised
+// store spelling could not accidentally agree with it, so a comparison site
+// left behind somewhere else would get a different answer and move a measured
+// number, loudly. THAT PREMISE IS NOW FALSE, and the loss is recorded here
+// rather than left to be rediscovered: this project's own
+// store's vocabulary is LOWERCASE, and two of its twelve members -- the code
+// spelling and the undefined spelling -- are string-identical to their
+// neutral classes. A left-behind raw comparison against the store's own
+// spelling therefore CAN accidentally agree now, silently, which is exactly
+// what the old rationale promised could not happen.
+//
+// Two guards replace it, and they are why the mapping below is still
+// defended. Neither is a claim in a header:
+//
+//   (a) the derived TOTAL cross-check in `block-class.test.ts`. It iterates
+//       the store's frozen twelve-member vocabulary from its single home and
+//       asserts the class this module returns for EVERY member, with its own
+//       non-vacuity assertions on the counts. It reddens the moment either
+//       side drifts; a spot check would not.
+//   (b) `r2000-coverage.test.ts`'s zero-overlap substitutability proof. Its
+//       substituted vocabulary (`EXECUTABLE_EXTENT` and its two siblings)
+//       shares no string with EITHER accepted vocabulary, so a left-behind
+//       comparison site is still observable there -- which is why that
+//       vocabulary list is DERIVED from both, not hand-written at four
+//       entries.
 //
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO -- each of these is a specific, named trap
@@ -63,10 +85,13 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The three neutral block classes every consumer speaks. Lowercase tokens,
- * deliberately distinct from any store's own capitalised spelling (see this
- * file's header): a left-behind comparison against a raw store string is
- * meant to be observable, not accidentally compatible.
+ * The three neutral block classes every consumer speaks. Lowercase tokens.
+ *
+ * These tokens were once ALSO offered as a guard in their own right, on the
+ * ground that no store spelling could collide with them. Two of the store's
+ * twelve members now do collide, so that reading is gone -- see this file's
+ * header for the loss and for the two derived cross-checks that defend the
+ * mapping instead.
  *
  * Three-valued and no finer. The consumers compare this against a
  * classification derived from completely different inputs, so a richer
@@ -116,18 +141,39 @@ export type BlockClassifier = (blocks: readonly BlockEntry[], address: number) =
  * point is that the defence now lives in the module that DOCUMENTS the
  * premise, instead of only in callers outside it.
  *
- * The mapping is total by construction: the store's code spelling becomes
- * `"code"`, its undefined spelling becomes `"undefined"`, and EVERY other
- * spelling becomes `"data"`. That fallthrough is not a simplification; it is
- * exactly what the two comparisons this function replaced did when read
- * together, and it is what keeps an unrecognised store spelling from
- * silently reading as code.
+ * The mapping is total by construction over BOTH ACCEPTED VOCABULARIES: a
+ * code spelling from either becomes `"code"`, an undefined spelling from
+ * either becomes `"undefined"`, and EVERY other spelling becomes `"data"` --
+ * whether it belongs to one of the two vocabularies or to neither. That
+ * fallthrough is not a simplification; it is exactly what the two comparisons
+ * this function replaced did when read together, and it is what keeps an
+ * unrecognised spelling -- including one from a producer this module has
+ * never heard of -- from silently reading as code.
+ *
+ * The two arms are two VOCABULARIES that happen to differ in case, never one
+ * vocabulary compared case-insensitively. A case-insensitive or
+ * whitespace-trimming comparison here would silently accept a third spelling
+ * nobody chose; `block-class.test.ts` pins that it does not.
  */
 export const blockClassAt: BlockClassifier = (blocks, address) => {
   if (!Array.isArray(blocks)) return null;
   for (const block of blocks) {
     if (!block) continue;
     if (address >= block.start_address && address <= block.end_address) {
+      // TWO ACCEPTED VOCABULARIES, one arm each, in the same order so the
+      // pairing reads at a glance. Deliberately NOT folded into a
+      // case-insensitive test -- see this function's doc comment.
+      //
+      // This project's own annotation store, whose twelve block types are
+      // lowercase and live in one frozen home the test cross-checks against:
+      if (block.type === "code") return "code";
+      if (block.type === "undefined") return "undefined";
+      // TRANSITIONAL -- the external analyser this project rents an
+      // annotation store from, whose Rust `Display` emits the capitalised
+      // spellings, and which every committed coverage fixture is spelled in.
+      // Removable once no capitalised-vocabulary producer remains, which is
+      // `CUT-01`'s subject. Removing it before then reclassifies every
+      // analyser block and every fixture block as data, silently.
       if (block.type === "Code") return "code";
       if (block.type === "Undefined") return "undefined";
       return "data";
