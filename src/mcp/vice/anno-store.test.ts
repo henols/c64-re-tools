@@ -48,11 +48,13 @@ import {
   NO_RETAINED_REVISION,
   oldestRetainedRevision,
   openStore,
+  paintIndexOf,
   putXref,
   revertTo,
   setComment,
   setDataType,
   setLabel,
+  snapshotPathFor,
   updateProjectEnum,
 } from "./anno-store.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
@@ -1104,6 +1106,294 @@ test("idempotency of revert: reverting to r yields the state at r, and a SECOND 
       closeStore(store);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// THE SECOND REVERT, AND THE ONE OWNERSHIP INVARIANT BEHIND IT
+// (gap 1 = CR-01 + WR-02).
+//
+// A revision is RETAINED only when BOTH halves of its record exist: its
+// pointer ROW in `anno_snapshot` and its FILE in `snapshots/`.
+// `retainedRevisions()` in `anno-store.ts` is the ONE definition of that, and
+// the published floor, the revert refusal, the half-state resolver and -- via
+// the resolver -- the prune bound all read it rather than each deciding for
+// themselves. The proofs below are what stops them drifting apart again,
+// because they exercise the one state in which the two halves can disagree: a
+// store that has been REVERTED at least once.
+//
+// THE DEFECT THEY PIN, reproduced on the committed code before the fix: after
+// 40 writes and `revertTo(8)` the restored `anno_snapshot` table held pointer
+// rows 0..7 whose files the prune had already deleted, `oldestRetainedRevision()`
+// published `0`, and following that published floor threw
+// `Error: ENOENT ... copyfile '.../r0.db'` -- a bare Node error outside the
+// `ViceError` family -- after `revertTo` had already closed the caller's
+// handle, so there was nothing left to diagnose with.
+// ---------------------------------------------------------------------------
+
+/**
+ * The two halves of the snapshot ring, read INDEPENDENTLY of the code under
+ * test: the revisions the pointer rows name, and the revisions the FILES on
+ * disk name. A consistent ring has them equal.
+ *
+ * Deliberately not routed through `retainedRevisions()`: a measurement taken
+ * with the function under test would agree with it by construction, which is
+ * the one thing a control must not do.
+ */
+function ringHalves(handle: ReturnType<typeof openStore>, dir: string): { rowRevisions: number[]; fileRevisions: number[] } {
+  const rowRevisions = (handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+    (row) => row.revision,
+  );
+  const snapshotDir = join(dir, "snapshots");
+  const fileRevisions = (existsSync(snapshotDir) ? readdirSync(snapshotDir) : [])
+    .map((name) => /^r(\d+)\.db$/.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]))
+    .sort((a, b) => a - b);
+  return { rowRevisions, fileRevisions };
+}
+
+/** The revisions whose pointer row survives WITHOUT its file -- the forbidden
+ * direction, and the state the whole gap exists to close. Read straight off
+ * the rows, again independently of the code under test. */
+function orphanRowRevisions(handle: ReturnType<typeof openStore>): number[] {
+  const rows = handle.db.prepare("select revision, path from anno_snapshot order by revision").all() as {
+    revision: number;
+    path: string;
+  }[];
+  return rows.filter((row) => !existsSync(row.path)).map((row) => row.revision);
+}
+
+test("a SECOND revert after a prune: the reconciled ring holds no half-state, the published floor is one revertTo can honour, and a refusal is an AnnoStoreError that leaves the caller's handle usable", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const firstFloor = oldestRetainedRevision(store);
+      assert.ok(firstFloor > 0, `the ring must genuinely have pruned before the first revert, floor was ${firstFloor}`);
+
+      // NON-VACUITY OF THE READER, TAKEN BEFORE THE REVERT. After this
+      // particular revert the reconciled ring is legitimately EMPTY, so a
+      // length assertion on the post-revert sets alone would be satisfied by a
+      // scan that read nothing at all. Measuring the SAME reader against a
+      // populated ring first is what makes the post-revert agreement mean
+      // something.
+      const beforeRevert = ringHalves(store, dir);
+      assert.equal(beforeRevert.rowRevisions.length, MAX_SNAPSHOT_REVISIONS, "the forward-only ring holds exactly the bound in pointer rows");
+      assert.equal(beforeRevert.fileRevisions.length, MAX_SNAPSHOT_REVISIONS, "and exactly the bound in files -- the reader sees both halves");
+      assert.deepEqual(beforeRevert.fileRevisions, beforeRevert.rowRevisions, "and they agree before any revert");
+
+      store = revertTo(store, firstFloor);
+      assert.equal(currentRevision(store), firstFloor, "the first revert lands on the revision it was asked for");
+
+      // (a) NO POINTER ROW MAY SURVIVE ITS FILE. This is the assertion the
+      // row-only reading of "retained" reddens: the restored image reinstates
+      // rows 0..firstFloor-1 whose files the prune removed.
+      assert.deepEqual(
+        orphanRowRevisions(store),
+        [],
+        "a pointer row aimed at a deleted file is the one failure direction the revert path cannot survive",
+      );
+
+      // (b) AND NO FILE MAY SURVIVE UNCLAIMED. A revert orphans every snapshot
+      // taken after the revision restored -- up to MAX_SNAPSHOT_REVISIONS of
+      // them -- and the bound is computed over rows, so an unclaimed file is
+      // invisible to it forever (CR-01 consequence 4).
+      const afterRevert = ringHalves(store, dir);
+      assert.equal(
+        afterRevert.fileRevisions.length,
+        afterRevert.rowRevisions.length,
+        `the two halves of the ring must agree after a revert: files ${JSON.stringify(afterRevert.fileRevisions)} vs rows ${JSON.stringify(afterRevert.rowRevisions)}`,
+      );
+      assert.deepEqual(afterRevert.fileRevisions, afterRevert.rowRevisions, "and they must agree BY REVISION NUMBER, not merely in count");
+      assert.ok(
+        afterRevert.fileRevisions.length <= MAX_SNAPSHOT_REVISIONS,
+        `the directory bound must hold AFTER a revert as well as before it, found ${afterRevert.fileRevisions.length} files`,
+      );
+
+      // (c) THE PUBLISHED FLOOR IS HONOURABLE, whichever it is.
+      const secondFloor = oldestRetainedRevision(store);
+      if (secondFloor !== NO_RETAINED_REVISION) {
+        assert.ok(
+          existsSync(snapshotPathFor(store, secondFloor)),
+          `the store published ${secondFloor} as its floor, so a snapshot file for it must exist -- a floor naming an unreachable revision is worse than no floor`,
+        );
+      }
+
+      // (d) THE SECOND REVERT. BOTH ARMS ARE COVERED EXPLICITLY, and the
+      // reason is not symmetry for its own sake: which arm this state takes
+      // depends on what the reconciliation found, and a test that asserted
+      // only the arm its author expected would silently stop testing anything
+      // the day the state changed. The DETERMINISTIC succeeding case is driven
+      // separately in the next test, because an arm that is never executed
+      // proves nothing.
+      if (secondFloor === NO_RETAINED_REVISION) {
+        assert.throws(
+          () => revertTo(store, 0),
+          (e: unknown) => {
+            assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+            assert.ok(
+              e instanceof ViceError,
+              "and it must stay inside the ViceError family -- a raw ENOENT out of copyFileSync is the exact failure this asserts against",
+            );
+            assert.match(e.message, /cannot revert to revision 0/, "the refusal must name the revision that was asked for");
+            return true;
+          },
+        );
+        // WR-02: THE REFUSAL LEFT THE CALLER A USABLE HANDLE. Asserted rather
+        // than assumed -- before the fix every call after a failed revert
+        // threw `database is not open`.
+        assert.equal(currentRevision(store), firstFloor, "the refused second revert left the connection open and currentRevision answering");
+        assert.equal(listRanges(store).length, firstFloor, "and listRanges still readable through the same handle");
+      } else {
+        store = revertTo(store, secondFloor);
+        assert.equal(currentRevision(store), secondFloor, "the second revert lands on exactly the floor the store published");
+        assert.deepEqual(orphanRowRevisions(store), [], "and the ring it leaves behind still holds no orphan row");
+      }
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("the DETERMINISTIC succeeding second revert: after a first revert, three republishing writes make the published floor a revision whose file exists, and reverting to it restores exactly the row set captured before those writes", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      // THE POSITIVE ARM OF GAP 1's "revertTo, then oldestRetainedRevision,
+      // then revertTo" pin. The two-arm test above is a STATE-DEPENDENT proof
+      // and on the reachable state it takes the REFUSAL arm; that arm closes
+      // the real defect and stays. This test drives the SUCCEEDING case
+      // deterministically instead, and contains NO branch on the floor's value
+      // -- a branch here would reintroduce exactly the unreachability it
+      // exists to remove.
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      store = revertTo(store, oldestRetainedRevision(store));
+
+      const revBefore = currentRevision(store);
+      const rowsBefore = listRanges(store);
+      assert.ok(rowsBefore.length > 0, "the state being captured must be a real one, or the deepEqual below is trivially satisfiable");
+
+      // THREE REPUBLISHING WRITES, AND THIS IS WHAT MAKES THE CASE
+      // DETERMINISTIC. Each accepted write takes a pre-mutation snapshot of
+      // its OWN base revision and inserts that revision's pointer row inside
+      // the same transaction, so afterwards the ring holds three rows whose
+      // three files all exist -- no reconciliation can drop any of them, and
+      // the floor is the first of the three by construction rather than by
+      // luck.
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x8000 + i * 0x10, endInclusive: 0x8000 + i * 0x10 + 0x0f, dataType: "code" });
+      }
+
+      const republished = ringHalves(store, dir);
+      assert.equal(republished.rowRevisions.length, 3, "the three writes republished exactly three pointer rows");
+      assert.deepEqual(republished.fileRevisions, republished.rowRevisions, "and three files that agree with them by revision number");
+
+      const floor = oldestRetainedRevision(store);
+      assert.notEqual(floor, NO_RETAINED_REVISION, "the ring is not empty, so the store must publish a floor rather than the empty sentinel");
+      assert.equal(floor, revBefore, "and the floor is the revision the first revert landed on -- the oldest of the three republished snapshots");
+      assert.ok(existsSync(snapshotPathFor(store, revBefore)), "whose file exists, which is what makes the floor honourable");
+
+      store = revertTo(store, revBefore);
+      assert.equal(currentRevision(store), revBefore, "the SECOND revert succeeded and landed on the revision the store published as its floor");
+      assert.deepEqual(
+        listRanges(store),
+        rowsBefore,
+        "and restored EXACTLY the row set captured before the three republishing writes -- the array, not its length",
+      );
+
+      const after = ringHalves(store, dir);
+      assert.equal(after.fileRevisions.length, after.rowRevisions.length, "the ring the second revert leaves behind holds no half-state either");
+      assert.deepEqual(after.fileRevisions, after.rowRevisions, "with the two halves agreeing by revision number");
+      assert.deepEqual(orphanRowRevisions(store), [], "and no pointer row surviving its file");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("STORE-03, post-revert EMPTY: reverting to a revision that held zero ranges leaves listRanges empty and the paint index resolving NO_ROW at every one of the 65,536 addresses", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      // One write from a fresh store, so revision 0's snapshot is an image of
+      // a store with no ranges at all.
+      setDataType(store, { start: 0x0400, endInclusive: 0x04ff, dataType: "byte" });
+      assert.equal(listRanges(store).length, 1, "the write landed, so the revert below has something to undo");
+
+      store = revertTo(store, 0);
+      assert.equal(currentRevision(store), 0, "revision 0 is the state before the only write");
+      assert.deepEqual(listRanges(store), [], "and it held zero ranges");
+
+      const index = paintIndexOf(store);
+      let comparisons = 0;
+      let covered = 0;
+      for (let address = 0x0000; address <= 0xffff; address += 1) {
+        comparisons += 1;
+        if (resolveAt(index, address) !== NO_ROW) covered += 1;
+      }
+
+      // THE NON-VACUITY HALF, ASSERTED FIRST: a loop that silently visited
+      // zero addresses would satisfy the emptiness assertion below on its own.
+      assert.equal(comparisons, 0x10000, `the sweep must be EXHAUSTIVE, not sampled -- expected 65536 comparisons, performed ${comparisons}`);
+      assert.equal(covered, 0, `a restored empty store must resolve NO_ROW everywhere, ${covered} addresses resolved to a row`);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("STORE-03, post-revert ORDERING: after a revert listRanges is in ascending id order and the paint index is exactly buildPaintIndex(listRanges) -- nothing derived survived the restore", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x100, endInclusive: 0x1000 + i * 0x100 + 0xff, dataType: "byte" });
+      }
+      // A partial overwrite, so the restored state has SPLIT rows whose ids are
+      // not a contiguous run -- an ordering assertion over four untouched rows
+      // would hold under almost any bug.
+      setDataType(store, { start: 0x1140, endInclusive: 0x117f, dataType: "code" });
+      assert.ok(listRanges(store).length > 4, "the partial overwrite really did split a row");
+
+      store = revertTo(store, 2);
+      const rows = listRanges(store);
+      assert.equal(rows.length, 2, "revision 2 held exactly the first two ranges");
+      for (let i = 1; i < rows.length; i += 1) {
+        assert.ok(rows[i].id > rows[i - 1].id, `listRanges must be in ASCENDING id order, row ${i} has id ${rows[i].id} after ${rows[i - 1].id}`);
+      }
+      assert.deepEqual(
+        paintIndexOf(store),
+        buildPaintIndex(rows),
+        "the restored store's narrowest-wins answer is exactly reconstructible from its rows -- nothing derived is cached on disk and nothing derived survived the restore",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("STORE-02 non-vacuity: the code this gap closure adds is inside the source the no-splitter structural scan reads", () => {
+  // `anno-overlap.test.ts:487` asserts that `coalesc`, `merg` and `splitter`
+  // appear NOWHERE in `codeOnly(anno-store.ts)`. An ABSENCE assertion over
+  // source that does not contain the new code proves nothing about the new
+  // code, so the presence of the two new identifiers is pinned here. Together
+  // the two make the adjacency guarantee non-vacuous over this plan's
+  // additions.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"));
+  assert.ok(stripped.includes("retainedRevisions"), "the one ownership predicate must be in the source the absence scan reads");
+  assert.ok(stripped.includes("reconcileSnapshotRing"), "and so must the one half-state resolver");
+  const offenders = ["coalesc", "merg", "splitter"].filter((needle) => stripped.toLowerCase().includes(needle));
+  assert.deepEqual(offenders, [], "and neither new identifier -- nor anything else in the file -- may name a merging or splitting primitive");
 });
 
 test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {

@@ -119,7 +119,7 @@
 //      retained revision for the one asked for changes the caller's intent with
 //      nothing recording that it happened, so a revert past the bound is
 //      refused BY NAME instead (`STORE-04`).
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -395,6 +395,57 @@ export function snapshotPathFor(handle: AnnoStoreHandle, revision: number): stri
 export const NO_RETAINED_REVISION = -1;
 
 /**
+ * The anchored filename of one snapshot inside the `snapshots/` sibling
+ * directory, and the source of the revision number the reconciliation below
+ * derives from a filename alone.
+ *
+ * ANCHORED ON PURPOSE, and the anchoring is load-bearing rather than tidy:
+ * plan 28-08 introduces per-attempt STAGING files in this same directory under
+ * a different suffix, and a sweep that matched them would delete another
+ * writer's in-flight snapshot -- the exact loss this reconciliation exists to
+ * prevent, committed by the repair itself.
+ *
+ * A frozen `RegExp` literal is NOT module-level mutable state: the scan in
+ * `anno-seam.test.ts` matches `new Map|Set|WeakMap|WeakSet` and array/object
+ * initialisers, so this constant sits outside it by construction rather than
+ * by exemption.
+ */
+const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
+
+/**
+ * THE definition of "revision `r` is retained", and the only one. Returns the
+ * retained revisions in ascending order.
+ *
+ * A revision is retained when BOTH halves of its record exist: its pointer row
+ * in `anno_snapshot` AND its file in `snapshots/`. The pointer row is the
+ * INDEX -- it is what a revision number is looked up in -- and the file is the
+ * EXISTENCE WITNESS. Neither half is sufficient on its own, and the reason is
+ * measured rather than theoretical: the snapshot image is a `vacuum into` of
+ * the WHOLE store, so it carries the `anno_snapshot` table with it, and
+ * restoring it reinstates pointer rows for revisions whose FILES an earlier
+ * prune already deleted. A row without a file is not a revision anyone can
+ * revert to, and reporting it as one steers the caller straight into a raw
+ * `ENOENT` out of `copyFileSync`.
+ *
+ * ITS CONSUMERS ARE NAMED HERE so a reader can see the set is closed:
+ * `oldestRetainedRevision()` (the published floor), `revertTo()` (the refusal,
+ * and the "available revisions" list inside its message),
+ * `reconcileSnapshotRing` (which half of a half-state to drop) and, through
+ * that resolver, `pruneSnapshots()` (the bound). Every one of them reads this
+ * function rather than deciding for itself what "retained" means -- three
+ * independent decisions is precisely how the three answers came to disagree,
+ * and a fourth would also hide the row-only regression from the proofs that
+ * exist to catch it.
+ */
+export function retainedRevisions(handle: AnnoStoreHandle): number[] {
+  const rows = handle.db.prepare("select revision, path from anno_snapshot order by revision").all() as {
+    revision: number;
+    path: string;
+  }[];
+  return rows.filter((row) => existsSync(row.path)).map((row) => row.revision);
+}
+
+/**
  * The smallest revision the snapshot ring still holds, or
  * `NO_RETAINED_REVISION` when it holds none. This is the FLOOR of what
  * `revertTo` can still honour.
@@ -404,11 +455,95 @@ export const NO_RETAINED_REVISION = -1;
  * has only ever been written forward, and they DISAGREE after a revert -- the
  * arithmetic would then name a revision no row records, and a floor naming an
  * unrevertable revision is worse than no floor at all.
+ *
+ * AND THE ROW-ONLY READING PRODUCED EXACTLY THE FAILURE THAT PARAGRAPH WAS
+ * WRITTEN TO AVOID. Reading `min(revision)` off the pointer rows alone
+ * published `0` on a store whose `r0.db` the prune had already removed, and
+ * following that floor threw a bare `ENOENT` -- the argument above was right
+ * and its implementation was one existence check short. So the floor is now
+ * the first element of `retainedRevisions()`, which requires the file as well
+ * as the row: the store cannot publish a number it will then refuse.
  */
 export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
-  const row = handle.db.prepare("select min(revision) as oldest from anno_snapshot").get() as { oldest: number | null } | undefined;
-  if (!row || row.oldest === null) return NO_RETAINED_REVISION;
-  return row.oldest;
+  const retained = retainedRevisions(handle);
+  return retained.length === 0 ? NO_RETAINED_REVISION : retained[0];
+}
+
+/**
+ * THE resolver for a snapshot-ring half-state, and the only one. Returns what
+ * it actually did, so a caller -- and a test -- can ASSERT the resolution
+ * rather than infer it from a later symptom.
+ *
+ * The ring has two truths that can disagree, and therefore two half-states:
+ *
+ *   * AN ORPHAN ROW (a pointer row whose file is gone) is the direction the
+ *     revert path CANNOT survive: the store advertises a revision it will then
+ *     fail to deliver. Every such row is deleted, and its revision is reported
+ *     in `droppedRows`.
+ *   * AN ORPHAN FILE (a snapshot file no surviving pointer row claims) is the
+ *     harmless direction, and it is harmless only until it is FORGOTTEN: the
+ *     bound is computed over rows, so an unclaimed file is invisible to it
+ *     forever. A single revert orphans up to `MAX_SNAPSHOT_REVISIONS` of them
+ *     at once, which is how the directory bound stopped holding after a
+ *     revert. Every such file is unlinked and its path reported in
+ *     `droppedFiles`.
+ *
+ * Each unlink is `force: true` inside a SWALLOWING `try`, and only a unlink
+ * that actually happened is reported: an undeletable file must not make the
+ * store unwritable, and leaving it unreported means the NEXT reconciliation
+ * sees it again rather than the store believing it is gone.
+ *
+ * ITS CALL SITES ARE EXACTLY TWO, AND `openStore` IS DELIBERATELY NOT ONE OF
+ * THEM. It runs at the end of `revertTo` on the NEW handle before that handle
+ * is returned (a restore is the one operation that manufactures orphan rows),
+ * and as the FIRST statement of `pruneSnapshots` (so the bound is computed
+ * over a ring with no half-states). It must NOT run from `openStore`:
+ * `anno-durability.test.ts:291-347` asserts that an orphan snapshot file left
+ * in the kill window SURVIVES a reopen and is identified by its revision, and
+ * that is a verified truth of plan 28-06 -- merely LOOKING at a store must not
+ * change it, and the orphan a kill window leaves is deliberately the harmless
+ * direction. Reconciling on open would redden that test, and rightly.
+ */
+export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: number[]; droppedFiles: string[] } {
+  const droppedRows: number[] = [];
+  const droppedFiles: string[] = [];
+
+  // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
+  // "retained" means with a second `existsSync` of its own -- a fourth
+  // independent decision is exactly how the first three came to disagree, and
+  // it would also make the row-only regression invisible to the proofs that
+  // exist to catch it.
+  const retained = new Set(retainedRevisions(handle));
+
+  const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
+  const dropRow = handle.db.prepare("delete from anno_snapshot where revision = ?");
+  for (const row of rows) {
+    if (retained.has(row.revision)) continue;
+    dropRow.run(row.revision);
+    droppedRows.push(row.revision);
+  }
+
+  // A store that has never been written has no `snapshots/` directory at all,
+  // and `readdirSync` throws on an absent one. That is not a half-state.
+  const snapshotDir = join(handle.dir, "snapshots");
+  if (!existsSync(snapshotDir)) return { droppedRows, droppedFiles };
+
+  for (const name of readdirSync(snapshotDir).sort()) {
+    const match = SNAPSHOT_FILE_PATTERN.exec(name);
+    if (!match) continue;
+    if (retained.has(Number(match[1]))) continue;
+    const orphan = join(snapshotDir, name);
+    try {
+      rmSync(orphan, { force: true });
+      droppedFiles.push(orphan);
+    } catch {
+      // Deliberately ignored, and deliberately NOT reported as dropped: an
+      // undeletable file must not make the store unwritable, and the next
+      // reconciliation has to see it again rather than believe it is gone.
+    }
+  }
+
+  return { droppedRows, droppedFiles };
 }
 
 /**
@@ -428,6 +563,13 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * history shorter than it says it has.
  */
 export function pruneSnapshots(handle: AnnoStoreHandle): void {
+  // FIRST, BEFORE THE BOUND IS COMPUTED: resolve any half-state, so the bound
+  // is computed over a ring whose rows and files agree. This is what makes the
+  // directory bound hold AFTER A REVERT as well as after a forward-only run --
+  // a restore leaves up to `MAX_SNAPSHOT_REVISIONS` files claimed by no row,
+  // and a prune that iterates rows alone can never see them.
+  reconcileSnapshotRing(handle);
+
   const floor = currentRevision(handle) - MAX_SNAPSHOT_REVISIONS;
   const doomed = handle.db.prepare("select revision, path from anno_snapshot where revision < ? order by revision").all(floor) as {
     revision: number;
@@ -798,38 +940,95 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * copied to a staging file beside the store, both the file and its directory
  * are fsynced, and only then is the staging file renamed over the store path.
  * Returns a NEW handle -- the old one is closed and must not be reused.
+ *
+ * ON THE REFUSAL PATH AND ON A STAGING FAILURE THE CALLER'S HANDLE IS STILL
+ * OPEN. `revertTo` refuses an unretained revision -- an absent pointer ROW or
+ * an absent snapshot FILE, one named `AnnoStoreError` for both -- before it
+ * touches the filesystem, and it stages and fsyncs the copy before it closes
+ * anything. The steps are numbered in the body and each number's POSITION is
+ * commented, because the ordering is the guarantee.
  */
 export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
+  // STEP 1. The pointer row -- the INDEX half of "retained".
   const pointer = handle.db.prepare("select path from anno_snapshot where revision = ?").get(revision) as { path: string } | undefined;
 
-  if (!pointer) {
-    const available = (handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
-      (row) => row.revision,
-    );
-    const oldest = oldestRetainedRevision(handle);
+  // STEP 2, AND ITS POSITION IS THE WHOLE POINT: refuse BEFORE anything is
+  // destroyed, and refuse a MISSING FILE with the same named error a missing
+  // ROW already produced. From the caller's side the two are one fact -- "no
+  // snapshot is retained for it" -- and the file-missing case used to reach
+  // `copyFileSync` and throw a bare `ENOENT` outside the `ViceError` family,
+  // with the caller's handle already closed. The "oldest retained" and
+  // "available revisions" figures are built from `retainedRevisions()` and
+  // never from the raw rows, so a refusal cannot steer the caller at a
+  // revision the very next call would also refuse.
+  if (!pointer || !existsSync(pointer.path)) {
+    const available = retainedRevisions(handle);
+    const oldest = available.length === 0 ? NO_RETAINED_REVISION : available[0];
     throw new AnnoStoreError(
       `cannot revert to revision ${revision}: no snapshot is retained for it. The oldest retained revision is ` +
         `${oldest === NO_RETAINED_REVISION ? "(none -- the ring is empty)" : oldest} and the current revision is ${currentRevision(handle)}; ` +
         `the ring holds at most ${MAX_SNAPSHOT_REVISIONS} revisions. The request is REFUSED rather than substituting the nearest retained ` +
         `revision, because returning a revision other than the one asked for changes the caller's intent with nothing recording that it ` +
         `happened. Available revisions: ${available.length === 0 ? "(none)" : available.join(", ")}`,
+      { data: { path: handle.path, revision } },
     );
   }
 
   const snapPath = pointer.path;
   const storePath = handle.path;
   const dir = handle.dir;
+  const staging = `${storePath}.revert-${process.pid}-${revision}`;
 
+  // STEP 3. Stage and fsync the copy WITH THE CONNECTION STILL OPEN. Every
+  // failure reachable here -- `ENOENT`, `ENOSPC`, `EACCES` -- therefore leaves
+  // the caller a USABLE handle: nothing has been replaced yet, so
+  // `currentRevision(handle)` and `listRanges(handle)` still answer and the
+  // caller can decide what to do. That is WR-02's entire complaint, and it is
+  // fixed by ordering rather than by a rescue path.
+  try {
+    copyFileSync(snapPath, staging);
+    fsyncPath(staging);
+    fsyncPath(dir);
+  } catch (e) {
+    rmSync(staging, { force: true });
+    throw new AnnoStoreError(
+      `cannot revert ${storePath} to revision ${revision}: staging the snapshot ${snapPath} failed during copy/fsync ` +
+        `(${(e as Error).message}). Nothing has been replaced and the store connection is deliberately still OPEN and usable.`,
+      { data: { path: storePath, snapshotPath: snapPath, operation: "copy/fsync", revision } },
+    );
+  }
+
+  // STEP 4. Only now, with a durable staged image beside the store.
   closeStore(handle);
 
-  const staging = `${storePath}.revert-${process.pid}-${revision}`;
-  copyFileSync(snapPath, staging);
-  fsyncPath(staging);
-  fsyncPath(dir);
-  renameSync(staging, storePath);
-  fsyncPath(dir);
+  // STEP 5. The rename is the ONE step that cannot be done with the connection
+  // open, so the residual is stated rather than claimed closed: a failure HERE
+  // does leave the caller without a handle. The staging file is removed so a
+  // retry is not blocked by its own leftovers, and the error names the
+  // operation so the caller can tell this case from step 3's.
+  try {
+    renameSync(staging, storePath);
+    fsyncPath(dir);
+  } catch (e) {
+    rmSync(staging, { force: true });
+    throw new AnnoStoreError(
+      `cannot revert ${storePath} to revision ${revision}: renaming the staged snapshot over the store failed ` +
+        `(${(e as Error).message}). The store connection was already closed for the rename -- that is the one residual this path ` +
+        `cannot remove, because the rename cannot be done with the connection open -- so reopen the store to inspect it.`,
+      { data: { path: storePath, snapshotPath: snapPath, operation: "rename", revision } },
+    );
+  }
 
-  return openStore(storePath);
+  // STEP 6. Reconcile the RESTORED ring before the handle leaves this
+  // function. The image just restored carries `anno_snapshot` rows for
+  // revisions whose files an earlier prune removed, and it leaves every
+  // snapshot taken AFTER `revision` unclaimed by any row. Both halves are
+  // resolved here, so the handle this function hands back never advertises a
+  // revision it cannot deliver and the directory bound holds after a revert as
+  // well as before one.
+  const restored = openStore(storePath);
+  reconcileSnapshotRing(restored);
+  return restored;
 }
 
 /** The paint index over this store's current rows, rebuilt from the rows every
