@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-03-PLAN.md
-last_updated: "2026-08-27T14:31:35.365Z"
+stopped_at: Completed 28-05-PLAN.md
+last_updated: "2026-08-27T14:54:30.008Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 28 execution started
-state_head: 8d75131df98e577303c7d087f6e31168f9f94fe8
+state_head: 915054690ab43cccb02ecaef3ec1f69c1e28db36
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 28 execution started
 
@@ -294,6 +294,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 28 P02 | 19 min | 2 tasks | 1 files |
 | Phase 28 P04 | 27 min | 3 tasks | 4 files |
 | Phase 28 P03 | 22 min | 3 tasks | 3 files |
+| Phase 28 P05 | 21 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -602,6 +603,9 @@ Recent decisions affecting current work:
 - [Phase 28]: Project-enum variant keys are validated against the four numeric-string forms the schema names but NEVER canonicalised, and two keys naming the same value are refused — Round-tripping by value is the store contract, so a caller that wrote "$40" reads back "$40" -- a rewritten key is a value the caller never supplied. Two keys for one value would be two variant names for one number, with nothing downstream able to say which was meant.
 - [Phase 28]: block-class.ts's boundary accepts BOTH block vocabularies during the transition -- the store's lowercase twelve and the external analyser's capitalised four -- rather than flipping to lowercase — The live census input and all six committed coverage fixtures still carry the analyser's capitalised spellings. A flip would have reclassified every one as data, silently, which is the exact failure the milestone guards against, and would have forced a fixture migration no criterion asks for. The capitalised arm is labelled TRANSITIONAL with its removal condition stated as CUT-01.
 - [Phase 28]: The label-kind agreement check partitions LABEL_KINDS BY MEASUREMENT into the three the census compares explicitly and the one it infers, instead of asserting all four appear as literals — Measured this session: r2000-coverage.ts never spells "Auto", because computeLabelRatio tests System/Platform then User and infers auto from its else branch. The partition form is strictly stronger -- a re-spelt store member moves out of the spelled set, a census that starts comparing the fallthrough explicitly moves it in, and either direction moves an asserted count.
+- [Phase 28]: The retype byte-preservation invariant is asserted in its UNION form (total typed bytes after equals the size of covered-before union the new range), not the literal "total unchanged" — The literal form is unsatisfiable by the CORRECT implementation in overlap case 2 (a new range legitimately types addresses nothing had typed), and is satisfied exactly by a BROKEN one in case 4, where 128 dropped tail bytes balance 128 newly typed low bytes while 128 previously typed addresses silently lose their type. Measured, and pinned as its own named test so invariant B (every previously typed address still typed) is justified by measurement rather than argument.
+- [Phase 28]: A contradicted comment is returned as DATA on a successful retype, never as an error and never as a refusal, and no option exists to make it a refusal — A refusal would push a caller toward deleting the comment to get the retype through, converting a reported loss into a silent one -- the exact outcome the report exists to prevent. The reason is written into anno-store.ts header trap 9, not only into the plan.
+- [Phase 28]: Filter-and-insert reddens THREE overlap cases (3, 4 and 5), not one, correcting the phase planted-violation model — Case 4 always has a tail (d < b) and case 5 always a head (a < c), so both lose bytes under filter-and-insert; only cases 1 and 2 have neither. Case 3 remains uniquely load-bearing because it is the only case losing BOTH sides and the only one whose correct answer is three rows.
 
 ### Pending Todos
 
@@ -1185,8 +1189,32 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T14:31:19.313Z
-Stopped at: Completed 28-03-PLAN.md
+Last session: 2026-08-27T14:54:14.816Z
+Stopped at: Completed 28-05-PLAN.md
+  Plan 28-05 is complete: 2 tasks, 2 task commits (`0b007b0`, `b67880a`).
+  `STORE-02` and `STORE-03` are both proven. `setDataType` now returns the named
+  `SetDataTypeResult` with an always-present `contradictedComments` array, and
+  `contradictedCommentsFor()` is the ONE definition of "this retype makes that
+  comment false", derived from `CONFIDENCE_GRADES` by token suffix rather than
+  restating the four brackets. `AnnoCommentGradeError extends ViceError` wraps
+  the confidence parser's non-`ViceError` refusal, message preserved verbatim.
+  New file `anno-overlap.test.ts` (588 lines, 14 tests) owns overlap and
+  adjacency semantics: all five overlap cases under both invariants, case 3's
+  three-row shape field by field, both plantings observed against the real
+  module (filter-and-insert reddened 5 of 14; the removed contradiction query
+  reddened 1 there and 5 in `anno-store.test.ts`), `STORE-02`'s non-merge proven
+  behaviourally AND structurally with a non-vacuity pairing, and a deterministic
+  post-split row order pinned across a reopen. Two of the plan's asserted facts
+  were MEASURED false and corrected in place: filter-and-insert reddens THREE
+  cases (3, 4, 5), not one, and the literal "total typed bytes unchanged"
+  invariant is unsatisfiable by the correct implementation in case 2 while being
+  satisfied by a 128-byte loss in case 4 — both recorded as deviations, with the
+  case-4 false negative now pinned as its own test. Gates: 74/74 on the four
+  store test files, typecheck green, `test:automated` 2610 tests / 5 failures
+  all inside the named baseline, broker stopped. Zero deletions. Next: plan 28-06
+  is the last of six for this phase.
+
+Previously stopped at: Phase 27 complete, ready to plan Phase 28
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is
@@ -1204,7 +1232,7 @@ Stopped at: Completed 28-03-PLAN.md
   runner cannot exit unaided). Next: `/gsd-verify-work 27`, then
   `/gsd-plan-phase 28`.
 
-Previously stopped at: Phase 27 discussed, ready to plan
+Earlier: Phase 27 discussed, ready to plan
   `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` written and committed (`6403e2f`).
   Four gray areas discussed, 17 decisions locked. Measured during the scout:
   `ci.yml` binds only the env var names, never the module path, so no functional
