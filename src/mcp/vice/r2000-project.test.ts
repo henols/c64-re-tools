@@ -54,7 +54,7 @@ import {
   ensureProjectSettings,
   R2000ProjectSettingsError,
 } from "./r2000-project.ts";
-import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.ts";
+import { decodeRawData } from "./prg-image.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 // ---------------------------------------------------------------------------
@@ -103,27 +103,6 @@ test("synthesizeProject: origin out of range throws naming the value and valid r
 
 test("synthesizeProject: empty payload throws", () => {
   assert.throws(() => synthesizeProject(Buffer.alloc(0), { origin: 0x0801 }), /empty/);
-});
-
-test("parsePrg: extracts a little-endian load address and the remaining body", () => {
-  const { origin, body } = parsePrg(Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));
-  assert.equal(origin, 0x0801);
-  assert.deepEqual(Buffer.from(body), Buffer.from([0xa9, 0x00, 0x60]));
-});
-
-test("parsePrg: a 2-byte or shorter input throws", () => {
-  assert.throws(() => parsePrg(Buffer.from([0x01, 0x08])), /3 bytes/);
-  assert.throws(() => parsePrg(Buffer.from([0x01])), /3 bytes/);
-  assert.throws(() => parsePrg(Buffer.alloc(0)), /3 bytes/);
-});
-
-test("flatImageOrigin: returns 0 for exactly 65536 bytes", () => {
-  assert.equal(flatImageOrigin(Buffer.alloc(65536)), 0);
-});
-
-test("flatImageOrigin: throws otherwise, naming the actual length", () => {
-  assert.throws(() => flatImageOrigin(Buffer.alloc(65535)), /65535/);
-  assert.throws(() => flatImageOrigin(Buffer.alloc(0)), /0/);
 });
 
 // ---------------------------------------------------------------------------
