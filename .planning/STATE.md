@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-08-27T13:11:12.470Z"
+stopped_at: Completed 28-02-PLAN.md
+last_updated: "2026-08-27T13:36:50.959Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 28 execution started
-state_head: b6f560dac30da4f4fc49ed2a11245fd90261f5c0
+state_head: 46d7532d8018894c89bec044e5b4dc5160b2b875
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 28 execution started
 
@@ -291,6 +291,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 27 P04 | 17 min | 3 tasks | 8 files |
 | Phase 27 P05 | 49 min | 3 tasks | 2 files |
 | Phase 28 P01 | 21 min | 3 tasks | 7 files |
+| Phase 28 P02 | 19 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -591,6 +592,8 @@ Recent decisions affecting current work:
 - [Phase 28]: parseStoreAddress owns the string address forms only; assertRangeShape owns range-ness for both forms — A boundary refusal must be a range-shape error so a caller can tell 'that is not an address' from 'those two ends do not make a range'. Parsing first collapsed the two.
 - [Phase 28]: The commit statement is centralised in one private helper shared by first-open init and the write sequence — Keeps exactly one commit site in the seam module, so a durability proof's planted violation has a unique, unambiguous target.
 - [Phase 28]: The node:sqlite single-seam detector is one substring test over literal-bodies-kept stripped source, with a comment-only negative control — node:sqlite has four working access routes and only the prefixed specifier resolves; a two-regex import idiom is blind to getBuiltinModule entirely. The cost is the string-literal half of the control, which cannot coexist with literal-bodies-kept mode.
+- [Phase 28]: A4's equal-length tie-break non-vacuity is proven by RELABELLING one of two equal-span rows (7/9 -> 9, then 7/3 -> 7), not by exchanging two ids -- exchanging ids between identical spans is a no-op on the row set — The plan's literal 'expect 7 after exchanging the ids' contradicts the rule it pins; array-order reversal plus relabelling carries the intent (no hard-coded answer can satisfy both)
+- [Phase 28]: anno-index.ts's import purity is asserted as an exact one-element specifier SET plus family exclusions and a dynamic-import prohibition, NOT as 'import type' — The module imports two error CLASSES it throws, so a type-only import is unreachable; the specifier set is what the constraint actually exists to enforce
 
 ### Pending Todos
 
@@ -1174,8 +1177,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T13:11:12.325Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-08-27T13:36:50.870Z
+Stopped at: Completed 28-02-PLAN.md
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is
