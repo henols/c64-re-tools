@@ -322,14 +322,45 @@ function fsyncPath(path: string): void {
 export function openStore(path: string, opts: { workspaceRoot?: string } = {}): AnnoStoreHandle {
   const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot);
   const fresh = !existsSync(resolved);
-  const db = new DatabaseSync(resolved, { timeout: 5_000 });
+
+  // WRAPPED, AND THE CLASS IS DELIBERATE. Two reproduced inputs -- a path that
+  // IS a directory, and a path whose parent directory does not exist -- both
+  // throw a bare `unable to open database file` here, with no path in the
+  // message and outside the `ViceError` family that every other refusal in this
+  // module belongs to. `AnnoStorePathError` rather than a new class, because
+  // both cases say the same thing `storePathWithinWorkspace` already says:
+  // this is not a place a store can live.
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(resolved, { timeout: 5_000 });
+  } catch (e) {
+    throw new AnnoStorePathError(`${resolved}: cannot open an annotation store here (${(e as Error).message})`, { path: resolved });
+  }
   const handle: AnnoStoreHandle = { db, path: resolved, dir: dirname(resolved) };
 
   if (fresh) {
-    db.exec("begin immediate");
-    db.exec(DDL);
-    db.prepare("insert into anno_meta(id, schema_version, revision) values (1, ?, 0)").run(SCHEMA_VERSION);
-    commitTransaction(db);
+    // WRAPPED FOR THE CONNECTION, NOT ONLY FOR THE MESSAGE. The most plausible
+    // failure in this block is a SECOND process that also saw
+    // the file absent, giving `table anno_meta already exists` -- and
+    // unwrapped that left BOTH the connection and the transaction open, so the
+    // caller lost the file handle and the lock with no way to reach either.
+    // The rollback is attempted inside its own swallowing `try` for the same
+    // reason the write sequence does it: there is nothing useful to do with a
+    // second error, and reporting it would replace the real one.
+    try {
+      db.exec("begin immediate");
+      db.exec(DDL);
+      db.prepare("insert into anno_meta(id, schema_version, revision) values (1, ?, 0)").run(SCHEMA_VERSION);
+      commitTransaction(db);
+    } catch (e) {
+      try {
+        db.exec("rollback");
+      } catch {
+        // deliberately ignored -- see above
+      }
+      db.close();
+      throw new AnnoStoreError(`${resolved}: failed to initialise a fresh annotation store (${(e as Error).message})`);
+    }
     return handle;
   }
 

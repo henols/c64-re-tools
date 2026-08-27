@@ -14,7 +14,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1955,6 +1955,169 @@ test("a refusal leaves NOTHING behind on disk: neither a stale-base refusal nor 
       assert.equal(currentRevision(store), 1, "and the rolled-back write did not advance the revision");
     } finally {
       closeStore(store);
+    }
+  });
+});
+// ---------------------------------------------------------------------------
+// WR-04: no family escape from openStore -- WR-11: both numbers on the CAS
+// refusal -- STORE-05: a refusal never reorders another process's rows
+// ---------------------------------------------------------------------------
+
+test("openStore family escape 1: a path that IS a directory is refused with AnnoStorePathError, inside the ViceError family, naming the path -- and the store is still usable afterwards", () => {
+  inTempDir((dir) => {
+    const notAStore = join(dir, "notastore");
+    mkdirSync(notAStore);
+
+    assert.throws(
+      () => openStore(notAStore, { workspaceRoot: dir }),
+      (e: unknown) => {
+        // THE FAMILY MEMBERSHIP IS THE ASSERTION, not merely that something
+        // threw. The finding this pins is that a BARE `Error` escaped -- so
+        // `assert.throws(fn, SomeClass)` alone would have been satisfied
+        // before the fix only by accident, and an `instanceof ViceError` is
+        // what actually distinguishes the two worlds.
+        assert.ok(e instanceof AnnoStorePathError, `expected AnnoStorePathError, got ${String(e)}`);
+        assert.ok(e instanceof ViceError, "and it must be inside the ViceError family -- a bare Error here is the defect");
+        assert.ok(e.message.includes(notAStore), `the refusal must name the path, got ${e.message}`);
+        return true;
+      },
+    );
+
+    // WHAT IS DELIBERATELY NOT ASSERTED, stated rather than left as a gap: a
+    // LEAKED CONNECTION is not observable from outside the process -- there is
+    // no handle to count and no fd the test can read. What IS observable is the
+    // family contract above and RECOVERABILITY, so that is what is measured:
+    // after the failure, opening a valid store in the SAME process still works
+    // and still round-trips a write.
+    const store = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x0400, endInclusive: 0x0403, dataType: "byte" });
+      assert.equal(listRanges(store).length, 1, "the process is still able to open a store and write to it after the refusal");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("openStore family escape 2: a path whose PARENT directory does not exist is refused with AnnoStorePathError, inside the ViceError family", () => {
+  inTempDir((dir) => {
+    const missingParent = join(dir, "no-such-dir", "proj.annostore");
+    assert.ok(!existsSync(join(dir, "no-such-dir")), "the parent must genuinely not exist, or this test proves nothing");
+
+    assert.throws(
+      () => openStore(missingParent, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStorePathError, `expected AnnoStorePathError, got ${String(e)}`);
+        assert.ok(e instanceof ViceError, "and it must be inside the ViceError family -- a bare Error here is the defect");
+        assert.ok(e.message.includes(missingParent), `the refusal must name the path, got ${e.message}`);
+        return true;
+      },
+    );
+
+    const store = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x0500, endInclusive: 0x0503, dataType: "byte" });
+      assert.equal(listRanges(store).length, 1, "and the process recovers -- a valid path in the same process still opens and writes");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-11, STRUCTURAL: the CAS-failure refusal carries BOTH revisions, and reads the second one BEFORE the rollback", () => {
+  // WHY A STRUCTURAL PIN RATHER THAN A BEHAVIOURAL ONE, stated because a
+  // structural assertion that does not say why it is structural reads as
+  // laziness. The CAS-failure branch is reached only when the revision moves
+  // BETWEEN the pre-transaction read and `begin immediate`. `runWriteSequence`
+  // is fully synchronous, so no in-process interleave can land in that window,
+  // and a spawned child racing it would be timing-dependent -- a flaky probe
+  // is worse evidence than an honest structural one.
+  //
+  // THE REACHABLE ARM IS PINNED BEHAVIOURALLY ELSEWHERE. The pre-transaction
+  // refusal's both-numbers contract is asserted by value in "every accepted
+  // write advances the revision by exactly one, and a write based on a stale
+  // revision is refused with both numbers" above. The two assertions together
+  // cover both arms of AnnoStoreStaleRevisionError's documented contract.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the target includes SQL text
+  // inside string literals, which strict mode blanks.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+  const fnStart = stripped.indexOf("function runWriteSequence");
+  assert.ok(fnStart >= 0, "runWriteSequence must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and its body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+
+  const branchStart = body.indexOf("cas.changes");
+  assert.ok(branchStart >= 0, "the CAS changes check must be present in the extracted body");
+  const branchEnd = body.indexOf("publishSnapshot", branchStart);
+  assert.ok(branchEnd > branchStart, "and the branch must terminate before the publication that only the winner reaches");
+  const branch = body.slice(branchStart, branchEnd);
+
+  // NON-VACUITY FIRST: an extraction that returned an empty or wrong slice
+  // would satisfy the ordering comparison below trivially.
+  assert.ok(branch.length > 100, `the extracted CAS-failure branch must be substantial, got ${branch.length} characters`);
+  assert.ok(branch.includes("AnnoStoreStaleRevisionError"), "the extracted branch must be the one that throws the stale-revision refusal");
+
+  assert.ok(
+    branch.includes("currentRevision:"),
+    "the CAS-failure refusal must carry currentRevision -- this is the ONE path on which a concurrent writer moved the revision, so it is " +
+      "the path on which the second number is most informative, and reporting a conflict with one number is the word 'conflict' with extra steps",
+  );
+  assert.ok(branch.includes("baseRevision:"), "and it must still carry baseRevision, so the caller can say WHICH two values disagreed");
+
+  const read = branch.indexOf("select revision from anno_meta");
+  const rollback = branch.indexOf("rollback");
+  assert.ok(read >= 0, "the branch must read the moved-to revision");
+  assert.ok(rollback >= 0, "and it must roll back");
+  assert.ok(
+    read < rollback,
+    "the second number must be READ BEFORE THE ROLLBACK: it is only visible while this transaction still sees it, so a read placed after " +
+      `the rollback reports the wrong value or none at all (read at ${read}, rollback at ${rollback})`,
+  );
+});
+
+test("STORE-05 ordering: a REFUSED stale write leaves the surviving rows in the identical ascending-id order they had before the attempt -- in the connection and on disk", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    let before: ReturnType<typeof listRanges>;
+    try {
+      setDataType(store, { start: 0x1000, endInclusive: 0x10ff, dataType: "code" });
+      setDataType(store, { start: 0x2000, endInclusive: 0x20ff, dataType: "byte" });
+      setDataType(store, { start: 0x3000, endInclusive: 0x30ff, dataType: "word" });
+
+      before = listRanges(store);
+      assert.deepEqual(
+        before.map((row) => row.id),
+        [1, 2, 3],
+        "the three non-overlapping writes must leave ids 1, 2 and 3 -- the fixture this test measures against",
+      );
+
+      assert.throws(
+        () => setDataType(store, { start: 0x4000, endInclusive: 0x40ff, dataType: "byte", baseRevision: 0 }),
+        AnnoStoreStaleRevisionError,
+        "the write based on a stale revision must be refused",
+      );
+
+      assert.deepEqual(
+        listRanges(store),
+        before,
+        "a refusal must never reorder, renumber or reinsert another process's rows: ids, starts, ends, types and order must all be identical " +
+          "to what they were before the attempt",
+      );
+    } finally {
+      closeStore(store);
+    }
+
+    // AND ON DISK, not only in the connection that made the attempt. A refusal
+    // that reordered rows in the file but not in the open connection's answer
+    // would pass the assertion above and still be the defect.
+    const reopened = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.deepEqual(listRanges(reopened), before, "and the identical array after a close and a reopen, so the property is proven on disk");
+    } finally {
+      closeStore(reopened);
     }
   });
 });

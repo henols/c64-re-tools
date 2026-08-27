@@ -286,15 +286,61 @@ test("the seam declares no module-level mutable binding, including a const bound
   assert.deepEqual(offenders, [], "every handle is owned by its caller; the seam holds nothing between calls");
 });
 
-test("no shipped module other than the seam names the no-commit write wrapper", () => {
-  // The wrapper exists only so a durability proof's planted violation drives
-  // the IDENTICAL code path as the real write. Its one caller is a spawned,
-  // test-only helper outside files[]. If it ever leaked into a production
-  // module, a write could silently fail to commit.
+/**
+ * The DECLARED set of the seam's SEAM-PRIVATE-BY-CONVENTION exports: symbols
+ * that are `export`ed only so a proof can drive the IDENTICAL production code
+ * rather than a hand-copied variant of it, and that no shipped module may
+ * reach for.
+ *
+ * `applyWriteWithoutCommit` exists so the durability proof's planted violation
+ * ("remove the commit") runs the real write sequence; if it leaked into a
+ * production module, a write could silently fail to commit.
+ *
+ * `stageSnapshot` exists for the same single reason -- the snapshot-OWNERSHIP
+ * proof has to stage from the losing writer's position through the code the
+ * winner uses -- and it carries the same class of risk if it leaked: a shipped
+ * caller that staged a snapshot without ever publishing it would leave `.tmp`
+ * files that no pointer row claims and that the reconciliation sweep is
+ * deliberately anchored NOT to match, so nothing would ever clean them up.
+ *
+ * A DECLARED LIST rather than two copy-pasted tests, so a third such export is
+ * one array entry and cannot be added without this list noticing.
+ */
+const SEAM_PRIVATE_EXPORTS = ["applyWriteWithoutCommit", "stageSnapshot"];
+
+test("no shipped module other than the seam names ANY of the declared seam-private exports", () => {
   const others = shippedTsModules().filter((name) => name !== THE_ONE_SEAM);
   assert.ok(others.length > 10, `the comparison set must be non-empty, got ${others.length}`);
-  const leaked = others.filter((name) => codeOnly(readFileSync(join(HERE, name), "utf8")).includes("applyWriteWithoutCommit"));
-  assert.deepEqual(leaked, [], "the no-commit write wrapper must not be reachable from any shipped module but the seam");
+
+  // PAIRED WITH A LENGTH CHECK, for the same reason the test-tree scan below
+  // is: a declared list that lost an entry would scan for nothing and every
+  // deepEqual against [] would still pass. The count is the assertion that the
+  // loop ran over the set it claims to cover.
+  assert.equal(
+    SEAM_PRIVATE_EXPORTS.length,
+    2,
+    `the declared seam-private export set must hold both members, got ${SEAM_PRIVATE_EXPORTS.length} -- a list that lost an entry scans ` +
+      "for nothing and passes",
+  );
+
+  for (const exported of SEAM_PRIVATE_EXPORTS) {
+    const leaked = others.filter((name) => codeOnly(readFileSync(join(HERE, name), "utf8")).includes(exported));
+    // The message names the OFFENDING export from the loop variable rather
+    // than hard-coding one of them: a singular noun standing over a two-element
+    // scan is a claim the assertion does not make.
+    assert.deepEqual(leaked, [], `the seam-private export ${exported} must not be reachable from any shipped module but the seam`);
+  }
+});
+
+test("the seam-private export scan is NON-VACUOUS over the code this area added: all three staging transitions are present in the seam's own stripped source", () => {
+  // The scan above is a filter for ABSENCE across other modules. Absence is
+  // trivially satisfiable by scanning for a name nothing has -- including a
+  // name the seam itself no longer has. This pins the other side: the symbols
+  // exist in the module the guard is protecting.
+  const kept = codeOnly(seamSource());
+  for (const symbol of ["stageSnapshot", "publishSnapshot", "discardSnapshot"]) {
+    assert.ok(kept.includes(symbol), `${symbol} must exist in the seam's stripped source, or the leak scan above is decoration`);
+  }
 });
 
 test("idempotency: re-running the scan over an unchanged tree yields the identical one-element importer list", () => {
