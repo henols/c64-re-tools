@@ -335,7 +335,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "listEntries", line: 62 },
-        { path: "src/mcp/vice/r2000-d64.test.ts", symbol: "sectorsPerTrack", line: 13 },
+        { path: "src/mcp/vice/r2000-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
       ],
       requirements: ["SEAM-02"],
       rationale:
@@ -475,7 +475,20 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     note:
       "Its ACME half left for acme-gate.ts earlier in this phase with byte-identical symbol and " +
       "environment-variable names and NO re-export shim -- a case-insensitive search for 'acme' in this " +
-      "module now returns nothing. Ten importers remain, all inside the analyser family.",
+      "module now returns nothing. Ten importers remain, all inside the analyser family. " +
+      "CONTESTED, flagged rather than smoothed over -- the same shape the r2000-verify.ts entry below " +
+      "flags for itself, and it was left unflagged here (WR-10). Two measurements sit in tension with " +
+      "the 'capability' verdict: every one of the ten measured importers is an r2000-*.test.ts file, so " +
+      "every consumer of this module dies with the substrate it gates; and the substrate-INDEPENDENT " +
+      "half of its discipline has already been extracted, in this same phase, under a different name " +
+      "(acme-gate.ts). What a later reader should carry forward is therefore the DISCIPLINE -- one " +
+      "computed skip reason per file, never a hand-rolled early return, and a hard failure rather than " +
+      "a skip when the environment declares the dependency mandatory -- which acme-gate.ts now also " +
+      "embodies for a second dependency, proving it generalises. Do NOT read this verdict as a claim " +
+      "that the module survives a prefix deletion: read it as a claim that the discipline must be " +
+      "carried into whatever gates the successor's external dependencies. An unflagged tense verdict " +
+      "here is how a later phase keeps dead code -- the inverse of the failure SEAM-02 targets, but " +
+      "still one this record exists to prevent.",
   },
   {
     module: "r2000-verify.ts",
