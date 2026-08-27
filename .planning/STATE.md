@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: "Completed 28-08-PLAN.md (CR-02, WR-04 and WR-11 closed); next 28-09"
-last_updated: "2026-08-27T22:01:35.284Z"
+stopped_at: Completed 28-09-PLAN.md (gap 3 / CR-03 closed); phase 28 plan set complete, awaiting re-verification
+last_updated: "2026-08-27T22:19:33.966Z"
 last_activity: 2026-08-28
-last_activity_desc: Completed 28-08-PLAN.md (CR-02, WR-04, WR-11)
-state_head: fef449cb129678f7d39016165d13b3ab72ace094
+last_activity_desc: Completed 28-09-PLAN.md (gap 3 / CR-03 -- real-path workspace confinement)
+state_head: 5bd76e9528e42755d376ee9362c5beddebbb4585
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
   percent: 17
 ---
 
@@ -146,9 +146,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 8 of 9 executed; gap closure running 28-07..28-09 (28-07 and 28-08 done, 28-09 remains)
-Status: Executing Phase 28 (gap closure, --gaps-only)
-Last activity: 2026-08-28 — Completed 28-08-PLAN.md (CR-02 / WR-04 / WR-11)
+Plan: 9 of 9 executed; gap closure 28-07..28-09 all done (gaps 1-2, CR-02/WR-04/WR-11, and gap 3 / CR-03)
+Status: Phase 28 plan set complete — all four verification gaps closed; awaiting re-verification
+Last activity: 2026-08-28 — Completed 28-09-PLAN.md (gap 3 / CR-03, real-path workspace confinement)
 
 ## Performance Metrics
 
@@ -298,6 +298,7 @@ Last activity: 2026-08-28 — Completed 28-08-PLAN.md (CR-02 / WR-04 / WR-11)
 | Phase 28 P06 | 26 min | 3 tasks | 5 files |
 | Phase 28 P07 | 16 min | 2 tasks | 2 files |
 | Phase 28 P08 | 21 min | 2 tasks | 3 files |
+| Phase 28 P09 | 20 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -618,6 +619,8 @@ Recent decisions affecting current work:
 - [Phase 28]: A snapshot FILE is removed only after the store has stopped claiming its revision; a revert reconciles the restored pointer table against the directory, and the refusal for a missing file is the same named AnnoStoreError a missing row already produced — Closes 28-VERIFICATION gaps 1 and 2 (CR-01, WR-01, WR-02); the published floor can no longer name a revision revertTo would refuse
 - [Phase 28]: A published snapshot has exactly ONE writer -- the one whose compare-and-swap won and whose pointer row commits it: stageSnapshot vacuums into a per-ATTEMPT r<rev>.<pid>.<uuid>.tmp, publishSnapshot renames onto r<rev>.db only after the CAS, discardSnapshot cleans every other exit — The pre-fix comment removed the published path before the lock on a TRUE premise (vacuum into refuses an existing target; a revision number recurs after a revert); the recurrence is now handled by the rename, which overwrites without a prior removal and is performed by the owner. A refusal must be indistinguishable from the attempt never having happened, on disk included
 - [Phase 28]: The WR-11 CAS-failure branch is pinned STRUCTURALLY with the reason stated in the test, and the second revision is read from anno_meta BEFORE the rollback — runWriteSequence is fully synchronous, so no in-process interleave can land between the pre-transaction read and begin immediate, and a spawned child racing it would be timing-dependent -- a flaky probe is worse evidence than an honest structural one. The reachable pre-transaction arm stays behaviourally pinned at anno-store.test.ts:320
+- [Phase 28]: Phase 28 (28-09): workspace confinement resolves REAL paths on BOTH sides through a deepest-existing-ancestor walk, and the resolution lives in the VALIDATOR (anno-types.ts), not in the persistence module. Siting it in anno-store.ts would have preserved the research map's purity row and the three-entry import pin, at the cost of splitting one confinement contract across two modules with the security-relevant half in the module whose header does not claim confinement -- a caller that skipped the pre-resolution would get a passing check and a store file outside the workspace, which is CR-03 again with a new cause and no test watching. The module that declares a contract must be the module that cannot answer it wrongly. node:fs is a Node builtin, not a seam; the closed hostpath consumer set is unchanged.
+- [Phase 28]: Phase 28 (28-09): an allow/deny control is proven by TWO plantings, not one. The pre-fix code must redden the REFUSAL test, and the over-broad wrong fix (refuse everything) must redden a DISCRIMINATING test. A confinement control that only ever refuses is indistinguishable from one that works, and a single planting cannot tell them apart. Applied here: reverting to resolve() reddened the symlink refusal (and a standalone probe reproduced the verifier's own "file created outside workspace: true"), while refusing every symlinked path left the refusal green and reddened the inside-pointing-symlink follow.
 
 ### Pending Todos
 

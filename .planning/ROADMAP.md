@@ -443,7 +443,7 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: 8/9 plans executed in 7 waves — 6/6 in waves 1–4, plus 28-07 in wave 5 and 28-08 in wave 6; 3 gap-closure plans were added in waves 5–7 after verification found gaps, of which 28-09 remains
+**Plans**: 9/9 plans executed in 7 waves — 6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6 and 28-09 in wave 7; 3 gap-closure plans were added in waves 5–7 after verification found gaps, and all three have landed
 
 Plans:
 **Wave 1**
@@ -474,7 +474,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion — an ordering-only edge, not a code dependency: this plan shares no `files_modified` with either peer, but its acceptance checks READ `anno-store.test.ts` and `anno-seam.test.ts`, which waves 5 and 6 rewrite)*
 
-- [ ] 28-09-PLAN.md — Gap 3: workspace confinement compares real paths on both sides, so a symlinked subdirectory is refused rather than followed — with an inside-pointing symlink still followed, so the control discriminates
+- [x] 28-09-PLAN.md — Gap 3: workspace confinement compares real paths on both sides, so a symlinked subdirectory is refused rather than followed — with an inside-pointing symlink still followed, so the control discriminates
 
 Notes:
 
@@ -952,7 +952,7 @@ in a milestone archive.
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
-| 28. The Store Core | v0.7.0 | 8/9 | In Progress | - |
+| 28. The Store Core | v0.7.0 | 9/9 | In Progress | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
