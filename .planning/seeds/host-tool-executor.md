@@ -14,6 +14,10 @@ planted_date: 2026-08-28
 > the applications it is using are installed on the host computer and can't be
 > directly accessed.
 
+Stateless host operations are **not MCP tools** — they get their own namespaced
+channel into the broker over the same socket port, dialed with a short-lived
+open/send/close connection.
+
 A skill script runs **container-side**. `c1541`, `petcat`, `cartconv`, `acme`,
 and external unpackers live **host-side**. There is no local PATH to find them
 on. They must be reached over the same container-out seam the VICE MCP already
@@ -45,27 +49,80 @@ VICE-instance-lifecycle ops — `acquire`, `release`, `recycle`, `status`,
 `monitor_claim`, `monitor_release` (`vice-broker-client.ts:372-1015`). Nothing
 runs a host binary.
 
-## Shape
+## Shape (refined by Henrik, 2026-08-28)
 
-- A host-side executor reached over the **same** control channel, so there is one
-  container-out mechanism rather than two. The `resources/*.mjs` build-and-commit
-  pattern (`build.ts` compiling host-bound `.mts` into banner-marked `.mjs`, with
-  `resources-sync.test.ts` failing CI on drift) already exists for exactly this
-  kind of host-side code.
-- **A typed allowlist of named tools, never a shell or argv passthrough.** A
-  generic "run host command" op over TCP is a remote-execution seam. Each tool
-  gets a named op with a typed argument shape; the executor constructs the argv.
-  This project already has the discipline — `DENY_LIST` in `vice.ts`, the
-  power-cycle resource denials — and the same single-checked-seam rule applies.
-- **Path translation on both directions.** Every path argument in, and every
-  produced artifact out, goes through `hostpath.ts` / `containerpath.ts`. Note
-  the CLAUDE.md derived-tool constraint about `rewriteArguments()` running inside
-  `forwardToVice()`: host-tool paths need translation deliberately placed, not
-  inherited by accident.
-- **Graceful non-container operation.** The common case today is host-developed
-  with no container at all (this repo included). The seam must not add a broker
-  round-trip where a direct spawn is correct — but the *decision* must live in one
-  place, not be re-derived per script.
+**Not MCP tools.** Stateless host operations are *not* exposed on the MCP tool
+surface. They get their own channel into the broker, **over the same socket
+port** the VICE control plane already uses.
+
+**Short-lived, per-request connections.** A skill script opens a connection,
+sends one request, reads the response, and closes. No lease, no session, no
+warm state.
+
+**Namespaced ops for routing.** Every request carries a prefix naming the
+subsystem, so the broker routes without inspecting semantics — VICE lifecycle,
+disk tools, disassembly tools, and whatever comes next each get their own
+namespace. The current dispatch is a flat `if (req.op === "acquire") … else if …`
+chain over a closed 7-member union `ControlRequestKind` (`broker-control.mts:30,534-655`),
+terminating in `unknown op` → `bad_request`. Prefixed `op` values slot into that
+chain directly.
+
+## Design constraints the existing control plane imposes
+
+These are established from the code, not assumed. Each one shapes the design.
+
+**1. Close-is-release is already gated — the pattern is safe by construction, but
+only just.** `broker-control.mts:388-397` states *"Connection close IS the
+release — including on the client's own SIGKILL."* It fires `onRelease` **only
+when `requestIdForThisConnection` is set**, and that is set solely by a
+successful `acquire`. So an open/send/close host-tool connection that never
+acquires closes harmlessly today. This must become an explicit, tested invariant:
+**a host-tool op must never set `requestIdForThisConnection`**, or every skill
+script invocation fires a spurious release and kills a live emulator. This is the
+single highest-risk detail in the whole design and it is one assignment away from
+being wrong.
+
+**2. 64 KiB hard line cap — bulk output cannot ride inline.** `MAX_LINE_BYTES =
+65536` (`broker-control.mts:242`), and on overflow the socket is `destroy()`ed
+with no error frame — from the client it is indistinguishable from a connection
+drop. Newline-delimited JSON at 64 K/line is fine for `petcat`'s SYS-stub answer
+and a `c1541` directory listing; it is **not** fine for a disassembly dump, a
+`c1541 -extract`, or a `prof flat` over a large binary. Bulk results must be
+written to a **file host-side and returned as a path** (translated back through
+`containerpath.ts`), or the channel needs chunked framing. Choose deliberately —
+inheriting the cap silently is how this fails in production on the first large
+image.
+
+**3. Per-boot capability token on every op.** Auth is a per-boot token,
+constant-time compared (`broker-control.mts:262-267`), required before any
+handler runs. Skill scripts become a **new class of token consumer**, reading it
+from the `.vice-supervisor/` state dir — which they do not do today. Token
+discovery from a skill script, in-container, is its own small design problem.
+
+**4. Wire-compat across separately-deployed halves.** The container-side client
+and the host-side broker are versioned and deployed independently (`build.ts` →
+committed `resources/*.mjs`, installed into the consuming project). A running
+broker can be older than the client that just dialed it. So the 7 existing
+unprefixed ops cannot simply be renamed: either the broker grandfathers
+unprefixed `op` as the VICE namespace, or the skew is handled through the
+existing epoch mechanism. Decide this before writing the first prefixed op.
+
+**5. A typed allowlist of named tools, never a shell or argv passthrough.** A
+generic run-host-command op over TCP is a remote-execution seam. Each tool gets a
+named op with a typed argument shape; the executor constructs the argv. This
+project already has the discipline — `DENY_LIST` in `vice.ts`, the power-cycle
+resource denials — and the same single-checked-seam rule applies.
+
+**6. Path translation in both directions.** Every path argument in, and every
+produced artifact out, through `hostpath.ts` / `containerpath.ts`. Note the
+CLAUDE.md derived-tool constraint about `rewriteArguments()` running inside
+`forwardToVice()`: host-tool paths need translation deliberately placed, not
+inherited by accident.
+
+**7. Graceful non-container operation.** The common case today is host-developed
+with no container at all (this repo included). The seam must not force a broker
+round-trip where a direct spawn is correct — but the *decision* must live in one
+place, not be re-derived per script.
 
 ## Retroactive scope (decided 2026-08-28)
 
