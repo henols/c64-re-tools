@@ -40,6 +40,14 @@
 // way to observe a module-load `const`'s unset-environment default without
 // asserting on source text instead of behaviour.
 //
+// That count is three because the FAIL probe is MEMOISED (`failRun()` below).
+// Two tests assert two properties of the failing run, and they previously
+// called `runGateProbe(true)` once each -- four children, two of them
+// identical runs of the same fixed input, plus a `mkdtemp`/`rm` cycle each on
+// a host whose `/tmp` is RAM-backed, for no added observation (WR-11). The
+// second test's own title says "that same failing child run"; memoising is
+// what makes that true.
+//
 // This file verifies test-harness discipline, not shipped runtime behaviour,
 // so `acme-gate.ts` stays OUT of `package.json`'s `files[]` -- asserted below
 // -- and this file is deliberately never added to `MANUAL_ONLY_TESTS`
@@ -123,8 +131,20 @@ function runGateProbe(requireAcme: boolean): ChildRun {
   }
 }
 
+/** The ONE `VICE_REQUIRE_ACME=1` probe run, memoised (WR-11). The two tests
+ * below assert two properties of the SAME failing child run -- the exit code
+ * and the refusal wording -- against one fixed input, so a second spawn adds
+ * cost and no observation. Lazily computed rather than a top-level call, so
+ * running a filtered subset of this file does not spawn a child it never
+ * asserts on. */
+let failRunCache: ChildRun | undefined;
+function failRun(): ChildRun {
+  if (failRunCache === undefined) failRunCache = runGateProbe(true);
+  return failRunCache;
+}
+
 test("VICE_REQUIRE_ACME=1 with a nonexistent ACME_BIN makes a child run FAIL (non-zero exit), never skip", () => {
-  const r = runGateProbe(true);
+  const r = failRun();
   assert.notEqual(
     r.status,
     0,
@@ -135,7 +155,7 @@ test("VICE_REQUIRE_ACME=1 with a nonexistent ACME_BIN makes a child run FAIL (no
 });
 
 test("that same failing child run names the gate's OWN refusal wording, so the non-zero exit is the assertion and not a broken import", () => {
-  const r = runGateProbe(true);
+  const r = failRun();
   assert.ok(
     r.output.includes(REFUSAL_PREFIX),
     `the child exited non-zero but its output never names the gate's refusal wording ` +
