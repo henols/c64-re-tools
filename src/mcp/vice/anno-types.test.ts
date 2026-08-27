@@ -24,8 +24,38 @@
 // file rather than a schema migration.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { DATA_TYPES, SPLIT_DATA_TYPES } from "./anno-types.ts";
+import {
+  assertAccessKind,
+  assertCommentText,
+  assertCommentType,
+  assertLabelKind,
+  assertEnumName,
+  assertLegalLabel,
+  AnnoAddressError,
+  AnnoCommentError,
+  AnnoLabelError,
+  AnnoRangeShapeError,
+  AnnoTypeError,
+  COMMENT_TYPES,
+  DATA_TYPES,
+  LABEL_KINDS,
+  MAX_COMMENT_BYTES,
+  MNEMONIC_DENYLIST,
+  parseStoreAddress,
+  parseVariantKey,
+  producesXrefsFor,
+  resolveSplitTargets,
+  SPLIT_DATA_TYPES,
+  XREF_ACCESS_KINDS,
+} from "./anno-types.ts";
+import { OPCODES } from "./disasm-opcodes.ts";
+import { codeOnly } from "./shipped-modules.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The twelve members, WRITTEN OUT BY HAND -- see the file header for why this
  * one expectation is not derived from its own subject. */
@@ -76,4 +106,444 @@ test("the twelve members are pairwise distinct and none contains the substring r
     assert.equal(member.includes("r2000"), false, `${member} contains the substring a removal gate greps for`);
     assert.equal(member, member.toLowerCase(), `${member} must be lowercase -- the schema's spellings are lowercase snake_case`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// THE SPLIT-ORIENTATION CONTROL, and why it is shaped this way.
+//
+// The four split layouts stay first-class members only if BOTH axes that
+// distinguish them are separately observable. This block observes both:
+//
+//   * ORIENTATION -- a `lo_hi_address` fixture read as `hi_lo_address` produces
+//     a DIFFERING resolved-target set. That difference is the whole observable
+//     consequence of recording orientation, and a collapsed vocabulary (one
+//     `table` member with a forgotten orientation flag) makes it vanish. The
+//     planting below shows the assertion going red against exactly that.
+//   * ADDRESS VERSUS WORD -- over IDENTICAL bytes, the two `_address` members
+//     produce cross-references and the two `_word` members do not, while the
+//     resolved target VALUES are equal. Equal targets plus differing reference
+//     production is precisely the claim that the second axis is orthogonal, and
+//     it is what answers a reviewer who says two members would do.
+//
+// A BYTE-IDENTICAL REASSEMBLY ASSERTION CANNOT BE THE ORIENTATION CONTROL, and
+// Test 4 records that as an assertion rather than leaving it as prose: a retype
+// changes no bytes, so a reassembly comparison is green under BOTH orientations
+// and can never go red on a collapsed vocabulary. It is worth having separately,
+// for a different reason -- it catches an exporter that mangles bytes.
+// ---------------------------------------------------------------------------
+
+/** The research-verified fixture: a four-entry split table's raw bytes.
+ * Low-high reads `$0810 $1234 $c000 $cfff`; high-low reads
+ * `$1008 $3412 $00c0 $ffcf`. */
+const SPLIT_FIXTURE = Object.freeze([0x10, 0x34, 0x00, 0xff, 0x08, 0x12, 0xc0, 0xcf] as const);
+
+/** THE ONE definition of "these two target sets differ". Called by the real
+ * control AND by the collapse planting, so the control and its own proof cannot
+ * drift apart into two slightly different comparisons. */
+function targetSetsDiffer(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return true;
+  return a.some((value, index) => value !== b[index]);
+}
+
+/** Renders a target set for a failure message. A failure in the control means
+ * the orientation axis stopped being observable, and the reader needs to see
+ * WHICH way -- "not equal" alone would not say. */
+function renderTargets(targets: readonly number[]): string {
+  return targets.map((value) => `$${value.toString(16).padStart(4, "0")}`).join(" ");
+}
+
+/**
+ * THE COLLAPSE PLANTING (inline synthetic-source route, the shape
+ * `hostpath-consumers.test.ts:231-262` labels its cases with). A test-local
+ * implementation that ignores the orientation axis entirely -- exactly what a
+ * single `table` member with a forgotten orientation flag produces.
+ *
+ * Inline rather than a `fixtures/*.ts.txt` module, deliberately: this planting
+ * is a small ALGORITHMIC variation of one function, not a whole plausible
+ * module, so a fixture file would hide the one line that differs.
+ */
+function resolveSplitTargetsCollapsed(bytes: readonly number[]): number[] {
+  const n = bytes.length / 2;
+  const targets: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    // The collapse: the low-high arithmetic, whatever the caller asked for.
+    targets.push(bytes[i] | (bytes[n + i] << 8));
+  }
+  return targets;
+}
+
+test("criterion 1's control: the fixture is non-degenerate FIRST, and then a lo_hi_address reading and a hi_lo_address reading of it produce DIFFERING target sets", () => {
+  const bytes = Uint8Array.from(SPLIT_FIXTURE);
+
+  // THE NON-DEGENERACY ASSERTIONS COME FIRST, in this same test, on purpose. A
+  // table whose low half and high half are byte-identical, or a one-entry table
+  // with equal low and high bytes, would make the differing-set assertion below
+  // hold for no reason -- and a vacuous control is WORSE than none, because it
+  // reads as evidence.
+  const lowHalf = [...SPLIT_FIXTURE].slice(0, 4);
+  const highHalf = [...SPLIT_FIXTURE].slice(4);
+  assert.equal(
+    targetSetsDiffer(lowHalf, highHalf),
+    true,
+    `the fixture's two halves must not be byte-identical, or the differing-set control below is vacuous: ${lowHalf} vs ${highHalf}`,
+  );
+
+  const lo = resolveSplitTargets(bytes, "lo_hi_address");
+  const hi = resolveSplitTargets(bytes, "hi_lo_address");
+  assert.equal(lo.entryCount, 4, "a four-entry table, so the control is not a one-entry accident");
+  assert.ok(lo.entryCount > 1, "an entry count of one would make the control vacuous too");
+
+  assert.deepEqual([...lo.targets], [0x0810, 0x1234, 0xc000, 0xcfff], "the low-high reading, verified arithmetically during research");
+  assert.deepEqual([...hi.targets], [0x1008, 0x3412, 0x00c0, 0xffcf], "the high-low reading, verified arithmetically during research");
+
+  assert.equal(
+    targetSetsDiffer(lo.targets, hi.targets),
+    true,
+    `the two orientations must resolve to DIFFERENT targets -- that difference is the whole observable consequence of recording ` +
+      `orientation, and if it has gone the vocabulary can no longer be told apart. lo_hi_address: ${renderTargets(lo.targets)} ; ` +
+      `hi_lo_address: ${renderTargets(hi.targets)}`,
+  );
+});
+
+test("the collapse planting, observed: a single-orientation implementation makes the control's OWN comparison report the two readings as identical", () => {
+  const collapsedLo = resolveSplitTargetsCollapsed([...SPLIT_FIXTURE]);
+  const collapsedHi = resolveSplitTargetsCollapsed([...SPLIT_FIXTURE]);
+
+  assert.equal(
+    targetSetsDiffer(collapsedLo, collapsedHi),
+    false,
+    `a collapsed implementation must produce IDENTICAL sets for the two orientations -- if this ever reports a difference, the planting ` +
+      `has stopped being a collapse and the control's red is no longer proven. lo: ${renderTargets(collapsedLo)} ; ` +
+      `hi: ${renderTargets(collapsedHi)}`,
+  );
+
+  // And the real implementation disagrees with the collapsed one on at least
+  // one orientation, which is what makes the planting a planting rather than a
+  // restatement.
+  const realHi = resolveSplitTargets(Uint8Array.from(SPLIT_FIXTURE), "hi_lo_address");
+  assert.equal(
+    targetSetsDiffer(collapsedHi, realHi.targets),
+    true,
+    "the collapsed reading must differ from the real high-low reading, or the planting is not planting anything",
+  );
+});
+
+test("the reassembly NON-control, recorded as an assertion: the fixture's bytes are unchanged by resolving under either orientation", () => {
+  const bytes = Uint8Array.from(SPLIT_FIXTURE);
+  const before = [...bytes];
+  resolveSplitTargets(bytes, "lo_hi_address");
+  resolveSplitTargets(bytes, "hi_lo_address");
+  assert.deepEqual(
+    [...bytes],
+    before,
+    "a retype changes NO bytes. That is why a byte-identical reassembly assertion is green under both orientations and cannot be " +
+      "criterion 1's control -- it is worth having separately, because it catches an exporter that mangles bytes, but it is not this " +
+      "claim's evidence and must not be presented as such.",
+  );
+});
+
+test("the second axis: over IDENTICAL bytes the two _address members produce cross-references and the two _word members do not, while the resolved targets are equal", () => {
+  const bytes = Uint8Array.from(SPLIT_FIXTURE);
+
+  const loAddress = resolveSplitTargets(bytes, "lo_hi_address");
+  const loWord = resolveSplitTargets(bytes, "lo_hi_word");
+  const hiAddress = resolveSplitTargets(bytes, "hi_lo_address");
+  const hiWord = resolveSplitTargets(bytes, "hi_lo_word");
+
+  assert.equal(loAddress.producesXrefs, true, "address=16-bit LE pointers creates X-Refs -- the schema's own words");
+  assert.equal(hiAddress.producesXrefs, true);
+  assert.equal(loWord.producesXrefs, false, "word=16-bit LE values does not");
+  assert.equal(hiWord.producesXrefs, false);
+
+  // BOTH HALVES MATTER. Equal targets plus differing reference production is
+  // precisely the claim that the address-versus-word axis is orthogonal to the
+  // orientation axis -- so four members, not two.
+  assert.deepEqual([...loWord.targets], [...loAddress.targets], "the word form resolves the SAME values; only reference production differs");
+  assert.deepEqual([...hiWord.targets], [...hiAddress.targets]);
+  assert.equal(producesXrefsFor("lo_hi_address"), true, "producesXrefsFor answers the same question without resolving anything");
+  assert.equal(producesXrefsFor("lo_hi_word"), false);
+});
+
+test("resolveSplitTargets refuses an odd byte count on each of the four split layouts, and refuses a non-split type outright", () => {
+  for (const layout of SPLIT_DATA_TYPES) {
+    assert.throws(
+      () => resolveSplitTargets(Uint8Array.from([0x10, 0x34, 0x00]), layout),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError for ${layout}, got ${String(e)}`);
+        assert.match(e.message, /even byte count/, "the refusal must name the rule that fired");
+        assert.match(e.message, new RegExp(layout), "and the layout it fired for");
+        return true;
+      },
+    );
+  }
+
+  for (const notSplit of ["byte", "word", "address", "code", "table"]) {
+    assert.throws(
+      () => resolveSplitTargets(Uint8Array.from([0x10, 0x34]), notSplit),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for ${notSplit}, got ${String(e)}`);
+        assert.equal(e.dataType, notSplit, "the refusal carries the offending value");
+        assert.deepEqual(e.validTypes, [...SPLIT_DATA_TYPES], "and the full list of split layouts");
+        return true;
+      },
+    );
+  }
+});
+
+test("the three remaining vocabularies are frozen with exactly their members, and each assert* accepts a member and refuses a non-member by name", () => {
+  assert.deepEqual([...COMMENT_TYPES], ["line", "side"], "the comment placements, in the schema's own order");
+  assert.equal(COMMENT_TYPES.length, 2);
+  assert.equal(Object.isFrozen(COMMENT_TYPES), true);
+
+  assert.deepEqual([...LABEL_KINDS], ["User", "Auto", "System", "Platform"], "the four label kinds, in the census's own capitalised spelling");
+  assert.equal(LABEL_KINDS.length, 4);
+  assert.equal(Object.isFrozen(LABEL_KINDS), true);
+
+  assert.deepEqual([...XREF_ACCESS_KINDS], ["READ", "WRITE", "READ_WRITE", "COMPUTED_JUMP"], "the four access kinds fixed by STORE-05");
+  assert.equal(XREF_ACCESS_KINDS.length, 4);
+  assert.equal(Object.isFrozen(XREF_ACCESS_KINDS), true);
+
+  assert.equal(assertCommentType("side"), "side");
+  assert.equal(assertLabelKind("Platform"), "Platform", "Platform is a first-class member, not normalised away to System");
+  assert.equal(assertAccessKind("COMPUTED_JUMP"), "COMPUTED_JUMP");
+
+  const refusals: readonly (readonly [string, (value: unknown) => unknown, unknown, readonly string[]])[] = [
+    ["comment type", assertCommentType, "inline", [...COMMENT_TYPES]],
+    ["label kind", assertLabelKind, "user", [...LABEL_KINDS]],
+    ["access kind", assertAccessKind, "EXECUTE", [...XREF_ACCESS_KINDS]],
+  ];
+  for (const [what, assertFn, offender, members] of refusals) {
+    assert.throws(
+      () => assertFn(offender),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for ${what}, got ${String(e)}`);
+        assert.equal(e.dataType, offender, "the refusal carries the offending value");
+        assert.deepEqual(e.validTypes, members, "and the full valid-member list, so a caller never has to go looking");
+        return true;
+      },
+    );
+  }
+});
+
+test("the mnemonic denylist is DERIVED from the opcode table -- its size equals the distinct mnemonic count computed here from OPCODES, and it carries the illegal-opcode names a hand-typed list misses", () => {
+  // The expectation is COMPUTED from OPCODES rather than pinned as a literal,
+  // so a change to the opcode table cannot leave a stale number behind here.
+  // This is the "do two homes agree" question, which is the derived
+  // instrument's job -- unlike the twelve-member freeze above, which asks "did
+  // the one home change" and is therefore hand-written.
+  const distinct = new Set(OPCODES.map((entry) => entry.mnemonic.toLowerCase()));
+  assert.equal(MNEMONIC_DENYLIST.size, distinct.size, "the denylist must be exactly the distinct mnemonics of the 256-entry opcode table");
+  assert.ok(distinct.size > 56, `there must be more than the 56 documented mnemonics, got ${distinct.size} -- otherwise the illegal ones are missing`);
+  for (const mnemonic of ["lda", "jsr", "jam", "slo", "lax"]) {
+    assert.equal(MNEMONIC_DENYLIST.has(mnemonic), true, `${mnemonic} must be on the denylist -- jam, slo and lax are the ones a hand list misses`);
+  }
+});
+
+test("assertLegalLabel accepts a legal identifier unchanged, refuses an illegal one WITHOUT sanitising it, and refuses a mnemonic case-insensitively", () => {
+  for (const legal of ["init_screen", "loop_start", "_private", "a1"]) {
+    assert.equal(assertLegalLabel(legal), legal, `${legal} must be accepted and returned UNCHANGED`);
+  }
+
+  for (const illegal of ["init screen", "1abc", "init-screen", ""]) {
+    assert.throws(
+      () => assertLegalLabel(illegal),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoLabelError, `expected AnnoLabelError for ${JSON.stringify(illegal)}, got ${String(e)}`);
+        assert.equal(e.identifier, illegal === "" ? "" : illegal, "the refusal carries the offending name VERBATIM");
+        assert.ok(typeof e.reason === "string" && e.reason.length > 0, "and a reason naming which rule fired");
+        return true;
+      },
+    );
+  }
+
+  // The specific hazard, asserted rather than described: `init screen` is
+  // REFUSED, not turned into `init_screen`. If it were sanitised, the two names
+  // would become one row and nothing would record that it happened.
+  assert.throws(() => assertLegalLabel("init screen"), AnnoLabelError);
+  assert.equal(assertLegalLabel("init_screen"), "init_screen", "and the underscore spelling remains a DIFFERENT, legal name");
+
+  for (const mnemonic of ["LDA", "lda", "Lda", "JAM", "slo"]) {
+    assert.throws(
+      () => assertLegalLabel(mnemonic),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoLabelError, `expected AnnoLabelError for ${mnemonic}, got ${String(e)}`);
+        assert.equal(e.reason, "6502/6510 mnemonic", "the denylist comparison is case-insensitive: all three spellings assemble the same");
+        return true;
+      },
+    );
+  }
+});
+
+test("parseStoreAddress accepts an in-range number and both hex prefixes, and REFUSES an unprefixed numeric string with the divergence named in the message", () => {
+  assert.equal(parseStoreAddress(1024), 0x0400);
+  assert.equal(parseStoreAddress("$0400"), 0x0400);
+  assert.equal(parseStoreAddress("$400"), 0x0400, "a short hex string is not padded, it is parsed");
+  assert.equal(parseStoreAddress("0x400"), 0x0400);
+  assert.equal(parseStoreAddress("0X400"), 0x0400);
+
+  for (const offender of ["1024", "0xzz", "$", "", 65536]) {
+    assert.throws(
+      () => parseStoreAddress(offender, { what: "toAddress" }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoAddressError, `expected AnnoAddressError for ${JSON.stringify(offender)}, got ${String(e)}`);
+        assert.equal(e.input, offender, "the refusal carries the offending input");
+        assert.equal(e.what, "toAddress", "and the caller-supplied field name, so the message says WHICH argument");
+        return true;
+      },
+    );
+  }
+
+  // The divergence, asserted where a reader will trip over it. `stock-address.ts`
+  // accepts the bare decimal form AS DECIMAL under its own decision; this store
+  // refuses it, because a mis-based address written into the store is PERSISTENT
+  // and silently wrong while a mis-based memory read is transient.
+  assert.throws(
+    () => parseStoreAddress("1024"),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoAddressError);
+      assert.match(e.message, /persistent/, "the refusal must say WHY an unprefixed numeric string is refused here but read elsewhere");
+      return true;
+    },
+  );
+});
+
+test("assertCommentText measures its bound in UTF-8 BYTES, not code units, and refuses the semicolon prefix the schema tells callers to omit", () => {
+  assert.equal(assertCommentText("raster split at line $64"), "raster split at line $64");
+  assert.equal(assertCommentText("x".repeat(MAX_COMMENT_BYTES)).length, MAX_COMMENT_BYTES, "exactly at the bound is accepted");
+
+  // 2048 euro signs: 2048 UTF-16 code units (comfortably under the 4096 bound
+  // if length were measured in code units) but 6144 UTF-8 bytes (over it). This
+  // is the case a `String.length` check passes and the disk then exceeds.
+  const multiByte = "€".repeat(2048);
+  assert.ok(multiByte.length < MAX_COMMENT_BYTES, "the fixture must be UNDER the bound in code units, or it does not test the distinction");
+  assert.throws(
+    () => assertCommentText(multiByte),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoCommentError, `expected AnnoCommentError, got ${String(e)}`);
+      assert.equal(e.byteLength, 6144, "the refusal carries the UTF-8 byte length -- 3 bytes per character, not 1");
+      assert.equal(e.reason, "over MAX_COMMENT_BYTES");
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => assertCommentText("x".repeat(MAX_COMMENT_BYTES + 1)),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoCommentError);
+      assert.equal(e.byteLength, MAX_COMMENT_BYTES + 1, "one byte over is over -- the text is REFUSED, never truncated");
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => assertCommentText("; the IRQ handler"),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoCommentError);
+      assert.equal(e.reason, "semicolon prefix", "the store holds the words; the exporter adds the prefix");
+      return true;
+    },
+  );
+  assert.equal(
+    assertCommentText("; a description may start with one", { allowLeadingSemicolon: true }),
+    "; a description may start with one",
+    "the opt-out exists for the one neighbouring field with the same bound and no semicolon rule",
+  );
+});
+
+test("assertEnumName and parseVariantKey complete the validator set: the identifier rule, the four numeric-string key forms, and a refusal for anything else", () => {
+  for (const legal of ["vic_registers", "_mode", "Sprite0"]) {
+    assert.equal(assertEnumName(legal), legal, `${legal} must be accepted and returned unchanged`);
+  }
+  for (const illegal of ["vic registers", "9lives", "vic-registers", ""]) {
+    assert.throws(
+      () => assertEnumName(illegal),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoLabelError, `expected AnnoLabelError for ${JSON.stringify(illegal)}, got ${String(e)}`);
+        assert.equal(e.reason, "illegal enum name", "the refusal names which rule fired");
+        return true;
+      },
+    );
+  }
+  // The mnemonic denylist is deliberately NOT applied to an enum name: the
+  // schema's mnemonic rule is scoped to LABEL names, which are the symbols an
+  // assembler sees.
+  assert.equal(assertEnumName("lda"), "lda", "an enum name is not a label, so the label-scoped denylist must not fire here");
+
+  // All four numeric-string forms the schema names, plus plain decimal.
+  assert.equal(parseVariantKey("64"), 64, "decimal IS accepted for a variant key -- the schema says so, and a key's base is not ambiguous");
+  assert.equal(parseVariantKey("$40"), 64);
+  assert.equal(parseVariantKey("0x40"), 64);
+  assert.equal(parseVariantKey("%01000000"), 64);
+  assert.equal(parseVariantKey("0b01000000"), 64);
+
+  for (const offender of ["", "0x", "$zz", "sixty-four", "%12"]) {
+    assert.throws(
+      () => parseVariantKey(offender),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for ${JSON.stringify(offender)}, got ${String(e)}`);
+        assert.equal(e.dataType, offender, "the refusal carries the offending key");
+        return true;
+      },
+    );
+  }
+  assert.throws(
+    () => parseVariantKey(64),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoTypeError, "a raw number is not a variant KEY -- the schema's keys are numeric STRINGS");
+      assert.equal(e.dataType, 64);
+      return true;
+    },
+  );
+});
+
+test("anno-types.ts declares no module-level mutable binding, and its import specifier set is exactly the three it needs", () => {
+  const raw = readFileSync(join(HERE, "anno-types.ts"), "utf8");
+
+  // Trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords.
+  // Two adjustments to `block-class.test.ts:194-212`'s scan, both necessary
+  // here and both stated so a later reader does not "restore" the original:
+  //
+  //   * ANCHORED AT COLUMN ZERO. This module's functions have genuine local
+  //     containers (`const targets: number[] = []` inside
+  //     `resolveSplitTargets`, `const ends: readonly ... = [...]` inside
+  //     `assertRangeShape`). The requirement is about MODULE-level state, and
+  //     the anchor is what makes the scan mean that instead of "no local array
+  //     anywhere", which is a different and wrong rule.
+  //   * `export` INCLUDED IN THE PATTERN. The original matches `^\s*const`,
+  //     which an `export const` line never satisfies -- and in this module
+  //     almost every module-level binding is exported, so without this the scan
+  //     would look at nothing that matters.
+  //
+  // The `let`-only form of this grep let the likeliest real offender through
+  // once already (a `const seen = new Map()` memoising cache is module-level
+  // mutable state and is `const`), which is why the container half is here.
+  const strict = codeOnly(raw);
+  const offenders = strict
+    .split("\n")
+    .filter(
+      (line) =>
+        /^(let|var)\s/.test(line) ||
+        /^(export\s+)?const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
+    );
+  assert.deepEqual(offenders, [], "every export here is a frozen constant or a pure function of its arguments; there is nothing to reset");
+
+  // Literal bodies KEPT: an import specifier IS a string literal, so blanking
+  // literal bodies would make the thing under assertion unobservable.
+  const specifiers = [
+    ...codeOnly(raw, true).matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm),
+  ]
+    .map((match) => match[1] ?? match[2] ?? match[3])
+    .filter((specifier): specifier is string => specifier !== undefined);
+
+  assert.deepEqual(
+    [...specifiers].sort(),
+    ["./disasm-opcodes.ts", "./vice.ts", "node:path"],
+    "anno-types.ts may import the opcode table (for the derived denylist), the error base, and node:path -- nothing else. A store " +
+      "module that grew a transport, census or path-translation import would stop being a pure validator layer.",
+  );
+  assert.equal(specifiers.length, 3, "three specifiers: a deepEqual catches a wrong one, the length catches a duplicate");
+
+  const localSpecifiers = specifiers.filter((specifier) => specifier.startsWith("./"));
+  assert.deepEqual([...localSpecifiers].sort(), ["./disasm-opcodes.ts", "./vice.ts"]);
+  assert.equal(localSpecifiers.length, 2);
 });
