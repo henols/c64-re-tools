@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { blockClassAt, type BlockEntry } from "./block-class.ts";
+import { codeOnly } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -133,20 +134,32 @@ test("first-match-wins on overlapping blocks -- the earliest array entry decides
 // ---------------------------------------------------------------------------
 
 test("block-class.ts imports nothing census-side, disassembler-side, transport-side or path-translation-side", () => {
-  const source = readFileSync(join(HERE, "block-class.ts"), "utf8");
-  // Strip `//`-comment lines first: this module's own header legitimately
-  // names the module families it must not import, so an unfiltered scan
-  // would be a self-invalidating gate. Same discipline
-  // `disasm-decoder.test.ts`'s purity check applies.
-  const codeOnly = source
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*") && !line.trim().startsWith("/*"))
-    .join("\n");
+  const raw = readFileSync(join(HERE, "block-class.ts"), "utf8");
+  // Comments must be stripped before scanning: this module's own header
+  // legitimately names the module families it must not import, so an
+  // unfiltered scan would be a self-invalidating gate. `codeOnly()` from
+  // `shipped-modules.ts` is the tree's shared stripper for exactly this job,
+  // and `keepLiteralBodies: true` is the right mode because an import
+  // specifier IS a string literal.
+  //
+  // This replaces a hand-rolled comment-line filter plus a
+  // `/\bfrom\s+"/` line scan that saw ONLY single-line, double-quoted,
+  // `from`-bearing imports (WR-03). All three of the shapes below were
+  // invisible to it, and both the family loop AND the emptiness assertion
+  // passed regardless -- a guard whose scanned set can shrink to nothing
+  // while staying green, which is trap 1's "quietly" made literal:
+  //
+  //   import "./r2000-coverage.ts";                    // no `from` at all
+  //   import { x } from './r2000-coverage.ts';         // single-quoted
+  //   const m = await import("./r2000-coverage.ts");   // dynamic
+  const source = codeOnly(raw, true);
 
-  const specifiers = codeOnly
-    .split("\n")
-    .filter((line) => /\bfrom\s+"/.test(line))
-    .map((line) => line.match(/from\s+"([^"]+)"/)?.[1])
+  const specifiers = [
+    ...source.matchAll(
+      /\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm,
+    ),
+  ]
+    .map((match) => match[1] ?? match[2] ?? match[3])
     .filter((specifier): specifier is string => specifier !== undefined);
 
   // The family check runs FIRST and the emptiness check LAST, deliberately:
@@ -161,6 +174,16 @@ test("block-class.ts imports nothing census-side, disassembler-side, transport-s
     );
   }
 
+  // The specifier scan catches a dynamic import with a LITERAL specifier, but
+  // `import(someVariable)` has no specifier to collect. Prohibit the shape
+  // itself, on strict-mode output so a comment discussing it cannot redden
+  // this.
+  assert.equal(
+    /\bimport\s*\(/.test(codeOnly(raw)),
+    false,
+    "block-class.ts must not use a dynamic import either -- it is an import the specifier scan above cannot see",
+  );
+
   assert.deepEqual(
     specifiers,
     [],
@@ -169,9 +192,22 @@ test("block-class.ts imports nothing census-side, disassembler-side, transport-s
   );
 });
 
-test("block-class.ts declares no module-level mutable binding", () => {
-  const source = readFileSync(join(HERE, "block-class.ts"), "utf8");
-  const offenders = source.split("\n").filter((line) => /^\s*(let|var)\s/.test(line));
+test("block-class.ts declares no module-level mutable binding, including a const mutable container", () => {
+  // Trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords.
+  // A `let`-only grep let the likeliest real offender straight through
+  // (WR-04): `const seen = new Map<number, BlockClass>();` is a memoising
+  // cache, is module-level mutable state, is exactly the shape someone would
+  // reach for to speed up a linear scan, and is `const`. Scanned on
+  // strict-mode `codeOnly()` output so the header's own prose about the trap
+  // cannot redden the gate.
+  const source = codeOnly(readFileSync(join(HERE, "block-class.ts"), "utf8"));
+  const offenders = source
+    .split("\n")
+    .filter(
+      (line) =>
+        /^\s*(let|var)\s/.test(line) ||
+        /^\s*const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
+    );
   assert.deepEqual(offenders, [], "the lookup is a pure function of its two arguments; there is nothing to hold");
 });
 
