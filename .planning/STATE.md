@@ -1083,10 +1083,16 @@ by `.planning/quick/260823-kf6`.
 | capture | 2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex | major | Pending |
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
 | capture | 2026-08-26-frame-exact-emulator-stop-is-unowned | major | Pending |
+| docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
 
-*The ledger was empty at the v0.4.0 close; the five rows above were all filed
-after that close (2026-08-24, and four on 2026-08-26), the first of them the
-first pending todo since Phase 17 plan 17-01 emptied the tree. The fifth row
+*The ledger was empty at the v0.4.0 close; every row above was filed after that
+close (one on 2026-08-24, five on 2026-08-26, one on 2026-08-28), the first of
+them the first pending todo since Phase 17 plan 17-01 emptied the tree. The
+2026-08-28 row was filed by a `/gsd-explore` session and its ledger row was
+added only after `docs-deferred-ledger.test.ts` direction A went red on it --
+the third occurrence of that same file-without-row cause recorded in this
+paragraph, which is itself the argument for filing the row in the same edit as
+the todo rather than after the guard complains. The fifth row
 (`back-05-…`) was added by plan 23-11 after `docs-deferred-ledger.test.ts`
 direction A went red on it — the same guard, on the same cause, that plan 23-10
 answered with commit `646d4d0` for the row above it. Filing a todo and adding its

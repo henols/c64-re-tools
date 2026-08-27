@@ -13,6 +13,8 @@ files:
   - src/mcp/vice/vice-broker.mts:929
   - src/mcp/vice/vice-broker-client.ts:372
   - src/mcp/vice/capability-registry.ts:283-285
+  - src/mcp/vice/resources/broker-launch.mjs:165
+  - src/mcp/vice/broker-state.mts:117-141
 ---
 
 ## Problem
@@ -43,11 +45,38 @@ Three related capabilities, which is why this is one todo and not three:
    equivalent, so no window is mapped and no audio device is opened. Needs to be
    established which stock/fork flag combination actually yields a usable
    monitor-only instance (the monitors must still bind).
-2. **Warp** — CLAUDE.md's settled constraint says there is **no runtime `WarpMode`
-   resource** on stock (`vsync.c:220-241`, deliberate), so warp on stock must be a
-   launch-time `-warp` / `InitialWarpMode`. `capability-registry.ts:283-285` already
-   records that the fork advertises a `WarpMode` resource stock does not have. That
-   asymmetry means the knob has to be expressed at launch, per backend, not as a tool.
+2. **Warp** — **PREMISE CORRECTED 2026-08-28, verified live. Warp is probably
+   not a launch-mode dimension at all.** The original argument ran: CLAUDE.md's
+   settled constraint says there is no runtime `WarpMode` *resource* on stock
+   (`vsync.c:220-241`, deliberate), and `capability-registry.ts:283-285` records
+   that the fork advertises a `WarpMode` resource stock does not have — therefore
+   warp must be a launch-time `-warp` / `InitialWarpMode` knob expressed per
+   backend.
+
+   That constraint is true **of the resource** and says nothing about the monitor
+   *command*. VICE's text monitor has a real `warp on` / `warp off` / `warp`
+   command, reachable over TCP on the `-remotemonitor` port — which
+   `broker-launch.mjs:165` **already appends to every stock launch**, allocating
+   and recording the port at `broker-state.mts:139`, with nothing in the tree ever
+   dialing it.
+
+   Confirmed live against `/usr/bin/x64sc` (genuine stock, VICE 3.9) on
+   2026-08-27: `warp` → `Warp mode is off.`, `warp on`, `warp` → `Warp mode is
+   on.`, `warp off`. Full probe evidence in
+   `.planning/notes/text-monitor-channel-live-probe.md`; the doc defect that hid
+   this is tracked in
+   `.planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md`.
+
+   **Consequence for this todo:** the expensive part of the design below — making
+   launch mode part of warm-instance eligibility, threading a mode field through
+   the acquire frame, and deciding what the warm floor pre-warms — was motivated
+   largely by warp being un-retrofittable to an already-booted process. Runtime
+   `warp on` **is** retrofittable to a warm instance, so it needs none of that.
+   Re-scope before planning: **headless is the only genuine launch-mode
+   dimension** (a window and an audio device cannot be un-opened after the fact),
+   and warp becomes an ordinary runtime operation over the text channel. Whether
+   the on-demand-lifecycle half (point 3) still earns its complexity for headless
+   alone is an open question this re-scope should answer, not assume.
 3. **On-demand lifecycle, so the mode can be chosen per run** (added 2026-08-26) —
    VICE does not have to be pre-started at all; it should be launched when a run
    needs it, in the mode that run wants, and shut down when the run is done.
@@ -82,7 +111,10 @@ Constraints any implementation has to respect:
 - Warp changes the emulator's wall-clock-to-cycle ratio, so anything that measures or
   waits on real time — broker probe timeouts (`probeReady`), `VICE_MCP_TIMEOUT_MS`,
   the checkpoint-wait poll loops in `vice-sync.ts` — needs to be re-checked under
-  warp before this is turned on by default anywhere.
+  warp before this is turned on by default anywhere. **This constraint survives the
+  2026-08-28 correction unchanged, and gets sharper:** runtime warp means the ratio
+  can now change *mid-run*, not only between launches, so the re-check has to cover
+  a bracket that starts un-warped and ends warped.
 - `vice-sync.ts`'s invariants (exactly one resume per wait; poll on `hit_count`,
   never on paused state) are deliberately untested and must survive the change.
 - A warm instance is a real, already-booted process, so it can never be
@@ -104,11 +136,15 @@ Constraints any implementation has to respect:
 
 TBD in detail; the shape that fits the existing seams:
 
-- Add an opt-in launch-mode input (env knob and/or an acquire-time parameter threaded
-  from `vice-broker.mts`'s acquire path) — something like `VICE_HEADLESS=1` /
-  `VICE_WARP=1` — that `buildViceArgs()` reads *in addition to* the backend shape,
-  rather than a `VICE_ARGS` full override. Keep the flags backend-specific: the fork
-  can also flip warp at runtime, stock cannot.
+- **Re-scope to headless first** (see the correction in point 2). Add an opt-in
+  launch-mode input (env knob and/or an acquire-time parameter threaded from
+  `vice-broker.mts`'s acquire path) — `VICE_HEADLESS=1` — that `buildViceArgs()`
+  reads *in addition to* the backend shape, rather than a `VICE_ARGS` full
+  override. **Do not add `VICE_WARP=1`**: stock can flip warp at runtime over the
+  text monitor, and so can the fork via its `WarpMode` resource, so warp is a
+  runtime operation on both backends rather than a launch flag on either.
+  Everything below about mode-aware warm-instance eligibility should be re-read
+  asking whether headless alone still justifies it.
 - Carry the mode on the acquire request itself (a field on the
   `{ op: "acquire", id, token }` frame) so it is per-run rather than per-broker, and
   make `selectWarmInstance()` mode-aware: record each instance's launch mode in its
