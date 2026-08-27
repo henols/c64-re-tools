@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 13
 waived_count: 0
 fixed_count: 3
-total_count: 15
-last_updated: 2026-08-26T15:56:52.138Z
+total_count: 16
+last_updated: 2026-08-27T13:14:52.643Z
 ---
 
 # Broken Windows Ledger
@@ -30,6 +30,7 @@ last_updated: 2026-08-26T15:56:52.138Z
 | 13 | 23 | deviation | src/mcp/vice/r2000-session.test.ts | 615 | Load-flaky: crash-counter assertion fails under full-suite parallelism, green in isolation and on re-run; logged in phase 23 deferred-items, not fixed (evidence convention 9 forbids touching src/) | open |  | 2026-08-26T11:40:12.713Z |  |
 | 14 | 23 | unmet-truth | .planning/REQUIREMENTS.md |  | PROOF-01/02/03 not met at the Phase 23 close: criteria never measured (no depacked flat-64K capture, D-03); rows read Pending with the reason | open |  | 2026-08-26T15:56:45.162Z |  |
 | 15 | 23 | unrun-verify | .planning/phases/23-the-real-release-gate-go-degrade-no-go/23-11-PLAN.md |  | 23-11 Task 3's automated verify asserts all five PROOF rows read Complete; recorded unsatisfiable because PROOF-01/02/03 were never measured (phase-wide precedent: the evidence is not bent to a plan regex) | open |  | 2026-08-26T15:56:52.138Z |  |
+| 16 | 28 | todo | src/mcp/vice/anno-types.ts |  | MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth) | open |  | 2026-08-27T13:14:52.643Z |  |
 
 ````json
 [
@@ -211,6 +212,18 @@ last_updated: 2026-08-26T15:56:52.138Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-26T15:56:52.138Z",
+    "resolved_at": null
+  },
+  {
+    "id": 16,
+    "kind": "todo",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-types.ts",
+    "line": null,
+    "description": "MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T13:14:52.643Z",
     "resolved_at": null
   }
 ]

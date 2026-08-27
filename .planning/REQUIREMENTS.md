@@ -84,7 +84,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 - [ ] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
 - [ ] **STORE-05**: The schema carries a version field and a reserved bank field from the first write, and cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`). All three are free at decode time and unrecoverable afterwards; the bank field is reserved and **not** interpreted, since `PROOF-03` is recorded `could-not-run` and `memmap.json` is flat
 - [ ] **STORE-06**: Cross-references and search over the typed decode are answerable — which addresses reference a given address, and search across labels, comments and instructions — built on the surviving `disasm-*` decoders, with the old route gone rather than kept as a fallback
-- [ ] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
+- [x] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
 
 ### MCP Surface
 
@@ -218,7 +218,7 @@ over them.
 | STORE-03 | Phase 28 | Pending |
 | STORE-04 | Phase 28 | Pending |
 | STORE-05 | Phase 28 | Pending |
-| STORE-07 | Phase 28 | Pending |
+| STORE-07 | Phase 28 | Complete |
 | MCP-01 | Phase 29 | Pending |
 | MCP-02 | Phase 29 | Pending |
 | MCP-03 | Phase 29 | Pending |

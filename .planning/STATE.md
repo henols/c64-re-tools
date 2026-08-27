@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Phase 27 complete, ready to plan Phase 28
-last_updated: "2026-08-27T12:09:47.542Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-08-27T13:11:12.470Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 27 complete, transitioned to Phase 28
-state_head: 4e7e2d769512c5165c01fb5ace0a55d454cf13d9
+last_activity_desc: Phase 28 execution started
+state_head: b6f560dac30da4f4fc49ed2a11245fd90261f5c0
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -72,7 +72,7 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 28 — The Store Core (Phase 27 Shared Seams Extracted completed 2026-08-27)
+**Current focus:** Phase 28 — The Store Core
 Milestone **v0.7.0 Own the Annotation Store**, opened 2026-08-26. 28 requirements
 (`SEAM-*`, `STORE-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*`), all 28 mapped to
 **six** phases in `.planning/ROADMAP.md` (Phases **27-32**) — one requirement to
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — READY TO EXECUTE
-Plan: Not started
+Phase: 28 (The Store Core) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-08-27 — Phase 27 complete, transitioned to Phase 28
+Last activity: 2026-08-27 — Phase 28 execution started
 
 ## Performance Metrics
 
@@ -290,6 +290,7 @@ Last activity: 2026-08-27 — Phase 27 complete, transitioned to Phase 28
 | Phase 27 P03 | 8 min | 3 tasks | 14 files |
 | Phase 27 P04 | 17 min | 3 tasks | 8 files |
 | Phase 27 P05 | 49 min | 3 tasks | 2 files |
+| Phase 28 P01 | 21 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -586,6 +587,10 @@ Recent decisions affecting current work:
 - [Phase 27]: The capability-or-glue record is a typed const with an enumerating guard (module-classification.ts), and its non-vacuity threshold is DERIVED from the registry rather than pinned or written as a growing literal floor — A pinned total goes red on a correct tree the moment a module is legitimately added OR deleted; this project already carries that scar in a guard that pinned per-milestone totals. The threshold "on-disk in-scope count >= in-enumeration entry count" catches a broken or empty glob (proven RED) and self-adjusts in both directions. It explicitly supersedes hostpath-consumers.test.ts R2000_MODULE_FLOOR = 14, with the reason recorded at the assertion so a later reader does not restore the literal.
 - [Phase 27]: OQ-2 resolved: r2000-verify.ts is recorded capability per criterion 2, but its basis is written as the DISCIPLINE (acmeVerdict at r2000-verify.ts:116) and the tension against EXPORT-01 is stated in the entry note — Criterion 2 is the phase binding text and a registry should not overrule it, but EXPORT-01 states verbatim that the existing verify seam invokes regenerator2000 and parses ITS transcript, so only the discipline survives. Recording the verdict without the tension would hand a later phase a verdict it will contest instead of a basis it can act on.
 - [Phase 27]: OQ-4 resolved: both scripts/lib/r2000-cli-verbs files are carried as registry DATA with scope out-of-enumeration, while the enforcing test enumeration stays inside src/mcp/vice/ — CUT-04 names scripts/lib/r2000-cli-verbs.mjs explicitly as a guard whose fate must be recorded, so two entries close that blind spot five phases early; keeping the enumeration inside the module directory respects D-09 and avoids a test that reaches into scripts/. Direction 7 proves the marker does the excluding rather than a special case in the loop.
+- [Phase 28]: Annotation data-type vocabulary frozen at twelve members, with all four split-table layouts first-class — Split-table orientation is unrecoverable from a store that never recorded it, so the recovery cost is a hand re-annotation rather than a migration. Both distinguishing axes are separately observable, and the twelve spellings already appear verbatim in a shipped skill playbook.
+- [Phase 28]: parseStoreAddress owns the string address forms only; assertRangeShape owns range-ness for both forms — A boundary refusal must be a range-shape error so a caller can tell 'that is not an address' from 'those two ends do not make a range'. Parsing first collapsed the two.
+- [Phase 28]: The commit statement is centralised in one private helper shared by first-open init and the write sequence — Keeps exactly one commit site in the seam module, so a durability proof's planted violation has a unique, unambiguous target.
+- [Phase 28]: The node:sqlite single-seam detector is one substring test over literal-bodies-kept stripped source, with a comment-only negative control — node:sqlite has four working access routes and only the prefixed specifier resolves; a two-regex import idiom is blind to getBuiltinModule entirely. The cost is the string-literal half of the control, which cannot coexist with literal-bodies-kept mode.
 
 ### Pending Todos
 
@@ -1169,8 +1174,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T10:21:13.170Z
-Stopped at: Phase 27 complete, ready to plan Phase 28
+Last session: 2026-08-27T13:11:12.325Z
+Stopped at: Completed 28-01-PLAN.md
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is
