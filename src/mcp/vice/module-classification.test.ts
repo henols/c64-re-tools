@@ -228,6 +228,60 @@ function lineCitationProblems(entry: ModuleClassificationEntry, root: string = R
   return problems;
 }
 
+/** Every `path:NN` citation in module-classification.ts's OWN source text --
+ * its header prose and its `rationale`/`note` strings -- as
+ * `{ path, line, symbol }`. Direction 9 above verifies only the citations the
+ * record carries as STRUCTURED data (`basis.consumers[].line`); the module
+ * additionally cites a dozen locations in prose, and those were outside every
+ * gate in the tree while the module's own header called the drift liability
+ * "MEASURED, NOT HYPOTHETICAL" and recorded that three citations had already
+ * drifted while it was being written (WR-06).
+ *
+ * A bare `:NN` continuation (the `at r2000-cli.ts:91 and :631` shape) inherits
+ * the last path seen, which is how that shape reads to a human and how it
+ * drifts.
+ *
+ * `symbol` is the nearest backticked identifier or `identifier()` token
+ * EARLIER ON THE SAME SOURCE LINE, or undefined. Deliberately same-line only:
+ * a wider window reaches back into the previous bullet and attributes that
+ * bullet's symbol to this citation, which reddens a CORRECT record -- measured
+ * while writing this, on the `r2000-session.ts:294` citation, whose prose names
+ * no symbol at all ("the single-flight session queue ... onward"). Under-
+ * reaching costs coverage on a few citations; over-reaching costs trust in the
+ * guard, and a guard that cries wolf gets deleted. */
+function prosePathCitations(source: string): { path: string; line: number; symbol?: string }[] {
+  const CITATION_RE = /([A-Za-z0-9_./-]+\.(?:ts|mts|md)):(\d+)|`:(\d+)`|\s:(\d+)\b/g;
+  const SYMBOL_RE = /`([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?`|\b([A-Za-z_$][A-Za-z0-9_$]{3,})\(\)/g;
+  const citations: { path: string; line: number; symbol?: string }[] = [];
+  let lastPath: string | undefined;
+  for (const match of source.matchAll(CITATION_RE)) {
+    let path: string | undefined;
+    let line: number;
+    if (match[1] !== undefined) {
+      path = match[1];
+      line = Number(match[2]);
+      lastPath = path;
+    } else {
+      path = lastPath;
+      line = Number(match[3] ?? match[4]);
+    }
+    if (path === undefined) continue; // a bare `:NN` before any path -- not a citation
+    const index = match.index ?? 0;
+    const sameLineBefore = source.slice(source.lastIndexOf("\n", index) + 1, index);
+    const tokens = [...sameLineBefore.matchAll(SYMBOL_RE)];
+    const last = tokens[tokens.length - 1];
+    const symbol = last === undefined ? undefined : (last[1] ?? last[2]);
+    citations.push(symbol === undefined ? { path, line } : { path, line, symbol });
+  }
+  return citations;
+}
+
+/** Resolves a citation path the way a reader would: a path containing `/` is
+ * repo-relative, a bare module name is a sibling of this directory. */
+function resolveCitationPath(path: string, root: string, here: string): string {
+  return path.includes("/") ? join(root, path) : join(here, path);
+}
+
 // --- DIRECTION 6: the derived non-vacuity relation, placed FIRST so no loop
 // --- below it can pass vacuously.
 
@@ -337,6 +391,51 @@ test("DIRECTION 9 (non-vacuity): the record actually carries advisory line citat
     cited.length > 0,
     "no consumer carries a line citation -- Direction 9 would then pass over an empty set, which is exactly the " +
       "vacuous-guard shape this suite refuses",
+  );
+});
+
+test("DIRECTION 9b (prose citations): every `path:NN` cited in this module's OWN source resolves to a real file and a real, non-blank line", () => {
+  const source = readFileSync(join(HERE, "module-classification.ts"), "utf8");
+  const problems: string[] = [];
+  for (const citation of prosePathCitations(source)) {
+    const abs = resolveCitationPath(citation.path, ROOT, HERE);
+    if (!existsSync(abs)) {
+      problems.push(`cites ${citation.path}:${citation.line}, but that file does not exist`);
+      continue;
+    }
+    const text = readFileSync(abs, "utf8").split("\n")[citation.line - 1];
+    if (text === undefined) {
+      problems.push(`cites ${citation.path}:${citation.line}, but that file has no such line`);
+      continue;
+    }
+    if (text.trim() === "") {
+      problems.push(`cites ${citation.path}:${citation.line}, but that line is blank -- the cited region moved`);
+      continue;
+    }
+    // The containment half, where the prose names a symbol adjacent to the
+    // citation. This is the same check Direction 9 applies to the structured
+    // citations; see prosePathCitations() for why the window is same-line only.
+    if (citation.symbol !== undefined && !text.includes(citation.symbol)) {
+      problems.push(
+        `cites ${citation.path}:${citation.line} for ${citation.symbol}, but that line does not contain it -- ` +
+          `drift. Line reads: ${JSON.stringify(text)}`,
+      );
+    }
+  }
+  assert.deepEqual(problems, [], `prose line citation drift in module-classification.ts:\n  ${problems.join("\n  ")}`);
+});
+
+test("DIRECTION 9b (non-vacuity): the extractor actually finds prose citations, and some of them carry a symbol to contain", () => {
+  // Without this, rewording the header so the citation regex matches nothing
+  // would make the check above pass over an empty set -- the vacuous-guard
+  // shape this suite refuses. Stated as relations, not as pinned counts, so
+  // adding or removing a citation never reddens it (see Direction 6's
+  // argument against literal floors).
+  const citations = prosePathCitations(readFileSync(join(HERE, "module-classification.ts"), "utf8"));
+  assert.ok(citations.length > 0, "the prose-citation extractor found nothing -- it has stopped seeing the citation shape");
+  assert.ok(
+    citations.some((citation) => citation.symbol !== undefined),
+    "no prose citation carries an adjacent symbol -- the containment half of 9b would then be vacuous",
   );
 });
 
