@@ -70,7 +70,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 
 - [x] **SEAM-01**: The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip
 - [ ] **SEAM-02**: Every `r2000-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `r2000-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted
-- [ ] **SEAM-03**: `r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store
+- [x] **SEAM-03**: `r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store
 
 ### Store Core
 
@@ -212,7 +212,7 @@ over them.
 |-------------|-------|--------|
 | SEAM-01 | Phase 27 | Complete |
 | SEAM-02 | Phase 27 | Pending |
-| SEAM-03 | Phase 27 | Pending |
+| SEAM-03 | Phase 27 | Complete |
 | STORE-01 | Phase 28 | Pending |
 | STORE-02 | Phase 28 | Pending |
 | STORE-03 | Phase 28 | Pending |
