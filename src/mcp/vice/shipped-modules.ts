@@ -200,8 +200,6 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
   const out: string[] = [];
   const n = src.length;
   let i = 0;
-  let inTemplateText = false;
-  let inInterp = false;
   const templateStack: { inInterp: boolean; interpBraceDepth: number }[] = [];
 
   // Expression-position tracking, for the regular-expression-literal branch
@@ -247,8 +245,10 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
   while (i < n) {
     const c = src[i];
     const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
-    inTemplateText = top !== undefined && !top.inInterp;
-    inInterp = top !== undefined && top.inInterp;
+    // Derived fresh from `templateStack` every iteration and carrying no
+    // state across iterations, so both are loop-body consts (IN-01).
+    const inTemplateText = top !== undefined && !top.inInterp;
+    const inInterp = top !== undefined && top.inInterp;
 
     if (inTemplateText) {
       if (c === "\\") {
