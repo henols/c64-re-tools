@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
-status: gaps_found
-stopped_at: "Phase 28 gap closure planned -- 3 plans (28-07..28-09, waves 5-7) close the 3 frontmatter gaps plus CR-02; next: /gsd-execute-phase 28 --gaps-only"
-last_updated: "2026-08-27T20:50:15.259Z"
+status: executing
+stopped_at: "Completed 28-07-PLAN.md (gap closure: gaps 1 and 2 closed); next 28-08"
+last_updated: "2026-08-27T21:43:55.608Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 28 gap closure planned; 3 gap_closure plans verified by plan-checker
-state_head: 0c4f6e317192cd9b25950308d8e1feb26b45b880
+last_activity_desc: Phase 28 execution started
+state_head: ee4c256727d2385972dddd57b10842525f643927
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
   percent: 17
 ---
 
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — READY TO EXECUTE (gap closure)
-Plan: 6 of 9 executed; 3 gap_closure plans (28-07..28-09) planned, not yet run
-Status: gaps_found — planned, not closed
-Last activity: 2026-08-27 — Phase 28 gap closure planned and verified
+Phase: 28 (The Store Core) — EXECUTING
+Plan: 7 of 9 executed; gap closure running 28-07..28-09 (28-07 done, 28-08 and 28-09 remain)
+Status: Executing Phase 28 (gap closure, --gaps-only)
+Last activity: 2026-08-27 — Phase 28 execution started
 
 ## Performance Metrics
 
@@ -296,6 +296,7 @@ Last activity: 2026-08-27 — Phase 28 gap closure planned and verified
 | Phase 28 P03 | 22 min | 3 tasks | 3 files |
 | Phase 28 P05 | 21 min | 2 tasks | 4 files |
 | Phase 28 P06 | 26 min | 3 tasks | 5 files |
+| Phase 28 P07 | 16 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -612,6 +613,8 @@ Recent decisions affecting current work:
 - [Phase 28]: oldestRetainedRevision() reads the pointer ROWS, and reports a named NO_RETAINED_REVISION sentinel on an empty ring — currentRevision() - MAX_SNAPSHOT_REVISIONS agrees with the rows only on a store written forward; after a revert the arithmetic names a revision no row records. A floor naming an unrevertable revision is worse than no floor.
 - [Phase 28]: node:sqlite is now bounded in the TEST tree by a declared one-element list, and its member is anno-seam.test.ts itself — shippedTsModules() derives from files[], which excludes test files, so the test tree was outside STORE-07's scope by construction. The plan expected the store's own test file to need the import; measured false (AnnoStoreHandle exposes its db). The guard file is the one member because its planted route strings are string literals a keepLiteralBodies specifier scan cannot distinguish from route (d).
 - [Phase 28]: The mutator's mutation is a single raw insert rather than setDataType — setDataType hard-wires the committing wrapper, so routing one mode through it would make the committing and planted modes differ in more than the commit -- the exact drift a parameterised planting exists to prevent. retype()'s split-and-preserve logic is STORE-02's subject and is proven in anno-overlap.test.ts.
+- [Phase 28]: reconcileSnapshotRing reads retainedRevisions() rather than re-deciding with an existsSync of its own -- one predicate, every consumer, so the row-only regression cannot hide from the proofs that catch it — A fourth independent existsSync would both reintroduce the three-way drift this plan exists to remove and leave the mandated planted red green
+- [Phase 28]: A snapshot FILE is removed only after the store has stopped claiming its revision; a revert reconciles the restored pointer table against the directory, and the refusal for a missing file is the same named AnnoStoreError a missing row already produced — Closes 28-VERIFICATION gaps 1 and 2 (CR-01, WR-01, WR-02); the published floor can no longer name a revision revertTo would refuse
 
 ### Pending Todos
 
@@ -1195,41 +1198,42 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T18:58:33.191Z
-Stopped at: Completed 28-06-PLAN.md
-  Plan 28-06 is complete: 3 tasks, 3 task commits (`3fccfc5`, `d86739e`,
-  `aefe2ed`). This was the LAST of six plans for phase 28 -- all six are now
-  executed. `STORE-04` and `STORE-05` are discharged. New file
-  `anno-durability.test.ts` (372 lines, 4 tests) carries the ONE combined proof
-  `STORE-04` asks for: the spawned, never-imported `anno-durability-mutator.mjs`
-  mutates a store in a separate OS process and `SIGKILL`s ITSELF with no clean
-  close, a fresh process reopens the file, the mutation reads back BY VALUE and
-  `revertTo(0)` returns the prior value -- both halves computed as booleans by
-  ONE shared helper (called exactly twice) and asserted as VALUES outside any
-  try. The snapshot ring is now BOUNDED at `MAX_SNAPSHOT_REVISIONS`, pruned
-  after the commit and outside the transaction, file-before-pointer-row, with a
-  revert past the bound refused by name rather than substituting the nearest
-  snapshot -- which closes `WINDOWS.md` window 16 (`T-28-diskgrowth`). The
-  cross-process stale-revision refusal is proven across two genuinely separate
-  OS processes with both `AnnoStoreStaleRevisionError` fields checked and both
-  rows' fates asserted. Four observed reds, all reverted before their commits:
-  the removed `pruneSnapshots` call (40 files, not 32); the
-  nearest-snapshot revert fallback; `runWriteSequence`'s single `commit` removed
-  by hand, yielding `revision=0 readBackByValue=false
-  revertReturnsPriorValue=false` -- both halves, matching research exactly; and
-  the removed step-2 base-revision check, which is a lost write happening.
-  THREE of the plan's asserted facts were MEASURED false and corrected in
-  place: the corrupt-fixture `node:sqlite` import is unnecessary (the handle
-  exposes its own `db`), `revertTo(r)` twice is structurally impossible rather
-  than idempotent (a snapshot cannot record a snapshot of itself), and an
-  unconditional step-5 CAS does not redden the cross-process test because that
-  refusal comes from step 2. Gates: 114/114 on the six store test files,
-  typecheck green, `test:automated` 2621 tests / 5 failures all inside the named
-  baseline, and the phase-close whole-glob `npm test` at 2748 tests / 44
-  failures -- exactly the documented clean baseline (39 `vice-proxy.test.ts` +
-  5 `r2000-session.test.ts`), broker stopped for both, the leaked
-  `vice-proxy.test.ts` child terminated by PID. Zero deletions. Next: phase 28
-  verification.
+Last session: 2026-08-27T21:43:55.450Z
+Stopped at: Completed 28-07-PLAN.md (gap closure: gaps 1 and 2 closed); next 28-08
+  Plan 28-07 is complete: 2 tasks, 2 task commits (`6902301`, `ee4c256`), 16
+  min. It is the FIRST of the three gap-closure plans (waves 5-7); 28-08 and
+  28-09 remain. `28-VERIFICATION.md` gaps 1 (CR-01 + WR-02) and 2 (WR-01) are
+  closed against all six of their `missing:` items, which discharges `28-06`
+  truths 7 and 8 and removes `28-06` P9's flagged degradation. The invariant
+  both gaps were routes into is now NAMED ONCE: a revision is RETAINED only
+  when its `anno_snapshot` pointer ROW and its `snapshots/` FILE both exist,
+  and `retainedRevisions()` is the single definition every consumer reads --
+  `oldestRetainedRevision()`, `revertTo()`'s refusal, `reconcileSnapshotRing()`
+  and through it `pruneSnapshots()`'s bound. The row-only
+  `select min(revision)` query is gone. `reconcileSnapshotRing()` is the single
+  half-state resolver, returns `{ droppedRows, droppedFiles }`, and is called
+  at EXACTLY two sites -- the end of `revertTo` on the new handle and the start
+  of `pruneSnapshots` -- and deliberately NOT from `openStore`, which would
+  redden `anno-durability.test.ts:291-347`. `revertTo` now refuses an absent
+  ROW or an absent FILE with the same named `AnnoStoreError` before touching
+  the filesystem, stages and fsyncs BEFORE `closeStore` so a failure leaves the
+  caller a usable handle (WR-02), and wraps every `node:fs` call so no raw
+  `ENOENT` escapes the family; the one residual (a `renameSync` failure after
+  the close) is STATED. The prune now deletes the POINTER ROW before it unlinks
+  the FILE, and trap 10's inverted conclusion is corrected IN PLACE with its
+  correct premise kept -- the verifier rated that comment a Blocker. Nine new
+  tests including the phase's first second-revert and first mid-prune
+  half-state scenarios. FOUR observed reds, all reverted before their commits:
+  the `existsSync` filter removed from `retainedRevisions` (41/39/2, reddening
+  both second-revert proofs); the prune statements swapped back to file-then-row
+  (45/44/1 on the source-order control); and the directory sweep removed from
+  the resolver (45/42/3 on half-state B's bound). Gates: 107/107 across the six
+  store test files, 21/21 on hostpath-consumers/docs-linerefs/
+  docs-review-disposition, `tsc --noEmit` clean, `check-npm-packages` OK with
+  80/34 files unchanged. The whole-glob `npm test` was NOT run and is not a
+  signal for this plan (~660 s, a `vice-proxy.test.ts` hang, 44-failure
+  baseline). Zero deletions. `STORE-02/03/04` stay `Gaps Found` on purpose --
+  gap 3 and CR-02 are still open against the same phase. Next: 28-08.
 
 Previously stopped at: Phase 27 complete, ready to plan Phase 28
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
