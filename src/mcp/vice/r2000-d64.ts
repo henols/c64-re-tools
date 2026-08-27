@@ -215,7 +215,7 @@ export function listEntries(image: Uint8Array): D64Entry[] {
  * The returned bytes are the file's RAW content INCLUDING its leading 2-byte
  * PRG load address, unmodified -- that is deliberate, since the whole point
  * of this module is to hand bytes straight to `parsePrg()` in
- * `r2000-project.ts`, which expects that same 2-byte header.
+ * `prg-image.ts`, which expects that same 2-byte header.
  */
 export function extractEntry(image: Uint8Array, entryName: string): Uint8Array {
   const entries = listEntries(image);

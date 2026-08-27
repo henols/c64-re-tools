@@ -3,7 +3,7 @@
 // refusal path D-02 depends on -- unknown name, ambiguous name, corrupt
 // chain, and an out-of-image pointer -- each proven to throw rather than
 // guess or read out of bounds. Also proves this module composes with
-// r2000-project.ts's parsePrg(), the pairing plan 10-04 depends on.
+// prg-image.ts's parsePrg(), the pairing plan 10-04 depends on.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
@@ -344,36 +344,40 @@ test("extractEntry: a hand-written final sector at the one-payload-byte boundary
   assert.deepEqual(Buffer.from(extracted), Buffer.from([0xaa]));
 });
 
-// ---------------------------------------------------- composition with r2000-project.ts
+// ---------------------------------------------------- composition with prg-image.ts
 //
-// Plan 10-04 hands extractEntry()'s output straight to parsePrg() in
-// r2000-project.ts (created by the concurrent, sibling wave-1 plan 10-02).
-// Because this plan and 10-02 execute in ISOLATED parallel worktrees, this
-// module may not exist on disk yet in this checkout -- it exists after the
-// orchestrator merges both wave-1 branches together. This test therefore
-// probes for the file before importing it (a static import of a missing
-// module would crash the whole suite, not just this test) and SKIPS with an
-// explicit, loud reason when absent, following this project's own
-// availability-gated-test convention (see disasm-roundtrip.test.ts's
-// SKIP_REASON pattern). It is NOT expected to skip once the wave has merged.
-const R2000_PROJECT_PATH = join(HERE, "r2000-project.ts");
-const R2000_PROJECT_AVAILABLE = existsSync(R2000_PROJECT_PATH);
-const SKIP_REASON = R2000_PROJECT_AVAILABLE
+// This module's extractEntry() output feeds straight into parsePrg(), which
+// now lives in prg-image.ts -- the pure C64 image byte-layout module the
+// SEAM-02 extraction moved it into, out of the annotation-store project
+// builder it used to share a file with. The probe below therefore targets
+// prg-image.ts, and it exists on disk in every checkout, so this test is not
+// expected to skip. The existence probe and the loud SKIP_REASON are kept as
+// a defensive net following this project's own availability-gated-test
+// convention (see disasm-roundtrip.test.ts's SKIP_REASON pattern): a silent
+// crash of the whole suite on a missing module is strictly worse than one
+// named skip.
+const PRG_IMAGE_PATH = join(HERE, "prg-image.ts");
+const PRG_IMAGE_AVAILABLE = existsSync(PRG_IMAGE_PATH);
+const SKIP_REASON = PRG_IMAGE_AVAILABLE
   ? false
-  : "r2000-project.ts (created by sibling wave-1 plan 10-02) is not present in this isolated worktree yet -- " +
-    "this composition test runs for real once the wave-1 branches merge. Not a failure of this plan's own scope.";
+  : "prg-image.ts is not present next to this test file -- parsePrg() cannot be composed with extractEntry(). " +
+    "This is a broken checkout, not a scoping limitation: the module ships in package.json's files[].";
 
 test(
   "composition: extracted bytes feed parsePrg(), and the recovered origin matches the fixture's load address",
   { skip: SKIP_REASON },
   async () => {
-    // A non-literal specifier, deliberately: this defers module resolution
-    // (both TypeScript's static check and Node's runtime resolution) to a
-    // path we have already confirmed exists on disk above -- a literal
-    // `import("./r2000-project.ts")` would fail `tsc --noEmit` in this
-    // isolated worktree even though the module is guaranteed to exist once
-    // wave-1 merges.
-    const mod = (await import(pathToFileURL(R2000_PROJECT_PATH).href)) as {
+    // A non-literal specifier, RETAINED deliberately. Its original
+    // rationale has lapsed: it existed because a literal
+    // `import("./prg-image.ts")`-shaped specifier would have failed
+    // `tsc --noEmit` in an isolated parallel worktree where the sibling
+    // module had not been merged in yet, and this repo no longer executes
+    // plans in isolated worktrees. The pattern is kept rather than
+    // simplified because it is harmless and the code is correct either way:
+    // it defers module resolution (both TypeScript's static check and Node's
+    // runtime resolution) to a path already confirmed to exist on disk
+    // above, which is exactly what pairs with the existence probe.
+    const mod = (await import(pathToFileURL(PRG_IMAGE_PATH).href)) as {
       parsePrg: (bytes: Uint8Array) => { origin: number; body: Uint8Array };
     };
     const { parsePrg } = mod;
