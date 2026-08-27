@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 0
 fixed_count: 3
-total_count: 16
-last_updated: 2026-08-27T13:14:52.643Z
+total_count: 17
+last_updated: 2026-08-27T13:34:12.253Z
 ---
 
 # Broken Windows Ledger
@@ -31,6 +31,7 @@ last_updated: 2026-08-27T13:14:52.643Z
 | 14 | 23 | unmet-truth | .planning/REQUIREMENTS.md |  | PROOF-01/02/03 not met at the Phase 23 close: criteria never measured (no depacked flat-64K capture, D-03); rows read Pending with the reason | open |  | 2026-08-26T15:56:45.162Z |  |
 | 15 | 23 | unrun-verify | .planning/phases/23-the-real-release-gate-go-degrade-no-go/23-11-PLAN.md |  | 23-11 Task 3's automated verify asserts all five PROOF rows read Complete; recorded unsatisfiable because PROOF-01/02/03 were never measured (phase-wide precedent: the evidence is not bent to a plan regex) | open |  | 2026-08-26T15:56:52.138Z |  |
 | 16 | 28 | todo | src/mcp/vice/anno-types.ts |  | MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth) | open |  | 2026-08-27T13:14:52.643Z |  |
+| 17 | 28 | deviation | src/mcp/vice/anno-index.test.ts | 508 | The 'imports nothing but types from anno-types.ts' truth is asserted as exactly one import specifier plus family exclusions, not as import type: anno-index.ts imports two error CLASSES it throws, so a type-only import is unreachable | open |  | 2026-08-27T13:34:12.253Z |  |
 
 ````json
 [
@@ -224,6 +225,18 @@ last_updated: 2026-08-27T13:14:52.643Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-27T13:14:52.643Z",
+    "resolved_at": null
+  },
+  {
+    "id": 17,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-index.test.ts",
+    "line": 508,
+    "description": "The 'imports nothing but types from anno-types.ts' truth is asserted as exactly one import specifier plus family exclusions, not as import type: anno-index.ts imports two error CLASSES it throws, so a type-only import is unreachable",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T13:34:12.253Z",
     "resolved_at": null
   }
 ]
