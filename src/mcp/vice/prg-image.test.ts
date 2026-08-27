@@ -60,8 +60,12 @@ test("flatImageOrigin: returns 0 for exactly 65536 bytes", () => {
 });
 
 test("flatImageOrigin: throws otherwise, naming the actual length", () => {
-  assert.throws(() => flatImageOrigin(Buffer.alloc(65535)), /65535/);
-  assert.throws(() => flatImageOrigin(Buffer.alloc(0)), /0/);
+  // Anchored on the message's `is <n> byte(s)` shape, not a bare number: the
+  // message always contains the constant 65536, so a bare /0/ was satisfied
+  // by that constant regardless of the observed length, and the zero-length
+  // case was not actually pinned to naming 0 at all (IN-03).
+  assert.throws(() => flatImageOrigin(Buffer.alloc(65535)), /is 65535 byte\(s\)/);
+  assert.throws(() => flatImageOrigin(Buffer.alloc(0)), /is 0 byte\(s\)/);
 });
 
 // ---------------------------------------------------------------------------
