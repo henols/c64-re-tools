@@ -399,13 +399,13 @@ on the record — before a line of store code exists.
   3. `r2000-coverage.ts`'s contact with the annotation store is a **named, repointable boundary** rather than two functions comparing against upstream's Rust `Display` strings, and `COV-01`/`COV-02`'s census-versus-store boundary test — the one that rewrites every block entry to a single type and asserts no census byte count moves — passes across that boundary. The coverage instrument survives the substrate swap intact instead of being deleted as glue.
   4. Full `npm test` (the whole glob, broker stopped, command named in the evidence) is green with **zero** `r2000` modules deleted — the extraction is demonstrably a move rather than a change, which is what makes every later phase's diff readable.
 
-**Plans**: 1/5 plans executed in 3 waves
+**Plans**: 2/5 plans executed in 3 waves
 
 Plans:
 **Wave 1**
 
 - [x] 27-01-PLAN.md — Extract the ACME availability gate into `acme-gate.ts`, repoint its four importers, and prove the missing-ACME hard-FAIL by a committed child-process observation (SEAM-01)
-- [ ] 27-02-PLAN.md — Reduce the coverage census's store contact to one named boundary, `block-class.ts`, and prove it substitutable with a zero-overlap second vocabulary (SEAM-03)
+- [x] 27-02-PLAN.md — Reduce the coverage census's store contact to one named boundary, `block-class.ts`, and prove it substitutable with a zero-overlap second vocabulary (SEAM-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -918,7 +918,7 @@ in a milestone archive.
 | 24. The Two Engines | v0.6.0 | — | Held for v0.8.0 | - |
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
-| 27. Shared Seams Extracted | v0.7.0 | 1/5 | In Progress|  |
+| 27. Shared Seams Extracted | v0.7.0 | 2/5 | In Progress|  |
 | 28. The Store Core | v0.7.0 | — | Not started | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |

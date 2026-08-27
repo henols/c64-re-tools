@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 27
 current_phase_name: Shared Seams Extracted
 status: executing
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-08-27T05:51:22.648Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-08-27T06:35:58.303Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 27 execution started
-state_head: 6e2fb2fcf0ee528e0ee361a74cf2cb75479e7425
+state_head: 122526ed97eb2812709fd12bbabbdbd565051d4c
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 27 (Shared Seams Extracted) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 27 execution started
 
@@ -285,6 +285,7 @@ Last activity: 2026-08-27 — Phase 27 execution started
 | Phase 23 P10 | 47 min | 3 tasks | 5 files |
 | Phase 23 P11 | 22 min | 3 tasks | 4 files |
 | Phase 27 P01 | 15 min | 3 tasks | 7 files |
+| Phase 27 P02 | 40 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -568,6 +569,10 @@ Recent decisions affecting current work:
 - [Phase 27]: The ACME availability gate stands under its own name in src/mcp/vice/acme-gate.ts with NO re-export shim in the module it left — A shim would leave the prefix-deletion hazard fully intact (a prefix-driven deletion would still break four test files), which is the exact failure SEAM-01 exists to remove.
 - [Phase 27]: ACME_BIN and VICE_REQUIRE_ACME keep byte-identical names, so .github/workflows/ci.yml needed no edit at all — Audited line by line: ci.yml contains no ACME_BIN occurrence, and VICE_REQUIRE_ACME sits at :140 above run: npm test at :141. It binds env-var names only, never a module path. Renaming either var would convert CI's hard FAIL into a silent SKIP with a green run either way.
 - [Phase 27]: The ACME hard-FAIL is proven by a child-process observation paired with a non-vacuity control, and NODE_TEST_CONTEXT must be deleted from that child's environment — ACME_AVAILABLE is a module-load const, so no in-process test can re-probe it. Measured during execution: an inherited NODE_TEST_CONTEXT makes a child node --test skip every file and exit ZERO, which would have shipped a green, vacuous gate — the precise defect class SEAM-01 targets.
+- [Phase 27]: The annotation store block vocabulary lives behind one module (block-class.ts), never behind an argument: a later phase swaps the module, and the census never learns a store spelling
+- [Phase 27]: A store-substitution seam is proven by SUBSTITUTION, not by a string grep: a second, zero-overlap block vocabulary through the boundary holds every census byte count while moving only the divergence sub-report, and the structural literal-absence check is committed as a labelled supplement
+- [Phase 27]: The confidence grades are a SECOND, unmoved store surface: classFromStore() answers from the grade token and returns before consulting the block class, so on a fully-graded store the block vocabulary is not on the answering path at all. SEAM-03 moved one of the two surfaces
+- [Phase 27]: Injection loudness is placed by scope: the classifier is required with no default on internal shapes (an omission is a typecheck error, observed at five call sites) and optional-defaulting-to-the-real-adapter at the public entry, so a forgetful production caller gets correct behaviour rather than a raw store vocabulary
 
 ### Pending Todos
 
@@ -1139,8 +1144,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T05:51:14.709Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-08-27T06:35:58.214Z
+Stopped at: Completed 27-02-PLAN.md
   `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` are written and committed
   (`6403e2f`). Four gray areas discussed, 17 decisions locked: the ACME gate is
   a hard move to `acme-gate.ts` with all four importers repointed and no
