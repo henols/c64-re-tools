@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 27
 current_phase_name: Shared Seams Extracted
-status: executing
-stopped_at: Completed 27-04-PLAN.md
-last_updated: "2026-08-27T07:08:05.491Z"
+status: verifying
+stopped_at: Completed 27-05-PLAN.md
+last_updated: "2026-08-27T08:05:10.720Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 27 execution started
-state_head: 3515e6151c37ade9cbac9793139297b5d8c103e9
+last_activity_desc: Phase 27 complete (5/5 plans executed)
+state_head: db00bd3e794f8d344efd4aec68acdb5162283eca
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -147,8 +147,8 @@ recorded in their own sections.
 
 Phase: 27 (Shared Seams Extracted) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-08-27 — Phase 27 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-08-27 — Phase 27 complete (5/5 plans executed)
 
 ## Performance Metrics
 
@@ -288,6 +288,7 @@ Last activity: 2026-08-27 — Phase 27 execution started
 | Phase 27 P02 | 40 min | 3 tasks | 7 files |
 | Phase 27 P03 | 8 min | 3 tasks | 14 files |
 | Phase 27 P04 | 17 min | 3 tasks | 8 files |
+| Phase 27 P05 | 49 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -581,6 +582,9 @@ Recent decisions affecting current work:
 - [Phase 27]: shippedTsModules() throws its own named ShippedFilesEntryMissingError instead of taking a caller's assertion library — No call site can opt out of the existence check by forgetting an argument, and all 11 call sites needed no signature change.
 - [Phase 27]: codeOnly() was merged as a superset (state machine plus keepLiteralBodies), not a choice between the two divergent copies — The default false path stays byte-identical to the moved original, so the spawn-seam guard's semantics are unchanged, while prg-image's import-specifier caller keeps the literal bodies it must read.
 - [Phase 27]: The comment-extractor family stays deliberately split, with all six sites named by filename and line inside shipped-modules.ts — Blanking string bodies would make the literals five of them search for unobservable; r2000-tools.test.ts:193-201 states that reasoning in code.
+- [Phase 27]: The capability-or-glue record is a typed const with an enumerating guard (module-classification.ts), and its non-vacuity threshold is DERIVED from the registry rather than pinned or written as a growing literal floor — A pinned total goes red on a correct tree the moment a module is legitimately added OR deleted; this project already carries that scar in a guard that pinned per-milestone totals. The threshold "on-disk in-scope count >= in-enumeration entry count" catches a broken or empty glob (proven RED) and self-adjusts in both directions. It explicitly supersedes hostpath-consumers.test.ts R2000_MODULE_FLOOR = 14, with the reason recorded at the assertion so a later reader does not restore the literal.
+- [Phase 27]: OQ-2 resolved: r2000-verify.ts is recorded capability per criterion 2, but its basis is written as the DISCIPLINE (acmeVerdict at r2000-verify.ts:116) and the tension against EXPORT-01 is stated in the entry note — Criterion 2 is the phase binding text and a registry should not overrule it, but EXPORT-01 states verbatim that the existing verify seam invokes regenerator2000 and parses ITS transcript, so only the discipline survives. Recording the verdict without the tension would hand a later phase a verdict it will contest instead of a basis it can act on.
+- [Phase 27]: OQ-4 resolved: both scripts/lib/r2000-cli-verbs files are carried as registry DATA with scope out-of-enumeration, while the enforcing test enumeration stays inside src/mcp/vice/ — CUT-04 names scripts/lib/r2000-cli-verbs.mjs explicitly as a guard whose fate must be recorded, so two entries close that blind spot five phases early; keeping the enumeration inside the module directory respects D-09 and avoids a test that reaches into scripts/. Direction 7 proves the marker does the excluding rather than a special case in the loop.
 
 ### Pending Todos
 
@@ -1152,22 +1156,32 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T07:07:53.694Z
-Stopped at: Completed 27-04-PLAN.md
-  `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` are written and committed
-  (`6403e2f`). Four gray areas discussed, 17 decisions locked: the ACME gate is
-  a hard move to `acme-gate.ts` with all four importers repointed and no
-  re-export shim; the capability-or-glue record is a committed registry plus an
-  enforcing test citing surviving consumers and requirement ids, with a third
-  verdict `glue-with-extractable`; `r2000-coverage.ts`'s store contact becomes
-  an adapter module with a neutral vocabulary (three comparison sites, not the
-  two the requirement names), proven substitutable by a second implementation;
-  and `prg-image.ts` plus a shared `shippedTsModules()`/`codeOnly()` test helper
-  are extracted in scope. Measured during the scout: `ci.yml` binds only the env
-  var names, never the module path, so no functional CI edit is expected. No
-  code written. Next: `/gsd-plan-phase 27`.
+Last session: 2026-08-27T08:03:55.973Z
+Stopped at: Completed 27-05-PLAN.md
+  Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
+  stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
+  `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is
+  committed as `module-classification.ts` (19 entries) with a 16-test enforcing
+  guard whose non-vacuity threshold is DERIVED from the registry rather than
+  pinned. `package.json`'s `files[]` gained exactly two entries for the whole
+  phase; the three test-only new modules are absent. Criterion 4's evidence is
+  in `27-05-SUMMARY.md`: broker confirmed stopped, full-glob `npm test`
+  (`node --test '*.test.*'`) at 2636 tests / 2520 pass / 44 fail / 67 skipped,
+  exit 1 — all 44 pre-existing and dispositioned (5 `r2000-session.test.ts`,
+  39 `vice-proxy.test.ts`) with zero failures in any phase-27 file; typecheck
+  and tarball validator green; ZERO deletions of any kind between `6c1f569` and
+  HEAD. Two new open items in `deferred-items.md`: `D-27-02-A` (unclaimed) and
+  `D-27-05-A` (`vice-proxy.test.ts` leaks two LISTEN sockets, so the whole-glob
+  runner cannot exit unaided). Next: `/gsd-verify-work 27`, then
+  `/gsd-plan-phase 28`.
 
-Previously stopped at: Phase 23 complete, ready to plan Phase 24
+Previously stopped at: Phase 27 discussed, ready to plan
+  `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` written and committed (`6403e2f`).
+  Four gray areas discussed, 17 decisions locked. Measured during the scout:
+  `ci.yml` binds only the env var names, never the module path, so no functional
+  CI edit was expected — confirmed by 27-01, which left `ci.yml` byte-identical.
+
+Earlier: Phase 23 complete, ready to plan Phase 24
   Phase 23 is closed. The verdict `no-go` (rule `R1`) now gates Phase 24 through
   its ROADMAP `**Depends on**` line and Notes, this file points at
   `docs/phase23-real-release-gate-findings.md` rather than copying it, and the
