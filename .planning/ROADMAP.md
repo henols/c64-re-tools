@@ -443,12 +443,21 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 28-01-PLAN.md — Tracer: the twelve-member vocabulary frozen at a decision checkpoint, then one range typed end-to-end through the single `node:sqlite` seam and read back by value, with the structural single-seam assertion green
+- [ ] 28-02-PLAN.md — The pure narrowest-wins index, cross-validated against an independently written oracle at all 65,536 addresses, with the `$FFFF`, both-ends-inclusive, length-1 and equal-length tie-break pins
+- [ ] 28-03-PLAN.md — The census boundary re-pointed: `block-class.ts` accepts the store's lowercase vocabulary alongside the analyser's capitalised one, pinned by a derived total cross-check, plus the label-kind agreement that makes the silent zero loud
+- [ ] 28-04-PLAN.md — Validation and the rest of the vocabulary: labels, comments, scopes, project enums and cross-references, with criterion 1's split-orientation control and its collapse planting
+- [ ] 28-05-PLAN.md — Split-and-preserve across all five overlap cases with the fully-contained case load-bearing, and the contradicted-comment rule returning comments as data
+- [ ] 28-06-PLAN.md — The ONE combined durability-and-revert test with the removed `COMMIT` observed reddening both halves, the four corrupt-file refusals, the cross-process stale-revision refusal, and the bounded snapshot ring
 
 Notes:
 
 - **The type vocabulary is decided here and never revisited** (ordering constraint 6). Split-table orientation is unrecoverable from stored data because it was never recorded, so the recovery cost is a hand re-annotation, not a migration. `DECOMP-01` (v0.9.0) is precisely what the 12 members are sized for, and shipping seven would re-create inside this project the `da65` expressiveness boundary that got `cc65` rejected one milestone ago.
 - Research flags this as the **one phase that may want a spike** — not for the domain but for the decision: measure the chosen persistence route's planted-violation reddenability on this repo's real workload. `D1` and `D2` are already resolved in `REQUIREMENTS.md`; what stays open is FTS5 versus `LIKE 'prefix%'` for the search surface (both compiled in, both free) and whether all four split variants are needed.
+  *All three resolved at plan time, 2026-08-27, and recorded in `28-01-PLAN.md` §`<research_corrections_applied>`: **no spike** — its stated measurement was executed in `28-RESEARCH.md`, where the exact criterion-4 sequence ran and removing the `COMMIT` was observed to redden both halves of one test; **`LIKE`, and no FTS5 table is created in this phase** — measured 2.02 ms indexed prefix `LIKE` against 2.99 ms FTS5 `MATCH` with a 121.8 ms rebuild, and adding FTS5 later is additive while removing it is a migration; **all four split variants are kept** — both axes were verified separately observable (orientation as a differing resolved-target set, address-versus-word as whether cross-references are produced).*
 - **The proxy validates nothing** — `vice-proxy.ts:3216-3230`'s `rawJsonSchemaAsStandardSchema()` returns `validate: (value) => ({ value })` by design, and its header says so — so every argument arrives unvalidated and validation belongs here, throwing named `ViceError` subclasses. **Not `zod`** (present only as an undeclared transitive of `@mastra`).
 - Name the field `endInclusive`, never a bare `end`: six conversion boundaries, five of which produce plausible output when wrong. Accept `integer` **and** `$`/`0x`-prefixed strings, and **reject an unprefixed numeric string outright** rather than guessing a base — this codebase already contains two opposite defaults, since VICE's monitor reads bare literals as hex.
 - **Reject label collisions, never sanitise.** `init screen` → `init_screen` silently collapses two labels into one, and `LDA`/`INC`/`ROL` are legal identifiers but illegal labels. Auto-generated names live in a separate namespace from user names — `export-lbl` exports user names only, so a test asserting an `a_`-prefixed name appears in an export is testing the wrong thing.
@@ -919,7 +928,7 @@ in a milestone archive.
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
-| 28. The Store Core | v0.7.0 | — | Not started | - |
+| 28. The Store Core | v0.7.0 | 0/6 | Planned | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
