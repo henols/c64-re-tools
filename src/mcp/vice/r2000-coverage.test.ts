@@ -55,11 +55,11 @@ import {
   provenDispatchTargets,
   scanIndirectDispatch,
   type CoverageReport,
-  type R2000BlockEntry,
   type R2000Comment,
   type R2000CrossReference,
   type R2000Symbol,
 } from "./r2000-coverage.ts";
+import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.ts";
 import { decode } from "./disasm-decoder.ts";
 import { decodeRawData } from "./r2000-project.ts";
 
@@ -119,7 +119,7 @@ interface FixtureStore {
   expect_measure: string | null;
   symbols: R2000Symbol[];
   comments: R2000Comment[];
-  blocks: R2000BlockEntry[];
+  blocks: BlockEntry[];
   cross_references: R2000CrossReference[];
 }
 
@@ -603,7 +603,7 @@ test("COV-01: no key anywhere in the report matches a combined-figure vocabulary
 
 test("independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report", () => {
   const before = reportFor(WELL_DOCUMENTED);
-  const oneType: R2000BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
+  const oneType: BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
   const after = reportFor(WELL_DOCUMENTED, { blocks: oneType });
 
   for (const key of ["reachedAsInstruction", "tableEntry", "referencedAsData", "unreached", "linearSweepDecodable", "rangeBytes"] as const) {
@@ -967,7 +967,7 @@ test("the cross-reference rule engages at strictly MORE THAN ONE caller, and not
     { address: 0x0828, callers: [0x0813] },
   ];
 
-  const repro = computeReproducibility({ census, dispatch, symbols, comments, blocks: [], crossReferences });
+  const repro = computeReproducibility({ census, dispatch, symbols, comments, blocks: [], crossReferences, blockClassifier: blockClassAt });
   assert.deepEqual(
     repro.multiCallerUndocumented.addresses,
     [0x0820],
@@ -983,6 +983,7 @@ test("the cross-reference rule engages at strictly MORE THAN ONE caller, and not
     comments: [{ address: 0x0820, type: "line", comment: "[confirmed-code] sets the mode flag; reached from $0810 and from $0816" }, comments[1]!],
     blocks: [],
     crossReferences,
+    blockClassifier: blockClassAt,
   });
   assert.deepEqual(named.multiCallerUndocumented.addresses, [], "a comment naming a caller address must satisfy the rule");
 
@@ -1063,6 +1064,7 @@ test("ANCHORING: a caller's label name satisfies the rule only on an identifier 
       comments: [{ address: 0x0820, type: "line", comment }],
       blocks: [],
       crossReferences,
+      blockClassifier: blockClassAt,
     });
 
   const embedded = reproFor("[confirmed-code] sets the mode flag; my_entry_pointer holds the vector");
@@ -1110,6 +1112,7 @@ test("WR-13: a caller's label name counts only when the comment USES it as a ref
       comments: [{ address: 0x0820, type: "line", comment }],
       blocks: [],
       crossReferences,
+      blockClassifier: blockClassAt,
     });
 
   const coincidental = reproFor("[confirmed-code] sets the mode flag before the main loop runs");
@@ -1234,6 +1237,7 @@ test("two symbols at one address produce a count of one, not two", () => {
     comments: [],
     blocks: [],
     crossReferences: [{ address: 0x1000, callers: [0x0810, 0x0816] }],
+    blockClassifier: blockClassAt,
   });
   assert.deepEqual(
     repro.multiCallerUndocumented,

@@ -19,11 +19,14 @@
 //
 // So the structural census here is a pure function of TWO things: the raw
 // bytes, and the seed set the caller supplies. The store's own block table
-// is read at exactly ONE call site in this file -- `computeDivergence()` --
-// and it feeds a sub-report that is explicitly named as a comparison, never
-// as a measure of completeness. `r2000-coverage.test.ts` pins that boundary
-// by rewriting every block entry to one type and asserting no census byte
-// count moves.
+// enters this file through exactly ONE boundary -- `block-class.ts`, which
+// is the only place in the tree that interprets a store block-type string --
+// and it reaches only a sub-report that is explicitly named as a comparison,
+// never a measure of completeness. This file compares NEUTRAL block classes
+// and never a store vocabulary. `r2000-coverage.test.ts` pins that boundary
+// twice: by rewriting every block entry to one type and asserting no census
+// byte count moves, and by substituting a second block vocabulary through
+// the boundary and asserting the same thing.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR
@@ -60,10 +63,13 @@
 // WHAT NOT TO DO -- each of these is a specific, named trap
 // ---------------------------------------------------------------------------
 //   1. NEVER derive any measure from the store's block-type listing. The
-//      listing enters this file at one call site (`computeDivergence()`) and
-//      leaves it as a comparison. A "completeness" number sourced from the
-//      block table measures the annotator's bookkeeping, not the annotation
-//      -- and mass `r2000_set_data_type` calls would move it for free.
+//      listing enters this file only through `block-class.ts` and leaves it
+//      as a comparison. A "completeness" number sourced from the block table
+//      measures the annotator's bookkeeping, not the annotation -- and mass
+//      `r2000_set_data_type` calls would move it for free. Nor may this file
+//      compare a store block-type string directly: the boundary owns that
+//      vocabulary, and a comparison written here would be a second answer to
+//      "what class is this address" beside the one the boundary gives.
 //   2. NEVER sum the linear-sweep figure into completeness. Upstream's own
 //      Pitfall 1 says it plainly: "Random data routinely disassembles into
 //      plausible-looking instruction sequences -- this does NOT make it
@@ -123,11 +129,16 @@
 // BYTES-VERSUS-STORE: one side classifies an address using only the raw bytes
 // and this file's census, the other using only the store's own documentation
 // (confidence grade, block type). Neither side reads the other's input. The
+// store side's own vocabulary now lives behind the named boundary
+// (`block-class.ts`), which takes the block listing and an address and
+// nothing else -- so the axis cannot be collapsed by quietly handing the
+// store side a look at the bytes. The
 // seal (`evidence/coverage-reproducibility/ANSWER.sha256`) is what makes the
 // result non-retrofittable, exactly as it was in Phase 11: the hash is
 // committed before the re-derivation is written, and a missing or empty
 // re-derivation FAILS rather than skips.
 
+import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
 import { decodeRawData } from "./r2000-project.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
@@ -205,12 +216,9 @@ export interface R2000Comment {
   comment: string;
 }
 
-export interface R2000BlockEntry {
-  start_address: number;
-  end_address: number;
-  /** `BlockType`'s Display string: `"Code"`, `"Byte"`, `"Address"`, ... */
-  type: string;
-}
+// The store's block-entry shape is NOT declared here. It lives in
+// `block-class.ts` as `BlockEntry`, together with the one function allowed to
+// interpret its `type` field -- see invariant 1 above.
 
 export interface R2000CrossReference {
   address: number;
@@ -1652,20 +1660,17 @@ export interface ReproducibilityInput {
   dispatch: IndirectDispatchScan;
   symbols: readonly R2000Symbol[];
   comments: readonly R2000Comment[];
-  blocks: readonly R2000BlockEntry[];
+  blocks: readonly BlockEntry[];
   crossReferences: readonly R2000CrossReference[];
   sampleSize?: number;
+  /** REQUIRED, with NO default. The store side's block vocabulary reaches
+   * this function only through here. An internal caller that forgets it is a
+   * typecheck error, which is the point: a defaulted classifier would let a
+   * forgetful site quietly fall back to one particular store's spelling. */
+  blockClassifier: BlockClassifier;
 }
 
 const DEFAULT_SAMPLE_SIZE = 8;
-
-function storeBlockTypeAt(blocks: readonly R2000BlockEntry[], address: number): string | null {
-  for (const block of blocks) {
-    if (!block) continue;
-    if (address >= block.start_address && address <= block.end_address) return block.type;
-  }
-  return null;
-}
 
 /** `provenTargets` is `provenDispatchTargets(dispatch)`, computed ONCE per
  * report by the caller. A bare membership test against the scan's own
@@ -1680,12 +1685,15 @@ function classFromBytes(census: StructuralCensus, provenTargets: readonly number
   return "unreached";
 }
 
-function classFromStore(gradeToken: string | null, blockType: string | null): DerivedClass {
+/** `blockClass` is a NEUTRAL class from `block-class.ts`, never a store
+ * vocabulary string. That is what lets a second annotation substrate be
+ * substituted without this function changing at all. */
+function classFromStore(gradeToken: string | null, blockClass: BlockClass | null): DerivedClass {
   if (gradeToken === "confirmed-code" || gradeToken === "probable-code") return "code";
   if (gradeToken === "confirmed-data" || gradeToken === "probable-data") return "data";
-  // `[unknown]` and ungraded fall through to the store's own block type.
-  if (blockType === "Code") return "code";
-  if (blockType === null || blockType === "Undefined") return "unreached";
+  // `[unknown]` and ungraded fall through to the store's own block class.
+  if (blockClass === "code") return "code";
+  if (blockClass === null || blockClass === "undefined") return "unreached";
   return "data";
 }
 
@@ -1844,7 +1852,7 @@ function namesACaller(
 }
 
 export function computeReproducibility(input: ReproducibilityInput): Reproducibility {
-  const { census, dispatch, symbols, comments, blocks, crossReferences } = input;
+  const { census, dispatch, symbols, comments, blocks, crossReferences, blockClassifier } = input;
   const sampleSize =
     Number.isSafeInteger(input.sampleSize) && input.sampleSize! > 0 ? input.sampleSize! : DEFAULT_SAMPLE_SIZE;
 
@@ -1918,7 +1926,7 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
   for (const address of addresses) {
     const fromBytes = classFromBytes(census, provenTargets, address);
     const entry = commentByAddress.get(address);
-    const fromStore = classFromStore(entry?.gradeToken ?? null, storeBlockTypeAt(blockList, address));
+    const fromStore = classFromStore(entry?.gradeToken ?? null, blockClassifier(blockList, address));
     comparisons.push({ address, fromBytes, fromStore, agreed: fromBytes === fromStore });
   }
 
@@ -1937,16 +1945,18 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
 }
 
 // ---------------------------------------------------------------------------
-// The divergence sub-report -- the ONE place the store's block table is read
+// The divergence sub-report -- the store's block table, read through the
+// boundary and reported as a comparison, never as a measure
 // ---------------------------------------------------------------------------
 
 export interface DivergenceReport {
-  /** Bytes the census reached as instructions that the store does NOT call
-   * `Code`. This is the direction that means the STORE missed something. */
+  /** Bytes the census reached as instructions whose store block class is NOT
+   * the code class. This is the direction that means the STORE missed
+   * something. */
   censusCodeStoreNotCode: number;
-  /** Bytes the store calls `Code` that the census never reached. This is the
-   * ordinary direction on an image with unreachable filler; it is reported,
-   * not treated as a defect. */
+  /** Bytes whose store block class IS the code class that the census never
+   * reached. This is the ordinary direction on an image with unreachable
+   * filler; it is reported, not treated as a defect. */
   storeCodeCensusUnreached: number;
   /** Bytes inside the censused range that no block entry covers at all. */
   uncoveredByStore: number;
@@ -1971,8 +1981,13 @@ const DIVERGENCE_NOTE =
   "is not on this project's curated tool surface. An over-merge on the store side is therefore " +
   "expected and is not evidence of a census error. The census side reads no block data at all.";
 
-function computeDivergence(census: StructuralCensus, blocks: readonly R2000BlockEntry[]): DivergenceReport {
-  // The ONE call site in this file that reads the store's block listing.
+/** `blockClassifier` is REQUIRED with NO default -- see
+ * `ReproducibilityInput`'s field of the same name for why. */
+function computeDivergence(
+  census: StructuralCensus,
+  blocks: readonly BlockEntry[],
+  blockClassifier: BlockClassifier,
+): DivergenceReport {
   const blockList = Array.isArray(blocks) ? blocks : [];
   let censusCodeStoreNotCode = 0;
   let storeCodeCensusUnreached = 0;
@@ -1980,10 +1995,12 @@ function computeDivergence(census: StructuralCensus, blocks: readonly R2000Block
 
   for (const run of census.classRuns) {
     for (let addr = run.start; addr <= run.end; addr++) {
-      const blockType = storeBlockTypeAt(blockList, addr);
-      if (blockType === null) uncoveredByStore++;
-      if (run.class === "reached-as-instruction" && blockType !== "Code") censusCodeStoreNotCode++;
-      if (run.class === "unreached" && blockType === "Code") storeCodeCensusUnreached++;
+      // Neutral classes only. The arithmetic and the counter names are
+      // exactly what they were when this loop compared store strings.
+      const blockClass = blockClassifier(blockList, addr);
+      if (blockClass === null) uncoveredByStore++;
+      if (run.class === "reached-as-instruction" && blockClass !== "code") censusCodeStoreNotCode++;
+      if (run.class === "unreached" && blockClass === "code") storeCodeCensusUnreached++;
     }
   }
 
@@ -2056,7 +2073,7 @@ export interface CoverageOptions {
   projectPath: string;
   symbols?: readonly R2000Symbol[];
   comments?: readonly R2000Comment[];
-  blocks?: readonly R2000BlockEntry[];
+  blocks?: readonly BlockEntry[];
   crossReferences?: readonly R2000CrossReference[];
   /** Extra descent seeds beyond the origin and the `User` label addresses. */
   entryPoints?: readonly number[];
@@ -2064,6 +2081,21 @@ export interface CoverageOptions {
   /** Injected clock, for callers that need a fixed timestamp. Defaults to the
    * real wall clock. */
   now?: () => string;
+  /**
+   * THE SUBSTITUTABILITY PROOF'S SEAM, and nothing else.
+   *
+   * Defaults to `blockClassAt` -- the one production classifier -- so a
+   * caller that omits it gets correct behaviour rather than some particular
+   * store's raw spelling. PRODUCTION MUST NOT PASS THIS. A store change is
+   * made by editing `block-class.ts`, never by threading a different
+   * classifier in from a call site: a second production classifier is a
+   * second answer to "what class is this address", which is exactly what the
+   * boundary exists to prevent. `r2000-coverage.test.ts` is the only caller
+   * that supplies it, and it supplies a vocabulary sharing no string with
+   * the real one so that a comparison site left behind anywhere in this file
+   * moves a census byte count and fails loudly.
+   */
+  blockClassifier?: BlockClassifier;
 }
 
 interface LoadedProject {
@@ -2136,6 +2168,9 @@ export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
   const blocks = opts.blocks ?? [];
   const crossReferences = opts.crossReferences ?? [];
   const now = typeof opts.now === "function" ? opts.now : () => new Date().toISOString();
+  // Resolved ONCE and passed to both consumers, so the two sub-reports can
+  // never disagree about which store vocabulary they are reading.
+  const blockClassifier = typeof opts.blockClassifier === "function" ? opts.blockClassifier : blockClassAt;
 
   const loaded = loadProject(opts.projectPath);
 
@@ -2165,10 +2200,11 @@ export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
     comments,
     blocks,
     crossReferences,
+    blockClassifier,
     ...(opts.sampleSize !== undefined ? { sampleSize: opts.sampleSize } : {}),
   });
   const labels = computeLabelRatio(symbols, { excludeUserAddresses: reproducibility.multiCallerUndocumented.addresses });
-  const divergence = computeDivergence(structural, blocks);
+  const divergence = computeDivergence(structural, blocks, blockClassifier);
 
   return {
     schemaVersion: COVERAGE_SCHEMA_VERSION,

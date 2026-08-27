@@ -72,7 +72,10 @@ import { renderMemoryMap, checkRenderedMemoryMap } from "./r2000-memmap-render.t
 // for them and a mention would trip it, exactly as `r2000-coverage.ts`'s
 // header records for the path-translation module names.
 import { buildCoverageReport, coverageFindings } from "./r2000-coverage.ts";
-import type { CoverageReport, R2000BlockEntry, R2000Comment, R2000CrossReference, R2000Symbol } from "./r2000-coverage.ts";
+import type { CoverageReport, R2000Comment, R2000CrossReference, R2000Symbol } from "./r2000-coverage.ts";
+// The store's block-entry shape comes from the boundary that owns its
+// vocabulary, not from the census -- see `block-class.ts`.
+import type { BlockEntry } from "./block-class.ts";
 import { runR2000Tool, resolveStorePath } from "./r2000-tools.ts";
 
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
@@ -1370,13 +1373,13 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   let symbols: R2000Symbol[];
   let comments: R2000Comment[];
-  let blocks: R2000BlockEntry[];
+  let blocks: BlockEntry[];
   const crossReferences: R2000CrossReference[] = [];
   let bound: CrossReferenceBound;
   try {
     symbols = await queryR2000Json<R2000Symbol[]>("r2000_get_symbols", { project: projectPath });
     comments = await queryR2000Json<R2000Comment[]>("r2000_get_comments", { project: projectPath });
-    blocks = await queryR2000Json<R2000BlockEntry[]>("r2000_get_blocks", { project: projectPath });
+    blocks = await queryR2000Json<BlockEntry[]>("r2000_get_blocks", { project: projectPath });
 
     // Cross-references are per-address, so only the labels the multi-caller
     // rule can actually act on are looked up: System labels are excluded from
