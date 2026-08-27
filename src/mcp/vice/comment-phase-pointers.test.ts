@@ -50,13 +50,20 @@
 // scoping the noun list to exact phrases actually seen in real violations
 // (see PATTERN FAMILIES below) rather than by re-widening the match window.
 //
-// MODULE SET: shippedTsModules() is copied verbatim from
-// docs-dangling-refs.test.ts (package.json's files[] filtered to
+// MODULE SET: this guard scans package.json's files[] filtered to
 // .ts/.mts, with an existence assertion so the scanned set cannot shrink
-// silently). Kept as a second, independent copy rather than an import --
-// this file and docs-dangling-refs.test.ts each own their own scan
-// end-to-end, matching this codebase's established "no import between
-// sibling guard tests" convention.
+// silently -- imported from shipped-modules.ts, which is its one home.
+//
+// THE CONVENTION, STATED WITH ITS SCOPE: a guard test must not import
+// another guard test. The reason is mechanical, not stylistic -- importing a
+// *.test.ts module for its exports also re-runs every top-level test that
+// module registers with the runner, as an import side effect, silently
+// duplicating that whole file's execution inside the importing file.
+// Importing a neutral, non-test helper module is a DIFFERENT thing and is
+// permitted; the precedent is already in the tree at r2000-spawn-seam
+// .test.ts:53, which imports a non-test gate module exactly that way. That
+// is why this file's module enumerator is now an import rather than the
+// fourth hand copy of the same body.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";

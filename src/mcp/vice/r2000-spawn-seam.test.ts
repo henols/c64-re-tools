@@ -14,15 +14,15 @@
 // trusting the wrong header would not know a THIRD site must guard too.
 // This file replaces that prose promise with a mechanically checked one.
 //
-// DISCOVERY, not enumeration (11.1-CONTEXT.md's organising principle): the
-// scanned module set is derived from `package.json`'s `files[]` array --
-// the SHIPPED production `.ts`/`.mts` module set, the exact
-// `shippedTsModules()` idiom `docs-dangling-refs.test.ts` already
-// established, copied rather than reinvented (see that function's own
-// comment below for why this is `files[]`-derived rather than a raw
-// `readdirSync` filtered only on `*.test.*` -- `r2000-test-gate.ts` is a
-// real, but non-shipped, spawn call site that the broader directory
-// listing would incorrectly catch). Within that derived set, this file
+// DISCOVERY, not enumeration: the scanned module set is derived from
+// `package.json`'s `files[]` array -- the SHIPPED production `.ts`/`.mts`
+// module set -- via the shared enumerator in `shipped-modules.ts`, its one
+// home, imported rather than copied. See that module for why the set is
+// `files[]`-derived rather than a raw `readdirSync` filtered only on
+// `*.test.*`: BOTH `r2000-test-gate.ts` and `acme-gate.ts` are real, but
+// non-shipped, spawn call sites that the broader directory listing would
+// incorrectly catch, so neither is a special case. Within that derived set,
+// this file
 // finds every call to a spawn-family function whose first argument is a
 // regenerator2000-binary-shaped expression, and asserts the discovered set
 // of FILES equals `EXPECTED_R2000_SPAWN_SITES` exactly, in both directions
@@ -62,12 +62,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // stripper: a decoy string literal that merely quotes a spawn call as prose
 // text must not be discoverable here as a call.
 
-// The scanned module set is `shippedTsModules()` from
-// `shipped-modules.ts`: `package.json`'s `files[]` filtered to `.ts`/`.mts`,
-// deliberately NOT a raw `readdirSync` over this directory, and it throws
-// rather than returning a short list. That module's own doc comment carries
-// the full rationale, including why a directory listing would wrongly catch
-// the two unshipped test-only gate modules that each spawn a real binary.
+// The scanned module set comes from the shared enumerator in
+// `shipped-modules.ts` -- its single home, not a local copy:
+// `package.json`'s `files[]` filtered to `.ts`/`.mts`, deliberately NOT a
+// raw `readdirSync` over this directory, and it THROWS rather than returning
+// a short list. That module's own doc comment carries the full rationale,
+// including why a directory listing would wrongly catch the two unshipped
+// test-only gate modules that each spawn a real binary with a fixed argv:
+// `r2000-test-gate.ts` and `acme-gate.ts`.
 
 /** Spawn-family function names this guard watches. `execSync` is
  * deliberately omitted -- it takes a shell command STRING, not an argv

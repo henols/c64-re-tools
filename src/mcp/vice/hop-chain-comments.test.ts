@@ -43,11 +43,27 @@
 // copied VERBATIM from `comment-phase-pointers.test.ts` (itself following
 // `docs-dangling-refs.test.ts`'s character-state-machine precedent, chosen
 // over a regex extractor after one was MEASURED to miss a real violation
-// sitting inside a template literal). Kept as a second, independent copy
-// rather than an import -- this codebase's established convention is that
-// each guard test owns its own scan end-to-end (`comment-phase-pointers
-// .test.ts`'s own header records that same decision for the same helpers).
-// Keep the copy verbatim so a future reader can diff the two.
+// sitting inside a template literal).
+//
+// THE CONVENTION, STATED WITH ITS SCOPE (the same wording
+// `comment-phase-pointers.test.ts`'s header now carries): a guard test must
+// not import another guard test, because importing a `*.test.ts` module for
+// its exports also re-runs every top-level test that module registers with
+// the runner, duplicating that whole file's execution inside the importing
+// file. Importing a neutral, non-test helper module is a DIFFERENT thing and
+// is permitted -- `r2000-spawn-seam.test.ts:53` is the in-tree precedent,
+// and the shared module enumerator in `shipped-modules.ts` is now consumed
+// that way by four guards.
+//
+// WHAT THIS FILE STILL DUPLICATES DELIBERATELY: its comment extractor, which
+// is a different helper from that module enumerator and is NOT consolidated,
+// because the comment-extractor family does several genuinely different
+// jobs. The full stripper blanks string-literal bodies; the line filters
+// must NOT, because the literals they search for are themselves strings; and
+// this file's extractor COLLECTS comment text rather than blanking it, the
+// inverse operation. `r2000-tools.test.ts:193-201` states that reasoning in
+// code. A future reader should read those, not re-copy a helper that now has
+// one home.
 //
 // SCAN SET: every `*.ts`/`*.mts` file in this module directory, enumerated
 // with `readdirSync(HERE)` -- NOT `package.json`'s `files[]`, because BOTH
