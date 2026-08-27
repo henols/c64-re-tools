@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-04-PLAN.md
-last_updated: "2026-08-27T14:07:32.305Z"
+stopped_at: Completed 28-03-PLAN.md
+last_updated: "2026-08-27T14:31:35.365Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 28 execution started
-state_head: 8991d73cd5f52a1336b594ad80e79b89fec018d3
+state_head: 8d75131df98e577303c7d087f6e31168f9f94fe8
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 28 execution started
 
@@ -293,6 +293,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 28 P01 | 21 min | 3 tasks | 7 files |
 | Phase 28 P02 | 19 min | 2 tasks | 1 files |
 | Phase 28 P04 | 27 min | 3 tasks | 4 files |
+| Phase 28 P03 | 22 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -599,6 +600,8 @@ Recent decisions affecting current work:
 - [Phase 28]: setDataType now returns AnnoWriteResult { revision, changed: boolean } rather than a touched-row count, and retype short-circuits an exact no-op — Required by the plan own idempotency truth ("the identical range type a second time ... reports changed:false"), and it matches the shape plan 28-05 already declares for SetDataTypeResult. No consumer outside the tests existed. changed is the only no-op signal; the revision still advances by exactly one on every accepted write.
 - [Phase 28]: runWriteSequence rolls the whole sequence back when the caller mutation throws, so a refusal raised inside a mutation cannot leave an open transaction with the revision compare-and-swap already applied — The label-collision refusal has to read rows, so it lives inside the mutation transaction (closing the window in which a concurrent writer binds the name between the read and the insert). Without the rollback, currentRevision() reported an advanced revision for a refused write.
 - [Phase 28]: Project-enum variant keys are validated against the four numeric-string forms the schema names but NEVER canonicalised, and two keys naming the same value are refused — Round-tripping by value is the store contract, so a caller that wrote "$40" reads back "$40" -- a rewritten key is a value the caller never supplied. Two keys for one value would be two variant names for one number, with nothing downstream able to say which was meant.
+- [Phase 28]: block-class.ts's boundary accepts BOTH block vocabularies during the transition -- the store's lowercase twelve and the external analyser's capitalised four -- rather than flipping to lowercase — The live census input and all six committed coverage fixtures still carry the analyser's capitalised spellings. A flip would have reclassified every one as data, silently, which is the exact failure the milestone guards against, and would have forced a fixture migration no criterion asks for. The capitalised arm is labelled TRANSITIONAL with its removal condition stated as CUT-01.
+- [Phase 28]: The label-kind agreement check partitions LABEL_KINDS BY MEASUREMENT into the three the census compares explicitly and the one it infers, instead of asserting all four appear as literals — Measured this session: r2000-coverage.ts never spells "Auto", because computeLabelRatio tests System/Platform then User and infers auto from its else branch. The partition form is strictly stronger -- a re-spelt store member moves out of the spelled set, a census that starts comparing the fallthrough explicitly moves it in, and either direction moves an asserted count.
 
 ### Pending Todos
 
@@ -1182,8 +1185,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T14:06:07.443Z
-Stopped at: Completed 28-04-PLAN.md
+Last session: 2026-08-27T14:31:19.313Z
+Stopped at: Completed 28-03-PLAN.md
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is

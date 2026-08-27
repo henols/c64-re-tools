@@ -78,7 +78,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      decision: split-table orientation is unrecoverable from data that never
      recorded it. -->
 
-- [ ] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering the **full 12-member vocabulary** read off `r2000_set_data_type`'s own schema — not the 7 v0.6.0 named, because "table" is four distinct split layouts and collapsing them re-creates the exact `da65` expressiveness boundary this project rejected `cc65` for
+- [x] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering the **full 12-member vocabulary** read off `r2000_set_data_type`'s own schema — not the 7 v0.6.0 named, because "table" is four distinct split layouts and collapsing them re-creates the exact `da65` expressiveness boundary this project rejected `cc65` for
 - [ ] **STORE-02**: Ranges are stored as ranges and are **never merged on adjacency**, so no splitter concept is needed and none is introduced — the manifest's named blocker for `DECOMP-01` and `BUILD-02`, and the over-merge bias it predicts for `COV-01`, are designed out by construction rather than worked around
 - [ ] **STORE-03**: A narrowest-range-wins lookup over the 64K space is exact at every one of the 65,536 addresses, verified by cross-validating two independent implementations rather than by spot checks — the tie-break, the range ends, and the behaviour when a typed range is partially overwritten all pinned
 - [ ] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
@@ -213,7 +213,7 @@ over them.
 | SEAM-01 | Phase 27 | Complete |
 | SEAM-02 | Phase 27 | Complete |
 | SEAM-03 | Phase 27 | Complete |
-| STORE-01 | Phase 28 | Pending |
+| STORE-01 | Phase 28 | Complete |
 | STORE-02 | Phase 28 | Pending |
 | STORE-03 | Phase 28 | Pending |
 | STORE-04 | Phase 28 | Pending |
