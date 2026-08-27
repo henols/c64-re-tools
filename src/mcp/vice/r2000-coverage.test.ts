@@ -824,6 +824,32 @@ test("SUPPLEMENT (not the proof): the census module's source carries no producti
   }
 });
 
+test("SUPPLEMENT (WR-12): no shipped module passes CoverageOptions.blockClassifier", () => {
+  // `CoverageOptions.blockClassifier` is documented IN CAPITALS as a test-only
+  // seam that "PRODUCTION MUST NOT PASS THIS", on the stated ground that a
+  // second production classifier is a second answer to "what class is this
+  // address" -- the exact hazard `block-class.ts` exists to close. Every other
+  // invariant this phase introduced got a committed guard; this one had only a
+  // comment (WR-12). Built from the enumerator and the stripper this phase
+  // extracted, so it covers whatever `files[]` ships rather than a list.
+  const DECLARATION_SITE = "r2000-coverage.ts";
+  const offenders: string[] = [];
+  for (const module of shippedTsModules()) {
+    // The declaration site itself legitimately names the option: the interface
+    // field and the internal parameter that thread it through.
+    if (module === DECLARATION_SITE) continue;
+    if (/\bblockClassifier\s*:/.test(codeOnly(readFileSync(join(HERE, module), "utf8")))) {
+      offenders.push(module);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `shipped module(s) inject a block classifier: ${offenders.join(", ")} -- a store change is made by editing ` +
+      `block-class.ts, never by threading a different classifier in from a call site`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 3. Decodability is not evidence of code
 // ---------------------------------------------------------------------------
