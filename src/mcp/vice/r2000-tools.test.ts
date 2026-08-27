@@ -33,7 +33,8 @@ import {
   R2000ReadRegionRangeError,
   R2000_READ_REGION_MAX_BYTES,
 } from "./r2000-tools.ts";
-import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";
+import { synthesizeProject } from "./r2000-project.ts";
+import { flatImageOrigin } from "./prg-image.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 import { __resetR2000SessionForTest } from "./r2000-session.ts";
 

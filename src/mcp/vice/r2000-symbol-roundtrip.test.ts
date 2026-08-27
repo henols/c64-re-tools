@@ -46,7 +46,8 @@ import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts
 import { exportLabels, importLabels, R2000SymbolsError, regenerateAndReload } from "./r2000-symbols.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { runR2000 } from "./r2000-launch.ts";
-import { parsePrg, synthesizeProject } from "./r2000-project.ts";
+import { synthesizeProject } from "./r2000-project.ts";
+import { parsePrg } from "./prg-image.ts";
 import { handleSymbolsLoad, handleSymbolsLookup, resetSymbolStoreForTest } from "./stock-symbols.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 

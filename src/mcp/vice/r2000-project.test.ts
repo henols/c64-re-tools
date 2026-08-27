@@ -51,12 +51,10 @@ import { join } from "node:path";
 import {
   R2000_SYSTEM_C64,
   synthesizeProject,
-  parsePrg,
-  flatImageOrigin,
-  decodeRawData,
   ensureProjectSettings,
   R2000ProjectSettingsError,
 } from "./r2000-project.ts";
+import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 // ---------------------------------------------------------------------------

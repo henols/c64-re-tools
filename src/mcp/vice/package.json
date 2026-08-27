@@ -70,6 +70,7 @@
     "r2000-memmap-render.ts",
     "r2000-coverage.ts",
     "block-class.ts",
+    "prg-image.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",

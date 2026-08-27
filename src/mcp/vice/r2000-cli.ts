@@ -53,7 +53,12 @@ import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 
 import { buildExportAsmArgs, runR2000, R2000ViceFlagError } from "./r2000-launch.ts";
-import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts";
+import { synthesizeProject } from "./r2000-project.ts";
+// Pure C64 image byte-layout knowledge -- the `.prg` load-address split and
+// the flat-64K origin -- lives in its own module, independent of the project
+// builder above. The dispatch ORDER below (extension before length) is this
+// file's own discipline and is unaffected by where the two functions live.
+import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
 import { verifyProject } from "./r2000-verify.ts";
 import { generateEnums } from "./r2000-enum-gen.ts";

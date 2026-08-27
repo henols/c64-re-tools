@@ -61,7 +61,7 @@ import {
 } from "./r2000-coverage.ts";
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode } from "./disasm-decoder.ts";
-import { decodeRawData } from "./r2000-project.ts";
+import { decodeRawData } from "./prg-image.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");

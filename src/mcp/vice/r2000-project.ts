@@ -80,7 +80,7 @@
 // change leaves byte-for-byte untouched.
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
 /** The exact literal regenerator2000's `System::C64` constant serialises as
  * (`types.rs`, `#[serde(transparent)] pub struct System(String)`). This is
@@ -161,46 +161,6 @@ export function synthesizeProject(bytes: Uint8Array, opts: SynthesizeOptions): s
   };
 
   return JSON.stringify(project);
-}
-
-/**
- * Parses a `.prg` file: a little-endian 2-byte load address followed by the
- * payload bytes. This is the C64 program-file convention every C64 loader
- * (and this project's own `acme-build` output) already follows.
- */
-export function parsePrg(bytes: Uint8Array): { origin: number; body: Uint8Array } {
-  if (bytes.length < 3) {
-    throw new Error(
-      `parsePrg: input is ${bytes.length} byte(s) -- a .prg needs at least 3 bytes (2-byte load address plus at least 1 payload byte)`,
-    );
-  }
-  const origin = bytes[0]! | (bytes[1]! << 8);
-  const body = bytes.subarray(2);
-  return { origin, body };
-}
-
-/**
- * Returns the load address (`0`) for a flat 64K RAM capture, and throws for
- * anything else. Flat 64K is in scope because `R2000-06` names it directly
- * and it is exactly the shape `c64-ram-capture` already produces (D-03) --
- * this function does not attempt to support any other flat-image size.
- */
-export function flatImageOrigin(bytes: Uint8Array): number {
-  if (bytes.length !== 65536) {
-    throw new Error(
-      `flatImageOrigin: input is ${bytes.length} byte(s) -- a flat 64K capture must be exactly 65536 bytes`,
-    );
-  }
-  return 0;
-}
-
-/**
- * The inverse of the `raw_data_base64` encoding step: base64-decode then
- * gunzip. Exported so tests can prove the payload round-trips exactly,
- * rather than asserting against an opaque blob.
- */
-export function decodeRawData(base64: string): Uint8Array {
-  return gunzipSync(Buffer.from(base64, "base64"));
 }
 
 export interface R2000ProjectSettingsErrorOptions {

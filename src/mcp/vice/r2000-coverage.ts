@@ -140,7 +140,7 @@
 
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
-import { decodeRawData } from "./r2000-project.ts";
+import { decodeRawData } from "./prg-image.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
 import { readFileSync } from "node:fs";
 

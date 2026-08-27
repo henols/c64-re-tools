@@ -95,7 +95,8 @@ import {
   R2000SessionFailedError,
   R2000SaveNotPersistedError,
 } from "./r2000-mcp-client.ts";
-import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";
+import { synthesizeProject } from "./r2000-project.ts";
+import { flatImageOrigin } from "./prg-image.ts";
 import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 /** `Tool.execute` is declared optional on the type (`execute?: (...) => ...`)
