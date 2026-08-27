@@ -129,6 +129,32 @@ export function shippedTsModules(dir: string = HERE): string[] {
   return entries;
 }
 
+/** The keywords after which a `/` starts a regular-expression literal rather
+ * than a division operator. Needed because a previous-CHARACTER test alone
+ * cannot tell `return /re/.test(x)` (a regex) from `total / count` (a
+ * division): both are preceded by an identifier character. Every entry is a
+ * keyword that can legally be followed by an expression. Getting this wrong
+ * in the permissive direction is the dangerous one -- misreading a division
+ * as a regex opener consumes real code as literal text -- which is why the
+ * scanner below also refuses to treat an unterminated `/ ... EOL` run as a
+ * regex at all. */
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  "return",
+  "typeof",
+  "instanceof",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "case",
+  "do",
+  "else",
+  "yield",
+  "await",
+]);
+
 /** Strip comments AND (unless `keepLiteralBodies`) string/template-literal
  * bodies from TypeScript source, so a structural guard's pattern can only
  * ever match REAL code.
@@ -153,6 +179,46 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
   let inInterp = false;
   const templateStack: { inInterp: boolean; interpBraceDepth: number }[] = [];
 
+  // Expression-position tracking, for the regular-expression-literal branch
+  // below. `/` is ambiguous in JS/TS -- it opens a regex literal in
+  // expression position and is the division operator everywhere else -- and
+  // only the preceding significant token can tell the two apart.
+  let regexAllowed = true; // start-of-file IS expression position
+  let prevWord = "";
+  let prevWordIsProperty = false;
+
+  /** Record one emitted code character's effect on expression position. */
+  const noteCodeChar = (ch: string): void => {
+    if (/\s/.test(ch)) return; // whitespace does not move expression position
+    if (/[A-Za-z0-9_$]/.test(ch)) {
+      prevWord += ch;
+      // `obj.in` is a property access, not the `in` keyword, so a word that
+      // began immediately after a `.` never counts as a regex-preceding one.
+      regexAllowed = !prevWordIsProperty && REGEX_PRECEDING_KEYWORDS.has(prevWord);
+      return;
+    }
+    prevWord = "";
+    prevWordIsProperty = ch === ".";
+    // `)`, `]` and `}` close a value-producing expression, so a following `/`
+    // is division. Every other punctuator leaves us in expression position.
+    regexAllowed = !/[)\]}]/.test(ch);
+  };
+
+  /** Record that a complete literal (string, template or regex) was just
+   * consumed: a value was produced, so a following `/` is division. */
+  const noteLiteralConsumed = (): void => {
+    prevWord = "";
+    prevWordIsProperty = false;
+    regexAllowed = false;
+  };
+
+  /** Record the start of a fresh expression (a `${` interpolation opening). */
+  const noteExpressionStart = (): void => {
+    prevWord = "";
+    prevWordIsProperty = false;
+    regexAllowed = true;
+  };
+
   while (i < n) {
     const c = src[i];
     const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
@@ -168,6 +234,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
       if (c === "`") {
         templateStack.pop();
         if (keepLiteralBodies) out.push(c);
+        noteLiteralConsumed();
         i++;
         continue;
       }
@@ -175,6 +242,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
         top!.inInterp = true;
         top!.interpBraceDepth = 1;
         if (keepLiteralBodies) out.push("${");
+        noteExpressionStart();
         i += 2;
         continue;
       }
@@ -197,6 +265,51 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
       i += 2;
       continue;
     }
+    // A regular-expression literal. This branch MUST sit after the two
+    // comment branches (`//` and `/*` are not regexes) and before the quote
+    // and backtick branches: a regex body may legally contain `\'`, `"` or a
+    // backtick, and without this branch such a character opens a phantom
+    // string/template frame the scanner never leaves -- silently truncating
+    // the rest of the file out of the "code" every consuming guard matches
+    // against. Measured, not hypothetical: `r2000-coverage.ts:1495`
+    // (`.replace(/[`*_]/g, "")`) truncated a 2329-line module to 1107 lines
+    // of visible code, and `incident-record.ts:107` (`/'/g`) truncated 443
+    // lines to 89, hiding seven real exported functions from
+    // `r2000-spawn-seam.test.ts`'s R2000-01 scan.
+    if (c === "/" && regexAllowed) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < n) {
+        const d = src[j];
+        if (d === "\\") {
+          j += 2;
+          continue;
+        }
+        // An unterminated run to end-of-line is not a regex literal. Bailing
+        // here is what keeps a misclassified division (`a.in / 2`) from
+        // eating the remainder of the file -- the same failure this branch
+        // exists to remove, in the opposite direction.
+        if (d === "\n") break;
+        if (d === "[") inClass = true;
+        else if (d === "]") inClass = false;
+        else if (d === "/" && !inClass) {
+          j++;
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      if (closed) {
+        while (j < n && /[dgimsuvy]/.test(src[j]!)) j++; // flags
+        out.push(src.slice(i, j)); // a regex IS real code, in BOTH modes
+        noteLiteralConsumed();
+        i = j;
+        continue;
+      }
+      // Not a regex after all -- fall through and treat `/` as an ordinary
+      // code character.
+    }
     if (c === '"' || c === "'") {
       const quote = c;
       const start = i;
@@ -210,6 +323,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
       }
       i++; // skip closing quote
       if (keepLiteralBodies) out.push(src.slice(start, i));
+      noteLiteralConsumed();
       continue; // otherwise the entire quoted literal contributes nothing to "code"
     }
     if (c === "`") {
@@ -222,6 +336,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
       if (c === "{") {
         top!.interpBraceDepth++;
         out.push(c);
+        noteCodeChar(c);
         i++;
         continue;
       }
@@ -233,11 +348,13 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
           if (keepLiteralBodies) out.push(c);
         } else {
           out.push(c);
+          noteCodeChar(c);
         }
         continue;
       }
     }
     out.push(c);
+    noteCodeChar(c);
     i++;
   }
   return out.join("");
