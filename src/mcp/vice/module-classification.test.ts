@@ -1,0 +1,534 @@
+// module-classification.test.ts
+//
+// WHY THIS FILE EXISTS (SEAM-02): `module-classification.ts` records which
+// modules in the rented-analyser family are capabilities and which are glue.
+// A prose document would do the same job and then go stale with nothing
+// failing. This file is what turns that record into an OBLIGATION: it
+// enumerates the declared scope from disk and fails, naming the file, the
+// moment a module in scope has no entry or an entry has no module.
+//
+// NINE DIRECTIONS, each extracted into a NAMED PREDICATE that the real scan
+// and the planted-violation test both call. That sharing is the property
+// that makes this guard trustworthy and it is already the established shape
+// in this suite (`hostpath-consumers.test.ts`'s planted-violation tests do
+// exactly this): a planted violation that re-implements the rule proves
+// nothing about the rule the real scan applies.
+//
+//   1. completeness      -- every in-scope path on disk has an entry
+//   2. no orphans        -- every in-enumeration entry's module is on disk
+//   3. basis integrity   -- basis non-empty, cited paths exist, ids well-shaped
+//   4. name prohibition  -- no basis justifies a verdict by the module's name
+//   5. verdict coherence -- extractables non-empty IFF the third verdict
+//   6. non-vacuity       -- a DERIVED relation, never a pinned total
+//   7. adjacency         -- no two entries name one module
+//   8. ordering          -- same results over a reversed copy of the array
+//   9. line citations    -- an advisory line is verified, never trusted
+//
+// THE `note` FIELD IS DELIBERATELY EXEMPT FROM DIRECTION 4, and the
+// distinction matters: a `note` legitimately DISCUSSES the naming hazard
+// this whole record exists to remove (one entry's note explains that a
+// requirement clause looks as though it belonged to a different module
+// because of what the modules are called). A guard that could not tell a
+// justification from a caveat would force the record to go silent about
+// exactly the thing it is for. So Direction 4 scans `basis` only -- every
+// consumer path, every symbol, every requirement id and the rationale -- and
+// never the note.
+//
+// DIRECTION 6 IS THE ONE TO GET RIGHT. Its threshold is DERIVED from the
+// registry, never written as a literal. See the reasoning recorded at the
+// assertion itself.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { MODULE_CLASSIFICATION, classificationFor } from "./module-classification.ts";
+import type { ModuleClassificationEntry } from "./module-classification.ts";
+import { repoRoot } from "./repo-root.ts";
+import { shippedTsModules } from "./shipped-modules.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = repoRoot({ from: HERE });
+
+/**
+ * The registry's DECLARED in-enumeration scope, derived from disk and
+ * filtered EXPLICITLY rather than incidentally: files in this directory
+ * whose name begins with the analyser family's own segment, ending `.ts` or
+ * `.json`, excluding every `*.test.*` file.
+ *
+ * The `.json` half is a DECISION, not an accident. The family contains one
+ * generated data file, it matches the family's naming, and an unfiltered
+ * enumeration would demand an entry for it by accident rather than by
+ * intent. Including it deliberately -- and comparing filenames as EXACT
+ * strings including the extension, so it is matched by its full filename and
+ * never by a stem -- is what makes the record's coverage of it a stated
+ * choice.
+ *
+ * `dir` is injectable purely so the ordering direction and the planted
+ * violations can drive this same code path against synthetic inputs. Real
+ * callers pass nothing.
+ */
+function inEnumerationOnDisk(dir: string = HERE): string[] {
+  return readdirSync(dir)
+    .filter((name) => name.startsWith("r2000-"))
+    .filter((name) => /\.(ts|json)$/.test(name))
+    .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
+    .sort();
+}
+
+/** The entries the disk-completeness relation applies to. */
+function inEnumerationEntries(entries: readonly ModuleClassificationEntry[]): ModuleClassificationEntry[] {
+  return entries.filter((entry) => entry.scope === "in-enumeration");
+}
+
+/** DIRECTION 1. Every in-scope path on disk that has no registry entry.
+ * Returns the offending filenames so the failure message can name them --
+ * a module added later cannot slip in unclassified. */
+function unclassifiedModules(entries: readonly ModuleClassificationEntry[], diskModules: readonly string[]): string[] {
+  const classified = new Set(inEnumerationEntries(entries).map((entry) => entry.module));
+  return diskModules.filter((name) => !classified.has(name));
+}
+
+/** DIRECTION 2. Every in-enumeration entry whose module is not on disk --
+ * the leftover an entry becomes after a rename or a deletion. */
+function orphanedEntries(entries: readonly ModuleClassificationEntry[], diskModules: readonly string[]): string[] {
+  const onDisk = new Set(diskModules);
+  return inEnumerationEntries(entries)
+    .filter((entry) => !onDisk.has(entry.module))
+    .map((entry) => entry.module);
+}
+
+/** A requirement id in this project's own FAMILY-NN shape (SEAM-02,
+ * EXPORT-01, COV-02, R2000-13, CUT-04). Deliberately a shape check, not a
+ * membership check against a file: a requirement document is reorganised
+ * every milestone, and a guard that went red on that would be re-pointed
+ * rather than believed. */
+const REQUIREMENT_ID_RE = /^[A-Z][A-Z0-9]*(?:-[0-9]+)+$/;
+
+/** DIRECTION 3. Everything wrong with one entry's basis: an empty basis, a
+ * cited consumer path that is not on disk, a malformed requirement id, or a
+ * blank rationale. Paths are repository-root-relative by the entry
+ * interface's own contract. */
+function basisProblems(entry: ModuleClassificationEntry, root: string = ROOT): string[] {
+  const problems: string[] = [];
+  const { consumers, requirements, rationale } = entry.basis;
+  if (consumers.length === 0 && requirements.length === 0) {
+    problems.push(`${entry.module}: basis names neither a consumer nor a requirement id`);
+  }
+  if (rationale.trim() === "") {
+    problems.push(`${entry.module}: basis has no rationale`);
+  }
+  for (const consumer of consumers) {
+    if (!existsSync(join(root, consumer.path))) {
+      problems.push(`${entry.module}: cited consumer path ${consumer.path} does not exist on disk`);
+    }
+    if (consumer.symbol.trim() === "") {
+      problems.push(`${entry.module}: consumer ${consumer.path} cites no symbol`);
+    }
+  }
+  for (const id of requirements) {
+    if (!REQUIREMENT_ID_RE.test(id)) {
+      problems.push(`${entry.module}: requirement id ${JSON.stringify(id)} is not FAMILY-NN shaped`);
+    }
+  }
+  return problems;
+}
+
+/** The shapes that read as "this verdict follows from what the module is
+ * CALLED" -- the one justification success criterion 2 forbids outright, and
+ * the only mechanically checkable half of it. Phrase-based on purpose: a
+ * cited path or symbol legitimately contains the family's naming (every
+ * consumer in the family does), so a bare substring test would reject every
+ * honest citation in the record and be switched off within a milestone. */
+const NAME_JUSTIFICATION_PATTERNS: readonly RegExp[] = [
+  /\bprefix(es|ed)?\b/i,
+  /because of its name\b/i,
+  /\bnamed?\s+r2000\b/i,
+  /\bname\s+(alone|itself)\b/i,
+  /\bnaming convention\b/i,
+  /\br2000-\*/,
+];
+
+/** DIRECTION 4. Every field of one entry's basis that justifies the verdict
+ * by the module's name. Scans consumer paths, consumer symbols, requirement
+ * ids and the rationale. Does NOT scan `note` -- see this file's header for
+ * why that exemption is load-bearing rather than a loophole. */
+function nameJustificationProblems(entry: ModuleClassificationEntry): string[] {
+  const fields: { where: string; text: string }[] = [
+    { where: "rationale", text: entry.basis.rationale },
+    ...entry.basis.consumers.flatMap((consumer) => [
+      { where: `consumers[].path (${consumer.path})`, text: consumer.path },
+      { where: `consumers[].symbol (${consumer.symbol})`, text: consumer.symbol },
+    ]),
+    ...entry.basis.requirements.map((id) => ({ where: `requirements[] (${id})`, text: id })),
+  ];
+  const problems: string[] = [];
+  for (const field of fields) {
+    for (const pattern of NAME_JUSTIFICATION_PATTERNS) {
+      if (pattern.test(field.text)) {
+        problems.push(`${entry.module}: basis.${field.where} justifies the verdict by the module's name (matched ${pattern})`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** DIRECTION 5. `extractables` must be non-empty IF AND ONLY IF the verdict
+ * is the third one. Both directions, because either half alone lets a
+ * verdict and its named obligations drift apart. */
+function verdictExtractablesProblems(entry: ModuleClassificationEntry): string[] {
+  const isThird = entry.verdict === "glue-with-extractable";
+  const hasExtractables = entry.extractables.length > 0;
+  if (isThird && !hasExtractables) {
+    return [`${entry.module}: verdict is glue-with-extractable but names no extractable symbol`];
+  }
+  if (!isThird && hasExtractables) {
+    return [`${entry.module}: verdict is ${entry.verdict} but names extractable symbols`];
+  }
+  return [];
+}
+
+/** DIRECTION 7 (adjacency). Every module named by more than one entry. */
+function duplicateModules(entries: readonly ModuleClassificationEntry[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.module)) duplicates.add(entry.module);
+    seen.add(entry.module);
+  }
+  return [...duplicates].sort();
+}
+
+/** DIRECTION 9. For every consumer carrying an advisory line, assert that
+ * line of that file CONTAINS the cited symbol -- never trust the number.
+ * The liability is measured, not hypothetical: three citations had drifted
+ * by the time the registry was populated, all because earlier work in the
+ * same phase inserted lines above them. Same shape as
+ * `docs-linerefs.test.ts`'s containment check. */
+function lineCitationProblems(entry: ModuleClassificationEntry, root: string = ROOT): string[] {
+  const problems: string[] = [];
+  for (const consumer of entry.basis.consumers) {
+    if (consumer.line === undefined) continue;
+    const abs = join(root, consumer.path);
+    if (!existsSync(abs)) continue; // reported by basisProblems() instead
+    const lines = readFileSync(abs, "utf8").split("\n");
+    const text = lines[consumer.line - 1];
+    if (text === undefined) {
+      problems.push(`${entry.module}: cites ${consumer.path}:${consumer.line}, but that file has no such line`);
+      continue;
+    }
+    if (!text.includes(consumer.symbol)) {
+      problems.push(
+        `${entry.module}: cites ${consumer.path}:${consumer.line} for ${consumer.symbol}, but that line does not contain it -- ` +
+          `drift. Line reads: ${JSON.stringify(text)}`,
+      );
+    }
+  }
+  return problems;
+}
+
+// --- DIRECTION 6: the derived non-vacuity relation, placed FIRST so no loop
+// --- below it can pass vacuously.
+
+test("DIRECTION 6 (non-vacuity): the on-disk in-scope count is at least the number of in-enumeration entries, DERIVED from the registry rather than pinned", () => {
+  const disk = inEnumerationOnDisk();
+  const entries = inEnumerationEntries(MODULE_CLASSIFICATION);
+  // WHY A DERIVED RELATION AND NOT A LITERAL FLOOR. The obvious in-repo
+  // analog is `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR = 14`,
+  // whose own comment says the number must be RAISED, never lowered. That
+  // pattern is right about relations-over-equality and this assertion
+  // supersedes it for one specific reason: a growing literal floor goes RED
+  // on a correct tree the moment a later phase legitimately DELETES a module
+  // together with its entry, and this project already carries the scar of a
+  // guard that pinned per-milestone totals and reddened on correct trees. A
+  // threshold taken from the registry itself catches the failure a literal
+  // catches (a broken or empty glob, which would make Direction 1 vacuously
+  // true) and survives legitimate change in BOTH directions. Do not
+  // "restore" a literal here.
+  assert.ok(
+    disk.length >= entries.length,
+    `the in-scope enumeration found ${disk.length} paths on disk but the registry declares ${entries.length} ` +
+      "in-enumeration entries -- a glob returning fewer paths than there are entries means the enumeration is " +
+      "broken or narrowed, and every completeness assertion below would pass vacuously",
+  );
+  assert.ok(disk.length > 0, "the in-scope enumeration is empty -- the filter or the directory resolution is broken");
+});
+
+// --- DIRECTION 1 and 2: the two completeness directions.
+
+test("DIRECTION 1 (completeness): every in-scope module and data file on disk has a registry entry, and the failure names it", () => {
+  const unclassified = unclassifiedModules(MODULE_CLASSIFICATION, inEnumerationOnDisk());
+  assert.ok(
+    unclassified.length === 0,
+    `these in-scope files have no capability-or-glue verdict: ${unclassified.join(", ")} -- a module added ` +
+      "without an entry must fail HERE, before a later phase deletes it by name with no record to check",
+  );
+});
+
+test("DIRECTION 2 (no orphans): every in-enumeration entry names a module that exists on disk", () => {
+  const orphans = orphanedEntries(MODULE_CLASSIFICATION, inEnumerationOnDisk());
+  assert.ok(
+    orphans.length === 0,
+    `these registry entries name a module that is not on disk: ${orphans.join(", ")} -- an entry left behind ` +
+      "after a rename or a deletion is a record that has silently stopped matching the tree",
+  );
+});
+
+test("DIRECTION 2 (encoding): the generated data file is matched by its FULL filename including the extension, never by a stem", () => {
+  const disk = inEnumerationOnDisk();
+  assert.ok(disk.includes("r2000-regbits.json"), "the in-scope enumeration must include the generated data file by full filename");
+  assert.ok(classificationFor("r2000-regbits.json") !== undefined, "the data file must have its own entry, keyed by its full filename");
+  assert.ok(
+    classificationFor("r2000-regbits") === undefined,
+    "a stem must NOT resolve to the data file's entry -- module values and on-disk filenames are compared as exact strings",
+  );
+});
+
+// --- DIRECTION 3, 4, 5, 7: per-entry integrity.
+
+test("DIRECTION 3 (basis integrity): every entry's basis is non-empty, every cited consumer path exists on disk, and every requirement id is well-shaped", () => {
+  const problems = MODULE_CLASSIFICATION.flatMap((entry) => basisProblems(entry));
+  assert.ok(problems.length === 0, `basis problems:\n  ${problems.join("\n  ")}`);
+});
+
+test("DIRECTION 4 (the name prohibition): no entry's basis justifies its verdict by the module's name", () => {
+  const problems = MODULE_CLASSIFICATION.flatMap((entry) => nameJustificationProblems(entry));
+  assert.ok(problems.length === 0, `name-as-justification problems:\n  ${problems.join("\n  ")}`);
+});
+
+test("DIRECTION 5 (verdict coherence): extractables is non-empty if and only if the verdict is glue-with-extractable", () => {
+  const problems = MODULE_CLASSIFICATION.flatMap((entry) => verdictExtractablesProblems(entry));
+  assert.ok(problems.length === 0, `verdict/extractables problems:\n  ${problems.join("\n  ")}`);
+});
+
+test("DIRECTION 7 (adjacency): no two entries name the same module", () => {
+  const duplicates = duplicateModules(MODULE_CLASSIFICATION);
+  assert.ok(duplicates.length === 0, `modules named by more than one entry: ${duplicates.join(", ")}`);
+});
+
+test("DIRECTION 7 (adjacency): out-of-enumeration entries are excluded from the completeness loop rather than colliding with it", () => {
+  const outOfScope = MODULE_CLASSIFICATION.filter((entry) => entry.scope === "out-of-enumeration");
+  assert.ok(outOfScope.length > 0, "the registry must carry the deliberately-excluded files as data, not drop them");
+  const disk = inEnumerationOnDisk();
+  for (const entry of outOfScope) {
+    assert.ok(
+      !disk.includes(entry.module),
+      `${entry.module} is marked out-of-enumeration but the enumeration found it -- the marker and the filter disagree`,
+    );
+  }
+  // The proof that the marker does the excluding: removing every
+  // out-of-enumeration entry changes neither completeness direction.
+  const withoutOutOfScope = MODULE_CLASSIFICATION.filter((entry) => entry.scope === "in-enumeration");
+  assert.deepEqual(unclassifiedModules(withoutOutOfScope, disk), unclassifiedModules(MODULE_CLASSIFICATION, disk));
+  assert.deepEqual(orphanedEntries(withoutOutOfScope, disk), orphanedEntries(MODULE_CLASSIFICATION, disk));
+});
+
+// --- DIRECTION 9: advisory line citations.
+
+test("DIRECTION 9 (precision): every advisory line citation is verified by containment -- the cited line contains the cited symbol", () => {
+  const problems = MODULE_CLASSIFICATION.flatMap((entry) => lineCitationProblems(entry));
+  assert.ok(problems.length === 0, `line citation drift:\n  ${problems.join("\n  ")}`);
+});
+
+test("DIRECTION 9 (non-vacuity): the record actually carries advisory line citations for this direction to check", () => {
+  const cited = MODULE_CLASSIFICATION.flatMap((entry) => entry.basis.consumers).filter((consumer) => consumer.line !== undefined);
+  assert.ok(
+    cited.length > 0,
+    "no consumer carries a line citation -- Direction 9 would then pass over an empty set, which is exactly the " +
+      "vacuous-guard shape this suite refuses",
+  );
+});
+
+// --- DIRECTION 8: order independence.
+
+test("DIRECTION 8 (ordering): re-running Directions 1-5, 7 and 9 over a REVERSED copy of the registry yields identical results", () => {
+  const disk = inEnumerationOnDisk();
+  const reversed = [...MODULE_CLASSIFICATION].reverse();
+
+  assert.deepEqual(unclassifiedModules(reversed, disk).sort(), unclassifiedModules(MODULE_CLASSIFICATION, disk).sort());
+  assert.deepEqual(orphanedEntries(reversed, disk).sort(), orphanedEntries(MODULE_CLASSIFICATION, disk).sort());
+  assert.deepEqual(duplicateModules(reversed), duplicateModules(MODULE_CLASSIFICATION));
+  assert.deepEqual(
+    reversed.flatMap((entry) => basisProblems(entry)).sort(),
+    MODULE_CLASSIFICATION.flatMap((entry) => basisProblems(entry)).sort(),
+  );
+  assert.deepEqual(
+    reversed.flatMap((entry) => nameJustificationProblems(entry)).sort(),
+    MODULE_CLASSIFICATION.flatMap((entry) => nameJustificationProblems(entry)).sort(),
+  );
+  assert.deepEqual(
+    reversed.flatMap((entry) => verdictExtractablesProblems(entry)).sort(),
+    MODULE_CLASSIFICATION.flatMap((entry) => verdictExtractablesProblems(entry)).sort(),
+  );
+  assert.deepEqual(
+    reversed.flatMap((entry) => lineCitationProblems(entry)).sort(),
+    MODULE_CLASSIFICATION.flatMap((entry) => lineCitationProblems(entry)).sort(),
+  );
+
+  // And the accessor answers by KEY, not by position: it must return the
+  // same entry against a reversed array's contents.
+  for (const entry of reversed) {
+    assert.equal(classificationFor(entry.module), entry, `${entry.module} must resolve by module key regardless of array order`);
+  }
+});
+
+// --- The planted violations: the SAME predicates the real scan calls.
+
+test("planted violation: the same predicates the real scan uses report all five synthetic bad entries, and do not report the clean one", () => {
+  const cleanConsumerPath = "src/mcp/vice/module-classification.ts";
+
+  const emptyBasis: ModuleClassificationEntry = {
+    module: "r2000-synthetic-empty.ts",
+    scope: "in-enumeration",
+    verdict: "capability",
+    basis: { consumers: [], requirements: [], rationale: "" },
+    extractables: [],
+  };
+  const missingPath: ModuleClassificationEntry = {
+    module: "r2000-synthetic-missing-path.ts",
+    scope: "in-enumeration",
+    verdict: "capability",
+    basis: {
+      consumers: [{ path: "src/mcp/vice/r2000-this-file-does-not-exist.ts", symbol: "somethingReal" }],
+      requirements: ["SEAM-02"],
+      rationale: "cites a consumer that is not on disk",
+    },
+    extractables: [],
+  };
+  const nameJustified: ModuleClassificationEntry = {
+    module: "r2000-synthetic-name-justified.ts",
+    scope: "in-enumeration",
+    verdict: "capability",
+    basis: {
+      consumers: [{ path: cleanConsumerPath, symbol: "MODULE_CLASSIFICATION" }],
+      requirements: ["SEAM-02"],
+      rationale: "Kept because of its name prefix, which is the one justification criterion 2 forbids.",
+    },
+    extractables: [],
+  };
+  const thirdVerdictNoExtractables: ModuleClassificationEntry = {
+    module: "r2000-synthetic-third-verdict.ts",
+    scope: "in-enumeration",
+    verdict: "glue-with-extractable",
+    basis: {
+      consumers: [{ path: cleanConsumerPath, symbol: "MODULE_CLASSIFICATION" }],
+      requirements: ["SEAM-02"],
+      rationale: "declares the third verdict but names no symbol that must move out",
+    },
+    extractables: [],
+  };
+  const clean: ModuleClassificationEntry = {
+    module: "r2000-synthetic-clean.ts",
+    scope: "in-enumeration",
+    verdict: "glue",
+    basis: {
+      consumers: [{ path: cleanConsumerPath, symbol: "MODULE_CLASSIFICATION" }],
+      requirements: ["SEAM-02"],
+      rationale: "speaks the rented analyser's own protocol and nothing else",
+    },
+    extractables: [],
+  };
+
+  // (a) empty basis
+  assert.ok(
+    basisProblems(emptyBasis).length >= 2,
+    "an entry with no consumer, no requirement id and no rationale must be reported by basisProblems() -- if it is " +
+      "not, the real scan above cannot catch a real empty basis",
+  );
+  // (b) nonexistent consumer path
+  assert.ok(
+    basisProblems(missingPath).some((problem) => problem.includes("does not exist on disk")),
+    "a cited consumer path that is not on disk must be reported by the same predicate the real scan calls",
+  );
+  // (c) the name as the justification
+  assert.ok(
+    nameJustificationProblems(nameJustified).length > 0,
+    "a basis whose rationale justifies the verdict by the module's name must be reported -- this is the only " +
+      "mechanically checkable half of criterion 2",
+  );
+  // (d) duplicate module
+  assert.deepEqual(duplicateModules([clean, thirdVerdictNoExtractables, clean]), ["r2000-synthetic-clean.ts"]);
+  // (e) third verdict with no extractables
+  assert.ok(
+    verdictExtractablesProblems(thirdVerdictNoExtractables).length > 0,
+    "the third verdict with an empty extractables list must be reported by verdictExtractablesProblems()",
+  );
+
+  // The non-vacuity half: the clean entry is reported by NONE of them.
+  assert.ok(basisProblems(clean).length === 0, "the clean synthetic entry must not be reported by basisProblems()");
+  assert.ok(nameJustificationProblems(clean).length === 0, "the clean synthetic entry must not be reported by nameJustificationProblems()");
+  assert.ok(verdictExtractablesProblems(clean).length === 0, "the clean synthetic entry must not be reported by verdictExtractablesProblems()");
+  assert.ok(lineCitationProblems(clean).length === 0, "the clean synthetic entry carries no line citation and must not be reported");
+  assert.ok(duplicateModules([clean, thirdVerdictNoExtractables]).length === 0, "two distinct modules must not be reported as duplicates");
+});
+
+test("planted violation: an in-scope file with no entry is reported by the same completeness predicate the real scan calls", () => {
+  // The synthetic disk list is FULLY synthetic -- two names the registry
+  // does classify plus one it does not -- rather than the real enumeration
+  // with one name appended. Measured: appending to the real enumeration made
+  // THIS test go red alongside Direction 1 during this plan's own on-disk
+  // break-and-restore probe, because the planted file then appeared in the
+  // list too, and that muddied the attribution of an observed RED. A
+  // predicate test should exercise the predicate, not the filesystem.
+  const syntheticDisk = ["r2000-cli.ts", "r2000-regbits.json", "r2000-synthetic-unclassified.ts"];
+  const unclassified = unclassifiedModules(MODULE_CLASSIFICATION, syntheticDisk);
+  assert.deepEqual(
+    unclassified,
+    ["r2000-synthetic-unclassified.ts"],
+    "a file present in the enumeration with no registry entry must be reported BY NAME -- if it is not, Direction 1 " +
+      "cannot catch a module that slips in unclassified",
+  );
+  // And an entry with no file on disk is reported by the other direction.
+  const orphanEntry: ModuleClassificationEntry = {
+    module: "r2000-renamed-away.ts",
+    scope: "in-enumeration",
+    verdict: "glue",
+    basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
+    extractables: [],
+  };
+  assert.deepEqual(orphanedEntries([...MODULE_CLASSIFICATION, orphanEntry], inEnumerationOnDisk()), ["r2000-renamed-away.ts"]);
+});
+
+test("planted violation: a drifted advisory line citation is reported by lineCitationProblems(), and a correct one is not", () => {
+  // Line 1 of the registry is its own header comment, which never contains
+  // the exported const's name -- so a citation planted there must be
+  // rejected by the same containment check the real scan uses.
+  const drifted: ModuleClassificationEntry = {
+    module: "r2000-synthetic-drift.ts",
+    scope: "in-enumeration",
+    verdict: "glue",
+    basis: {
+      consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION", line: 1 }],
+      requirements: [],
+      rationale: "cites a line that does not contain the cited symbol",
+    },
+    extractables: [],
+  };
+  const problems = lineCitationProblems(drifted);
+  assert.ok(problems.length > 0, "a citation pointing at a line that does not contain the symbol must be reported as drift");
+  assert.ok(problems[0].includes("drift"), `the failure must name the drift; got: ${problems[0]}`);
+
+  const registryLines = readFileSync(join(ROOT, "src/mcp/vice/module-classification.ts"), "utf8").split("\n");
+  const realLine = registryLines.findIndex((text) => text.includes("export const MODULE_CLASSIFICATION")) + 1;
+  assert.ok(realLine > 0, "expected to find the exported const's declaration line");
+  const correct: ModuleClassificationEntry = {
+    ...drifted,
+    basis: { ...drifted.basis, consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION", line: realLine }] },
+  };
+  assert.ok(lineCitationProblems(correct).length === 0, "a correct citation must not be reported -- otherwise the check rejects everything");
+});
+
+// --- Structural: this record is bookkeeping and must never ship.
+
+test("module-classification.ts is absent from package.json's files[] array (bookkeeping, not shipped runtime behaviour)", () => {
+  // Uses the extracted files[] enumerator rather than a local re-read, so
+  // the shipped set is derived in exactly one place in this repo.
+  assert.ok(
+    !shippedTsModules().includes("module-classification.ts"),
+    "module-classification.ts records a judgement about this repo's own modules and must never enter the published tarball",
+  );
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
+  assert.ok(!pkg.files.includes("module-classification.ts"), "and the same absence read directly from the manifest");
+});
