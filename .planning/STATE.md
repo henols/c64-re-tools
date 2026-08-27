@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 27
 current_phase_name: Shared Seams Extracted
 status: executing
-stopped_at: Completed 27-03-PLAN.md
-last_updated: "2026-08-27T06:52:06.072Z"
+stopped_at: Completed 27-04-PLAN.md
+last_updated: "2026-08-27T07:08:05.491Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 27 execution started
-state_head: 8f194d3cb3c7d650adb68ebb7ecd214515ba7053
+state_head: 3515e6151c37ade9cbac9793139297b5d8c103e9
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 27 (Shared Seams Extracted) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 27 execution started
 
@@ -287,6 +287,7 @@ Last activity: 2026-08-27 — Phase 27 execution started
 | Phase 27 P01 | 15 min | 3 tasks | 7 files |
 | Phase 27 P02 | 40 min | 3 tasks | 7 files |
 | Phase 27 P03 | 8 min | 3 tasks | 14 files |
+| Phase 27 P04 | 17 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -577,6 +578,9 @@ Recent decisions affecting current work:
 - [Phase 27]: OQ-3 resolved as MOVE decodeRawData into prg-image.ts rather than record-and-defer — The coverage census statically imported it from a module a prefix deletion removes, so deferring would leave a criterion-2 capability one deletion away from silently breaking -- the exact failure SEAM-02 exists to prevent. Cost: one node:zlib import on the new module and two extra repoints.
 - [Phase 27]: No re-export shim left in r2000-project.ts, and the six remaining importers were repointed in the extraction commit itself — A shim leaves the coupling fully intact while looking finished. And because tsc --noEmit is whole-project (tsconfig include is **/*.ts), any commit that removes the exports without repointing every importer is a tree that does not typecheck -- itself a partial repoint. Deviation Rule 3.
 - [Phase 27]: r2000-cli.test.ts deliberately left untouched: measured, no comment in it attributes either moved function to the old module — The plan expected two comment-accuracy files. All seven parser mentions in r2000-cli.test.ts either name the function bare or attribute it to r2000-cli.ts own header, so editing it would be churn against correct prose. One comment-accuracy file (r2000-d64.ts), and six files needing no change rather than five.
+- [Phase 27]: shippedTsModules() throws its own named ShippedFilesEntryMissingError instead of taking a caller's assertion library — No call site can opt out of the existence check by forgetting an argument, and all 11 call sites needed no signature change.
+- [Phase 27]: codeOnly() was merged as a superset (state machine plus keepLiteralBodies), not a choice between the two divergent copies — The default false path stays byte-identical to the moved original, so the spawn-seam guard's semantics are unchanged, while prg-image's import-specifier caller keeps the literal bodies it must read.
+- [Phase 27]: The comment-extractor family stays deliberately split, with all six sites named by filename and line inside shipped-modules.ts — Blanking string bodies would make the literals five of them search for unobservable; r2000-tools.test.ts:193-201 states that reasoning in code.
 
 ### Pending Todos
 
@@ -1148,8 +1152,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T06:52:05.995Z
-Stopped at: Completed 27-03-PLAN.md
+Last session: 2026-08-27T07:07:53.694Z
+Stopped at: Completed 27-04-PLAN.md
   `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` are written and committed
   (`6403e2f`). Four gray areas discussed, 17 decisions locked: the ACME gate is
   a hard move to `acme-gate.ts` with all four importers repointed and no

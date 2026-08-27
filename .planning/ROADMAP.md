@@ -399,7 +399,7 @@ on the record — before a line of store code exists.
   3. `r2000-coverage.ts`'s contact with the annotation store is a **named, repointable boundary** rather than two functions comparing against upstream's Rust `Display` strings, and `COV-01`/`COV-02`'s census-versus-store boundary test — the one that rewrites every block entry to a single type and asserts no census byte count moves — passes across that boundary. The coverage instrument survives the substrate swap intact instead of being deleted as glue.
   4. Full `npm test` (the whole glob, broker stopped, command named in the evidence) is green with **zero** `r2000` modules deleted — the extraction is demonstrably a move rather than a change, which is what makes every later phase's diff readable.
 
-**Plans**: 3/5 plans executed in 3 waves
+**Plans**: 4/5 plans executed in 3 waves
 
 Plans:
 **Wave 1**
@@ -410,7 +410,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 27-03-PLAN.md — Move `parsePrg`, `flatImageOrigin` and `decodeRawData` into a shipped `prg-image.ts` and repoint all nine consumers (SEAM-02, SEAM-03)
-- [ ] 27-04-PLAN.md — Extract the four hand-copied `shippedTsModules()` enumerators and `codeOnly()` into `shipped-modules.ts`, and rewrite both recorded statements of the sharing convention (SEAM-02)
+- [x] 27-04-PLAN.md — Extract the four hand-copied `shippedTsModules()` enumerators and `codeOnly()` into `shipped-modules.ts`, and rewrite both recorded statements of the sharing convention (SEAM-02)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -918,7 +918,7 @@ in a milestone archive.
 | 24. The Two Engines | v0.6.0 | — | Held for v0.8.0 | - |
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
-| 27. Shared Seams Extracted | v0.7.0 | 3/5 | In Progress|  |
+| 27. Shared Seams Extracted | v0.7.0 | 4/5 | In Progress|  |
 | 28. The Store Core | v0.7.0 | — | Not started | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
