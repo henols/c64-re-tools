@@ -5,11 +5,18 @@
 // comment-AND-string-literal stripper those guards feed source text through
 // before matching anything.
 //
-// WHY THIS FILE EXISTS (SEAM-02): `shippedTsModules()` existed as FOUR
-// byte-identical hand copies -- in `docs-dangling-refs.test.ts` (the
+// WHY THIS FILE EXISTS (SEAM-02): `shippedTsModules()` existed as FOUR hand
+// copies with identical FILTER logic -- in `docs-dangling-refs.test.ts` (the
 // canonical body, and where the existence-assertion lesson was first
 // recorded), `r2000-spawn-seam.test.ts`, `stock-dispatch.test.ts` and
-// `comment-phase-pointers.test.ts`. Each copy decides WHAT its guard scans.
+// `comment-phase-pointers.test.ts`. Not byte-identical, and the difference is
+// the point (IN-05): all four checked disk presence with
+// `assert.ok(existsSync(...), ...)`, a SOFT assertion borrowed from whichever
+// assertion library the calling test happened to import. The extraction
+// throws its own `ShippedFilesEntryMissingError` instead -- a deliberate
+// assert-to-throw upgrade, argued for further down: no call site can opt out
+// of the check by forgetting an argument. Each copy decides WHAT its guard
+// scans.
 // One copy losing its existence assertion, or gaining a narrower extension
 // filter, silently shrinks that guard's scanned set -- and the guard keeps
 // PASSING, because a guard that scans nothing finds nothing. Four
