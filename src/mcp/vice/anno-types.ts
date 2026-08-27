@@ -47,8 +47,23 @@
 //      `r2000-confidence.ts:79` derives `VALID_BRACKETS` with a `.map()`. Two
 //      literal lists are two homes for one fact, and they drift silently.
 //   3. NEVER hold module-level mutable state here. Every export below is a
-//      frozen constant or a pure function of its arguments, so two concurrent
-//      callers cannot observe each other and there is nothing to reset.
+//      frozen constant, so two concurrent callers cannot observe each other
+//      and there is nothing to reset. That half of the rule is unchanged and
+//      unconditional.
+//      NARROWED 2026-08-28, and the reversal is the record rather than a
+//      deletion. This paragraph used to end "...or a pure function of its
+//      arguments", and that clause is now false for exactly ONE export:
+//      `storePathWithinWorkspace()` is a function of its arguments AND THE
+//      FILESYSTEM. It must be. Workspace confinement has to answer whether a
+//      path lands outside the root once symbolic links are followed, and that
+//      is a filesystem question that no string comparison can answer -- the
+//      earlier pure-string version accepted a symlinked subdirectory and let a
+//      store file be created outside the workspace root (`28-VERIFICATION.md`
+//      gap 3 / `28-REVIEW.md` CR-03, reproduced). Every OTHER export is still
+//      a pure function of its arguments and still unit-testable with no file
+//      on disk. The exception is named here, in `storePathWithinWorkspace`'s
+//      own doc comment, and in `anno-types.test.ts`'s mutable-state assertion
+//      message, so no reader can find a place that still claims total purity.
 //   4. NEVER accept an unprefixed numeric string as an address.
 //      `parseStoreAddress()` takes an integer, a `$hex` string and a
 //      `0x`/`0X` string, and refuses `"1024"`. This is a REAL, user-visible
@@ -92,7 +107,8 @@
 //      code units, so a multi-byte comment passes a code-unit check and then
 //      exceeds the byte bound on disk. `assertCommentText()` measures with a
 //      `TextEncoder`.
-import { resolve, sep } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { OPCODES } from "./disasm-opcodes.ts";
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
@@ -689,19 +705,98 @@ export function parseStoreAddress(input: unknown, opts: { what?: string } = {}):
 }
 
 /**
- * Resolves `path` and `workspaceRoot` and returns the resolved absolute store
- * path, or throws `AnnoStorePathError` when the store path is not the
- * workspace root itself or something beneath it. Boundary-safe: the comparison
- * appends the platform separator rather than testing a bare string prefix, so
- * a sibling directory whose name merely STARTS with the root's name is refused.
+ * Returns the REAL absolute path of `p`, resolved through the deepest ancestor
+ * that actually exists on disk, with the non-existent tail re-joined after it.
+ *
+ * WHY THE WALK. The common case is a store file that does NOT exist yet -- the
+ * store is created on first open -- so a bare `realpathSync(p)` would throw
+ * `ENOENT` on exactly the path this module most needs to check. The walk stops
+ * at the first existing ancestor, resolves THAT, and re-joins the remaining
+ * segments afterwards, so the answer is the path the filesystem will actually
+ * use once the tail is created.
+ *
+ * WHY THE TAIL IS RE-JOINED AFTER the real ancestor rather than before: the
+ * symlinks that matter are the ones already on disk, and they are all in the
+ * existing prefix. Re-joining after resolution is what makes the returned value
+ * the location a write lands at, which is the only thing confinement can
+ * honestly compare.
+ *
+ * Nothing exists anywhere on the path (the walk reached the filesystem root):
+ * there is nothing to resolve, so the plainly-resolved path is the honest
+ * answer and is returned unchanged.
+ *
+ * Every `realpathSync` failure is rethrown as `AnnoStorePathError` naming the
+ * path, so a permission error resolving an ancestor stays inside the
+ * `ViceError` family instead of escaping as a bare `Error`.
+ */
+function realpathOfNearestExisting(p: string): string {
+  const resolved = resolve(p);
+  const tail: string[] = [];
+  let current = resolved;
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) return resolved;
+    tail.unshift(basename(current));
+    current = parent;
+  }
+  let real: string;
+  try {
+    real = realpathSync(current);
+  } catch (e) {
+    throw new AnnoStorePathError(
+      `cannot resolve the real path of ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+      { path: resolved },
+    );
+  }
+  return tail.length === 0 ? real : join(real, ...tail);
+}
+
+/**
+ * Resolves `path` and `workspaceRoot` to REAL paths and returns the resolved
+ * absolute store path, or throws `AnnoStorePathError` when the store path is
+ * not the workspace root itself or something beneath it. Boundary-safe: the
+ * comparison appends the platform separator rather than testing a bare string
+ * prefix, so a sibling directory whose name merely STARTS with the root's name
+ * is refused.
+ *
+ * BOTH SIDES GO THROUGH `realpathOfNearestExisting`, and that is the
+ * load-bearing detail rather than a symmetry preference:
+ *
+ *   * The PATH must be a real path, because `resolve()` normalises `..` but
+ *     does NOT follow symbolic links. The pure-string version accepted a
+ *     symlinked subdirectory inside the workspace and the store file was
+ *     created outside the root (`28-REVIEW.md` CR-03, reproduced by the phase
+ *     verifier). A confinement check has to compare what the filesystem will
+ *     actually do.
+ *   * The ROOT must go through the SAME walk, for two independent reasons. A
+ *     workspace root that does not exist is a legitimate input -- the pinned
+ *     case in `anno-store.test.ts` passes `<dir>/nested`, which is never
+ *     created -- and a bare `realpathSync` on it throws a raw `ENOENT`,
+ *     replacing a clean named refusal with a non-family error. And resolving
+ *     only ONE side makes every path look foreign whenever the root itself is
+ *     reached through a symlink, which is the common case on hosts where the
+ *     temp directory is a link.
+ *
+ * BEHAVIOURAL CONSEQUENCE, intended and tested: because this returns the real
+ * path, a store reached through a symlink that points INSIDE the workspace is
+ * FOLLOWED, and the file lands at the link's real location rather than through
+ * the link. The alternative -- refusing every symlink -- would refuse
+ * legitimate layouts, and is the over-broad fix that
+ * `anno-confinement.test.ts` discriminates against: a control that only ever
+ * refuses is indistinguishable from one that works.
+ *
+ * This is the ONE export in this module that is a function of its arguments AND
+ * the filesystem; see the narrowed trap 3 in the header.
  *
  * The path is deliberately NOT routed through either host/container
  * path-translation seam -- see trap 7 in `anno-store.ts`'s header for what a
- * translated store path would do.
+ * translated store path would do. `node:fs` is a Node builtin, not a seam, and
+ * `hostpath-consumers.test.ts`'s closed consumer set still excludes this
+ * module.
  */
 export function storePathWithinWorkspace(path: string, workspaceRoot: string): string {
-  const resolvedRoot = resolve(workspaceRoot);
-  const resolvedPath = resolve(path);
+  const resolvedRoot = realpathOfNearestExisting(workspaceRoot);
+  const resolvedPath = realpathOfNearestExisting(path);
   if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedRoot + sep)) {
     throw new AnnoStorePathError(
       `store path ${JSON.stringify(resolvedPath)} is outside the workspace root ${JSON.stringify(resolvedRoot)} -- refusing to open a store there`,
