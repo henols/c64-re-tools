@@ -6,7 +6,7 @@
 // constraint.
 import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
