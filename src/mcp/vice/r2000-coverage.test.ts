@@ -624,10 +624,14 @@ test("independence: rewriting every block entry to one type leaves every census 
   }
   assert.deepEqual(after.structural.classRuns, before.structural.classRuns);
 
-  assert.equal(before.divergence.censusCodeStoreNotCode, 0);
+  // Stated as the RELATION it is, not as a pinned absolute (WR-08). The
+  // baseline is fixture-derived, so `=== 0` reddens this test on any
+  // legitimate fixture or census change -- and it was the one assertion here
+  // with no message, so it would have reddened with no diagnostic at all.
   assert.ok(
-    after.divergence.censusCodeStoreNotCode > 0,
-    "the divergence sub-report did not move at all -- if it cannot move, the independence assertion above is vacuous",
+    after.divergence.censusCodeStoreNotCode > before.divergence.censusCodeStoreNotCode,
+    "the divergence sub-report did not move at all -- if it cannot move, the independence assertion above is " +
+      `vacuous (before=${before.divergence.censusCodeStoreNotCode}, after=${after.divergence.censusCodeStoreNotCode})`,
   );
 });
 
@@ -726,12 +730,14 @@ test("substitutability: feeding the census a second, zero-overlap block vocabula
 
   // The non-vacuity half. Without this the assertions above are satisfied by a
   // substitution that changes nothing.
-  assert.equal(before.divergence.censusCodeStoreNotCode, 0);
+  // The relation, not a pinned absolute baseline -- see WR-08 on the sibling
+  // assertion in section 2.
   assert.ok(
-    after.divergence.censusCodeStoreNotCode > 0,
+    after.divergence.censusCodeStoreNotCode > before.divergence.censusCodeStoreNotCode,
     "the divergence sub-report did not move at all -- if a vocabulary substitution cannot move it, the " +
       "substitutability assertions above are vacuous, and a comparison site left behind in the divergence loop " +
-      "would look exactly like this",
+      `would look exactly like this (before=${before.divergence.censusCodeStoreNotCode}, ` +
+      `after=${after.divergence.censusCodeStoreNotCode})`,
   );
 });
 
