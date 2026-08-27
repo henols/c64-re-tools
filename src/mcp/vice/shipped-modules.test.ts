@@ -131,6 +131,93 @@ test("codeOnly(keepLiteralBodies = true): keeps literal text, for the caller rea
   );
 });
 
+test("codeOnly(): a regex literal containing a backtick or a quote does not swallow the code after it", () => {
+  // CR-01, phase 27. This shape shipped green because no test in this file
+  // contained a `/` regex at all. Without a regex-literal branch, the
+  // backtick inside the character class opens a phantom TEMPLATE frame the
+  // scanner never leaves, and every remaining line of the file vanishes from
+  // the "code" the consuming guards match against.
+  const src = 'const r = /[`*_]/g;\nspawnSync(R2000_BIN, []);\nconst s = "HIDDEN";\n';
+  const code = codeOnly(src);
+  assert.match(code, /spawnSync\(R2000_BIN/, "code after a regex literal must stay visible");
+  assert.equal(/HIDDEN/.test(code), false, "and a real string literal after it must still be blanked");
+
+  const singleQuoted = codeOnly("const r = /'/g;\nspawnSync(R2000_BIN, []);\n");
+  assert.match(singleQuoted, /spawnSync\(R2000_BIN/, "a quote inside a regex must not open a string frame either");
+
+  const doubleQuoted = codeOnly('const r = /["]/g;\nspawnSync(R2000_BIN, []);\n');
+  assert.match(doubleQuoted, /spawnSync\(R2000_BIN/, "nor a double quote inside a character class");
+});
+
+test("codeOnly(): the two real modules CR-01 was measured on are scanned whole, not truncated", () => {
+  // The regression half of CR-01, stated against the shipped tree rather
+  // than a synthetic string -- a future rewrite of the state machine that
+  // reintroduces the truncation fails HERE with the module named. Both
+  // modules are real `files[]` entries whose regex bodies contain a
+  // backtick (`r2000-coverage.ts:1495`) and a single quote
+  // (`incident-record.ts:107`); before the fix the first was truncated from
+  // 2329 lines to 1107 and the second from 443 to 89. Symbols are asserted
+  // rather than line counts, so ordinary growth in either module does not
+  // redden this.
+  const expected: Record<string, string[]> = {
+    "r2000-coverage.ts": [
+      "computeCommentVacuity",
+      "computeReproducibility",
+      "COVERAGE_REPORT_KEYS",
+      "coverageFindings",
+    ],
+    "incident-record.ts": ["renderIncidentRecord", "writeIncidentRecord", "finaliseIncidentRecord"],
+  };
+  for (const [module, symbols] of Object.entries(expected)) {
+    assert.ok(
+      shippedTsModules().includes(module),
+      `${module} must still be a files[] entry for this regression assertion to mean anything`,
+    );
+    const code = codeOnly(readFileSync(join(HERE, module), "utf8"));
+    for (const symbol of symbols) {
+      assert.ok(
+        code.includes(symbol),
+        `${module}: "${symbol}" is declared after that module's regex literal and is missing from ` +
+          `codeOnly()'s output -- the scanner is truncating again (CR-01), so every guard reading this ` +
+          `module is enforcing its invariant over a partial file`,
+      );
+    }
+  }
+});
+
+test("codeOnly(): a division is NOT read as a regex opener, in either direction", () => {
+  // The permissive failure mode of the CR-01 fix: misreading `/` as a regex
+  // opener consumes real code as literal text. Both keyword position (where
+  // a regex IS legal) and value position (where it is division) are pinned.
+  assert.match(codeOnly("const q = total / count;\nspawnSync(R2000_BIN, []);\n"), /total \/ count/);
+  assert.match(codeOnly("const q = f() / 2;\nspawnSync(R2000_BIN, []);\n"), /spawnSync\(R2000_BIN/);
+  assert.match(codeOnly("const q = arr[0] / 2;\nspawnSync(R2000_BIN, []);\n"), /spawnSync\(R2000_BIN/);
+  assert.match(
+    codeOnly('function f() { return /x/.test("HIDDEN"); }'),
+    /return \/x\/\.test\(/,
+    "after `return` a `/` IS a regex opener, and the string argument must still be blanked",
+  );
+  assert.equal(/HIDDEN/.test(codeOnly('function f() { return /x/.test("HIDDEN"); }')), false);
+});
+
+test("codeOnly(keepLiteralBodies = true) reconstructs every literal shape exactly", () => {
+  // The flag threads through the quote, backtick, interpolation and escape
+  // branches, but was only ever exercised on ONE double-quoted import
+  // specifier (WR-01). Each source below is comment-free, so keep-mode is
+  // required to be byte-lossless.
+  for (const src of [
+    'const d = `a ${f("x")} b`;',
+    "const d = `a ${`inner ${g()}`} b`;",
+    'const s = "a\\"b";',
+    "const s = 'a\\'b';",
+    "const r = /[`*_]/g;",
+    "const r = /'/g;",
+    "const t = `text ${obj.in / 2} more`;",
+  ]) {
+    assert.equal(codeOnly(src, true), src, `keepLiteralBodies must be lossless for ${src}`);
+  }
+});
+
 test(`${MODULE_NAME} is absent from package.json's files[] array (test-only, mechanically enforced)`, () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
