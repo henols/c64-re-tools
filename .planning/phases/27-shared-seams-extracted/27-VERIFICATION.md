@@ -4,9 +4,14 @@ verified: 2026-08-27T09:42:27Z
 status: human_needed
 score: 30/33 must-haves verified
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
 prohibition_flags: 3
 gaps: []
+overrides:
+  - must_have: "Full npm test (the whole glob, broker stopped, command named in the evidence) is green with zero r2000 modules deleted"
+    reason: "The suite exits 1 with 44 pre-existing failures — 39 in vice-proxy.test.ts (MANUAL_ONLY_TESTS, needs a live host/broker) and 5 in r2000-session.test.ts (regenerator2000 absent from PATH, logged D-27-02-A). Both files were last touched in phase 18 and are in no phase-27 plan's files_modified. Zero failures in any file phase 27 touched; tsc exit 0; tarball closure clean; zero r2000 modules deleted. The criterion's purpose — proving the extraction is a move, not a change — is met."
+    accepted_by: "henrik"
+    accepted_at: "2026-08-27T09:56:51Z"
 deferred:
   - truth: "SEAM-03's second clause: 'COV-01/COV-02's census-versus-store boundary test passes against the NEW store'"
     addressed_in: "Phase 28"

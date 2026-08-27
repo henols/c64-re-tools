@@ -71,3 +71,30 @@ say so in any evidence taken this way.
 `files_modified`, it is on `test-gate.mjs`'s frozen nine-file
 `MANUAL_ONLY_TESTS` list, and closing the leaked handles is stdio-proxy test
 behaviour with no requirement in this phase.
+
+## D-27-05-B — `contested` is prose-only and Direction 4's prefix scan exempts `note`
+
+**Found during:** verification (`27-VERIFICATION.md` prohibition item 2,
+verdict `HOLDS_WITH_RESIDUAL`); **accepted by henrik at UAT test 3** as a
+residual rather than a phase-27 blocker.
+**Symptom:** two structural holes in `module-classification.ts`'s guard set,
+both about *future* entries rather than any present one:
+
+- A contested capability-or-glue verdict is recorded as CONTESTED inside the
+  free-text `note` (today: `r2000-test-gate.ts`, WR-10). Nothing mechanical
+  forces a future contested verdict to be flagged — `contested` is not a
+  structured field, so a guard cannot assert on it.
+- `note` is deliberately exempt from Direction 4's name-prefix scan (which does
+  cover `rationale`, every consumer path, every symbol and every requirement
+  id). A future prefix justification parked in `note` therefore has no gate.
+
+**Why it is not a phase-27 defect:** every present entry is correct and the
+non-vacuity of Direction 4 is proven both ways (a planted name-justified entry
+goes red; a clean control stays green), and Direction 1 was proven against a
+real unclassified `r2000-*.ts` created on disk. The residual is about what a
+later maintainer could add, not about what the record now says.
+
+**Not fixed here:** promoting `contested` to a structured field changes the
+classification record's schema and every consumer of it, and extending
+Direction 4 to `note` needs the prose-exemption rationale revisited — both
+outside plan 27-05's `files_modified`.
