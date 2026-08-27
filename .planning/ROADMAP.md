@@ -453,7 +453,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 28-02-PLAN.md — The pure narrowest-wins index, cross-validated against an independently written oracle at all 65,536 addresses, with the `$FFFF`, both-ends-inclusive, length-1 and equal-length tie-break pins
-- [ ] 28-04-PLAN.md — Validation and the rest of the vocabulary: labels, comments, scopes, project enums and cross-references, with criterion 1's split-orientation control and its collapse planting
+- [x] 28-04-PLAN.md — Validation and the rest of the vocabulary: labels, comments, scopes, project enums and cross-references, with criterion 1's split-orientation control and its collapse planting
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
