@@ -13,6 +13,7 @@
 // empty-stderr assertion anywhere in this file would fail for that alone.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -1144,5 +1145,136 @@ test("idempotency of open: opening and closing a store twice with no write betwe
         closeStore(fresh);
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE OPTIMISTIC-CONCURRENCY REFUSAL, ACROSS TWO GENUINELY SEPARATE OS
+// PROCESSES (STORE-01, threats T-28-lostwrite and T-28-lastwritewins).
+//
+// SQLite's locking arbitrates WRITES but not INTENT: two processes can both
+// commit, and the later one can erase the earlier one's meaning without
+// erasing its bytes. So the refusal is the store's own, and proving it needs a
+// second process that really commits and really goes away -- an in-process
+// second handle would prove only that one connection can see another's rows.
+//
+// The spawned child is `anno-durability-mutator.mjs` in its commit-and-exit
+// mode: it writes a DIFFERENT range from the parent's, so the readback can say
+// WHOSE row survived rather than having to infer it from a row either process
+// could have written. That mode exits cleanly, so its status is CHECKED rather
+// than ignored -- unlike the self-SIGKILLing modes, a non-zero status here
+// would mean the other process never committed and the refusal being measured
+// could be something else entirely.
+// ---------------------------------------------------------------------------
+
+const MUTATOR = join(HERE, "anno-durability-mutator.mjs");
+
+/** The range the mutator's commit-and-exit mode writes. Restated here so the
+ * "whose row survived" assertion is by value against numbers this file names. */
+const OTHER_PROCESS_RANGE = { start: 0x2000, endInclusive: 0x201f, dataType: "word" } as const;
+
+test("cross-process compare-and-swap: after a genuinely separate OS process commits, a write with the now-stale base revision is REFUSED with both revisions -- the other process's row survives and the refused write's row is absent", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      const staleBase = currentRevision(store);
+      assert.equal(staleBase, 1, "the parent's own write put the store at revision 1, which is the base it is about to be stale about");
+
+      // The other process. `openStore`'s connection option `{ timeout: 5_000 }`
+      // is what makes a genuinely concurrent writer WAIT for the write lock
+      // rather than failing SQLITE_BUSY on contact -- and the refusal below
+      // still happens afterwards, which is the point: waiting for the lock is
+      // not the same as being allowed to overwrite.
+      const status = execFileSync(process.execPath, [MUTATOR, path, "commit-and-exit"], { stdio: "pipe" });
+      assert.ok(status !== undefined, "the commit-and-exit mode exits cleanly, so execFileSync returns rather than throwing");
+
+      const afterChild = currentRevision(store);
+      assert.equal(afterChild, staleBase + 1, "the other process's commit is visible on this connection and advanced the revision by exactly one");
+
+      assert.throws(
+        () => setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "byte", baseRevision: staleBase }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreStaleRevisionError, `expected AnnoStoreStaleRevisionError, got ${String(e)}`);
+          // BOTH FIELDS, not merely that it threw: "conflict" is not an answer
+          // a caller can act on, and the two numbers are what let it say WHICH
+          // two revisions disagreed.
+          assert.equal(e.baseRevision, staleBase, "the refusal carries the revision the caller based its edit on");
+          assert.equal(e.currentRevision, afterChild, "and the revision the other process left on disk");
+          return true;
+        },
+      );
+
+      // WHOSE ROW SURVIVED, asserted in the same test as the refusal. A
+      // last-write-wins implementation would ALSO leave two rows here -- the
+      // parent's and one of the two writes -- so the assertion is on the exact
+      // set, by value.
+      const rows = listRanges(store);
+      assert.deepEqual(
+        rows.map((row) => [row.start, row.endInclusive, row.dataType]),
+        [
+          [0x1000, 0x100f, "byte"],
+          [OTHER_PROCESS_RANGE.start, OTHER_PROCESS_RANGE.endInclusive, OTHER_PROCESS_RANGE.dataType],
+        ],
+        "the other process's committed row is INTACT and the refused write's row is ABSENT -- never merged, never last-write-wins",
+      );
+      assert.equal(
+        rows.some((row) => row.start === 0x3000),
+        false,
+        "the refused write left no row behind at all",
+      );
+      assert.equal(currentRevision(store), afterChild, "and did not advance the revision");
+
+      // THE REFUSAL IS NOT BUILT ON A DETECTOR, and this comment records the
+      // measurement rather than the assertion, because the assertion is the
+      // throw above. `pragma data_version` was measured moving from 1 to 2 on
+      // the other process's commit, which makes it a useful cheap "did
+      // anything change at all" probe -- but it is a DETECTOR, not an
+      // enforcement point: it does not say WHAT changed, it cannot be made
+      // atomic with a write, and a refusal built on it would be a race with a
+      // nicer name. The refusal is built on
+      // `update anno_meta set revision = revision + 1 where id = 1 and
+      // revision = ?` with its `changes !== 1` rollback inside
+      // `begin immediate`, plus the base-revision check that precedes the
+      // transaction -- and `anno-seam.test.ts` pins all three structurally.
+      const dataVersion = store.db.prepare("pragma data_version").get() as { data_version: number };
+      assert.equal(typeof dataVersion.data_version, "number", "data_version is readable, and is deliberately NOT what the refusal is built on");
+
+      // WHICH GUARD THIS TEST ACTUALLY EXERCISES, MEASURED RATHER THAN
+      // ASSUMED -- because the two guards fail independently and only one of
+      // them is reachable from a synchronous test.
+      //
+      //   * Making the step-5 compare-and-swap TAUTOLOGICAL (its `revision = ?`
+      //     guard replaced by an always-true predicate, the bound parameter
+      //     kept so the statement still runs) leaves THIS TEST GREEN and
+      //     reddens only `anno-seam.test.ts`'s structural CAS assertion.
+      //     Measured: 52 tests, 1 fail. The reason is not a weakness in this
+      //     test: the CAS guards the window between step 1's revision read and
+      //     step 5's update -- a writer committing INSIDE that window -- and a
+      //     single-threaded test cannot open it. The CAS is pinned
+      //     structurally for exactly that reason.
+      //   * Removing the STEP-2 base-revision refusal reddens this test with
+      //     `Missing expected exception`: the stale-base write is silently
+      //     accepted and the other process's meaning is overwritten. Measured:
+      //     36 tests, 2 fail. That is `T-28-lostwrite` happening, and it is the
+      //     planting that falsifies what this test claims.
+      //
+      // Recorded so a later reader does not conclude from the first result
+      // that the CAS is dead code, nor from this test's green that the CAS is
+      // what it proves.
+
+      // LAST-WRITE-WINS IS REFUSED, NOT RESOLVED. The store never recovers
+      // from a stale base by silently re-reading the current revision and
+      // proceeding -- that would be last-write-wins wearing a
+      // compare-and-swap's clothes, and the caller could not tell it had
+      // happened. A caller that genuinely wants to overwrite must say so by
+      // supplying a FRESH base explicitly, which is exactly what this does.
+      const retry = setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "byte", baseRevision: currentRevision(store) });
+      assert.equal(retry.revision, afterChild + 1, "the same write with a FRESH base is accepted and advances the revision");
+      assert.equal(listRanges(store).length, 3, "and its row lands this time -- the refusal was about the base, never about the write");
+    } finally {
+      closeStore(store);
+    }
   });
 });

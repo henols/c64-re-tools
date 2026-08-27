@@ -200,10 +200,16 @@ test("STORE-04, one combined test: a separate OS process mutates the store and S
   // TOGETHER when the commit is removed.
   assert.equal(observed.revisionAfterKill, 1, "the committed write advanced the revision by exactly one and the advance survived the kill");
   assert.deepEqual(observed.snapshotRowsAfterKill, [0], "and the pointer row for the pre-mutation revision survived with it, in the same transaction");
-});
 
-test("all-or-nothing: after the kill a fresh process sees EITHER the one complete row OR none of it -- never a partial range", () => {
-  const observed = observeMutateKillReopen("commit");
+  // ---------------------------------------------------------------------
+  // ALL-OR-NOTHING, asserted on THIS SAME RUN rather than in a test of its
+  // own. That is deliberate: it is a property of the interrupted write just
+  // performed, and giving it a separate test would mean a third call of the
+  // shared helper -- a third SIGKILLed child proving a property of a run the
+  // assertions above already have in hand. The helper is called exactly
+  // twice in this file, once per mode, which is what keeps the planted
+  // counterpart the counterpart OF THIS TEST.
+  // ---------------------------------------------------------------------
   const rows = observed.rangesAfterKill;
 
   // BOTH acceptable states are enumerated explicitly. Asserting only the
@@ -227,6 +233,59 @@ test("all-or-nothing: after the kill a fresh process sees EITHER the one complet
   // is still visible in a failure message here.
   assert.equal(isCompleteMutation, true, "on this store the committed write is expected to be the COMPLETE one, not the empty state");
   assert.equal(isNothingAtAll, false);
+});
+
+test("STORE-04's planted violation, in the SAME shape and through the SAME helper: with the commit removed, readBackByValue is FALSE and revertReturnsPriorValue is FALSE -- one planting, both halves", () => {
+  const observed = observeMutateKillReopen("no-commit");
+
+  // BOTH halves asserted false, in ONE test, on ONE planting. This is the
+  // criterion `STORE-04` states and the reason it demands one combined test
+  // rather than two: the snapshot POINTER ROW is inserted in the same
+  // transaction as the mutation, so removing the single `commit` destroys the
+  // durability claim and the revert claim SIMULTANEOUSLY. Two separate tests
+  // would both stay green over a store satisfying neither.
+  assert.equal(
+    observed.readBackByValue,
+    false,
+    `with the commit removed the mutation must NOT survive, but a fresh process read back ${JSON.stringify(observed.rangesAfterKill)}`,
+  );
+  assert.equal(
+    observed.revertReturnsPriorValue,
+    false,
+    "with the commit removed the revert must NOT return the prior value: the pointer row rolled back with the mutation, so there is nothing to revert to",
+  );
+
+  // THE MECHANISM, ASSERTED RATHER THAN INFERRED. A reader should be able to
+  // see WHY both halves fail, not just that they do: the revision
+  // compare-and-swap rolled back with everything else, so the file is still at
+  // revision 0 and `anno_snapshot` is empty -- while the pre-mutation snapshot
+  // FILE is on disk, orphaned, which is the harmless failure direction the
+  // write sequence's ordering deliberately chooses.
+  assert.equal(observed.revisionAfterKill, 0, "the CAS's revision bump rolled back with the mutation -- the file is still at revision 0");
+  assert.deepEqual(observed.snapshotRowsAfterKill, [], "and no pointer row landed, which is exactly why the revert half fails too");
+  assert.deepEqual(observed.snapshotFilesAfterKill, ["r0.db"], "the snapshot FILE is still there, orphaned -- extra files, never a missing one");
+  assert.ok(
+    observed.revertRefusal !== null && /cannot revert to revision 0/.test(observed.revertRefusal),
+    `the revert half fails through a NAMED refusal, which is why it is converted to a boolean rather than allowed to propagate: ${String(observed.revertRefusal)}`,
+  );
+
+  // THE VALUES MEASURED IN PHASE RESEARCH, recorded so a future divergence
+  // from them is visible rather than silently absorbed into a still-green
+  // test:
+  //     [commit]    revision=1 readBackByValue=true  revertReturnsPriorValue=true  -> GREEN
+  //     [no-commit] revision=0 readBackByValue=false revertReturnsPriorValue=false -> RED
+  //                 (AnnoStoreError: no snapshot recorded for revision 0)
+  //
+  // AND THE LIMIT OF THIS TEST, stated because it is easy to over-read. This
+  // test is PERMANENTLY GREEN: it proves the criterion's shape is falsifiable
+  // and keeps proving it in CI. It is NOT `STORE-04`'s observed red, because
+  // the planting is a parameter to a SIBLING entry point -- the absence of the
+  // commit is never exercised in the real, shipped call path here. That
+  // obligation is discharged separately, by removing `runWriteSequence`'s
+  // single `commit` BY HAND, watching the committing test above go red in both
+  // halves, and reverting. Both are required; neither substitutes for the
+  // other, and a reader who takes this test's green FOR that red has mis-read
+  // it.
 });
 
 test("an orphan snapshot file left in the kill window is identified by its revision and does not affect the readback", () => {
