@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 17
 waived_count: 0
-fixed_count: 3
-total_count: 18
-last_updated: 2026-08-27T14:10:41.641Z
+fixed_count: 4
+total_count: 21
+last_updated: 2026-08-27T18:38:16.829Z
 ---
 
 # Broken Windows Ledger
@@ -30,9 +30,12 @@ last_updated: 2026-08-27T14:10:41.641Z
 | 13 | 23 | deviation | src/mcp/vice/r2000-session.test.ts | 615 | Load-flaky: crash-counter assertion fails under full-suite parallelism, green in isolation and on re-run; logged in phase 23 deferred-items, not fixed (evidence convention 9 forbids touching src/) | open |  | 2026-08-26T11:40:12.713Z |  |
 | 14 | 23 | unmet-truth | .planning/REQUIREMENTS.md |  | PROOF-01/02/03 not met at the Phase 23 close: criteria never measured (no depacked flat-64K capture, D-03); rows read Pending with the reason | open |  | 2026-08-26T15:56:45.162Z |  |
 | 15 | 23 | unrun-verify | .planning/phases/23-the-real-release-gate-go-degrade-no-go/23-11-PLAN.md |  | 23-11 Task 3's automated verify asserts all five PROOF rows read Complete; recorded unsatisfiable because PROOF-01/02/03 were never measured (phase-wide precedent: the evidence is not bent to a plan regex) | open |  | 2026-08-26T15:56:52.138Z |  |
-| 16 | 28 | todo | src/mcp/vice/anno-types.ts |  | MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth) | open |  | 2026-08-27T13:14:52.643Z |  |
+| 16 | 28 | todo | src/mcp/vice/anno-types.ts |  | MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth) | fixed |  | 2026-08-27T13:14:52.643Z | 2026-08-27T18:38:04.157Z |
 | 17 | 28 | deviation | src/mcp/vice/anno-index.test.ts | 508 | The 'imports nothing but types from anno-types.ts' truth is asserted as exactly one import specifier plus family exclusions, not as import type: anno-index.ts imports two error CLASSES it throws, so a type-only import is unreachable | open |  | 2026-08-27T13:34:12.253Z |  |
 | 18 | 28 | deviation | src/mcp/vice/anno-store.ts |  | setDataType's result changed from { revision, changed: number } to AnnoWriteResult { revision, changed: boolean }; runWriteSequence now rolls back on a throwing mutation (both required by plan 28-04's own truths) | open |  | 2026-08-27T14:10:41.641Z |  |
+| 19 | 28 | deviation | src/mcp/vice/anno-store.test.ts |  | The plan's premise that the schema_version corrupt fixture needs a test-side node:sqlite import is measured FALSE: AnnoStoreHandle exposes its own db, so no second importer was added; the declared test-tree list in anno-seam.test.ts therefore has one member and it is anno-seam.test.ts itself (its planted route strings are string literals a keepLiteralBodies specifier scan cannot distinguish from route (d)) | open |  | 2026-08-27T18:38:16.421Z |  |
+| 20 | 28 | deviation | src/mcp/vice/anno-store.test.ts |  | Plan 28-06 Test 9 as written (revertTo(r) twice leaves the same state) is unsatisfiable: a snapshot of revision r contains pointer rows for 0..r-1 only, so a second revertTo(r) is refused by name. Asserted instead as the idempotency that holds -- the observable store state after one revert and after a refused second revert is identical | open |  | 2026-08-27T18:38:16.632Z |  |
+| 21 | 28 | deviation | src/mcp/vice/anno-store.ts |  | Plan 28-06's third planting (make the step-5 CAS unconditional) does NOT redden the cross-process test: that refusal comes from the step-2 base-revision check. The tautological CAS reddens only anno-seam.test.ts's structural CAS assertion; the semantic red was obtained by removing the step-2 check instead. Both results recorded at the test site | open |  | 2026-08-27T18:38:16.829Z |  |
 
 ````json
 [
@@ -223,10 +226,10 @@ last_updated: 2026-08-27T14:10:41.641Z
     "file": "src/mcp/vice/anno-types.ts",
     "line": null,
     "description": "MAX_SNAPSHOT_REVISIONS = 32 is declared but not enforced: the snapshots/ directory grows unbounded until a later plan of phase 28 adds pruning (T-28-diskgrowth)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-27T13:14:52.643Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-27T18:38:04.157Z"
   },
   {
     "id": 17,
@@ -250,6 +253,42 @@ last_updated: 2026-08-27T14:10:41.641Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-27T14:10:41.641Z",
+    "resolved_at": null
+  },
+  {
+    "id": 19,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.test.ts",
+    "line": null,
+    "description": "The plan's premise that the schema_version corrupt fixture needs a test-side node:sqlite import is measured FALSE: AnnoStoreHandle exposes its own db, so no second importer was added; the declared test-tree list in anno-seam.test.ts therefore has one member and it is anno-seam.test.ts itself (its planted route strings are string literals a keepLiteralBodies specifier scan cannot distinguish from route (d))",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T18:38:16.421Z",
+    "resolved_at": null
+  },
+  {
+    "id": 20,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.test.ts",
+    "line": null,
+    "description": "Plan 28-06 Test 9 as written (revertTo(r) twice leaves the same state) is unsatisfiable: a snapshot of revision r contains pointer rows for 0..r-1 only, so a second revertTo(r) is refused by name. Asserted instead as the idempotency that holds -- the observable store state after one revert and after a refused second revert is identical",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T18:38:16.632Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.ts",
+    "line": null,
+    "description": "Plan 28-06's third planting (make the step-5 CAS unconditional) does NOT redden the cross-process test: that refusal comes from the step-2 base-revision check. The tautological CAS reddens only anno-seam.test.ts's structural CAS assertion; the semantic red was obtained by removing the step-2 check instead. Both results recorded at the test site",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T18:38:16.829Z",
     "resolved_at": null
   }
 ]

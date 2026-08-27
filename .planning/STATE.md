@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
-status: executing
-stopped_at: Completed 28-05-PLAN.md
-last_updated: "2026-08-27T14:54:30.008Z"
+status: verifying
+stopped_at: Completed 28-06-PLAN.md
+last_updated: "2026-08-27T18:59:36.859Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 28 execution started
-state_head: 915054690ab43cccb02ecaef3ec1f69c1e28db36
+last_activity_desc: Phase 28 plan 06 complete -- all six plans executed
+state_head: aefe2ed069af4e153668b63a363c523b428a6151
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
   percent: 17
 ---
 
@@ -147,7 +147,7 @@ recorded in their own sections.
 
 Phase: 28 (The Store Core) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-27 — Phase 28 execution started
 
 ## Performance Metrics
@@ -295,6 +295,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 28 P04 | 27 min | 3 tasks | 4 files |
 | Phase 28 P03 | 22 min | 3 tasks | 3 files |
 | Phase 28 P05 | 21 min | 2 tasks | 4 files |
+| Phase 28 P06 | 26 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -606,6 +607,11 @@ Recent decisions affecting current work:
 - [Phase 28]: The retype byte-preservation invariant is asserted in its UNION form (total typed bytes after equals the size of covered-before union the new range), not the literal "total unchanged" — The literal form is unsatisfiable by the CORRECT implementation in overlap case 2 (a new range legitimately types addresses nothing had typed), and is satisfied exactly by a BROKEN one in case 4, where 128 dropped tail bytes balance 128 newly typed low bytes while 128 previously typed addresses silently lose their type. Measured, and pinned as its own named test so invariant B (every previously typed address still typed) is justified by measurement rather than argument.
 - [Phase 28]: A contradicted comment is returned as DATA on a successful retype, never as an error and never as a refusal, and no option exists to make it a refusal — A refusal would push a caller toward deleting the comment to get the retype through, converting a reported loss into a silent one -- the exact outcome the report exists to prevent. The reason is written into anno-store.ts header trap 9, not only into the plan.
 - [Phase 28]: Filter-and-insert reddens THREE overlap cases (3, 4 and 5), not one, correcting the phase planted-violation model — Case 4 always has a tail (d < b) and case 5 always a head (a < c), so both lose bytes under filter-and-insert; only cases 1 and 2 have neither. Case 3 remains uniquely load-bearing because it is the only case losing BOTH sides and the only one whose correct answer is three rows.
+- [Phase 28]: Snapshot pruning runs AFTER the commit and OUTSIDE the write transaction, deleting the file before its pointer row — A filesystem unlink is not transactional. Pruning inside the transaction means a rollback leaves a pointer row aimed at a file that is already gone -- the one failure direction the revert path cannot survive. The chosen direction is EXTRA files, which are harmless and reconcilable by revision number.
+- [Phase 28]: A revert to a revision the ring no longer retains is REFUSED by name, never substituted with the nearest retained snapshot — Returning a revision other than the one asked for changes the caller's intent with nothing recording that it happened. The refusal message carries the requested revision, the oldest retained one, the current one and the bound.
+- [Phase 28]: oldestRetainedRevision() reads the pointer ROWS, and reports a named NO_RETAINED_REVISION sentinel on an empty ring — currentRevision() - MAX_SNAPSHOT_REVISIONS agrees with the rows only on a store written forward; after a revert the arithmetic names a revision no row records. A floor naming an unrevertable revision is worse than no floor.
+- [Phase 28]: node:sqlite is now bounded in the TEST tree by a declared one-element list, and its member is anno-seam.test.ts itself — shippedTsModules() derives from files[], which excludes test files, so the test tree was outside STORE-07's scope by construction. The plan expected the store's own test file to need the import; measured false (AnnoStoreHandle exposes its db). The guard file is the one member because its planted route strings are string literals a keepLiteralBodies specifier scan cannot distinguish from route (d).
+- [Phase 28]: The mutator's mutation is a single raw insert rather than setDataType — setDataType hard-wires the committing wrapper, so routing one mode through it would make the committing and planted modes differ in more than the commit -- the exact drift a parameterised planting exists to prevent. retype()'s split-and-preserve logic is STORE-02's subject and is proven in anno-overlap.test.ts.
 
 ### Pending Todos
 
@@ -1189,30 +1195,41 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T14:54:14.816Z
-Stopped at: Completed 28-05-PLAN.md
-  Plan 28-05 is complete: 2 tasks, 2 task commits (`0b007b0`, `b67880a`).
-  `STORE-02` and `STORE-03` are both proven. `setDataType` now returns the named
-  `SetDataTypeResult` with an always-present `contradictedComments` array, and
-  `contradictedCommentsFor()` is the ONE definition of "this retype makes that
-  comment false", derived from `CONFIDENCE_GRADES` by token suffix rather than
-  restating the four brackets. `AnnoCommentGradeError extends ViceError` wraps
-  the confidence parser's non-`ViceError` refusal, message preserved verbatim.
-  New file `anno-overlap.test.ts` (588 lines, 14 tests) owns overlap and
-  adjacency semantics: all five overlap cases under both invariants, case 3's
-  three-row shape field by field, both plantings observed against the real
-  module (filter-and-insert reddened 5 of 14; the removed contradiction query
-  reddened 1 there and 5 in `anno-store.test.ts`), `STORE-02`'s non-merge proven
-  behaviourally AND structurally with a non-vacuity pairing, and a deterministic
-  post-split row order pinned across a reopen. Two of the plan's asserted facts
-  were MEASURED false and corrected in place: filter-and-insert reddens THREE
-  cases (3, 4, 5), not one, and the literal "total typed bytes unchanged"
-  invariant is unsatisfiable by the correct implementation in case 2 while being
-  satisfied by a 128-byte loss in case 4 — both recorded as deviations, with the
-  case-4 false negative now pinned as its own test. Gates: 74/74 on the four
-  store test files, typecheck green, `test:automated` 2610 tests / 5 failures
-  all inside the named baseline, broker stopped. Zero deletions. Next: plan 28-06
-  is the last of six for this phase.
+Last session: 2026-08-27T18:58:33.191Z
+Stopped at: Completed 28-06-PLAN.md
+  Plan 28-06 is complete: 3 tasks, 3 task commits (`3fccfc5`, `d86739e`,
+  `aefe2ed`). This was the LAST of six plans for phase 28 -- all six are now
+  executed. `STORE-04` and `STORE-05` are discharged. New file
+  `anno-durability.test.ts` (372 lines, 4 tests) carries the ONE combined proof
+  `STORE-04` asks for: the spawned, never-imported `anno-durability-mutator.mjs`
+  mutates a store in a separate OS process and `SIGKILL`s ITSELF with no clean
+  close, a fresh process reopens the file, the mutation reads back BY VALUE and
+  `revertTo(0)` returns the prior value -- both halves computed as booleans by
+  ONE shared helper (called exactly twice) and asserted as VALUES outside any
+  try. The snapshot ring is now BOUNDED at `MAX_SNAPSHOT_REVISIONS`, pruned
+  after the commit and outside the transaction, file-before-pointer-row, with a
+  revert past the bound refused by name rather than substituting the nearest
+  snapshot -- which closes `WINDOWS.md` window 16 (`T-28-diskgrowth`). The
+  cross-process stale-revision refusal is proven across two genuinely separate
+  OS processes with both `AnnoStoreStaleRevisionError` fields checked and both
+  rows' fates asserted. Four observed reds, all reverted before their commits:
+  the removed `pruneSnapshots` call (40 files, not 32); the
+  nearest-snapshot revert fallback; `runWriteSequence`'s single `commit` removed
+  by hand, yielding `revision=0 readBackByValue=false
+  revertReturnsPriorValue=false` -- both halves, matching research exactly; and
+  the removed step-2 base-revision check, which is a lost write happening.
+  THREE of the plan's asserted facts were MEASURED false and corrected in
+  place: the corrupt-fixture `node:sqlite` import is unnecessary (the handle
+  exposes its own `db`), `revertTo(r)` twice is structurally impossible rather
+  than idempotent (a snapshot cannot record a snapshot of itself), and an
+  unconditional step-5 CAS does not redden the cross-process test because that
+  refusal comes from step 2. Gates: 114/114 on the six store test files,
+  typecheck green, `test:automated` 2621 tests / 5 failures all inside the named
+  baseline, and the phase-close whole-glob `npm test` at 2748 tests / 44
+  failures -- exactly the documented clean baseline (39 `vice-proxy.test.ts` +
+  5 `r2000-session.test.ts`), broker stopped for both, the leaked
+  `vice-proxy.test.ts` child terminated by PID. Zero deletions. Next: phase 28
+  verification.
 
 Previously stopped at: Phase 27 complete, ready to plan Phase 28
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
