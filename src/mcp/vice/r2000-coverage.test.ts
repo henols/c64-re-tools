@@ -60,6 +60,7 @@ import {
   type R2000Symbol,
 } from "./r2000-coverage.ts";
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
+import { DATA_TYPES, LABEL_KINDS } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
 import { decodeRawData } from "./prg-image.ts";
 import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
@@ -659,9 +660,44 @@ test("independence: rewriting every block entry to one type leaves every census 
 // assertion below red, and nothing else in this file notices.
 // ---------------------------------------------------------------------------
 
-/** The production vocabulary, written out so the disjointness assertion below
- * is a measurement rather than an eyeball. */
-const PRODUCTION_BLOCK_SPELLINGS: readonly string[] = ["Code", "Undefined", "Byte", "Address"];
+/** The EXTERNAL ANALYSER's four capitalised spellings. Hand-written because the
+ * analyser is external and has no importable vocabulary in this tree. */
+const ANALYSER_BLOCK_SPELLINGS: readonly string[] = ["Code", "Undefined", "Byte", "Address"];
+
+/** BOTH accepted production vocabularies, DERIVED and de-duplicated, so the
+ * disjointness assertion below stays a measurement rather than becoming stale
+ * prose.
+ *
+ * `block-class.ts` now accepts two vocabularies: the analyser's four
+ * capitalised spellings above and this project's own store's twelve lowercase
+ * members, imported from their single home. Left hand-written at four entries
+ * this constant would silently stop covering the twelve the boundary also
+ * accepts, and a substituted vocabulary that collided with one of those twelve
+ * could let a left-behind comparison site agree by accident and hide from the
+ * proof below. */
+const PRODUCTION_BLOCK_SPELLINGS: readonly string[] = [
+  ...new Set<string>([...ANALYSER_BLOCK_SPELLINGS, ...DATA_TYPES]),
+];
+
+/** The subset of `PRODUCTION_BLOCK_SPELLINGS` whose presence as a string
+ * literal in `r2000-coverage.ts` would actually mean a store spelling had
+ * leaked into the census -- i.e. every accepted spelling EXCEPT the ones that
+ * are string-identical to a neutral `BlockClass` token.
+ *
+ * WHY THIS SUBTRACTION EXISTS, and why it is not a lowered floor. Two of the
+ * store's twelve members -- its code spelling and its undefined spelling --
+ * are byte-identical to two of the three neutral classes the census
+ * legitimately holds and compares everywhere. `block-class.ts`'s header used
+ * to claim that could never happen, and records that the claim is now false;
+ * this constant is the same fact measured from the other side. The absence
+ * supplement below therefore cannot speak about those two: their presence in
+ * the census proves nothing either way, which is precisely the protection that
+ * was lost. What still protects them is the derived TOTAL cross-check in
+ * `block-class.test.ts` and the substitutability proof below, neither of which
+ * depends on a spelling being unspelled. */
+const CENSUS_FORBIDDEN_BLOCK_LITERALS: readonly string[] = PRODUCTION_BLOCK_SPELLINGS.filter(
+  (spelling) => !(["code", "data", "undefined"] satisfies BlockClass[] as readonly string[]).includes(spelling),
+);
 
 /** The substituted vocabulary. Every spelling is chosen to collide with
  * nothing in `PRODUCTION_BLOCK_SPELLINGS` -- see this section's header. */
@@ -685,7 +721,50 @@ const substitutedBlockClassAt: BlockClassifier = (blocks, address) => {
   return null;
 };
 
-test("substitutability: the two block vocabularies share no string, which is what makes a left-behind comparison site observable", () => {
+test("the production block-spelling list is the DERIVED union of BOTH accepted vocabularies, with no duplicates", () => {
+  // Non-vacuity for the disjointness assertion below: if this union silently
+  // shrank back to the analyser's four, that assertion would keep passing
+  // while covering only half of what the boundary accepts.
+  assert.equal(
+    PRODUCTION_BLOCK_SPELLINGS.length,
+    new Set(PRODUCTION_BLOCK_SPELLINGS).size,
+    "the derived union contains a duplicate -- de-duplication is what lets the counts below be read as coverage",
+  );
+  for (const spelling of ANALYSER_BLOCK_SPELLINGS) {
+    assert.ok(
+      PRODUCTION_BLOCK_SPELLINGS.includes(spelling),
+      `the derived union dropped the analyser spelling ${JSON.stringify(spelling)}`,
+    );
+  }
+  for (const member of DATA_TYPES) {
+    assert.ok(
+      PRODUCTION_BLOCK_SPELLINGS.includes(member),
+      `the derived union dropped the store block type ${JSON.stringify(member)} -- block-class.ts accepts it, so ` +
+        "the disjointness assertion below must cover it",
+    );
+  }
+  assert.equal(
+    PRODUCTION_BLOCK_SPELLINGS.length,
+    ANALYSER_BLOCK_SPELLINGS.length + DATA_TYPES.length,
+    "the two accepted vocabularies overlap -- they are meant to differ in case at every member, so an overlap " +
+      "means one of them was re-spelt",
+  );
+
+  // The absence supplement's own non-vacuity: exactly the two members that
+  // collide with a neutral class are subtracted, and nothing else is.
+  assert.deepEqual(
+    PRODUCTION_BLOCK_SPELLINGS.filter((s) => !CENSUS_FORBIDDEN_BLOCK_LITERALS.includes(s)),
+    ["code", "undefined"],
+    "the absence supplement's exemption list must be exactly the two store members that are byte-identical to a " +
+      "neutral BlockClass token -- a wider exemption would be a lowered floor",
+  );
+});
+
+test("substitutability: the substituted vocabulary shares no string with EITHER accepted production vocabulary, which is what makes a left-behind comparison site observable", () => {
+  // Now measured against both accepted vocabularies, not just the analyser's:
+  // after the boundary learnt the store's lowercase twelve, a substituted
+  // spelling colliding with any of those twelve could let a left-behind
+  // comparison site agree by accident and hide.
   const shared = Object.values(SUBSTITUTED_BLOCK_SPELLINGS).filter((spelling) =>
     PRODUCTION_BLOCK_SPELLINGS.includes(spelling),
   );
@@ -803,6 +882,153 @@ test("idempotency: building the coverage report twice over the same fixture thro
   assert.deepEqual(build(), build(), "the census must stay a pure function of the bytes and the seed set across repeated builds");
 });
 
+// ---------------------------------------------------------------------------
+// 2c. The LABEL-KIND half of the same boundary
+//
+// `SEAM-03` extracted the BLOCK-type vocabulary into `block-class.ts`. The
+// sibling LABEL-KIND vocabulary was never extracted and is still compared
+// inline at four sites in `r2000-coverage.ts`: `:1430`
+// (`kind === "System" || kind === "Platform"`), `:1432` (`kind === "User"`),
+// `:1869` (the `nameByAddress` build) and `:2180` (the `seeds` build). This
+// section does not extract that second boundary -- it PINS the agreement and
+// makes the failure loud. Extracting a `labelKindClassAt` and repointing all
+// four sites remains the larger available alternative and was deliberately
+// not taken.
+//
+// The failure mode here is worse than a wrong answer: a kind matching neither
+// branch falls through BOTH, so the label vanishes from both tallies with no
+// error anywhere. `:1869` and `:2180` are the dangerous pair -- a store
+// emitting a lowercase kind empties the census's name map and its seed set.
+// The `COV-01`/`COV-02` boundary test above does not reach them: it rewrites
+// BLOCK entries, not symbols.
+// ---------------------------------------------------------------------------
+
+test("a lowercase label kind collapses the user tally to zero with no error -- the silent zero, made loud", () => {
+  const { store } = loadFixture(WELL_DOCUMENTED);
+
+  // NON-VACUITY, asserted BEFORE the rewrite: without this the measured zero
+  // below could be an empty input rather than a collapse, and the test would
+  // read as a pass while measuring nothing.
+  assert.ok(
+    Array.isArray(store.symbols) && store.symbols.length > 0,
+    `the ${WELL_DOCUMENTED} fixture must actually carry symbols -- otherwise the zero asserted below is an empty ` +
+      "input, not a collapse, and this test measures nothing",
+  );
+
+  const lowercased: R2000Symbol[] = store.symbols.map((s) => ({ ...s, kind: String(s.kind ?? "").toLowerCase() }));
+
+  const before = reportFor(WELL_DOCUMENTED);
+  const after = reportFor(WELL_DOCUMENTED, { symbols: lowercased });
+
+  const why =
+    "computeLabelRatio compares the kind against the CAPITALISED spellings at r2000-coverage.ts:1430 and :1432, " +
+    "and a kind matching neither falls through BOTH branches -- so a store emitting a lowercase kind empties the " +
+    "tally with no error anywhere. The same comparison is repeated inline at :1869 (nameByAddress) and :2180 " +
+    "(seeds), where the same lowercase kind empties the census's name map and its seed set. This tally is the " +
+    "observable symptom, not the whole disease.";
+
+  assert.ok(
+    before.labels.kindRatio.user > 0,
+    `the unmodified fixture reports kindRatio.user = ${before.labels.kindRatio.user} -- it must be positive for ` +
+      `the collapse below to be measurable. ${why}`,
+  );
+  assert.equal(
+    after.labels.kindRatio.user,
+    0,
+    `rewriting every symbol kind to lowercase left kindRatio.user at ${after.labels.kindRatio.user} rather than ` +
+      `collapsing it to 0. ${why}`,
+  );
+  assert.equal(
+    after.labels.systemExcluded,
+    0,
+    `the lowercase kinds were counted as systemExcluded (${after.labels.systemExcluded}) rather than falling ` +
+      `through both branches. ${why}`,
+  );
+});
+
+test("derived agreement: every member of the store's label-kind vocabulary appears as a literal in the census's source", () => {
+  // `keepLiteralBodies` MUST be true here. The four spellings being searched
+  // for ARE string literals, and `codeOnly()`'s default strict mode blanks
+  // literal bodies -- which would make every one of them unobservable and
+  // turn this loop into a guard that passes by construction.
+  const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);
+
+  // THE ASYMMETRY IS DECIDED, not an oversight: block types are lowercase and
+  // label kinds are capitalised. `DATA_TYPES` is lowercase because it is read
+  // off `r2000_set_data_type`'s own schema and named verbatim in
+  // `src/skills/c64-memory-mapping/SKILL.md`, so re-spelling it would break a
+  // shipped playbook. `LABEL_KINDS` is capitalised because its only mechanical
+  // consumer is this census, which already spells it capitalised at four
+  // sites. Matching the consumer costs nothing; changing the consumer costs
+  // four edits inside a 2,292-line module and buys no criterion.
+  assert.equal(
+    LABEL_KINDS.length,
+    4,
+    `the label-kind vocabulary has ${LABEL_KINDS.length} members, not the four this agreement check is total ` +
+      "over -- a vocabulary that shrank would satisfy the partition below trivially",
+  );
+
+  // MEASURED, not assumed: three of the four members are compared EXPLICITLY
+  // by the census and one is its `else` fallthrough. `computeLabelRatio`
+  // tests `kind === "System" || kind === "Platform"` and then `kind === "User"`
+  // and infers auto from neither matching, so it never needs to spell `"Auto"`
+  // at all. Partitioning by measurement rather than by a hand-written list is
+  // what makes both halves below reddenable: a re-spelt store member moves
+  // out of `spelled`, and a census that started comparing the fallthrough
+  // explicitly moves it in. Either way the counts stop matching.
+  const spelled = LABEL_KINDS.filter((kind) => source.includes(`"${kind}"`));
+  const inferred = LABEL_KINDS.filter((kind) => !source.includes(`"${kind}"`));
+
+  assert.equal(
+    inferred.length,
+    1,
+    `${inferred.length} label kinds are absent from the census's source (${JSON.stringify(inferred)}) -- exactly ` +
+      "one is expected, the `else` fallthrough. More than one means the store's label-kind spelling and the " +
+      "census's inline comparisons have drifted apart, which empties a tally, a name map and a seed set silently " +
+      "rather than raising anything",
+  );
+  assert.equal(
+    spelled.length,
+    3,
+    `${spelled.length} label kinds are spelled in the census's source rather than the three it compares ` +
+      `explicitly (${JSON.stringify(spelled)})`,
+  );
+
+  // The BEHAVIOURAL half. String presence alone would not prove the census
+  // still routes each kind where it says it does, so each spelled member is
+  // driven through a real report, and the inferred one is proven to BE the
+  // fallthrough rather than merely unspelled.
+  const oneSymbolAs = (kind: string) =>
+    reportFor(WELL_DOCUMENTED, { symbols: [{ address: 0x0810, name: "probe_target", kind }] }).labels;
+
+  for (const kind of spelled) {
+    const labels = oneSymbolAs(kind);
+    if (kind === "User") {
+      assert.equal(labels.kindRatio.user, 1, `a ${JSON.stringify(kind)} label must reach the user tally`);
+      assert.equal(labels.systemExcluded, 0, `a ${JSON.stringify(kind)} label must not be excluded as platform-provided`);
+    } else {
+      assert.equal(
+        labels.systemExcluded,
+        1,
+        `a ${JSON.stringify(kind)} label must be excluded as platform-provided -- a large KERNAL symbol set would ` +
+          "otherwise inflate the user fraction for free",
+      );
+      assert.equal(labels.kindRatio.user, 0, `a ${JSON.stringify(kind)} label must not reach the user tally`);
+    }
+  }
+
+  const fallthrough = inferred[0] as string;
+  const fallthroughLabels = oneSymbolAs(fallthrough);
+  assert.equal(
+    fallthroughLabels.kindRatio.auto,
+    1,
+    `${JSON.stringify(fallthrough)} is absent from the census's source AND does not land in the auto tally -- so ` +
+      "it is not the documented `else` fallthrough, it is a drifted spelling that vanishes from every tally",
+  );
+  assert.equal(fallthroughLabels.kindRatio.user, 0);
+  assert.equal(fallthroughLabels.systemExcluded, 0);
+});
+
 test("SUPPLEMENT (not the proof): the census module's source carries no production block-type literal", () => {
   // Absence of a string demonstrates absence of a string. It is offered
   // ALONGSIDE the substitutability proof above, never instead of it -- what a
@@ -814,8 +1040,16 @@ test("SUPPLEMENT (not the proof): the census module's source carries no producti
   // otherwise turn this red for a reason unrelated to the invariant.
   // `keepLiteralBodies: true` is the right mode precisely because the thing
   // being searched for IS a string literal.
+  //
+  // Iterated over `CENSUS_FORBIDDEN_BLOCK_LITERALS` rather than the full
+  // derived union: the union now also contains the store's `code` and
+  // `undefined` members, which are byte-identical to two neutral `BlockClass`
+  // tokens the census legitimately holds. See that constant's own comment for
+  // why exempting exactly those two is the honest measurement rather than a
+  // lowered floor -- and note that the exemption list's size is itself
+  // asserted above, so it cannot widen unnoticed.
   const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);
-  for (const spelling of PRODUCTION_BLOCK_SPELLINGS) {
+  for (const spelling of CENSUS_FORBIDDEN_BLOCK_LITERALS) {
     assert.equal(
       source.includes(`"${spelling}"`),
       false,
