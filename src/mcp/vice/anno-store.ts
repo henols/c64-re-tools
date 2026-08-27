@@ -126,6 +126,7 @@
 //      retained revision for the one asked for changes the caller's intent with
 //      nothing recording that it happened, so a revert past the bound is
 //      refused BY NAME instead (`STORE-04`).
+import { randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -618,15 +619,108 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
 }
 
 /**
+ * Vacuums the store's CURRENT contents into a snapshot file staged under a name
+ * unique to THIS ATTEMPT, and returns that path. It never reads, writes,
+ * removes or renames the published `r<revision>.db` -- publication is
+ * `publishSnapshot`'s job and happens only after the compare-and-swap below has
+ * been won.
+ *
+ * EXPORTED FOR EXACTLY ONE REASON, and no other: the snapshot-ownership proof
+ * has to drive the IDENTICAL staging code the production writer uses. A
+ * hand-copied variant inside a test can drift out of agreement with the real
+ * one, and a proof that agrees with a copy proves nothing about the original.
+ * `anno-seam.test.ts` asserts that no shipped module other than this one so
+ * much as names it -- the same bound `applyWriteWithoutCommit` carries, by the
+ * same mechanism rather than a second one.
+ *
+ * THE STAGING SUFFIX IS DELIBERATELY OUTSIDE `SNAPSHOT_FILE_PATTERN`. That
+ * pattern is anchored on `r<digits>.db`, and `reconcileSnapshotRing`'s
+ * directory sweep matches only what it matches -- so a concurrent writer's
+ * in-flight staging file is invisible to the sweep and can never be deleted out
+ * from under it. That anchoring is the contract between this function and the
+ * reconciliation; neither side may drift from it.
+ *
+ * THE UNIQUENESS IS PER ATTEMPT, NOT PER REVISION, and the distinction is
+ * load-bearing: a revision number can recur after a revert, and two attempts at
+ * the same revision -- in this process or another -- must not share a path,
+ * because `vacuum into` refuses an existing target and because two writers
+ * filling one file is the very collision this staging exists to remove.
+ */
+export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string {
+  const snapPath = snapshotPathFor(handle, revision);
+  mkdirSync(dirname(snapPath), { recursive: true });
+  const staging = join(dirname(snapPath), `r${revision}.${process.pid}.${randomUUID()}.tmp`);
+  handle.db.exec(`vacuum into ${sqlQuotedPath(staging)}`);
+  return staging;
+}
+
+/**
+ * Publishes a staged snapshot onto its revision's user-visible path. One
+ * `renameSync`, called from exactly one place: between the WON compare-and-swap
+ * and the pointer-row insert, so the only writer that can publish is the writer
+ * that will own the row.
+ *
+ * THE REVERSAL THIS RECORDS. The code here used to be an unconditional
+ * `rmSync(snapPath, { force: true })` followed by a `vacuum into` of the
+ * published path, both BEFORE `begin immediate`, justified by a comment reading
+ * "`vacuum into` refuses an existing target, and a revision number can recur
+ * after a revert, so the stale file is removed rather than colliding". THE
+ * PREMISE IS TRUE AND IS KEPT: `vacuum into` does refuse an existing target, and
+ * a revision number does recur after a revert. THE REMEDY WAS WRONG. Removing
+ * the published path is an unowned write, performed by a writer that may be
+ * about to be refused, onto a file a COMMITTED pointer row already claims -- so
+ * a losing writer replaced a winner's bytes and left that winner's row
+ * describing a different revision, which `revertTo` then restored without a
+ * word. The recurrence is handled HERE instead: a rename overwrites without a
+ * prior removal, so the stale file is replaced by the writer that OWNS the new
+ * pointer row and by no one else.
+ *
+ * AND A RENAME HERE CANNOT DESTROY A CLAIMED SNAPSHOT, which is proved rather
+ * than hoped. Pointer rows are inserted for the PRE-mutation revision, and the
+ * vacuum image is taken before that insert -- so every row in any surviving
+ * pointer table names a revision STRICTLY BELOW the revision the store is at.
+ * The only path this rename targets is the CURRENT revision's, which no
+ * surviving row can name. `anno-store.test.ts` asserts that property over a
+ * store that has been reverted and written forward again, rather than leaving
+ * it as an argument.
+ */
+function publishSnapshot(stagingPath: string, snapPath: string): void {
+  renameSync(stagingPath, snapPath);
+}
+
+/**
+ * Removes a staged snapshot that will never be published, on every refusal and
+ * every rollback exit of the write sequence. A safe no-op after a successful
+ * publication, because the staged file no longer exists under that name -- which
+ * is why the call sites do not have to know which side of the publication they
+ * are on.
+ *
+ * Swallowing on purpose. A staging file this fails to remove is an orphan
+ * `.tmp`, and an orphan `.tmp` is harmless: nothing addresses it, no pointer row
+ * can name it and the reconciliation sweep does not match it. Reporting a second
+ * error here would replace the caller's ACTUAL refusal -- the one it needs to
+ * read -- with a confusing one about a temporary file.
+ */
+function discardSnapshot(stagingPath: string): void {
+  try {
+    rmSync(stagingPath, { force: true });
+  } catch {
+    // deliberately ignored -- see above
+  }
+}
+
+/**
  * The write sequence. THE ORDER BELOW IS LOAD-BEARING and is not a style
  * choice:
  *
  *   1. read the current revision;
  *   2. refuse immediately if the caller based its edit on a different one;
- *   3. take the pre-mutation snapshot with `vacuum into`;
+ *   3. STAGE the pre-mutation snapshot with `vacuum into`, under a name unique
+ *      to this attempt and outside the published naming;
  *   4. `begin immediate`;
  *   5. compare-and-swap the revision, requiring exactly one changed row;
- *   6. insert the snapshot pointer row for the PRE-mutation revision;
+ *   6. PUBLISH the staged snapshot onto the revision's path by rename, then
+ *      insert the snapshot pointer row for the PRE-mutation revision;
  *   7. run the caller's mutation;
  *   8. commit -- once, through the module's one commit site;
  *   9. prune the snapshot ring -- AFTER the commit and OUTSIDE the
@@ -636,6 +730,25 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
  * the window leaves a DURABLE MUTATION WITH NO SNAPSHOT -- an edit that can
  * never be undone. In the present order a kill inside the window leaves an
  * orphan snapshot FILE, which is harmless and reconcilable by revision number.
+ *
+ * WHY THE SNAPSHOT IS STAGED AND ONLY PUBLISHED AFTER THE COMPARE-AND-SWAP IS
+ * WON: a published snapshot must have EXACTLY ONE writer -- the writer that
+ * goes on to commit that revision's pointer row. The earlier arrangement did
+ * the filesystem work before the lock, on the published path, with no check
+ * that a committed pointer row already owned it, so a writer that was about to
+ * be REFUSED could still replace a winner's bytes:
+ *
+ *     B reads rev 5; A reads rev 5, snapshots r5.db, wins the CAS, commits the
+ *     row (5, r5.db); B removes r5.db and re-creates it from the CURRENT
+ *     (revision 6) state; B's CAS then fails and B is refused -- leaving A's
+ *     committed row describing revision 6, and `revertTo(5)` silently restoring
+ *     the wrong state.
+ *
+ * A refusal must be indistinguishable, from every other process's point of
+ * view, from the write never having been attempted -- ON DISK INCLUDED, in
+ * bytes nobody reads until a revert. Staging under a per-attempt name and
+ * publishing by rename only after the CAS is won is what makes that true: a
+ * loser touches nothing but its own staging file, and discards even that.
  *
  * WHY THE POINTER ROW IS INSERTED INSIDE THE SAME TRANSACTION AS THE MUTATION:
  * that is the mechanism that makes the durability claim and the revert claim
@@ -658,22 +771,34 @@ function runWriteSequence<T>(
     );
   }
 
-  const snapPath = snapshotPathFor(handle, rev);
-  mkdirSync(dirname(snapPath), { recursive: true });
-  // `vacuum into` refuses an existing target, and a revision number can recur
-  // after a revert, so the stale file is removed rather than colliding.
-  rmSync(snapPath, { force: true });
-  handle.db.exec(`vacuum into ${sqlQuotedPath(snapPath)}`);
+  const staging = stageSnapshot(handle, rev);
 
   handle.db.exec("begin immediate");
 
   const cas = handle.db.prepare("update anno_meta set revision = revision + 1 where id = 1 and revision = ?").run(rev);
   if (Number(cas.changes) !== 1) {
+    // THE SECOND NUMBER IS READ BEFORE THE ROLLBACK, and the order is the
+    // point: this is the one refusal path on which a CONCURRENT writer moved
+    // the revision, so it is the path on which the second number is most
+    // informative -- and it is only visible while this transaction still sees
+    // it. Reporting "the revision moved" with one number is the word
+    // "conflict" with extra steps: the caller cannot tell a lost race from a
+    // mistyped base, and cannot say which two values disagreed.
+    const moved = handle.db.prepare("select revision from anno_meta where id = 1").get() as { revision: number } | undefined;
     handle.db.exec("rollback");
-    throw new AnnoStoreStaleRevisionError(`refusing the write: the revision moved under us (expected ${rev})`, {
-      baseRevision: rev,
-    });
+    discardSnapshot(staging);
+    throw new AnnoStoreStaleRevisionError(
+      `refusing the write: the revision moved under us (expected ${rev}, found ${moved === undefined ? "no meta row" : moved.revision})`,
+      { baseRevision: rev, currentRevision: moved?.revision },
+    );
   }
+
+  // ONLY THE WINNER REACHES HERE, which is the whole ownership discipline: the
+  // publication sits between the won compare-and-swap and the pointer-row
+  // insert, so the writer that puts the bytes at the revision's path is exactly
+  // the writer whose row will claim them. A loser never names this path at all.
+  const snapPath = snapshotPathFor(handle, rev);
+  publishSnapshot(staging, snapPath);
 
   handle.db.prepare("insert into anno_snapshot(revision, path) values (?, ?)").run(rev, snapPath);
 
@@ -700,6 +825,13 @@ function runWriteSequence<T>(
     } catch {
       // deliberately ignored -- see above
     }
+    // Unconditional, and safe unconditionally: by this point the staged file has
+    // already been renamed onto the revision's path, so this is a no-op -- the
+    // call site does not have to know which side of the publication it is on.
+    // What the rollback DOES leave behind is a published FILE no pointer row
+    // claims, which is the harmless direction: `reconcileSnapshotRing` sweeps
+    // exactly that.
+    discardSnapshot(staging);
     throw mutationError;
   }
 

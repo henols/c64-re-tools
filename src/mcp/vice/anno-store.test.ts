@@ -35,6 +35,7 @@ import {
 } from "./anno-types.ts";
 import {
   addScope,
+  applyWrite,
   closeStore,
   contradictedCommentsFor,
   createProjectEnum,
@@ -58,6 +59,7 @@ import {
   setDataType,
   setLabel,
   snapshotPathFor,
+  stageSnapshot,
   updateProjectEnum,
 } from "./anno-store.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
@@ -1791,6 +1793,166 @@ test("cross-process compare-and-swap: after a genuinely separate OS process comm
       const retry = setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "byte", baseRevision: currentRevision(store) });
       assert.equal(retry.revision, afterChild + 1, "the same write with a FRESH base is accepted and advances the revision");
       assert.equal(listRanges(store).length, 3, "and its row lands this time -- the refusal was about the base, never about the write");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-02: one owner per published snapshot
+// ---------------------------------------------------------------------------
+
+test("snapshot OWNERSHIP: a losing writer that stages a snapshot for a revision another writer already committed cannot touch that winner's published bytes, and the revert to it still returns that revision with its exact row set", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+
+    // WRITER A -- the winner. One accepted write publishes `r0.db` and commits
+    // the pointer row (0, r0.db) in the same transaction as the mutation.
+    const a = openStore(path, { workspaceRoot: dir });
+    setDataType(a, { start: 0x1000, endInclusive: 0x10ff, dataType: "code" });
+    assert.equal(currentRevision(a), 1, "the winner's write advanced the revision by exactly one");
+    assert.equal(listRanges(a).length, 1, "and left exactly one row");
+
+    const snap0 = snapshotPathFor(a, 0);
+    assert.ok(existsSync(snap0), "the winner published revision 0's snapshot at its user-visible path");
+    const winnerBytes = readFileSync(snap0);
+    assert.ok(winnerBytes.length > 0, "and that snapshot is a real file, not an empty placeholder");
+
+    // WRITER B -- the loser, driven through the PRODUCTION staging code rather
+    // than a hand-copied variant of it. A copy inside a test can drift out of
+    // agreement with the real one, and a proof that agrees with a copy proves
+    // nothing about the original. This is the reason `stageSnapshot` is
+    // exported at all.
+    const b = openStore(path, { workspaceRoot: dir });
+    const staging = stageSnapshot(b, 0);
+
+    assert.notEqual(
+      staging,
+      snap0,
+      "a losing writer must stage under a name of its own -- staging ON the published path IS the defect, because the published path is " +
+        `already owned by a committed pointer row (staged at ${staging}, published at ${snap0})`,
+    );
+    assert.ok(existsSync(staging), "and the staged file must actually exist, or the assertion above is comparing two names and proving nothing");
+
+    assert.deepEqual(
+      readFileSync(snap0),
+      winnerBytes,
+      "a LOSER must not be able to touch a WINNER's published snapshot: revision 0's bytes must be byte-identical to what the winner wrote. " +
+        "This is the assertion the pre-fix rmSync-then-vacuum-into-the-published-path pair fails -- it removed the winner's file and " +
+        "re-created it from the CURRENT state, leaving the winner's committed pointer row describing a different revision",
+    );
+
+    rmSync(staging, { force: true });
+    closeStore(b);
+
+    // AND THE CONSEQUENCE THE REVIEWER ACTUALLY MEASURED. The damage CR-02 did
+    // was never visible at the row level -- the loser's write is correctly
+    // refused either way -- it was visible only here, on a revert that
+    // succeeded with the wrong state.
+    const reverted = revertTo(a, 0);
+    try {
+      const gotRevision = currentRevision(reverted);
+      const gotRows = listRanges(reverted);
+      assert.equal(
+        gotRevision,
+        0,
+        `revertTo(0) gave revision ${gotRevision} with ${gotRows.length} row(s) -- expected revision 0 with 0 rows`,
+      );
+      assert.equal(
+        gotRows.length,
+        0,
+        `revertTo(0) gave revision ${gotRevision} with ${gotRows.length} row(s) -- expected revision 0 with 0 rows`,
+      );
+    } finally {
+      closeStore(reverted);
+    }
+  });
+});
+
+test("publishing by RENAME cannot destroy a claimed snapshot: on a store written past a revert and forward again, no surviving pointer row names the CURRENT revision", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      // The property is an argument about ordering -- pointer rows are inserted
+      // for the PRE-mutation revision and the vacuum image is taken before that
+      // insert, so no row can ever name the revision the store is currently at,
+      // which is the only path the publishing rename targets. It is asserted
+      // here rather than left as an argument, and asserted specifically on the
+      // shape that makes revision numbers RECUR: a revert followed by more
+      // writes.
+      for (let i = 0; i < 4; i += 1) {
+        setDataType(store, { start: 0x2000 + i * 0x10, endInclusive: 0x2000 + i * 0x10 + 1, dataType: "word" });
+      }
+      store = revertTo(store, 2);
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x3000 + i * 0x10, endInclusive: 0x3000 + i * 0x10 + 1, dataType: "byte" });
+      }
+
+      const rows = store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
+      // NON-VACUITY FIRST: an empty pointer table satisfies "no row names the
+      // current revision" without saying anything at all.
+      assert.ok(rows.length > 0, `the pointer table must hold rows for this assertion to mean anything, got ${rows.length}`);
+
+      const now = currentRevision(store);
+      const colliding = rows.filter((row) => row.revision === now);
+      assert.deepEqual(
+        colliding,
+        [],
+        `no surviving pointer row may name the CURRENT revision ${now} -- that is the only path the publishing rename targets, and a row ` +
+          "naming it would mean the rename could overwrite a snapshot some row still claims",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("a refusal leaves NOTHING behind on disk: neither a stale-base refusal nor a write whose mutation throws leaves a .tmp staging file in the snapshots directory", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x0400, endInclusive: 0x07e7, dataType: "screencode" });
+      const snapshotDir = join(dir, "snapshots");
+      const tmpEntries = (): string[] => readdirSync(snapshotDir).filter((name) => name.endsWith(".tmp")).sort();
+
+      // NON-VACUITY FIRST, and it has to be taken this way round: "no .tmp
+      // entry" is trivially true of a directory in which a .tmp entry is
+      // impossible. Staging one through the production code proves the reader
+      // can see one when there is one.
+      const planted = stageSnapshot(store, currentRevision(store));
+      assert.deepEqual(tmpEntries().length, 1, "a staged snapshot IS visible to this reader, so its absence below is a measurement");
+      rmSync(planted, { force: true });
+      assert.deepEqual(tmpEntries(), [], "and the directory is clean again before the two refusals below");
+
+      // REFUSAL 1 -- a stale base. This one is refused BEFORE any filesystem
+      // work happens at all, which is itself the guarantee: a caller with a
+      // stale base does no I/O.
+      assert.throws(
+        () => setDataType(store, { start: 0x5000, endInclusive: 0x5001, dataType: "word", baseRevision: 0 }),
+        AnnoStoreStaleRevisionError,
+      );
+      assert.deepEqual(tmpEntries(), [], "a stale-base refusal leaves no staging file behind");
+
+      // REFUSAL 2 -- a mutation that throws. THIS route is chosen over an
+      // invalid argument on purpose: `applyWrite` with a throwing callback is
+      // the ONLY deterministic way into the rollback path that runs AFTER the
+      // snapshot has been staged, and it drives the shipped write sequence
+      // rather than a variant of it. An invalid range would be refused by the
+      // validators before the sequence ever starts, and would therefore test
+      // nothing about staging.
+      const boom = new Error("the mutation refuses, from inside the transaction");
+      assert.throws(
+        () =>
+          applyWrite(store, () => {
+            throw boom;
+          }),
+        (e: unknown) => e === boom,
+      );
+      assert.deepEqual(tmpEntries(), [], "a write whose mutation throws leaves no staging file behind either");
+      assert.equal(currentRevision(store), 1, "and the rolled-back write did not advance the revision");
     } finally {
       closeStore(store);
     }
