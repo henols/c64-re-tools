@@ -71,16 +71,41 @@ chain directly.
 
 These are established from the code, not assumed. Each one shapes the design.
 
-**1. Close-is-release is already gated — the pattern is safe by construction, but
-only just.** `broker-control.mts:388-397` states *"Connection close IS the
-release — including on the client's own SIGKILL."* It fires `onRelease` **only
-when `requestIdForThisConnection` is set**, and that is set solely by a
-successful `acquire`. So an open/send/close host-tool connection that never
-acquires closes harmlessly today. This must become an explicit, tested invariant:
-**a host-tool op must never set `requestIdForThisConnection`**, or every skill
-script invocation fires a spurious release and kills a live emulator. This is the
-single highest-risk detail in the whole design and it is one assignment away from
-being wrong.
+**1. External work must not be able to interfere with the emulator at all — and
+that is a structural requirement, not a discipline one (Henrik, 2026-08-28).**
+A disk or disassembly call has nothing to do with the emulator and must not be
+*able* to reach its state. Three separate couplings exist in the current design,
+and each needs its own structural answer:
+
+- **Shared connection state.** `broker-control.mts:388-397` states *"Connection
+  close IS the release — including on the client's own SIGKILL"*, firing
+  `onRelease` whenever `requestIdForThisConnection` is set (set only by a
+  successful `acquire`). An open/send/close host-tool connection is harmless
+  today *by accident of that guard*. **Answer:** route on the namespace prefix at
+  the top of `handleLine`, before any lease-bearing path, and hand the host-tool
+  handler its own deps object containing **none** of the seven VICE callbacks
+  (`onAcquire`, `onRelease`, `onRecycle`, `onStatus`, `onHostState`,
+  `onMonitorClaim`, `onMonitorRelease` — `broker-control.mts:143-181`). It cannot
+  touch lease state because it is never handed anything that reaches it.
+  Capability-passing is already this module's idiom, so this is close to free.
+
+- **Shared process fate — the decisive one.** `broker-kill.mts:367-374` registers
+  `uncaughtException` and `unhandledRejection` handlers that log and then
+  `run(…, 1)`: the kill-and-exit path. This is deliberate and correct for a
+  supervisor — never orphan emulators — but it means **any unhandled throw
+  anywhere in the broker process tears down the entire VICE pool**. Running a
+  host tool inline makes every live emulator hostage to a `c1541` bug.
+  **Answer:** host-tool work runs in a child process, never in the broker's own.
+  A failure there is a failed response frame, not a broker fault. Without this
+  layer, the routing above is insufficient.
+
+- **Shared event loop.** The broker is single-threaded Node. A synchronous
+  `c1541 -extract` or a headless disassembler run stalls acquires, the warm floor
+  and monitor claims for its whole duration. **Answer:** async spawn only, never
+  `spawnSync`. Not corruption, but interference all the same.
+
+What legitimately stays shared: the port, the line framing, and the token gate —
+transport and authentication, carrying no emulator state.
 
 **2. 64 KiB hard line cap — bulk output cannot ride inline.** `MAX_LINE_BYTES =
 65536` (`broker-control.mts:242`), and on overflow the socket is `destroy()`ed
