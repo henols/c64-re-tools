@@ -675,10 +675,12 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// ACME gate, using the shared r2000-test-gate.ts seam (ACME_BIN/
-// ACME_AVAILABLE/acmeSkipReasonFor/assertAcmeRequiredIfEnvSet, imported
-// above) instead of a local copy of disasm-roundtrip.test.ts's original
-// convention -- see
+// ACME gate, using the shared acme-gate.ts seam (ACME_BIN/
+// ACME_AVAILABLE/acmeSkipReasonFor/assertAcmeRequiredIfEnvSet -- the last
+// two of those four are what this file imports) instead of a local copy of
+// disasm-roundtrip.test.ts's original convention. The seam now stands under
+// its own name, outside the regenerator2000 filename prefix (SEAM-01);
+// prehistory of the consolidation itself:
 // 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md. The
 // seam's probeAcme() passes a 10s spawnSync timeout; this file's own local
 // copy previously passed none -- converged on the seam's bounded probe.

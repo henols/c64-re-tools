@@ -217,8 +217,11 @@ test("SESSION-B-ANSWER.md's canonical line matches QUESTION.md's own grammar", (
 //
 // CI DOES run this: `.github/workflows/ci.yml`'s Test step installs ACME
 // and sets `VICE_REQUIRE_ACME=1`, so a missing ACME hard-FAILS there rather
-// than skipping. The gate below is imported from `r2000-test-gate.ts` (the
-// sanctioned seam) rather than hand-copied a third time.
+// than skipping. The gate below is imported from `acme-gate.ts` (the
+// sanctioned seam) rather than hand-copied a third time -- that seam stands
+// under its own name, outside the regenerator2000 filename prefix, so a
+// prefix-driven cleanup there cannot take this file's hard FAIL with it
+// (SEAM-01).
 // ---------------------------------------------------------------------------
 
 import { mkdtempSync, rmSync } from "node:fs";

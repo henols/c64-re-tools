@@ -13,8 +13,11 @@
 //
 // ACME availability: this file imports the ONE shared availability seam
 // (ACME_BIN / acmeSkipReasonFor / assertAcmeRequiredIfEnvSet) from
-// ./r2000-test-gate.ts, exactly like disasm-roundtrip.test.ts -- never a
-// second, hand-rolled binary-presence probe. The always-runs
+// ./acme-gate.ts, exactly like disasm-roundtrip.test.ts -- never a
+// second, hand-rolled binary-presence probe. The seam lives under its own
+// name rather than inside the regenerator2000 gate module, so a
+// prefix-driven cleanup there cannot silently turn this file's hard FAIL
+// back into a skip (SEAM-01). The always-runs
 // availability-gate test below fails loudly (not silently skips) when
 // VICE_REQUIRE_ACME is set but no real ACME is found, which is CI's own
 // condition.
