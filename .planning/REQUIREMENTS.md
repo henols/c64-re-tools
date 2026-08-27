@@ -78,13 +78,13 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      decision: split-table orientation is unrecoverable from data that never
      recorded it. -->
 
-- [x] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering the **full 12-member vocabulary** read off `r2000_set_data_type`'s own schema — not the 7 v0.6.0 named, because "table" is four distinct split layouts and collapsing them re-creates the exact `da65` expressiveness boundary this project rejected `cc65` for
-- [x] **STORE-02**: Ranges are stored as ranges and are **never merged on adjacency**, so no splitter concept is needed and none is introduced — the manifest's named blocker for `DECOMP-01` and `BUILD-02`, and the over-merge bias it predicts for `COV-01`, are designed out by construction rather than worked around
-- [x] **STORE-03**: A narrowest-range-wins lookup over the 64K space is exact at every one of the 65,536 addresses, verified by cross-validating two independent implementations rather than by spot checks — the tie-break, the range ends, and the behaviour when a typed range is partially overwritten all pinned
-- [x] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
-- [x] **STORE-05**: The schema carries a version field and a reserved bank field from the first write, and cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`). All three are free at decode time and unrecoverable afterwards; the bank field is reserved and **not** interpreted, since `PROOF-03` is recorded `could-not-run` and `memmap.json` is flat
+- [ ] **STORE-01**: The store holds labels, comments, per-range data typing, scopes and project enums, with per-range typing covering the **full 12-member vocabulary** read off `r2000_set_data_type`'s own schema — not the 7 v0.6.0 named, because "table" is four distinct split layouts and collapsing them re-creates the exact `da65` expressiveness boundary this project rejected `cc65` for
+- [ ] **STORE-02**: Ranges are stored as ranges and are **never merged on adjacency**, so no splitter concept is needed and none is introduced — the manifest's named blocker for `DECOMP-01` and `BUILD-02`, and the over-merge bias it predicts for `COV-01`, are designed out by construction rather than worked around
+- [ ] **STORE-03**: A narrowest-range-wins lookup over the 64K space is exact at every one of the 65,536 addresses, verified by cross-validating two independent implementations rather than by spot checks — the tie-break, the range ends, and the behaviour when a typed range is partially overwritten all pinned
+- [ ] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
+- [ ] **STORE-05**: The schema carries a version field and a reserved bank field from the first write, and cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`). All three are free at decode time and unrecoverable afterwards; the bank field is reserved and **not** interpreted, since `PROOF-03` is recorded `could-not-run` and `memmap.json` is flat
 - [ ] **STORE-06**: Cross-references and search over the typed decode are answerable — which addresses reference a given address, and search across labels, comments and instructions — built on the surviving `disasm-*` decoders, with the old route gone rather than kept as a fallback
-- [x] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
+- [ ] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
 
 ### MCP Surface
 
@@ -213,12 +213,12 @@ over them.
 | SEAM-01 | Phase 27 | Complete |
 | SEAM-02 | Phase 27 | Complete |
 | SEAM-03 | Phase 27 | Complete |
-| STORE-01 | Phase 28 | Complete |
-| STORE-02 | Phase 28 | Complete |
-| STORE-03 | Phase 28 | Complete |
-| STORE-04 | Phase 28 | Complete |
-| STORE-05 | Phase 28 | Complete |
-| STORE-07 | Phase 28 | Complete |
+| STORE-01 | Phase 28 | Gaps Found |
+| STORE-02 | Phase 28 | Gaps Found |
+| STORE-03 | Phase 28 | Gaps Found |
+| STORE-04 | Phase 28 | Gaps Found |
+| STORE-05 | Phase 28 | Gaps Found |
+| STORE-07 | Phase 28 | Gaps Found |
 | MCP-01 | Phase 29 | Pending |
 | MCP-02 | Phase 29 | Pending |
 | MCP-03 | Phase 29 | Pending |
