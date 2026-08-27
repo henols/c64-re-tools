@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
+import { shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
@@ -343,24 +344,13 @@ function extractStringLiterals(src: string): string[] {
   return literals;
 }
 
-/** The shipped module set this guard scans: every `package.json` `files[]`
- * entry ending `.ts`/`.mts`. Derived, not enumerated -- the guard-first
- * principle this phase's CONTEXT.md organises around -- so a module added
- * to `files[]` by a later phase is scanned automatically, with no edit
- * here. A `files[]` entry that does not exist on disk FAILS this function
- * rather than silently shrinking the scanned set (the INT-01 lesson applied
- * preemptively). */
-function shippedTsModules(): string[] {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files?: string[] };
-  const entries = (pkg.files ?? []).filter((f) => /\.(ts|mts)$/.test(f));
-  for (const entry of entries) {
-    assert.ok(
-      existsSync(join(HERE, entry)),
-      `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`,
-    );
-  }
-  return entries;
-}
+// MODULE SET: `shippedTsModules()` is imported from `shipped-modules.ts`,
+// which is where this function's body -- first written here -- and the full
+// statement of its rationale now live. The one sentence worth keeping at the
+// call site, because it is the reason this guard can be trusted at all: a
+// `files[]` entry that does not exist on disk makes that helper THROW rather
+// than silently shrinking the set scanned below, and a guard that scans
+// nothing finds nothing and still passes.
 
 /** Every literal, from every shipped module, whose content names a phase
  * number. Blanket inside literals -- no exemption list, no verb heuristics

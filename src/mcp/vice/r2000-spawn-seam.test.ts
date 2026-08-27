@@ -51,139 +51,23 @@ import { __r2000SessionStateForTest, __resetR2000SessionForTest } from "./r2000-
 import { buildMcpServerStdioArgs, assertNoViceFlag as launchAssertNoViceFlag } from "./r2000-launch.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// -- codeOnly(): strip comments AND string/template literal bodies --------
-//
-// Real code (including any `${ ... }` interpolation inside a template
-// literal) is preserved verbatim; comment text and quoted-literal text are
-// dropped entirely. This is deliberately a superset of `r2000-launch.test
-// .ts`'s `stripCommentLines()`: that function strips comments only, which
-// is not enough here -- a decoy string literal that merely quotes
-// `spawnSync(R2000_BIN` as prose text must not be discoverable as a call.
-function codeOnly(src: string): string {
-  const out: string[] = [];
-  const n = src.length;
-  let i = 0;
-  let inTemplateText = false;
-  let inInterp = false;
-  let interpBraceDepth = 0;
-  const templateStack: { inInterp: boolean; interpBraceDepth: number }[] = [];
+// `codeOnly()` -- strip comments AND string/template-literal bodies -- is
+// imported from `shipped-modules.ts`, its single home. Real code (including
+// any `${ ... }` interpolation) survives verbatim; comment text and
+// quoted-literal text do not. Deliberately a superset of a comments-only
+// stripper: a decoy string literal that merely quotes a spawn call as prose
+// text must not be discoverable here as a call.
 
-  while (i < n) {
-    const c = src[i];
-    const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
-    inTemplateText = top !== undefined && !top.inInterp;
-    inInterp = top !== undefined && top.inInterp;
-
-    if (inTemplateText) {
-      if (c === "\\") {
-        i += 2;
-        continue;
-      }
-      if (c === "`") {
-        templateStack.pop();
-        i++;
-        continue;
-      }
-      if (c === "$" && src[i + 1] === "{") {
-        top!.inInterp = true;
-        top!.interpBraceDepth = 1;
-        i += 2;
-        continue;
-      }
-      i++; // drop template literal text
-      continue;
-    }
-
-    // Top-level code, or inside a template literal's `${ ... }`
-    // interpolation -- both are real code and both get the same handling
-    // below (comments/quoted-literals/nested-templates), only the
-    // interpolation-close bookkeeping differs.
-    if (c === "/" && src[i + 1] === "/") {
-      while (i < n && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      const quote = c;
-      i++;
-      while (i < n && src[i] !== quote) {
-        if (src[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        i++;
-      }
-      i++; // skip closing quote
-      continue; // the entire quoted literal contributes nothing to "code"
-    }
-    if (c === "`") {
-      templateStack.push({ inInterp: false, interpBraceDepth: 0 });
-      i++;
-      continue;
-    }
-    if (inInterp) {
-      if (c === "{") {
-        top!.interpBraceDepth++;
-        out.push(c);
-        i++;
-        continue;
-      }
-      if (c === "}") {
-        top!.interpBraceDepth--;
-        i++;
-        if (top!.interpBraceDepth === 0) {
-          top!.inInterp = false;
-        } else {
-          out.push(c);
-        }
-        continue;
-      }
-    }
-    out.push(c);
-    i++;
-  }
-  return out.join("");
-}
-
-/** The scanned module set: every `package.json` `files[]` entry ending
- * `.ts`/`.mts` -- the SHIPPED production module set, derived rather than
- * enumerated (`docs-dangling-refs.test.ts`'s `shippedTsModules()` idiom,
- * copied verbatim rather than reinvented). Deliberately NOT a raw
- * `readdirSync` over every non-`*.test.*` file in this directory: that
- * broader set also catches genuinely test-only helpers that merely fail
- * to end in `.test.ts` by name -- `r2000-test-gate.ts` is exactly this
- * shape (its own header states "This module is TEST-ONLY... it must never
- * be imported by a production module", and it is deliberately absent from
- * `files[]` for that reason) and itself calls `spawnSync(R2000_BIN,
- * ["--version"], ...)` as a live-availability probe with a FIXED,
- * hardcoded argv that can never carry `--vice` -- a real call, but not one
- * `R2000-01`'s guard-before-user-facing-argv invariant is about, and not
- * a file a maintainer ships. Scanning `files[]` instead of the raw
- * directory listing is what keeps that probe out of
- * `EXPECTED_R2000_SPAWN_SITES` without an exclusion list -- the same
- * "derive, don't enumerate" principle applied one level up, to WHICH set
- * is scanned rather than only to HOW it is scanned. A `files[]` entry that
- * does not exist on disk FAILS this function rather than letting the
- * scanned set silently shrink (the INT-01 lesson, applied here too). */
-function shippedTsModules(): string[] {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files?: string[] };
-  const entries = (pkg.files ?? []).filter((f) => /\.(ts|mts)$/.test(f));
-  for (const entry of entries) {
-    assert.ok(
-      existsSync(join(HERE, entry)),
-      `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`
-    );
-  }
-  return entries;
-}
+// The scanned module set is `shippedTsModules()` from
+// `shipped-modules.ts`: `package.json`'s `files[]` filtered to `.ts`/`.mts`,
+// deliberately NOT a raw `readdirSync` over this directory, and it throws
+// rather than returning a short list. That module's own doc comment carries
+// the full rationale, including why a directory listing would wrongly catch
+// the two unshipped test-only gate modules that each spawn a real binary.
 
 /** Spawn-family function names this guard watches. `execSync` is
  * deliberately omitted -- it takes a shell command STRING, not an argv

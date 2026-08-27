@@ -36,6 +36,7 @@ import type { StockConnectSession, StockConnectOptions } from "./stock-connect.t
 import { resetRunStateTrackersForTest, attachRunStateTracker } from "./stock-runstate.ts";
 import type { StockSessionHandler, StockToolResult } from "./stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
+import { shippedTsModules } from "./shipped-modules.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
@@ -2886,9 +2887,8 @@ test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal 
 //
 // DISCOVERY, not enumeration: the scanned module set is derived from
 // package.json's files[] array -- the SHIPPED production .ts/.mts set --
-// the same shippedTsModules() idiom r2000-spawn-seam.test.ts already
-// established in this repo, rather than a hand-typed file list that could
-// silently omit a future offender.
+// via the shared shippedTsModules() helper in shipped-modules.ts, rather
+// than a hand-typed file list that could silently omit a future offender.
 //
 // capability-registry.ts:335-346 documents the ONE authoritative refusal
 // contract (BACK-05): a hardware loss gets NO "wait for a later phase"
@@ -2899,24 +2899,13 @@ test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal 
 // "wait for a later phase" framing. This test pins that fix as a standing
 // invariant across every shipped module, not just the one file this plan
 // touched.
-function shippedTsModules(): string[] {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files?: string[] };
-  const entries = (pkg.files ?? []).filter((f) => /\.(ts|mts)$/.test(f));
-  for (const entry of entries) {
-    assert.ok(
-      existsSync(join(HERE, entry)),
-      `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`,
-    );
-  }
-  return entries;
-}
 
 /** Strips comment lines (a line whose first non-whitespace characters open a
  * `//`, `/*`, or `*` continuation line) before scanning -- capability-registry
  * .ts's OWN doc comment quotes both forbidden shapes as prose describing what
  * NOT to do (335-346), and this file's own comments quote WR-13's fixed
  * wording; neither is a live occurrence. Line-oriented, not the fuller
- * codeOnly() string-literal stripper r2000-spawn-seam.test.ts uses -- no
+ * codeOnly() string-literal stripper in shipped-modules.ts -- no
  * shipped module's non-comment code has any legitimate reason to hold either
  * forbidden phrase inside a string literal either, so the simpler filter is
  * sufficient here. */

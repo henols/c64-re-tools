@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.ts";
+import { codeOnly } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(HERE, "prg-image.ts");
@@ -89,52 +90,11 @@ test("decodeRawData: round-trips an all-zero page and a byte sequence with every
 // Structural SUPPLEMENT: the module is pure -- bytes in, values out.
 // ---------------------------------------------------------------------------
 
-/** Strips comment spans, and (unless `keepLiteralBodies`) string and
- * template-literal BODIES too, so a module name mentioned in prose or in a
- * message string can never satisfy a code check below. Character-state-machine
- * rather than a regex, following this directory's established convention for
- * source-scanning assertions -- a regex extractor was measured elsewhere in
- * this suite family to miss a real violation sitting inside a template
- * literal. The import-specifier test needs the literal bodies (a specifier IS
- * a string), so it passes `true`; the forbidden-call test must not see them. */
-function codeOnly(src: string, keepLiteralBodies = false): string {
-  let out = "";
-  let i = 0;
-  const n = src.length;
-  while (i < n) {
-    const c = src[i]!;
-    const c2 = src[i + 1];
-    if (c === "/" && c2 === "/") {
-      while (i < n && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && c2 === "*") {
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      const start = i;
-      i++;
-      while (i < n) {
-        if (src[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (src[i] === quote) break;
-        i++;
-      }
-      out += keepLiteralBodies ? src.slice(start, i + 1) : quote + quote;
-      i++;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
+// `codeOnly()` is imported from `shipped-modules.ts`, the single home of the
+// full comment-and-string-literal stripper. The import-specifier test below
+// needs the literal bodies (a specifier IS a string) so it passes `true`; the
+// forbidden-call test keeps the default, so a module name mentioned in a
+// comment or a message string can never satisfy it.
 
 test("prg-image.ts imports exactly one module, node:zlib, and nothing from this repo", () => {
   const code = codeOnly(readFileSync(MODULE_PATH, "utf8"), true);
