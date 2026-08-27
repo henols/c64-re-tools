@@ -13,12 +13,12 @@
 // empty-stderr assertion anywhere in this file would fail for that alone.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
-import { AnnoRangeShapeError, AnnoStoreCorruptError, AnnoStorePathError } from "./anno-types.ts";
+import { AnnoRangeShapeError, AnnoStoreCorruptError, AnnoStorePathError, AnnoStoreStaleRevisionError, SCHEMA_VERSION } from "./anno-types.ts";
 import { closeStore, currentRevision, listRanges, openStore, revertTo, setDataType } from "./anno-store.ts";
 
 /** One temp directory per test, removed unconditionally. */
@@ -177,11 +177,138 @@ test("a zero-length store file is REFUSED with AnnoStoreCorruptError instead of 
   });
 });
 
-test("a store file whose schema_version is not the expected one is refused, and so is a file that is not a database at all", () => {
+test("a file that is not a database at all is refused", () => {
   inTempDir((dir) => {
     const foreign = join(dir, "foreign.annostore");
     writeFileSync(foreign, "this is not a database, it is a text file\n");
     assert.throws(() => openStore(foreign, { workspaceRoot: dir }), AnnoStoreCorruptError);
+  });
+});
+
+test("a store file whose schema_version is not this build's is refused, and the refusal names both versions", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    // Forging the corrupt state directly, deliberately outside the write
+    // sequence -- the point is a file this build must refuse, not a write it
+    // would ever perform.
+    store.db.prepare("update anno_meta set schema_version = ? where id = 1").run(SCHEMA_VERSION + 98);
+    closeStore(store);
+
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, new RegExp(`schema_version ${SCHEMA_VERSION + 98}`), "the refusal must name the version it found");
+        assert.match(e.message, new RegExp(`expected ${SCHEMA_VERSION}`), "the refusal must name the version it wanted");
+        return true;
+      },
+    );
+  });
+});
+
+test("a store truncated mid-file is refused rather than read -- and integrity_check reports exactly one row reading ok on a healthy one", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    for (let i = 0; i < 40; i += 1) {
+      setDataType(store, { start: i * 16, endInclusive: i * 16 + 15, dataType: "byte" });
+    }
+    // The refusal's own condition, exercised in its PASSING direction: this is
+    // the exact query and the exact shape openStore() checks, so the check
+    // cannot silently become a no-op through a changed result shape.
+    const healthy = store.db.prepare("pragma integrity_check").all() as { integrity_check: string }[];
+    assert.equal(healthy.length, 1, "integrity_check on a healthy store returns exactly one row");
+    assert.equal(healthy[0].integrity_check, "ok");
+    const size = statSync(path).size;
+    closeStore(store);
+
+    truncateSync(path, Math.floor(size / 2));
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      AnnoStoreCorruptError,
+      "a store truncated mid-file must be refused, not read as a shorter store",
+    );
+  });
+});
+
+test("every accepted write advances the revision by exactly one, and a write based on a stale revision is refused with both numbers", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(currentRevision(store), 0);
+      for (let expected = 1; expected <= 3; expected += 1) {
+        const write = setDataType(store, { start: 0x1000 + expected * 0x10, endInclusive: 0x1000 + expected * 0x10 + 1, dataType: "word" });
+        assert.equal(write.revision, expected, "the write must report the revision it produced");
+        assert.equal(currentRevision(store), expected, "and the on-disk revision must agree, having advanced by exactly one");
+      }
+
+      assert.throws(
+        () => setDataType(store, { start: 0x2000, endInclusive: 0x2001, dataType: "word", baseRevision: 0 }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreStaleRevisionError, `expected AnnoStoreStaleRevisionError, got ${String(e)}`);
+          assert.equal(e.baseRevision, 0, "the refusal carries the revision the caller based its edit on");
+          assert.equal(e.currentRevision, 3, "and the revision actually on disk, so a caller can say WHICH two disagreed");
+          return true;
+        },
+      );
+      assert.equal(currentRevision(store), 3, "a refused write does not advance the revision");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("the reserved bank column exists and is nullable on all four annotated tables, and every row written today has it null", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      for (const table of ["anno_range", "anno_label", "anno_comment", "anno_xref"]) {
+        const columns = store.db.prepare(`pragma table_info(${table})`).all() as { name: string; notnull: number }[];
+        const bank = columns.find((column) => column.name === "bank");
+        assert.ok(bank, `${table} must carry the reserved bank column`);
+        assert.equal(bank.notnull, 0, `${table}.bank must be NULLABLE -- nothing interprets it yet`);
+      }
+      setDataType(store, { start: 0x0810, endInclusive: 0x084f, dataType: "lo_hi_address" });
+      for (const row of listRanges(store)) {
+        assert.equal(row.bank, null, "every row this store writes today has bank null");
+      }
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("anno_xref exists with its access_kind column from the first write, and the store creates NO FTS5 virtual table", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const columns = (store.db.prepare("pragma table_info(anno_xref)").all() as { name: string }[]).map((column) => column.name);
+      assert.ok(columns.includes("access_kind"), "the cross-reference table carries access_kind from the very first write");
+      assert.ok(columns.includes("from_address") && columns.includes("to_address"));
+      assert.equal(
+        store.db.prepare("select count(*) as n from anno_xref").get() !== undefined,
+        true,
+        "the table exists and is queryable even though nothing derivable is stored in it",
+      );
+
+      // Adding FTS5 later is additive; removing it is a schema migration. The
+      // search surface is not this schema's, so it must not be foreclosed here.
+      const objects = store.db.prepare("select type, name, sql from sqlite_master").all() as {
+        type: string;
+        name: string;
+        sql: string | null;
+      }[];
+      const virtualTables = objects.filter((object) => (object.sql ?? "").toLowerCase().includes("virtual table"));
+      assert.deepEqual(virtualTables, [], "the store must create no virtual table");
+      const fts = objects.filter((object) => object.name.toLowerCase().includes("fts"));
+      assert.deepEqual(fts, [], "the store must create no FTS5 table");
+    } finally {
+      closeStore(store);
+    }
   });
 });
 

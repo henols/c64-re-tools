@@ -265,6 +265,38 @@ test("no shipped module other than the seam names the no-commit write wrapper", 
   assert.deepEqual(leaked, [], "the no-commit write wrapper must not be reachable from any shipped module but the seam");
 });
 
+test("idempotency: re-running the scan over an unchanged tree yields the identical one-element importer list", () => {
+  // The scan must be a PURE FUNCTION of shippedTsModules() and the files'
+  // contents, with no cached state between runs. If it ever memoised, a second
+  // run could report a stale answer -- and the run that matters is the one
+  // after somebody adds a second importer.
+  const first = sqliteImporters();
+  const second = sqliteImporters();
+  const third = sqliteImporters();
+  assert.deepEqual(second, first, "a second run over an unchanged tree must produce the identical list");
+  assert.deepEqual(third, first, "and so must a third");
+  assert.deepEqual(first, [THE_ONE_SEAM], "and the list is still the one-element list, not an accumulated one");
+  assert.notEqual(second, first, "each run must return a FRESH array, not a shared cached one a caller could mutate");
+});
+
+test("the revision compare-and-swap is structurally intact: begin immediate, an UPDATE guarded on the current revision, and a changes count that must equal 1", () => {
+  // Structural, from the seam's own source, because the three parts fail
+  // SEPARATELY and quietly: drop `begin immediate` and the snapshot pointer row
+  // stops being atomic with the mutation; drop the `revision = ?` guard and a
+  // concurrent writer's edit is overwritten; drop the changes check and a
+  // no-op UPDATE reads as a successful write. Strict mode would blank the SQL
+  // literals, so literal bodies are kept and comments are still stripped.
+  const kept = codeOnly(seamSource(), true);
+  assert.match(kept, /begin immediate/, "the write sequence must take the write lock up front");
+  assert.match(
+    kept,
+    /update anno_meta set revision = revision \+ 1 where id = 1 and revision = \?/,
+    "the revision must be advanced by a compare-and-swap guarded on the revision the caller read",
+  );
+  assert.match(kept, /changes\) !== 1|changes !== 1/, "the CAS must require exactly one changed row -- a no-op UPDATE is a lost write");
+  assert.match(kept, /rollback/, "and must roll back rather than leaving the transaction open when it refuses");
+});
+
 test("the seam contains exactly one commit statement, so the single planted-violation site is unique", () => {
   // Literal bodies KEPT: the commit statement IS a string literal. Comments are
   // still stripped, so the header's prose about the commit cannot inflate the
