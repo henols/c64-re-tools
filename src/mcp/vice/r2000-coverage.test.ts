@@ -59,7 +59,7 @@ import {
   type R2000CrossReference,
   type R2000Symbol,
 } from "./r2000-coverage.ts";
-import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.ts";
+import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode } from "./disasm-decoder.ts";
 import { decodeRawData } from "./r2000-project.ts";
 
@@ -136,7 +136,15 @@ function loadFixture(dir: string): { projectPath: string; store: FixtureStore } 
   return { projectPath, store };
 }
 
-function reportFor(dir: string, overrides: Partial<FixtureStore> = {}): CoverageReport {
+/** `blockClassifier` is the ONLY caller-supplied classifier anywhere in this
+ * repository, and it is supplied only by the substitutability proof below.
+ * Omitting it -- which every other test in this file does -- resolves to the
+ * one production adapter inside `buildCoverageReport`, so the existing
+ * defaults are untouched. */
+function reportFor(
+  dir: string,
+  overrides: Partial<FixtureStore> & { blockClassifier?: BlockClassifier } = {},
+): CoverageReport {
   const { projectPath, store } = loadFixture(dir);
   return buildCoverageReport({
     projectPath,
@@ -144,6 +152,7 @@ function reportFor(dir: string, overrides: Partial<FixtureStore> = {}): Coverage
     comments: overrides.comments ?? store.comments,
     blocks: overrides.blocks ?? store.blocks,
     crossReferences: overrides.cross_references ?? store.cross_references,
+    ...(overrides.blockClassifier !== undefined ? { blockClassifier: overrides.blockClassifier } : {}),
   });
 }
 
@@ -620,6 +629,186 @@ test("independence: rewriting every block entry to one type leaves every census 
     after.divergence.censusCodeStoreNotCode > 0,
     "the divergence sub-report did not move at all -- if it cannot move, the independence assertion above is vacuous",
   );
+});
+
+// ---------------------------------------------------------------------------
+// 2b. Substitutability -- the same claim as 2, made against the BOUNDARY
+//     rather than against the data (SEAM-03, D-13)
+//
+// Section 2 above proves the census does not move when the block DATA is
+// rewritten. This section proves the stronger thing a later phase actually
+// needs: the census does not move when the whole block VOCABULARY is
+// replaced -- when a different implementation of "what class is this address,
+// according to the store" is substituted through `block-class.ts`'s
+// `BlockClassifier` seam.
+//
+// WHY THE SECOND VOCABULARY SHARES NO STRING WITH THE FIRST -- do NOT
+// "simplify" this back into overlap. Zero overlap is what makes a comparison
+// site LEFT BEHIND in `r2000-coverage.ts` observable. A left-behind site
+// compares a block entry's raw `type` against the production vocabulary's own
+// spelling; fed a listing spelled in that vocabulary it would agree with the
+// production adapter and hide. Fed a listing the substituted classifier reads
+// differently, it disagrees, and the divergence sub-report below stops moving
+// -- which is exactly the assertion that then goes red. Measured: restoring
+// one raw-string comparison at the divergence loop turns the non-vacuity
+// assertion below red, and nothing else in this file notices.
+// ---------------------------------------------------------------------------
+
+/** The production vocabulary, written out so the disjointness assertion below
+ * is a measurement rather than an eyeball. */
+const PRODUCTION_BLOCK_SPELLINGS: readonly string[] = ["Code", "Undefined", "Byte", "Address"];
+
+/** The substituted vocabulary. Every spelling is chosen to collide with
+ * nothing in `PRODUCTION_BLOCK_SPELLINGS` -- see this section's header. */
+const SUBSTITUTED_BLOCK_SPELLINGS: Record<BlockClass, string> = {
+  code: "EXECUTABLE_EXTENT",
+  undefined: "UNCLASSIFIED_EXTENT",
+  data: "OPAQUE_EXTENT",
+};
+
+/** A second, complete implementation of the boundary. Same inclusive-range,
+ * first-match-wins scan; a different vocabulary entirely. */
+const substitutedBlockClassAt: BlockClassifier = (blocks, address) => {
+  for (const block of blocks) {
+    if (!block) continue;
+    if (address >= block.start_address && address <= block.end_address) {
+      if (block.type === SUBSTITUTED_BLOCK_SPELLINGS.code) return "code";
+      if (block.type === SUBSTITUTED_BLOCK_SPELLINGS.undefined) return "undefined";
+      return "data";
+    }
+  }
+  return null;
+};
+
+test("substitutability: the two block vocabularies share no string, which is what makes a left-behind comparison site observable", () => {
+  const shared = Object.values(SUBSTITUTED_BLOCK_SPELLINGS).filter((spelling) =>
+    PRODUCTION_BLOCK_SPELLINGS.includes(spelling),
+  );
+  assert.deepEqual(
+    shared,
+    [],
+    "the substituted vocabulary shares a spelling with the production one -- a comparison site left behind in " +
+      "r2000-coverage.ts could then agree with the adapter by accident and hide from the proof below",
+  );
+});
+
+test("substitutability: feeding the census a second, zero-overlap block vocabulary through the adapter leaves every census byte count exact and moves only the divergence sub-report", () => {
+  const before = reportFor(WELL_DOCUMENTED);
+  const after = reportFor(WELL_DOCUMENTED, { blockClassifier: substitutedBlockClassAt });
+
+  for (const key of ["reachedAsInstruction", "tableEntry", "referencedAsData", "unreached", "linearSweepDecodable", "rangeBytes"] as const) {
+    assert.equal(
+      after.structural[key],
+      before.structural[key],
+      `substituting the block vocabulary moved structural.${key} -- the census must be a pure function of the ` +
+        "bytes and the seed set, so a store substitution may not reach it at all",
+    );
+  }
+  assert.deepEqual(
+    after.structural.classRuns,
+    before.structural.classRuns,
+    "substituting the block vocabulary moved a class run -- the run boundaries are derived from the bytes alone",
+  );
+
+  // The bytes side of the same report must not have moved either. The
+  // matching store-side half is asserted separately below, on an UNGRADED
+  // comment set -- see that test for why it cannot be asserted here.
+  assert.ok(before.reproducibility.comparisons.length > 0, "the fixture must actually sample something, or the loop below is vacuous");
+  for (const [i, beforeComparison] of before.reproducibility.comparisons.entries()) {
+    const afterComparison = after.reproducibility.comparisons[i]!;
+    assert.equal(afterComparison.address, beforeComparison.address, "the sample itself must not depend on the store vocabulary");
+    assert.equal(
+      afterComparison.fromBytes,
+      beforeComparison.fromBytes,
+      `substituting the block vocabulary moved reproducibility.comparisons[${i}].fromBytes -- the bytes side must not read the store at all`,
+    );
+  }
+
+  // The non-vacuity half. Without this the assertions above are satisfied by a
+  // substitution that changes nothing.
+  assert.equal(before.divergence.censusCodeStoreNotCode, 0);
+  assert.ok(
+    after.divergence.censusCodeStoreNotCode > 0,
+    "the divergence sub-report did not move at all -- if a vocabulary substitution cannot move it, the " +
+      "substitutability assertions above are vacuous, and a comparison site left behind in the divergence loop " +
+      "would look exactly like this",
+  );
+});
+
+test("substitutability: on an UNGRADED comment set every fromStore value moves while every fromBytes value holds -- the sharpest form of the bytes-versus-store claim", () => {
+  // MEASURED WHILE WRITING THIS TEST, and the reason it is a separate test
+  // rather than three more lines in the one above: on the well-documented
+  // fixture every sampled label carries a `[confirmed-code]`/`[probable-code]`
+  // grade, and `classFromStore()` answers from the GRADE and returns before it
+  // ever consults the block class. So a vocabulary substitution provably
+  // cannot move `fromStore` on that comment set -- not because the boundary
+  // failed to reach the store side, but because the store side had already
+  // answered from a different store surface. The confidence grades are a
+  // SECOND store surface this plan deliberately does not move.
+  //
+  // Rewriting every grade to `[unknown]` is what puts the block class on the
+  // answering path. The rest of each comment is preserved verbatim so the
+  // labels stay non-vacuous and therefore stay sampled.
+  const { store } = loadFixture(WELL_DOCUMENTED);
+  const ungraded: R2000Comment[] = store.comments.map((c) => ({
+    ...c,
+    comment: c.comment.replace(/^\[(confirmed|probable)-(code|data)\]/, "[unknown]"),
+  }));
+  assert.ok(
+    ungraded.every((c) => c.comment.startsWith("[unknown]")),
+    "every fixture comment must have been re-graded, or the fall-through to the block class is not exercised",
+  );
+
+  const before = reportFor(WELL_DOCUMENTED, { comments: ungraded });
+  const after = reportFor(WELL_DOCUMENTED, { comments: ungraded, blockClassifier: substitutedBlockClassAt });
+
+  assert.ok(before.reproducibility.comparisons.length > 0, "nothing was sampled, so the assertions below would be vacuous");
+  for (const [i, beforeComparison] of before.reproducibility.comparisons.entries()) {
+    const afterComparison = after.reproducibility.comparisons[i]!;
+    assert.equal(
+      afterComparison.fromBytes,
+      beforeComparison.fromBytes,
+      `substituting the block vocabulary moved reproducibility.comparisons[${i}].fromBytes -- the bytes side must not read the store at all`,
+    );
+    assert.notEqual(
+      afterComparison.fromStore,
+      beforeComparison.fromStore,
+      `reproducibility.comparisons[${i}].fromStore did not move -- the substitution never reached the store side, ` +
+        "so the fromBytes assertion beside it is vacuous",
+    );
+  }
+});
+
+test("idempotency: building the coverage report twice over the same fixture through the adapter yields deep-equal reports", () => {
+  const fixedNow = () => "2026-01-01T00:00:00.000Z";
+  const { projectPath, store } = loadFixture(WELL_DOCUMENTED);
+  const build = () =>
+    buildCoverageReport({
+      projectPath,
+      symbols: store.symbols,
+      comments: store.comments,
+      blocks: store.blocks,
+      crossReferences: store.cross_references,
+      blockClassifier: blockClassAt,
+      now: fixedNow,
+    });
+
+  assert.deepEqual(build(), build(), "the census must stay a pure function of the bytes and the seed set across repeated builds");
+});
+
+test("SUPPLEMENT (not the proof): the census module's source carries no production block-type literal", () => {
+  // Absence of a string demonstrates absence of a string. It is offered
+  // ALONGSIDE the substitutability proof above, never instead of it -- what a
+  // later phase needs is that a substituted implementation works, not that a
+  // particular spelling is unspelled.
+  const source = readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+  for (const spelling of PRODUCTION_BLOCK_SPELLINGS) {
+    assert.equal(
+      source.includes(`"${spelling}"`),
+      false,
+      `r2000-coverage.ts carries the block-type literal "${spelling}" -- the store's vocabulary belongs to block-class.ts alone`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
