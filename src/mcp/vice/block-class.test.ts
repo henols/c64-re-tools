@@ -99,6 +99,21 @@ test("a null/undefined hole inside the block array is skipped rather than thrown
   assert.equal(blockClassAt(holed, 0x0900), null, "a hole must not be mistaken for coverage either");
 });
 
+test("a non-array blocks argument returns null rather than throwing (IN-04)", () => {
+  // The doc comment's own premise -- "the listing arrives from a project file
+  // this process did not author" -- applies to the container as much as to its
+  // holes. Both production callers pre-guard with `Array.isArray(...) ? ... : []`,
+  // so this pins the symmetry rather than a reachable path: the defence belongs
+  // in the module that states the premise.
+  for (const notAnArray of [null, undefined, 42, "blocks", { start_address: 0x0810 }]) {
+    assert.equal(
+      blockClassAt(notAnArray as unknown as readonly BlockEntry[], 0x0820),
+      null,
+      `a ${typeof notAnArray} blocks argument must read as "covers nothing", not throw`,
+    );
+  }
+});
+
 test("first-match-wins on overlapping blocks -- the earliest array entry decides", () => {
   const overlapping: readonly BlockEntry[] = [
     { start_address: 0x0810, end_address: 0x084f, type: STORE_CODE },

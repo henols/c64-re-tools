@@ -108,7 +108,13 @@ export type BlockClassifier = (blocks: readonly BlockEntry[], address: number) =
  *
  * A linear scan, first-match-wins, with both range ends INCLUSIVE. A
  * `null`/`undefined` hole in the array is skipped rather than thrown on --
- * the listing arrives from a project file this process did not author.
+ * the listing arrives from a project file this process did not author. That
+ * premise applies to `blocks` ITSELF as well, so a non-array argument returns
+ * `null` here rather than throwing a `TypeError` out of the `for ... of`
+ * (IN-04). Both production callers already pre-guard with
+ * `Array.isArray(blocks) ? blocks : []`, so nothing is reachable today; the
+ * point is that the defence now lives in the module that DOCUMENTS the
+ * premise, instead of only in callers outside it.
  *
  * The mapping is total by construction: the store's code spelling becomes
  * `"code"`, its undefined spelling becomes `"undefined"`, and EVERY other
@@ -118,6 +124,7 @@ export type BlockClassifier = (blocks: readonly BlockEntry[], address: number) =
  * silently reading as code.
  */
 export const blockClassAt: BlockClassifier = (blocks, address) => {
+  if (!Array.isArray(blocks)) return null;
   for (const block of blocks) {
     if (!block) continue;
     if (address >= block.start_address && address <= block.end_address) {
