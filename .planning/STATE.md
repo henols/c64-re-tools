@@ -4,11 +4,11 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
-status: executing
-stopped_at: Completed 28-09-PLAN.md (gap 3 / CR-03 closed); phase 28 plan set complete, awaiting re-verification
+status: gaps_found
+stopped_at: Phase 28 re-verified after gap closure -- 9/11 must-haves, 2 gaps remain (snapshot identity; dangling-symlink confinement)
 last_updated: "2026-08-27T22:19:33.966Z"
 last_activity: 2026-08-28
-last_activity_desc: Completed 28-09-PLAN.md (gap 3 / CR-03 -- real-path workspace confinement)
+last_activity_desc: Phase 28 gap-closure run complete (28-07..28-09); re-verification returned gaps_found at 9/11
 state_head: 5bd76e9528e42755d376ee9362c5beddebbb4585
 progress:
   total_phases: 6
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — EXECUTING
-Plan: 9 of 9 executed; gap closure 28-07..28-09 all done (gaps 1-2, CR-02/WR-04/WR-11, and gap 3 / CR-03)
-Status: Phase 28 plan set complete — all four verification gaps closed; awaiting re-verification
-Last activity: 2026-08-28 — Completed 28-09-PLAN.md (gap 3 / CR-03, real-path workspace confinement)
+Phase: 28 (The Store Core) — GAPS FOUND (re-verified)
+Plan: 9 of 9 executed; gap closure 28-07..28-09 all landed
+Status: 9/11 must-haves (was 8/11). Gap 2 (prune ordering) CLOSED. Gaps 1 and 3 remain: the named remedies were implemented and independently re-verified, but three NEW destructive ring failures were reproduced (two of them regressions introduced by 28-07) and the confinement bypass survives for DANGLING symlinks. See 28-VERIFICATION.md.
+Last activity: 2026-08-28 — Phase 28 re-verification returned gaps_found
 
 ## Performance Metrics
 
