@@ -23,9 +23,8 @@ import {
   R2000_AVAILABLE,
   skipReasonFor,
   assertR2000RequiredIfEnvSet,
-  ACME_AVAILABLE,
-  assertAcmeRequiredIfEnvSet,
 } from "./r2000-test-gate.ts";
+import { ACME_AVAILABLE, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

@@ -54,7 +54,7 @@ import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
 import { CommandType } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
-import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 
 // ---------------------------------------------------------------------------
 // Gate: is a real ACME reachable at ACME_BIN? Uses the shared

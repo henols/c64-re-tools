@@ -44,7 +44,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");

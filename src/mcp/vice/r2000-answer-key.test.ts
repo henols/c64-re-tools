@@ -228,7 +228,7 @@ import {
   ACME_BIN,
   acmeSkipReasonFor,
   assertAcmeRequiredIfEnvSet,
-} from "./r2000-test-gate.ts";
+} from "./acme-gate.ts";
 
 const FIXTURE_DIR = join(EVIDENCE_DIR, "fixture");
 const FIXTURE_SOURCE = join(FIXTURE_DIR, "recon-subject.a");
