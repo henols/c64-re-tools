@@ -104,18 +104,50 @@ import { DatabaseSync } from "node:sqlite";
 
 import { buildPaintIndex, type PaintIndex } from "./anno-index.ts";
 import {
+  assertAccessKind,
+  assertCommentText,
+  assertCommentType,
   assertDataType,
+  assertEnumName,
+  assertLabelKind,
+  assertLegalLabel,
   assertRangeShape,
+  AnnoLabelError,
   AnnoStoreCorruptError,
   AnnoStoreError,
   AnnoStorePathError,
   AnnoStoreStaleRevisionError,
+  AnnoTypeError,
   parseStoreAddress,
+  parseVariantKey,
   storePathWithinWorkspace,
   SCHEMA_VERSION,
+  type CommentRow,
+  type CommentType,
   type DataType,
+  type LabelKind,
+  type LabelRow,
+  type ProjectEnumRow,
   type RangeRow,
+  type ScopeRow,
+  type XrefAccessKind,
+  type XrefRow,
 } from "./anno-types.ts";
+
+/**
+ * What every write entry point in this module returns.
+ *
+ * `changed` is the ONLY signal that distinguishes a no-op from a real edit. The
+ * revision is NOT that signal: every accepted write advances it by exactly one,
+ * including a write that turned out to be identical to what was already stored.
+ * That is deliberate -- a repeated identical write is accepted rather than
+ * refused (an agent re-running an annotation pass must not have to diff first),
+ * and the revision has to advance for the snapshot ring to stay meaningful.
+ */
+export interface AnnoWriteResult {
+  revision: number;
+  changed: boolean;
+}
 
 /**
  * The complete on-disk schema, created in full at first open so
@@ -386,7 +418,31 @@ function runWriteSequence<T>(
 
   handle.db.prepare("insert into anno_snapshot(revision, path) values (?, ?)").run(rev, snapPath);
 
-  const result = mutate(handle.db);
+  // A REFUSAL RAISED INSIDE THE MUTATION MUST ROLL THE WHOLE SEQUENCE BACK.
+  // Several entry points below refuse from inside their mutation on purpose,
+  // because the refusal needs to read rows -- a label name already bound to a
+  // different address is the load-bearing case, and reading it outside the
+  // transaction would open a window in which a concurrent writer binds the
+  // name between the read and the insert. Without this rollback the thrown
+  // refusal would leave the transaction OPEN with the revision compare-and-swap
+  // already applied, so `currentRevision()` on this same connection would report
+  // an advanced revision for a write that was refused, and every later statement
+  // would run inside a transaction nobody meant to start.
+  //
+  // The inner catch is deliberately silent: if the rollback itself fails there
+  // is nothing useful to do with that second error, and reporting it would
+  // replace the caller's actual refusal with a confusing one.
+  let result: T;
+  try {
+    result = mutate(handle.db);
+  } catch (mutationError) {
+    try {
+      handle.db.exec("rollback");
+    } catch {
+      // deliberately ignored -- see above
+    }
+    throw mutationError;
+  }
 
   if (doCommit) {
     commitTransaction(handle.db);
@@ -440,30 +496,38 @@ function insertRange(db: DatabaseSync, start: number, endInclusive: number, data
  * sides has both its head and its tail discarded. That case is therefore the
  * detector, and a proof that exercises only the other four proves nothing.
  *
- * Returns how many `anno_range` rows the mutation touched (deletes plus
- * inserts).
+ * Returns whether the mutation CHANGED anything. Typing a range that is already
+ * exactly that range with exactly that type is a no-op: it leaves the single
+ * existing row alone and reports `false`. The revision still advances, because
+ * every accepted write advances it by exactly one -- so `changed` is the ONLY
+ * signal that distinguishes a no-op, and the revision is never that signal.
  */
-function retype(db: DatabaseSync, start: number, endInclusive: number, dataType: DataType): number {
+function retype(db: DatabaseSync, start: number, endInclusive: number, dataType: DataType): boolean {
   const overlapping = db
     .prepare("select id, start, end_inclusive, data_type from anno_range where end_inclusive >= ? and start <= ? order by id")
     .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string }[];
 
-  let touched = 0;
+  if (
+    overlapping.length === 1 &&
+    overlapping[0].start === start &&
+    overlapping[0].end_inclusive === endInclusive &&
+    overlapping[0].data_type === dataType
+  ) {
+    return false;
+  }
+
   for (const row of overlapping) {
     db.prepare("delete from anno_range where id = ?").run(row.id);
-    touched += 1;
     if (row.start < start) {
       insertRange(db, row.start, start - 1, row.data_type);
-      touched += 1;
     }
     if (row.end_inclusive > endInclusive) {
       insertRange(db, endInclusive + 1, row.end_inclusive, row.data_type);
-      touched += 1;
     }
   }
 
   insertRange(db, start, endInclusive, dataType);
-  return touched + 1;
+  return true;
 }
 
 /**
@@ -476,7 +540,7 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
 export function setDataType(
   handle: AnnoStoreHandle,
   args: { start: number | string; endInclusive: number | string; dataType: unknown; baseRevision?: number },
-): { revision: number; changed: number } {
+): AnnoWriteResult {
   const dataType = assertDataType(args.dataType);
   // ORDERING IS LOAD-BEARING: `parseStoreAddress` owns the STRING forms only
   // -- what base is this text in, and is it a form the store accepts at all --
@@ -559,4 +623,454 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
  * `buildPaintIndex(listRanges(handle))` -- it holds nothing between calls. */
 export function paintIndexOf(handle: AnnoStoreHandle): PaintIndex {
   return buildPaintIndex(listRanges(handle));
+}
+
+// ---------------------------------------------------------------------------
+// The five annotation kinds: labels, comments, scopes, project enums and
+// cross-references. Every entry point below VALIDATES FIRST and only then goes
+// through `applyWrite`, so no SQL runs on an unvalidated argument. Every
+// statement is `prepare().run()` with bound parameters -- `exec()` stays
+// restricted to the fixed `DDL`, the transaction keywords and the one escaped
+// `vacuum into` (trap 3).
+// ---------------------------------------------------------------------------
+
+/**
+ * Binds `name` to `address` with label kind `kind`.
+ *
+ * THE COLLISION IS REFUSED, NEVER RESOLVED. A name already bound to a
+ * DIFFERENT address throws `AnnoLabelError` naming the name and both addresses.
+ * It is not rebound, not suffixed and not sanitised: see `anno-types.ts` trap 7
+ * for the hazard, which is that any of those silently merges or moves a name a
+ * human deliberately chose, with nothing recording that it happened.
+ *
+ * The DDL's `unique(name)` constraint is a SECOND LINE OF DEFENCE and is
+ * deliberately not the observable refusal. The named error is thrown first, from
+ * inside the mutation's own transaction so a concurrent writer cannot bind the
+ * name between the read and the insert; the constraint only catches a path that
+ * bypassed this function entirely.
+ *
+ * The name-versus-name comparison is EXACT BYTE EQUALITY -- the SQL `=` on a
+ * text column with the default (binary) collation, matching the definition
+ * `assertLegalLabel()`'s doc comment states. No case folding, no Unicode
+ * normalisation, no trimming.
+ */
+export function setLabel(
+  handle: AnnoStoreHandle,
+  args: { address: number | string; name: unknown; kind: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const address = parseStoreAddress(args.address, { what: "address" });
+  const name = assertLegalLabel(args.name);
+  const kind: LabelKind = assertLabelKind(args.kind);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db.prepare("select id, address, kind from anno_label where name = ?").get(name) as
+        | { id: number; address: number; kind: string }
+        | undefined;
+
+      if (existing && existing.address !== address) {
+        throw new AnnoLabelError(
+          `label name ${JSON.stringify(name)} is already bound to address ${existing.address} ` +
+            `($${existing.address.toString(16).padStart(4, "0")}) and cannot also name address ${address} ` +
+            `($${address.toString(16).padStart(4, "0")}) -- the write is REFUSED rather than rebinding the name or inventing a variant of it, ` +
+            `because either would silently merge or move a name somebody chose on purpose`,
+          { identifier: name, reason: "name already bound to a different address", existingAddress: existing.address, requestedAddress: address },
+        );
+      }
+
+      if (existing) {
+        if (existing.kind === kind) return false;
+        db.prepare("update anno_label set kind = ? where id = ?").run(kind, existing.id);
+        return true;
+      }
+
+      db.prepare("insert into anno_label(address, name, kind, bank) values (?, ?, ?, ?)").run(address, name, kind, null);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every label, in ascending `id` order. One of the row mappers that read the
+ * reserved `bank` column -- see `listRanges()` for why nothing else may. */
+export function listLabels(handle: AnnoStoreHandle): LabelRow[] {
+  const rows = handle.db.prepare("select id, address, name, kind, bank from anno_label order by id").all() as {
+    id: number;
+    address: number;
+    name: string;
+    kind: string;
+    bank: number | null;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    address: row.address,
+    name: row.name,
+    kind: row.kind as LabelKind,
+    bank: row.bank,
+  }));
+}
+
+/**
+ * Stores `text` as the `commentType` comment at `address`, replacing whatever
+ * was there. One comment per `(address, comment_type)` pair -- the DDL's own
+ * unique constraint -- so the two placements coexist at one address and a
+ * repeated write of the same placement replaces rather than accumulates.
+ *
+ * A byte-identical repeat reports `changed:false`: it is accepted, not refused,
+ * and the revision still advances (see `AnnoWriteResult`).
+ */
+export function setComment(
+  handle: AnnoStoreHandle,
+  args: { address: number | string; commentType: unknown; text: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const address = parseStoreAddress(args.address, { what: "address" });
+  const commentType: CommentType = assertCommentType(args.commentType);
+  const text = assertCommentText(args.text);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db.prepare("select id, text from anno_comment where address = ? and comment_type = ?").get(address, commentType) as
+        | { id: number; text: string }
+        | undefined;
+
+      if (existing) {
+        if (existing.text === text) return false;
+        db.prepare("update anno_comment set text = ? where id = ?").run(text, existing.id);
+        return true;
+      }
+
+      db.prepare("insert into anno_comment(address, comment_type, text, bank) values (?, ?, ?, ?)").run(address, commentType, text, null);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every comment, in ascending `id` order. Reads the reserved `bank` column. */
+export function listComments(handle: AnnoStoreHandle): CommentRow[] {
+  const rows = handle.db.prepare("select id, address, comment_type, text, bank from anno_comment order by id").all() as {
+    id: number;
+    address: number;
+    comment_type: string;
+    text: string;
+    bank: number | null;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    address: row.address,
+    commentType: row.comment_type as CommentType,
+    text: row.text,
+    bank: row.bank,
+  }));
+}
+
+/**
+ * Adds a lexical scope over the inclusive range `start..endInclusive`.
+ *
+ * NO NESTING, and that is a faithful mirror rather than a shortcut: the schema
+ * this store mirrors says in as many words that nested scopes are not supported
+ * (`r2000-tools.ts:320-324`). Inventing nesting here would create annotations no
+ * exporter downstream can express.
+ *
+ * The shape check passes a NON-SPLIT data type on purpose. `assertRangeShape()`
+ * carries the split-table even-count rule, and a scope is not a table -- a
+ * three-byte routine is a perfectly good scope. Passing `"byte"` selects the
+ * two rules that do apply (both ends inside the address space; the end not below
+ * the start) and none of the ones that do not.
+ *
+ * ADDITIVE, matching the verb's own name in the schema (`add_scope`): two
+ * identical calls produce two rows. There is no unique constraint on
+ * `anno_scope` to make it otherwise, and collapsing duplicates here would be
+ * this module inventing a policy the surface does not have.
+ */
+export function addScope(
+  handle: AnnoStoreHandle,
+  args: { start: number | string; endInclusive: number | string; baseRevision?: number },
+): AnnoWriteResult {
+  const start = parseStoreAddress(args.start, { what: "start" });
+  const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
+  assertRangeShape(start, endInclusive, "byte");
+
+  const { revision } = applyWrite(
+    handle,
+    (db) => {
+      db.prepare("insert into anno_scope(start, end_inclusive) values (?, ?)").run(start, endInclusive);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: true };
+}
+
+/** Every scope, in ascending `id` order. `anno_scope` has no `bank` column --
+ * a scope is a lexical region, not a memory view. */
+export function listScopes(handle: AnnoStoreHandle): ScopeRow[] {
+  const rows = handle.db.prepare("select id, start, end_inclusive from anno_scope order by id").all() as {
+    id: number;
+    start: number;
+    end_inclusive: number;
+  }[];
+  return rows.map((row) => ({ id: row.id, start: row.start, endInclusive: row.end_inclusive }));
+}
+
+/**
+ * Validates one project enum's variants mapping and returns it with its KEYS
+ * VERBATIM.
+ *
+ * Every key goes through `parseVariantKey()`, which accepts exactly the forms
+ * the schema names -- decimal, `0x`/`$` hex, `0b`/`%` binary -- and refuses
+ * anything else. The parsed VALUE is used only to detect two keys naming the
+ * same number, which is refused: `"64"` and `"$40"` in one mapping would mean
+ * two variant names for one value, and nothing downstream could say which one
+ * was meant.
+ *
+ * The keys are NOT canonicalised. A caller that wrote `"$40"` reads back
+ * `"$40"`, because round-tripping by value is the store's contract and a
+ * rewritten key is a value the caller never supplied.
+ *
+ * Every variant NAME is checked as an identifier, for the same reason a label
+ * name is: it is emitted as a symbol downstream, so garbage accepted here
+ * becomes an export failure a long way from its cause.
+ */
+function validatedVariants(variants: unknown): Record<string, string> {
+  if (typeof variants !== "object" || variants === null || Array.isArray(variants)) {
+    throw new AnnoTypeError(`enum variants ${JSON.stringify(variants)} is not a mapping of numeric-string keys to variant names`, {
+      dataType: variants,
+    });
+  }
+  const out: Record<string, string> = {};
+  const seenValues = new Map<number, string>();
+  for (const [key, value] of Object.entries(variants as Record<string, unknown>)) {
+    const numeric = parseVariantKey(key);
+    const alreadyAt = seenValues.get(numeric);
+    if (alreadyAt !== undefined) {
+      throw new AnnoTypeError(
+        `enum variant keys ${JSON.stringify(alreadyAt)} and ${JSON.stringify(key)} both name the value ${numeric} -- refusing a mapping ` +
+          `with two names for one value, because nothing downstream could say which was meant`,
+        { dataType: key },
+      );
+    }
+    seenValues.set(numeric, key);
+    out[key] = assertEnumName(value);
+  }
+  return out;
+}
+
+/** Bounds a project enum's free-text description with the same byte bound
+ * comment text carries, and without the semicolon rule -- a description is not
+ * assembler comment text, so a leading `';'` is merely a character. */
+function validatedDescription(description: unknown): string | null {
+  if (description === undefined || description === null) return null;
+  return assertCommentText(description, { what: "description", allowLeadingSemicolon: true });
+}
+
+function readEnumRow(db: DatabaseSync, name: string): { id: number; name: string; variants: string; description: string | null } | undefined {
+  return db.prepare("select id, name, variants, description from anno_enum where name = ?").get(name) as
+    | { id: number; name: string; variants: string; description: string | null }
+    | undefined;
+}
+
+/**
+ * Creates a project-local enum.
+ *
+ * A byte-identical repeat is a no-op reporting `changed:false`, so re-running a
+ * generation pass is safe. A DIFFERENT enum under an existing name is REFUSED
+ * with `AnnoLabelError` naming the collision, rather than overwritten -- the
+ * same rule as a label, for the same reason.
+ *
+ * THERE IS NO DELETE VERB, here or anywhere in this module, and that is a
+ * decision rather than an omission: the delete tool on the surface this store
+ * mirrors has zero callers, and a regenerated enum set replaces an old one
+ * through create-then-update. A delete verb whose only exercise is a test is a
+ * data-loss path with no user.
+ */
+export function createProjectEnum(
+  handle: AnnoStoreHandle,
+  args: { name: unknown; variants: unknown; description?: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const name = assertEnumName(args.name);
+  const variants = validatedVariants(args.variants);
+  const description = validatedDescription(args.description);
+  const variantsJson = JSON.stringify(variants);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = readEnumRow(db, name);
+      if (existing) {
+        if (existing.variants === variantsJson && existing.description === description) return false;
+        throw new AnnoLabelError(
+          `project enum ${JSON.stringify(name)} already exists with different contents -- the write is REFUSED rather than overwriting it. ` +
+            `Use the update entry point, which replaces the variants mapping wholesale and says so.`,
+          { identifier: name, reason: "enum name already in use with different contents" },
+        );
+      }
+      db.prepare("insert into anno_enum(name, variants, description) values (?, ?, ?)").run(name, variantsJson, description);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/**
+ * Updates a project-local enum: renames it, replaces its variants mapping, and
+ * replaces its description, in any combination.
+ *
+ * THE VARIANTS MAPPING IS REPLACED WHOLESALE when one is supplied, matching the
+ * schema's own words ("complete updated variants mapping"). It is not merged: a
+ * merge would make a variant impossible to REMOVE, since there would be no way
+ * to express its absence.
+ *
+ * A rename onto a name another enum already holds is refused, not merged.
+ */
+export function updateProjectEnum(
+  handle: AnnoStoreHandle,
+  args: { name: unknown; newName?: unknown; variants?: unknown; description?: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const name = assertEnumName(args.name);
+  const newName = args.newName === undefined ? undefined : assertEnumName(args.newName);
+  const variants = args.variants === undefined ? undefined : validatedVariants(args.variants);
+  const variantsJson = variants === undefined ? undefined : JSON.stringify(variants);
+  const description = args.description === undefined ? undefined : validatedDescription(args.description);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = readEnumRow(db, name);
+      if (!existing) {
+        throw new AnnoLabelError(`project enum ${JSON.stringify(name)} does not exist, so there is nothing to update`, {
+          identifier: name,
+          reason: "no such enum",
+        });
+      }
+      if (newName !== undefined && newName !== name) {
+        const clash = readEnumRow(db, newName);
+        if (clash) {
+          throw new AnnoLabelError(
+            `cannot rename project enum ${JSON.stringify(name)} to ${JSON.stringify(newName)}: that name is already held by another enum -- ` +
+              `the rename is REFUSED rather than merging two enums into one`,
+            { identifier: newName, reason: "rename target already in use" },
+          );
+        }
+      }
+
+      const nextName = newName ?? existing.name;
+      const nextVariants = variantsJson ?? existing.variants;
+      const nextDescription = description === undefined ? existing.description : description;
+      if (nextName === existing.name && nextVariants === existing.variants && nextDescription === existing.description) {
+        return false;
+      }
+
+      db.prepare("update anno_enum set name = ?, variants = ?, description = ? where id = ?").run(
+        nextName,
+        nextVariants,
+        nextDescription,
+        existing.id,
+      );
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every project enum, in ascending `id` order, with its variants mapping
+ * parsed back out of the single JSON text column. */
+export function listProjectEnums(handle: AnnoStoreHandle): ProjectEnumRow[] {
+  const rows = handle.db.prepare("select id, name, variants, description from anno_enum order by id").all() as {
+    id: number;
+    name: string;
+    variants: string;
+    description: string | null;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    variants: JSON.parse(row.variants) as Record<string, string>,
+    description: row.description,
+  }));
+}
+
+/**
+ * Records ONE NON-DERIVABLE cross-reference.
+ *
+ * THIS IS THE C-5 RECONCILIATION, written down here for a reader of the code
+ * rather than left in a plan. Two requirement texts look like they conflict:
+ * `STORE-05` requires cross-reference rows to carry their access kind from the
+ * first write, while the cross-reference criterion requires references to be
+ * DERIVED on every query and never cached on disk. Both hold at once, and this
+ * entry point is where:
+ *
+ *   * the table and its `access_kind` column exist from the first write (the
+ *     `DDL` above), so `STORE-05` is satisfied structurally;
+ *   * the only rows ever written here are references that CANNOT be recovered
+ *     from the bytes -- hand-asserted, or resolved from something outside the
+ *     program image. The `COMPUTED_JUMP` case is exactly that: a computed
+ *     dispatch produces no reference derivable from the bytes at all, which is
+ *     why it needs somewhere to live;
+ *   * nothing derivable is ever written here. A cached derivation would be a
+ *     SECOND ON-DISK TRUTH that can disagree with the range table it came from,
+ *     and the disagreement is invisible because both answers look
+ *     authoritative. `resolveSplitTargets()` in `anno-types.ts` derives and
+ *     returns; it never writes.
+ *
+ * The positive pin is in `anno-store.test.ts`: typing a `lo_hi_address` range,
+ * whose targets are fully derivable from its bytes, leaves this table with zero
+ * rows.
+ *
+ * Two references sharing a `from`/`to` pair but carrying different access kinds
+ * are TWO ROWS. They are not merged: `READ` and `WRITE` at one pair of
+ * addresses are two different facts, and merging them would invent a third.
+ */
+export function putXref(
+  handle: AnnoStoreHandle,
+  args: { fromAddress: number | string; toAddress: number | string; accessKind: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const fromAddress = parseStoreAddress(args.fromAddress, { what: "fromAddress" });
+  const toAddress = parseStoreAddress(args.toAddress, { what: "toAddress" });
+  const accessKind: XrefAccessKind = assertAccessKind(args.accessKind);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db
+        .prepare("select id from anno_xref where from_address = ? and to_address = ? and access_kind = ?")
+        .get(fromAddress, toAddress, accessKind) as { id: number } | undefined;
+      if (existing) return false;
+      db.prepare("insert into anno_xref(from_address, to_address, access_kind, bank) values (?, ?, ?, ?)").run(
+        fromAddress,
+        toAddress,
+        accessKind,
+        null,
+      );
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every stored cross-reference, in ascending `id` order. Empty unless
+ * something called `putXref()` -- typing a range never puts a row here, and a
+ * test pins that. Reads the reserved `bank` column. */
+export function listXrefs(handle: AnnoStoreHandle): XrefRow[] {
+  const rows = handle.db.prepare("select id, from_address, to_address, access_kind, bank from anno_xref order by id").all() as {
+    id: number;
+    from_address: number;
+    to_address: number;
+    access_kind: string;
+    bank: number | null;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    fromAddress: row.from_address,
+    toAddress: row.to_address,
+    accessKind: row.access_kind as XrefAccessKind,
+    bank: row.bank,
+  }));
 }
