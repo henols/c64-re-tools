@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-08-27T13:36:50.959Z"
+stopped_at: Completed 28-04-PLAN.md
+last_updated: "2026-08-27T14:07:32.305Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 28 execution started
-state_head: 46d7532d8018894c89bec044e5b4dc5160b2b875
+state_head: 8991d73cd5f52a1336b594ad80e79b89fec018d3
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 28 execution started
 
@@ -292,6 +292,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 27 P05 | 49 min | 3 tasks | 2 files |
 | Phase 28 P01 | 21 min | 3 tasks | 7 files |
 | Phase 28 P02 | 19 min | 2 tasks | 1 files |
+| Phase 28 P04 | 27 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -594,6 +595,10 @@ Recent decisions affecting current work:
 - [Phase 28]: The node:sqlite single-seam detector is one substring test over literal-bodies-kept stripped source, with a comment-only negative control — node:sqlite has four working access routes and only the prefixed specifier resolves; a two-regex import idiom is blind to getBuiltinModule entirely. The cost is the string-literal half of the control, which cannot coexist with literal-bodies-kept mode.
 - [Phase 28]: A4's equal-length tie-break non-vacuity is proven by RELABELLING one of two equal-span rows (7/9 -> 9, then 7/3 -> 7), not by exchanging two ids -- exchanging ids between identical spans is a no-op on the row set — The plan's literal 'expect 7 after exchanging the ids' contradicts the rule it pins; array-order reversal plus relabelling carries the intent (no hard-coded answer can satisfy both)
 - [Phase 28]: anno-index.ts's import purity is asserted as an exact one-element specifier SET plus family exclusions and a dynamic-import prohibition, NOT as 'import type' — The module imports two error CLASSES it throws, so a type-only import is unreachable; the specifier set is what the constraint actually exists to enforce
+- [Phase 28]: AnnoLabelError carries its offending identifier in a field named `identifier`, never `name` -- `name` is `Error.prototype.name`, which every constructor in the AnnoStoreError family assigns the class name to — A public `name` field would overwrite "AnnoLabelError", so a catch block asking which error it caught would be told the answer to a different question. The plan named the field `name`; the rename is the fix.
+- [Phase 28]: setDataType now returns AnnoWriteResult { revision, changed: boolean } rather than a touched-row count, and retype short-circuits an exact no-op — Required by the plan own idempotency truth ("the identical range type a second time ... reports changed:false"), and it matches the shape plan 28-05 already declares for SetDataTypeResult. No consumer outside the tests existed. changed is the only no-op signal; the revision still advances by exactly one on every accepted write.
+- [Phase 28]: runWriteSequence rolls the whole sequence back when the caller mutation throws, so a refusal raised inside a mutation cannot leave an open transaction with the revision compare-and-swap already applied — The label-collision refusal has to read rows, so it lives inside the mutation transaction (closing the window in which a concurrent writer binds the name between the read and the insert). Without the rollback, currentRevision() reported an advanced revision for a refused write.
+- [Phase 28]: Project-enum variant keys are validated against the four numeric-string forms the schema names but NEVER canonicalised, and two keys naming the same value are refused — Round-tripping by value is the store contract, so a caller that wrote "$40" reads back "$40" -- a rewritten key is a value the caller never supplied. Two keys for one value would be two variant names for one number, with nothing downstream able to say which was meant.
 
 ### Pending Todos
 
@@ -1177,8 +1182,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T13:36:50.870Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-08-27T14:06:07.443Z
+Stopped at: Completed 28-04-PLAN.md
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is
