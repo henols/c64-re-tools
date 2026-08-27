@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: "Completed 28-07-PLAN.md (gap closure: gaps 1 and 2 closed); next 28-08"
-last_updated: "2026-08-27T21:43:55.608Z"
-last_activity: 2026-08-27
-last_activity_desc: Phase 28 execution started
-state_head: ee4c256727d2385972dddd57b10842525f643927
+stopped_at: "Completed 28-08-PLAN.md (CR-02, WR-04 and WR-11 closed); next 28-09"
+last_updated: "2026-08-27T22:01:35.284Z"
+last_activity: 2026-08-28
+last_activity_desc: Completed 28-08-PLAN.md (CR-02, WR-04, WR-11)
+state_head: fef449cb129678f7d39016165d13b3ab72ace094
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 13
   percent: 17
 ---
 
@@ -146,9 +146,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 7 of 9 executed; gap closure running 28-07..28-09 (28-07 done, 28-08 and 28-09 remain)
+Plan: 8 of 9 executed; gap closure running 28-07..28-09 (28-07 and 28-08 done, 28-09 remains)
 Status: Executing Phase 28 (gap closure, --gaps-only)
-Last activity: 2026-08-27 — Phase 28 execution started
+Last activity: 2026-08-28 — Completed 28-08-PLAN.md (CR-02 / WR-04 / WR-11)
 
 ## Performance Metrics
 
@@ -297,6 +297,7 @@ Last activity: 2026-08-27 — Phase 28 execution started
 | Phase 28 P05 | 21 min | 2 tasks | 4 files |
 | Phase 28 P06 | 26 min | 3 tasks | 5 files |
 | Phase 28 P07 | 16 min | 2 tasks | 2 files |
+| Phase 28 P08 | 21 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -615,6 +616,8 @@ Recent decisions affecting current work:
 - [Phase 28]: The mutator's mutation is a single raw insert rather than setDataType — setDataType hard-wires the committing wrapper, so routing one mode through it would make the committing and planted modes differ in more than the commit -- the exact drift a parameterised planting exists to prevent. retype()'s split-and-preserve logic is STORE-02's subject and is proven in anno-overlap.test.ts.
 - [Phase 28]: reconcileSnapshotRing reads retainedRevisions() rather than re-deciding with an existsSync of its own -- one predicate, every consumer, so the row-only regression cannot hide from the proofs that catch it — A fourth independent existsSync would both reintroduce the three-way drift this plan exists to remove and leave the mandated planted red green
 - [Phase 28]: A snapshot FILE is removed only after the store has stopped claiming its revision; a revert reconciles the restored pointer table against the directory, and the refusal for a missing file is the same named AnnoStoreError a missing row already produced — Closes 28-VERIFICATION gaps 1 and 2 (CR-01, WR-01, WR-02); the published floor can no longer name a revision revertTo would refuse
+- [Phase 28]: A published snapshot has exactly ONE writer -- the one whose compare-and-swap won and whose pointer row commits it: stageSnapshot vacuums into a per-ATTEMPT r<rev>.<pid>.<uuid>.tmp, publishSnapshot renames onto r<rev>.db only after the CAS, discardSnapshot cleans every other exit — The pre-fix comment removed the published path before the lock on a TRUE premise (vacuum into refuses an existing target; a revision number recurs after a revert); the recurrence is now handled by the rename, which overwrites without a prior removal and is performed by the owner. A refusal must be indistinguishable from the attempt never having happened, on disk included
+- [Phase 28]: The WR-11 CAS-failure branch is pinned STRUCTURALLY with the reason stated in the test, and the second revision is read from anno_meta BEFORE the rollback — runWriteSequence is fully synchronous, so no in-process interleave can land between the pre-transaction read and begin immediate, and a spawned child racing it would be timing-dependent -- a flaky probe is worse evidence than an honest structural one. The reachable pre-transaction arm stays behaviourally pinned at anno-store.test.ts:320
 
 ### Pending Todos
 
@@ -1198,8 +1201,63 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T21:43:55.450Z
-Stopped at: Completed 28-07-PLAN.md (gap closure: gaps 1 and 2 closed); next 28-08
+Last session: 2026-08-27T22:01:35.120Z
+Stopped at: Completed 28-08-PLAN.md (CR-02, WR-04 and WR-11 closed); next 28-09
+  Plan 28-08 is complete: 2 tasks, 2 task commits (`6846492`, `f5805ae`), 21
+  min. It is the SECOND of the three gap-closure plans (waves 5-7); 28-09 (gap
+  3, CR-03's symlink confinement bypass) remains. **CR-02 is closed at the
+  cause.** The `rmSync` + `vacuum into` pair that ran BEFORE `begin immediate`,
+  outside any lock, on a path a committed pointer row already owned, is gone.
+  The ring now has ONE OWNER PER PUBLISHED FILE: `stageSnapshot(handle, rev)`
+  (exported, and exported for exactly one reason -- the ownership proof must
+  drive the identical production code) vacuums into
+  `snapshots/r<rev>.<pid>.<uuid>.tmp` and never names the published path;
+  module-private `publishSnapshot` is the only `renameSync` onto
+  `r<rev>.db` and runs only BETWEEN the won compare-and-swap and the
+  pointer-row insert; module-private `discardSnapshot` runs on the CAS-failure
+  path and the mutation-error path and is a safe no-op after a publication. The
+  staging suffix is deliberately outside plan 28-07's `r<digits>.db` sweep
+  pattern -- that anchoring is the live contract between the two plans and
+  neither side may drift. The old comment's TRUE premise (`vacuum into` refuses
+  an existing target; a revision number recurs after a revert) is KEPT and the
+  reversal of its remedy recorded on `publishSnapshot`. **WR-11 closed**: the
+  CAS-failure refusal reads the moved-to revision from `anno_meta` BEFORE the
+  rollback and carries both `baseRevision` and `currentRevision`, pinned
+  structurally with the reason for a structural pin stated in the test (the
+  branch is not deterministically reachable -- `runWriteSequence` is
+  synchronous -- and the reachable pre-transaction arm stays behaviourally
+  pinned at `anno-store.test.ts:320`). **WR-04 closed**: `new DatabaseSync` and
+  the fresh-store DDL block are both wrapped; a directory-as-path and a
+  missing-parent path are refused with `AnnoStorePathError` inside the
+  `ViceError` family, and a fresh-init failure rolls back and closes its
+  connection. Two new edge probes: STORE-05 ordering (a refusal never reorders,
+  renumbers or reinserts another process's rows -- in the connection AND after
+  a close-and-reopen) and STORE-04 concurrency (the ownership proof). STORE-07
+  extended without a second mechanism: `stageSnapshot` joins
+  `applyWriteWithoutCommit` in `anno-seam.test.ts`'s no-shipped-module-names-it
+  scan, generalised over a DECLARED two-element list with a paired length
+  check, a RESTATED title and a loop-variable-built failure message (28-07's
+  P12 applied to our own edit), plus a presence pin over all three staging
+  transitions. FOUR observed reds, all reverted before their commits:
+  `stageSnapshot` reverted to remove-then-vacuum-into-the-published-path
+  (48/46/2, reddening the ownership proof on the staging-name inequality, then
+  -- that arm neutralised -- on the buffer byte-identity, then on the revert);
+  `currentRevision` removed from the CAS-failure options (52/51/1 on the WR-11
+  pin); and the `DatabaseSync` constructor wrapping removed (52/50/2,
+  `expected AnnoStorePathError, got Error: unable to open database file`). The
+  third arm of the first red differs from the reviewer's own printed line
+  because the test's own cleanup of its staging path IS, under the planting, a
+  removal of the published file -- recorded verbatim rather than papered over.
+  Gates: 115/115 across the six store test files, 36/36 on
+  docs-review-disposition/hostpath-consumers/docs-linerefs/block-class,
+  `tsc --noEmit` clean, `check-npm-packages` OK with 80/34 files unchanged. All
+  four `anno-durability.test.ts` tests stay green, so the identical-code-path
+  property WR-10 was accepted as designed on is intact. The whole-glob
+  `npm test` was NOT run and is not a signal for this plan. Zero deletions.
+  `STORE-04/05/07` stay `Gaps Found` on purpose -- gap 3 is still open against
+  the same phase and `28-09` also declares `STORE-07`. Next: 28-09.
+
+Previously stopped at: Completed 28-07-PLAN.md (gap closure: gaps 1 and 2 closed); next 28-08
   Plan 28-07 is complete: 2 tasks, 2 task commits (`6902301`, `ee4c256`), 16
   min. It is the FIRST of the three gap-closure plans (waves 5-7); 28-08 and
   28-09 remain. `28-VERIFICATION.md` gaps 1 (CR-01 + WR-02) and 2 (WR-01) are
