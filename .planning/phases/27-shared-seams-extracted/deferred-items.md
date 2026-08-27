@@ -37,3 +37,37 @@ one would deterministically redden `BACK-05`). `npm test`'s bare glob does not
 consult that list, so the whole-glob run cannot be read as a pass/fail verdict
 on its own — the dispositioned nine must be subtracted by hand. Recorded so a
 future reader does not mistake the 44 for a phase-27 regression.
+
+## D-27-05-A — `vice-proxy.test.ts` leaks two LISTEN sockets and prevents `node --test` from exiting
+
+**Found during:** plan 27-05, criterion 4's whole-glob `npm test` evidence run.
+**Symptom:** the whole-glob run does not terminate. After every test file has
+emitted its results, the `vice-proxy.test.ts` child stays alive indefinitely.
+
+Diagnosed rather than guessed, on PID 2308306 after 19 minutes of frozen output:
+
+- process state `Sl`, and **zero CPU consumed across a 5-second sample**
+  (`utime/stime` read `322 50` before and after) — it is not running anything
+- **all 2410 of the run's flat TAP result lines already emitted**, the last one
+  being `vice-proxy.test.ts`'s own final `vice_recycle` test
+- **two LISTEN sockets still open**: `127.0.0.1:34211` (fd 21) and
+  `127.0.0.1:42613` (fd 22), both held by that child
+
+So the file finishes its tests and then cannot exit, because two
+test-created listeners are never closed and keep the event loop alive.
+
+**Reproduced twice on this host:** a stale run from an earlier plan sat in the
+same state for 67 minutes before it was terminated, and plan 27-05's own run
+reached it again. Terminating that one child lets the runner emit its totals,
+and doing so adds **no** failure (`# fail 44` matches the dispositioned count
+exactly), so the whole-glob totals are still genuine.
+
+**Consequence for a future reader:** `cd src/mcp/vice && npm test` cannot be
+expected to terminate unaided on a host with no broker. Budget for terminating
+the hung `vice-proxy.test.ts` child once its results have all been emitted, and
+say so in any evidence taken this way.
+
+**Not fixed here:** `vice-proxy.test.ts` is in no phase-27 plan's
+`files_modified`, it is on `test-gate.mjs`'s frozen nine-file
+`MANUAL_ONLY_TESTS` list, and closing the leaked handles is stdio-proxy test
+behaviour with no requirement in this phase.
