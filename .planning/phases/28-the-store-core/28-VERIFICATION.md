@@ -1,411 +1,552 @@
 ---
 phase: 28-the-store-core
-verified: 2026-08-27T19:32:49Z
+verified: 2026-08-27T23:06:41Z
 status: gaps_found
-score: 8/11 must-haves verified
+score: 9/11 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: 2/5 # 8/11 must-haves; 3 gaps
+  gaps_closed:
+    - "Snapshot pruning happens AFTER the commit and outside the write transaction, and a kill between the commit and the prune leaves extra files, never a missing one the revert path still points at (28-06 truth 8) — the prune loop now deletes the POINTER ROW first and unlinks the FILE second, pinned by a reddenable source-order control, and trap 10's inverted conclusion is corrected"
+  gaps_remaining:
+    - "The snapshots/ ring is bounded, the pointer rows are pruned to match, and a revert past the bound is REFUSED by name (28-06 truth 7) — the PRIOR failure mode (post-revert orphan rows, a lying floor, a raw ENOENT out of a closed handle) is genuinely CLOSED and independently re-verified, but three NEW destructive failure modes were reproduced against the same must-have"
+    - "anno-types.ts provides workspace path confinement — a store write cannot land outside the workspace root (28-01 artifact `provides`; anno-store.ts trap 7) — the LIVE-symlink half is genuinely closed and the control discriminates; a DANGLING symlink still creates the store file outside the root"
+  regressions:
+    - "28-07's reconciliation sweep (new code, written to close gap 1) deletes a concurrent writer's published-but-uncommitted snapshot, manufacturing the exact orphan-pointer-row state trap 10 declares unsurvivable — reproduced (CR-02)"
+    - "28-07's retainedRevisions() predicate tests the ABSOLUTE path stored in anno_snapshot.path, so one `mv` of the project directory plus one write silently deletes the entire snapshot ring, rows and files. Before 28-07 the ring was computed from rows alone and a move was harmless — this destruction is new (CR-03)"
 gaps:
-  - truth: "The snapshots/ directory is bounded at MAX_SNAPSHOT_REVISIONS, the anno_snapshot pointer rows are pruned to match, and a revert to a pruned revision is REFUSED by name with the oldest retained revision in the message (28-06 truth 7; 28-06 prohibition 3)"
+  - truth: "The snapshots/ directory is bounded at MAX_SNAPSHOT_REVISIONS, the anno_snapshot pointer rows are pruned to match, and a revert to a pruned revision is REFUSED by name with the oldest retained revision in the message (28-06 truth 7; 28-06 prohibition 3) — and, at the goal level, the store is REVERTIBLE"
     status: partial
-    reason: "The bound, the pruning and the named refusal all hold on a forward-only store — independently reproduced. They stop holding after the FIRST revertTo: the snapshot image is a `vacuum into` of the whole store, so it carries the anno_snapshot table, and restoring it reinstates pointer rows for revisions whose FILES the prune already deleted. oldestRetainedRevision() then reports a floor that cannot be honoured, and following that floor throws a raw non-ViceError ENOENT out of copyFileSync — after revertTo has already closed the caller's handle, so there is no handle left to diagnose with. This is CR-01, reproduced verbatim."
+    reason: >-
+      The prior round's failure is closed and I re-verified it independently: after 40 writes the ring holds
+      exactly 32 files, oldestRetainedRevision() reports 8, a below-floor revert refuses by name inside the
+      ViceError family, and — the part that used to throw a raw ENOENT out of a closed handle — a SECOND
+      revert at the published floor now SUCCEEDS. Three NEW destructive failure modes were reproduced in its
+      place, all against committed code at a8187d2, all silent, all in the exact capability the phase goal
+      names. (1) snapshotPathFor() keys the ring on handle.dir and never on the store FILENAME, so two stores
+      in one directory share one snapshots/ ring; reverting game.annostore to ITS OWN revision 1 returned
+      loader.annostore's rows — reproduced verbatim, including the reviewer's exact output line. (2) The
+      reconciliation sweep 28-07 added deletes a concurrent writer's published-but-uncommitted snapshot,
+      because the rename is a filesystem act and the pointer row is a transactional one; the destroyed
+      revision then becomes permanently unrevertible. (3) anno_snapshot.path is absolute and retainedRevisions()
+      tests that stored string, so one `mv` of the project directory plus one write deleted five snapshot files
+      and five pointer rows with no error and nothing in AnnoWriteResult to notice it by.
     artifacts:
       - path: "src/mcp/vice/anno-store.ts"
-        issue: "DDL:246-249 puts anno_snapshot inside the snapshot image that runWriteSequence:499 takes with `vacuum into`; revertTo:802-833 restores that image wholesale; oldestRetainedRevision:408-412 reads min(revision) from the restored rows and reports 0 with no file behind it; revertTo:824-829 does all filesystem work AFTER closeStore(handle) (WR-02), so the ENOENT escapes with the connection already closed."
+        issue: >-
+          snapshotPathFor:423-425 keys the ring on handle.dir alone (pre-existing since 28-01, newly
+          AMPLIFIED by the sweep); reconcileSnapshotRing:566-582 judges a file it cannot have created,
+          from this connection's committed view only, and runs on every accepted write via pruneSnapshots:617;
+          retainedRevisions:479-485 filters on the absolute row.path rather than on snapshotPathFor(handle, revision),
+          and revertTo:1165 reads pointer.path for the same reason.
+      - path: "src/mcp/vice/anno-store.test.ts"
+        issue: >-
+          No test opens two stores in one directory; no test plants the publish-to-commit interleaving;
+          no test renames the containing directory between two writes. All three defects are invisible to a
+          green 136-test suite, which is why they shipped.
     missing:
-      - "Exclude anno_snapshot from the restored image, or reconcile the pointer rows against the snapshots/ directory immediately after a restore, so the reported floor is one revertTo can actually honour"
-      - "Convert a missing snapshot FILE into the same named AnnoStoreError refusal the missing POINTER ROW already produces at revertTo:806-816 — a snapshot the ring promises and cannot deliver must be refused, not crashed on"
-      - "Do the copy/fsync/rename before closeStore, or return the original handle on failure, so a failed revert leaves the caller a usable handle"
-      - "A test pinning revertTo-then-oldestRetainedRevision-then-revertTo; no test in the phase exercises a second revert after a prune"
-  - truth: "Snapshot pruning happens AFTER the commit and outside the write transaction, and a kill between the commit and the prune leaves extra files, never a missing one the revert path still points at (28-06 truth 8)"
-    status: partial
-    reason: "The first half is true and verified in code: runWriteSequence step 9 calls pruneSnapshots after commitTransaction and outside the transaction. The second half is FALSIFIED BY THE PRUNE LOOP'S OWN ORDER. pruneSnapshots:445-457 does rmSync(file) and THEN `delete from anno_snapshot`, per doomed row. A kill between those two statements leaves precisely the state trap 10 names as the one the revert path cannot survive — a pointer row aimed at a file that is already gone. The code comment concludes 'The file is deleted before its pointer row for the same reason -- the opposite order can produce the bad state and this one cannot', which is inverted with respect to its own premise. This is WR-01, confirmed by reading the loop; CR-01 reaches the identical bad state by a second route that needs no kill at all."
-    artifacts:
-      - path: "src/mcp/vice/anno-store.ts"
-        issue: "pruneSnapshots:430-458 — file-then-row ordering, with a doc comment asserting the opposite guarantee. The unlink is correctly swallowed and the row delete correctly not swallowed, but the two are in the order that produces the forbidden state rather than the harmless one."
-    missing:
-      - "Swap the two statements: delete the pointer row first, then unlink the file, so a kill mid-loop leaves an orphan FILE (harmless, reconcilable by revision number) instead of an orphan ROW"
-      - "Correct the inverted conclusion in the doc comment so it matches the code and trap 10's premise"
+      - "Key the snapshot directory on the store FILE (e.g. `${basename(handle.path)}.snapshots`), read through the one helper that already owns the layout, and pin it with a two-stores-in-one-directory revert test"
+      - "Make the sweep unable to judge a file it cannot have created — age it against a grace bound comfortably longer than the publish-to-commit window, or serialise it under `begin immediate` — with a two-connection test planting the exact interleaving"
+      - "Stop treating anno_snapshot.path as authoritative: derive the location from the handle in retainedRevisions() and revertTo(), store a relative filename or drop the column, and pin it with a rename-the-directory test"
   - truth: "anno-types.ts provides workspace path confinement — a store write cannot land outside the workspace root (28-01 artifact `provides`; anno-store.ts trap 7)"
     status: partial
-    reason: "The `..` half of the control works and is pinned; I reproduced its refusal (AnnoStorePathError). The symlink half does not exist. storePathWithinWorkspace compares resolve(path) against resolve(workspaceRoot) + sep, and resolve() normalises `..` but does not resolve symbolic links, so a symlinked subdirectory inside the workspace escapes confinement. Reproduced: with workspaceRoot=<ws> and <ws>/escape a symlink to a sibling directory, openStore(<ws>/escape/p.annostore) succeeded and the store file was CREATED outside the workspace root. This is CR-03. The module's own header premise is that this path arrives unvalidated from the transport (vice-proxy.ts's validator is `(value) => ({ value })`), so a checked-in or agent-created symlink is sufficient — no privileged access is needed."
+    reason: >-
+      28-09's fix is real and its control genuinely discriminates: I reproduced the LIVE directory-symlink case
+      being refused with AnnoStorePathError, and separately confirmed an inside-pointing symlink is still
+      followed, so the fix is not the over-broad refuse-everything one. The truth itself is still false.
+      realpathOfNearestExisting() walks with existsSync, which FOLLOWS links and therefore reports false for a
+      DANGLING one, so the walk steps past the symlink instead of resolving it. Reproduced two ways at
+      a8187d2 — storePathWithinWorkspace() ACCEPTS both a dangling leaf link and a dangling directory link
+      pointing outside the root, and end-to-end openStore() on the dangling leaf link returned a path inside
+      the workspace while creating the store file OUTSIDE it (`file created OUTSIDE workspace: true`).
+      A dangling link is a one-line plant needing no privilege and nothing pre-existing — easier than the live
+      one the fix does catch — against a path the module's own header states arrives unvalidated from the
+      transport. This is CR-04, dispositioned open in
+      .planning/todos/pending/2026-08-28-phase-28-review-cr-04-dangling-symlink-confinement-bypass.md.
+      That disposition records the gap; it is NOT a VERIFICATION.md override and does not carry the truth.
     artifacts:
       - path: "src/mcp/vice/anno-types.ts"
-        issue: "storePathWithinWorkspace:702-712 — resolve() only; no realpath resolution of either the root or the deepest existing ancestor of the target."
-      - path: "src/mcp/vice/anno-store.test.ts"
-        issue: "The confinement tests pin the sibling-prefix and `..` cases only. No test plants a symlink, so the gap is invisible to the suite."
+        issue: "realpathOfNearestExisting:732-752 — `while (!existsSync(current))` cannot see a dangling symlink; used by storePathWithinWorkspace:797-807."
+      - path: "src/mcp/vice/anno-confinement.test.ts"
+        issue: "Six cases, all planting LIVE links. No dangling-leaf and no dangling-directory case, which is why the suite is green over the bypass."
     missing:
-      - "Compare real paths: realpathSync the workspace root, and realpath the deepest EXISTING ancestor of the store path so a not-yet-created file still works"
-      - "A test asserting a symlinked subdirectory is REFUSED, not followed, alongside the existing sibling-prefix pin"
+      - "Decide path-entry existence with lstatSync(p, { throwIfNoEntry: false }) rather than existsSync, so a symlink counts as present whether or not its target does"
+      - "When the stopping entry IS a dangling symlink, resolve it with readlinkSync + resolve(dirname(current), link) and restart the walk there"
+      - "Two cases in anno-confinement.test.ts — dangling leaf and dangling directory, both pointing outside the root — each asserting AnnoStorePathError AND that nothing was created outside the workspace, matching test 1's two-part shape; with the planted red observed"
 deferred: []
-prohibition_flags:  # all nine are verification: judgment — see the section below. Non-authoritative LLM-judge verdicts; human review recommended.
-  - statement: "MUST NOT let revert history grow without bound ... never a silent best-effort (28-06 P9)"
+prohibition_flags: # judgment-tier; non-authoritative LLM-judge verdicts, human review recommended
+  - statement: "28-07 P1 — MUST NOT destroy the only remaining route back to a state the store still advertises as reachable ... a reconciliation that resolves a half-state by deleting the surviving half in the addressable direction is the loss this whole gap exists to close, not a repair of it."
+    verdict: violated
+    flagged: true
+    reason: >-
+      Reproduced twice, both times by the reconciliation this prohibition was written to govern. CR-02: the
+      sweep deletes a concurrent writer's published snapshot, and that revision can never be undone again.
+      CR-03: after a directory move the sweep deletes EVERY file and EVERY row. The prohibition names its own
+      violation almost word for word.
+  - statement: "28-07 P2 — MUST NOT publish a floor, bound or 'retained' claim the store cannot honour on the very next call."
     verdict: partially_held
     flagged: true
-    reason: "Bound is a named constant and the forward-path refusal is named; post-revert the refusal degrades into an unhandled ENOENT, which is worse than the best-effort the prohibition forbids. Overlaps gap 1."
-  - statement: "The other eight judgment-tier prohibitions (28-03 P1/P2, 28-04 P3/P4, 28-05 P5/P6, 28-06 P7/P8)"
+    reason: >-
+      Held in the dangerous direction on a single store at a stable path — independently re-verified: the
+      published floor is one revertTo honours, and a second revert at it succeeds. It fails in the opposite
+      direction after a directory move, where retainedRevisions() reports [] and oldestRetainedRevision()
+      reports NO_RETAINED_REVISION while all five snapshot files are sitting there — an under-claim whose
+      consequence is that the sweep then deletes them.
+  - statement: "28-07 P3 — MUST NOT leave in place, or introduce, a comment that asserts a guarantee the code does not provide."
     verdict: held
     flagged: true
-    reason: "Each independently reproduced (see Prohibition Assessment). Flagged only because verification: judgment admits no automated proof — unverified-prohibition, human review recommended."
+    reason: >-
+      Verified by reading: trap 10 (anno-store.ts:109-128) now concludes row-then-file, keeps the premise that
+      was right, and records the reversal rather than deleting the paragraph; pruneSnapshots' own ordering
+      clause agrees with its loop. Flagged only because verification: judgment admits no automated proof.
+  - statement: "28-08 P1 — MUST NOT let a writer that is about to be refused mutate anything a committed writer owns."
+    verdict: partially_held
+    flagged: true
+    reason: >-
+      Held as worded, and the mechanism is real: a loser stages under r<rev>.<pid>.<uuid>.tmp, never names
+      the published path, and discards its own file. The SPIRIT is broken by two actors the wording does not
+      reach — a sweeping writer (CR-02) and a neighbouring store's writer (CR-01) — each of which destroys or
+      overwrites bytes a committed pointer row owns.
+  - statement: "28-08 P2 — MUST NOT report a conflict without both of the numbers that conflicted."
+    verdict: held
+    flagged: true
+    reason: >-
+      Probed: a stale-base write threw AnnoStoreStaleRevisionError carrying baseRevision 0 and currentRevision 1.
+      The CAS-loss path reads the moved revision from anno_meta BEFORE the rollback (anno-store.ts:819-825),
+      confirmed by reading.
+  - statement: "28-09 P1 — MUST NOT silently redirect a path the confinement rejects."
+    verdict: partially_held
+    flagged: true
+    reason: >-
+      No code path rewrites a rejected path to a safe location, so the prohibition as worded holds. But the
+      dangling-symlink bypass produces the outcome the prohibition exists to prevent by a different mechanism:
+      storePathWithinWorkspace RETURNS a path inside the workspace while the write lands outside it, with
+      nothing recording that it happened.
+  - statement: "The eight earlier judgment-tier prohibitions (28-03 P1/P2, 28-04 P3/P4, 28-05 P5/P6, 28-06 P7/P8)"
+    verdict: held
+    flagged: true
+    reason: >-
+      Carried forward from the prior round, where each was independently reproduced. Regression-checked here
+      via the 136 green tests in the eight phase files plus direct probes of the vocabulary, the split-and-preserve
+      cases, the contradicted-comment rule, the label refusals and the census mapping. Flagged only because
+      verification: judgment admits no automated proof.
+backstop_assessment:
+  - id: "28-07 D11"
+    statement: "A kill landing between the pointer-row delete and the unlink inside the prune loop leaves an orphan FILE and never an orphan ROW."
+    substitution: "A source-order control over the module's own stripped source, plus two directly constructed half-states, instead of a timed mid-prune kill."
+    ruling: accepted
+    reason: >-
+      The substitution covers the whole causal chain the phase owns. See the Backstop Ruling section for the
+      argument and the one named residual.
+human_verification: []
 ---
 
-# Phase 28: The Store Core — Verification Report
+# Phase 28: The Store Core — Verification Report (round 2, post gap-closure)
 
 **Phase Goal:** This project owns the annotation state — labels, comments, per-range typing over the full 12-member vocabulary, scopes and project enums — durable across a `SIGKILL`, revertible, and reachable through exactly one persistence seam. The milestone's one irreversible decision lands here.
-**Verified:** 2026-08-27T19:32:49Z
+**Verified:** 2026-08-27T23:06:41Z (UTC)
+**Commit verified:** `a8187d2`
 **Status:** gaps_found
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after three gap-closure plans (28-07, 28-08, 28-09)
 
 ## What this verification did
 
-Everything below marked VERIFIED was reproduced by this verifier against the
-committed code at `57dfb0b`, in its own process — not read out of a SUMMARY. That
-includes running the phase's own six test files (98 top-level tests, 0 failures),
-running independent probes against `anno-store.ts`/`anno-types.ts`/`anno-index.ts`
-/`block-class.ts`, and **removing `runWriteSequence`'s single `commit` by hand to
-observe criterion 4's red on the real shipped call path**, then restoring the file
-(`git diff --stat` clean, suite green again).
+Everything below marked VERIFIED was reproduced by this verifier in its own
+process against the committed code at `a8187d2` — not read out of a SUMMARY and
+not taken from the prior round. That includes:
 
-The three phase-28 blockers in `28-REVIEW.md` were each reproduced independently
-rather than taken on the reviewer's word. Two of them reproduced *verbatim*,
-including the reviewer's exact reported output line. One reviewer claim (WR-08's
-"merges adjacent same-type rows", framed as a `STORE-02` contradiction) is
-**refuted** in that framing.
+- running the phase's eight test files (`anno-*.test.ts` + `block-class.test.ts`) → **136 tests, 0 failures**, confirming the reviewer's own count;
+- **re-observing criterion 4's planted red on the REWRITTEN shipped call path.** `runWriteSequence` was substantially rewritten by 28-07 and 28-08, so the prior round's observation does not carry. I replaced `commitTransaction`'s `db.exec("commit")` with a no-op by hand: `anno-durability.test.ts:179` — the ONE combined durability-and-revert test — went from `ok` to `not ok`. Restored; `git status --porcelain src/mcp/vice/` clean; 4/4 green again;
+- independent probes of the twelve-member vocabulary and the split-orientation control, split-and-preserve, the contradicted-comment rule, the schema/bank/xref columns, the stale-revision refusal, the four corrupt-file refusals, the label refusals, the address-parse refusals and the census mapping;
+- **four separate reproduction scripts driving the production functions** for the four blockers `28-REVIEW.md` raised after the gap plans landed.
+
+**Every reviewer verdict that bears on a must-have or a success criterion was
+reproduced or refuted, not taken on trust.** Result: all four new blockers
+**reproduced**, three of them verbatim (matching the reviewer's own output
+lines). WR-01 and WR-04 were confirmed **structurally by reading**, not by
+reproduction, and are labelled as such below.
+
+Where a reviewer verdict and an executor SUMMARY disagree, the resolution is
+stated explicitly in the "Reviewer verdicts, reconciled" section.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Truths 1-5 are the ROADMAP success criteria (the contract). Truths 6-11 are
-PLAN-frontmatter must-haves that add material scope beyond them.
+Truths 1–5 are the ROADMAP success criteria (the contract). Truths 6–11 are
+PLAN-frontmatter must-haves that add material scope beyond them. The truth
+numbering is kept identical to the prior round so the two are comparable.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Full 12-member vocabulary with the four split layouts as first-class members; a `lo_hi_address` fixture read as `hi_lo_address` produces a **differing resolved-target set**; collapsing the four to one `table` makes that control fail | ✓ VERIFIED | Probed over IDENTICAL bytes `[00 10 34 12 78 56]`: `lo_hi_address`→`[4608,30736,22068]` vs `hi_lo_address`→`[18,4216,13398]` — orientation is observable as a differing target set. Second axis also observable: `_address` → `producesXrefs:true`, `_word` → `false` with equal targets. `DATA_TYPES` is exactly the twelve members in the schema's order, frozen (read out of `assertDataType`'s own refusal message). Collapse planting is a real test: `anno-types.test.ts:208` ("the collapse planting, observed"), passes. The reassembly NON-control is recorded as an assertion at `:231` rather than used as the control. |
-| 2 | Narrowest-range-wins exact at all **65,536** addresses, cross-validated against a second independent implementation with **zero** disagreements; tie-break, both ends and `$FFFF` pinned; `$0400-$0400` reports length 1; ranges never merged on adjacency, no splitter primitive | ✓ VERIFIED | `anno-index.test.ts:200-250` is a genuine exhaustive loop `ADDRESS_MIN..ADDRESS_MAX` against `resolveByScan`, with `assert.equal(comparisons, 0x10000)` asserted FIRST as the non-vacuity half. Fixture non-degeneracy pinned on BOTH axes (`:259` different lengths, `:268` equal lengths). 13 tests pass. Adjacency proven twice: behaviourally (`anno-overlap.test.ts:463`, and my own probe — `$0400-$04FF` + `$0500-$05FF` stay two rows with ids 1,2) and structurally (`:487` scans `codeOnly(anno-store.ts)` for `coalesc`/`merg`/`splitter`, offenders `[]`, with a `strict.length > 5_000` non-vacuity pin). |
-| 3 | A partial overwrite **splits and preserves**; total typed bytes unchanged across all five overlap cases; planting `filter()`-and-insert makes the fully-contained case fail; a retype that contradicts a comment returns the contradicted comments **as data** | ✓ VERIFIED | Probed case 3 directly: `$2000-$20FF byte`, retype `$2040-$207F code` → 3 rows `[2000-203f byte][2080-20ff byte][2040-207f code]`, total typed bytes 256→256. Probed the contradiction rule: retype `code`→`byte` over three comments SUCCEEDED (`changed:true`) and returned exactly the `[confirmed-code]` one as data — the `[unknown]` and ungraded comments correctly not reported. Both plantings exist as passing tests (`anno-overlap.test.ts:312` planting A selective per-case, `:427` planting B), and `:358` measures why invariant B is not optional (case 4 loses 128 addresses while satisfying the naive total). |
-| 4 | Durability and revert proven by **ONE combined planted-violation test**: mutate → `SIGKILL` no clean close → **fresh process** → reopen → reads back **by value** → revert returns prior value; removing the commit makes **that same test** go red, observed; a truncated store file is **refused**, never partial | ✓ VERIFIED | `anno-durability.test.ts:179` is one test asserting both halves as values outside any try, plus all-or-nothing on the same run; `:238` is the planted counterpart asserting BOTH booleans false on ONE planting. The child is a genuinely separate OS process (`execFileSync(process.execPath, [MUTATOR, ...])`) that runs `process.kill(process.pid, "SIGKILL")` at `anno-durability-mutator.mjs:125`. **I observed the red myself on the real shipped path**: replacing `commitTransaction`'s `db.exec("commit")` with a no-op turned `:179` from `ok` to `not ok`; restoring gave 4/4 green. Refusal probed independently — zero-length, foreign text, truncated mid-file, missing `anno_meta` row and mismatched `schema_version` all refused with `AnnoStoreCorruptError`. |
-| 5 | Every write carries a schema version and a **reserved, uninterpreted** `bank` field; xref rows carry their access kind; a write on a stale base revision is **refused** rather than discarding another process's annotations, observed cross-process; `node:sqlite` reachable from exactly one module, asserted structurally | ✓ VERIFIED | DDL: `anno_meta.schema_version`; nullable `bank integer` on `anno_range`/`anno_label`/`anno_comment`/`anno_xref`; `anno_xref.access_kind text not null`; `XREF_ACCESS_KINDS` frozen as `["READ","WRITE","READ_WRITE","COMPUTED_JUMP"]`; no FTS5 table. `bank` is written NULL and read back but **never branched on** — grep for `bank ===`/`bank !==`/`if (…bank` across all three modules returns nothing, so "uninterpreted" is literally true. Cross-process CAS at `anno-store.test.ts:1176` uses a real second process and asserts both revisions on the error plus the exact surviving row set; I probed the refusal path independently. Single seam: `anno-store.ts` is the only entry in `package.json` `files[]` naming `node:sqlite` — the four other hits (`anno-store.test.ts`, `anno-overlap.test.ts`, `anno-durability.test.ts`, `anno-durability-mutator.mjs`) are all inside COMMENTS, stripped by `codeOnly`, and none is shipped. |
-| 6 | A store file is refused rather than read when zero-length, truncated mid-file, missing its `anno_meta` row, or of a mismatched schema version — with the tail-truncation residual **stated**, not claimed closed (28-06 truth 3) | ✓ VERIFIED | All four probed, all `AnnoStoreCorruptError` (plus a foreign prose file, also refused). The residual is real and honestly recorded: I flipped a byte three from the end of a 30-write store and it OPENED — which is exactly what `anno-store.test.ts:292-308` states deliberately WITHOUT an assertion ("THE STATED RESIDUAL … asserting a behaviour nobody measured is how a stated residual becomes a false claim"). Stating it is what truth 3 asks for. |
-| 7 | The snapshot ring is bounded, the pointer rows are pruned to match, and a revert past the bound is **REFUSED by name** with the oldest retained revision in the message (28-06 truth 7) | ✗ FAILED (partial) | Holds forward-only: after 40 writes, 32 files on disk, `oldestRetained` 8, and a revert below 8 refuses by name. **Breaks on the first revert.** `revertTo(8)` restored pointer rows `[0..7]` whose files the prune had deleted; `oldestRetainedRevision` then reported `0`; following that floor threw `Error: ENOENT … copyfile r0.db` — not a `ViceError`, and thrown after `revertTo` had already closed the handle. CR-01, reproduced. See gap 1. |
-| 8 | Pruning happens after the commit and outside the transaction, and a kill in the window leaves **extra files, never a missing one the revert path still points at** (28-06 truth 8) | ✗ FAILED (partial) | First half verified in code (`runWriteSequence` step 9). Second half falsified by `pruneSnapshots:445-457`, which unlinks the FILE and then deletes its POINTER ROW — a kill between the two produces exactly the forbidden state, and the doc comment's own conclusion is inverted. WR-01, confirmed. See gap 2. |
-| 9 | `anno-types.ts` provides workspace path confinement — a store write cannot land outside the workspace root (28-01 artifact `provides`; trap 7) | ✗ FAILED (partial) | `..` escape refused (`AnnoStorePathError`) — control works. Symlinked subdirectory NOT refused: the store file was created outside the workspace root. CR-03, reproduced. See gap 3. |
-| 10 | A label name bound to a different address is refused; an illegal character refuses rather than being sanitised; the mnemonic denylist is DERIVED from `OPCODES` and compares case-insensitively; an unprefixed numeric address string is refused | ✓ VERIFIED | Probed all five refusals: same-name-different-address, `"init screen"`, `lda`, `LDA`, `Rol` — every one `AnnoLabelError`, and `listLabels` still held exactly the one original row, so nothing was sanitised into existence. Denylist is 76 entries (derived; `anno-types.test.ts:328` pins the size against a count computed from `OPCODES`, so a hand-typed list cannot pass). `parseStoreAddress`: `$0810`→2064, `0x0810`→2064, `0X0810`→2064, `"2064"`→`AnnoAddressError`. `anno_xref` held 0 rows after typing a `lo_hi_address` range — nothing derivable cached on disk. |
-| 11 | The census vocabulary boundary accepts the store's lowercase vocabulary alongside the analyser's capitalised one, pinned by a **derived total** cross-check, with `block-class.ts`'s import list still empty | ✓ VERIFIED | Probed: all 12 `DATA_TYPES` map totally — exactly 1→`code`, exactly 1→`undefined`, 10→`data`; capitalised `Code`/`Undefined` still map correctly; `CODE`, `Code `, `cOdE` all fall through to `data`, so no third spelling was silently admitted. `block-class.ts` has **zero** `import` lines; the derived cross-check lives in `block-class.test.ts:130` with a `DATA_TYPES.length === 12` non-vacuity pin. `PRODUCTION_BLOCK_SPELLINGS` is the derived union at `r2000-coverage.test.ts:679`. 131 tests pass across the two files. The false header rationale was rewritten honestly (two vocabularies differing in case, never one case-insensitive comparison) with the transitional arm's removal condition named (`CUT-01`). |
+| 1 | Full 12-member vocabulary with the four split layouts as first-class members; a `lo_hi_address` fixture read as `hi_lo_address` produces a **differing resolved-target set**; collapsing the four to one `table` makes that control fail | ✓ VERIFIED | Re-probed `resolveSplitTargets` over identical bytes `[00 10 34 12 78 56]`: `lo_hi_address`→`[4608,30736,22068]`, `hi_lo_address`→`[18,4216,13398]` — a differing target set, not a differing reassembly. Second axis also observable: `_address`→`producesXrefs:true`, `_word`→`false`, targets equal. `DATA_TYPES` is exactly 12 in schema order. The collapse planting is a real, passing test (`anno-types.test.ts:208`). |
+| 2 | Narrowest-range-wins exact at all **65,536** addresses, cross-validated against a second independent implementation with **zero** disagreements; tie-break, both ends and `$FFFF` pinned; `$0400-$0400` reports length 1; ranges never merged on adjacency, no splitter primitive | ✓ VERIFIED | Regression: `anno-index.test.ts` green (exhaustive `ADDRESS_MIN..ADDRESS_MAX` loop against `resolveByScan`, with `assert.equal(comparisons, 0x10000)` asserted first as the non-vacuity half). `anno-overlap.test.ts:487`'s structural scan of `codeOnly(anno-store.ts)` for `coalesc`/`merg`/`splitter` still reports `[]` — **and is non-vacuous over the ~390 lines 28-07/28-08 added to that file**, which is what makes this a regression check rather than a stale pass. |
+| 3 | A partial overwrite **splits and preserves**; total typed bytes unchanged across all five overlap cases; planting `filter()`-and-insert makes the fully-contained case fail; a retype that contradicts a comment returns the contradicted comments **as data** | ✓ VERIFIED | Re-probed case 3 directly: `$2000-$20FF byte`, retype `$2040-$207F code` → 3 rows `[2000-203f byte][2080-20ff byte][2040-207f code]`, total typed bytes 256→256. Re-probed the contradiction rule: the retype **succeeded** (`changed:true`) and returned the `[confirmed-code]` comment as data with `contradictedBy:"byte"` — as data, not as a refusal. Both plantings are passing tests (`anno-overlap.test.ts:312`, `:427`). |
+| 4 | Durability and revert proven by **ONE combined planted-violation test**: mutate → `SIGKILL` no clean close → **fresh process** → reopen → reads back **by value** → revert returns prior value; removing the commit makes **that same test** go red, observed; a truncated store file is **refused**, never partial | ✓ VERIFIED | **The red was re-observed on the current, rewritten code** (see above): `:179` goes `not ok` with the commit removed, `ok` with it restored. The child is a genuinely separate OS process (`execFileSync` → `process.kill(process.pid,"SIGKILL")` at `anno-durability-mutator.mjs:125`). Refusals re-probed independently: zero-length, foreign prose and mid-file truncation all → `AnnoStoreCorruptError`. The tail-truncation residual is still honestly STATED, not claimed closed. |
+| 5 | Every write carries a schema version and a **reserved, uninterpreted** `bank` field; xref rows carry their access kind; a write on a stale base revision is **refused**, observed cross-process; `node:sqlite` reachable from exactly one module, asserted structurally | ✓ VERIFIED | Re-probed: `anno_meta` = `{id:1, schema_version:1, revision:N}`; `anno_range` cols `id,start,end_inclusive,data_type,bank`; `anno_xref` cols `id,from_address,to_address,access_kind,bank`; `XREF_ACCESS_KINDS` = `READ,WRITE,READ_WRITE,COMPUTED_JUMP`. Stale write refused: `AnnoStoreStaleRevisionError` carrying `base 0 / current 1`. Cross-process CAS proof still present and green (`anno-store.test.ts:1710`, real `execFileSync` child). Single seam re-checked: of the eight files naming `node:sqlite`, `anno-store.ts` is the **only** one in `package.json` `files[]`; `anno-seam.test.ts` asserts it with four planted-violation routes plus a comment-only negative control. |
+| 6 | A store file is refused rather than read when zero-length, truncated mid-file, missing its `anno_meta` row, or of a mismatched schema version — with the tail-truncation residual **stated**, not claimed closed (28-06 truth 3) | ✓ VERIFIED | Re-probed zero-length, foreign-text and mid-file truncation: all three `AnnoStoreCorruptError`. `anno-store.test.ts:292-308` still states the tail-truncation residual deliberately without an assertion. |
+| 7 | The snapshot ring is bounded, the pointer rows are pruned to match, and a revert past the bound is **REFUSED by name** with the oldest retained revision in the message (28-06 truth 7) — and, at the goal level, the store is **revertible** | ✗ FAILED | **The prior failure mode is genuinely closed** — re-verified independently: 40 writes → 32 files, `oldestRetained` 8, below-floor revert refuses by name inside the `ViceError` family; `revertTo(8)` then 40 more writes → 32 files, `oldestRetained` 16; **a second revert at the published floor SUCCEEDS** instead of throwing a raw `ENOENT` out of a closed handle. **Three new failure modes reproduced in its place** (CR-01, CR-02, CR-03 — see the reproductions below). All three are silent, all three destroy revert history or return another store's data, none is caught by the 136-test suite. See gap 1. |
+| 8 | Pruning happens after the commit and outside the transaction, and a kill in the window leaves **extra files, never a missing one the revert path still points at** (28-06 truth 8) | ✓ VERIFIED | Both halves now hold. First half: `runWriteSequence` step 9 calls `pruneSnapshots` after `commitTransaction` and inside the `doCommit` branch. Second half: the prune loop deletes the **pointer row first** (`anno-store.ts:634`) and unlinks the **file second** (`:644`) — the inversion the prior round found is gone, and trap 10's conclusion (`:109-128`) now agrees with the loop and records the reversal rather than deleting it. Pinned by a source-order control over `codeOnly(anno-store.ts)` with a `body.length > 200` non-vacuity pin and both statements asserted present before their order is compared — a control a "tidying" edit genuinely reddens. Backstop D11 ruled acceptable below. **Caveat, not a failure of this truth:** the forbidden state is now reachable by a *different* route (CR-02, a concurrent sweep, not a kill) and is filed under gap 1. |
+| 9 | `anno-types.ts` provides workspace path confinement — a store write cannot land outside the workspace root (28-01 artifact `provides`; trap 7) | ✗ FAILED | The `..` and sibling-prefix halves refuse. The **live**-symlink half is genuinely fixed and the control discriminates: a live directory symlink pointing outside → `AnnoStorePathError`; an inside-pointing symlink is still followed, so this is not the over-broad refuse-everything fix. The **dangling** half is open: `storePathWithinWorkspace` ACCEPTS both a dangling leaf link and a dangling directory link pointing outside the root, and `openStore` on the dangling leaf returned an in-workspace path while creating the file OUTSIDE the root. CR-04, reproduced. See gap 2. |
+| 10 | A label name bound to a different address is refused; an illegal character refuses rather than being sanitised; the mnemonic denylist is DERIVED from `OPCODES` and compares case-insensitively; an unprefixed numeric address string is refused | ✓ VERIFIED | Re-probed all five refusals — `init screen`, `lda`, `LDA`, `Rol`, and rebinding `init_screen` to a second address — every one `AnnoLabelError`, with `listLabels` still holding exactly `["init_screen"]`, so nothing was sanitised into existence. `parseStoreAddress`: `$0810`→2064, `0x0810`→2064, `"2064"`→`AnnoAddressError`. |
+| 11 | The census vocabulary boundary accepts the store's lowercase vocabulary alongside the analyser's capitalised one, pinned by a **derived total** cross-check, with `block-class.ts`'s import list still empty | ✓ VERIFIED | Re-probed `blockClassAt` over all 12 `DATA_TYPES`: exactly 1→`code`, exactly 1→`undefined`, 10→`data`. Capitalised `Code`/`Undefined` still map correctly; `CODE` and `cOdE` fall through to `data`, so no third spelling was silently admitted. `block-class.ts` has zero `import` lines. |
 
-**Score:** 8/11 truths verified (0 present, behavior-unverified)
+**Score:** 9/11 truths verified (0 present-but-behavior-unverified)
 
-All five ROADMAP success criteria are VERIFIED. The three failures are
-PLAN-frontmatter must-haves that extend beyond the roadmap contract — all three
-in the snapshot/revert/confinement area, and all three convergent on the same two
-review blockers.
+**All five ROADMAP success criteria are VERIFIED**, each one re-established in
+this round rather than carried over — including criterion 4's observed red,
+re-run against the rewritten write sequence.
 
-### Required Artifacts
+**The phase GOAL is not achieved.** This is the "tasks complete, goal missed"
+split the goal-backward method exists to surface, and it is worth stating
+precisely rather than softening: the goal sentence promises annotation state
+that is *"durable across a `SIGKILL`, revertible, and reachable through exactly
+one persistence seam."* Durability holds. The single seam holds. **Revertible
+does not** — `revertTo` was reproduced returning a *different store's*
+annotations with no error, and the revert history was reproduced being silently
+destroyed by an ordinary `mv` and by ordinary write contention. Each success
+criterion is a statement about a *specific proof*, and every one of those proofs
+exists and is falsifiable; none of them can see any of the three losses, because
+each is scoped to one store, at one path, with one writer.
+
+## Reproductions (this verifier's own, against `a8187d2`)
+
+### CR-01 — two stores in one directory share one ring; a revert returns the WRONG store's database ✗ REPRODUCED, verbatim
+
+Driving the production functions, no test hooks:
+
+```
+A rev 2 rows [ 'code@4096', 'code@4352' ]        # game.annostore
+B rev 2 rows [ 'petscii@2049', 'petscii@2304' ]  # loader.annostore, same directory
+snapshots/: [ 'r0.db', 'r1.db' ]
+A retained: [ 0, 1 ] snapshotPathFor(A,1) = /tmp/cr01-XXXX/snapshots/r1.db
+B retained: [ 0, 1 ] snapshotPathFor(B,1) = /tmp/cr01-XXXX/snapshots/r1.db   <- IDENTICAL
+A after revertTo(1): rev 1 rows [ 'petscii@2049' ]
+A2 store path: /tmp/cr01-XXXX/game.annostore
+```
+
+`game.annostore` reverted to **its own** revision 1 and came back holding
+`loader.annostore`'s annotations. Every one of A's rows is gone; no error was
+raised; `retainedRevisions()` reported the revision as perfectly retained
+beforehand, because both halves of the predicate genuinely exist. The ownership
+predicate 28-07 added is structurally unable to see this: it is per-revision,
+and revision numbers are not unique across stores in one directory.
+
+**Attribution, checked in git rather than assumed.** The `join(handle.dir, "snapshots", …)`
+keying dates from `4c9cea3` (28-01), so consequence 3 pre-dates the gap plans.
+Consequence 1 — the sweep *deleting* the neighbour's ring on every accepted
+write — is new in `6902301` (28-07). The prior round did not find this because
+it never opened two stores in one directory.
+
+### CR-02 — the sweep deletes a concurrent writer's published-but-uncommitted snapshot ✗ REPRODUCED, verbatim
+
+```
+rev after two writes: 2 retained: [ 0, 1 ]
+B published (uncommitted row) snapshot file exists: true r2.db
+A reconcile droppedRows: [] droppedFiles: [ 'r2.db' ]     <- A deleted B's file
+B committed. rev: 3
+pointer rows: [ [0,'file OK'], [1,'file OK'], [2,'FILE GONE'] ]
+retained (B): [ 0, 1 ]
+revertTo(2) REFUSED: AnnoStoreError | cannot revert to revision 2: no snapshot is retained for it.
+```
+
+Revision 2's pre-mutation snapshot is destroyed, so that write can **never** be
+undone. `retainedRevisions()` stops it becoming an `ENOENT` crash — 28-07's fix
+doing exactly its job — but the underlying loss is the one trap 10 names as the
+direction the revert path cannot survive, now manufactured by the reconciliation
+that exists to prevent it.
+
+**Honest note on the mechanism of my repro:** I used `applyWriteWithoutCommit`
+(the test-only sibling export) to hold writer B deterministically between its
+`renameSync` at `:832` and its `commit` at `:870`. The *interleaving* is
+production-reachable without it: the rename is a filesystem act and the pointer
+row is transactional, `pruneSnapshots` runs immediately after every commit
+(`:870-875`), and a writer blocked on `begin immediate` is woken by precisely
+that commit — so this is the likely interleaving under contention, not a rare
+one. The module supports concurrent writers by design (`{ timeout: 5_000 }` at
+`:317`, plus a real cross-process CAS proof). The sweep's directory pass needs no
+write lock when there are no orphan rows, so it completes while B holds the
+transaction.
+
+### CR-03 — `anno_snapshot.path` is absolute; one `mv` plus one write destroys the ring ✗ REPRODUCED, verbatim
+
+```
+before move:              rev 5 retained [0,1,2,3,4] files [r0.db..r4.db]
+after move, before write: retained []   oldest -1    files [r0.db..r4.db]
+after ONE write:          retained [5]               files [ 'r5.db' ]
+rows survive: 6
+```
+
+Five snapshot files and five pointer rows destroyed, with no error, no report and
+nothing in `AnnoWriteResult` to notice it by. The annotations survive; the whole
+of `STORE-04`'s revert history does not.
+
+**This is a regression introduced by gap closure.** Before 28-07 the bound was
+computed over pointer rows alone, so a moved directory was harmless — a
+`rmSync(..., { force: true })` on an absent path is a no-op. `retainedRevisions()`
+turned the absolute path into a *destruction* trigger. The repo makes this worse
+than hypothetical: the same bind-mounted tree seen from the host and from a
+container is exactly the second-absolute-path case, and this project's whole
+architecture is built around that boundary.
+
+### CR-04 — dangling-symlink confinement bypass ✗ REPRODUCED
+
+Through `openStore`, end to end:
+
+```
+target exists before: false
+A) confinement ACCEPTED, returned: /tmp/annosym-XXXX/ws/p.annostore
+A) file created OUTSIDE workspace: true
+C) refused (good): AnnoStorePathError     (live dir link -- the case 28-09 fixed)
+```
+
+And at the predicate itself, which is where the reviewer measured it:
+
+```
+A dangling leaf -> ACCEPTED: /tmp/annosym2-XXXX/ws/p.annostore
+B dangling dir  -> ACCEPTED: /tmp/annosym2-XXXX/ws/sub/q.annostore
+```
+
+**One partial refutation of the reviewer, stated for the record.** The reviewer's
+case B output shows `openStore` accepting the dangling *directory* link. Driving
+`openStore` I got `AnnoStorePathError` for case B — but for an unrelated reason
+(`DatabaseSync` cannot create a file under a non-existent directory, and 28-08's
+new wrapper converts that into a path error). The **confinement itself accepts
+it**, as the predicate-level run above shows. The reviewer's finding stands; only
+the incidental exit path for case B differs.
+
+## Reviewer verdicts, reconciled
+
+| Finding | Reviewer's verdict | This verifier | How resolved |
+|---|---|---|---|
+| old CR-01 (orphan rows, lying floor, `ENOENT` out of a closed handle) | Resolved | **Confirmed resolved** | Reproduced the whole forward-and-revert sequence myself: 32-file bound holds after a revert, floor honest, second revert at the floor succeeds. Independently observed, not read off the review. |
+| old CR-02 (a loser overwrites a winner's snapshot) | Resolved | **Confirmed resolved** | Read the staging/publish/discard triple: `stageSnapshot` vacuums into `r<rev>.<pid>.<uuid>.tmp`, `publishSnapshot` renames only after the CAS is won (`:832`), `discardSnapshot` is called on both non-committing exits (`:820`, `:865`). |
+| old CR-03 (symlink bypass) | PARTIALLY resolved | **Confirmed partial** | Reproduced both halves: live link refused (fixed), dangling link accepted with the file created outside (open). |
+| old WR-01 (prune deletes file before row) | Resolved | **Confirmed resolved** | Row at `:634`, file at `:644`, plus a genuinely reddenable source-order control and a corrected trap 10. |
+| old WR-02 (`revertTo` closes the handle first) | Resolved | **Confirmed resolved** | Read `revertTo`: copy + two `fsyncPath` calls at `:1173-1187` precede `closeStore` at `:1194`, and the rename-failure residual is stated in the error text rather than claimed closed. |
+| old WR-04 (`openStore` raw errors + leaked connection) | Mostly resolved | **Confirmed mostly** | Constructor wrapped (`:334-336`) and the fresh-init block wrapped with rollback + `db.close()` (`:349-362`). `pragma integrity_check` at `:394` is still unwrapped and still leaks the connection — **structurally confirmed by reading, not reproduced**. Warning, not a must-have failure. |
+| old WR-11 (CAS refusal omits `currentRevision`) | Resolved | **Confirmed resolved** | Probed: both numbers present. The moved revision is read before the rollback (`:819-825`). |
+| new CR-01 / CR-02 / CR-03 / CR-04 | BLOCKER ×4 | **All four reproduced** | See above. CR-01, CR-02 and CR-03 reproduce verbatim including the reviewer's own output lines. |
+| WR-01 (unguarded staging→mutation window) | WARNING | **Structurally confirmed, not reproduced** | `stageSnapshot` at `:805`; the first `try` in the sequence is at `:848`. No handler covers `begin immediate` (`:807`), the CAS `.run()` (`:809`), the rename (`:832`) or the pointer insert (`:834`). A throw there leaks a `.tmp` the sweep is deliberately anchored not to collect, and escapes the `ViceError` family. Warning. |
+| WR-08 ("`retype` merges adjacent same-type rows", framed as a `STORE-02` contradiction) | WARNING | **Refuted in that framing, again** | The prior round refuted it; the structural scan of `codeOnly(anno-store.ts)` for `coalesc`/`merg`/`splitter` still reports `[]`, non-vacuously over the new code. Whatever `retype` does on a same-type subrange is not an adjacency coalescer and does not contradict `STORE-02`. |
+
+### Where a SUMMARY and the code disagree
+
+- **28-09-SUMMARY.md declares `requirements-completed: [STORE-01, STORE-07]`.**
+  Its own coverage item D1 is worded around a *symlinked subdirectory* (a live
+  link) and is literally true. But `STORE-01`'s confinement half is not complete:
+  the dangling case creates the store file outside the root. The SUMMARY's
+  per-item claims survive; its requirement-level claim overstates. The executors
+  were right to leave `REQUIREMENTS.md` at `Gaps Found`, and I have not changed it.
+- **28-07-SUMMARY.md presents the reconciliation sweep as the repair for gap 1.**
+  It is, for gap 1. It is also the direct cause of CR-02 and CR-03. No SUMMARY
+  claims otherwise — the defects simply were not looked for — but the net effect
+  of 28-07 on the ring is one failure mode closed and two opened.
+
+## Backstop Ruling — 28-07 coverage item D11
+
+**The item.** *"A kill landing between the pointer-row delete and the unlink
+inside the prune loop leaves an orphan FILE and never an orphan ROW. The real
+interleaving is not deterministically reachable from a test without a hook in
+shipped code, so this is carried as a backstop over the source-order assertion
+plus the two constructed half-states rather than as a timed control."*
+
+**Ruling: the substitution is ACCEPTED.**
+
+The claim decomposes into three links, and the evidence covers the two this
+phase owns:
+
+1. *The source order is row-then-file.* Proven by a mechanical control that
+   genuinely reddens — I read it: it extracts `pruneSnapshots`' body from the
+   stripped source, asserts a `> 200` character non-vacuity floor, asserts both
+   statements are **present** before comparing their indices, and only then
+   asserts `rowDelete < unlink`. Swapping the two statements flips it. This is
+   the correct instrument for the property: both statements are present in either
+   arrangement and both leave the same end state absent a kill, so no behavioural
+   assertion can distinguish them. A test that cannot see the thing it claims to
+   test is worse than an honest structural one.
+2. *Each half-state, once it exists, is handled correctly.* Proven by the two
+   constructed half-states (`anno-store.test.ts:1432` and `:1481`), each of which
+   asserts the ring is full **before** the half-state is constructed and that the
+   construction really took effect — so neither can pass vacuously.
+3. *A `SIGKILL` between two adjacent statements actually yields the state the
+   source order implies.* This is the untested link, and it is a property of the
+   platform, not of this code: it asks whether SQLite's autocommit of the row
+   delete is durable before the following `rmSync`. Under the failure model the
+   phase actually declares — `SIGKILL`, not power loss — the page cache survives,
+   so it holds. And the phase already exercises that platform property directly
+   elsewhere, with a real self-`SIGKILL`ing child process in
+   `anno-durability.test.ts`.
+
+Reaching link 3 by a timed control would require a hook inside a shipped module,
+which this project's conventions refuse and which would itself weaken the
+`STORE-07` single-seam and no-test-scaffolding-in-shipped-code properties the
+phase spends real effort on. Trading a proven structural control for an
+unreliable timing race that also degrades a verified invariant is a bad trade.
+
+**Named residual:** link 3 is unproven under *power loss* (as distinct from
+`SIGKILL`), where WAL durability ordering versus an unlink is genuinely open.
+That is outside the phase's stated failure model and should be recorded as a
+known limit rather than closed silently. **This residual is advisory and does
+not gate the phase.**
+
+## Required Artifacts
 
 | Artifact | Expected | Status | Details |
-|----------|----------|--------|---------|
-| `src/mcp/vice/anno-types.ts` | 12-member vocabulary, split layouts, validators, confinement, error family | ⚠️ HOLLOW (confinement) | 979 lines (min 320). All declared exports present; `DATA_TYPES`/`SPLIT_DATA_TYPES`/`COMMENT_TYPES`/`LABEL_KINDS`/`XREF_ACCESS_KINDS` frozen and probed. `storePathWithinWorkspace` is wired and called by `openStore`, but does not confine against symlinks — the one `provides` clause that does not hold. |
-| `src/mcp/vice/anno-index.ts` | Pure narrowest-wins paint index, rebuilt never maintained | ✓ VERIFIED | 150 lines (min 70). `resolveAt` bound-checks the address with `AnnoAddressError`. No module-level mutable state (asserted structurally in its own test). |
-| `src/mcp/vice/anno-store.ts` | The ONE `node:sqlite` module: DDL, corrupt-file refusal, revision CAS, `vacuum into` snapshot, split-and-preserve, revert, bounded ring | ⚠️ HOLLOW (revert path) | 1290 lines (min 510). Every declared export present. DDL, CAS, split-and-preserve, corrupt refusals and the single-commit site all verified. The snapshot ring's *accounting* does not survive a revert (gap 1) and the prune ordering contradicts its own stated guarantee (gap 2). |
-| `src/mcp/vice/anno-seam.test.ts` | STORE-07 structural assertion, four planted access routes, comment-only negative control, `files[]` non-vacuity | ✓ VERIFIED | 399 lines (min 130). 16 tests pass. Both the shipped-set and test-tree scans pair `deepEqual` with a `length` assertion, and the test-tree scan pins `scanned.length > 50` and `includes("anno-store.test.ts")` before asserting — genuinely non-vacuous. |
-| `src/mcp/vice/anno-store.test.ts` | Round-trips by value, idempotency, corrupt refusals, snapshot bound, cross-process CAS | ✓ VERIFIED | 1280 lines (min 300). 36 tests pass. Cross-process CAS uses a real second OS process. |
-| `src/mcp/vice/anno-types.test.ts` | The irreversible decision frozen; split-orientation control with collapse planting | ✓ VERIFIED | 549 lines (min 220). 15 tests pass. |
-| `src/mcp/vice/anno-index.test.ts` | Exhaustive 65,536-address cross-validation, four pins, non-degeneracy, module purity | ✓ VERIFIED | 530 lines (min 170). 13 tests pass. |
-| `src/mcp/vice/anno-overlap.test.ts` | Five overlap cases, case 3 load-bearing, both plantings observed, adjacency non-merge, no-splitter structural | ✓ VERIFIED | 588 lines (min 240). 14 tests pass. |
-| `src/mcp/vice/anno-durability.test.ts` | ONE combined mutate-SIGKILL-reopen-readback-revert test with its planted counterpart | ✓ VERIFIED | 372 lines (min 150). 4 tests pass. Planted red re-observed by this verifier on the real path. |
-| `src/mcp/vice/anno-durability-mutator.mjs` | Test-only child process, three modes, self-SIGKILL | ✓ VERIFIED | 136 lines (min 90). Absent from `files[]` (confirmed) and does not match the `*.test.*` glob — pinned by its own test at `:348`. |
-| `src/mcp/vice/block-class.ts` | The ONE store-vocabulary boundary, both vocabularies, transitional arm named | ✓ VERIFIED | 183 lines (min 60). Zero imports. |
-| `src/mcp/vice/block-class.test.ts` | Spot checks plus derived total cross-check with non-vacuity | ✓ VERIFIED | Derived cross-check at `:130` over `DATA_TYPES`. |
-| `src/mcp/vice/r2000-coverage.test.ts` | Label-kind agreement, derived literal cross-check, widened derived spellings union | ✓ VERIFIED | Derived union at `:679`. No coverage fixture changed. |
+|---|---|---|---|
+| `src/mcp/vice/anno-store.ts` | The single `node:sqlite` seam: ownership predicate, half-state resolver, staged/published snapshots, revert, prune | ✓ EXISTS, SUBSTANTIVE, WIRED — ⚠️ defective | 1677 lines (28-08 floor 1480). All declared exports present. Wired: imported by `anno-index`-adjacent tests, the mutator and the census boundary. Data flows (real `DatabaseSync`, no static returns). Three reproduced destructive defects in the ring — see gap 1. |
+| `src/mcp/vice/anno-types.ts` | Vocabulary, validators, error family, workspace confinement | ✓ EXISTS, SUBSTANTIVE, WIRED — ⚠️ defective | 1074 lines (28-09 floor 1019). `storePathWithinWorkspace` present and reached from `openStore:323`. Dangling-symlink bypass — see gap 2. |
+| `src/mcp/vice/anno-index.ts` | Pure narrowest-wins paint index | ✓ VERIFIED | 150 lines. Rebuilt from rows on every call via `paintIndexOf`; nothing cached. |
+| `src/mcp/vice/block-class.ts` | The census vocabulary boundary | ✓ VERIFIED | 183 lines, zero `import` lines, both vocabularies as two explicit arms. |
+| `src/mcp/vice/anno-confinement.test.ts` | Symlink refusal + non-over-broad control | ✓ EXISTS, SUBSTANTIVE — ⚠️ incomplete | 218 lines (floor 180), 6 cases, all green. All six plant **live** links; no dangling case, which is why CR-04 is invisible to it. |
+| `src/mcp/vice/anno-seam.test.ts` | `STORE-07` structural proof + seam-private export bound | ✓ VERIFIED | 445 lines (floor 419). Four planted-violation routes incl. `process.getBuiltinModule`, a comment-only negative control, declared lists paired with length checks. |
+| `src/mcp/vice/anno-store.test.ts` | Ring, revert, ownership, refusal and half-state proofs | ✓ EXISTS, SUBSTANTIVE — ⚠️ incomplete | 2123 lines (28-08 floor 1610). Blind to two-stores-in-one-directory, to the publish-to-commit interleaving and to a directory rename. |
+| `src/mcp/vice/anno-durability.test.ts` + `anno-durability-mutator.mjs` | The ONE combined `SIGKILL` proof and its planting | ✓ VERIFIED | 372 + 136 lines. Real separate OS process; real self-`SIGKILL`; planted red re-observed by hand on the current code. |
+| `src/mcp/vice/anno-types.test.ts`, `anno-index.test.ts`, `anno-overlap.test.ts`, `block-class.test.ts` | Vocabulary, exhaustive index, five overlap cases, census cross-check | ✓ VERIFIED | 615 / 530 / 588 lines + `block-class.test.ts`. All green inside the 136. |
 
-### Key Link Verification
+## Key Link Verification
 
-| From | To | Via | Status | Details |
-|------|----|-----|--------|---------|
-| `anno-store.ts` | `node:sqlite` | The only static import in the shipped set | ✓ WIRED | Confirmed independently against `package.json` `files[]`; all other tree hits are comments in unshipped test files. |
-| `anno-store.ts` | `anno-types.ts` | Frozen vocabulary + every validator before any SQL | ✓ WIRED | `assertDataType`/`assertRangeShape`/`assertLegalLabel` etc. all called ahead of the write; probed by observing refusals with zero rows written. |
-| `anno-store.ts` | `anno-index.ts` | `buildPaintIndex` over `listRanges`, rebuilt every call | ✓ WIRED | `paintIndexOf:838` holds nothing between calls. |
-| `anno-types.ts` | `vice.ts` | `ViceError` base for the whole error family | ✓ WIRED | Every store refusal I triggered was an `Anno*Error`. Two exceptions escape the family — see WR-04 and CR-01. |
-| `anno-types.ts` | `disasm-opcodes.ts` | `OPCODES` → derived mnemonic denylist | ✓ WIRED | 76 derived entries; size pinned against a count computed from `OPCODES`. |
-| `anno-store.ts` | `r2000-confidence.ts` | `CONFIDENCE_GRADES` → the contradiction rule | ✓ WIRED | `CODE_GRADE_BRACKETS`/`DATA_GRADE_BRACKETS` filtered from the five-grade vocabulary by token suffix, never restated. |
-| `anno-durability.test.ts` | `anno-durability-mutator.mjs` | `execFileSync`, spawned never imported | ✓ WIRED | Real child process, self-SIGKILL, status 137 tolerated. |
-| `anno-store.ts` | `hostpath.ts` | MUST NOT exist | ✓ CORRECTLY ABSENT | Only a comment mentions it; `hostpath-consumers.test.ts` green. |
-| `package.json` `files[]` | `anno-store.ts` | Non-vacuity of the single-seam assertion | ✓ WIRED | Present, so the assertion is not vacuous. |
+`gsd-tools query verify.key-links` reports 2/30 across the nine plans. **Those
+failures are a tool artifact, not a wiring finding** — the tool passes the
+`pattern` field with its surrounding quote characters into the search, so no
+pattern with a quoted literal can match. Every link was therefore verified by
+hand with `grep`:
 
-### Data-Flow Trace (Level 4)
+| From | To | Via | Status | Detail |
+|---|---|---|---|---|
+| `anno-store.ts` | `anno-store.ts` | one `retainedRevisions()`, three consumers | ✓ WIRED | Defined `:479`; read by `oldestRetainedRevision:507`, `reconcileSnapshotRing:555`, `revertTo:1153`. `pruneSnapshots` reads it through the resolver — the set is closed, exactly as the doc comment claims. |
+| `anno-store.ts` | `anno-store.ts` | `stageSnapshot` → `publishSnapshot` → `discardSnapshot` | ✓ WIRED | `:805` stage, `:832` publish (after the won CAS), `:820`/`:865` discard on both non-committing exits. |
+| `anno-store.ts` | `anno-types.ts` | `MAX_SNAPSHOT_REVISIONS`, `AnnoStoreError`, `AnnoStoreStaleRevisionError` | ✓ WIRED | Imported at `:151` and used as the single bound; both error classes thrown from the ring and CAS paths. No second literal for the bound. |
+| `anno-types.ts` | `node:fs` | `existsSync`, `realpathSync` for the ancestor walk | ✓ WIRED | `import { existsSync, realpathSync } from "node:fs"` at `:110`. |
+| `anno-types.ts` | `hostpath.ts` | **MUST NOT exist** | ✓ ABSENT (correct) | The only `hostpath` occurrence in `anno-types.ts` is a doc-comment reference at `:794`. `hostpath-consumers.test.ts` green: 11/11. |
+| `anno-confinement.test.ts` | `anno-store.ts` | `openStore` end-to-end so the FILE is checked, not just the throw | ✓ WIRED | 6 `openStore` references. |
+| `anno-seam.test.ts` | `anno-store.ts` | seam-private export scan over the shipped module set | ✓ WIRED | `stageSnapshot` joined `applyWriteWithoutCommit` in the declared list, paired with a length check and a non-vacuity presence pin at `:335`. |
+| `package.json` | shipped modules | `files[]` ships the four modules, no test file | ✓ WIRED | `files[]` contains `anno-store.ts`, `anno-types.ts`, `anno-index.ts`, `block-class.ts`; no `anno-*.test.ts` and no `anno-durability-mutator.mjs`. |
 
-| Artifact | Data Variable | Source | Produces Real Data | Status |
-|----------|---------------|--------|--------------------|--------|
-| `anno-store.ts` | `listRanges` rows | `select … from anno_range order by id` | Yes — probed, real rows with real ids | ✓ FLOWING |
-| `anno-store.ts` | `contradictedComments` | `collectContradictedComments` query inside the write transaction | Yes — probed, one real entry with grade and `contradictedBy` | ✓ FLOWING |
-| `anno-store.ts` | `oldestRetainedRevision` | `select min(revision) from anno_snapshot` | Yes, but the value can name a revision with no file behind it | ⚠️ STATIC-EQUIVALENT (gap 1) |
-| `anno-index.ts` | `PaintIndex` | `Int32Array` painted from `listRanges` output | Yes — 65,536 entries, cross-validated | ✓ FLOWING |
-| `block-class.ts` | `BlockClass` | The block listing's own `type` field | Yes — probed over both vocabularies | ✓ FLOWING |
+## Data-Flow Trace (Level 4)
 
-### Behavioral Spot-Checks
+| Artifact | Value | Source | Real data | Status |
+|---|---|---|---|---|
+| `listRanges` | typed ranges incl. `bank` | `select id, start, end_inclusive, data_type, bank from anno_range order by id` | yes | ✓ FLOWING |
+| `paintIndexOf` | narrowest-wins index | `buildPaintIndex(listRanges(handle))`, rebuilt each call | yes | ✓ FLOWING |
+| `retainedRevisions` | retained revision list | `select revision, path from anno_snapshot` **filtered on the stored absolute path** | yes, but the predicate is location-fragile | ⚠️ FLOWING-BUT-FRAGILE (CR-03) |
+| `oldestRetainedRevision` | the published floor | first element of `retainedRevisions()` | yes | ✓ FLOWING |
+| `revertTo` | restored store contents | `copyFileSync(pointer.path, staging)` → rename | **the file at that path may be another store's** | ✗ WRONG-SOURCE (CR-01) |
+| `currentRevision` | revision counter | `select revision from anno_meta where id = 1` | yes | ✓ FLOWING |
+| `setDataType` result | `contradictedComments` | `collectContradictedComments` reading `anno_comment` inside the same transaction | yes — probed, returned a real row as data | ✓ FLOWING |
+| `blockClassAt` | census class | the caller's block list, two explicit vocabulary arms | yes | ✓ FLOWING |
+
+## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| Phase test files pass | `node --test anno-{store,types,index,overlap,seam,durability}.test.ts` | 36+15+13+14+16+4 = 98 tests, 0 fail | ✓ PASS |
-| Criterion 4's planted red, on the REAL path | replace `commitTransaction`'s `db.exec("commit")` with a no-op, run the combined test | `not ok 1 - STORE-04, one combined test…` — then restored, `git diff` clean, 4/4 green | ✓ PASS |
-| 12-member split orientation observable | probe `resolveSplitTargets` over identical bytes | lo_hi vs hi_lo target sets differ; `_address` produces xrefs, `_word` does not | ✓ PASS |
-| Corrupt-store refusals | probe 5 corruption modes through `openStore` | 5/5 `AnnoStoreCorruptError`; tail-byte flip opens (the stated residual) | ✓ PASS |
-| Cross-process CAS refusal | probe stale `baseRevision` | `AnnoStoreStaleRevisionError`, other row intact, refused row absent | ✓ PASS |
-| Label rules | probe 5 illegal label writes | 5/5 `AnnoLabelError`, nothing sanitised | ✓ PASS |
-| Split-and-preserve case 3 | probe fully-contained retype | 3 rows, 256→256 bytes | ✓ PASS |
-| CR-01 reproduction | 40 writes → `revertTo(8)` → follow reported floor | floor reported 0; raw non-`ViceError` `ENOENT` | ✗ FAIL (gap 1) |
-| CR-02 reproduction | loser re-vacuums a winner's snapshot path → `revertTo(1)` | `revertTo(1) gave revision 2 with 2 row(s)` | ✗ FAIL (see below) |
-| CR-03 reproduction | symlinked subdir inside workspace | store file created outside workspace root | ✗ FAIL (gap 3) |
-| Typecheck | `npx tsc --noEmit` | exit 0 | ✓ PASS |
-| Package manifests | `node scripts/check-npm-packages.mjs` | `OK`, 80 + 34 files | ✓ PASS |
-| Related guards | `node --test docs-linerefs.test.ts hostpath-consumers.test.ts` | 14 tests, 0 fail | ✓ PASS |
-| Plan 28-03 tests | `node --test block-class.test.ts r2000-coverage.test.ts` | 131 tests, 0 fail | ✓ PASS |
-| Disposition guard (pre-this-file) | `node --test docs-review-disposition.test.ts` | RED, listing 17 `28-REVIEW.md` ids | ✗ FAIL (closed by this file) |
+|---|---|---|---|
+| The phase's own eight test files pass | `node --test anno-store anno-types anno-confinement anno-seam anno-index anno-overlap anno-durability block-class` | 136 tests / 136 pass / 0 fail | ✓ PASS |
+| `hostpath` isolation still holds over the new `node:fs` import | `node --test hostpath-consumers.test.ts` | 11 pass / 0 fail | ✓ PASS |
+| Criterion 4's planted red on the CURRENT shipped path | `commitTransaction` → no-op by hand; `node --test anno-durability.test.ts` | `not ok 1` (the ONE combined test), `# pass 1 / fail 3`; restored → `# pass 4 / fail 0`, `git status` clean | ✓ PASS (red observed) |
+| Ring bound holds after a revert | 40 writes → revert → 40 writes, production functions | 32 files both times; floor 8 then 16; second revert at the floor SUCCEEDS | ✓ PASS |
+| Two stores in one directory keep their own rings | production `openStore`/`setDataType`/`revertTo` | A's revert returned B's rows | ✗ FAIL (CR-01) |
+| A concurrent writer's published snapshot survives a sweep | two connections, production `reconcileSnapshotRing` | `droppedFiles: [r2.db]`; revision 2 permanently unrevertible | ✗ FAIL (CR-02) |
+| The ring survives a project-directory rename | `mv` + one write, production functions | 5 files and 5 rows destroyed silently | ✗ FAIL (CR-03) |
+| A dangling symlink cannot place the store outside the root | `openStore` + `storePathWithinWorkspace` | accepted; file created outside | ✗ FAIL (CR-04) |
+| The full workspace suite | **not run** | — | ? SKIP — documented ~19 min runtime with a hang in `vice-proxy.test.ts`; a truncated run is not a test result. Targeted files run instead, per the phase's own guidance. |
 
-### Probe Execution
+## Probe Execution
 
 | Probe | Command | Result | Status |
-|-------|---------|--------|--------|
-| n/a | — | This phase declares no `scripts/*/tests/probe-*.sh`; its probe obligations are the `STORE-0N probe:` clauses inside the plan truths, verified above through the test files and my own probes | ✓ N/A |
+|---|---|---|---|
+| `scripts/*/tests/probe-*.sh` | `find scripts -path '*/tests/probe-*.sh'` | none found; no phase-28 PLAN or SUMMARY declares a probe script | N/A — not a probe-based phase |
 
-### Requirements Coverage
+## Requirements Coverage
 
-| Requirement | Source Plan | Description | Status | Evidence |
-|-------------|-------------|-------------|--------|----------|
-| STORE-01 | 28-01, 28-03, 28-04 | Labels, comments, per-range typing over the full 12-member vocabulary, scopes, project enums | ✓ SATISFIED | Truths 1, 10, 11. All five annotation kinds round-trip; the twelve members are frozen and probed. |
-| STORE-02 | 28-01, 28-05 | Ranges stored as ranges, **never merged on adjacency**, no splitter introduced | ✓ SATISFIED | Truth 2. Proven behaviourally (adjacent rows stay two, verified by my own probe) and structurally (no `coalesc`/`merg`/`splitter` identifier in `codeOnly(anno-store.ts)`, with non-vacuity pinned). WR-08's "merge" framing refuted below. |
-| STORE-03 | 28-01, 28-02, 28-05 | Narrowest-wins exact at all 65,536 addresses, cross-validated, tie-break/ends/partial-overwrite pinned | ✓ SATISFIED | Truths 2, 3. Real exhaustive loop with an asserted comparison count and an independent oracle. |
-| STORE-04 | 28-01, 28-06 | Survives restart, edit revertible, **one** combined planted-violation test, removing the commit observed red | ⚠️ PARTIAL | Truth 4 VERIFIED — I observed the red myself. But truths 7 and 8 FAILED: the ring's accounting does not survive a revert, and the prune ordering contradicts its own guarantee. The requirement's literal contract is met; its revert path has two reproduced defects. |
-| STORE-05 | 28-01, 28-04, 28-06 | Schema version + reserved uninterpreted `bank` from the first write; xref access kinds; stale-base write refused | ✓ SATISFIED | Truth 5. `bank` verified never branched on anywhere. `anno_scope`/`anno_enum` carry no `bank` column — a **documented deliberate narrowing** ("a scope is a lexical region, not a memory view"; an enum is not address-bound), consistent with 28-01's own truth wording, which names exactly the four address-bearing tables. Accepted as designed. |
-| STORE-07 | 28-01 | `node:sqlite` reached through exactly one seam module | ✓ SATISFIED | Truth 5. Verified independently against `files[]`, not just via the test. |
-| STORE-06 | — | Cross-references and search answerable | n/a — NOT ORPHANED | `REQUIREMENTS.md:227` maps it to **Phase 29**, and `REQUIREMENTS.md:250` states so explicitly. Correctly absent from every Phase 28 plan. |
+| Requirement | Source plans | Description | Status | Evidence |
+|---|---|---|---|---|
+| **STORE-01** | 28-01, 28-04, 28-09 | Labels, comments, per-range typing over the **full 12-member** vocabulary, scopes, project enums | ✗ BLOCKED | The vocabulary half is fully satisfied and re-probed (truths 1, 3, 10). The confinement half that 28-09 declares under this ID is not: a dangling symlink puts the store file outside the workspace root (truth 9, gap 2). |
+| **STORE-02** | 28-02, 28-05 | Ranges never merged on adjacency; no splitter introduced | ✓ SATISFIED | Behavioural (two adjacent ranges stay two rows) and structural (`codeOnly` scan for `coalesc`/`merg`/`splitter` → `[]`, non-vacuous over 28-07/28-08's additions). Truth 2. |
+| **STORE-03** | 28-02, 28-05 | Narrowest-wins exact at all 65,536 addresses, cross-validated; partial-overwrite behaviour pinned | ✓ SATISFIED | Exhaustive loop with an asserted comparison count of `0x10000`; five overlap cases with the fully-contained case load-bearing. Truths 2, 3. |
+| **STORE-04** | 28-06, 28-07, 28-08 | Survives a restart; an edit can be **reverted**; one combined planted-violation test with the red observed | ✗ BLOCKED | The durability half is satisfied, and the observed red was re-run against the rewritten write sequence (truth 4). The **revert** half is not: reproduced returning another store's database (CR-01), reproduced losing a revision permanently under contention (CR-02) and losing the entire history on a directory move (CR-03). Truth 7, gap 1. |
+| **STORE-05** | 28-01, 28-04, 28-06 | Schema version + reserved uninterpreted `bank`; xref access kinds; stale-base writes refused | ✓ SATISFIED | Columns re-probed; `bank` written `NULL`, read back, never branched on; four access kinds frozen; stale write refused with both revisions; cross-process CAS proof green. Truth 5. |
+| **STORE-07** | 28-01, 28-08, 28-09 | `node:sqlite` reached through exactly one seam module | ✓ SATISFIED | `anno-store.ts` is the only entry in `files[]` naming `node:sqlite`; asserted structurally with four planted-violation routes and a comment-only negative control; `anno-types.ts`'s new `node:fs` import is a Node builtin, and `hostpath-consumers.test.ts` stays green. Truth 5. |
 
-No orphaned requirements. All six declared IDs are accounted for and all six are
-marked `Complete` in `REQUIREMENTS.md`'s traceability table — **`STORE-04`'s
-`Complete` mark is the one I would question**, given truths 7 and 8.
+**Orphaned requirements: none.** `REQUIREMENTS.md` maps exactly
+`STORE-01..05, STORE-07` to Phase 28, and every one is claimed by at least one
+plan's `requirements` frontmatter. `STORE-06` maps to Phase 29 and is correctly
+absent here.
 
-### Anti-Patterns Found
+**`REQUIREMENTS.md` was NOT modified by this verification.** All six rows stay at
+`Gaps Found`, which my own verdict supports: `STORE-01` and `STORE-04` are
+blocked, and the milestone convention is not to flip the others independently
+while the phase is open.
+
+## Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| — | — | `TBD` / `FIXME` / `XXX` | none | Zero debt markers across all 13 phase files. |
-| — | — | `TODO` / `HACK` / `PLACEHOLDER` / "not yet implemented" | none | Zero. |
-| `anno-store.ts` | 445-457 | Doc comment asserts the opposite of what the loop does | 🛑 Blocker | Gap 2. A future reader hardening this path will trust the comment. |
-| `anno-store.ts` | 314-326 | `new DatabaseSync` and the whole fresh-store DDL block sit outside every `try` | ⚠️ Warning | WR-04. Raw `Error` escapes the `ViceError` family; connection leaks on the fresh path. |
-| `anno-store.ts` | 335-341 | Unconditional `catch` → `AnnoStoreCorruptError` | ⚠️ Warning | WR-03. A lock timeout would read as "your annotations are gone". |
-| `anno-types.ts` | 758 | `LEGAL_IDENTIFIER_RE` with no length bound | ⚠️ Warning | WR-07. `MAX_COMMENT_BYTES` exists for exactly this reason; three neighbouring fields lack it. |
+|---|---|---|---|---|
+| — | — | `TBD` / `FIXME` / `XXX` / `TODO` / `HACK` / `PLACEHOLDER` across all 12 phase files | — | **None found.** The debt-marker gate is clean. |
+| `anno-store.ts` | 805–848 | 43 lines between `stageSnapshot` and the first `try` — `begin immediate`, the CAS, the rename and the pointer insert are all unguarded | ⚠️ Warning | A throw there leaks a `.tmp` the sweep is deliberately anchored not to collect (unbounded growth in the directory `MAX_SNAPSHOT_REVISIONS` exists to bound), leaves the transaction open with the CAS applied, and escapes the `ViceError` family. Structurally confirmed. (WR-01) |
+| `anno-store.ts` | 394 | `pragma integrity_check` outside any `try` | ⚠️ Warning | A throw leaks the connection and escapes the family — the one path 28-08's `openStore` wrapping missed. (WR-04) |
+| `anno-store.ts` | 870–877 | `pruneSnapshots` runs after `commitTransaction` with no handler | ⚠️ Warning | Its two `delete from anno_snapshot` statements are autocommit writes; `SQLITE_BUSY` after the 5 s timeout reports a **committed** write to the caller as a failure, and a retry of an additive verb produces a second row. (WR-02) |
+| `anno-store.ts` | 566–582 | The sweep's `readdirSync` + unconditional unlink | 🛑 Blocker | Root cause of CR-02 and, with the absolute-path predicate, of CR-03. Filed as gap 1. |
+| `anno-types.ts` | 732–752 | `existsSync` used as a path-entry-existence test | 🛑 Blocker | Root cause of CR-04. Filed as gap 2. |
 
-## Review Finding Assessment (all 18 ids)
+The eight remaining `28-REVIEW.md` warnings (WR-03, WR-05..WR-10) and four info
+items were re-read; none falsifies a must-have or a success criterion, and they
+are correctly dispositioned in the review. They are not repeated here.
 
-Reproduced or refuted in my own process where possible, not inherited.
+## Human Verification Required
 
-### Blockers — all three reproduced
-
-**CR-01 — VERIFIED REAL, blocks a must-have (gap 1).** Reproduced exactly as
-reported: 40 writes, `revertTo(8)`, `oldestRetainedRevision` → `0`, following that
-floor → `Error: ENOENT … copyfile r0.db`, `is ViceError-family? false`. Root cause
-confirmed: the `vacuum into` image is the whole database including `anno_snapshot`,
-so restoring it reinstates pointer rows for revisions whose files are gone. The
-compounding factor is WR-02 — the handle was already closed when the `ENOENT`
-threw. Falsifies 28-06 truths 7 and 8, and degrades 28-06 prohibition 3.
-
-**CR-02 — VERIFIED REAL, blocks the goal's "revertible" clause.** Reproduced
-verbatim, including the reviewer's own output line: `revertTo(1) gave revision 2
-with 2 row(s) -- expected revision 1 with 1 row`. The `rmSync` + `vacuum into` at
-`:498-499` run before `begin immediate`, so a stale-revision loser replaces a
-winner's committed snapshot bytes; the loser's write is then correctly refused,
-leaving a pointer row that describes the wrong revision and a `revertTo` that
-silently succeeds with the wrong state. **Weighed against STORE-05 as instructed:
-STORE-05 is NOT falsified** — I verified the stale write is refused and the other
-process's row survives intact. The damage is entirely to the snapshot file, i.e.
-to STORE-04's revert claim under concurrency. Silent wrong-answer severity; the
-`vacuum into` is a full database copy, so the window scales with store size rather
-than being a microsecond race.
-
-**CR-03 — VERIFIED REAL, blocks a must-have (gap 3).** Reproduced: symlink escape
-succeeded and created the store file outside the workspace root, while the `..`
-control correctly refused. **Weighed against STORE-01 as instructed: STORE-01's
-requirement text does not mention confinement, and no ROADMAP success criterion
-does either** — so this falsifies 28-01's *artifact* `provides` clause and
-`anno-store.ts`'s own trap 7, not a roadmap criterion. It nonetheless guards a
-path the module's own header premise says arrives unvalidated from the transport,
-which is why I am carrying it as a gap rather than a warning.
-
-### Warnings
-
-**WR-01 — VERIFIED REAL, blocks a must-have (gap 2).** Confirmed by reading
-`pruneSnapshots`: `rmSync(row.path)` then `delete from anno_snapshot`. The doc
-comment's conclusion ("this one cannot [produce the bad state]") is inverted with
-respect to its own correctly-stated premise. Same forbidden state CR-01 reaches by
-another route. One-line fix; the reasoning around it is already correct.
-
-**WR-02 — VERIFIED REAL, contributes to gap 1.** Observed as a side effect of my
-CR-01 probe: the `ENOENT` surfaced with the connection already closed, leaving no
-handle to diagnose with. `closeStore` precedes all filesystem work in `revertTo`.
-
-**WR-03 — VERIFIED REAL (by inspection), out of scope for this phase's truths.**
-The `catch` at `:335` is unconditional and its message asserts corruption. A
-`SELECT` on a WAL database does not normally block on a write lock, so
-reachability is narrower than the finding implies — but the failure mode it
-describes ("your annotations are gone" for a transient lock) is exactly the
-confusion 28-06 prohibition 1 exists to prevent. Should be fixed; does not
-falsify a truth.
-
-**WR-04 — VERIFIED REAL, out of scope for this phase's truths.** Reproduced both
-halves: a directory-as-path and a missing-parent path both throw a bare `Error`
-with `ViceError-family? false`. The fresh-store DDL block is likewise outside any
-`try`, so a failure there leaks the connection. Same family-escape class as
-CR-01's `ENOENT`.
-
-**WR-05 — VERIFIED REAL, but NARROWER than reported.** My first probe with plain
-decimal keys `{"0":…,"1":…}` showed both orderings accepted with `changed:false` —
-because JavaScript's own integer-index property ordering canonicalises them, which
-the finding does not account for. Re-probed with `$`-prefixed keys (one of the four
-accepted forms): `{"$01","$00"}` after `{"$00","$01"}` → `AnnoLabelError: project
-enum "mode" already exists with different contents`. So the finding holds for the
-`$`/`0x`/`%`/`0b` key forms and is masked for decimal. Real, contradicts
-`createProjectEnum`'s own doc comment, out of scope for this phase's truths.
-
-**WR-06 — VERIFIED REAL, out of scope.** Probed: `baseRevision` of `"1"`, `1.5`
-and `null` all produce `AnnoStoreStaleRevisionError` against a store at revision 3.
-Mitigating: the outcome is a **refusal**, so it fails safe — no write lands. It is
-a diagnosability defect (a caller told "stale" when the real answer is "that is not
-a revision number"), not a data-loss one.
-
-**WR-07 — VERIFIED REAL, out of scope.** Confirmed: `MAX_COMMENT_BYTES = 4096`
-exists; `LEGAL_IDENTIFIER_RE` has no length cap and neither does `assertEnumName`.
-The finding's "same argument applies verbatim" reasoning is sound.
-
-**WR-08 — PARTLY REFUTED, partly verified real. Its `STORE-02` framing is wrong.**
-I reproduced both row sets exactly as printed. My assessment differs on what they
-mean:
-
-- *The "merge" is not a merge on adjacency.* Retyping `$0400-$05FF` to `byte` over
-  two wholly-contained rows is the caller **explicitly requesting** that range;
-  split-and-preserve correctly finds no head and no tail to preserve and emits one
-  row for exactly what was asked. STORE-02 forbids the store **spontaneously**
-  coalescing adjacent rows, and it does not: my pure-adjacency probe (`$0400-$04FF`
-  then `$0500-$05FF`, no union retype) left two rows with ids 1 and 2. The
-  `end_inclusive >= ? and start <= ?` overlap query provably cannot select a
-  strictly-adjacent row. **So this is not a requirement-level contradiction, and
-  criterion 2 stands.**
-- *The fragmentation IS a real defect, on a different requirement.* A same-type
-  subrange retype produced `[[2,1000,107f,code],[3,1080,10ff,code]]` with
-  `changed:true` — three id churns and a row split for a semantic no-op, while
-  `AnnoWriteResult`'s doc comment says `changed` "is the ONLY signal that
-  distinguishes a no-op from a real edit". That is a genuine contract violation.
-- The reviewer's core process point is correct either way: **neither behaviour is
-  pinned by any test**, so both can flip silently. Worth fixing; not a blocker.
-
-**WR-09 — ACCEPTED AS REAL, low priority.** `JSON.parse(row.variants)` is
-unguarded. Reachable only via a hand-edited or foreign store — and such a store is
-already refused at `openStore` unless the tampering preserved `anno_meta` and
-`integrity_check`, which is a narrow window. Same error-family-escape class as
-WR-04.
-
-**WR-10 — VERIFIED REAL as a fact, ACCEPTED AS DESIGNED for this phase.**
-Confirmed: `applyWriteWithoutCommit` is exported and `anno-store.ts` is in
-`files[]`. The seam test does pin that no shipped module *names* it
-(`anno-seam.test.ts:296`), which bounds the in-tree risk; the package-boundary risk
-the finding names is real but is API hygiene, not a phase-28 truth. The
-"identical code path" property the durability proof needs is genuinely load-bearing
-and any fix must preserve it — the finding's suggested opt-in token does.
-
-**WR-11 — VERIFIED REAL, narrow.** Confirmed by reading `:506-508`: the
-CAS-failure refusal passes only `{ baseRevision: rev }`, so `currentRevision` is
-`undefined` on exactly the path where a concurrent writer moved the revision. The
-*pre-transaction* refusal — the one the cross-process test exercises and the one I
-probed — does carry both numbers, which is why truth 5 still verifies. Fix is
-three lines and must read the value before the rollback.
-
-### Info
-
-**IN-01 — ACCEPTED AS REAL, minor.** `null`/`true`/`{}` reach `assertRangeShape`
-and are reported as range-shape rather than address errors. The documented
-responsibility split is deliberate and stated; the finding is right that it makes
-the two error classes indistinguishable for non-string non-number input.
-
-**IN-02 — REFUTED as a defect on this platform.** `fsyncPath` opens with `"r"`;
-on Linux `fsync(2)` on an `O_RDONLY` descriptor is permitted, and `O_RDONLY` is the
-standard idiom for the directory fsync this function also performs. No observable
-problem here; portability-only.
-
-**IN-03 — ACCEPTED AS REAL, minor.** `resolveAt` bound-checks the *address*
-(verified: `AnnoAddressError` outside `0..0xFFFF`) but not `index.length`, so a
-hand-built short index would return `undefined` rather than `NO_ROW`.
-`buildPaintIndex` is the only producer and always allocates `PAINT_INDEX_SIZE`, so
-nothing is reachable today.
-
-**IN-04 — ACCEPTED AS REAL, test-fixture only.** A fixture census note; does not
-affect the exhaustive cross-validation's non-vacuity, which is separately asserted
-on both axes and which I verified.
-
-## Prohibition Assessment
-
-All nine phase prohibitions are `verification: judgment` with
-`status: unverified`. Per the autonomous-mode contract these receive
-**NON-AUTHORITATIVE LLM-judge verdicts** and are flagged
-`unverified-prohibition — human review recommended`. None is silently passed.
-
-| # | Plan | Prohibition (abridged) | Non-authoritative verdict | Evidence |
-|---|------|------------------------|---------------------------|----------|
-| P1 | 28-03 | MUST NOT let a measured census number silently go to zero; any vocabulary change needs a derived TOTAL cross-check | HELD | `block-class.test.ts:130` iterates `DATA_TYPES` with a 12-member non-vacuity pin; `r2000-coverage.test.ts:679` derives the spellings union; the label-kind literal cross-check reads through `codeOnly(src, true)`. 131 tests pass. |
-| P2 | 28-03 | MUST NOT repair the boundary by lowering a floor or deleting a rationale that became false | HELD | The false header premise was rewritten honestly, the transitional arm named with its removal condition (`CUT-01`), and the reversal recorded rather than the old rationale deleted. No floor lowered. |
-| P3 | 28-04 | MUST NOT collapse two labels by sanitising a name | HELD | Probed 5 refusals; `listLabels` still held exactly the one original row afterwards. No normalisation/substitution/quoting step exists on the write path. |
-| P4 | 28-04 | MUST NOT store anything derivable from program bytes in the xref table | HELD | Probed: `anno_xref` held 0 rows after typing a `lo_hi_address` split table whose targets are fully derivable. |
-| P5 | 28-05 | MUST NOT silently un-document a previously annotated region | HELD | Probed case 3: 256 bytes preserved across 3 rows; the contradicted comment reported back as data. |
-| P6 | 28-05 | MUST NOT report a contradicted comment as a failure | HELD | Probed: the retype SUCCEEDED with `changed:true` and returned the comment as data. |
-| P7 | 28-06 | MUST NOT present a corrupt/foreign/zero-length store as a pristine empty store; state residuals | HELD | Probed 5 refusals. The tail-truncation residual is stated **without** an assertion, which is the honest form the prohibition asks for. |
-| P8 | 28-06 | MUST NOT silently discard another process's committed annotations | HELD | Probed cross-process CAS: refused by name with both revisions, other process's row intact, refused row absent. |
-| P9 | 28-06 | MUST NOT let revert history grow without bound; a named constant with a **refusal** past it, never a silent best-effort | **PARTIALLY HELD — FLAGGED** | `MAX_SNAPSHOT_REVISIONS = 32` is a named constant imported not copied, and the forward-path refusal is named and informative. Post-revert the refusal degrades into an unhandled `ENOENT` that also closes the handle — not a silent best-effort, but worse. Overlaps gap 1. |
+None. Every truth resolved to VERIFIED or FAILED against reproduced evidence; no
+truth was left present-but-behavior-unverified, and no truth needed a judgment
+call I could not make from the code. The judgment-tier prohibitions are carried
+in `prohibition_flags` as non-authoritative verdicts with human review
+recommended, per the standing convention for that tier — but they are not
+blocking items and they are not the reason for this phase's status.
 
 ## Gaps Summary
 
-The phase delivered its five ROADMAP success criteria, and delivered them with
-unusually strong evidence: a genuinely exhaustive 65,536-address cross-validation
-with its comparison count asserted first, two real planted-violation controls in
-the overlap path, a real second OS process for both the SIGKILL durability proof
-and the CAS proof, and a structural single-seam assertion whose non-vacuity is
-itself pinned. I re-observed criterion 4's planted red on the shipped code path
-rather than taking the SUMMARY's word for it, and it reddened. Typecheck, package
-manifests, and the phase's own 98 tests are clean, with zero debt markers.
+Three gap-closure plans ran, and they did real work: **one of the three prior
+gaps is genuinely closed** (the prune's ordering, plus the inverted trap-10
+comment that would have misled the next reader), and the other two had their
+*named* remedies correctly implemented — the ownership predicate, the half-state
+resolver, the per-attempt staging with publish-after-CAS, the real-path
+confinement. I re-verified each of those mechanisms independently rather than
+reading them off a SUMMARY, and each does what it claims. The score moved 8/11 →
+9/11 and all five ROADMAP success criteria hold, each re-established in this
+round.
 
-What is missing is concentrated in one area: **the snapshot ring's accounting after
-a revert, and the ordering around the prune.** Three reproduced defects converge
-there.
+But **two of the three gaps are not closed at the level the must-have states**,
+and the reason is worth naming because it is a pattern rather than an accident:
+in both cases the plan closed the *specific reproduction* the prior verification
+happened to write, and the underlying property stayed false one step to the side
+of it. Gap 3's remedy handles live symlinks and not dangling ones — a strictly
+easier plant. Gap 1's remedy fixes the post-revert ring on one store, at one
+path, with one writer, and introduces two new destructive defects in the ring
+the moment any of those three assumptions is relaxed.
 
-1. The snapshot image contains the pointer table, so the first `revertTo` reinstates
-   pointer rows for files the prune deleted. The reported floor becomes a lie, and
-   following it crashes out of the `ViceError` family with the caller's handle
-   already closed (CR-01 + WR-02).
-2. The prune loop deletes the file before its pointer row — the exact inverse of
-   what its own doc comment argues for — so a kill mid-loop produces the same
-   pointer-row-without-file state by a second route (WR-01).
-3. A stale-revision loser can replace a winner's committed snapshot bytes, because
-   the `rm` and `vacuum into` happen outside any lock. The loser's *write* is
-   correctly refused — STORE-05 holds — but `revertTo` then silently returns the
-   wrong revision (CR-02).
+The concentration is striking and should drive the closure design: **all three
+new ring blockers are the same missing idea — a snapshot's identity.** CR-01 is
+"the ring has no identity, so two stores share one." CR-03 is "the identity is
+an absolute path, so it changes when the tree moves." CR-02 is "identity is
+decided from one connection's committed view, so a file mid-publication looks
+unowned." A closure plan that fixes them one at a time will keep finding the
+fourth. One that decides what identifies a snapshot — which store, keyed on the
+store *file*; which revision, derived from the handle rather than stored; and
+who may judge an unclaimed file, which is nobody who cannot have created it —
+closes all three and makes the fourth hard to write.
 
-Read together these are one concern, not three: **the snapshot ring has no
-ownership or reconciliation discipline between its files and its pointer rows.**
-Every one of them is invisible to the current suite because no test performs a
-second revert, a mid-prune interruption, or a concurrent snapshot write. That is
-the shape of gap this phase's own methodology is otherwise excellent at catching,
-which makes its absence here worth naming rather than smoothing over.
+CR-04 is separate and much smaller: `existsSync` cannot answer the question the
+confinement is asking, and `lstatSync` can. Its real cost is the test surface
+(dangling leaf, dangling directory, broken chains, and the over-refusal control
+that must survive), which is exactly what the existing todo says.
 
-Separately, the workspace confinement control is half-built: the `..` case is
-pinned and works, the symlink case is neither pinned nor handled, and the store
-file lands outside the workspace root (CR-03). Small fix, small test, real
-exposure given the module's own stated premise that the path arrives unvalidated.
-
-None of the three gaps is addressed by any later milestone phase — Phase 29 is the
-MCP surface (`STORE-06`), Phase 30 is ACME reassembly — so none is deferrable.
-
-I would also flag `REQUIREMENTS.md`'s `STORE-04 | Phase 28 | Complete` row for
-reconsideration: the requirement's literal contract is met, but two of the plan's
-own stated truths about its revert path are not.
+**Not deferrable.** Phase 29 exposes this store through an MCP tool family; no
+later phase in the milestone touches the snapshot ring or the confinement, so
+nothing downstream absorbs these. Shipping the surface over a store whose revert
+can return a neighbouring store's annotations would put the silent-wrong-answer
+in front of an agent.
 
 ---
 
-_Verified: 2026-08-27T19:32:49Z_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-08-27T23:06:41Z at `a8187d2`_
+_Verifier: Claude (gsd-verifier), round 2_
