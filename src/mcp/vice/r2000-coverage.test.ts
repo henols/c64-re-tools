@@ -62,6 +62,7 @@ import {
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode } from "./disasm-decoder.ts";
 import { decodeRawData } from "./prg-image.ts";
+import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
@@ -807,7 +808,13 @@ test("SUPPLEMENT (not the proof): the census module's source carries no producti
   // ALONGSIDE the substitutability proof above, never instead of it -- what a
   // later phase needs is that a substituted implementation works, not that a
   // particular spelling is unspelled.
-  const source = readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+  // Scanned through the shared stripper, not on raw text (WR-09). A future
+  // header paragraph that legitimately DISCUSSES the store's "Code" spelling
+  // -- exactly the kind of paragraph this module family is full of -- would
+  // otherwise turn this red for a reason unrelated to the invariant.
+  // `keepLiteralBodies: true` is the right mode precisely because the thing
+  // being searched for IS a string literal.
+  const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);
   for (const spelling of PRODUCTION_BLOCK_SPELLINGS) {
     assert.equal(
       source.includes(`"${spelling}"`),
