@@ -6,13 +6,9 @@
 // prg-image.ts's parsePrg(), the pairing plan 10-04 depends on.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
 
 import { sectorsPerTrack, tsToOffset, listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
+import { parsePrg } from "./prg-image.ts";
 
 // ------------------------------------------------------------ fixture helpers
 
@@ -349,45 +345,38 @@ test("extractEntry: a hand-written final sector at the one-payload-byte boundary
 // This module's extractEntry() output feeds straight into parsePrg(), which
 // now lives in prg-image.ts -- the pure C64 image byte-layout module the
 // SEAM-02 extraction moved it into, out of the annotation-store project
-// builder it used to share a file with. The probe below therefore targets
-// prg-image.ts, and it exists on disk in every checkout, so this test is not
-// expected to skip. The existence probe and the loud SKIP_REASON are kept as
-// a defensive net following this project's own availability-gated-test
-// convention (see disasm-roundtrip.test.ts's SKIP_REASON pattern): a silent
-// crash of the whole suite on a missing module is strictly worse than one
-// named skip.
-const PRG_IMAGE_PATH = join(HERE, "prg-image.ts");
-const PRG_IMAGE_AVAILABLE = existsSync(PRG_IMAGE_PATH);
-const SKIP_REASON = PRG_IMAGE_AVAILABLE
-  ? false
-  : "prg-image.ts is not present next to this test file -- parsePrg() cannot be composed with extractEntry(). " +
-    "This is a broken checkout, not a scoping limitation: the module ships in package.json's files[].";
-
-test(
-  "composition: extracted bytes feed parsePrg(), and the recovered origin matches the fixture's load address",
-  { skip: SKIP_REASON },
-  async () => {
-    // A non-literal specifier, RETAINED deliberately. Its original
-    // rationale has lapsed: it existed because a literal
-    // `import("./prg-image.ts")`-shaped specifier would have failed
-    // `tsc --noEmit` in an isolated parallel worktree where the sibling
-    // module had not been merged in yet, and this repo no longer executes
-    // plans in isolated worktrees. The pattern is kept rather than
-    // simplified because it is harmless and the code is correct either way:
-    // it defers module resolution (both TypeScript's static check and Node's
-    // runtime resolution) to a path already confirmed to exist on disk
-    // above, which is exactly what pairs with the existence probe.
-    const mod = (await import(pathToFileURL(PRG_IMAGE_PATH).href)) as {
-      parsePrg: (bytes: Uint8Array) => { origin: number; body: Uint8Array };
-    };
-    const { parsePrg } = mod;
-    const buf = twoEntryImage();
-    const extracted = extractEntry(buf, "GAME");
-    const { origin, body } = parsePrg(extracted);
-    assert.equal(origin, 0x0801, "the fixture's load address ($0801) must be recovered exactly");
-    assert.equal(body.length, extracted.length - 2);
-  },
-);
+// builder it used to share a file with.
+//
+// STATICALLY imported, and NOT availability-gated (WR-07). Both halves of
+// what stood here before were wrong for this composition site:
+//
+//   1. An `existsSync` probe feeding a `{ skip: SKIP_REASON }` gate. Its own
+//      comment conceded prg-image.ts "exists on disk in every checkout, so
+//      this test is not expected to skip" and "the module ships in
+//      package.json's files[]" -- i.e. the condition can only be false when
+//      the checkout is broken. A skip REPORTS GREEN, so the gate turned a
+//      broken checkout into a pass. That is the precise degradation
+//      `acme-gate.ts:61-63` and `r2000-test-gate.ts` both name as the
+//      failure their whole design exists to prevent, and it is the opposite
+//      of the availability-gate convention it cited: that convention gates
+//      on an EXTERNAL dependency (a binary that may genuinely be absent),
+//      never on a sibling module in the same shipped tarball. A missing
+//      import now fails loudly at module load, naming the module.
+//   2. A dynamic `import(pathToFileURL(...).href)` plus a hand-written `as`
+//      cast of parsePrg's signature. The cast, not the import, was the
+//      defect: it made `tsc --noEmit` unable to check that prg-image.ts
+//      still exports parsePrg with that shape -- and this is the one
+//      composition site across a phase whose central risk was a MOVED symbol
+//      whose importers were not all repointed. The stated worktree rationale
+//      for the dynamic form was already recorded as lapsed. A static import
+//      puts this boundary back under the typechecker.
+test("composition: extracted bytes feed parsePrg(), and the recovered origin matches the fixture's load address", () => {
+  const buf = twoEntryImage();
+  const extracted = extractEntry(buf, "GAME");
+  const { origin, body } = parsePrg(extracted);
+  assert.equal(origin, 0x0801, "the fixture's load address ($0801) must be recovered exactly");
+  assert.equal(body.length, extracted.length - 2);
+});
 
 // Sanity check on sectorsPerTrack, re-exported here since extractEntry/
 // listEntries depend on it and this file's fixtures assume its standard
