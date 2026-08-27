@@ -404,7 +404,6 @@ function cutPhaseHitsFor(phaseLines: PhaseLine[], sourceLabel: string, cutPhases
 // scanned set shrink silently. See that module for the full rationale.
 // ---------------------------------------------------------------------------
 
-
 function danglingPhaseCommentAssignments(): AssignmentHit[] {
   const hits: AssignmentHit[] = [];
   for (const file of shippedTsModules()) {
