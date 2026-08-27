@@ -24,6 +24,7 @@ text inherited from v0.6.0, and both are recorded here rather than left implicit
    *"nothing may delete r2000 before a replacement demonstrably produces the same
    facts"*, and `STORE-04` was worded as *"the capability `R2000-11` shipped,
    carried across the substrate swap rather than lost in it"*. Both are removed.
+
 2. **The Phase 24 engine coupling is dropped with it** — Phase 25's *"populated
    from the engines' output"* dependency and its criterion 3's *"against a program
    analysed by the new engines"*. The store stands on the `disasm-*` decoders this
@@ -41,12 +42,14 @@ research agents disagreed on three points; `research/SUMMARY.md` names them as
   acceptance bar. `node:sqlite` is a built-in, unflagged since Node v22.13.0 and
   therefore unconditional at the `>=22.18.0` floor, so `ENGINEERING_RULES.md` §4's
   dependency bar is not triggered at all.
+
 - **`D2` undo → whole-store snapshot/restore, not a per-edit inverse journal.**
   Measured: zero callers anywhere, and the Phase 19 manifest already disposes
   `r2000_undo` as `omit` because idempotent range typing collapses "undo the wrong
   conversion" into "set it correctly". Node's `sqlite` surface also does not expose
   `sqlite3changeset_invert`, confirmed two independent ways. `STORE-04` is scoped
   to what a planted-violation test can actually prove.
+
 - **`D3` no `capability-registry.ts` entry.** That registry holds only the
   per-backend *delta*; a proxy-local family has none, and the precedent named in
   its own header is `vice_diagnose` / `vice_recycle`. v0.6.0's `STORE-03` required
@@ -65,7 +68,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      prefix-driven deletion would silently take with it. Extracting them before
      anything else is what makes the deletion safe rather than lucky. -->
 
-- [ ] **SEAM-01**: The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip
+- [x] **SEAM-01**: The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip
 - [ ] **SEAM-02**: Every `r2000-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `r2000-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted
 - [ ] **SEAM-03**: `r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store
 
@@ -130,6 +133,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
   named — the extras include `scripts/lib/r2000-cli-verbs.mjs` and two `.d.mts`
   declarations, `audit-gate.mjs`, `check-npm-packages.mjs`,
   `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
+
 - [ ] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
 - [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
 
@@ -175,6 +179,7 @@ this is the remaining one.
 
 - **`set_immediate_format`** and the **emitted/non-emitted comment flag** — both
   have named *future* consumers (`BUILD-03`; the exporter) and no caller today.
+
 - **Analysis built on the xref access-kind field** — the field is stored by
   `STORE-05` because it is free now and unrecoverable later, but no shipped caller
   reads it until `GHID-05` unholds.
@@ -205,7 +210,7 @@ over them.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEAM-01 | Phase 27 | Pending |
+| SEAM-01 | Phase 27 | Complete |
 | SEAM-02 | Phase 27 | Pending |
 | SEAM-03 | Phase 27 | Pending |
 | STORE-01 | Phase 28 | Pending |
@@ -235,6 +240,7 @@ over them.
 | CUT-06 | Phase 32 | Pending |
 
 **Coverage:**
+
 - v0.7.0 requirements: 28 total
 - Mapped to phases: 28
 - Unmapped: 0 ✓
@@ -247,6 +253,7 @@ over them.
   derived on every query from the surviving `disasm-*` decoders rather than stored.
   Research places `anno-xref`-class code in the surface phase for that reason. The
   store core (Phase 28) owns what is *stored*; Phase 29 owns what is *asked*.
+
 - **`STORE-07` maps to Phase 28, with `STORE-06` its only family sibling
   elsewhere.** The one-seam confinement of `node:sqlite` is a property of the
   persistence layer and is asserted structurally there, before any surface exists

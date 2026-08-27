@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 27
 current_phase_name: Shared Seams Extracted
-status: planning
-stopped_at: Phase 27 context gathered
-last_updated: "2026-08-26T23:16:08.594Z"
-last_activity: 2026-08-26
-last_activity_desc: Phase 27 context gathered - 27-CONTEXT.md committed, ready to plan
-state_head: 02d1148e45947446d95ce23c43868228f860c22f
+status: executing
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-08-27T05:51:22.648Z"
+last_activity: 2026-08-27
+last_activity_desc: Phase 27 execution started
+state_head: 6e2fb2fcf0ee528e0ee361a74cf2cb75479e7425
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 27 (Shared Seams Extracted) — READY TO EXECUTE
-Plan: — (no plans written yet)
-Status: `27-CONTEXT.md` committed — 17 decisions across four gray areas. Awaiting `/gsd-plan-phase 27`
-Last activity: 2026-08-26 — Phase 27 context gathered; `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` committed (`6403e2f`)
+Phase: 27 (Shared Seams Extracted) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-08-27 — Phase 27 execution started
 
 ## Performance Metrics
 
@@ -284,6 +284,7 @@ Last activity: 2026-08-26 — Phase 27 context gathered; `27-CONTEXT.md` and `27
 | Phase 23 P03 | 1h 55m | 3 tasks | 7 files |
 | Phase 23 P10 | 47 min | 3 tasks | 5 files |
 | Phase 23 P11 | 22 min | 3 tasks | 4 files |
+| Phase 27 P01 | 15 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -564,6 +565,9 @@ Recent decisions affecting current work:
 - [Phase 23]: 23-11: `R1` carries **no pre-mapped per-requirement narrowing**, so no `DXA-*`, `GHID-*`, `OPC-*`, `STORE-*`, `CUT-*` or `AUTO-*` requirement is narrowed by name — the pre-mapped narrowings belong to `R6` and `R7`, and under first-match-wins neither was ever evaluated. The consequence written beside Phases 24, 25 and 26 is `R1`'s own text, reproduced rather than re-authored, and every downstream success criterion is left **byte-identical**. — `AUTO-04`/`AUTO-05` are therefore **unvalidated rather than narrowed**: `PROOF-03`'s criterion was never measured, so nothing was observed about where a single forward-carried `$01` value stops being correct, in either direction. Recording a narrowing that no fired rule authorises would be scope drift dressed as a verdict.
 - [Phase 23]: 23-11: PROOF-01, PROOF-02 and PROOF-03 are recorded **NOT met** in REQUIREMENTS.md — not `Complete` — with the reason on the row; only PROOF-04 (criterion 4, whose recorded outcome is at `evidence/criterion4-analyzer-audit.md` and which needed no capture because the audit ran offline against crate source) and PROOF-05 (the machine-readable verdict derived from the pre-committed rule) are honestly discharged. — 23-11-PLAN.md asked for all five to flip; that instruction was written before the verdict existed and assumed the criteria had been measured. They were not: PROOF-01/02/03 each require the depacked flat-64K capture and the criteria measured on it, and no capture exists. Flipping them would make the traceability table assert a measurement that was never taken, which is the one thing a traceability table exists to prevent. 23-10 had already, correctly, left the file untouched when `requirements.ready-ids` returned 0/5 ready.
 - [Phase 23]: 23-11: the remaining obstacle to a real measurement is **one** thing, not two — the fork's stopping exec checkpoint is not frame-exact. Snapshot-to-snapshot, with no transcription anywhere, the two `danish` runs still diverge at 201 multi-bit addresses. The hex-transcription half is **solved** (extract the 64K from a VICE `.vsf` `C64MEM` module body; validated against 23-03's own transcript, todo `2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md`) and it **did not change the verdict** and must not be read as though it did. — A frame-exact stop is the single gate on `R1`'s "secure a corpus first" branch, so the re-scope decision can be taken on evidence rather than re-derived. The second pending todo (`back-05-test-fails-deterministically-on-a-live-broker-host`) is a test-isolation defect, unrelated to the verdict.
+- [Phase 27]: The ACME availability gate stands under its own name in src/mcp/vice/acme-gate.ts with NO re-export shim in the module it left — A shim would leave the prefix-deletion hazard fully intact (a prefix-driven deletion would still break four test files), which is the exact failure SEAM-01 exists to remove.
+- [Phase 27]: ACME_BIN and VICE_REQUIRE_ACME keep byte-identical names, so .github/workflows/ci.yml needed no edit at all — Audited line by line: ci.yml contains no ACME_BIN occurrence, and VICE_REQUIRE_ACME sits at :140 above run: npm test at :141. It binds env-var names only, never a module path. Renaming either var would convert CI's hard FAIL into a silent SKIP with a green run either way.
+- [Phase 27]: The ACME hard-FAIL is proven by a child-process observation paired with a non-vacuity control, and NODE_TEST_CONTEXT must be deleted from that child's environment — ACME_AVAILABLE is a module-load const, so no in-process test can re-probe it. Measured during execution: an inherited NODE_TEST_CONTEXT makes a child node --test skip every file and exit ZERO, which would have shipped a green, vacuous gate — the precise defect class SEAM-01 targets.
 
 ### Pending Todos
 
@@ -1135,8 +1139,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-26T21:29:09.201Z
-Stopped at: Phase 27 context gathered
+Last session: 2026-08-27T05:51:14.709Z
+Stopped at: Completed 27-01-PLAN.md
   `27-CONTEXT.md` and `27-DISCUSSION-LOG.md` are written and committed
   (`6403e2f`). Four gray areas discussed, 17 decisions locked: the ACME gate is
   a hard move to `acme-gate.ts` with all four importers repointed and no
@@ -1230,7 +1234,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: .planning/phases/27-shared-seams-extracted/27-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 
