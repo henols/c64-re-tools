@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 27
-current_phase_name: Shared Seams Extracted
-status: verifying
-stopped_at: Completed 27-05-PLAN.md
-last_updated: "2026-08-27T08:05:10.720Z"
+current_phase: 28
+current_phase_name: The Store Core
+status: planning
+stopped_at: Phase 27 complete, ready to plan Phase 28
+last_updated: "2026-08-27T10:19:05.510Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 27 complete (5/5 plans executed)
-state_head: db00bd3e794f8d344efd4aec68acdb5162283eca
+last_activity_desc: Phase 27 complete, transitioned to Phase 28
+state_head: a03c586a98df4f9cb63889bc730217efe5911a2d
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
   completed_plans: 5
-  percent: 0
+  percent: 17
 ---
 
 # Project State
@@ -72,7 +72,7 @@ incapable of touching VICE.
 plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
 project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
 
-**Current focus:** Phase 27 — Shared Seams Extracted
+**Current focus:** Phase 28 — The Store Core (Phase 27 Shared Seams Extracted completed 2026-08-27)
 Milestone **v0.7.0 Own the Annotation Store**, opened 2026-08-26. 28 requirements
 (`SEAM-*`, `STORE-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*`), all 28 mapped to
 **six** phases in `.planning/ROADMAP.md` (Phases **27-32**) — one requirement to
@@ -145,16 +145,16 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 27 (Shared Seams Extracted) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-08-27 — Phase 27 complete (5/5 plans executed)
+Phase: 28 — The Store Core
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-27 — Phase 27 complete, transitioned to Phase 28
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 193
+- Total plans completed: 198
 - Average duration: —
 - Total execution time: —
 
@@ -183,6 +183,7 @@ Last activity: 2026-08-27 — Phase 27 complete (5/5 plans executed)
 | 18 | 7 | - | - |
 | 19 | 20 | - | - |
 | 23 | 6 | - | - |
+| 27 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -785,6 +786,18 @@ forbidden from modifying anything under `src/`.
 
 ### Blockers/Concerns
 
+- **Phase 27 carried items (2026-08-27), none blocking Phase 28.** Three deferred
+  items survive the phase in `27-shared-seams-extracted/deferred-items.md`:
+  `D-27-02-A` — `r2000-session.test.ts`'s five plan-18-06 queue tests spawn a real
+  `regenerator2000` child with no gate, so they FAIL where their gated siblings SKIP
+  on a host without the binary; `D-27-05-A` — `vice-proxy.test.ts` leaks two LISTEN
+  sockets, so the whole-glob `npm test` never terminates unaided (budget for killing
+  the child once results have emitted); `D-27-05-B` — in `module-classification.ts`,
+  `contested` is prose-only rather than a structured field and `note` is exempt from
+  Direction 4's prefix scan, so a *future* contested verdict or a prefix justification
+  parked in `note` has no mechanical gate. All three accepted on the record at the
+  Phase 27 UAT (2026-08-27), not silently inherited.
+
 - **Phase 1 external prerequisite:** VERIF-01 needs a real stock VICE build and a
   display on the *host*; this repo's container has neither. Confirm availability
   before planning Phase 1.
@@ -1156,8 +1169,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T08:03:55.973Z
-Stopped at: Completed 27-05-PLAN.md
+Last session: 2026-08-27T10:21:13.170Z
+Stopped at: Phase 27 complete, ready to plan Phase 28
   Phase 27 is complete: 5 of 5 plans executed across 3 waves. Four seams now
   stand under non-`r2000` names (`acme-gate.ts`, `block-class.ts`,
   `prg-image.ts`, `shipped-modules.ts`) and the capability-or-glue record is

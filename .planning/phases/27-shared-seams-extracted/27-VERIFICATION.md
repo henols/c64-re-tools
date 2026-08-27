@@ -1,22 +1,25 @@
 ---
 phase: 27-shared-seams-extracted
 verified: 2026-08-27T09:42:27Z
-status: human_needed
+status: passed
 score: 30/33 must-haves verified
 behavior_unverified: 0
 overrides_applied: 1
 prohibition_flags: 3
 gaps: []
 overrides:
+
   - must_have: "Full npm test (the whole glob, broker stopped, command named in the evidence) is green with zero r2000 modules deleted"
     reason: "The suite exits 1 with 44 pre-existing failures — 39 in vice-proxy.test.ts (MANUAL_ONLY_TESTS, needs a live host/broker) and 5 in r2000-session.test.ts (regenerator2000 absent from PATH, logged D-27-02-A). Both files were last touched in phase 18 and are in no phase-27 plan's files_modified. Zero failures in any file phase 27 touched; tsc exit 0; tarball closure clean; zero r2000 modules deleted. The criterion's purpose — proving the extraction is a move, not a change — is met."
     accepted_by: "henrik"
     accepted_at: "2026-08-27T09:56:51Z"
 deferred:
+
   - truth: "SEAM-03's second clause: 'COV-01/COV-02's census-versus-store boundary test passes against the NEW store'"
     addressed_in: "Phase 28"
     evidence: "ROADMAP Phase 27 SC-3 scopes the phase contract to 'passes across that boundary' (verified). The 'new store' half is unsatisfiable before a store exists; Phase 28's goal is 'The Store Core' and it declares 'Depends on: Phase 27 (the extracted seams and the capability-or-glue classification)'."
 insufficient_spec_items:
+
   - truth: "block-class.ts declares no module-level mutable binding and its exported lookup is a pure function of its two arguments, so interleaved or repeated calls cannot observe each other's state; there is no concurrent or interruptible execution path in this single-threaded package to exercise the guarantee directly (SEAM-03 probe: concurrency)"
     reason: insufficient_spec
     verification_tag: backstop
@@ -24,6 +27,7 @@ insufficient_spec_items:
     expected: "Either an accepted 'not applicable — single-threaded, pure, no interruptible path' judgement, or a held-out/property-based test if a future phase introduces one."
     why_human: "The truth is tagged `verification: backstop` and its own second clause concedes there is no execution path to exercise it. The STATIC half is fully and mechanically verified (block-class.test.ts's no-module-level-mutable-binding gate, incl. the WR-04 `const` mutable-container case, and its zero-imports gate — both passing). Presence + wiring never upgrades a backstop truth, so this abstains rather than passes."
 prohibition_items:
+
   - statement: "MUST NOT leave any route by which the ACME hard-FAIL degrades into a silent skip: no re-export shim in the module the half leaves, no rename of ACME_BIN or VICE_REQUIRE_ACME, and no removal or weakening of the committed observation of the FAIL."
     plan: "27-01"
     verification: judgment
@@ -31,6 +35,7 @@ prohibition_items:
     judge_evidence: "`grep -in acme src/mcp/vice/r2000-test-gate.ts` returns nothing (no shim, no prose). `ACME_BIN` / `VICE_REQUIRE_ACME` byte-identical to the pre-phase body (diff of the stripped code bodies is a single leading blank line). ci.yml:140 still binds VICE_REQUIRE_ACME by name. The committed observation exists and I reproduced it out-of-band: exit=1 + the gate's own refusal wording under VICE_REQUIRE_ACME=1, exit=0 with it unset."
     flagged: true
     flag_reason: "unverified-prohibition — human review recommended (judgment-tier; enforcement evidence is strong but the disposition is non-authoritative)"
+
   - statement: "MUST NOT justify any module's capability-or-glue verdict by its name prefix, and MUST NOT leave an in-scope module, a deliberate scope exclusion, or a contested verdict unrecorded."
     plan: "27-05"
     verification: judgment
@@ -38,6 +43,7 @@ prohibition_items:
     judge_evidence: "Prefix half: mechanically enforced by Direction 4 over rationale + every consumer path + every symbol + every requirement id, with a planted name-justified entry proving non-vacuity and a clean control proving no false positive. Completeness half: I planted a REAL unclassified r2000-*.ts on disk and Direction 1 went red naming it. Scope exclusions: carried as data (`scope: \"out-of-enumeration\"`, 2 entries) plus four stated exclusions in the header. Contested verdict: r2000-test-gate.ts carries CONTESTED in its note (WR-10). RESIDUAL: `contested` is prose only, not a structured field, and `note` is deliberately exempt from Direction 4 — so a FUTURE contested verdict or a future prefix justification parked in `note` has no mechanical gate."
     flagged: true
     flag_reason: "unverified-prohibition — human review recommended (judgment-tier, plus the two named structural residuals)"
+
   - statement: "MUST NOT claim the phase's green run from the narrowed automated gate, or from a host with a live emulator broker, or state the result without naming the exact command, the broker state and the pass/fail/skip counts."
     plan: "27-05"
     verification: judgment
@@ -46,12 +52,15 @@ prohibition_items:
     flagged: true
     flag_reason: "unverified-prohibition — human review recommended (judgment-tier)"
 human_verification:
+
   - test: "Decide whether ROADMAP Phase 27 SC-4's literal wording ('Full `npm test` ... is green') is accepted as met-in-intent. Re-run `cd src/mcp/vice && npm test` if desired (11+ min; will not terminate unaided — see deferred-items D-27-05-A)."
     expected: "Exit 1 with exactly 44 failures: 39 in vice-proxy.test.ts (MANUAL_ONLY_TESTS entry 2, needs a live host/broker) and 5 in r2000-session.test.ts (regenerator2000 not on PATH). Zero failures in any file phase 27 touched. Both files were last touched in phase 18 and appear in no phase-27 plan's files_modified."
     why_human: "The literal exit-0 reading is NOT met and was not met before this phase began. Whether a pre-existing, fully attributed environmental red is acceptable against a criterion that says 'green' is a scope judgement, not a codebase fact. See the override suggestion in the Gaps Summary."
+
   - test: "Resolve the backstop-tagged SEAM-03 concurrency abstention (see insufficient_spec_items)."
     expected: "An explicit 'not applicable — single-threaded, pure, no interruptible path' acceptance, or a held-out test."
     why_human: "verification: backstop — abstention is required absent explicit exogenous evidence."
+
   - test: "Resolve the three judgment-tier prohibitions (see prohibition_items). My verdicts are HOLDS, HOLDS_WITH_RESIDUAL, HOLDS — all non-authoritative."
     expected: "Explicit acceptance, or a decision to promote `contested` to a structured field and/or extend Direction 4 to `note`."
     why_human: "Judgment-tier prohibitions are never silently absorbed into a passing verdict."
@@ -267,6 +276,7 @@ No `scripts/*/tests/probe-*.sh` files exist in this repo, and no phase-27 PLAN o
 **C-1 — ROADMAP SC-1's "`ci.yml` is repointed in the same commit" clause is satisfied by *nothing needing to change*.** `.github/workflows/ci.yml` binds `VICE_REQUIRE_ACME` by env-var **name** at `:140` and never names a module path, so moving the code required no workflow edit — which the plan predicted as key-link 5 ("env-var name binding only … never a module path, so no ci.yml code edit") and which I confirmed by grepping the whole file. The criterion's *intent* (CI's hard FAIL still reaches the gate) is verified; its literal *action* ("repointed") had no referent. Flagged so a reader diffing `ci.yml` for this phase and finding nothing does not conclude a step was skipped.
 
 **C-2 — ROADMAP SC-4's literal "green" is NOT met, and was not met before this phase began.** `cd src/mcp/vice && npm test` exits **1** with 44 failures (orchestrator's post-fix full run: 2644 tests / 2528 pass / 44 fail / 67 skipped / 5 todo, broker stopped, no `x64sc`). I did not restate that as green, and neither does the SUMMARY. The 44 split into two groups, both of which I reproduced or attributed myself:
+
   - **39 in `vice-proxy.test.ts`** — entry 2 of `test-gate.mjs`'s frozen `MANUAL_ONLY_TESTS`, needs a reachable host/broker; a broker could not be started because that deterministically reddens `BACK-05` (a separate pre-existing condition with its own pending todo).
   - **5 in `r2000-session.test.ts`** — I ran the file: 25 tests / 14 pass / 5 fail / 6 skipped, all five `R2000SpawnError: regenerator2000 was not found on PATH`. `command -v regenerator2000` → absent. These five are ungated where every sibling in the same file is gated — a real pre-existing gap, logged as `D-27-02-A`.
 
@@ -292,6 +302,7 @@ This is an infrastructure/foundation phase (pure extraction, guard-test discipli
 
 ```yaml
 overrides:
+
   - must_have: "Full npm test (the whole glob, broker stopped, command named in the evidence) is green with zero r2000 modules deleted"
     reason: "The suite exits 1 with 44 pre-existing failures — 39 in vice-proxy.test.ts (MANUAL_ONLY_TESTS, needs a live host/broker) and 5 in r2000-session.test.ts (regenerator2000 absent from PATH, logged D-27-02-A). Both files were last touched in phase 18 and are in no phase-27 plan's files_modified. Zero failures in any file phase 27 touched; tsc exit 0; tarball closure clean; zero r2000 modules deleted. The criterion's purpose — proving the extraction is a move, not a change — is met."
     accepted_by: "henrik"
