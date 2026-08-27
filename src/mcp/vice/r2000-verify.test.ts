@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { parseVerifyOutput, acmeVerdict, verifyProject } from "./r2000-verify.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { flatImageOrigin } from "./prg-image.ts";
-import { R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
