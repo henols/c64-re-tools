@@ -28,6 +28,31 @@
 // a template literal. Without this move, the tree's only correct
 // template-literal-aware stripper leaves with that file.
 //
+// WHAT `codeOnly()` HANDLES, STATED AS A MEASUREMENT RATHER THAN A CLAIM
+// (WR-02, phase 27): `//` and `/* */` comments; all three literal shapes;
+// nested `${ ... }` interpolation to any depth; escapes inside any of them;
+// and regular-expression literals, disambiguated from division by the
+// preceding significant token. The regex branch is NOT original to the
+// extraction -- it was absent from every prior copy, and its absence was
+// measured on this tree as a truncation, not reasoned about: a regex body
+// containing a backtick or a quote opened a phantom literal frame the
+// scanner never left, cutting `r2000-coverage.ts` (whose `:1495` does
+// `.replace(/[`*_]/g, "")`) from 2329 lines to 1107 and `incident-record.ts`
+// (whose `:107` does `/'/g`) from 443 to 89 -- hiding seven real exported
+// functions from the R2000-01 spawn-seam guard reading them. That is the
+// same "a guard that scans nothing finds nothing" failure the enumerator
+// half of this file exists to remove, so BOTH halves of this module now
+// carry it. `shipped-modules.test.ts` pins the regex shapes, the
+// division-versus-regex disambiguation in both directions, and the two real
+// modules by name.
+//
+// NOT handled, deliberately and known: JSX, and a `/` in the small set of
+// positions where the preceding-token heuristic is ambiguous even for a real
+// parser (after `)` or `}` closing a control-flow head, e.g.
+// `if (x) /re/.test(y)`). Both are read as division. Neither shape occurs in
+// this tree; a scanner that needed them would need a real tokeniser, not a
+// wider heuristic.
+//
 // TEST-ONLY, both helpers. This module must never appear in `package.json`'s
 // `files[]` (a test-only helper has no business in the published npm tarball)
 // and must never be imported by a production module -- only by `*.test.ts`
