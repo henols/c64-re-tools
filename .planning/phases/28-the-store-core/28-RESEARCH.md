@@ -53,8 +53,8 @@ planted violation is the removal of one `COMMIT`.
 
 | Capability | Primary Tier | Secondary Tier | Rationale |
 |------------|-------------|----------------|-----------|
-| The 12-member type vocabulary | `anno-types.ts` (container-side library) | — | It is a data definition with zero I/O; every other tier imports it, including tests that cross-check `block-class.ts` |
-| Argument validation (`$`/`0x` parsing, label legality, range shape) | `anno-types.ts` | — | The proxy validates nothing (`vice-proxy.ts:3230`), so validation must live where the store is entered. Not in the persistence module, so it is unit-testable with no file on disk |
+| The 12-member type vocabulary | `anno-types.ts` (container-side library) | — | It is a data definition with zero I/O; every other tier imports it, including tests that cross-check `block-class.ts`. (This row is about the VOCABULARY, not about the module: since CR-03 the module has exactly one filesystem-touching export — see the next row.) |
+| Argument validation (`$`/`0x` parsing, label legality, range shape) | `anno-types.ts` | filesystem, for workspace confinement only | The proxy validates nothing (`vice-proxy.ts:3230`), so validation must live where the store is entered. Not in the persistence module. **REVISED 2026-08-27 after CR-03 (closed by plan `28-09`).** The original rationale ended "…so it is unit-testable with no file on disk", and that clause became false for exactly one export. Workspace confinement (`storePathWithinWorkspace`) has to answer whether a path escapes the root once symbolic links are followed, and that is a filesystem question a string comparison provably cannot answer — the gap CR-03 reported. So this tier imports `node:fs` (`existsSync`, `realpathSync`, nothing more) and that ONE export is a function of its arguments **and the filesystem**; every other export is still a frozen constant or a pure function and is still unit-testable with no file on disk. The alternative siting — resolve real paths in `anno-store.ts` (which this map already pairs with "filesystem") and pass resolved paths into the validator — was weighed and REJECTED: it splits one confinement contract across two modules and leaves the exported validator callable in a form that no longer confines, which is the "two places decide" shape plan `28-07` exists to remove from the snapshot ring. `node:fs` is a Node builtin, not a seam: the closed consumer set for `hostpath.ts`/`containerpath.ts` is unchanged and `anno-types.ts` is still absent from it (`hostpath-consumers.test.ts`), and `node:sqlite` still has exactly one shipped importer. The reversal is recorded here rather than the old rationale being deleted, per `28-03` prohibition P2 |
 | Narrowest-range-wins resolution | `anno-index.ts` (pure) | — | A pure function of range rows and an address. Keeping it out of the persistence tier is what makes the 65,536-address exhaustive cross-validation cheap and what lets overlapping rows be fed in deliberately |
 | Durability, revision CAS, snapshot/revert | `anno-store.ts` (persistence) | filesystem | `STORE-07`: the one module that names `node:sqlite` |
 | Block-class translation for the census | `block-class.ts` (existing, Phase 27) | — | Already the named boundary. Phase 28 changes its two literals; it may not gain an import (its empty import list is asserted) |
@@ -1600,30 +1600,32 @@ does.
 **Nothing in the Assumptions Log blocks planning.** A3 and A4 are the two worth
 resolving before the plan is written; both are one-line decisions.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the store emit label `kind` in the census's capitalised spelling, or is a second boundary extracted?**
+**All six were answered during planning and execution of `28-01`..`28-06`; each carries its resolution inline below.** The section is kept in full rather than trimmed, so a later reader can see what was open, what was decided, and where the decision is now pinned.
+
+1. **Does the store emit label `kind` in the census's capitalised spelling, or is a second boundary extracted?** — **RESOLVED (`28-03`).** The recommendation was taken: the spelling is matched and cross-checked rather than a second boundary extracted. This is verified truth 11 in `28-VERIFICATION.md` — all 12 `DATA_TYPES` map totally, `block-class.ts`'s import list is still empty, and the derived cross-check lives at `block-class.test.ts:130` with a `DATA_TYPES.length === 12` non-vacuity pin.
    - What we know: the census compares `"User"`/`"Auto"`/`"System"`/`"Platform"` inline at four verified sites, and `SEAM-03`'s "two functions" measurement did not include them.
    - What's unclear: whether Phase 28 is the right place for a second extraction, or whether matching the spelling and cross-checking it is enough.
    - Recommendation: **match the spelling, add a derived cross-check test, and record the block-lowercase / kind-capitalised asymmetry as a decision.** Cheapest, and it makes the failure mode loud. Extracting the boundary properly is a defensible larger alternative; either way it must be a named task, because the failure is a measured number silently going to zero.
 
-2. **How is C-5 resolved — is there an `anno_xref` table at all?**
+2. **How is C-5 resolved — is there an `anno_xref` table at all?** — **RESOLVED (`28-01`).** The recommendation was taken: the table exists with its `access_kind text not null` column from the first write and nothing is stored in it this milestone. Verified truth 5.
    - What we know: `STORE-05` requires the column; Phase 29 forbids caching derived xrefs.
    - What's unclear: whether any xref is non-derivable in this milestone (the `COMPUTED_JUMP` case is, but its producer is held for v0.8.0).
    - Recommendation: create the table with the column, store nothing in it during this milestone, and assert the column exists and accepts exactly the four members. That satisfies "carries the field from the first write" without creating the second truth Phase 29 forbids. If instead the answer is "no table", `STORE-05`'s xref clause needs an explicit re-reading in the plan.
 
-3. **Are all four split variants needed?** (`ROADMAP.md` lists this as genuinely open.)
+3. **Are all four split variants needed?** — **RESOLVED (`28-01`): yes, all four.** `lo_hi_address`, `hi_lo_address`, `lo_hi_word` and `hi_lo_word` all ship in the 12-member vocabulary. Verified as goal criterion 1.
    - What we know: the schema names four; the orientation axis is observably different (verified); the address-vs-word axis is `creates X-Refs` versus not (verified in the schema text).
    - Recommendation: **keep all four.** The decision is irreversible (orientation is unrecoverable from data that never recorded it), `DECOMP-01` is sized for it, and shipping fewer re-creates the `da65` expressiveness boundary that got `cc65` rejected. The cost of four over two is a handful of lines; the cost of being wrong is a hand re-annotation.
 
-4. **FTS5 versus `LIKE 'prefix%'`** (`ROADMAP.md` lists this as open.)
+4. **FTS5 versus `LIKE 'prefix%'`** — **RESOLVED (`28-01`): `LIKE`, no FTS5 table.** Recorded as trap 5 in `anno-store.ts:84-86` with the measurement beside it; verified truth 5 confirms no FTS5 table exists. The Phase 29 search surface (`STORE-06`) inherits the open half.
    - What we know: measured — indexed `LIKE 'prefix%'` 2.02 ms, infix full scan 4.49 ms, FTS5 `MATCH` 2.99 ms with a 121.8 ms rebuild, on 20,000 rows.
    - Recommendation: **`LIKE`, and defer the decision to Phase 29 by not creating an FTS5 table now.** Adding FTS5 later is additive; removing it is a schema migration. The measurement says FTS5 buys nothing at these row counts.
 
-5. **Does the phase want a spike?** (`ROADMAP.md` flags this as the one phase that might.)
+5. **Does the phase want a spike?** — **RESOLVED: no, and none was run.** The phase went straight to planning.
    - **No.** The spike's stated purpose was to "measure the chosen persistence route's planted-violation reddenability on this repo's real workload." That measurement is **done, in this research**: the exact criterion-4 sequence was run, and removing the `COMMIT` was observed to redden both halves of one test. The prototype is at `~/.cache/gsd-probe/c4/` and is ~90 lines. A spike phase would re-run what is already in this document. What remains is the two open *decisions* (Q1, Q2), which are decisions rather than measurements.
 
-6. **Does the snapshot bound belong in this phase?**
+6. **Does the snapshot bound belong in this phase?** — **RESOLVED (`28-06`): yes.** Shipped as `MAX_SNAPSHOT_REVISIONS = 32` in `anno-types.ts`, the single home of the bound. Its post-revert correctness is what gap 1 reopened and plan `28-07` closes.
    - What we know: `snapshots/` grows one file per write, unbounded, in my prototype.
    - Recommendation: yes — a bounded ring (e.g. the last N revisions) with the bound named. Otherwise the phase ships a monotonically growing disk consumer and the fix later has to reason about which snapshots a revert might still need.
 

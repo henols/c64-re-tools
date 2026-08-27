@@ -467,11 +467,14 @@ Plans:
 **Wave 5** *(gap closure — `28-VERIFICATION.md` scored 8/11 must-haves; all five success criteria VERIFIED)*
 
 - [ ] 28-07-PLAN.md — Gap 1 + gap 2: one ownership predicate for the snapshot ring, one half-state resolver, a second revert that refuses by name instead of crashing out of the error family, and a prune whose statement order matches its own argument
-- [ ] 28-09-PLAN.md — Gap 3: workspace confinement compares real paths on both sides, so a symlinked subdirectory is refused rather than followed — with an inside-pointing symlink still followed, so the control discriminates
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
 - [ ] 28-08-PLAN.md — CR-02: one owner per published snapshot — stage under a unique unpublished name and publish only after winning the compare-and-swap — plus the WR-04 and WR-11 error-family escapes folded in
+
+**Wave 7** *(blocked on Wave 6 completion — an ordering-only edge, not a code dependency: this plan shares no `files_modified` with either peer, but its acceptance checks READ `anno-store.test.ts` and `anno-seam.test.ts`, which waves 5 and 6 rewrite)*
+
+- [ ] 28-09-PLAN.md — Gap 3: workspace confinement compares real paths on both sides, so a symlinked subdirectory is refused rather than followed — with an inside-pointing symlink still followed, so the control discriminates
 
 Notes:
 
