@@ -106,6 +106,19 @@
 //      prevent (`STORE-03`). A WIDENED rule would fire on every retype of a
 //      commented range, and a report that fires every time is a report nobody
 //      reads, so the one case that matters stops being noticed (`STORE-01`).
+//  10. NEVER prune the snapshot ring INSIDE the write transaction, and never
+//      let a revert fall back to the nearest retained revision. A filesystem
+//      unlink is not part of the transaction, so pruning inside it means a
+//      rollback leaves a POINTER ROW AIMED AT A FILE THAT IS ALREADY GONE --
+//      the one failure direction the revert path cannot survive. Pruning after
+//      the commit inverts that failure deliberately: a kill in the window
+//      between the commit and the prune leaves EXTRA files, which are harmless
+//      and reconcilable by revision number. The file is deleted before its
+//      pointer row for the same reason -- the opposite order can produce the
+//      bad state and this one cannot. And a revert that SUBSTITUTES the nearest
+//      retained revision for the one asked for changes the caller's intent with
+//      nothing recording that it happened, so a revert past the bound is
+//      refused BY NAME instead (`STORE-04`).
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -127,6 +140,7 @@ import {
   AnnoStorePathError,
   AnnoStoreStaleRevisionError,
   AnnoTypeError,
+  MAX_SNAPSHOT_REVISIONS,
   parseStoreAddress,
   parseVariantKey,
   storePathWithinWorkspace,
@@ -371,6 +385,71 @@ export function snapshotPathFor(handle: AnnoStoreHandle, revision: number): stri
   return join(handle.dir, "snapshots", `r${revision}.db`);
 }
 
+/** What `oldestRetainedRevision()` reports when the ring holds NO snapshot at
+ * all -- a freshly created store, or one restored from its very first
+ * snapshot. Named rather than left as a bare `-1` for the same reason
+ * `anno-index.ts`'s `NO_ROW` is named: a sentinel a caller has to recognise
+ * from its VALUE is a sentinel a caller gets wrong. Reporting
+ * `currentRevision()` in that state instead would be a LIE -- `revertTo`
+ * refuses the current revision too, because no snapshot records it. */
+export const NO_RETAINED_REVISION = -1;
+
+/**
+ * The smallest revision the snapshot ring still holds, or
+ * `NO_RETAINED_REVISION` when it holds none. This is the FLOOR of what
+ * `revertTo` can still honour.
+ *
+ * Read from the pointer ROWS rather than computed as
+ * `currentRevision() - MAX_SNAPSHOT_REVISIONS`. The two agree on a store that
+ * has only ever been written forward, and they DISAGREE after a revert -- the
+ * arithmetic would then name a revision no row records, and a floor naming an
+ * unrevertable revision is worse than no floor at all.
+ */
+export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
+  const row = handle.db.prepare("select min(revision) as oldest from anno_snapshot").get() as { oldest: number | null } | undefined;
+  if (!row || row.oldest === null) return NO_RETAINED_REVISION;
+  return row.oldest;
+}
+
+/**
+ * Bounds the `snapshots/` sibling directory at `MAX_SNAPSHOT_REVISIONS` by
+ * deleting every snapshot older than the newest `MAX_SNAPSHOT_REVISIONS`
+ * revisions -- THE FILE FIRST, ITS POINTER ROW SECOND.
+ *
+ * MUST BE CALLED AFTER THE COMMIT AND OUTSIDE THE TRANSACTION. Trap 10 in the
+ * module header carries the whole argument; the short form is that an unlink is
+ * not transactional, so the ordering around the commit CHOOSES which failure a
+ * kill in the window produces -- and the choice made here is "extra files"
+ * over "a pointer row aimed at a deleted file".
+ *
+ * The bound itself lives in `anno-types.ts` and is imported, never copied: a
+ * second literal would drift the moment the first one is edited, silently, and
+ * a store whose pruning bound disagrees with its declared bound has a revert
+ * history shorter than it says it has.
+ */
+export function pruneSnapshots(handle: AnnoStoreHandle): void {
+  const floor = currentRevision(handle) - MAX_SNAPSHOT_REVISIONS;
+  const doomed = handle.db.prepare("select revision, path from anno_snapshot where revision < ? order by revision").all(floor) as {
+    revision: number;
+    path: string;
+  }[];
+
+  for (const row of doomed) {
+    // Swallowed on purpose, and ONLY here: an interrupted earlier prune may
+    // already have removed this file, and a prune that threw on an
+    // already-absent file would make the store unwritable after a single kill
+    // in the window. The pointer-row delete below is deliberately NOT
+    // swallowed -- a pointer row surviving its file is the exact state trap 10
+    // exists to prevent, so it has to be loud.
+    try {
+      rmSync(row.path, { force: true });
+    } catch {
+      // deliberately ignored -- see above
+    }
+    handle.db.prepare("delete from anno_snapshot where revision = ?").run(row.revision);
+  }
+}
+
 /**
  * The write sequence. THE ORDER BELOW IS LOAD-BEARING and is not a style
  * choice:
@@ -382,7 +461,9 @@ export function snapshotPathFor(handle: AnnoStoreHandle, revision: number): stri
  *   5. compare-and-swap the revision, requiring exactly one changed row;
  *   6. insert the snapshot pointer row for the PRE-mutation revision;
  *   7. run the caller's mutation;
- *   8. commit -- once, through the module's one commit site.
+ *   8. commit -- once, through the module's one commit site;
+ *   9. prune the snapshot ring -- AFTER the commit and OUTSIDE the
+ *      transaction, because an unlink is not transactional (trap 10).
  *
  * WHY THE SNAPSHOT PRECEDES THE MUTATION: reverse the two and a kill inside
  * the window leaves a DURABLE MUTATION WITH NO SNAPSHOT -- an edit that can
@@ -457,6 +538,11 @@ function runWriteSequence<T>(
 
   if (doCommit) {
     commitTransaction(handle.db);
+    // STEP 9, AND ITS POSITION IS THE POINT: the prune runs AFTER the commit
+    // and OUTSIDE the transaction (trap 10). It sits inside the `doCommit`
+    // branch because a sequence that never commits has no accepted write to
+    // bound.
+    pruneSnapshots(handle);
   }
 
   return { revision: rev + 1, result };
@@ -720,8 +806,13 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     const available = (handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
       (row) => row.revision,
     );
+    const oldest = oldestRetainedRevision(handle);
     throw new AnnoStoreError(
-      `cannot revert to revision ${revision}: no snapshot is recorded for it -- available revisions: ${available.length === 0 ? "(none)" : available.join(", ")}`,
+      `cannot revert to revision ${revision}: no snapshot is retained for it. The oldest retained revision is ` +
+        `${oldest === NO_RETAINED_REVISION ? "(none -- the ring is empty)" : oldest} and the current revision is ${currentRevision(handle)}; ` +
+        `the ring holds at most ${MAX_SNAPSHOT_REVISIONS} revisions. The request is REFUSED rather than substituting the nearest retained ` +
+        `revision, because returning a revision other than the one asked for changes the caller's intent with nothing recording that it ` +
+        `happened. Available revisions: ${available.length === 0 ? "(none)" : available.join(", ")}`,
     );
   }
 

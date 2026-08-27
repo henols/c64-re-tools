@@ -13,7 +13,7 @@
 // empty-stderr assertion anywhere in this file would fail for that alone.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,10 +24,12 @@ import {
   AnnoLabelError,
   AnnoRangeShapeError,
   AnnoStoreCorruptError,
+  AnnoStoreError,
   AnnoStorePathError,
   AnnoStoreStaleRevisionError,
   AnnoTypeError,
   DATA_TYPES,
+  MAX_SNAPSHOT_REVISIONS,
   SCHEMA_VERSION,
 } from "./anno-types.ts";
 import {
@@ -42,6 +44,8 @@ import {
   listRanges,
   listScopes,
   listXrefs,
+  NO_RETAINED_REVISION,
+  oldestRetainedRevision,
   openStore,
   putXref,
   revertTo,
@@ -212,11 +216,25 @@ test("a zero-length store file is REFUSED with AnnoStoreCorruptError instead of 
   });
 });
 
-test("a file that is not a database at all is refused", () => {
+test("a file that is not a database at all is refused, and the refusal names what SQLite said as well as what the store refuses to assume", () => {
   inTempDir((dir) => {
     const foreign = join(dir, "foreign.annostore");
     writeFileSync(foreign, "this is not a database, it is a text file\n");
-    assert.throws(() => openStore(foreign, { workspaceRoot: dir }), AnnoStoreCorruptError);
+    assert.throws(
+      () => openStore(foreign, { workspaceRoot: dir }),
+      (e: unknown) => {
+        // The CLASS and a substring of the MESSAGE, both. A class-only
+        // assertion passes over a refusal whose message has lost the reason,
+        // and the reason is the whole product here: a caller has to be able to
+        // tell "your annotations are gone" from "there are no annotations".
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /not an annotation store/, "the refusal must say what it refused");
+        assert.match(e.message, /file is not a database/, "and must carry SQLite's own diagnostic rather than replacing it");
+        assert.match(e.message, /empty store/, "and must say it is refusing to read a foreign file as an empty store");
+        assert.equal(e.path, foreign, "the offending path rides on the error");
+        return true;
+      },
+    );
   });
 });
 
@@ -261,9 +279,35 @@ test("a store truncated mid-file is refused rather than read -- and integrity_ch
     truncateSync(path, Math.floor(size / 2));
     assert.throws(
       () => openStore(path, { workspaceRoot: dir }),
-      AnnoStoreCorruptError,
-      "a store truncated mid-file must be refused, not read as a shorter store",
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /not an annotation store/, "a store truncated mid-file must be refused, not read as a shorter store");
+        assert.match(e.message, /database disk image is malformed/, "and the refusal carries SQLite's own errcode-11 diagnostic verbatim");
+        return true;
+      },
     );
+
+    // ------------------------------------------------------------------
+    // THE STATED RESIDUAL, recorded here deliberately WITHOUT AN ASSERTION.
+    //
+    // Measured on this host during phase research, on raw `node:sqlite` with
+    // no store logic in front of it: removing 100 bytes from the TAIL of a
+    // 12 KB database leaves a file that OPENS and RETURNS THE CORRECT ROWS.
+    // `pragma integrity_check` on that file reports fragmentation and a
+    // missing index row rather than `ok`, and that report is the ONLY thing
+    // closing the case here -- `openStore()` runs the check and refuses on
+    // any answer but `ok`.
+    //
+    // The residual, stated rather than claimed closed: a tail truncation
+    // small enough to leave the last page internally consistent -- so that
+    // `integrity_check` still reports `ok` -- WOULD OPEN, and this store
+    // cannot tell it from a healthy one. That case is NOT asserted below,
+    // because asserting a behaviour nobody measured is how a stated residual
+    // quietly becomes a false claim. The half-file truncation above is the
+    // measured case; the undetectable tail is the residual; and the two must
+    // not be conflated by a later reader tempted to widen the claim to "any
+    // truncation is refused". It is not.
+    // ------------------------------------------------------------------
   });
 });
 
@@ -360,6 +404,16 @@ test("pragma journal_mode on a freshly created store reads delete -- the default
       );
     } finally {
       closeStore(store);
+    }
+
+    // THE OTHER HALF OF THE SAME DECISION: `wal` is the only journal mode with
+    // PERSISTENT `-wal`/`-shm` sidecars, so their absence beside a cleanly
+    // closed store is the observable consequence of staying on `delete`. A
+    // future edit that set WAL anywhere would be inherited by every later
+    // connection to the file and would leave these behind; the mode assertion
+    // above catches the pragma, and this catches its effect on disk.
+    for (const suffix of ["-wal", "-shm", "-journal"]) {
+      assert.equal(existsSync(`${path}${suffix}`), false, `a cleanly closed store must leave no ${suffix} sidecar beside it`);
     }
   });
 });
@@ -905,4 +959,190 @@ test("contradictedCommentsFor is the ONE definition of the rule, and it is deriv
     assert.equal(contradictedCommentsFor("[unknown]", dataType), false, `[unknown] is never contradicted, not even by ${dataType}`);
     assert.equal(contradictedCommentsFor(null, dataType), false, `an ungraded comment is never contradicted, not even by ${dataType}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// THE BOUNDED SNAPSHOT RING (STORE-04, threat T-28-diskgrowth).
+//
+// An unbounded `snapshots/` directory is a monotonically growing disk consumer
+// whose later fix has to reason about which snapshots a revert might still
+// need. The bound has exactly ONE home -- `MAX_SNAPSHOT_REVISIONS` in
+// `anno-types.ts` -- and is imported here rather than written as a literal, so
+// this proof cannot agree with a stale copy of the number.
+// ---------------------------------------------------------------------------
+
+test("the snapshot ring is BOUNDED at MAX_SNAPSHOT_REVISIONS: after more writes than the bound, the files on disk, the pointer rows and the reported floor all agree", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      assert.equal(currentRevision(store), writes, "every one of the writes was accepted and advanced the revision by exactly one");
+
+      const files = readdirSync(join(dir, "snapshots")).sort();
+      assert.ok(
+        files.length <= MAX_SNAPSHOT_REVISIONS,
+        `the snapshots directory must hold at most ${MAX_SNAPSHOT_REVISIONS} files, found ${files.length}: ${files.join(", ")}`,
+      );
+      assert.equal(
+        files.length,
+        MAX_SNAPSHOT_REVISIONS,
+        "and it must hold exactly the bound after more writes than the bound -- fewer would mean the prune is over-eager, more that it never ran",
+      );
+
+      const rows = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+        (row) => row.revision,
+      );
+      assert.equal(
+        rows.length,
+        files.length,
+        "the pointer rows must be pruned to match the files -- a pointer row surviving its file is the one failure direction the ordering exists to prevent",
+      );
+      assert.deepEqual(
+        files,
+        rows.map((revision) => `r${revision}.db`).sort(),
+        "and the surviving files must be exactly the surviving pointer rows, by revision number",
+      );
+
+      assert.equal(
+        oldestRetainedRevision(store),
+        writes - MAX_SNAPSHOT_REVISIONS,
+        "the reported floor is the newest revision minus the bound, computed from the rows rather than from arithmetic on the revision",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("a revert PAST the bound is REFUSED by name -- it names the requested and the oldest retained revision, and does NOT substitute the nearest retained snapshot", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const writes = MAX_SNAPSHOT_REVISIONS + 8;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const oldest = oldestRetainedRevision(store);
+      assert.ok(oldest > 0, "the ring must genuinely have pruned something, or this refusal has nothing to refuse");
+
+      assert.throws(
+        () => revertTo(store, 0),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.match(e.message, /cannot revert to revision 0/, "the refusal must name the revision that was asked for");
+          assert.match(
+            e.message,
+            new RegExp(`oldest retained revision is ${oldest}`),
+            "and the oldest revision that IS still retained, so a caller can pick a reachable one",
+          );
+          assert.match(e.message, new RegExp(`at most ${MAX_SNAPSHOT_REVISIONS} revisions`), "and the bound itself");
+          return true;
+        },
+      );
+
+      // THE HALF THAT MATTERS MORE THAN THE MESSAGE: a best-effort revert that
+      // returned the nearest retained revision instead would ALSO throw
+      // nothing, and the caller could not tell it happened. So the store is
+      // asserted UNCHANGED after the refusal -- no substitution, no partial
+      // restore, and the handle still usable.
+      assert.equal(currentRevision(store), writes, "the refused revert must not have moved the revision");
+      assert.equal(listRanges(store).length, writes, "nor restored some other revision's rows");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("idempotency of revert: reverting to r yields the state at r, and a SECOND revert to the same r is refused and leaves that state byte-for-byte unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      assert.equal(currentRevision(store), 3);
+
+      store = revertTo(store, 1);
+      const rangesAfterFirst = listRanges(store);
+      const revisionAfterFirst = currentRevision(store);
+      assert.equal(revisionAfterFirst, 1, "revertTo(1) puts the store back at revision 1");
+      assert.equal(rangesAfterFirst.length, 1, "with exactly the one range that existed at revision 1");
+
+      // MEASURED, AND THE PLAN'S SHAPE CORRECTED BY THE MEASUREMENT. A second
+      // `revertTo(1)` does NOT succeed, and the reason is structural rather
+      // than a bug: the snapshot of revision 1 is a whole-store image taken
+      // BEFORE the write that produced revision 2, so it contains pointer rows
+      // for revisions 0..0 only -- a snapshot cannot record a snapshot of
+      // itself. The idempotency that actually holds, and the one worth
+      // asserting, is that the OBSERVABLE STORE STATE after "revert to r" and
+      // after "revert to r, then attempt it again" is identical: the second
+      // attempt is refused by name and changes nothing.
+      assert.throws(
+        () => revertTo(store, 1),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.match(e.message, /cannot revert to revision 1/);
+          return true;
+        },
+      );
+      assert.deepEqual(listRanges(store), rangesAfterFirst, "the refused second revert left every row exactly as the first revert left it");
+      assert.equal(currentRevision(store), revisionAfterFirst, "and left the revision alone");
+
+      // And the revision BELOW it is still reachable, which is what makes the
+      // refusal above a bound rather than a dead end.
+      store = revertTo(store, 0);
+      assert.deepEqual(listRanges(store), [], "revision 0 is still retained and still reverts to an empty store");
+      assert.equal(currentRevision(store), 0);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+
+    const first = openStore(path, { workspaceRoot: dir });
+    setDataType(first, { start: 0x0810, endInclusive: 0x084f, dataType: "lo_hi_address" });
+    const revisionAfterWrite = currentRevision(first);
+    const rowsAfterWrite = listRanges(first);
+    const snapshotsAfterWrite = readdirSync(join(dir, "snapshots")).sort();
+    closeStore(first);
+
+    // Opening is a READ, and it must stay one: an open that took a snapshot,
+    // advanced the revision or ran a migration would make merely LOOKING at a
+    // store change it -- and every one of those is a shape somebody could add
+    // without noticing, because nothing else in the suite reopens twice.
+    for (const pass of [1, 2]) {
+      const handle = openStore(path, { workspaceRoot: dir });
+      try {
+        assert.equal(currentRevision(handle), revisionAfterWrite, `open pass ${pass} must not advance the revision`);
+        assert.deepEqual(listRanges(handle), rowsAfterWrite, `open pass ${pass} must not change the rows`);
+        assert.deepEqual(readdirSync(join(dir, "snapshots")).sort(), snapshotsAfterWrite, `open pass ${pass} must not add a snapshot`);
+      } finally {
+        closeStore(handle);
+      }
+    }
+
+    assert.equal(NO_RETAINED_REVISION, -1, "the empty-ring sentinel is a named constant, so no caller has to recognise a bare -1");
+    inTempDir((freshDir) => {
+      const fresh = openStore(join(freshDir, "proj.annostore"), { workspaceRoot: freshDir });
+      try {
+        assert.equal(
+          oldestRetainedRevision(fresh),
+          NO_RETAINED_REVISION,
+          "a freshly created store retains NO snapshot, and says so rather than naming its current revision as revertable",
+        );
+      } finally {
+        closeStore(fresh);
+      }
+    });
+  });
 });

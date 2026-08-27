@@ -13,7 +13,7 @@
 // emits an `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -26,6 +26,38 @@ const THE_ONE_SEAM = "anno-store.ts";
 
 /** The three shipped modules this area adds. */
 const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
+
+/**
+ * The DECLARED set of TEST files whose code names the persistence dependency.
+ *
+ * WHY A SECOND DECLARED SET EXISTS AT ALL. `STORE-07`'s assertion above scans
+ * `shippedTsModules()`, which is `package.json`'s `files[]` filtered to
+ * `.ts`/`.mts` -- and no test file is ever in `files[]` (asserted further
+ * down). So the test tree is OUTSIDE that guard's scope BY CONSTRUCTION, and
+ * "outside the scope of the guard" is precisely how a dependency spreads
+ * unnoticed: every new store test is a place someone could reach for
+ * `DatabaseSync` directly rather than through the seam's entry points, and
+ * nothing above would say a word. A declared list closes it -- not by
+ * forbidding the import outright, but by making each instance a deliberate,
+ * reviewed edit to THIS array.
+ *
+ * WHY THE MEMBER IS THIS FILE, AND WHY IT IS THE ONLY ONE. Plan 28-06 expected
+ * `anno-store.test.ts` to need the import for one corrupt fixture -- a
+ * `schema_version` set to a value the store deliberately exposes no way to
+ * write. MEASURED FALSE: `AnnoStoreHandle` exposes its own `db`, so that
+ * fixture is one `UPDATE` through the open handle and needs no second importer
+ * at all. The store tests therefore mention the specifier only in prose, which
+ * `codeOnly()` strips.
+ *
+ * This file is the one member, and it is UNAVOIDABLE rather than incidental:
+ * the four planted access routes above are STRING LITERALS containing the
+ * specifier, and a specifier scan must run with `keepLiteralBodies = true`
+ * (see `namesNodeSqlite`), which is exactly what makes a literal
+ * indistinguishable from route (d)'s argument. That is the trade DIVERGENCE 2
+ * already records, seen from the other side: the guard cannot exempt itself
+ * without blinding itself.
+ */
+const TEST_FILES_NAMING_SQLITE = ["anno-seam.test.ts"];
 
 /**
  * True iff the (already `codeOnly`-stripped, LITERAL-BODIES-KEPT) source names
@@ -311,4 +343,57 @@ test("the seam contains exactly one commit statement, so the single planted-viol
     `the seam must contain exactly one commit statement, found ${commitStatements.length} -- a second one splits the durability ` +
       `proof's planted violation across two sites and lets half of it survive`,
   );
+});
+
+// ---------------------------------------------------------------------------
+// 13. The same confinement, bounded over the TEST tree
+// ---------------------------------------------------------------------------
+
+/** Every `*.test.*` file in this directory whose CODE names the dependency,
+ * through the SAME `namesNodeSqlite` predicate and the SAME strip pipeline the
+ * shipped-set scan uses. One definition of "counts as naming the module",
+ * never two that can drift -- the discipline the predicate's own doc comment
+ * records, applied to the second scanned set. */
+function testFilesNamingSqlite(): string[] {
+  return readdirSync(HERE)
+    .filter((name) => /\.test\.[a-zA-Z0-9]+$/.test(name))
+    .filter((name) => namesNodeSqlite(stripForSpecifierScan(readFileSync(join(HERE, name), "utf8"))))
+    .sort();
+}
+
+test("node:sqlite is bounded in the TEST tree too: the set of test files naming it is a DECLARED list", () => {
+  const scanned = readdirSync(HERE).filter((name) => /\.test\.[a-zA-Z0-9]+$/.test(name));
+  // Non-vacuity FIRST: a scan that found no test files at all would satisfy any
+  // deepEqual against a list it also failed to populate.
+  assert.ok(scanned.length > 50, `the scanned test-file set must be substantial, got ${scanned.length}`);
+  assert.ok(scanned.includes("anno-store.test.ts"), "the store's own test file must be inside the scanned set, or this assertion is decoration");
+
+  const namers = testFilesNamingSqlite();
+  // The same pairing as the shipped-set assertion, for the same reason: the
+  // deepEqual catches a WRONG NAME and the length catches a BROKEN SCAN that
+  // returned [] -- which a deepEqual against a one-element array would also
+  // fail, but which a later refactor to a shorter expected list would not.
+  assert.deepEqual(
+    namers,
+    TEST_FILES_NAMING_SQLITE,
+    "a test file naming the SQLite builtin must be a declared, reviewed member of TEST_FILES_NAMING_SQLITE -- the shipped-set scan above " +
+      "cannot see the test tree, and a store test reaching for DatabaseSync directly rather than through the seam is exactly how the " +
+      "dependency spreads where no guard is looking",
+  );
+  assert.equal(namers.length, 1);
+});
+
+test("non-vacuity of the test-tree scan: a planted test file naming the specifier IS reported by the same predicate", () => {
+  // The scan above is a filter over real files, so its non-vacuity has to be
+  // shown on a synthetic source rather than by adding a real violation. Same
+  // predicate, same strip pipeline as the real scan and as routes (a)-(d).
+  const planted = 'import { DatabaseSync } from "node:sqlite";\ntest("x", () => new DatabaseSync(":memory:"));\n';
+  assert.equal(
+    namesNodeSqlite(stripForSpecifierScan(planted)),
+    true,
+    "if a planted test-side importer is not reported, the declared list above cannot catch a real one and is decoration",
+  );
+
+  const clean = "// a store test that goes through the seam's own entry points, as every one of them must\nimport { openStore } from './anno-store.ts';\n";
+  assert.equal(namesNodeSqlite(stripForSpecifierScan(clean)), false, "and a test file that only goes through the seam must not be reported");
 });
