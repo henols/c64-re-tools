@@ -23,19 +23,26 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { blockClassAt, type BlockEntry } from "./block-class.ts";
+import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.ts";
 import { codeOnly } from "./shipped-modules.ts";
+import { DATA_TYPES } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The store spellings the production mapping recognises by name, plus one it
- * deliberately does not. Written out here rather than imported so a silent
- * change to the mapping cannot silently change its own test. */
-const STORE_CODE = "Code";
-const STORE_UNDEFINED = "Undefined";
-const STORE_OTHER = "Byte";
+/** The EXTERNAL ANALYSER's spellings that the production mapping recognises by
+ * name, plus one it deliberately does not. This is the capitalised vocabulary
+ * the rented analyser's Rust `Display` emits and every committed coverage
+ * fixture is spelled in -- it is NOT this project's own store's vocabulary,
+ * which is lowercase and lives in `anno-types.ts`. That distinction is
+ * load-bearing now that the mapping accepts both.
+ *
+ * Written out here rather than imported so a silent change to the mapping
+ * cannot silently change its own test. */
+const ANALYSER_CODE = "Code";
+const ANALYSER_UNDEFINED = "Undefined";
+const ANALYSER_OTHER = "Byte";
 
-const ONE_BLOCK: readonly BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: STORE_CODE }];
+const ONE_BLOCK: readonly BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: ANALYSER_CODE }];
 
 // ---------------------------------------------------------------------------
 // 1. Coverage and the inclusive range ends
@@ -67,14 +74,20 @@ test("an empty block array returns null for every probed address", () => {
 
 // ---------------------------------------------------------------------------
 // 2. The vocabulary mapping, including the fallthrough
+//
+// The mapping accepts TWO vocabularies. This section's spot checks drive the
+// EXTERNAL ANALYSER's capitalised one off hand-written constants; section 2b
+// below drives this project's own store's lowercase one off a DERIVED total
+// loop. The two forms are kept on purpose -- see 2b for why the justification
+// that applies to the constants here is deliberately reversed there.
 // ---------------------------------------------------------------------------
 
-test("the store's code spelling maps to code, its undefined spelling to undefined, and ANY other spelling to data", () => {
+test("the analyser's code spelling maps to code, its undefined spelling to undefined, and ANY other spelling to data", () => {
   const at = (type: string) => blockClassAt([{ start_address: 0x10, end_address: 0x20, type }], 0x18);
 
-  assert.equal(at(STORE_CODE), "code");
-  assert.equal(at(STORE_UNDEFINED), "undefined");
-  assert.equal(at(STORE_OTHER), "data", "a recognised non-code, non-undefined spelling is data");
+  assert.equal(at(ANALYSER_CODE), "code");
+  assert.equal(at(ANALYSER_UNDEFINED), "undefined");
+  assert.equal(at(ANALYSER_OTHER), "data", "a recognised non-code, non-undefined spelling is data");
   assert.equal(at("Address"), "data");
   assert.equal(
     at("SomeSpellingThisTreeHasNeverSeen"),
@@ -82,6 +95,104 @@ test("the store's code spelling maps to code, its undefined spelling to undefine
     "the fallthrough is total on purpose -- an unrecognised store spelling must never read as code",
   );
   assert.equal(at(""), "data", "an empty type string is still not code");
+});
+
+// ---------------------------------------------------------------------------
+// 2b. The DERIVED total cross-check over this project's own store vocabulary
+// ---------------------------------------------------------------------------
+
+/** One probe against a single-entry listing, at an interior address. */
+const classOf = (type: string): BlockClass | null =>
+  blockClassAt([{ start_address: 0x10, end_address: 0x20, type }], 0x18);
+
+test("derived TOTAL cross-check: every member of the store's frozen block vocabulary maps to the right neutral class", () => {
+  // THE RATIONALE REVERSAL, ON THE RECORD -- do not "reconcile" this with the
+  // comment above the analyser constants by deleting one of them.
+  //
+  // That comment justifies writing the spellings out by hand on the ground
+  // that a silent change to the mapping must not be able to silently change
+  // the test of it. It is CORRECT for the analyser's four spellings: the
+  // analyser is external, its vocabulary has no importable home in this tree,
+  // and a hand-written copy is the only copy there can be.
+  //
+  // It is deliberately REVERSED here, for the store's twelve. This project's
+  // own vocabulary has exactly ONE home (`DATA_TYPES` in `anno-types.ts`),
+  // and the failure this test exists against is precisely a DIVERGENCE
+  // between that home and this mapping -- a correct new store silently
+  // reclassifying every block as `data` while every spot check stays green.
+  // A hand-written copy here would be a second home, free to drift from the
+  // first without either side noticing, which is the failure rather than the
+  // guard against it.
+  //
+  // Both forms are kept on purpose. Neither replaces the other.
+  const mapped = new Map<string, BlockClass | null>();
+
+  for (const member of DATA_TYPES) {
+    // The expectation is computed FROM THE MEMBER STRING, never from a second
+    // table beside the vocabulary: the code spelling is the code class, the
+    // undefined spelling is the undefined class, everything else is data.
+    const expected: BlockClass = member === "code" ? "code" : member === "undefined" ? "undefined" : "data";
+    const actual = classOf(member);
+    mapped.set(member, actual);
+    assert.equal(
+      actual,
+      expected,
+      `the store's ${JSON.stringify(member)} block type resolved to ${JSON.stringify(actual)} rather than ` +
+        `${JSON.stringify(expected)} -- block-class.ts and anno-types.ts's DATA_TYPES have diverged, which ` +
+        "reclassifies live blocks and moves a published census figure with no error anywhere",
+    );
+  }
+
+  // NON-VACUITY. Without these, a vocabulary that collapsed to a single
+  // member -- or one whose code spelling was re-spelt, so that NO member
+  // equals "code" and the loop's own expectation quietly becomes "data" for
+  // all of them -- would satisfy the loop above trivially.
+  assert.equal(
+    DATA_TYPES.length,
+    12,
+    `the iterated vocabulary has ${DATA_TYPES.length} members, not the twelve this cross-check is total over`,
+  );
+  const membersFor = (cls: BlockClass) => [...mapped.entries()].filter(([, v]) => v === cls).map(([k]) => k);
+  assert.deepEqual(
+    membersFor("code"),
+    ["code"],
+    "exactly one member of the store's vocabulary must map to the code class -- zero means the code spelling " +
+      "drifted, more than one means the mapping widened",
+  );
+  assert.deepEqual(
+    membersFor("undefined"),
+    ["undefined"],
+    "exactly one member of the store's vocabulary must map to the undefined class",
+  );
+  assert.equal(
+    membersFor("data").length,
+    10,
+    "the other ten members must all fall through to data -- the fallthrough is what keeps an unrecognised " +
+      "spelling from reading as code",
+  );
+});
+
+test("the analyser arm survives the store arm being added -- its four spellings still map as before", () => {
+  // Pinned explicitly so removing the transitional arm later (`CUT-01`) is a
+  // deliberate edit that reddens here, never a silent consequence of some
+  // other change. Every committed coverage fixture is spelled in this
+  // vocabulary.
+  assert.equal(classOf(ANALYSER_CODE), "code");
+  assert.equal(classOf(ANALYSER_UNDEFINED), "undefined");
+  assert.equal(classOf(ANALYSER_OTHER), "data");
+  assert.equal(classOf("Address"), "data");
+});
+
+test("the two arms are two vocabularies, NOT one vocabulary compared case-insensitively", () => {
+  for (const neither of ["CODE", "cOdE", "UNDEFINED", "Code ", " code", "code\t", "Byte ", "BYTE"]) {
+    assert.equal(
+      classOf(neither),
+      "data",
+      `${JSON.stringify(neither)} belongs to neither accepted vocabulary and must read as data -- a ` +
+        "case-insensitive or whitespace-trimming comparison would silently accept a third spelling nobody chose, " +
+        "and no producer in this tree emits one",
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -93,7 +204,7 @@ test("a null/undefined hole inside the block array is skipped rather than thrown
   const holed = [
     null,
     undefined,
-    { start_address: 0x0810, end_address: 0x084f, type: STORE_CODE },
+    { start_address: 0x0810, end_address: 0x084f, type: ANALYSER_CODE },
   ] as unknown as readonly BlockEntry[];
 
   assert.equal(blockClassAt(holed, 0x0820), "code", "the hole must be skipped and the real entry still found");
@@ -117,8 +228,8 @@ test("a non-array blocks argument returns null rather than throwing (IN-04)", ()
 
 test("first-match-wins on overlapping blocks -- the earliest array entry decides", () => {
   const overlapping: readonly BlockEntry[] = [
-    { start_address: 0x0810, end_address: 0x084f, type: STORE_CODE },
-    { start_address: 0x0800, end_address: 0x08ff, type: STORE_OTHER },
+    { start_address: 0x0810, end_address: 0x084f, type: ANALYSER_CODE },
+    { start_address: 0x0800, end_address: 0x08ff, type: ANALYSER_OTHER },
   ];
 
   assert.equal(
