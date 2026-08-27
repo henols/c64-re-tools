@@ -443,7 +443,7 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: 6/6 plans executed in 4 waves
+**Plans**: 9 plans in 6 waves — 6/6 executed in waves 1–4; 3 gap-closure plans added in waves 5–6 after verification found gaps
 
 Plans:
 **Wave 1**
@@ -463,6 +463,15 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 28-06-PLAN.md — The ONE combined durability-and-revert test with the removed `COMMIT` observed reddening both halves, the four corrupt-file refusals, the cross-process stale-revision refusal, and the bounded snapshot ring
+
+**Wave 5** *(gap closure — `28-VERIFICATION.md` scored 8/11 must-haves; all five success criteria VERIFIED)*
+
+- [ ] 28-07-PLAN.md — Gap 1 + gap 2: one ownership predicate for the snapshot ring, one half-state resolver, a second revert that refuses by name instead of crashing out of the error family, and a prune whose statement order matches its own argument
+- [ ] 28-09-PLAN.md — Gap 3: workspace confinement compares real paths on both sides, so a symlinked subdirectory is refused rather than followed — with an inside-pointing symlink still followed, so the control discriminates
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 28-08-PLAN.md — CR-02: one owner per published snapshot — stage under a unique unpublished name and publish only after winning the compare-and-swap — plus the WR-04 and WR-11 error-family escapes folded in
 
 Notes:
 
