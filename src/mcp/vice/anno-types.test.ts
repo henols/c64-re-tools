@@ -496,7 +496,7 @@ test("assertEnumName and parseVariantKey complete the validator set: the identif
   );
 });
 
-test("anno-types.ts declares no module-level mutable binding, and its import specifier set is exactly the three it needs", () => {
+test("anno-types.ts declares no module-level mutable binding, and its import specifier set is exactly the four it needs", () => {
   const raw = readFileSync(join(HERE, "anno-types.ts"), "utf8");
 
   // Trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords.
@@ -525,25 +525,91 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
         /^(let|var)\s/.test(line) ||
         /^(export\s+)?const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
     );
-  assert.deepEqual(offenders, [], "every export here is a frozen constant or a pure function of its arguments; there is nothing to reset");
+  // MESSAGE NARROWED (2026-08-28), logic untouched. The scan above, its
+  // anchor, its container filter and its two documented adjustments are
+  // byte-identical and still report `[]` -- the confinement fix added no
+  // module-level binding. What changed is the SENTENCE beside it: it used to
+  // claim every export is a frozen constant or a pure function of its
+  // arguments, and that is now false for exactly one export. An assertion that
+  // is sound with a message that over-claims is the same defect as a comment
+  // asserting a guarantee the code does not provide, so the message moves in
+  // the same edit as the thing that falsified it.
+  assert.deepEqual(offenders, [],
+    "no module-level mutable state: nothing is held between calls, two concurrent callers cannot observe each other, and there is nothing " +
+      "to reset. Every export here is a frozen constant or a pure function of its arguments EXCEPT storePathWithinWorkspace, which is a " +
+      "function of its arguments AND THE FILESYSTEM -- workspace confinement has to know whether a path lands outside the root once " +
+      "symbolic links are followed, and no string comparison can answer that. Narrowed in step with trap 3 in anno-types.ts's own header, " +
+      "so the header and this test cannot disagree about which exports are pure.",
+  );
 
   // Literal bodies KEPT: an import specifier IS a string literal, so blanking
   // literal bodies would make the thing under assertion unobservable.
+  const kept = codeOnly(raw, true);
   const specifiers = [
-    ...codeOnly(raw, true).matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm),
+    ...kept.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm),
   ]
     .map((match) => match[1] ?? match[2] ?? match[3])
     .filter((specifier): specifier is string => specifier !== undefined);
 
+  // WIDENED 2026-08-28, AND THIS IS A REVERSAL RATHER THAN A CORRECTION.
+  // This list held three entries until this date. It now holds four: node:fs
+  // was added when workspace confinement was fixed to compare REAL paths
+  // (28-VERIFICATION.md gap 3 / 28-REVIEW.md CR-03, where a symlinked
+  // subdirectory inside the workspace escaped and the store file was created
+  // outside the root). The reason is recorded here, and in the rationale
+  // below, because a guard widened with no record of why is indistinguishable
+  // from a floor quietly lowered to make a red go away -- which is exactly the
+  // failure 28-03's prohibition P2 names. The three absence assertions after
+  // it pin the directions this widening deliberately did NOT open, so the
+  // four-entry list is a floor and not a wildcard.
   assert.deepEqual(
     [...specifiers].sort(),
-    ["./disasm-opcodes.ts", "./vice.ts", "node:path"],
-    "anno-types.ts may import the opcode table (for the derived denylist), the error base, and node:path -- nothing else. A store " +
-      "module that grew a transport, census or path-translation import would stop being a pure validator layer.",
+    ["./disasm-opcodes.ts", "./vice.ts", "node:fs", "node:path"],
+    "anno-types.ts may import the opcode table (for the derived denylist), the error base, node:path, and node:fs -- nothing else. " +
+      "STILL FORBIDDEN, unchanged: either host/container path-translation seam, any transport import, any census import, and the SQLite " +
+      "builtin, which belongs to anno-store.ts alone under STORE-07. WHY THE THREE-ENTRY VERSION BECAME FALSE: workspace confinement has " +
+      "to answer whether a path resolves outside the root once symbolic links are followed, and that is a filesystem question. The string " +
+      "comparison the shorter list implied WAS the gap CR-03 reported, and node:fs is the minimum that closes it -- existsSync and " +
+      "realpathSync, nothing more. WHY node:fs IS NOT WHAT THE OLD SENTENCE GUARDED AGAINST: it is a Node builtin, not a seam. The failure " +
+      "that rationale feared was a store module growing a dependency on the transport or on path translation, and the guard that actually " +
+      "enforces that is hostpath-consumers.test.ts's closed consumer set -- which anno-types.ts is still absent from, and which did not " +
+      "move. A reader who widens this list further should be looking there.",
   );
-  assert.equal(specifiers.length, 3, "three specifiers: a deepEqual catches a wrong one, the length catches a duplicate");
+  assert.equal(specifiers.length, 4, "four specifiers: a deepEqual catches a wrong one, the length catches a duplicate");
 
   const localSpecifiers = specifiers.filter((specifier) => specifier.startsWith("./"));
   assert.deepEqual([...localSpecifiers].sort(), ["./disasm-opcodes.ts", "./vice.ts"]);
   assert.equal(localSpecifiers.length, 2);
+
+  // THREE TARGETED ABSENCE ASSERTIONS -- what the widening did NOT open. The
+  // specifier scan above is already non-vacuous (its length assertion proves it
+  // read four real specifiers), so these run over the same stripped source and
+  // each carries its own message rather than being folded into one.
+  //
+  // The SQLite specifier is assembled rather than written out, and that is
+  // deliberate rather than stylistic: anno-seam.test.ts's
+  // TEST_FILES_NAMING_SQLITE scans every test file's code with literal bodies
+  // KEPT, so writing "node:sqlite" as a literal here would make THIS file a
+  // second declared namer of the builtin and redden that guard. Comments are
+  // stripped by that scan, which is why the name appears in this comment and
+  // not in the code below.
+  const sqliteSpecifier = ["node", "sqlite"].join(":");
+  assert.equal(
+    kept.includes("hostpath"),
+    false,
+    "anno-types.ts must not reach the host path-translation seam: a host-translated store path would let a store write land on the HOST " +
+      "filesystem, outside the workspace -- anno-store.ts's trap 7",
+  );
+  assert.equal(
+    kept.includes("containerpath"),
+    false,
+    "and not the container-side inverse either: the confinement contract compares real paths in ONE namespace, and a translation on " +
+      "either side of it would make the comparison meaningless",
+  );
+  assert.equal(
+    kept.includes(sqliteSpecifier),
+    false,
+    "and not the SQLite builtin: STORE-07 puts the dependency in anno-store.ts alone, and a validator layer that opened a connection " +
+      "would be a second place the store can be reached",
+  );
 });
