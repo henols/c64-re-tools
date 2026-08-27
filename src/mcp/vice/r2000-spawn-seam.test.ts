@@ -22,9 +22,8 @@
 // `*.test.*`: BOTH `r2000-test-gate.ts` and `acme-gate.ts` are real, but
 // non-shipped, spawn call sites that the broader directory listing would
 // incorrectly catch, so neither is a special case. Within that derived set,
-// this file
-// finds every call to a spawn-family function whose first argument is a
-// regenerator2000-binary-shaped expression, and asserts the discovered set
+// this file finds every call to a spawn-family function whose first argument
+// is a regenerator2000-binary-shaped expression, and asserts the discovered set
 // of FILES equals `EXPECTED_R2000_SPAWN_SITES` exactly, in both directions
 // -- a third site appearing, or one of the two disappearing, both FAIL.
 //
@@ -79,12 +78,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SPAWN_FUNCTION_NAMES = ["spawnSync", "spawn", "execFileSync", "execFile", "exec"] as const;
 
 /** Matches `<spawnFn>(<firstArgToken>` in already-`codeOnly()`-ed source,
- * capturing the function name and the raw first-argument token (an
- * identifier, or a quoted/backtick string -- `codeOnly()` has already
- * blanked literal bodies, so a string-literal first argument surfaces here
- * as an empty pair of quote characters, which `isR2000BinaryExpression()`
- * below treats as "not a literal that names regenerator2000", correctly,
- * since the literal's actual text was never real code to begin with). */
+ * capturing the function name and the raw first-argument token, which can
+ * only ever be an identifier. `codeOnly()` removes a quoted literal
+ * ENTIRELY -- quote characters included -- so a string-literal first
+ * argument contributes nothing at all and surfaces as `spawnSync(, ...)`.
+ * The identifier group below therefore cannot match it, which is the
+ * intended outcome: the literal's actual text was never real code to begin
+ * with. `isR2000SpawnCall()` (below) is what then decides whether a matched
+ * identifier names the regenerator2000 binary. */
 const SPAWN_CALL_RE = new RegExp(`\\b(${SPAWN_FUNCTION_NAMES.join("|")})\\s*\\(\\s*([A-Za-z_$][A-Za-z0-9_$]*)`, "g");
 
 interface SpawnCallSite {
