@@ -5,15 +5,15 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: gaps_found
-stopped_at: "Phase 28 verified gaps_found (8/11 must-haves) -- 3 gaps in the snapshot ring; next: /gsd-plan-phase 28 --gaps"
-last_updated: "2026-08-27T19:38:41.754Z"
+stopped_at: "Phase 28 gap closure planned -- 3 plans (28-07..28-09, waves 5-7) close the 3 frontmatter gaps plus CR-02; next: /gsd-execute-phase 28 --gaps-only"
+last_updated: "2026-08-27T20:50:15.259Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 28 executed 6/6 plans; verification found 3 gaps
-state_head: 081550a90f9269946cf2380f3acffda28a7e7135
+last_activity_desc: Phase 28 gap closure planned; 3 gap_closure plans verified by plan-checker
+state_head: 0c4f6e317192cd9b25950308d8e1feb26b45b880
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 11
+  total_plans: 14
   completed_plans: 11
   percent: 17
 ---
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — EXECUTING
-Plan: 6 of 6
-Status: gaps_found
-Last activity: 2026-08-27 — Phase 28 execution started
+Phase: 28 (The Store Core) — READY TO EXECUTE (gap closure)
+Plan: 6 of 9 executed; 3 gap_closure plans (28-07..28-09) planned, not yet run
+Status: gaps_found — planned, not closed
+Last activity: 2026-08-27 — Phase 28 gap closure planned and verified
 
 ## Performance Metrics
 
