@@ -74,9 +74,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
-import { ADDRESS_MAX, ADDRESS_MIN, type DataType, type RangeRow } from "./anno-types.ts";
-import { applyWrite, closeStore, listRanges, openStore, setComment, setDataType } from "./anno-store.ts";
+import {
+  ADDRESS_MAX,
+  ADDRESS_MIN,
+  AnnoRangeShapeError,
+  AnnoSplitRemainderError,
+  type DataType,
+  type RangeRow,
+} from "./anno-types.ts";
+import { applyWrite, closeStore, currentRevision, listRanges, openStore, setComment, setDataType } from "./anno-store.ts";
 import { codeOnly } from "./shipped-modules.ts";
+import { ViceError } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -454,6 +462,148 @@ test("planting B, OBSERVED: with the contradiction query removed the identical s
   assert.equal(real.contradictedComments[0].address, 0x0812);
   assert.equal(real.contradictedComments[0].grade, "[confirmed-code]");
   assert.equal(real.contradictedComments[0].contradictedBy, "byte");
+});
+
+// ---------------------------------------------------------------------------
+// SPLIT-TABLE ROWS: THE REMAINDER RULE (CR-09).
+// ---------------------------------------------------------------------------
+//
+// A split-table layout needs an EVEN byte count -- the low half and the high
+// half must be the same length -- and `assertRangeShape()` refuses an odd one at
+// the store's own entry point. Split-and-preserve re-inserts the surviving head
+// and tail of an overlapped row carrying that row's own type forward, so a
+// retype that lands off an entry boundary can propose a remainder that is an ODD
+// split table: a row `setDataType` would refuse to create and
+// `resolveSplitTargets()` cannot decode.
+//
+// THE RULE: the store never persists a range row it would refuse at its own
+// entry point. Every remainder the split would produce is asked the SAME shape
+// question -- `assertRangeShape` itself, not a second even-count test -- BEFORE
+// the first delete, and an illegal one refuses the whole retype by name.
+// `retype()`'s doc comment records the decision and the alternative not taken.
+
+/** The split-table row every case in this section starts from: `$1000..$100f`
+ * typed `lo_hi_address` -- 16 bytes, 8 entries, so an entry boundary falls on
+ * every even offset and the two nearest legal boundaries around any odd
+ * remainder are one address apart on each side. */
+const SPLIT_A = 0x1000;
+const SPLIT_B = 0x100f;
+
+/** Seeds a fresh store with the split row above, through the production entry
+ * point. Returns the rows and the revision as they stand before the case's own
+ * retype, so a refusal can be asserted against real before-values. */
+function seedSplitRow(store: ReturnType<typeof openStore>): { before: RangeRow[]; revision: number } {
+  setDataType(store, { start: SPLIT_A, endInclusive: SPLIT_B, dataType: "lo_hi_address" });
+  return { before: listRanges(store), revision: currentRevision(store) };
+}
+
+test("CR-09, PRODUCTION ENTRY POINTS ONLY: typing one byte inside a lo_hi_address table is REFUSED by name, and the refusal costs the store nothing", () => {
+  // THE DRIVE IS THE POINT. No hand-edited store, no test-only export, no
+  // `applyWrite`: two ordinary `setDataType` calls, which is what made the
+  // round-5 report actionable. Before this rule existed the second call returned
+  // `{ revision: 2, changed: true, contradictedComments: [] }` and left
+  // `id=3 $1005..$100f lo_hi_address` -- an 11-byte split table -- on disk with
+  // no diagnostic anywhere.
+  inFreshStore((store) => {
+    const { before, revision } = seedSplitRow(store);
+    assert.deepEqual(
+      before.map((row) => [row.start, row.endInclusive, row.dataType, row.bank]),
+      [[SPLIT_A, SPLIT_B, "lo_hi_address", null]],
+      "the seed is a single 16-byte lo_hi_address row",
+    );
+
+    let thrown: unknown = null;
+    try {
+      setDataType(store, { start: 0x1004, endInclusive: 0x1004, dataType: "byte" });
+    } catch (e) {
+      thrown = e;
+    }
+
+    assert.ok(thrown !== null, "the retype must be REFUSED -- it would leave an 11-byte lo_hi_address tail");
+    assert.ok(thrown instanceof AnnoSplitRemainderError, "refused by its own name, not by a generic error");
+    // IN-FAMILY, asserted rather than reasoned about: an existing caller
+    // catching the shape family keeps working, and nothing escapes `ViceError`.
+    assert.ok(thrown instanceof AnnoRangeShapeError, "AnnoSplitRemainderError IS a shape refusal");
+    assert.ok(thrown instanceof ViceError, "and it stays inside the ViceError family");
+
+    // BOTH NUMBERS THAT CONFLICTED, plus the legal alternatives (28-08 P2).
+    const message = (thrown as Error).message;
+    for (const needle of ["4096..4111", "lo_hi_address", "4101..4111", "11 byte", "tail", "4100", "4112"]) {
+      assert.ok(message.includes(needle), `the refusal must name ${needle}; got: ${message}`);
+    }
+
+    // THE REFUSAL COSTS NOTHING. The gate runs before the first delete, so this
+    // is not a rollback claim -- nothing was ever applied.
+    assert.deepEqual(listRanges(store), before, "the row set is byte-identical after the refusal, ids included");
+    assert.equal(currentRevision(store), revision, "and the revision did not move");
+  });
+});
+
+test("the LEGAL remainder case on the same split row: an even head and an even tail split into three rows, and every one of them is re-acceptable at setDataType", () => {
+  inFreshStore((store) => {
+    seedSplitRow(store);
+    const result = setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
+    assert.equal(result.changed, true);
+
+    const rows = listRanges(store);
+    assert.deepEqual(
+      rows.map((row) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType, bank: row.bank })),
+      [
+        { start: 0x1000, endInclusive: 0x1003, dataType: "lo_hi_address", bank: null },
+        { start: 0x1008, endInclusive: 0x100f, dataType: "lo_hi_address", bank: null },
+        { start: 0x1004, endInclusive: 0x1007, dataType: "byte", bank: null },
+      ],
+      "head (4 bytes, even), tail (8 bytes, even), then the newly typed range",
+    );
+
+    // THE ROUND TRIP, on this one case: a row the store returned is a row the
+    // store would accept. The class-level statement of it is the invariant
+    // further down; this is the instance the gap was reported against.
+    for (const row of rows) {
+      setDataType(store, { start: row.start, endInclusive: row.endInclusive, dataType: row.dataType });
+    }
+  });
+});
+
+test("IN-06: a remainder carries the overlapped row's own `bank` forward, while the newly typed range carries null", () => {
+  // THE INPUT STATE IS TEST-CONSTRUCTED AND THE READ-BACK IS NOT. MEASURED
+  // AGAINST THE SOURCE: `insertRange()` is the module's ONLY range insert and it
+  // binds whatever `bank` its caller passes -- and every production caller
+  // passes `null` (a new range) or the overlapped row's own value (a remainder).
+  // So NO production entry point can put a non-null `bank` on disk, and the
+  // precondition for this claim can only be built through `applyWrite`. That
+  // half is filed as a `backstop` truth in this plan's SUMMARY. What IS
+  // production-driven is the preservation itself: the split below is an ordinary
+  // `setDataType`, and the result is read back through `listRanges()`.
+  inFreshStore((store) => {
+    applyWrite(store, (db) => {
+      db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+        SPLIT_A,
+        SPLIT_B,
+        "lo_hi_address",
+        7,
+      );
+      return true;
+    });
+    assert.deepEqual(
+      listRanges(store).map((row) => [row.start, row.endInclusive, row.dataType, row.bank]),
+      [[SPLIT_A, SPLIT_B, "lo_hi_address", 7]],
+      "the constructed precondition: one split row carrying a NON-NULL bank",
+    );
+
+    // PRODUCTION FROM HERE ON.
+    setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
+
+    assert.deepEqual(
+      listRanges(store).map((row) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType, bank: row.bank })),
+      [
+        { start: 0x1000, endInclusive: 0x1003, dataType: "lo_hi_address", bank: 7 },
+        { start: 0x1008, endInclusive: 0x100f, dataType: "lo_hi_address", bank: 7 },
+        { start: 0x1004, endInclusive: 0x1007, dataType: "byte", bank: null },
+      ],
+      "both remainders keep the overlapped row's bank; the newly typed range gets null",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
