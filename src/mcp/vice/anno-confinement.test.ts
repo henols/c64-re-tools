@@ -90,12 +90,13 @@
 // `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
 import { closeStore, openStore } from "./anno-store.ts";
 import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.ts";
+import { ViceError } from "./vice.ts";
 
 /** `anno-store.test.ts`'s `inTempDir` shape -- `mkdtempSync` under `tmpdir()`
  * inside a `try` with an UNCONDITIONAL `finally rmSync`. The one addition is
@@ -489,5 +490,222 @@ test("12. idempotency: a repeated confinement check returns the identical answer
     // answer rather than a second, different one.
     assert.deepEqual(readdirSync(ws).sort(), before, "the workspace listing is unchanged across all four calls: the confinement check creates nothing");
     assert.deepEqual(readdirSync(outside), [], "and nothing appeared outside the root either");
+  });
+});
+
+// CASES 13, 14 AND 15 -- `WR-12`, the three input classes the twelve cases
+// above have never planted. `28-VERIFICATION.md` records them as COINCIDENTAL
+// RELIANCE: the confinement OUTCOME on these inputs was already right, but it
+// was right because an unhandled OS error aborted the call, not because
+// anything decided. 28-12 swapped `existsSync` for `lstatSync` in the ancestor
+// walk; `throwIfNoEntry: false` suppresses ENOENT ONLY, so all three escaped
+// `openStore` as bare `Error`s outside the `ViceError` family. Measured against
+// the pre-plan tree at `49826f9`, at BOTH entry points, on this host
+// (Node 22.22):
+//
+//   A predicate (ENOTDIR): threw Error | inViceFamily=false | ENOTDIR: not a directory, lstat '.../wsA/notes.txt/p.annostore'
+//   A openStore   (ENOTDIR): threw Error | inViceFamily=false | ENOTDIR: not a directory, lstat '.../wsA/notes.txt/p.annostore'
+//   B predicate (EACCES): threw Error | inViceFamily=false | EACCES: permission denied, lstat '.../wsB/locked/p.annostore'
+//   B openStore   (EACCES): threw Error | inViceFamily=false | EACCES: permission denied, lstat '.../wsB/locked/p.annostore'
+//   C predicate (ancestor ELOOP): threw Error | inViceFamily=false | ELOOP: too many symbolic links encountered, lstat '.../wsC/a/sub/p.annostore'
+//   C openStore   (ancestor ELOOP): threw Error | inViceFamily=false | ELOOP: too many symbolic links encountered, lstat '.../wsC/a/sub/p.annostore'
+//
+// EACH IS DRIVEN THROUGH BOTH ENTRY POINTS ON PURPOSE. Case 8 above records why
+// a predicate-only assertion can pass for the wrong reason; the mirror hazard is
+// an `openStore`-only assertion passing because `DatabaseSync` happened to fail
+// downstream. Asserting both is what makes the refusal a decision of the
+// confinement rather than a coincidence of whatever runs next.
+
+test("13. an ancestor that is a REGULAR FILE is refused with AnnoStorePathError at both entry points, and the file is left untouched", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+
+    // THE PLANT NEEDS NO SYMLINK, NO PRIVILEGE AND NOTHING PRE-EXISTING -- it is
+    // an ordinary caller typo (`notes.txt` where a directory was meant), which
+    // is what makes this the most reachable of the three classes rather than an
+    // exotic one.
+    const notes = join(ws, "notes.txt");
+    writeFileSync(notes, "original contents");
+    const storePath = join(ws, "notes.txt", "p.annostore");
+    const wsBefore = readdirSync(ws).sort();
+
+    for (const [label, call] of [
+      ["storePathWithinWorkspace", () => storePathWithinWorkspace(storePath, ws)],
+      ["openStore", () => openStore(storePath, { workspaceRoot: ws })],
+    ] as const) {
+      assert.throws(
+        call,
+        (e: unknown) => {
+          assert.ok(
+            e instanceof AnnoStorePathError,
+            `${label}: a regular-file ancestor must refuse by NAME -- before this plan it aborted with a bare ENOTDIR Error`,
+          );
+          assert.ok(
+            e instanceof ViceError,
+            `${label}: and the refusal must be inside the ViceError family -- \`inViceFamily=false\` is the measured defect`,
+          );
+          assert.ok(
+            (e as Error).message.includes(storePath),
+            `${label}: the refusal must NAME the path the caller asked about -- got ${JSON.stringify((e as Error).message)}`,
+          );
+          return true;
+        },
+      );
+    }
+
+    // THE REFUSAL MUST NOT HAVE TOUCHED THE FILE. A "fix" that created a
+    // directory where the file was, or truncated it on the way to opening a
+    // store under it, would satisfy every class assertion above and destroy the
+    // caller's data.
+    assert.equal(statSync(notes).isFile(), true, "the ancestor is still a REGULAR FILE -- the refusal must not have replaced it with a directory");
+    assert.equal(readFileSync(notes, "utf8"), "original contents", "and its contents are byte-identical -- nothing truncated it on the way to a refusal");
+    assert.deepEqual(readdirSync(ws).sort(), wsBefore, "the workspace listing is unchanged: the confinement check creates nothing");
+    assert.deepEqual(readdirSync(outside), [], "and nothing appeared outside the root either");
+  });
+});
+
+test(
+  "14. an UNREADABLE ancestor directory is refused with AnnoStorePathError at both entry points",
+  {
+    // ROOT CANNOT CONSTRUCT THIS FIXTURE. Root ignores directory mode bits, so
+    // `lstat` under a `0o000` directory SUCCEEDS and the EACCES this case is
+    // about never happens -- the case would pass while measuring nothing. A
+    // silently-passing confinement control is precisely the blind spot this
+    // task exists to remove, so the skip is explicit and carries its reason.
+    skip:
+      process.getuid?.() === 0
+        ? "running as root: root ignores directory mode bits, so a 0o000 ancestor still stats successfully and the EACCES class cannot be planted -- this case would pass vacuously"
+        : false,
+  },
+  () => {
+    inTempDir((root) => {
+      const ws = join(root, "ws");
+      const outside = join(root, "outside");
+      mkdirSync(ws);
+      mkdirSync(outside);
+
+      const locked = join(ws, "locked");
+      mkdirSync(locked);
+      const storePath = join(locked, "p.annostore");
+
+      // UNCONDITIONAL RESTORE. `inTempDir`'s `finally rmSync` cannot recurse
+      // into a `0o000` directory, and `/tmp` here is a tmpfs whose periodic
+      // cleanup is disabled -- a leaked fixture is leaked RAM until reboot.
+      chmodSync(locked, 0o000);
+      try {
+        // NON-VACUITY PIN. If the mode change did not actually make the child
+        // unreadable on this filesystem, the case is measuring nothing.
+        assert.throws(() => statSync(storePath), /EACCES/, "precondition: stat of a child of the locked directory must fail with EACCES, or this case measures nothing");
+
+        for (const [label, call] of [
+          ["storePathWithinWorkspace", () => storePathWithinWorkspace(storePath, ws)],
+          ["openStore", () => openStore(storePath, { workspaceRoot: ws })],
+        ] as const) {
+          assert.throws(
+            call,
+            (e: unknown) => {
+              assert.ok(
+                e instanceof AnnoStorePathError,
+                `${label}: an unreadable ancestor must refuse by NAME -- before this plan it aborted with a bare EACCES Error`,
+              );
+              assert.ok(e instanceof ViceError, `${label}: and the refusal must be inside the ViceError family`);
+              assert.ok(
+                (e as Error).message.includes(storePath),
+                `${label}: the refusal must NAME the path the caller asked about -- got ${JSON.stringify((e as Error).message)}`,
+              );
+              return true;
+            },
+          );
+        }
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+
+      assert.deepEqual(readdirSync(locked), [], "no store file was created under the unreadable ancestor");
+      assert.deepEqual(readdirSync(outside), [], "and nothing appeared outside the root either");
+    });
+  },
+);
+
+test("15. a symlink cycle in an ANCESTOR position is refused with AnnoStorePathError at both entry points -- and it is the KERNEL's bound, not the manual hop counter, that refuses it", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+
+    // Case 10's plant, asked for in the OTHER spelling. `a -> b`, `b -> a`.
+    symlinkSync(join(ws, "b"), join(ws, "a"));
+    symlinkSync(join(ws, "a"), join(ws, "b"));
+
+    // CASE 10 PINS THE LEAF SPELLING (`<ws>/a`); THIS CASE PINS THE ANCESTOR
+    // SPELLING (`<ws>/a/sub/p.annostore`), AND THEY DO NOT TAKE THE SAME ROUTE.
+    // 28-12's truth 3 -- "a cycle refuses with the hop bound rather than
+    // looping" -- was measured only against the leaf spelling, and it is true
+    // only there. MEASURED, both spellings, this host:
+    //
+    //   * LEAF. `lstat` does NOT follow the FINAL component, so `<ws>/a` is a
+    //     stopping ENTRY, the manual hop loop runs, and `MAX_SYMLINK_HOPS`
+    //     refuses. That is case 10, and its message names 40.
+    //   * ANCESTOR. `lstat` MUST follow `a` to reach `sub`, so the kernel's own
+    //     MAXSYMLINKS fires first and `lstat` throws ELOOP -- before the walk
+    //     has descended anywhere and before the hop counter has run once. Until
+    //     this plan that ELOOP escaped as a bare `Error`
+    //     (`inViceFamily=false`, transcript in the block above); it is the
+    //     WR-12 wrap in `pathEntryExists`, not the hop counter, that refuses it
+    //     now.
+    //
+    // THE TWO BOUNDS AGREE BY CONSTRUCTION and that is the point rather than an
+    // accident: `MAX_SYMLINK_HOPS` is 40 because Linux's MAXSYMLINKS is 40, so
+    // whichever bound fires, the answer is the same refusal. The manual counter
+    // is therefore UNREACHABLE in ancestor position by design, not by omission.
+    const storePath = join(ws, "a", "sub", "p.annostore");
+    const startedAt = Date.now();
+
+    for (const [label, call] of [
+      ["storePathWithinWorkspace", () => storePathWithinWorkspace(storePath, ws)],
+      ["openStore", () => openStore(storePath, { workspaceRoot: ws })],
+    ] as const) {
+      assert.throws(
+        call,
+        (e: unknown) => {
+          assert.ok(
+            e instanceof AnnoStorePathError,
+            `${label}: an ANCESTOR cycle must refuse by NAME -- before this plan it aborted with a bare ELOOP Error while the LEAF spelling refused correctly`,
+          );
+          assert.ok(e instanceof ViceError, `${label}: and the refusal must be inside the ViceError family`);
+          assert.ok(
+            (e as Error).message.includes(storePath),
+            `${label}: the refusal must NAME the path the caller asked about -- got ${JSON.stringify((e as Error).message)}`,
+          );
+          assert.match(
+            (e as Error).message,
+            /ELOOP/,
+            `${label}: and it must carry the underlying reason, which for the ANCESTOR spelling is the kernel's own ELOOP and NOT the manual hop bound`,
+          );
+          return true;
+        },
+      );
+    }
+
+    // THE COMPARISON THAT MAKES THIS CASE MORE THAN A COPY OF CASE 10. Same two
+    // links, same cycle, asked for in the leaf spelling: that one DOES reach
+    // the manual counter and names the bound. Asserted here beside the ancestor
+    // spelling so a future reader sees the two routes in one place rather than
+    // concluding from case 10 alone that "a cycle names 40".
+    assert.throws(
+      () => storePathWithinWorkspace(join(ws, "a"), ws),
+      (e: unknown) => {
+        assert.match((e as Error).message, /40/, "the LEAF spelling of the SAME cycle is refused by the manual hop counter and names the 40-hop bound");
+        return true;
+      },
+    );
+
+    assert.ok(Date.now() - startedAt < 2000, "the refusal must be prompt in BOTH spellings: an unbounded hop is a hang, and a hang in a confinement check is a denial of service on unvalidated input");
+    assert.deepEqual(readdirSync(outside), [], "nothing was created outside the workspace root");
+    assert.deepEqual(readdirSync(ws).sort(), ["a", "b"], "and nothing was created inside it either -- the confinement check creates nothing");
   });
 });
