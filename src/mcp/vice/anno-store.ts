@@ -143,6 +143,8 @@ import {
   assertRangeShape,
   AnnoCommentGradeError,
   AnnoLabelError,
+  AnnoRangeShapeError,
+  AnnoSplitRemainderError,
   AnnoStoreCorruptError,
   AnnoStoreError,
   AnnoStorePathError,
@@ -1681,8 +1683,86 @@ export function applyWriteWithoutCommit<T>(
   return runWriteSequence(handle, mutate, false, opts.baseRevision);
 }
 
-function insertRange(db: DatabaseSync, start: number, endInclusive: number, dataType: string): void {
-  db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
+/**
+ * The module's ONE range insert. `bank` is a parameter rather than a hardcoded
+ * `null` (IN-06): a remainder re-inserted by split-and-preserve carries the
+ * overlapped row's own `bank` forward, and a newly typed range carries `null`.
+ * `bank` is reserved and interpreted by nothing today, which is exactly why a
+ * write path that silently dropped it would be an unobservable loss a future
+ * banked-memory model inherits.
+ */
+function insertRange(db: DatabaseSync, start: number, endInclusive: number, dataType: string, bank: number | null): void {
+  db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, bank);
+}
+
+/** One overlapped row as `retype()` reads it. `bank` is selected because the
+ * remainders re-inserted from this row must carry it forward. */
+interface OverlappedRangeRow {
+  id: number;
+  start: number;
+  end_inclusive: number;
+  data_type: string;
+  bank: number | null;
+}
+
+/**
+ * Would preserving `remainderStart..remainderEndInclusive` as `row`'s own type
+ * write a row the store would REFUSE at its own entry point? Returns the
+ * refusal to throw, or `null` when the remainder is legal.
+ *
+ * THE QUESTION IS ASKED THROUGH `assertRangeShape` ITSELF, never through a
+ * re-implemented even-count test. That is the whole point: there is then exactly
+ * ONE definition of a legal range shape in the repo, and a rule added to it
+ * later applies to the store's own writer for free. A second copy of the rule
+ * here would drift the moment the first one is edited, and the drift is silent.
+ *
+ * It is a separate named function rather than inline code so the round-trip
+ * invariant in `anno-overlap.test.ts` has a named thing to point at.
+ */
+function remainderRefusal(
+  row: OverlappedRangeRow,
+  remainderStart: number,
+  remainderEndInclusive: number,
+  side: "head" | "tail",
+  callerStart: number,
+  callerEndInclusive: number,
+): AnnoSplitRemainderError | null {
+  try {
+    assertRangeShape(remainderStart, remainderEndInclusive, row.data_type as DataType);
+    return null;
+  } catch (e) {
+    if (!(e instanceof AnnoRangeShapeError)) throw e;
+    // The caller's own boundary on the OFFENDING side. Moving it by one flips
+    // the remainder's parity, so the two nearest legal values are one either
+    // way -- reported as numbers so the caller does not have to work out which
+    // end to move or by how much.
+    const boundaryName = side === "head" ? "start" : "endInclusive";
+    const boundary = side === "head" ? callerStart : callerEndInclusive;
+    const span = remainderEndInclusive - remainderStart + 1;
+    const message =
+      `typing ${callerStart}..${callerEndInclusive} (${hexRange(callerStart, callerEndInclusive)}) would split range id ${row.id} ` +
+      `(${row.start}..${row.end_inclusive}, ${hexRange(row.start, row.end_inclusive)}, ${row.data_type}) and leave a ${side} remainder ` +
+      `${remainderStart}..${remainderEndInclusive} (${hexRange(remainderStart, remainderEndInclusive)}) of ${span} byte(s), which is not a ` +
+      `shape this store accepts: ${e.message}. The whole retype is refused, so nothing was written. The nearest ${boundaryName} values ` +
+      `that would leave an even ${side} are ${boundary - 1} and ${boundary + 1}; alternatively extend the retype to one of the table's ` +
+      `own entry boundaries, or retype the whole table to the type you want first.`;
+    return new AnnoSplitRemainderError(message, {
+      start: remainderStart,
+      endInclusive: remainderEndInclusive,
+      rowId: row.id,
+      rowStart: row.start,
+      rowEndInclusive: row.end_inclusive,
+      dataType: row.data_type as DataType,
+      remainderStart,
+      remainderEndInclusive,
+      side,
+    });
+  }
+}
+
+/** `$xxxx-$xxxx`, the spelling the rest of this module's messages use. */
+function hexRange(start: number, endInclusive: number): string {
+  return `$${start.toString(16).padStart(4, "0")}-$${endInclusive.toString(16).padStart(4, "0")}`;
 }
 
 /**
@@ -1703,11 +1783,56 @@ function insertRange(db: DatabaseSync, start: number, endInclusive: number, data
  * existing row alone and reports `false`. The revision still advances, because
  * every accepted write advances it by exactly one -- so `changed` is the ONLY
  * signal that distinguishes a no-op, and the revision is never that signal.
+ *
+ * ---------------------------------------------------------------------------
+ * DECISION 1: THE REMAINDER RULE, WITH THE ALTERNATIVE NOT TAKEN (CR-09).
+ * ---------------------------------------------------------------------------
+ * A remainder that is not a legal shape for its OWN type -- the odd-byte-count
+ * tail of a fragmented split table is the reachable case -- is REFUSED, and the
+ * whole retype is refused with it: the store never persists a range row it
+ * would refuse at its own entry point, by any writer. DEMOTING the illegal
+ * remainder to the vocabulary's `undefined` member was considered and REJECTED,
+ * because it destroys the recorded split ORIENTATION, which this module's own
+ * header calls the one irreversible decision in this area with no field to
+ * migrate -- a one-way data decision taken silently on the caller's behalf.
+ * Rounding the caller's range outward to an entry boundary is forbidden
+ * outright by `anno-types.ts` trap 7.
+ *
+ * THE CHECK RUNS OVER EVERY REMAINDER OF EVERY OVERLAPPING ROW BEFORE THE FIRST
+ * `delete`, and the ordering is the guarantee, not a tidiness preference: a
+ * refusal must cost nothing observable, and leaning on the transaction's
+ * rollback to undo a half-applied mutation would make that depend on a rollback
+ * that the CR-06 arm's own `rollbackFailed` handling shows can itself fail.
+ * Compute, refuse, then mutate.
+ *
+ * ---------------------------------------------------------------------------
+ * DECISION 2: THE UNION COLLAPSE IS INTENDED (STORE-02, round-3 WR-08).
+ * ---------------------------------------------------------------------------
+ * A caller range that SPANS several existing rows deletes all of them and
+ * inserts one row. That is intended, and it does not contradict STORE-02:
+ * STORE-02 forbids the store joining adjacent ranges OF ITS OWN ACCORD, and
+ * here the caller asked for exactly one range and got exactly one range. The
+ * store still never joins two rows nobody asked about -- see the behavioural
+ * and structural adjacency controls.
+ *
+ * `changed: true` is CORRECT for that call even when every address resolves to
+ * the same type afterwards, because `changed` reports the ROW SET and the row
+ * identities really did change: both original ids are gone and a new one exists.
+ * Both shapes -- the union retype and the same-type subrange, which fragments
+ * one row into three with every id churned -- are pinned BY VALUE in
+ * `anno-overlap.test.ts`, so "does not join" can be told apart from "was never
+ * asked to".
  */
 function retype(db: DatabaseSync, start: number, endInclusive: number, dataType: DataType): boolean {
   const overlapping = db
-    .prepare("select id, start, end_inclusive, data_type from anno_range where end_inclusive >= ? and start <= ? order by id")
-    .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string }[];
+    .prepare("select id, start, end_inclusive, data_type, bank from anno_range where end_inclusive >= ? and start <= ? order by id")
+    // The cast names the shape INLINE rather than through `OverlappedRangeRow`
+    // for one mechanical reason: `node:sqlite` types `all()` as
+    // `Record<string, SQLOutputValue>[]`, and TypeScript refuses a direct
+    // assertion to a named interface as insufficiently overlapping while
+    // accepting the identical anonymous shape. The result is structurally the
+    // interface, which is what the helper below takes.
+    .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string; bank: number | null }[];
 
   if (
     overlapping.length === 1 &&
@@ -1718,17 +1843,30 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
     return false;
   }
 
+  // THE GATE. Every remainder the loop below would write, asked the entry
+  // point's own shape question, BEFORE anything is deleted or inserted.
   for (const row of overlapping) {
-    db.prepare("delete from anno_range where id = ?").run(row.id);
     if (row.start < start) {
-      insertRange(db, row.start, start - 1, row.data_type);
+      const refusal = remainderRefusal(row, row.start, start - 1, "head", start, endInclusive);
+      if (refusal) throw refusal;
     }
     if (row.end_inclusive > endInclusive) {
-      insertRange(db, endInclusive + 1, row.end_inclusive, row.data_type);
+      const refusal = remainderRefusal(row, endInclusive + 1, row.end_inclusive, "tail", start, endInclusive);
+      if (refusal) throw refusal;
     }
   }
 
-  insertRange(db, start, endInclusive, dataType);
+  for (const row of overlapping) {
+    db.prepare("delete from anno_range where id = ?").run(row.id);
+    if (row.start < start) {
+      insertRange(db, row.start, start - 1, row.data_type, row.bank);
+    }
+    if (row.end_inclusive > endInclusive) {
+      insertRange(db, endInclusive + 1, row.end_inclusive, row.data_type, row.bank);
+    }
+  }
+
+  insertRange(db, start, endInclusive, dataType, null);
   return true;
 }
 

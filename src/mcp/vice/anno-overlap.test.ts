@@ -528,7 +528,7 @@ test("CR-09, PRODUCTION ENTRY POINTS ONLY: typing one byte inside a lo_hi_addres
 
     // BOTH NUMBERS THAT CONFLICTED, plus the legal alternatives (28-08 P2).
     const message = (thrown as Error).message;
-    for (const needle of ["4096..4111", "lo_hi_address", "4101..4111", "11 byte", "tail", "4100", "4112"]) {
+    for (const needle of ["4096..4111", "lo_hi_address", "4101..4111", "11 byte", "tail", "4099", "even"]) {
       assert.ok(message.includes(needle), `the refusal must name ${needle}; got: ${message}`);
     }
 

@@ -492,6 +492,56 @@ export class AnnoRangeShapeError extends AnnoStoreError {
   }
 }
 
+export interface AnnoSplitRemainderErrorOptions extends AnnoRangeShapeErrorOptions {
+  /** The overlapped row the split would fragment. */
+  rowId?: number;
+  rowStart?: number;
+  rowEndInclusive?: number;
+  /** The overlapped row's own type -- the type the remainder would inherit. */
+  dataType?: DataType;
+  /** The remainder the store refused to write. */
+  remainderStart?: number;
+  remainderEndInclusive?: number;
+  /** Which end of the overlapped row the illegal remainder is. */
+  side?: "head" | "tail";
+}
+
+/**
+ * A split-and-preserve remainder is not a legal shape for the type it would
+ * carry, so the whole retype is refused. Carries the overlapped row's identity
+ * AND the illegal remainder's, because a conflict reported with only one of the
+ * two numbers that conflicted is not a report.
+ *
+ * WHY IT EXTENDS `AnnoRangeShapeError` RATHER THAN `AnnoStoreError` DIRECTLY,
+ * and this is deliberate, not incidental: it really IS a shape refusal -- the
+ * SAME rule `assertRangeShape()` applies, asked about a range the store is about
+ * to write on its own initiative rather than one the caller supplied. Sitting it
+ * in the shape family means every existing `instanceof AnnoRangeShapeError`
+ * caller keeps working when the store starts refusing on this new path, and a
+ * caller that wants to distinguish the two asks for this class by name.
+ */
+export class AnnoSplitRemainderError extends AnnoRangeShapeError {
+  rowId?: number;
+  rowStart?: number;
+  rowEndInclusive?: number;
+  dataType?: DataType;
+  remainderStart?: number;
+  remainderEndInclusive?: number;
+  side?: "head" | "tail";
+
+  constructor(message: string, options: AnnoSplitRemainderErrorOptions = {}) {
+    super(message, { start: options.start, endInclusive: options.endInclusive });
+    this.name = "AnnoSplitRemainderError";
+    this.rowId = options.rowId;
+    this.rowStart = options.rowStart;
+    this.rowEndInclusive = options.rowEndInclusive;
+    this.dataType = options.dataType;
+    this.remainderStart = options.remainderStart;
+    this.remainderEndInclusive = options.remainderEndInclusive;
+    this.side = options.side;
+  }
+}
+
 export interface AnnoAddressErrorOptions {
   input?: unknown;
   what?: string;

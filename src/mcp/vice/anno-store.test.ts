@@ -847,7 +847,7 @@ test("nothing derivable is cached: anno_xref holds ZERO rows after typing a lo_h
   });
 });
 
-test("the reserved bank field is never READ: every list function returns bank null, and no line of the seam's own code reads a bank value outside the row mappers", () => {
+test("the reserved bank field is never INTERPRETED: every list function returns bank null, and no line of the seam's own code branches on or computes with a bank value", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const store = openStore(path, { workspaceRoot: dir });
@@ -881,15 +881,47 @@ test("the reserved bank field is never READ: every list function returns bank nu
   // removes the `DDL` template's `bank integer` declarations and every `select
   // ... bank ...` column list from the scan without hand-excluding line spans,
   // leaving only real code that names the identifier.
+  //
+  // WHAT IN-06 CHANGED, AND WHY THE CONTROL IS NARROWED RATHER THAN DELETED.
+  // Before IN-06 the store's only range insert bound the literal `null`, so
+  // "no line outside the row mappers so much as names a bank value" was true
+  // and was the assertion. `retype()`'s split-and-preserve now carries the
+  // OVERLAPPED ROW'S OWN bank forward onto its remainders, because a split path
+  // that dropped a reserved column is exactly the silent loss a future
+  // banked-memory model would inherit. Carrying a value through verbatim is not
+  // INTERPRETING it: the four lines allowed below declare it, bind it, and pass
+  // it on, and not one of them asks what the number means. The prohibition that
+  // actually matters -- no branch, no comparison, no arithmetic on a bank value
+  // -- is asserted separately and unconditionally underneath, over the same
+  // scanned lines, so narrowing the allow-list cannot quietly widen the rule.
   const strict = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"));
-  const offenders = strict
-    .split("\n")
-    .filter((line) => /\bbank\b/.test(line))
+  const bankLines = strict.split("\n").filter((line) => /\bbank\b/.test(line));
+
+  // NON-VACUITY: an allow-list is only evidence if the scan found the lines it
+  // is excusing. 14 lines name a bank value on the tree this control was
+  // written against; the floor is stated below it so an accidental change to
+  // `codeOnly()` that stripped everything cannot pass here trivially.
+  assert.ok(bankLines.length >= 13, `the scan must find the bank-naming lines it excuses, got ${bankLines.length}`);
+
+  const offenders = bankLines
     // The row mappers ARE the one permitted read, one line each.
     .filter((line) => !/^\s*bank: row\.bank,$/.test(line))
-    // ...and the local row-shape casts that name the column's type.
-    .filter((line) => !/^\s*bank: number \| null;$/.test(line));
-  assert.deepEqual(offenders, [], "no code outside the row mappers may read a bank value -- nothing knows what one would mean");
+    // ...and the local row-shape casts that name the column's type, whether
+    // written over several lines or inline on the `.all()` that produced them.
+    .filter((line) => !/^\s*bank: number \| null;$/.test(line))
+    .filter((line) => !/^\s*\.all\(.*\) as \{[^}]*bank: number \| null \}\[\];$/.test(line))
+    // IN-06's pass-through, four lines: the parameter, the bind, and the two
+    // remainder call sites that hand the overlapped row's own value onward.
+    .filter((line) => !/^function insertRange\(.*, bank: number \| null\): void \{$/.test(line))
+    .filter((line) => !/^\s*db\.prepare\(\)\.run\(start, endInclusive, dataType, bank\);$/.test(line))
+    .filter((line) => !/^\s*insertRange\(db, .*, row\.bank\);$/.test(line));
+  assert.deepEqual(offenders, [], "no code outside the row mappers and IN-06's verbatim pass-through may touch a bank value");
+
+  // THE RULE THE ALLOW-LIST MUST NOT SOFTEN: nothing may act on the value.
+  const interpreters = bankLines.filter(
+    (line) => /\bbank\b\s*(===|!==|==|!=|<=|>=|<|>|\+|-|\*|\/|\?\?|\|\||&&|\?)/.test(line) || /(===|!==|==|!=|<=|>=|<|>|\?\?)\s*\w*\.?\bbank\b/.test(line),
+  );
+  assert.deepEqual(interpreters, [], "no line may branch on, compare or compute with a bank value -- nothing knows what one would mean");
 });
 
 // ---------------------------------------------------------------------------
