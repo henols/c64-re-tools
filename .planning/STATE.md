@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-10-PLAN.md
-last_updated: "2026-08-28T08:14:39.468Z"
+stopped_at: Completed 28-11-PLAN.md
+last_updated: "2026-08-28T08:36:29.185Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 28 execution started
-state_head: 9c1c4c9d6f8e2acb298031fb08ef0e4546065e3a
+state_head: ef31fde7d0728d93d1772fc4a5fe846e3cef950f
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 17
 ---
 
@@ -146,7 +146,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 10 of 12 executed; executing second gap-closure round 28-10..28-12 (--gaps-only)
+Plan: 11 of 12 executed; executing second gap-closure round 28-10..28-12 (--gaps-only)
 Status: Executing the second gap-closure round. 9/11 must-haves verified before this run; two gaps open — the snapshot ring (CR-01/CR-02/CR-03) and the DANGLING-symlink confinement bypass (CR-04). Plans 28-10..28-12 close them.
 Last activity: 2026-08-28 — Phase 28 second gap-closure round execution started (28-10..28-12)
 
@@ -300,6 +300,7 @@ Last activity: 2026-08-28 — Phase 28 second gap-closure round execution starte
 | Phase 28 P08 | 21 min | 2 tasks | 3 files |
 | Phase 28 P09 | 20 min | 2 tasks | 3 files |
 | Phase 28 P10 | 14 min | 3 tasks | 4 files |
+| Phase 28 P11 | 22 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -624,6 +625,9 @@ Recent decisions affecting current work:
 - [Phase 28]: Phase 28 (28-09): an allow/deny control is proven by TWO plantings, not one. The pre-fix code must redden the REFUSAL test, and the over-broad wrong fix (refuse everything) must redden a DISCRIMINATING test. A confinement control that only ever refuses is indistinguishable from one that works, and a single planting cannot tell them apart. Applied here: reverting to resolve() reddened the symlink refusal (and a standalone probe reproduced the verifier's own "file created outside workspace: true"), while refusing every symlinked path left the refusal green and reddened the inside-pointing-symlink follow.
 - [Phase 28]: D-A (28-10, one-way): the snapshot ring is keyed on the store FILE and anno_snapshot.path is DROPPED, with SCHEMA_VERSION 1 -> 2 refusing a previous-shape store by name and leaving its legacy <dir>/snapshots ring untouched — Option a-bump-and-refuse. Rejected b-silent-history-loss (an existing store keeps opening but its entire revert history becomes unreachable with NO signal, and a persisted absolute-path column stays on disk for a future edit to read -- CR-03's primitive left in place) and c-migrate (with two stores in one directory the legacy ring is genuinely ambiguous, so a migration would attribute a neighbour's snapshots to whichever store opens first -- CR-01 again with a new cause and no test watching). Accepted cost: an existing store's annotations need a hand migration. Safe because the store is unreleased -- every store on disk today is a phase-28 test fixture.
 - [Phase 28]: CR-01 is fixed by renaming the LOCATION, not by an ownership predicate: two distinct store files in one directory have distinct basenames by definition of a filesystem, so distinct rings follow by construction — 28-07's per-revision ownership predicate over the shared <dir>/snapshots ring was structurally blind to CR-01 because revision numbers are not unique ACROSS stores -- two stores both write r1.db and every per-revision predicate answers "mine" to both. A location that cannot collide has no such blind spot. Residual stated rather than closed: renaming the store FILE re-points the ring name, the old ring becomes unreachable and is deliberately never deleted, and retainedRevisions() honestly reports [] -- an accepted under-claim over guessing which ring a renamed store used to own.
+- [Phase 28]: The snapshot sweep serialises its judgement under `begin immediate` rather than aging files against a grace bound — Gap 1's remedy 2 offered both routes. A grace bound is a guess about how long a writer may sit between its `renameSync` and its transaction's end: it has a tuned constant, it is wrong for a writer that is paged out or stopped at a debugger, and the next reproduction of CR-02 would arrive as "raise the constant". The lock is exact by derivation instead — publication is reachable only from behind a won compare-and-swap, which runs inside `begin immediate`, so the publish-to-commit window and the write-lock hold are the same interval. Nothing is timed.
+- [Phase 28]: `pruneSnapshots` returns early when its own sweep reports `deferred`, and the resulting write latency is shipped as a stated fact — Pressing on would compute a doomed set over a ring the sweep just declined to reconcile — 28-07 P2's forbidden shape with an extra step — and its autocommit deletes would block a second five-second `busy_timeout` before failing `SQLITE_BUSY` into WR-02's swallowing wrap, so a contended write would pay roughly ten seconds silently for work guaranteed to be redone. The accepted cost is one more write's worth of un-pruned ring (extra files, the harmless direction) and up to ONE five-second stall per contended accepted write and per contended `revertTo` — both on paths Phase 29 exposes as MCP tools. Recorded in the `reconcileSnapshotRing` doc comment, not only in the plan.
+- [Phase 28]: `revertTo` step 6's directory-bound claim is recorded as a reversal in place rather than deleted, and its first clause is explicitly preserved — Trap 10's own correction is this module's precedent: a rationale that became false is evidence. The sweep can now decline under contention, so "the directory bound holds after a revert as well as before one" became an over-claim and is now conditional on the sweep not having deferred. The first clause — the handle never advertises a revision it cannot deliver — survives byte-identical in meaning, because the published floor still routes through `retainedRevisions()`, which requires both the pointer row and the file regardless of whether the sweep ran. Demonstrated removal rather than a vacuous search: `grep -cF 'well as before one.'` went from 1 to 0 while `grep -c 'unless the sweep deferred'` went from 0 to 1.
 
 ### Pending Todos
 
@@ -1215,8 +1219,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-28T08:14:39.304Z
-Stopped at: Completed 28-10-PLAN.md
+Last session: 2026-08-28T08:36:29.042Z
+Stopped at: Completed 28-11-PLAN.md
   Plan 28-08 is complete: 2 tasks, 2 task commits (`6846492`, `f5805ae`), 21
   min. It is the SECOND of the three gap-closure plans (waves 5-7); 28-09 (gap
   3, CR-03's symlink confinement bypass) remains. **CR-02 is closed at the

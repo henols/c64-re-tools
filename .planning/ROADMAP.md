@@ -443,7 +443,7 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: 12 plans in 10 waves — 10/12 executed (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6 and 28-09 in wave 7); a second gap-closure round added 28-10..28-12 in waves 8–10 after re-verification scored 9/11 with two gaps remaining, of which 28-10 (snapshot identity, CR-01 + CR-03) is now executed and 28-11..28-12 remain
+**Plans**: 12 plans in 10 waves — 11/12 executed (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6 and 28-09 in wave 7); a second gap-closure round added 28-10..28-12 in waves 8–10 after re-verification scored 9/11 with two gaps remaining, of which 28-10 (snapshot identity, CR-01 + CR-03) and 28-11 (the judge rule, CR-02, plus WR-01/WR-02/WR-04) are now executed and 28-12 remains
 
 Plans:
 **Wave 1**
@@ -482,7 +482,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion — it sweeps the directory wave 8 renames)*
 
-- [ ] 28-11-PLAN.md — Gap 1, CR-02: who may judge an unclaimed snapshot — the sweep decides under the store's write lock, commits its row deletes before it unlinks, and declines rather than guessing; WR-01, WR-02 and WR-04 folded in because they live in the same rewritten code
+- [x] 28-11-PLAN.md — Gap 1, CR-02: who may judge an unclaimed snapshot — the sweep decides under the store's write lock, commits its row deletes before it unlinks, and declines rather than guessing; WR-01, WR-02 and WR-04 folded in because they live in the same rewritten code
 
 **Wave 10** *(blocked on Wave 9 completion — an ordering-only edge, not a code dependency: this plan shares no `files_modified` with either peer, but its acceptance surface runs `anno-confinement.test.ts`, which imports `anno-store.ts` — the module waves 8 and 9 rewrite)*
 
@@ -964,7 +964,7 @@ in a milestone archive.
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
-| 28. The Store Core | v0.7.0 | 10/12 | In Progress | - |
+| 28. The Store Core | v0.7.0 | 11/12 | In Progress | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
