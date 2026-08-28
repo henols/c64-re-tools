@@ -356,6 +356,69 @@ export interface ContradictedComment {
   contradictedBy: DataType;
 }
 
+/**
+ * One entry-address pairing of a split table (STORE-03, CR-10).
+ *
+ * `pairs[i]` is the two ADDRESSES whose bytes form entry `i`, in table order:
+ * the first-half address and its second-half partner. `entryCount` is
+ * `pairs.length`, restated as a field so a caller can assert the count without
+ * reading the array -- the same shape convention `SplitTargets` uses.
+ */
+export interface SplitEntryPairs {
+  entryCount: number;
+  pairs: readonly (readonly [number, number])[];
+}
+
+/**
+ * One surviving fragment of a split table that a partial overwrite left behind
+ * (CR-10). `entryPairs` is what that fragment reads NOW -- not what the addresses
+ * in it used to be paired with.
+ */
+export interface SplitTableSurvivor {
+  start: number;
+  endInclusive: number;
+  entryCount: number;
+  entryPairs: readonly (readonly [number, number])[];
+}
+
+/**
+ * What one accepted partial overwrite of a split table COST, reported as data on
+ * a successful `setDataType()` result (STORE-03, CR-10). Documented in the same
+ * register as `ContradictedComment` above, and for the same reason: a caller
+ * needs every fact it would otherwise have to re-query for.
+ *
+ * WHY THIS RECORD EXISTS AT ALL. A split table's layout is
+ * first-half/second-half, so an entry's partner is a function of the row's START
+ * and its LENGTH (see `resolveSplitTargets()` below). Changing either end
+ * re-pairs EVERY entry: a surviving fragment of `m` entries pairs its own byte
+ * `j` with its own byte `m + j`, which matches an original pair only when
+ * `m == n` -- only when the fragment IS the whole row. **No proper fragment of a
+ * split table preserves a single entry pair, at any boundary, the midpoint
+ * included.** The surviving rows are still legal and still decode; they decode to
+ * DIFFERENT 16-bit values than the ones a human recorded. Preservation is
+ * therefore not recoverable by a cleverer boundary rule, and the only two honest
+ * answers are to refuse the edit or to disclose its cost. This record is the
+ * disclosure.
+ *
+ * BOTH OF THE NUMBERS THAT CONFLICTED are carried (28-08 P2): `entryPairsBefore`
+ * is what the table read before the write, each survivor's `entryPairs` is what
+ * that fragment reads after, and `preservedEntryPairs` is their intersection --
+ * COMPUTED by comparing the two sets, never assumed. It is empty today as a
+ * consequence of the layout; a computed field stays correct if a future layout
+ * changes that.
+ */
+export interface SplitTableReinterpretation {
+  rowId: number;
+  rowStart: number;
+  rowEndInclusive: number;
+  dataType: SplitDataType;
+  entryCountBefore: number;
+  entryPairsBefore: readonly (readonly [number, number])[];
+  survivors: readonly SplitTableSurvivor[];
+  preservedEntryPairs: readonly (readonly [number, number])[];
+  summary: string;
+}
+
 /** One scope as the store holds it. Both ends are INCLUSIVE, matching the
  * schema's own two sentences (`r2000-tools.ts:322-331`). There is no name field
  * and no nesting: the schema says nested scopes are unsupported, and the store
@@ -1327,28 +1390,94 @@ export function producesXrefsFor(dataType: SplitDataType): boolean {
  * `putXref` for the reason a derived cross-reference must not reach the disk.
  */
 export function resolveSplitTargets(bytes: Uint8Array | readonly number[], dataType: unknown): SplitTargets {
+  const layout = assertSplitLayout(dataType);
+  const source = Array.from(bytes);
+  const lowFirst = layout.startsWith("lo_hi_");
+  const targets: number[] = [];
+  // THE PARTNER RULE IS NOT RE-DERIVED HERE. The offset couples come from
+  // `splitPartnerOffsets()`, which is the one place in the repo that knows an
+  // entry's partner -- and which raises this function's own odd-byte-count
+  // refusal, so the message and the rule stay together.
+  for (const [firstOffset, secondOffset] of splitPartnerOffsets(source.length, layout)) {
+    const first = source[firstOffset] & 0xff;
+    const second = source[secondOffset] & 0xff;
+    targets.push(lowFirst ? first | (second << 8) : (first << 8) | second);
+  }
+  return { entryCount: targets.length, targets, producesXrefs: producesXrefsFor(layout) };
+}
+
+/**
+ * THE ONE PLACE IN THIS REPO WHERE AN ENTRY'S PARTNER IS COMPUTED.
+ *
+ * Returns the ordered offset couples `[i, n + i]` for `i` in `0..n-1`, with
+ * `n = byteCount / 2` -- the first-half/second-half layout, expressed once.
+ *
+ * ITS TWO CONSUMERS, NAMED because a third would defeat the point:
+ *   * `resolveSplitTargets()` above, which reads BYTES at those offsets;
+ *   * `splitEntryAddressPairs()` below, which reads ADDRESSES at them, and is
+ *     what `anno-store.ts`'s `retype()` gate consults before it fragments a
+ *     split row.
+ *
+ * A resolver and a writer that each kept their own copy of this arithmetic could
+ * disagree about what an entry IS, and the disagreement would be silent: both
+ * copies produce legal, decodable rows. That is CR-10's whole class, so the rule
+ * has one home. `anno-types.test.ts`'s worked-arithmetic pin is the control --
+ * changing the couples here to an interleaved `[2i, 2i + 1]` reddens it.
+ *
+ * The odd-count refusal lives here for the same reason: it is the SAME rule
+ * stated as a precondition, and `assertRangeShape()` asks it of an address span
+ * while this asks it of a byte count.
+ */
+function splitPartnerOffsets(byteCount: number, layout: SplitDataType): readonly (readonly [number, number])[] {
+  if (byteCount % 2 !== 0) {
+    throw new AnnoRangeShapeError(
+      `a ${layout} table needs an even byte count, but ${byteCount} byte(s) were supplied -- the low half and the high half must be ` +
+        `the same length`,
+      { start: 0, endInclusive: byteCount - 1 },
+    );
+  }
+  const n = byteCount / 2;
+  const offsets: (readonly [number, number])[] = [];
+  for (let i = 0; i < n; i += 1) offsets.push([i, n + i] as const);
+  return offsets;
+}
+
+/** Refuses anything that is not one of the four split layouts, with the full
+ * list. Extracted so `resolveSplitTargets()` and `splitEntryAddressPairs()`
+ * refuse a non-split type in exactly one way rather than two. */
+function assertSplitLayout(dataType: unknown): SplitDataType {
   if (typeof dataType !== "string" || !(SPLIT_DATA_TYPES as readonly string[]).includes(dataType)) {
     throw new AnnoTypeError(
       `${JSON.stringify(dataType)} is not a split-table layout -- expected one of: ${SPLIT_DATA_TYPES.join(", ")}`,
       { dataType, validTypes: [...SPLIT_DATA_TYPES] },
     );
   }
-  const layout = dataType as SplitDataType;
-  const source = Array.from(bytes);
-  if (source.length % 2 !== 0) {
-    throw new AnnoRangeShapeError(
-      `a ${layout} table needs an even byte count, but ${source.length} byte(s) were supplied -- the low half and the high half must be ` +
-        `the same length`,
-      { start: 0, endInclusive: source.length - 1 },
-    );
-  }
-  const n = source.length / 2;
-  const lowFirst = layout.startsWith("lo_hi_");
-  const targets: number[] = [];
-  for (let i = 0; i < n; i += 1) {
-    const first = source[i] & 0xff;
-    const second = source[n + i] & 0xff;
-    targets.push(lowFirst ? first | (second << 8) : (first << 8) | second);
-  }
-  return { entryCount: n, targets, producesXrefs: producesXrefsFor(layout) };
+  return dataType as SplitDataType;
+}
+
+/**
+ * The two ADDRESSES whose bytes form each entry of the split table occupying
+ * `start..endInclusive`, in table order. PURE: no I/O, no state, no bytes.
+ *
+ * WHY THE STORE NEEDS ADDRESSES RATHER THAN RESOLVED VALUES. The store holds no
+ * bytes -- it holds spans and types, and the emulator or the image holds what is
+ * in them. So the preservation question the store can answer FOR ITSELF is not
+ * "did this entry's 16-bit value survive" (it cannot know the value) but "does
+ * this entry still read the same two addresses". That is the question
+ * `retype()`'s gate asks before it fragments a split row, and it is answerable
+ * from the row's span alone.
+ *
+ * ORDERING IS LOAD-BEARING, the same split `setDataType()` makes: the TYPE gate
+ * runs first (is this a split layout at all), then the RANGE gate
+ * (`assertRangeShape`, which owns the even-byte-count rule for an address span).
+ * Collapsing them would make a caller unable to tell "that is not a split
+ * layout" from "those two ends do not make a split table".
+ */
+export function splitEntryAddressPairs(start: number, endInclusive: number, dataType: SplitDataType): SplitEntryPairs {
+  const layout = assertSplitLayout(dataType);
+  assertRangeShape(start, endInclusive, layout);
+  const pairs = splitPartnerOffsets(endInclusive - start + 1, layout).map(
+    ([first, second]) => [start + first, start + second] as const,
+  );
+  return { entryCount: pairs.length, pairs };
 }

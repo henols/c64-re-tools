@@ -515,22 +515,42 @@ test("planting B, OBSERVED: with the contradiction query removed the identical s
 });
 
 // ---------------------------------------------------------------------------
-// SPLIT-TABLE ROWS: THE REMAINDER RULE (CR-09).
+// SPLIT-TABLE ROWS: TWO RULES, NEITHER SILENT (CR-09 and CR-10).
 // ---------------------------------------------------------------------------
 //
-// A split-table layout needs an EVEN byte count -- the low half and the high
-// half must be the same length -- and `assertRangeShape()` refuses an odd one at
-// the store's own entry point. Split-and-preserve re-inserts the surviving head
-// and tail of an overlapped row carrying that row's own type forward, so a
-// retype that lands off an entry boundary can propose a remainder that is an ODD
-// split table: a row `setDataType` would refuse to create and
-// `resolveSplitTargets()` cannot decode.
-//
-// THE RULE: the store never persists a range row it would refuse at its own
-// entry point. Every remainder the split would produce is asked the SAME shape
+// RULE ONE -- PARITY REFUSES THE ODD FRAGMENT (CR-09). A split-table layout
+// needs an EVEN byte count -- the low half and the high half must be the same
+// length -- and `assertRangeShape()` refuses an odd one at the store's own entry
+// point. Split-and-preserve re-inserts the surviving head and tail of an
+// overlapped row carrying that row's own type forward, so a retype that lands
+// off an entry boundary can propose a remainder that is an ODD split table: a
+// row `setDataType` would refuse to create and `resolveSplitTargets()` cannot
+// decode. The store never persists a range row it would refuse at its own entry
+// point. Every remainder the split would produce is asked the SAME shape
 // question -- `assertRangeShape` itself, not a second even-count test -- BEFORE
 // the first delete, and an illegal one refuses the whole retype by name.
-// `retype()`'s doc comment records the decision and the alternative not taken.
+//
+// RULE TWO -- EVERY FRAGMENTATION OF A SPLIT ROW IS REPORTED, WITH BOTH
+// ENTRY-PAIR SETS (CR-10). Parity is not the only thing a fragment breaks. A
+// split table pairs byte `i` with byte `n + i`, so an entry's partner is a
+// function of the row's START and its LENGTH: a surviving fragment of `m`
+// entries pairs its own byte `j` with its own byte `m + j`, which matches an
+// original pair only when the fragment IS the whole row. No proper fragment
+// preserves a single entry pair, at any boundary, THE MIDPOINT INCLUDED. So an
+// accepted write returns, as data on a successful result, the pairs the
+// overlapped row read before and the pairs each survivor reads now.
+//
+// WHY RULE TWO NEEDS ITS OWN CONTROL, AND WHY NOTHING ELSE HERE CAN BE IT: A
+// RE-PAIRED TABLE DECODES PERFECTLY. Its rows are legal, re-acceptable at
+// `setDataType`, and return plausible WRONG 16-bit values. Parity cannot see it,
+// the row-set pins cannot see it, and the round-trip invariant's decodability
+// check cannot see it -- decodability is not preservation. Only a
+// `resolveSplitTargets()` comparison over the same bytes BEFORE and AFTER can,
+// which is why every accepted case below carries one.
+//
+// `retype()`'s DECISION 1 in `anno-store.ts` records both rules, the answer not
+// taken for each, and why the disclosure is a return channel rather than a
+// column.
 
 /** The split-table row every case in this section starts from: `$1000..$100f`
  * typed `lo_hi_address` -- 16 bytes, 8 entries, so an entry boundary falls on
@@ -545,6 +565,32 @@ const SPLIT_B = 0x100f;
 function seedSplitRow(store: ReturnType<typeof openStore>): { before: RangeRow[]; revision: number } {
   setDataType(store, { start: SPLIT_A, endInclusive: SPLIT_B, dataType: "lo_hi_address" });
   return { before: listRanges(store), revision: currentRevision(store) };
+}
+
+/**
+ * The synthetic byte image the round-6 verification report drives CR-10 over:
+ * `00 01 02 ... 0f` laid across `$1000..$100f`, so the byte at any address is
+ * that address's offset from `SPLIT_A` and a resolved 16-bit target names its
+ * own two source addresses unambiguously.
+ *
+ * The store holds no bytes, so this image is the test's own -- it is what turns
+ * "which two addresses does this entry read" into a value a reader can compare.
+ * `resolveSplitTargets()` is the module's own authority on what a row MEANS, and
+ * the round-6 verifier names it as THE observation for this class; importing it
+ * here is expected and correct. Importing the production PAIRING function would
+ * not be -- every expected couple in this file is hand-written on purpose.
+ */
+function syntheticImage(start: number, endInclusive: number): Uint8Array {
+  return Uint8Array.from(Array.from({ length: endInclusive - start + 1 }, (_, i) => (start - SPLIT_A + i) & 0xff));
+}
+
+/** Every 16-bit target the split rows lying inside `spanStart..spanEnd` resolve
+ * to over `syntheticImage`, in `listRanges()` order. The comparison operand for
+ * "did any recorded target survive this write". */
+function survivingSplitTargets(rows: readonly RangeRow[], spanStart: number, spanEnd: number): number[] {
+  return rows
+    .filter((row) => isSplitDataType(row.dataType) && row.start >= spanStart && row.endInclusive <= spanEnd)
+    .flatMap((row) => [...resolveSplitTargets(syntheticImage(row.start, row.endInclusive), row.dataType).targets]);
 }
 
 test("CR-09, PRODUCTION ENTRY POINTS ONLY: typing one byte inside a lo_hi_address table is REFUSED by name, and the refusal costs the store nothing", () => {
@@ -589,11 +635,18 @@ test("CR-09, PRODUCTION ENTRY POINTS ONLY: typing one byte inside a lo_hi_addres
   });
 });
 
-test("the LEGAL remainder case on the same split row: an even head and an even tail split into three rows, and every one of them is re-acceptable at setDataType", () => {
+test("CR-10, PRODUCTION ENTRY POINTS ONLY: an even-remainder fragmentation of a split row is ACCEPTED AND REPORTED -- the three rows are correct and the store names both entry-pair sets", () => {
+  // THIS TEST USED TO CERTIFY THE DEFECT. It was named "the LEGAL remainder
+  // case" and pinned only the three-row set, which is CORRECT and always was --
+  // and which is exactly why 210 green tests were blind to CR-10. The row set
+  // says nothing about what the surviving rows MEAN, and a re-paired split table
+  // is legal, re-acceptable and decodable. So the row assertions stay (they are
+  // right) and the DISCLOSURE is what this test now measures.
   inFreshStore((store) => {
     seedSplitRow(store);
     const result = setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
     assert.equal(result.changed, true);
+    assert.deepEqual(result.contradictedComments, [], "no comment was contradicted -- the disclosure rides beside that field, not in it");
 
     const rows = listRanges(store);
     assert.deepEqual(
@@ -606,12 +659,115 @@ test("the LEGAL remainder case on the same split row: an even head and an even t
       "head (4 bytes, even), tail (8 bytes, even), then the newly typed range",
     );
 
+    // THE DISCLOSURE, BY VALUE. Every couple below is HAND-DERIVED from the
+    // layout rule -- a table of n entries pairs its own byte i with its own byte
+    // n + i -- and this file deliberately does NOT import the production pairing
+    // function, so these expectations are an independent oracle rather than the
+    // implementation checking itself.
+    assert.equal(result.reinterpretedSplitTables.length, 1, "one overlapped split row was fragmented, so one record");
+    const record = result.reinterpretedSplitTables[0];
+    assert.equal(record.rowStart, 0x1000);
+    assert.equal(record.rowEndInclusive, 0x100f);
+    assert.equal(record.dataType, "lo_hi_address");
+    assert.equal(record.entryCountBefore, 8, "16 bytes, so eight entries before the write");
+    assert.deepEqual(
+      record.entryPairsBefore.map((pair) => [...pair]),
+      [
+        [0x1000, 0x1008],
+        [0x1001, 0x1009],
+        [0x1002, 0x100a],
+        [0x1003, 0x100b],
+        [0x1004, 0x100c],
+        [0x1005, 0x100d],
+        [0x1006, 0x100e],
+        [0x1007, 0x100f],
+      ],
+      "the eight couples the 16-byte table read BEFORE the write, n = 8 so entry i reads i and 8 + i",
+    );
+
+    // SURVIVORS ARE ORDERED HEAD THEN TAIL WITHIN THE RECORD -- the within-record
+    // half of the report's ordering contract.
+    assert.deepEqual(
+      record.survivors.map((s) => ({ start: s.start, endInclusive: s.endInclusive, entryCount: s.entryCount })),
+      [
+        { start: 0x1000, endInclusive: 0x1003, entryCount: 2 },
+        { start: 0x1008, endInclusive: 0x100f, entryCount: 4 },
+      ],
+      "the head survivor first, then the tail -- ascending address order within one record",
+    );
+    assert.equal(record.survivors[0].start, record.rowStart, "survivors[0] is the HEAD, and it starts where the row started");
+    assert.ok(record.survivors[0].start < record.survivors[1].start, "and the TAIL follows it");
+    assert.deepEqual(
+      record.survivors[0].entryPairs.map((pair) => [...pair]),
+      [
+        [0x1000, 0x1002],
+        [0x1001, 0x1003],
+      ],
+      "the 4-byte head is now a TWO-entry table: entry i reads i and 2 + i",
+    );
+    assert.deepEqual(
+      record.survivors[1].entryPairs.map((pair) => [...pair]),
+      [
+        [0x1008, 0x100c],
+        [0x1009, 0x100d],
+        [0x100a, 0x100e],
+        [0x100b, 0x100f],
+      ],
+      "the 8-byte tail is now a FOUR-entry table: entry i reads i and 4 + i",
+    );
+    assert.deepEqual(
+      record.preservedEntryPairs.map((pair) => [...pair]),
+      [],
+      "NOT ONE of the eight couples survives -- a proper fragment of a split table pairs its own byte j with its own byte m + j, " +
+        "which matches an original pair only when the fragment IS the whole row",
+    );
+    assert.match(record.summary, /0 of 8 entry-address pairs are preserved/, "and the summary carries BOTH of the numbers that conflicted");
+
+    // THE VERIFIER'S OWN OBSERVATION, and the only one that can SEE this class:
+    // resolve the ORIGINAL span and every surviving split row through the
+    // module's own resolver over a synthetic byte image, and compare the TARGET
+    // SETS. DECODABILITY IS NOT PRESERVATION -- every row below decodes
+    // perfectly, and none of them decodes to anything the table used to say.
+    const original = resolveSplitTargets(syntheticImage(0x1000, 0x100f), "lo_hi_address");
+    assert.deepEqual(
+      [...original.targets],
+      [0x0800, 0x0901, 0x0a02, 0x0b03, 0x0c04, 0x0d05, 0x0e06, 0x0f07],
+      "the original eight targets over the 00 01 02 ... 0f image, as the round-6 verification report records them",
+    );
+    const surviving = survivingSplitTargets(rows, 0x1000, 0x100f);
+    assert.deepEqual(
+      surviving,
+      [0x0200, 0x0301, 0x0c08, 0x0d09, 0x0e0a, 0x0f0b],
+      "what the two surviving split rows resolve to now, over the SAME bytes",
+    );
+    assert.deepEqual(
+      surviving.filter((target) => original.targets.includes(target)),
+      [],
+      `the two target sets are DISJOINT: decodability is not preservation, and every surviving row here decodes cleanly to a value ` +
+        `the human who typed this table never recorded. original: ${[...original.targets]} ; surviving: ${surviving}`,
+    );
+
     // THE ROUND TRIP, on this one case: a row the store returned is a row the
     // store would accept. The class-level statement of it is the invariant
     // further down; this is the instance the gap was reported against.
     for (const row of rows) {
       setDataType(store, { start: row.start, endInclusive: row.endInclusive, dataType: row.dataType });
     }
+  });
+});
+
+test("CR-10 idempotency: the identical repeat of an accepted fragmenting write reports changed:false and an EMPTY report", () => {
+  // A second disclosure of a fragmentation that already happened would be a
+  // FALSE report -- nothing was fragmented by this call. The field is EMPTY
+  // rather than absent, so the caller still reads it unconditionally.
+  inFreshStore((store) => {
+    seedSplitRow(store);
+    const first = setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
+    assert.equal(first.reinterpretedSplitTables.length, 1, "the first write fragments the table and says so");
+
+    const again = setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
+    assert.equal(again.changed, false, "the identical write is a no-op on the row set");
+    assert.deepEqual(again.reinterpretedSplitTables, [], "and it discloses nothing, because it cost nothing");
   });
 });
 

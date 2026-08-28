@@ -141,6 +141,8 @@ import {
   assertLabelKind,
   assertLegalLabel,
   assertRangeShape,
+  isSplitDataType,
+  splitEntryAddressPairs,
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
@@ -165,6 +167,9 @@ import {
   type ProjectEnumRow,
   type RangeRow,
   type ScopeRow,
+  type SplitDataType,
+  type SplitTableReinterpretation,
+  type SplitTableSurvivor,
   type XrefAccessKind,
   type XrefRow,
 } from "./anno-types.ts";
@@ -1898,6 +1903,96 @@ function hexRange(start: number, endInclusive: number): string {
   return `$${start.toString(16).padStart(4, "0")}-$${endInclusive.toString(16).padStart(4, "0")}`;
 }
 
+/** A canonical key for one entry-address couple, so the intersection below is
+ * exact set arithmetic rather than an `includes()` over arrays that compares
+ * tuple IDENTITY and would report every pair lost. */
+function entryPairKey(pair: readonly [number, number]): string {
+  return `${pair[0]}:${pair[1]}`;
+}
+
+/**
+ * What fragmenting `row` at the caller's range COSTS, or `null` when it costs
+ * nothing this record could describe (CR-10).
+ *
+ * `null` in exactly two cases, both of them honest:
+ *   * the row is not a split-table layout -- asked through `isSplitDataType`,
+ *     never through a hand-written list of the four names (`anno-types.ts` trap
+ *     2). A non-split row's meaning does not depend on its extent, so there is
+ *     nothing to disclose;
+ *   * the caller's range leaves NO remainder of this row. Nothing survives, so
+ *     no preservation is claimed and none is owed. A full cover is a deletion,
+ *     and a deletion is already visible in the row set.
+ *
+ * Otherwise it consults the SPLIT LAYOUT'S OWN PAIRING RULE through
+ * `splitEntryAddressPairs()` -- the same single definition `resolveSplitTargets()`
+ * consumes -- once over the ROW's span and once over each remainder's, and
+ * reports both sets plus their intersection.
+ *
+ * IT MUST RUN AFTER `remainderRefusal()` FOR THE SAME ROW AND BEFORE THE FIRST
+ * `delete`. After, because a remainder that fails the parity gate is not a
+ * remainder this store will ever write and `splitEntryAddressPairs()` would
+ * refuse it; before, because a refusal must still cost nothing and an acceptance
+ * must never be half-applied.
+ *
+ * PURE: no I/O, no SQL, no state. It reads the row shape it is handed.
+ */
+function splitReinterpretation(
+  row: OverlappedRangeRow,
+  callerStart: number,
+  callerEndInclusive: number,
+): SplitTableReinterpretation | null {
+  const dataType = row.data_type as DataType;
+  if (!isSplitDataType(dataType)) return null;
+
+  const hasHead = row.start < callerStart;
+  const hasTail = row.end_inclusive > callerEndInclusive;
+  if (!hasHead && !hasTail) return null;
+
+  const layout = dataType as SplitDataType;
+  const before = splitEntryAddressPairs(row.start, row.end_inclusive, layout);
+
+  // HEAD THEN TAIL, and the order is part of the contract: within one record the
+  // survivors read in ascending address order, which is the order the mutation
+  // loop below re-inserts them in.
+  const survivors: SplitTableSurvivor[] = [];
+  const addSurvivor = (start: number, endInclusive: number): void => {
+    const pairs = splitEntryAddressPairs(start, endInclusive, layout);
+    survivors.push({ start, endInclusive, entryCount: pairs.entryCount, entryPairs: pairs.pairs });
+  };
+  if (hasHead) addSurvivor(row.start, callerStart - 1);
+  if (hasTail) addSurvivor(callerEndInclusive + 1, row.end_inclusive);
+
+  // THE INTERSECTION IS COMPUTED, NOT ASSUMED. It is empty today for every
+  // proper fragment -- that is the arithmetic in `retype()`'s DECISION 1 -- but
+  // hardcoding the emptiness would make this field a restatement of the layout
+  // rather than a measurement of it, and it would stop being true the moment a
+  // layout with a different pairing is added.
+  const survivingKeys = new Set(survivors.flatMap((s) => s.entryPairs.map(entryPairKey)));
+  const preservedEntryPairs = before.pairs.filter((pair) => survivingKeys.has(entryPairKey(pair)));
+
+  const survivorText = survivors
+    .map((s) => `${s.start}..${s.endInclusive} (${hexRange(s.start, s.endInclusive)}, ${s.entryCount} entries)`)
+    .join(" and ");
+  const summary =
+    `typing ${callerStart}..${callerEndInclusive} (${hexRange(callerStart, callerEndInclusive)}) fragments range id ${row.id} ` +
+    `(${row.start}..${row.end_inclusive}, ${hexRange(row.start, row.end_inclusive)}, ${dataType}, ${before.entryCount} entries), ` +
+    `leaving ${survivorText}. A split table pairs byte i with byte n + i, so changing either end re-pairs every entry: ` +
+    `${preservedEntryPairs.length} of ${before.entryCount} entry-address pairs are preserved. The surviving row(s) are still legal ` +
+    `and still decode -- they decode to DIFFERENT 16-bit values than the ones recorded here.`;
+
+  return {
+    rowId: row.id,
+    rowStart: row.start,
+    rowEndInclusive: row.end_inclusive,
+    dataType: layout,
+    entryCountBefore: before.entryCount,
+    entryPairsBefore: before.pairs,
+    survivors,
+    preservedEntryPairs,
+    summary,
+  };
+}
+
 /**
  * SPLIT-AND-PRESERVE. Every row overlapping the new range is deleted, and the
  * parts of it that fall OUTSIDE the new range are re-inserted with their
@@ -1918,25 +2013,69 @@ function hexRange(start: number, endInclusive: number): string {
  * signal that distinguishes a no-op, and the revision is never that signal.
  *
  * ---------------------------------------------------------------------------
- * DECISION 1: THE REMAINDER RULE, WITH THE ALTERNATIVE NOT TAKEN (CR-09).
+ * DECISION 1: THE SPLIT-ROW REMAINDER RULE -- TWO OUTCOMES, NEITHER SILENT
+ * (CR-09 and CR-10).
  * ---------------------------------------------------------------------------
- * A remainder that is not a legal shape for its OWN type -- the odd-byte-count
- * tail of a fragmented split table is the reachable case -- is REFUSED, and the
- * whole retype is refused with it: the store never persists a range row it
- * would refuse at its own entry point, by any writer. DEMOTING the illegal
- * remainder to the vocabulary's `undefined` member was considered and REJECTED,
- * because it destroys the recorded split ORIENTATION, which this module's own
- * header calls the one irreversible decision in this area with no field to
- * migrate -- a one-way data decision taken silently on the caller's behalf.
- * Rounding the caller's range outward to an entry boundary is forbidden
- * outright by `anno-types.ts` trap 7.
+ * A split-table row has TWO things that can go wrong when a caller's range
+ * fragments it, and this function answers them differently on purpose. The
+ * comment and the code below state ONE rule, and both halves of it are here.
  *
- * THE CHECK RUNS OVER EVERY REMAINDER OF EVERY OVERLAPPING ROW BEFORE THE FIRST
+ * (1) THE ODD REMAINDER IS REFUSED, and the whole retype is refused with it
+ * (CR-09). A remainder that is not a legal shape for its OWN type -- the
+ * odd-byte-count tail of a fragmented split table is the reachable case -- is a
+ * row `setDataType` would decline to create and `resolveSplitTargets()` cannot
+ * decode. The store never persists a range row it would refuse at its own entry
+ * point, by any writer. DEMOTING the illegal remainder to the vocabulary's
+ * `undefined` member was considered and REJECTED, because it destroys the
+ * recorded split ORIENTATION, which this module's own header calls the one
+ * irreversible decision in this area with no field to migrate -- a one-way data
+ * decision taken silently on the caller's behalf. Rounding the caller's range
+ * outward to an entry boundary is forbidden outright by `anno-types.ts` trap 7.
+ *
+ * (2) THE EVEN REMAINDER IS ACCEPTED **WITH A REPORT** -- never accepted
+ * silently (CR-10). Parity is not the only thing a fragment can break. A split
+ * table pairs byte `i` with byte `n + i`, so an entry's partner is a function of
+ * the row's START and its LENGTH, and changing either end re-pairs EVERY entry.
+ *
+ * THE ARITHMETIC, because it settles the design rather than merely describing
+ * it: a surviving fragment of `m` entries pairs its own byte `j` with its own
+ * byte `m + j`, which matches an original pair only when `m == n` -- only when
+ * the fragment IS the whole row. **No proper fragment preserves a single entry
+ * pair, at any boundary, THE MIDPOINT INCLUDED.** So preservation is not
+ * something a cleverer boundary rule can recover, and the surviving rows are the
+ * dangerous kind of wrong: legal, re-acceptable, decodable, and decoding to
+ * different 16-bit values than the ones a human recorded.
+ *
+ * ANSWER (a) -- REFUSE ANY PARTIAL OVERLAP OF A SPLIT ROW -- WAS WEIGHED AND NOT
+ * TAKEN. It is defensible and it is implementable, but it makes split tables
+ * editable only WHOLESALE, and the inputs it would refuse are ordinary
+ * annotation work: correcting a few bytes inside a table, or trimming a table
+ * typed one entry too wide. Split-and-preserve exists for exactly that.
+ *
+ * WHAT IS TAKEN is answer (b): `splitReinterpretation()` builds one record per
+ * fragmented split row, carrying the pairs the row read BEFORE and the pairs
+ * each survivor reads AFTER, and `setDataType()` returns it as DATA on a
+ * SUCCESSFUL result beside `contradictedComments`. The failing clause was never
+ * "a partial overwrite must preserve"; it was "silently un-documenting a
+ * previously annotated region is the exact failure the store exists to prevent".
+ * Disclosure removes the silence, which is the clause that was actually false.
+ *
+ * RECORDING THE TABLE'S ORIGINAL EXTENT ON DISK -- so the pairing could be
+ * reconstructed later -- WAS REJECTED. It is a new column, therefore a
+ * `SCHEMA_VERSION` bump, therefore a one-way decision requiring the older
+ * on-disk shape to refuse by name (28-10 P4); and this milestone's one
+ * irreversible decision is already spent on the twelve-member vocabulary. The
+ * return channel gives the caller the same fact at the only moment it can still
+ * act on it, and costs nothing that cannot be reverted.
+ *
+ * BOTH CHECKS RUN OVER EVERY REMAINDER OF EVERY OVERLAPPING ROW BEFORE THE FIRST
  * `delete`, and the ordering is the guarantee, not a tidiness preference: a
  * refusal must cost nothing observable, and leaning on the transaction's
  * rollback to undo a half-applied mutation would make that depend on a rollback
  * that the CR-06 arm's own `rollbackFailed` handling shows can itself fail.
- * Compute, refuse, then mutate.
+ * Compute, refuse, then mutate. The parity check runs FIRST and is untouched by
+ * the disclosure: a refusing retype returns no report because it returns nothing
+ * at all.
  *
  * ---------------------------------------------------------------------------
  * DECISION 2: THE UNION COLLAPSE IS INTENDED (STORE-02, round-3 WR-08).
@@ -1956,7 +2095,12 @@ function hexRange(start: number, endInclusive: number): string {
  * `anno-overlap.test.ts`, so "does not join" can be told apart from "was never
  * asked to".
  */
-function retype(db: DatabaseSync, start: number, endInclusive: number, dataType: DataType): boolean {
+function retype(
+  db: DatabaseSync,
+  start: number,
+  endInclusive: number,
+  dataType: DataType,
+): { changed: boolean; reinterpretedSplitTables: readonly SplitTableReinterpretation[] } {
   const overlapping = db
     .prepare("select id, start, end_inclusive, data_type, bank from anno_range where end_inclusive >= ? and start <= ? order by id")
     // The cast names the shape INLINE rather than through `OverlappedRangeRow`
@@ -1973,11 +2117,27 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
     overlapping[0].end_inclusive === endInclusive &&
     overlapping[0].data_type === dataType
   ) {
-    return false;
+    // AN IDENTICAL REPEAT REPORTS NOTHING. Nothing is fragmented, so a second
+    // disclosure of a fragmentation that already happened would be a false
+    // report -- and the field is empty rather than absent, so the caller still
+    // reads it unconditionally.
+    return { changed: false, reinterpretedSplitTables: [] };
   }
 
   // THE GATE. Every remainder the loop below would write, asked the entry
-  // point's own shape question, BEFORE anything is deleted or inserted.
+  // point's own shape question, BEFORE anything is deleted or inserted -- and,
+  // for a split row that survives that question, what the fragmentation COSTS.
+  //
+  // ORDER WITHIN THE LOOP IS LOAD-BEARING TWICE OVER: the two refusal checks run
+  // before the reinterpretation for the SAME row, so a row whose remainder fails
+  // parity never reaches a computation that would refuse it a second time with a
+  // worse message; and the whole loop runs before the first `delete`, so a
+  // refusal still costs nothing and an acceptance is never half-applied.
+  //
+  // The records are collected in the query's own `order by id` order, which is
+  // what makes the report's array order ASCENDING OVERLAPPED-ROW ID rather than
+  // an accident of iteration.
+  const reinterpretedSplitTables: SplitTableReinterpretation[] = [];
   for (const row of overlapping) {
     if (row.start < start) {
       const refusal = remainderRefusal(row, row.start, start - 1, "head", start, endInclusive);
@@ -1987,6 +2147,8 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
       const refusal = remainderRefusal(row, endInclusive + 1, row.end_inclusive, "tail", start, endInclusive);
       if (refusal) throw refusal;
     }
+    const reinterpretation = splitReinterpretation(row, start, endInclusive);
+    if (reinterpretation !== null) reinterpretedSplitTables.push(reinterpretation);
   }
 
   for (const row of overlapping) {
@@ -2000,7 +2162,7 @@ function retype(db: DatabaseSync, start: number, endInclusive: number, dataType:
   }
 
   insertRange(db, start, endInclusive, dataType, null);
-  return true;
+  return { changed: true, reinterpretedSplitTables };
 }
 
 /** The two grade brackets that assert the addresses are CODE, and the two that
@@ -2091,19 +2253,33 @@ function collectContradictedComments(db: DatabaseSync, start: number, endInclusi
 }
 
 /**
- * What `setDataType()` returns: `AnnoWriteResult` plus the comments this retype
- * has just made false.
+ * What `setDataType()` returns: `AnnoWriteResult` plus the two things this
+ * retype has just cost that the row set alone does not show -- the comments it
+ * made false, and the split tables it re-interpreted.
  *
- * `contradictedComments` IS ALWAYS PRESENT AND OFTEN EMPTY, never absent, so a
- * caller reads the field unconditionally instead of guarding on it.
+ * BOTH REPORT FIELDS ARE ALWAYS PRESENT AND OFTEN EMPTY, never absent, so a
+ * caller reads them unconditionally instead of guarding on them.
  *
- * THE CONTRADICTION IS DATA ON A SUCCESSFUL RESULT -- never an error, never a
- * refusal, and there is no option to make it one. See the module header's trap 9
- * for why: a refusal would push a caller toward deleting the comment to get the
- * retype through, which converts a REPORTED loss into a SILENT one.
+ * BOTH ARE DATA ON A SUCCESSFUL RESULT -- never an error, never a refusal, and
+ * there is no option to make either one. For `contradictedComments` see the
+ * module header's trap 9: a refusal would push a caller toward deleting the
+ * comment to get the retype through, which converts a REPORTED loss into a
+ * SILENT one. `reinterpretedSplitTables` rides alongside it for the same reason
+ * and by the same pattern.
+ *
+ * `reinterpretedSplitTables` carries one record per OVERLAPPED SPLIT ROW that
+ * the accepted write fragmented -- the row's identity and span, the entry-address
+ * pairs it read before, every surviving remainder's span and the pairs it reads
+ * now, and the pairs PRESERVED (computed by comparing the two sets). It is empty
+ * whenever the write fragmented no split row: a non-split overlap, a full cover,
+ * an identical repeat. Its array order is ASCENDING OVERLAPPED-ROW ID, matching
+ * the gate's own `order by id`; within a record the survivors are ordered HEAD
+ * then TAIL. See `retype()`'s DECISION 1 for why this is a RETURN CHANNEL rather
+ * than an on-disk column.
  */
 export interface SetDataTypeResult extends AnnoWriteResult {
   contradictedComments: readonly ContradictedComment[];
+  reinterpretedSplitTables: readonly SplitTableReinterpretation[];
 }
 
 /**
@@ -2136,12 +2312,17 @@ export function setDataType(
       // reads are the ones the retype is about to contradict, and no concurrent
       // writer can slip a comment in between the two.
       const contradictedComments = collectContradictedComments(db, start, endInclusive, dataType);
-      const changed = retype(db, start, endInclusive, dataType);
-      return { changed, contradictedComments };
+      const { changed, reinterpretedSplitTables } = retype(db, start, endInclusive, dataType);
+      return { changed, contradictedComments, reinterpretedSplitTables };
     },
     { baseRevision: args.baseRevision },
   );
-  return { revision, changed: result.changed, contradictedComments: result.contradictedComments };
+  return {
+    revision,
+    changed: result.changed,
+    contradictedComments: result.contradictedComments,
+    reinterpretedSplitTables: result.reinterpretedSplitTables,
+  };
 }
 
 /** Every typed range, in insertion order. The `bank` column is read HERE and

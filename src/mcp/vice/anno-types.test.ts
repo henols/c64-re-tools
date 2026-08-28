@@ -49,6 +49,7 @@ import {
   parseVariantKey,
   producesXrefsFor,
   resolveSplitTargets,
+  splitEntryAddressPairs,
   SPLIT_DATA_TYPES,
   XREF_ACCESS_KINDS,
 } from "./anno-types.ts";
@@ -286,6 +287,112 @@ test("resolveSplitTargets refuses an odd byte count on each of the four split la
         assert.deepEqual(e.validTypes, [...SPLIT_DATA_TYPES], "and the full list of split layouts");
         return true;
       },
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// CR-10: THE PARTNER RULE HAS ONE DEFINITION, AND THE WRITER CONSULTS IT.
+// ---------------------------------------------------------------------------
+//
+// `splitEntryAddressPairs()` names the two ADDRESSES whose bytes form one entry
+// of a split table. `anno-store.ts`'s `retype()` gate consults it before it
+// fragments a split row, and `resolveSplitTargets()` above consults the SAME
+// underlying `splitPartnerOffsets()` couples to read bytes -- so a resolver and
+// a writer cannot disagree about what an entry IS.
+//
+// THE EXPECTED PAIRS BELOW ARE HAND-DERIVED FROM THE LAYOUT RULE IN WORDS, not
+// computed by the function under test: a 16-byte table has n = 8 entries, entry
+// `i` reads offset `i` and offset `8 + i`, so over `$1000..$100f` entry 0 reads
+// `$1000` and `$1008`, entry 1 reads `$1001` and `$1009`, and so on to entry 7
+// reading `$1007` and `$100f`. Deriving them from `splitEntryAddressPairs`
+// would make the pin read its own subject -- the same argument the file header
+// makes for the twelve members.
+
+test("CR-10: splitEntryAddressPairs reports the eight entry-address couples of a 16-byte split table, hand-derived and asserted BY VALUE", () => {
+  const pairs = splitEntryAddressPairs(0x1000, 0x100f, "lo_hi_address");
+
+  assert.equal(pairs.entryCount, 8, "16 bytes, first half paired with second half -- eight entries");
+  assert.deepEqual(
+    pairs.pairs.map((pair) => [...pair]),
+    [
+      [0x1000, 0x1008],
+      [0x1001, 0x1009],
+      [0x1002, 0x100a],
+      [0x1003, 0x100b],
+      [0x1004, 0x100c],
+      [0x1005, 0x100d],
+      [0x1006, 0x100e],
+      [0x1007, 0x100f],
+    ],
+    "the eight couples, written out from the layout rule rather than computed by the function under test",
+  );
+  assert.equal(pairs.entryCount, pairs.pairs.length, "the restated count and the array agree");
+
+  // The rule is about the LAYOUT, not about the orientation or the
+  // address-versus-word axis: all four members pair the same way, and only the
+  // arithmetic applied to the two bytes differs.
+  for (const layout of SPLIT_DATA_TYPES) {
+    assert.deepEqual(
+      splitEntryAddressPairs(0x1000, 0x100f, layout).pairs.map((pair) => [...pair]),
+      pairs.pairs.map((pair) => [...pair]),
+      `${layout} pairs the same two addresses -- orientation changes how the bytes are read, never which two they are`,
+    );
+  }
+});
+
+test("CR-10: splitEntryAddressPairs refuses an ODD span in the shape family, with assertRangeShape's own message, and refuses a non-split type by name", () => {
+  for (const layout of SPLIT_DATA_TYPES) {
+    assert.throws(
+      // The span $1000..$100e is 15 bytes -- the odd fragment CR-09 refuses.
+      () => splitEntryAddressPairs(0x1000, 0x100e, layout),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError for ${layout}, got ${String(e)}`);
+        assert.match(e.message, /even byte count/, "the SAME rule assertRangeShape raises, not a second one");
+        assert.match(e.message, new RegExp(layout), "and it names the layout it fired for");
+        return true;
+      },
+    );
+  }
+
+  for (const notSplit of ["byte", "word", "address", "code", "table"]) {
+    assert.throws(
+      () => splitEntryAddressPairs(0x1000, 0x100f, notSplit as never),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for ${notSplit}, got ${String(e)}`);
+        assert.equal(e.dataType, notSplit, "the refusal carries the offending value");
+        assert.deepEqual(e.validTypes, [...SPLIT_DATA_TYPES], "and the full list of split layouts");
+        return true;
+      },
+    );
+  }
+});
+
+test("CR-10: the partner rule has exactly ONE definition -- the pairs splitEntryAddressPairs reports and the targets resolveSplitTargets produces agree ENTRY FOR ENTRY", () => {
+  // WHY THIS TEST EXISTS AND WHAT IT IS FOR. It is what makes PLANTING P2
+  // meaningful: with the shared `splitPartnerOffsets()` couples changed to an
+  // interleaved `[2i, 2i + 1]`, BOTH consumers move together and the
+  // worked-arithmetic pin above goes red. If the resolver had kept its own copy
+  // of the `n + i` arithmetic the two would disagree here instead, and the
+  // planting would prove nothing about the resolver.
+  const start = 0x1000;
+  const endInclusive = 0x100f;
+  // A byte image whose value at each address is that address's OFFSET, so the
+  // resolved target names its own two source addresses unambiguously.
+  const image = Uint8Array.from(Array.from({ length: endInclusive - start + 1 }, (_, i) => i));
+
+  const pairs = splitEntryAddressPairs(start, endInclusive, "lo_hi_address");
+  const resolved = resolveSplitTargets(image, "lo_hi_address");
+
+  assert.equal(resolved.entryCount, pairs.entryCount, "the two consumers must agree on how many entries a 16-byte table has");
+  for (const [i, pair] of pairs.pairs.entries()) {
+    const low = image[pair[0] - start];
+    const high = image[pair[1] - start];
+    assert.equal(
+      resolved.targets[i],
+      low | (high << 8),
+      `entry ${i}: resolveSplitTargets read the bytes at ${pair[0]} and ${pair[1]} -- if it did not, the writer-side gate and the ` +
+        `resolver are consulting two different definitions of what an entry is, which is CR-10's whole class`,
     );
   }
 });
