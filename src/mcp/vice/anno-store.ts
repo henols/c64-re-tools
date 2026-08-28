@@ -2688,10 +2688,29 @@ export function listComments(handle: AnnoStoreHandle): CommentRow[] {
  * two rules that do apply (both ends inside the address space; the end not below
  * the start) and none of the ones that do not.
  *
- * ADDITIVE, matching the verb's own name in the schema (`add_scope`): two
- * identical calls produce two rows. There is no unique constraint on
- * `anno_scope` to make it otherwise, and collapsing duplicates here would be
- * this module inventing a policy the surface does not have.
+ * ENFORCED, as of 28-21, by the overlap refusal below: a scope that is nested
+ * inside, contains, or partially overlaps an existing scope is REFUSED with an
+ * `AnnoRangeShapeError` naming BOTH scopes -- the incoming one's two ends and
+ * the existing one's id and two ends. Before that refusal existed this comment
+ * and `ScopeRow`'s made a claim the code did not honour, which is exactly the
+ * shape prohibition 28-07 P3 forbids. Adjacency is NOT overlap: two scopes that
+ * merely touch at a boundary are two scopes, consistent with STORE-02's
+ * treatment of ranges.
+ *
+ * A BYTE-IDENTICAL REPEAT IS AN ACCEPTED NO-OP reporting `changed: false`, and
+ * this REVERSES a decision recorded here in as many words. The deleted
+ * paragraph read "ADDITIVE, matching the verb's own name in the schema
+ * (`add_scope`): two identical calls produce two rows [...] collapsing
+ * duplicates here would be this module inventing a policy the surface does not
+ * have." That reading is rejected on two grounds it could not see. First,
+ * `AnnoWriteResult`'s own doc comment states that `changed` is the ONLY signal
+ * distinguishing a no-op from a real edit -- and for scopes it could never say
+ * no-op, so the module already had the policy and simply could not express it
+ * here. Second, Phase 29's success criterion 5 requires a repeated edit to
+ * SUCCEED reporting no change, so the surface this store mirrors does have the
+ * policy after all. The repeat is therefore accepted rather than refused, and
+ * the revision still advances by one, exactly like every other write entry
+ * point in this module.
  */
 export function addScope(
   handle: AnnoStoreHandle,
@@ -2701,15 +2720,45 @@ export function addScope(
   const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
   assertRangeShape(start, endInclusive, "byte");
 
-  const { revision } = applyWrite(
+  const { revision, result } = applyWrite(
     handle,
     (db) => {
+      // IDEMPOTENCE FIRST, in the same shape `setLabel` and `setComment` use:
+      // read the existing row inside the transaction and return `false`. It has
+      // to run before the overlap check, because a byte-identical scope
+      // overlaps itself and would otherwise be refused rather than accepted as
+      // the no-op Phase 29's criterion 5 requires.
+      const identical = db.prepare("select id from anno_scope where start = ? and end_inclusive = ?").get(start, endInclusive) as
+        | { id: number }
+        | undefined;
+      if (identical) return false;
+
+      // TWO RANGES OVERLAP IFF each starts at or before the other ends.
+      // ADJACENCY FALLS OUT OF THE `>=`: an existing scope ending at exactly
+      // `start - 1` fails `end_inclusive >= start`, so touching is not
+      // overlapping. `order by id limit 1` reports the FIRST conflicting row
+      // rather than an arbitrary one, so the message is reproducible.
+      const overlapper = db
+        .prepare("select id, start, end_inclusive from anno_scope where start <= ? and end_inclusive >= ? order by id limit 1")
+        .get(endInclusive, start) as { id: number; start: number; end_inclusive: number } | undefined;
+      if (overlapper) {
+        throw new AnnoRangeShapeError(
+          `scope ${start}..${endInclusive} ($${start.toString(16).padStart(4, "0")}..$${endInclusive.toString(16).padStart(4, "0")}) ` +
+            `overlaps the existing scope id=${overlapper.id} ${overlapper.start}..${overlapper.end_inclusive} ` +
+            `($${overlapper.start.toString(16).padStart(4, "0")}..$${overlapper.end_inclusive.toString(16).padStart(4, "0")}) -- ` +
+            `nested and overlapping scopes are UNSUPPORTED by the schema this store mirrors, so the write is REFUSED rather than stored ` +
+            `as a shape nothing downstream can express. The incoming scope is NOT trimmed and NOT split: supply a range disjoint from ` +
+            `every existing scope. Two scopes that merely TOUCH at a boundary are disjoint and both accepted.`,
+          { start, endInclusive },
+        );
+      }
+
       db.prepare("insert into anno_scope(start, end_inclusive) values (?, ?)").run(start, endInclusive);
       return true;
     },
     { baseRevision: args.baseRevision },
   );
-  return { revision, changed: true };
+  return { revision, changed: result };
 }
 
 /** Every scope, in ascending `id` order. `anno_scope` has no `bank` column --

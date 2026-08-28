@@ -4521,11 +4521,17 @@ test("WR-21: a NESTED scope is refused BY NAME with both scopes' ends and the ex
     try {
       addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
 
-      const thrown = assert.throws(
-        () => addScope(handle, { start: 0x1400, endInclusive: 0x1500 }),
-        AnnoRangeShapeError,
-        "a scope wholly inside an existing one is REFUSED -- `ScopeRow`'s doc comment says nested scopes are unsupported",
-      ) as AnnoRangeShapeError;
+      let caught: unknown;
+      try {
+        addScope(handle, { start: 0x1400, endInclusive: 0x1500 });
+      } catch (e) {
+        caught = e;
+      }
+      assert.ok(
+        caught instanceof AnnoRangeShapeError,
+        `a scope wholly inside an existing one is REFUSED -- \`ScopeRow\`'s doc comment says nested scopes are unsupported; got ${caught}`,
+      );
+      const thrown = caught as AnnoRangeShapeError;
 
       // BOTH NUMBERS THAT CONFLICTED (28-08 P2): the incoming scope's two ends,
       // the existing scope's two ends, AND the existing scope's id.
@@ -4550,11 +4556,14 @@ test("WR-21: a PARTIALLY overlapping scope is refused by the same rule and the s
     try {
       addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
 
-      const thrown = assert.throws(
-        () => addScope(handle, { start: 0x1fff, endInclusive: 0x3000 }),
-        AnnoRangeShapeError,
-        "a scope overlapping an existing one by a single byte is refused by the same rule",
-      ) as AnnoRangeShapeError;
+      let caught: unknown;
+      try {
+        addScope(handle, { start: 0x1fff, endInclusive: 0x3000 });
+      } catch (e) {
+        caught = e;
+      }
+      assert.ok(caught instanceof AnnoRangeShapeError, `a scope overlapping an existing one by a single byte is refused by the same rule; got ${caught}`);
+      const thrown = caught as AnnoRangeShapeError;
       assert.match(thrown.message, /id=1/, "and the same message shape names the existing row");
 
       assert.equal(listScopes(handle).length, 1, "and nothing was stored");

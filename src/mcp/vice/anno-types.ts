@@ -359,7 +359,10 @@ export interface ContradictedComment {
 /** One scope as the store holds it. Both ends are INCLUSIVE, matching the
  * schema's own two sentences (`r2000-tools.ts:322-331`). There is no name field
  * and no nesting: the schema says nested scopes are unsupported, and the store
- * must not invent a capability the surface it mirrors does not have. */
+ * must not invent a capability the surface it mirrors does not have. That last
+ * claim is ENFORCED rather than merely asserted -- `addScope()` in
+ * `anno-store.ts` refuses a nested or overlapping range with an
+ * `AnnoRangeShapeError` naming both scopes; see its doc comment for the rule. */
 export interface ScopeRow {
   id: number;
   start: number;
