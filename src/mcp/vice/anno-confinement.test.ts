@@ -27,18 +27,57 @@
 // refuse legitimate layouts. Tests 2 and 6 are what make test 1 meaningful: an
 // inside-pointing symlink is FOLLOWED, and a symlinked workspace ROOT does not
 // make every path look foreign. A control that only ever refuses is
-// indistinguishable from one that works.
+// indistinguishable from one that works. Test 9 is the same control for the
+// DANGLING case, and it was confirmed by hand to redden against a deliberately
+// over-broad implementation (refuse whenever the stopping entry is a symlink),
+// which reddens 2, 6 and 9 while leaving 1 and 7 green -- so it is a control
+// that can actually go red rather than one that cannot.
+//
+// AND THE SIX LIVE-LINK CASES ARE GREEN OVER A REAL BYPASS -- that is why tests
+// 7 through 12 exist. `28-VERIFICATION.md` gap 2 / `28-REVIEW.md` CR-04: all six
+// original cases plant LIVE links, and `existsSync` reports `false` for a
+// DANGLING one, so the ancestor walk stepped straight PAST it. Reproduced
+// verbatim against `a8187d2`: `A) confinement ACCEPTED, returned:
+// /tmp/annosym-XXXX/ws/p.annostore` with `A) file created OUTSIDE workspace:
+// true`, and at the predicate `B dangling dir -> ACCEPTED`. A dangling link is a
+// one-line plant needing no privilege and nothing pre-existing -- strictly
+// easier than the live link the six cases do catch. Tests 1 through 6 are NOT
+// edited by that addition: they are the untouched regression surface that proves
+// the new walk did not trade one class of escape for another.
 //
 // SYMLINK SUPPORT IS ASSUMED, DELIBERATELY, AND MUST FAIL LOUDLY. The host's
 // `/tmp` here is a tmpfs and supports symlinks. On a filesystem that did not,
-// tests 1, 2 and 6 would be vacuous -- so `symlinkSync` is called bare: if it
-// throws, the test FAILS rather than skipping. A silently skipped confinement
-// control is exactly the state CR-03 was reported from.
+// tests 1, 2 and 6 -- and 7 through 10, which plant dangling links and a cycle --
+// would be vacuous, so `symlinkSync` is called bare: if it throws, the test
+// FAILS rather than skipping. A silently skipped confinement control is exactly
+// the state CR-03 was reported from.
 //
 // THE TEMP ROOT IS REALPATH'D BEFORE USE. `mkdtempSync(join(tmpdir(), ...))`
 // can sit under a symlinked `tmpdir()` on some hosts (macOS `/var` ->
-// `/private/var`). Resolving it once in the helper keeps tests 1-5 asserting
-// what they mean to assert; test 6 plants its OWN symlinked root on purpose.
+// `/private/var`). Resolving it once in the helper keeps tests 1-5 and 7-12
+// asserting what they mean to assert; test 6 plants its OWN symlinked root on
+// purpose.
+//
+// TWO RESIDUALS ARE STATED HERE AND CLOSED BY NOTHING BELOW. They are recorded
+// where the guarantee is claimed, so the next reader of this file finds the limit
+// beside the control rather than only in a plan document.
+//
+//   (a) THE CHECK-THEN-OPEN WINDOW. The confinement decision and the file
+//       creation are two separate filesystem operations. A link planted BETWEEN
+//       them redirects the write, and every refusal test below would still pass.
+//       There is no honest fix at this layer: `node:sqlite`'s `DatabaseSync`
+//       constructor takes a PATH, not a file descriptor, so there is no
+//       `O_NOFOLLOW`/`openat` route to making the check and the open one
+//       operation. This is a stated limit, never a handled case, and no test
+//       here may be read as covering it.
+//   (b) THE COMPARISON IS BYTE-WISE AND NORMALISES NOTHING. `storePathWithinWorkspace`
+//       compares resolved path STRINGS with the platform separator appended, and
+//       applies no Unicode normalisation. Two paths differing only in
+//       normalisation form are therefore two distinct paths here, and a
+//       filesystem that normalises on its own may accept a path this check
+//       computed differently. Normalising here would introduce a second truth
+//       that disagrees with whatever the filesystem does, so the divergence is
+//       recorded rather than papered over.
 //
 // This file names no `node:sqlite` specifier, so `anno-seam.test.ts`'s declared
 // `TEST_FILES_NAMING_SQLITE` list is untouched by its existence. It spawns no
@@ -304,5 +343,151 @@ test("9. a dangling link pointing INSIDE the workspace is still FOLLOWED -- the 
       join(ws, "real", "p.annostore"),
       "a dangling link pointing inside the workspace is FOLLOWED to its target location under the root -- the refusal must discriminate, not blanket",
     );
+  });
+});
+
+test("8. a DANGLING directory symlink pointing outside the workspace is REFUSED at the predicate, and nothing is created outside the root", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+    const outside = join(root, "outside");
+    // The DIRECTORY link is dangling because its target directory is never
+    // created. The store path then has a tail BELOW the link, which is what
+    // makes this a different case from test 7's leaf: the hop must consume the
+    // link's own name while leaving `q.annostore` hanging below whatever the
+    // link resolves to.
+    symlinkSync(outside, join(ws, "escape"), "dir");
+    assert.equal(existsSync(outside), false, "precondition: the link's target directory does not exist -- that is what makes the link dangling");
+
+    const storePath = join(ws, "escape", "q.annostore");
+
+    // THE PREDICATE-LEVEL ASSERTION IS THE LOAD-BEARING ONE HERE, and the
+    // reason is specific rather than stylistic. `28-VERIFICATION.md` records
+    // that driving `openStore` for THIS case yields `AnnoStorePathError` for an
+    // UNRELATED reason -- `DatabaseSync` cannot create a file under a
+    // non-existent directory, and 28-08's wrapper converts that failure into a
+    // path error. So an `openStore`-only version of this test would have passed
+    // today, against the broken predicate, for the wrong reason, and case B
+    // would still be open. The verifier measured it where it lives:
+    // `B dangling dir -> ACCEPTED: /tmp/annosym2-XXXX/ws/sub/q.annostore`.
+    assert.throws(
+      () => storePathWithinWorkspace(storePath, ws),
+      AnnoStorePathError,
+      "the CONFINEMENT ITSELF must refuse a path whose dangling DIRECTORY link resolves outside the root -- not merely fail later for an incidental reason",
+    );
+
+    // The end-to-end half, in test 1's two-part shape. It is included for
+    // completeness and for the nothing-created assertion; it is NOT the half
+    // that carries the finding (see above).
+    assert.throws(() => openStore(storePath, { workspaceRoot: ws }), AnnoStorePathError);
+    assert.equal(
+      existsSync(outside),
+      false,
+      "nothing outside the workspace root may be created -- not the target directory, and not a store file inside it",
+    );
+  });
+});
+
+test("10. a symlink CYCLE refuses with AnnoStorePathError naming the hop bound, rather than looping", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+    // `a -> b` and `b -> a`. Both are dangling in the sense the walk cares
+    // about: `existsSync` on either gets `ELOOP` from the kernel and reports
+    // false, so each is a stopping ENTRY whose target does not resolve, and the
+    // hop moves between them forever unless something bounds it.
+    symlinkSync(join(ws, "b"), join(ws, "a"));
+    symlinkSync(join(ws, "a"), join(ws, "b"));
+
+    // THE FAILURE MODE OF A REGRESSION HERE IS A TIMEOUT, NOT AN ASSERTION.
+    // Remove the hop counter and this call never returns, so the elapsed
+    // assertion below never runs and the test runner reports the file as timed
+    // out. A reader looking at a red run should expect that shape rather than a
+    // diff. The wall-clock bound is what turns a hang into a reported failure.
+    const startedAt = Date.now();
+    assert.throws(
+      () => storePathWithinWorkspace(join(ws, "a"), ws),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStorePathError, "a cycle must refuse inside the ViceError family, not escape as a bare Error or an ELOOP");
+        assert.match(
+          (e as Error).message,
+          /40/,
+          "the refusal must NAME the hop bound, so a caller can tell a cycle from an ordinary outside-the-root refusal",
+        );
+        return true;
+      },
+    );
+    assert.ok(Date.now() - startedAt < 2000, "the refusal must be prompt: an unbounded hop is a hang, and a hang in a confinement check is a denial of service on unvalidated input");
+  });
+});
+
+test("11. the boundary, one step either side: the root itself, one segment in, one segment out, and the sibling-prefix", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+
+    // ACCEPTED: the workspace root ITSELF as the store path. This is the
+    // `resolvedPath !== resolvedRoot` arm; drop it and this case reddens.
+    assert.equal(
+      storePathWithinWorkspace(ws, ws),
+      ws,
+      "the workspace root itself is inside the workspace root -- the boundary is inclusive, and the returned value is the resolved root",
+    );
+
+    // ACCEPTED: one segment beneath the root.
+    assert.equal(
+      storePathWithinWorkspace(join(ws, "p.annostore"), ws),
+      join(ws, "p.annostore"),
+      "one segment beneath the root is inside it",
+    );
+
+    // REFUSED: one segment ABOVE the root. `anno-store.test.ts` and test 5 are
+    // the AUTHORITATIVE pins for both of the refusals below; this is the same
+    // locality restatement test 5 already declares itself to be, asserting the
+    // same classes one step either side of the boundary rather than a weaker
+    // property.
+    assert.throws(
+      () => storePathWithinWorkspace(join(ws, ".."), ws),
+      AnnoStorePathError,
+      "one segment ABOVE the root is outside it",
+    );
+
+    // REFUSED: a sibling whose name merely STARTS with the root's name.
+    // Replacing the separator-appended comparison with a bare `startsWith`
+    // reddens exactly this case and nothing else.
+    assert.throws(
+      () => storePathWithinWorkspace(join(root, "wsx", "proj.annostore"), ws),
+      AnnoStorePathError,
+      "boundary safety: `<parent>/wsx` is not inside `<parent>/ws`, and only the separator-appended comparison can tell",
+    );
+  });
+});
+
+test("12. idempotency: a repeated confinement check returns the identical answer and creates nothing", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+    // Test 7's plant, reused as the REJECTED input.
+    symlinkSync(join("..", "outside", "p.annostore"), join(ws, "dangling"));
+
+    const accepted = join(ws, "p.annostore");
+    const before = readdirSync(ws).sort();
+
+    const first = storePathWithinWorkspace(accepted, ws);
+    const second = storePathWithinWorkspace(accepted, ws);
+    assert.equal(first, second, "two calls on the same accepted input return the byte-identical string -- the check is a question, not a step");
+
+    assert.throws(() => storePathWithinWorkspace(join(ws, "dangling"), ws), AnnoStorePathError, "first call on the rejected input refuses");
+    assert.throws(() => storePathWithinWorkspace(join(ws, "dangling"), ws), AnnoStorePathError, "and so does the second -- a refusal is not consumed by being observed");
+
+    // THE NON-VACUITY HALF. Any implementation that memoises, that creates a
+    // directory so the walk resolves, or that mutates module state to
+    // short-circuit the second call fails one of these three assertions. The
+    // check must CREATE NOTHING -- that is what makes a repeated call the same
+    // answer rather than a second, different one.
+    assert.deepEqual(readdirSync(ws).sort(), before, "the workspace listing is unchanged across all four calls: the confinement check creates nothing");
+    assert.deepEqual(readdirSync(outside), [], "and nothing appeared outside the root either");
   });
 });
