@@ -443,7 +443,7 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: 15 plans in 13 waves — 12/15 executed (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6, 28-09 in wave 7, and the second gap-closure round's 28-10..28-12 in waves 8–10). A THIRD gap-closure round adds 28-13..28-15 in waves 11–13 after round-3 verification scored 10/12 with two gaps remaining: all five success criteria are VERIFIED for a third round, but the goal's REVERTIBLE clause is still false (CR-05 — the ring keyed on the store path's basename spelling, so a second spelling deletes every pointer row) and an accepted write can leave its handle permanently wedged (CR-06/CR-07/WR-12). 28-13 (the identity decision plus the sweep's transaction lifetime), 28-14 (the commit and revert paths brought inside the error family, proven cross-process) and 28-15 (the confinement predicate's regression plus the closing gate) are planned and not yet executed
+**Plans**: 15 plans in 13 waves — 13/15 executed (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6, 28-09 in wave 7, and the second gap-closure round's 28-10..28-12 in waves 8–10). A THIRD gap-closure round adds 28-13..28-15 in waves 11–13 after round-3 verification scored 10/12 with two gaps remaining: all five success criteria are VERIFIED for a third round, but the goal's REVERTIBLE clause is still false (CR-05 — the ring keyed on the store path's basename spelling, so a second spelling deletes every pointer row) and an accepted write can leave its handle permanently wedged (CR-06/CR-07/WR-12). 28-13 (the identity decision plus the sweep's transaction lifetime) is EXECUTED — CR-05 and CR-07 closed behaviourally through production entry points; 28-14 (the commit and revert paths brought inside the error family, proven cross-process) and 28-15 (the confinement predicate's regression plus the closing gate) are planned and not yet executed
 
 Plans:
 **Wave 1**
@@ -490,7 +490,7 @@ Plans:
 
 **Wave 11** *(third gap-closure round — round-3 verification scored 10/12; all five success criteria VERIFIED for a third round, but the REVERTIBLE clause is false for a third cause and the write path can wedge its own handle)*
 
-- [ ] 28-13-PLAN.md — Gap 1, CR-05 + CR-07: what identifies a snapshot ring, decided on the record — the sweep abstains from the pointer-ROW direction entirely, because a row without a file is inert to every consumer and deleting one under a second path spelling destroyed a reachable revert history; plus a structural transaction lifetime for the sweep and the two corrected comments that asserted a guarantee the code did not provide
+- [x] 28-13-PLAN.md — Gap 1, CR-05 + CR-07: what identifies a snapshot ring, decided on the record — the sweep abstains from the pointer-ROW direction entirely, because a row without a file is inert to every consumer and deleting one under a second path spelling destroyed a reachable revert history; plus a structural transaction lifetime for the sweep and the two corrected comments that asserted a guarantee the code did not provide
 
 **Wave 12** *(blocked on Wave 11 completion — it rewrites the same file, and three rounds of evidence say concurrent edits to `anno-store.ts` are how the next blocker arrives)*
 
@@ -976,7 +976,7 @@ in a milestone archive.
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
-| 28. The Store Core | v0.7.0 | 12/12 | In Progress | - |
+| 28. The Store Core | v0.7.0 | 13/15 | In Progress | - |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
