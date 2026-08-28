@@ -3301,3 +3301,209 @@ test("revertTo step 6, STRUCTURAL BACKSTOP: the sweep call sits inside a handler
   assert.match(handler.slice(0, 400), /closeStore\(restored\)/, "the handler must close the connection whose transaction state is unknown");
   assert.match(handler.slice(0, 400), /return openStore\(storePath\)/, "and must hand back a freshly opened handle rather than the suspect one");
 });
+
+// ---------------------------------------------------------------------------
+// CR-08 -- WHAT PROVES A SNAPSHOT IMAGE IS A STORE.
+//
+// Reproduced against committed code by the round-4 verifier, through production
+// entry points only and with no hand edit of any source file: `revertTo` gated
+// on `existsSync(snapPath)` and nothing more, then closed the caller's handle
+// and renamed that unverified file over the live store. A retained snapshot
+// truncated to zero bytes therefore took a 69,632-byte live store to 0 bytes,
+// returned NO handle at all, and made every later `openStore` refuse -- and the
+// bytes destroyed were the only copy, because the CURRENT revision has no
+// snapshot of its own by design.
+//
+// This module's own FIRST MEASURED FACT is why presence could never have been
+// the witness: a ZERO-LENGTH FILE OPENS as a SQLite database and reports
+// `integrity_check ok`. The refusal is the store's own job -- reasoning the
+// module applied to `openStore` and never applied to the image `revertTo`
+// installs.
+//
+// THE FIX IS AN ORDERING, NOT A ZERO-LENGTH SPECIAL CASE. Step 3b opens the
+// STAGED COPY -- the exact bytes step 5 renames -- before step 4 closes
+// anything, so every destructive step is downstream of a successful open. The
+// two tests below drive the two shapes that reach it (truncated, and foreign
+// bytes); neither of them mentions a byte length to the code under test.
+// ---------------------------------------------------------------------------
+
+/** A store at revision 3 whose ring holds exactly `[r0.db, r1.db, r2.db]` --
+ * the fixture the round-4 verifier's CR-08 reproduction used, built through
+ * `setDataType` and nothing else. Returned OPEN; the caller closes it. */
+function revisionThreeStore(dir: string): ReturnType<typeof openStore> {
+  const store = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+  for (let i = 0; i < 3; i += 1) {
+    setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+  }
+  return store;
+}
+
+/** The four properties a refused revert must leave behind, asserted together
+ * because each one alone would pass against a different broken implementation:
+ * a refusal that destroyed the store would satisfy the throw assertion, and a
+ * silent no-op would satisfy the store-unchanged one. */
+function assertRefusedRevertLeftEverythingIntact(
+  store: ReturnType<typeof openStore>,
+  path: string,
+  snapPath: string,
+  revision: number,
+  bytesBefore: Buffer,
+  rowsBefore: ReturnType<typeof listRanges>,
+): void {
+  assert.equal(statSync(path).size, bytesBefore.length, "the live store's byte length must be exactly what it was before the refused revert");
+  assert.ok(
+    readFileSync(path).equals(bytesBefore),
+    "and its CONTENT must be byte-identical -- a same-length replacement is the failure a length-only assertion would miss",
+  );
+  assert.equal(currentRevision(store), 3, "the SAME handle must still answer currentRevision() -- the refusal must not have closed it");
+  assert.deepEqual(listRanges(store), rowsBefore, "and must still answer listRanges() with the rows it had before the attempt");
+  assert.ok(existsSync(snapPath), `the refused snapshot for r${revision} is left on disk for inspection rather than unlinked`);
+}
+
+test("CR-08: a retained snapshot TRUNCATED to zero bytes is REFUSED by name -- the live store stays byte-identical, the caller's handle still answers, and a later openStore succeeds", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = revisionThreeStore(dir);
+    try {
+      assert.equal(currentRevision(store), 3, "the fixture must be at revision 3");
+      assert.deepEqual(
+        readdirSync(join(dir, "proj.annostore.snapshots")).sort(),
+        ["r0.db", "r1.db", "r2.db"],
+        "and its ring must hold exactly the three snapshot files the reproduction used -- spelled out here rather than asked of the code under test",
+      );
+
+      const bytesBefore = readFileSync(path);
+      const rowsBefore = listRanges(store);
+      // THE VERIFIER'S FIGURE, PINNED. This is an OBSERVATION of SQLite's
+      // default page size on a three-write store, not a store invariant: if
+      // this ever changes it is a SQLite default that moved and the number is
+      // to be re-recorded, not a defect. It is pinned because the reproduction
+      // this test closes is quoted in revision numbers AND in bytes -- "69632
+      // -> 0" is the whole finding -- and a test that never names the number
+      // cannot be matched against it.
+      assert.equal(bytesBefore.length, 69632, "the live store measures the 69,632 bytes the CR-08 reproduction destroyed");
+      assert.equal(rowsBefore.length, 3, "with the three rows the three writes added");
+
+      const snapPath = snapshotPathFor(store, 1);
+      truncateSync(snapPath, 0);
+      assert.equal(statSync(snapPath).size, 0, "the planting must really have emptied r1.db, or this test proves nothing");
+
+      assert.throws(
+        () => revertTo(store, 1),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.ok(e instanceof ViceError, "and it must be inside the ViceError family -- the reproduction escaped it entirely");
+          assert.ok(e.message.includes(path), `the refusal must name the store path; got ${e.message}`);
+          assert.ok(e.message.includes(snapPath), `and the snapshot path; got ${e.message}`);
+          assert.match(
+            e.message,
+            /NOTHING has been replaced/,
+            "and must say so in as many words, because the reproduced failure differs from this one in exactly that fact",
+          );
+          return true;
+        },
+      );
+
+      assertRefusedRevertLeftEverythingIntact(store, path, snapPath, 1, bytesBefore, rowsBefore);
+    } finally {
+      closeStore(store);
+    }
+
+    // AND THE STORE IS STILL OPENABLE FROM SCRATCH. In the reproduction this
+    // threw `AnnoStoreCorruptError: not an annotation store (no such table:
+    // anno_meta)` for the rest of the store's life.
+    const reopened = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(currentRevision(reopened), 3, "a FRESH handle over the same path reads the untouched revision");
+      assert.equal(listRanges(reopened).length, 3, "and the untouched rows");
+    } finally {
+      closeStore(reopened);
+    }
+
+    // AND THE SOURCE ORDER, ASSERTED HERE RATHER THAN AS ITS OWN TEST, because
+    // it is the SAME CLAIM as everything above seen from the other side: the
+    // assertions above show the outcome, this one shows WHY the outcome is
+    // structural rather than incidental. A behavioural assertion cannot see it.
+    // Everything above passes against an implementation that validated the
+    // SOURCE image instead of the staged copy, and against one that closed the
+    // caller's handle first and reopened it on failure -- arrangements that
+    // leave the same end state on every input a test can construct in-process,
+    // and that differ only in WHICH FAILURES ARE SURVIVABLE.
+    //
+    // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
+    // identified by source text and strict mode would blank the SQL literals
+    // that make the body substantial.
+    const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+    const fnStart = stripped.indexOf("export function revertTo");
+    assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
+    const fnEnd = stripped.indexOf("\n}", fnStart);
+    assert.ok(fnEnd > fnStart, "and its body must terminate at a column-zero closing brace");
+    const body = stripped.slice(fnStart, fnEnd);
+
+    // NON-VACUITY FIRST, and then a presence check per landmark: a failed
+    // extraction returns -1 for all three landmarks, and -1 < -1 is false, so
+    // the ordering comparisons alone would report the wrong reason for the
+    // failure rather than passing -- the presence checks are what name it.
+    assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
+
+    const validate = body.indexOf('openStore(staging, { mustExist: true })');
+    const closeCaller = body.indexOf("closeStore(handle)");
+    const rename = body.indexOf("renameSync(staging, storePath)");
+    assert.ok(validate >= 0, "step 3b's open of the STAGED copy must be present in revertTo's body");
+    assert.ok(closeCaller >= 0, "step 4's close of the caller's handle must be present");
+    assert.ok(rename >= 0, "and step 5's rename over the live store must be present");
+
+    assert.ok(
+      validate < closeCaller,
+      `the staged image must be OPENED before the caller's handle is closed -- otherwise a bad image costs the caller its handle ` +
+        `(open at ${validate}, close at ${closeCaller})`,
+    );
+    assert.ok(
+      validate < rename,
+      `and before the rename over the live store -- otherwise a bad image destroys the only copy of the current revision ` +
+        `(open at ${validate}, rename at ${rename})`,
+    );
+  });
+});
+
+test("CR-08: a retained snapshot overwritten with FOREIGN BYTES is refused by the same gate -- the fix is an ordering, not a zero-length special case", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = revisionThreeStore(dir);
+    try {
+      const bytesBefore = readFileSync(path);
+      const rowsBefore = listRanges(store);
+      const snapPath = snapshotPathFor(store, 1);
+
+      // NOT A DATABASE, AND NOT EMPTY EITHER -- long enough to survive SQLite's
+      // 100-byte header read, so the refusal cannot come from a short-file
+      // check. This is the shape a partial copy or another tool's file has, and
+      // it needs no crash and no race to arrive.
+      writeFileSync(snapPath, "this is not a database, it is ASCII text that another tool wrote into the ring directory. ".repeat(4));
+      assert.ok(statSync(snapPath).size > 100, "the planted payload must exceed SQLite's header length");
+
+      assert.throws(
+        () => revertTo(store, 1),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.ok(e instanceof ViceError, "inside the ViceError family");
+          assert.ok(e.message.includes(path), `naming the store path; got ${e.message}`);
+          assert.ok(e.message.includes(snapPath), `and the snapshot path; got ${e.message}`);
+          assert.match(e.message, /NOTHING has been replaced/);
+          return true;
+        },
+      );
+
+      assertRefusedRevertLeftEverythingIntact(store, path, snapPath, 1, bytesBefore, rowsBefore);
+    } finally {
+      closeStore(store);
+    }
+
+    const reopened = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(currentRevision(reopened), 3, "and the store is still openable from scratch");
+    } finally {
+      closeStore(reopened);
+    }
+  });
+});

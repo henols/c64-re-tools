@@ -341,10 +341,46 @@ function fsyncPath(path: string): void {
  * `timeout` is set so a genuinely concurrent writer WAITS for the lock rather
  * than failing `SQLITE_BUSY` on contact. No other connection option is passed:
  * see traps 1 and 4.
+ *
+ * `mustExist` EXISTS FOR EXACTLY ONE PURPOSE: JUDGING A FILE THE CALLER IS
+ * ABOUT TO INSTALL, and its two halves are inseparable. This function's default
+ * behaviour is to CREATE and initialise an absent store -- which is the right
+ * default for opening a project's store and precisely the wrong one for asking
+ * "is this snapshot image a store I can speak to", because a judge that can
+ * create or modify the thing it judges is not a judge: it would manufacture the
+ * very empty store it was asked to detect and then report it healthy. So with
+ * `mustExist` set, an absent path is REFUSED BY NAME before `new DatabaseSync`
+ * is constructed, which makes the create-and-initialise branch below
+ * unreachable, and the connection is opened `readOnly`.
+ *
+ * READ-ONLY IS NOT BELT-AND-BRACES ON THE EXISTENCE TEST -- it closes the
+ * residual window the existence test leaves. Between the `existsSync` above and
+ * the constructor below the file can be unlinked; a writable open would then
+ * create it, and the judgement would be about a file this call had just made
+ * up. Measured on this host at plan time: a `readOnly` open of an absent path
+ * REFUSES with `unable to open database file` rather than creating it. Nothing
+ * downstream is duplicated for this option -- the `anno_meta` read, the
+ * `schema_version` comparison and `pragma integrity_check` are REUSED
+ * UNCHANGED, because those four checks together ARE the definition of "an
+ * annotation store this build can speak to" and a second list of them would be
+ * a second answer to the one question this option exists to answer once.
  */
-export function openStore(path: string, opts: { workspaceRoot?: string } = {}): AnnoStoreHandle {
+export function openStore(path: string, opts: { workspaceRoot?: string; mustExist?: boolean } = {}): AnnoStoreHandle {
   const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot);
   const fresh = !existsSync(resolved);
+
+  // REFUSED BEFORE THE CONNECTION IS CONSTRUCTED, and the position is the whole
+  // point: `new DatabaseSync` on an absent path CREATES the file, so after that
+  // line there is no way left to ask the question -- and the answer would be
+  // "yes, a healthy empty store", about a file this call invented.
+  if (opts.mustExist === true && fresh) {
+    throw new AnnoStoreError(
+      `${resolved}: cannot open an annotation store here -- the file does not exist, and this open was asked to JUDGE an existing image ` +
+        `rather than create one. An absent image is refused rather than initialised, because a judge that creates the thing it judges ` +
+        `would report the empty store it just made as healthy.`,
+      { data: { path: resolved } },
+    );
+  }
 
   // WRAPPED, AND THE CLASS IS DELIBERATE. Two reproduced inputs -- a path that
   // IS a directory, and a path whose parent directory does not exist -- both
@@ -355,7 +391,7 @@ export function openStore(path: string, opts: { workspaceRoot?: string } = {}): 
   // this is not a place a store can live.
   let db: DatabaseSync;
   try {
-    db = new DatabaseSync(resolved, { timeout: 5_000 });
+    db = opts.mustExist === true ? new DatabaseSync(resolved, { readOnly: true, timeout: 5_000 }) : new DatabaseSync(resolved, { timeout: 5_000 });
   } catch (e) {
     throw new AnnoStorePathError(`${resolved}: cannot open an annotation store here (${(e as Error).message})`, { path: resolved });
   }
@@ -1609,6 +1645,19 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * touches the filesystem, and it stages and fsyncs the copy before it closes
  * anything. The steps are numbered in the body and each number's POSITION is
  * commented, because the ordering is the guarantee.
+ *
+ * AND THE ORDERING RULE IS NOW STATED IN FULL, because "stages and fsyncs the
+ * copy before it closes anything" was the whole of it and it was not enough.
+ * NOTHING IS CLOSED AND NOTHING IS RENAMED UNTIL THE STAGED IMAGE HAS BEEN
+ * OPENED AS AN ANNOTATION STORE THIS BUILD CAN SPEAK TO. Step 3b sits between
+ * the staging and the close and does exactly that, and it is the step the whole
+ * guarantee now rests on: presence was the only witness before it, and presence
+ * proves nothing (a ZERO-LENGTH FILE OPENS -- the module header's first measured
+ * fact). Reproduced before step 3b existed: a 0-byte retained snapshot took the
+ * live 69,632-byte store to 0 bytes, returned no handle at all, and made every
+ * later `openStore` refuse. The sentence above about the refusal path and the
+ * staging failure stays exactly true; step 3b widens the set of failures it
+ * covers rather than qualifying it.
  */
 export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
   // STEP 1. The pointer row -- the INDEX half of "retained". An EXISTENCE check
@@ -1665,7 +1714,45 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     );
   }
 
-  // STEP 4. Only now, with a durable staged image beside the store.
+  // STEP 3b, AND ITS POSITION IS THE GUARANTEE (CR-08). OPEN THE STAGED IMAGE
+  // BEFORE ANYTHING IS CLOSED AND BEFORE ANYTHING IS RENAMED. Until this step
+  // existed the only witness that the image about to be installed was a store at
+  // all was `existsSync` -- and this module's own FIRST MEASURED FACT (see the
+  // header, `:22-31`) is that a ZERO-LENGTH FILE OPENS as a SQLite database and
+  // reports `integrity_check ok`, so presence proves nothing and the refusal has
+  // to be the store's OWN job. That reasoning was applied to `openStore` and
+  // never applied to the image `revertTo` installs, which is exactly the gap: a
+  // 0-byte retained snapshot took the live store from 69,632 bytes to 0, with no
+  // handle returned and no route back, because the bytes destroyed are the only
+  // copy of the CURRENT revision -- `revertTo` refuses the current revision by
+  // design, precisely because no snapshot records it.
+  //
+  // THE STAGED COPY AND NOT ONLY THE SOURCE IMAGE, and the difference is a
+  // window rather than a nicety: the staged file is the exact bytes step 5
+  // renames over the store, so judging it is what leaves no interval in which
+  // the judged bytes and the installed bytes can differ. Step 2's gate on the
+  // SOURCE image is the same witness in its other position -- one witness, two
+  // positions, not two witnesses.
+  //
+  // A FAILURE HERE COSTS THE CALLER NOTHING. The connection is still open, so
+  // `currentRevision(handle)` and `listRanges(handle)` still answer; the live
+  // store has not been touched; and the snapshot is left on disk for inspection
+  // rather than unlinked, because a corrupt image a pointer row still claims is
+  // EVIDENCE.
+  try {
+    closeStore(openStore(staging, { mustExist: true }));
+  } catch (e) {
+    rmSync(staging, { force: true });
+    throw new AnnoStoreError(
+      `cannot revert ${storePath} to revision ${revision}: the retained snapshot ${snapPath} is not a readable annotation store ` +
+        `(${(e as Error).message}). NOTHING has been replaced -- the store is still at revision ${currentRevision(handle)} and this ` +
+        `handle is still open and usable. The snapshot is left on disk for inspection.`,
+      { data: { path: storePath, snapshotPath: snapPath, operation: "validate", revision } },
+    );
+  }
+
+  // STEP 4. Only now, with a durable staged image beside the store that has been
+  // OPENED as an annotation store this build can speak to.
   closeStore(handle);
 
   // STEP 5. The rename is the ONE step that cannot be done with the connection
