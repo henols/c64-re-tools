@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 18
 waived_count: 0
 fixed_count: 4
-total_count: 21
-last_updated: 2026-08-27T18:38:16.829Z
+total_count: 22
+last_updated: 2026-08-28T12:05:16.879Z
 ---
 
 # Broken Windows Ledger
@@ -36,6 +36,7 @@ last_updated: 2026-08-27T18:38:16.829Z
 | 19 | 28 | deviation | src/mcp/vice/anno-store.test.ts |  | The plan's premise that the schema_version corrupt fixture needs a test-side node:sqlite import is measured FALSE: AnnoStoreHandle exposes its own db, so no second importer was added; the declared test-tree list in anno-seam.test.ts therefore has one member and it is anno-seam.test.ts itself (its planted route strings are string literals a keepLiteralBodies specifier scan cannot distinguish from route (d)) | open |  | 2026-08-27T18:38:16.421Z |  |
 | 20 | 28 | deviation | src/mcp/vice/anno-store.test.ts |  | Plan 28-06 Test 9 as written (revertTo(r) twice leaves the same state) is unsatisfiable: a snapshot of revision r contains pointer rows for 0..r-1 only, so a second revertTo(r) is refused by name. Asserted instead as the idempotency that holds -- the observable store state after one revert and after a refused second revert is identical | open |  | 2026-08-27T18:38:16.632Z |  |
 | 21 | 28 | deviation | src/mcp/vice/anno-store.ts |  | Plan 28-06's third planting (make the step-5 CAS unconditional) does NOT redden the cross-process test: that refusal comes from the step-2 base-revision check. The tautological CAS reddens only anno-seam.test.ts's structural CAS assertion; the semantic red was obtained by removing the step-2 check instead. Both results recorded at the test site | open |  | 2026-08-27T18:38:16.829Z |  |
+| 22 | 28 | deviation | src/mcp/vice/anno-confinement.test.ts |  | Case 15 cannot assert the plan's expected 40-hop message: the manual bound is structurally unreachable in ancestor position because the kernel's MAXSYMLINKS throws ELOOP at lstat first. Recorded as the finding; the leaf spelling's 40 is asserted beside it. | open |  | 2026-08-28T12:05:16.879Z |  |
 
 ````json
 [
@@ -289,6 +290,18 @@ last_updated: 2026-08-27T18:38:16.829Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-27T18:38:16.829Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-confinement.test.ts",
+    "line": null,
+    "description": "Case 15 cannot assert the plan's expected 40-hop message: the manual bound is structurally unreachable in ancestor position because the kernel's MAXSYMLINKS throws ELOOP at lstat first. Recorded as the finding; the leaf spelling's 40 is asserted beside it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-28T12:05:16.879Z",
     "resolved_at": null
   }
 ]

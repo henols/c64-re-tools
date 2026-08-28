@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-14-PLAN.md
-last_updated: "2026-08-28T11:46:50.091Z"
+stopped_at: Completed 28-15-PLAN.md
+last_updated: "2026-08-28T12:02:57.875Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 28 third gap-closure round executing (28-13..28-15)
-state_head: fbc5e6fd102cc0a8ad1cafefdbdc8dc6b1d943df
+last_activity_desc: Phase 28 third gap-closure round complete (28-13..28-15); ready for verification
+state_head: 0960bd003df5b0f11950fd298f17efa0d730dcde
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 20
-  completed_plans: 19
+  completed_plans: 20
   percent: 17
 ---
 
@@ -146,9 +146,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 14 of 15 executed; third gap-closure round (28-13..28-15) EXECUTING
-Status: 10/12 must-haves at last verification. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false and are what this round closes: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). Plan 28-13 has now closed CR-05 and CR-07 in the sweep: the reconciler abstains from the pointer-ROW direction entirely and its transaction has a structural lifetime, both pinned behaviourally through production entry points. Plan 28-14 has now closed CR-06 and CR-07's third property: step 8's commit sits inside a handler that rolls back — so a reader in another OS process can no longer make an accepted write escape the ViceError family, hold the store's write lock, or leave currentRevision() reporting a write that never landed — and revertTo always hands back a usable handle for a revert that already succeeded on disk. The CR-06 closure is proven cross-process against a genuinely separate reader, with a negative control that reproduces the review's bare `Error: database is locked` verbatim against the pre-plan code. WR-12 remains open and is 28-15's subject. All six STORE requirements remain reverted out of Complete until this round re-verifies. See 28-VERIFICATION.md and 28-REVIEW.md.
-Last activity: 2026-08-28 — 28-14 executed (CR-06 and CR-07's third property closed at `runWriteSequence` step 8 and `revertTo` step 6); 28-15 still to run
+Plan: 15 of 15 executed; third gap-closure round (28-13..28-15) COMPLETE — ready for phase verification
+Status: 10/12 must-haves at last verification. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false and are what this round closes: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). Plan 28-13 has now closed CR-05 and CR-07 in the sweep: the reconciler abstains from the pointer-ROW direction entirely and its transaction has a structural lifetime, both pinned behaviourally through production entry points. Plan 28-14 has now closed CR-06 and CR-07's third property: step 8's commit sits inside a handler that rolls back — so a reader in another OS process can no longer make an accepted write escape the ViceError family, hold the store's write lock, or leave currentRevision() reporting a write that never landed — and revertTo always hands back a usable handle for a revert that already succeeded on disk. The CR-06 closure is proven cross-process against a genuinely separate reader, with a negative control that reproduces the review's bare `Error: database is locked` verbatim against the pre-plan code. Plan 28-15 has now closed WR-12, the last of the three: `pathEntryExists` wraps every non-ENOENT stat failure, so a regular-file ancestor, an unreadable ancestor and an ANCESTOR symlink cycle refuse with `AnnoStorePathError` at BOTH entry points instead of aborting outside the ViceError family (measured, six probe rows, before and after) — which also makes `realpathOfNearestExisting`'s doc claim true and closes the 28-07 P3 comment violation round 3 recorded at anno-types.ts:830-833. Truth 12's three clauses are therefore all closed by this round. The round's closing gate is recorded as numbers: 144/144 anno tests at real exit 0 (was 141, baseline 135), `tsc --noEmit` clean, the four named non-vacuity controls re-observed one at a time, and criterion 4's planted red re-observed on the FINAL tree and reverted to an empty `git diff --stat -- src/mcp/vice`. STORE-01, STORE-02, STORE-03 and STORE-07 are marked Complete on that gate's evidence; STORE-04 and STORE-05 stay held, STORE-04 because round 3 contradicted the evidence it was recorded Complete on. THREE RESIDUALS STAY OPEN and are not closed by this round's green suite: 28-13's prohibition P2 under-claim (a second path spelling makes `retainedRevisions()` report `[]` while the first ring's files exist), the `pragma integrity_check` throw path as a human-verification item, and the check-then-open window plus the byte-wise non-normalising path comparison as stated limits. A NEW residual is named rather than fixed: the manual 40-hop symlink bound is structurally unreachable in ancestor position, where the kernel's own MAXSYMLINKS refuses first — the two bounds are both 40 and agree on every input. See 28-VERIFICATION.md and 28-REVIEW.md.
+Last activity: 2026-08-28 — 28-15 executed (WR-12 closed in `pathEntryExists`; three confinement cases added; closing gate 144/144 at real exit 0); the third gap-closure round is complete and the phase is ready for verification
 
 ## Performance Metrics
 
@@ -304,6 +304,7 @@ Last activity: 2026-08-28 — 28-14 executed (CR-06 and CR-07's third property c
 | Phase 28 P12 | 24 min | 2 tasks | 4 files |
 | Phase 28 P13 | 12 min | 3 tasks | 3 files |
 | Phase 28 P14 | 14 min | 3 tasks | 4 files |
+| Phase 28 P15 | 8 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -638,6 +639,8 @@ Recent decisions affecting current work:
 - [Phase 28]: `deferred` is WIDENED to mean "this sweep changed nothing" — covering both write-lock contention and a sweep that rolled back — and no second discriminator was added (28-13, CR-07). — Its only consumer, `pruneSnapshots`, returns early identically in both cases, so a discriminator would have no reader; and CR-07's concealment complaint is removed at its source by the structural try/catch rather than labelled. A field describing a state the code can no longer reach is the comment prohibition 28-07 P3 forbids, in the shape of an enum.
 - [Phase 28]: Step 8's commit handler ROLLS BACK rather than merely wrapping — the rollback is what releases the store's write lock and undoes the CAS, the mutation and the pointer-row insert together — Wrapping alone would have closed only the family-escape half of CR-06 and left both the leaked write lock and the phantom advanced revision. Proven cross-process: against the pre-plan code the same construction throws a bare Error: database is locked outside the family, with the transaction open.
 - [Phase 28]: revertTo's step-6 handler CLOSES the restored connection and REOPENS rather than returning the same handle — If the sweep threw, that connection's transaction state is unknown; handing back a connection that may hold the store's write lock is the defect being closed, not a repair of it. The reopen routes through openStore, which is already inside the ViceError family. After 28-13 the arm is unreachable, so the handler is defence-in-depth pinned by a declared structural backstop.
+- [Phase 28]: WR-12 is closed at the cause: `pathEntryExists` wraps every non-ENOENT stat failure, so a regular-file ancestor, an unreadable ancestor and an ANCESTOR symlink cycle refuse with `AnnoStorePathError` at both entry points instead of aborting outside the ViceError family. — `lstatSync(p, { throwIfNoEntry: false })` suppresses ENOENT and nothing else, so 28-12's correct `existsSync` -> `lstat` swap silently regressed three ordinary caller inputs from a named refusal to a bare `Error`. Measured before (inViceFamily=false on all six probe rows) and after (in-family on all six). The wrap also makes `realpathOfNearestExisting`'s existing doc claim true of all four fs call sites, closing the 28-07 P3 comment violation round 3 recorded at anno-types.ts:830-833.
+- [Phase 28]: The manual 40-hop symlink bound is structurally UNREACHABLE in ancestor position, and confinement case 15 records that rather than asserting the plan's expected message. — `lstat` does not follow the FINAL path component but must follow every ancestor one, so `<ws>/a` (leaf) reaches the manual hop counter and names 40, while `<ws>/a/sub/p.annostore` (ancestor) makes the kernel's own MAXSYMLINKS throw ELOOP before the walk descends once. Both bounds are 40 by construction -- MAX_SYMLINK_HOPS' own doc comment already said the two disagree about no input -- so the confinement answer is identical either way and only the bound that fires differs. Case 15 pins the ancestor spelling honestly and asserts the leaf spelling's 40 beside it as the comparison.
 
 ### Pending Todos
 
@@ -1229,8 +1232,57 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:46:49.891Z
-Stopped at: Completed 28-14-PLAN.md
+Last session: 2026-08-28T12:02:57.685Z
+Stopped at: Completed 28-15-PLAN.md
+  Plan 28-15 is complete: 3 tasks, 2 task commits (`4dc258d`, `25e15f4`) plus the
+  SUMMARY commit (`0960bd0`), 8 min. It is the THIRD and LAST of the third
+  gap-closure round (28-13..28-15). **WR-12 closed at the cause.**
+  `pathEntryExists` now takes the confined path as a second parameter and wraps
+  its `lstatSync`: `throwIfNoEntry: false` suppresses ENOENT AND NOTHING ELSE,
+  so 28-12's otherwise-correct `existsSync` -> `lstat` swap had regressed three
+  ORDINARY caller inputs from a named refusal to a bare `Error` outside the
+  ViceError family. Measured at BOTH entry points, before and after: six probe
+  rows `inViceFamily=false` before (`ENOTDIR` on a regular-file ancestor,
+  `EACCES` on an unreadable ancestor, `ELOOP` on an ANCESTOR symlink cycle),
+  six `AnnoStorePathError` naming the caller's path after. This closes truth
+  12's third clause and the 28-07 P3 comment violation round 3 recorded at
+  `anno-types.ts:830-833` -- `realpathOfNearestExisting`'s "every failure is
+  rethrown" paragraph is left BYTE-IDENTICAL and is now true of all four
+  executable fs call sites in the module. Three new confinement cases (13, 14,
+  15) pin the classes at the PRODUCTION entry point as well as at the
+  predicate; non-vacuity measured by reverting only `anno-types.ts` (`12 pass /
+  3 fail`, the twelve existing cases green in the same run -- that is the
+  28-12 P3 evidence). **ONE FINDING CONTRADICTS THE PLAN AND IS RECORDED AS THE
+  FINDING:** the manual 40-hop bound is structurally UNREACHABLE in ancestor
+  position, because `lstat` must follow a non-final symlink and the kernel's own
+  MAXSYMLINKS throws ELOOP before the walk descends once. Both bounds are 40 by
+  construction, so they agree on every input; case 15 pins the ancestor spelling
+  honestly and asserts the leaf spelling's `40` beside it as the comparison.
+  CLOSING GATE, as numbers: **144 pass / 0 fail / 0 skipped across all seven
+  `anno-*.test.ts` files with REAL exit code 0** (was 141; round-3 baseline
+  135 -- it grew by exactly the three cases added), `tsc --noEmit` clean, one
+  `db.exec("commit")` site, `node:sqlite` in one shipped module, both store
+  modules still absent from the five-element host-path consumer set, no stderr
+  assertion in the diff. The four named non-vacuity controls were re-observed
+  ONE AT A TIME rather than as an aggregate (criterion 1's split-orientation
+  control and its collapse planting; the exhaustive 65,536-address index
+  cross-validation with its `comparisons` assertion; the fully-contained
+  overlap case and its filter-and-insert planting; the no-splitter structural
+  scan and its STORE-02 non-vacuity companion), and criterion 4's planted red
+  was re-observed ON THE FINAL TREE -- with the single commit statement replaced
+  by a comment, the combined STORE-04 test and its planted-violation sibling
+  both report `not ok` (4 fail / 1 pass, and 28-14's CR-06 control reddens too);
+  after restore, `git diff --stat -- src/mcp/vice` is EMPTY and the file is 5/5
+  green. STILL OPEN AND DELIBERATELY NOT CLOSED BY THIS ROUND: 28-13's
+  prohibition P2 under-claim residual (a second path spelling makes
+  `retainedRevisions()` report `[]` while the first ring's files exist), the
+  `pragma integrity_check` throw path as a human-verification item, and the
+  check-then-open window plus the byte-wise non-normalising comparison as
+  stated limits. The whole-glob `npm test` was NOT run and is not a signal for
+  this plan. Next: phase verification.
+
+
+Previously stopped at: Completed 28-14-PLAN.md (CR-06 and CR-07's third property closed); next 28-15
   Plan 28-14 is complete: 3 tasks, 3 task commits (`03a1855`, `777d900`,
   `328cf62`), 14 min. It is the SECOND of the third gap-closure round's three
   plans (28-13..28-15); 28-15 (WR-12, the confinement predicate) remains.
