@@ -15,6 +15,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -3027,6 +3028,128 @@ test("CR-05: a store reached through a SYMLINK ALIAS keeps every pointer row and
       assert.equal(currentRevision(store), 1, "and reverting to r1 SUCCEEDS -- before this change the same sequence refused, with every row deleted");
     } finally {
       if (aliasHandle !== undefined) closeStore(aliasHandle);
+      closeStore(store);
+    }
+  });
+});
+
+test("CR-05 (b): renaming the store FILE, writing, and renaming back leaves the pre-rename floor intact", () => {
+  inTempDir((dir) => {
+    const originalPath = join(dir, "proj.annostore");
+    let store = openStore(originalPath, { workspaceRoot: dir });
+    let renamed: ReturnType<typeof openStore> | undefined;
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const floorBefore = oldestRetainedRevision(store);
+      const filesBefore = readdirSync(join(dir, "proj.annostore.snapshots")).sort();
+      assert.notEqual(floorBefore, NO_RETAINED_REVISION, "the store must publish a floor before the rename, or the recovery claim below is vacuous");
+      closeStore(store);
+
+      // THE SECOND REPRODUCED SPELLING: `mv proj.annostore other.annostore`.
+      // The ring is named from the store FILE, so the renamed handle names a
+      // ring that does not exist yet and creates its own.
+      const otherPath = join(dir, "other.annostore");
+      renameSync(originalPath, otherPath);
+      renamed = openStore(otherPath);
+      assert.notEqual(
+        snapshotDirFor(renamed),
+        join(dir, "proj.annostore.snapshots"),
+        "NON-VACUITY: the renamed handle must name a DIFFERENT ring, or this reproduces nothing",
+      );
+      setDataType(renamed, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+      closeStore(renamed);
+      renamed = undefined;
+
+      // AND BACK. Before this change the one write above had already deleted
+      // every pointer row, so this reopen published NO_RETAINED_REVISION and
+      // every revertTo refused -- renaming back recovered nothing.
+      //
+      // THE CLAIM IS BOUNDED AT THIS ONE WRITE and is NOT a claim of
+      // unconditional recovery: `pruneSnapshots`' doomed loop still deletes
+      // every row below `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so the
+      // floor survives only while the wrong-spelling handle has not advanced
+      // past that many further revisions. What the sweep can no longer do is
+      // delete the rows immediately, at any revision, which is what made the
+      // loss irreversible.
+      renameSync(otherPath, originalPath);
+      store = openStore(originalPath, { workspaceRoot: dir });
+      assert.equal(
+        oldestRetainedRevision(store),
+        floorBefore,
+        "the pre-rename floor is intact after the rename-back -- the sweep under the wrong spelling deleted no pointer row (CR-05)",
+      );
+      assert.deepEqual(readdirSync(join(dir, "proj.annostore.snapshots")).sort(), filesBefore, "and the original ring's files are untouched");
+      store = revertTo(store, floorBefore);
+      assert.equal(currentRevision(store), floorBefore, "and reverting to that floor SUCCEEDS rather than refusing");
+    } finally {
+      if (renamed !== undefined) closeStore(renamed);
+      closeStore(store);
+    }
+  });
+});
+
+test("CR-07: a sweep that throws inside its own transaction leaves the caller's connection with NO open transaction", () => {
+  inTempDir((dir) => {
+    // ROOT IGNORES THE MODE BITS, so the construction below would silently
+    // prove nothing: `readdirSync` would succeed, the sweep would never throw,
+    // and every assertion would pass for the wrong reason.
+    if (process.getuid?.() === 0) {
+      assert.ok(
+        true,
+        "SKIPPED as root: an unreadable directory is not constructible when the mode bits are ignored, and a test that cannot build its own precondition must say so rather than pass",
+      );
+      return;
+    }
+
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    const ring = join(dir, "proj.annostore.snapshots");
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const rowsBefore = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+        (row) => row.revision,
+      );
+      assert.ok(rowsBefore.length > 0, "the ring must genuinely hold rows, or 'unchanged apart from the new one' is trivially satisfied");
+      const revisionBefore = currentRevision(store);
+
+      try {
+        // WRITABLE BUT NOT READABLE. The sweep can still stage and publish into
+        // this directory and can still `existsSync` a path inside it, so the
+        // write itself is entirely ordinary; only the sweep's `readdirSync`
+        // throws. That is the whole point -- the failure is reachable from an
+        // ORDINARY setDataType, not from a test-only entry point.
+        chmodSync(ring, 0o300);
+
+        // PROHIBITION 28-11 P5: the committed write is NOT converted into a
+        // caller-visible failure. Step 9's WR-02 wrap swallows the housekeeping
+        // throw, which is correct -- and is also what made this defect silent.
+        const result = setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
+        assert.equal(result.revision, revisionBefore + 1, "the write is accepted and reports the advanced revision -- a committed write is never reported as a failure");
+
+        // THE ASSERTION THIS TEST EXISTS FOR. Against the pre-task code the
+        // sweep's `begin immediate` was still open on this very connection, so
+        // this statement threw "cannot start a transaction within a
+        // transaction" and the handle was permanently wedged.
+        store.db.exec("begin immediate");
+        store.db.exec("rollback");
+
+        const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+          (row) => row.revision,
+        );
+        assert.deepEqual(
+          rowsAfter,
+          [...rowsBefore, revisionBefore],
+          "the rolled-back sweep changed no pointer row -- the rows are the pre-write set plus exactly the one this write inserted",
+        );
+      } finally {
+        // Restored unconditionally so the temp directory can be removed.
+        chmodSync(ring, 0o700);
+      }
+    } finally {
       closeStore(store);
     }
   });

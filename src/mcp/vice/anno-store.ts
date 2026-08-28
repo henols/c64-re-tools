@@ -695,6 +695,19 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * until the next accepted write sweeps successfully: extra FILES, the direction
  * trap 10's own premise calls harmless and reconcilable by revision number.
  *
+ * `deferred` IS NOW WIDENED, AND THE WIDENING IS STATED RATHER THAN LEFT TO BE
+ * INFERRED FROM THE ONE NEW RETURN SITE. It reports "THIS SWEEP CHANGED
+ * NOTHING", which covers two causes: another writer holds the write lock (step
+ * 1 above), and this sweep failed part-way and rolled back (the structural
+ * handler around steps 2-4). NO SECOND DISCRIMINATOR WAS ADDED, and the reason
+ * is not economy. Its only consumer, `pruneSnapshots`, returns early
+ * identically in both cases, so a discriminator would have no reader -- and
+ * CR-07's actual complaint, that a LEAKED transaction makes every later sweep
+ * report `deferred` indistinguishably from contention, is removed AT ITS SOURCE
+ * by the handler rather than papered over with a label. A field describing a
+ * state this code can no longer reach would be exactly the kind of comment
+ * prohibition 28-07 P3 forbids, in the shape of an enum.
+ *
  * THE NEW CALLER-VISIBLE LATENCY, STATED HERE BECAUSE A READER OF THE OLD
  * COMMENT WOULD NOT EXPECT IT. Before this change the sweep took no write lock
  * and could not block at all. After it, under contention, a caller blocks HERE
@@ -734,51 +747,85 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
     return { droppedFiles, deferred: true };
   }
 
-  // STEP 2. With the lock held, compute the drop set -- which since CR-05 has
-  // exactly ONE direction, the FILE direction -- before changing anything.
-  //
-  // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
-  // "retained" means with a second `existsSync` of its own -- a fourth
-  // independent decision is exactly how the first three came to disagree, and
-  // it would also make the row-only regression invisible to the proofs that
-  // exist to catch it.
-  const retained = new Set(retainedRevisions(handle));
-
-  // A store that has never been written has no ring directory at all, and
-  // `readdirSync` throws on an absent one. That is not a half-state -- and the
-  // check lives HERE, inside the drop-set computation, rather than returning
-  // early: an early return from this point would leave the sweep's own
-  // transaction OPEN on the caller's connection. With no directory there are
-  // simply no orphan files, and the function falls through to close its
-  // transaction like any other run.
-  //
-  // NAMED THROUGH `snapshotDirFor` AND ONLY THROUGH IT, which is what confines
-  // this sweep to a ring this store can be the owner of. It cannot see -- and
-  // therefore cannot delete -- a legacy `<dir>/snapshots` ring, or a ring
-  // belonging to a neighbouring store file in the same directory.
-  const snapshotDir = snapshotDirFor(handle);
+  // DECLARED OUTSIDE THE HANDLER BELOW so step 5 can still read it after the
+  // handler closes. The transaction's lifetime is structural; the drop set's
+  // scope is not, and conflating the two would put the unlink loop inside the
+  // transaction, which is exactly what trap 10 forbids.
   const orphanFiles: string[] = [];
-  if (existsSync(snapshotDir)) {
-    for (const name of readdirSync(snapshotDir).sort()) {
-      const match = SNAPSHOT_FILE_PATTERN.exec(name);
-      if (!match) continue;
-      if (retained.has(Number(match[1]))) continue;
-      orphanFiles.push(join(snapshotDir, name));
+
+  // EVERYTHING FROM HERE TO THE COMMIT IS BRACKETED, AND THE BRACKET IS THE
+  // FIX (CR-07). `begin immediate` above has already opened a transaction on
+  // the CALLER's connection. Before this handler existed, any throw between
+  // that statement and the commit -- `readdirSync` on a ring directory that
+  // became unreadable, an `EIO` out of the `existsSync` sweep inside
+  // `retainedRevisions`, anything -- propagated out with the transaction still
+  // OPEN. Step 9's WR-02 wrap then swallowed it, so an ordinary `setDataType`
+  // reported SUCCESS while leaving the handle permanently inside a transaction:
+  // every later write failed with "cannot start a transaction within a
+  // transaction", and every later sweep reported `deferred` indistinguishably
+  // from ordinary contention. The lifetime is now structural rather than
+  // path-dependent: there is no route out of this block that does not either
+  // commit or roll back.
+  try {
+    // STEP 2. With the lock held, compute the drop set -- which since CR-05 has
+    // exactly ONE direction, the FILE direction -- before changing anything.
+    //
+    // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
+    // "retained" means with a second `existsSync` of its own -- a fourth
+    // independent decision is exactly how the first three came to disagree, and
+    // it would also make the row-only regression invisible to the proofs that
+    // exist to catch it.
+    const retained = new Set(retainedRevisions(handle));
+
+    // A store that has never been written has no ring directory at all, and
+    // `readdirSync` throws on an absent one. That is not a half-state -- and the
+    // check lives HERE, inside the drop-set computation, rather than returning
+    // early: an early return from this point would leave the sweep's own
+    // transaction OPEN on the caller's connection. With no directory there are
+    // simply no orphan files, and the function falls through to close its
+    // transaction like any other run.
+    //
+    // NAMED THROUGH `snapshotDirFor` AND ONLY THROUGH IT, which is what confines
+    // this sweep to a ring this store can be the owner of. It cannot see -- and
+    // therefore cannot delete -- a legacy `<dir>/snapshots` ring, or a ring
+    // belonging to a neighbouring store file in the same directory.
+    const snapshotDir = snapshotDirFor(handle);
+    if (existsSync(snapshotDir)) {
+      for (const name of readdirSync(snapshotDir).sort()) {
+        const match = SNAPSHOT_FILE_PATTERN.exec(name);
+        if (!match) continue;
+        if (retained.has(Number(match[1]))) continue;
+        orphanFiles.push(join(snapshotDir, name));
+      }
     }
+
+    // STEP 3 IS GONE ON PURPOSE, and its absence is the fix for CR-05. It
+    // deleted every pointer row this handle's spelling of the ring could not
+    // vouch for; under a second spelling of the same store file that was every
+    // row it had. The whole argument is in the ORPHAN ROW bullet above.
+
+    // STEP 4. Close the sweep's own transaction through THE module's single
+    // commit site. It must be `commitTransaction` and never a second
+    // `handle.db.exec` of the bare word: `anno-seam.test.ts` asserts this module
+    // contains exactly ONE such statement, because the durability proof's planted
+    // violation must have a single site -- a second literal would split that
+    // planting and let half of it survive.
+    commitTransaction(handle.db);
+  } catch {
+    // ROLLED BACK INSIDE ITS OWN SWALLOWING `try`: there is nothing useful to
+    // do with a second error here, and reporting it would replace the first.
+    try {
+      handle.db.exec("rollback");
+    } catch {
+      // deliberately ignored -- see above
+    }
+    // AND DELIBERATELY NOT RETHROWN. A throw from here is swallowed by step 9's
+    // WR-02 wrap anyway, so rethrowing would buy nothing on the write path --
+    // and on `revertTo`'s own step-6 call site it would convert a COMMITTED
+    // write into a caller-visible failure, which prohibition 28-11 P5 forbids.
+    // The sweep changed nothing, which is precisely what `deferred` reports.
+    return { droppedFiles: [], deferred: true };
   }
-
-  // STEP 3 IS GONE ON PURPOSE, and its absence is the fix. It deleted every
-  // pointer row this handle's spelling of the ring could not vouch for; under a
-  // second spelling of the same store file that was every row it had (CR-05).
-  // The whole argument is in the ORPHAN ROW bullet above.
-
-  // STEP 4. Close the sweep's own transaction through THE module's single
-  // commit site. It must be `commitTransaction` and never a second
-  // `handle.db.exec` of the bare word: `anno-seam.test.ts` asserts this module
-  // contains exactly ONE such statement, because the durability proof's planted
-  // violation must have a single site -- a second literal would split that
-  // planting and let half of it survive.
-  commitTransaction(handle.db);
 
   // STEP 5, AND ITS POSITION IS THE POINT: only now, with the sweep's
   // transaction durably closed, unlink the orphan files. An interruption
