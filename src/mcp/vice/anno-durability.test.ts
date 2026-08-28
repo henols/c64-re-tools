@@ -33,14 +33,17 @@
 // warning out of the TAP stream rather than to inspect it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, currentRevision, listRanges, openStore, revertTo } from "./anno-store.ts";
+import { closeStore, currentRevision, listRanges, openStore, revertTo, setDataType } from "./anno-store.ts";
+import { AnnoStoreError } from "./anno-types.ts";
 import type { RangeRow } from "./anno-types.ts";
+import { ViceError } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -48,6 +51,36 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * `*.test.*` glob -- collected as a test it would SIGKILL the runner. */
 const MUTATOR_FILENAME = "anno-durability-mutator.mjs";
 const MUTATOR = join(HERE, MUTATOR_FILENAME);
+
+/** The mutator's fourth mode, and the one argv token it needs beyond the store
+ * path. Named here rather than spelled inline for the same reason the mutator
+ * names its own mode constants: a typo in a mode string looks like a store bug,
+ * not like a typo. */
+const MODE_HOLD_READ = "hold-read";
+
+/**
+ * Blocks until `marker` exists, with a HARD CAP. The cap is what makes a child
+ * that never started a loud failure instead of a silent pass: without it a
+ * `existsSync` spin would hang the whole suite, and with an unchecked
+ * fall-through the test would go on to attempt its write against a store nobody
+ * was reading and observe an ordinary SUCCESS -- passing the file, proving
+ * nothing.
+ *
+ * `Atomics.wait` for the pause, not a timer: the caller is about to block its
+ * own event loop inside a synchronous store write, so nothing asynchronous
+ * could be observed here anyway.
+ */
+function waitForMarker(marker: string): void {
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (existsSync(marker)) return;
+    Atomics.wait(pause, 0, 0, 50);
+  }
+  assert.fail(
+    `the ${MODE_HOLD_READ} child never created its readiness marker at ${marker} within 10 s -- the separate OS process that was ` +
+      `supposed to hold a READ transaction never started, so every assertion below would have measured an UNCONTENDED write`,
+  );
+}
 
 /** The range the killed modes write, restated here so the readback is BY VALUE
  * against numbers this file names rather than against whatever the child
@@ -369,4 +402,87 @@ test("the mutator is test-only: absent from package.json files[], and its filena
   // And it really is on disk under that name, so neither assertion above is
   // about a file that does not exist.
   assert.equal(existsSync(MUTATOR), true, `${MUTATOR_FILENAME} must exist, or both assertions above are vacuous`);
+});
+
+test("CR-06: with a separate OS process holding a READ transaction, the commit REFUSES inside the ViceError family, the revision is unchanged, and the write lock is released", async () => {
+  // WHY A SEPARATE OS PROCESS AND NOT A SECOND HANDLE. A `COMMIT` of a write
+  // transaction needs SQLite's EXCLUSIVE lock, and step 4's `begin immediate`
+  // never excluded READERS -- so an ordinary reader is enough to make an
+  // ACCEPTED-path write fail at its commit statement. That contention is only
+  // real across processes; simulating it in-process would be a vacuous control.
+  //
+  // Against the pre-plan code this exact construction threw a bare `Error:
+  // database is locked` after ~5010 ms, outside the ViceError family, with the
+  // transaction left OPEN, the compare-and-swap applied, and `currentRevision()`
+  // reporting the advanced revision for a write that never landed.
+  //
+  // SLOW BY CONSTRUCTION, and deliberately not sped up: the ~5 s this test
+  // spends is the writer's own `busy_timeout` elapsing, which is what makes the
+  // contention real rather than instantaneous.
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  let child: ReturnType<typeof spawn> | undefined;
+  const store = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+  try {
+    const path = store.path;
+    // One accepted write, so the revision under test is non-zero and there is
+    // something in the store to observe.
+    setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+    const revisionBefore = currentRevision(store);
+    assert.equal(revisionBefore, 1, "the fixture is at the revision this test thinks it is at");
+
+    const marker = join(dir, "reader-ready");
+    // `spawn`, NOT `execFileSync`: the child has to be alive and holding its
+    // read transaction WHILE the parent writes, and `execFileSync` would block
+    // the parent for the child's whole lifetime. `stdio: "pipe"` for this
+    // file's stated reason -- keeping `node:sqlite`'s unconditional
+    // `ExperimentalWarning` out of the TAP stream, never to inspect it.
+    child = spawn(process.execPath, [MUTATOR, path, MODE_HOLD_READ, marker], { stdio: "pipe" });
+    waitForMarker(marker);
+
+    assert.throws(
+      () => setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" }),
+      (e: unknown) => {
+        // FAMILY MEMBERSHIP is the assertion that distinguishes the two worlds:
+        // a bare SQLite `Error` is exactly what the pre-plan code produced.
+        assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}: ${(e as Error).message}`);
+        assert.ok(e instanceof ViceError, "and it must be inside the ViceError family -- a bare `database is locked` Error here is the defect");
+        assert.ok((e as Error).message.includes(path), `the refusal must name the store path, got ${(e as Error).message}`);
+        assert.match(
+          (e as Error).message,
+          new RegExp(`still at revision ${revisionBefore}`),
+          `the refusal must say which revision the store is still at, got ${(e as Error).message}`,
+        );
+        return true;
+      },
+    );
+
+    // THE COMPARE-AND-SWAP WAS ROLLED BACK. Against the pre-plan code this read
+    // returned the ADVANCED revision, from inside a transaction that never
+    // committed.
+    assert.equal(currentRevision(store), revisionBefore, "a refused commit must leave the revision exactly where it was");
+
+    // THE WRITE LOCK WAS RELEASED. Against the pre-plan code this statement
+    // reported "cannot start a transaction within a transaction", because the
+    // failed commit left its own transaction open on this connection.
+    store.db.exec("begin immediate");
+    store.db.exec("rollback");
+
+    // AND THE REFUSAL LEFT NO RESIDUE ON THE CONNECTION: once the reader is
+    // gone, an ordinary write on the SAME handle is accepted and advances the
+    // revision by exactly one.
+    child.kill("SIGKILL");
+    await once(child, "exit");
+    child = undefined;
+
+    const accepted = setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "code" });
+    assert.equal(accepted.revision, revisionBefore + 1, "an unobstructed write on the same handle advances the revision by exactly one");
+    assert.equal(currentRevision(store), revisionBefore + 1, "and the store agrees");
+    assert.equal(listRanges(store).filter((row) => row.start === 0x3000).length, 1, "the accepted write's row is really there");
+    assert.equal(listRanges(store).filter((row) => row.start === 0x2000).length, 0, "while the refused write's row is absent");
+  } finally {
+    if (child !== undefined) child.kill("SIGKILL");
+    closeStore(store);
+    // THE PARENT DOES THE CLEANING, per this file's own rule.
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

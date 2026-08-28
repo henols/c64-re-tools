@@ -59,17 +59,54 @@
 //      compare-and-swap, the pointer row, the mutation, and the commit or its
 //      absence.
 //
+// ---------------------------------------------------------------------------
+// THE FOURTH MODE: HOLD A READ TRANSACTION (28-14, CR-06)
+// ---------------------------------------------------------------------------
+// `hold-read` writes nothing at all. It opens the store, runs a genuine read
+// INSIDE a transaction and then holds that transaction open for a bounded
+// lifetime. Its purpose is CR-06: a `COMMIT` of a write transaction needs
+// SQLite's EXCLUSIVE lock, and `begin immediate` never excluded READERS -- so an
+// ordinary reader in another process is enough to make an accepted-path write
+// fail at its commit statement. That contention is only real ACROSS PROCESSES:
+// two handles in one process share nothing that would make the lock manager
+// behave as it does between two OS processes, so an in-process simulation would
+// be a vacuous control.
+//
+// Three properties of the mode a reader would otherwise have to rederive:
+//
+//   1. `begin deferred` ALONE ACQUIRES NOTHING. SQLite takes the SHARED lock at
+//      the first statement that actually reads, so the mode issues a real
+//      `select` against `anno_meta` before it claims to be holding anything.
+//   2. READINESS IS SIGNALLED BY A MARKER FILE, not by stdout, and only AFTER
+//      that read has run. This file's own header forbids the parent inspecting
+//      the child's chatter, and the parent's wait has to be a bounded
+//      SYNCHRONOUS spin -- it blocks its own event loop inside the write it is
+//      about to attempt, so it could not observe a pipe anyway.
+//   3. THE HOLD IS BOUNDED, so a parent that dies cannot leave an orphan
+//      process holding the store's lock forever. The bound is chosen to outlive
+//      the writer's 5000 ms `busy_timeout` with margin; the parent kills the
+//      child as soon as it is done, so the bound is a ceiling, not a delay.
+//
 // Nothing is written to stdout. The parent inspects the STORE FILE, never this
 // process's chatter, and the `ExperimentalWarning` `node:sqlite` emits on first
 // load is left alone -- the parent's `stdio: "pipe"` is what keeps it out of
 // the TAP stream.
+import { writeFileSync } from "node:fs";
+
 import { applyWrite, applyWriteWithoutCommit, closeStore, openStore } from "./anno-store.ts";
 
-/** The three argv tokens. Spelled once here so the test file and this file
+/** The four argv tokens. Spelled once here so the test file and this file
  * cannot disagree about them by a typo that would look like a store bug. */
 const MODE_COMMIT = "commit";
 const MODE_NO_COMMIT = "no-commit";
 const MODE_COMMIT_AND_EXIT = "commit-and-exit";
+const MODE_HOLD_READ = "hold-read";
+
+/** How long `hold-read` keeps its read transaction open, in milliseconds. Well
+ * clear of the writer's 5000 ms `busy_timeout` so the contention the parent
+ * measures is decided by the lock and not by this timer -- and finite so a
+ * parent that dies cannot orphan a process holding the store's lock. */
+const HOLD_READ_MS = 12_000;
 
 /** The range the two KILLED modes write. The parent reads this back BY VALUE,
  * so all three fields matter. */
@@ -129,6 +166,32 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
   // genuinely gone before the parent's stale-base write is attempted, or the
   // refusal being measured could be a lock contention instead.
   closeStore(mutateStore(storePath, commitWriter, OTHER_PROCESS_RANGE));
+  process.exit(0);
+} else if (mode === MODE_HOLD_READ) {
+  const markerPath = process.argv[4];
+  if (typeof markerPath !== "string" || markerPath.length === 0) {
+    process.stderr.write(`anno-durability-mutator: mode ${MODE_HOLD_READ} needs argv[4], the readiness marker path\n`);
+    process.exit(2);
+  }
+  const handle = openStore(storePath);
+  handle.db.exec("begin deferred");
+  // THE READ IS WHAT TAKES THE LOCK. `begin deferred` on its own acquires
+  // nothing; the SHARED lock arrives with the first statement that actually
+  // reads a page. One row out of `anno_meta` is the smallest statement that
+  // does it.
+  handle.db.prepare("select revision from anno_meta where id = 1").get();
+
+  // ONLY NOW is the marker written: the parent treats its appearance as "the
+  // reader is holding the lock", and writing it any earlier would let the
+  // parent's write start against a store nothing was reading.
+  writeFileSync(markerPath, `${process.pid}\n`);
+
+  // A SYNCHRONOUS block, deliberately: an async timer would return to the event
+  // loop, and nothing here should be able to run between the read and the close.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, HOLD_READ_MS);
+
+  handle.db.exec("rollback");
+  closeStore(handle);
   process.exit(0);
 } else {
   process.stderr.write(`anno-durability-mutator: unknown mode ${JSON.stringify(mode)}\n`);
