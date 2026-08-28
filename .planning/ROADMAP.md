@@ -443,7 +443,7 @@ seam. The milestone's one irreversible decision lands here.
   4. **Durability and revert are proven by ONE combined planted-violation test, not two.** mutate → `SIGKILL` with no clean close → **fresh process** → reopen → the mutation reads back **by value** → revert returns the prior value; and removing the commit makes that same test go **red**, observed. Two separate tests both stay green over a store that cannot revert across a restart, which is exactly why there is one. A store file truncated between kill and reopen is **refused**, never returned partial.
   5. Every write carries a schema version and a **reserved, uninterpreted** `bank` field, cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), and a write whose base revision is not the current on-disk revision is **refused** rather than silently discarding another process's annotations — observed by mutating from a second OS process and reading back. `node:sqlite` is reachable from exactly one module, asserted structurally over the shipped module set.
 
-**Plans**: 12/12 plans executed in 10 waves (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6 and 28-09 in wave 7); a second gap-closure round added 28-10..28-12 in waves 8–10 after re-verification scored 9/11 with two gaps remaining — 28-10 (snapshot identity, CR-01 + CR-03), 28-11 (the judge rule, CR-02, plus WR-01/WR-02/WR-04) and 28-12 (gap 2 / CR-04, the dangling-symlink confinement bypass) are all now executed
+**Plans**: 15 plans in 13 waves — 12/15 executed (6/6 in waves 1–4, plus 28-07 in wave 5, 28-08 in wave 6, 28-09 in wave 7, and the second gap-closure round's 28-10..28-12 in waves 8–10). A THIRD gap-closure round adds 28-13..28-15 in waves 11–13 after round-3 verification scored 10/12 with two gaps remaining: all five success criteria are VERIFIED for a third round, but the goal's REVERTIBLE clause is still false (CR-05 — the ring keyed on the store path's basename spelling, so a second spelling deletes every pointer row) and an accepted write can leave its handle permanently wedged (CR-06/CR-07/WR-12). 28-13 (the identity decision plus the sweep's transaction lifetime), 28-14 (the commit and revert paths brought inside the error family, proven cross-process) and 28-15 (the confinement predicate's regression plus the closing gate) are planned and not yet executed
 
 Plans:
 **Wave 1**
@@ -487,6 +487,18 @@ Plans:
 **Wave 10** *(blocked on Wave 9 completion — an ordering-only edge, not a code dependency: this plan shares no `files_modified` with either peer, but its acceptance surface runs `anno-confinement.test.ts`, which imports `anno-store.ts` — the module waves 8 and 9 rewrite)*
 
 - [x] 28-12-PLAN.md — Gap 2, CR-04: the confinement walk stops at a path ENTRY rather than at a path that resolves, so a dangling symlink cannot place the store outside the workspace root — with the inside-pointing dangling link still followed, so the control discriminates
+
+**Wave 11** *(third gap-closure round — round-3 verification scored 10/12; all five success criteria VERIFIED for a third round, but the REVERTIBLE clause is false for a third cause and the write path can wedge its own handle)*
+
+- [ ] 28-13-PLAN.md — Gap 1, CR-05 + CR-07: what identifies a snapshot ring, decided on the record — the sweep abstains from the pointer-ROW direction entirely, because a row without a file is inert to every consumer and deleting one under a second path spelling destroyed a reachable revert history; plus a structural transaction lifetime for the sweep and the two corrected comments that asserted a guarantee the code did not provide
+
+**Wave 12** *(blocked on Wave 11 completion — it rewrites the same file, and three rounds of evidence say concurrent edits to `anno-store.ts` are how the next blocker arrives)*
+
+- [ ] 28-14-PLAN.md — Gap 2, CR-06 + CR-07's revert arm: step 8's commit brought inside the ViceError family so a concurrent READER can no longer wedge the handle with the write lock held, and a `revertTo` whose housekeeping fails still hands back a usable handle — proven by a cross-process test with a child holding a real read transaction
+
+**Wave 13** *(blocked on Wave 12 completion — an ordering-only edge, not a code dependency: this plan shares no `files_modified` with either peer, but its acceptance surface runs `anno-confinement.test.ts`, which imports `anno-store.ts`, and it carries the round's closing regression gate)*
+
+- [ ] 28-15-PLAN.md — Gap 2, WR-12: every stat failure other than ENOENT in the confinement walk becomes `AnnoStorePathError` naming the path, pinned by the three ancestor cases twelve existing cases never planted — plus the closing gate that re-establishes the reverted requirements by regression and re-observes criterion 4's planted red on the final tree
 
 Notes:
 
