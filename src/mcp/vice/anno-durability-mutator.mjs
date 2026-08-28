@@ -92,6 +92,7 @@
 // load is left alone -- the parent's `stdio: "pipe"` is what keeps it out of
 // the TAP stream.
 import { writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { applyWrite, applyWriteWithoutCommit, closeStore, openStore } from "./anno-store.ts";
 
@@ -132,7 +133,12 @@ const noCommitWriter = (handle, mutate) => applyWriteWithoutCommit(handle, mutat
  * thing the modes differ in.
  */
 function mutateStore(storePath, write, range) {
-  const handle = openStore(storePath);
+  // CONFINED, NOT ESCAPED (WR-25). `openStore`'s workspace root is REQUIRED as
+  // of 28-21, and this helper has a real one to give: the store file's own
+  // directory. It is not a module-derived path in `anno-store.ts`'s sense --
+  // it arrives on argv -- so the escape hatch is the wrong remedy here and
+  // would make this spawned helper the one caller that forgets.
+  const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });
   write(handle, (db) => {
     db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
       range.start,
@@ -173,7 +179,8 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
     process.stderr.write(`anno-durability-mutator: mode ${MODE_HOLD_READ} needs argv[4], the readiness marker path\n`);
     process.exit(2);
   }
-  const handle = openStore(storePath);
+  // CONFINED, for the same reason as `mutateStore` above.
+  const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });
   handle.db.exec("begin deferred");
   // THE READ IS WHAT TAKES THE LOCK. `begin deferred` on its own acquires
   // nothing; the SHARED lock arrives with the first statement that actually

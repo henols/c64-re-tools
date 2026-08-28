@@ -3364,10 +3364,16 @@ test("CR-05: a store reached through a SYMLINK ALIAS keeps every pointer row and
       symlinkSync("real.annostore", aliasPath);
 
       // OPENED WITH NO `workspaceRoot`, WHICH IS LOAD-BEARING: that is the exact
-      // shape `revertTo` itself uses (`openStore(storePath)`), and supplying a
+      // shape `revertTo` itself uses on `handle.path`, and supplying a
       // root would realpath the alias back onto the real name and make this test
       // prove nothing.
-      aliasHandle = openStore(aliasPath);
+      //
+      // EXTENDED FOR WR-25 rather than replaced: since 28-21 a `workspaceRoot`
+      // is REQUIRED unless the caller explicitly asks for the unconfined path,
+      // so this case now names the escape by hand. That is exactly what the
+      // escape is for -- this test exists to mimic `revertTo`'s own
+      // module-derived call shape, and confining it would delete the case.
+      aliasHandle = openStore(aliasPath, { unconfinedModuleDerivedPath: true });
       const aliasRing = snapshotDirFor(aliasHandle);
       assert.notEqual(
         aliasRing,
@@ -3426,7 +3432,10 @@ test("CR-05 (b): renaming the store FILE, writing, and renaming back leaves the 
       // ring that does not exist yet and creates its own.
       const otherPath = join(dir, "other.annostore");
       renameSync(originalPath, otherPath);
-      renamed = openStore(otherPath);
+      // EXTENDED FOR WR-25, same reason as the alias case above: the unconfined
+      // shape IS the reproduction, so the escape is named by hand rather than
+      // the case being confined out of existence.
+      renamed = openStore(otherPath, { unconfinedModuleDerivedPath: true });
       assert.notEqual(
         snapshotDirFor(renamed),
         join(dir, "proj.annostore.snapshots"),
@@ -3680,7 +3689,11 @@ test("revertTo step 6, STRUCTURAL BACKSTOP: the sweep call sits inside a handler
   // unknown -- which is the defect, not the repair.
   const handler = body.slice(closingCatch);
   assert.match(handler.slice(0, 400), /closeStore\(restored\)/, "the handler must close the connection whose transaction state is unknown");
-  assert.match(handler.slice(0, 400), /return openStore\(storePath\)/, "and must hand back a freshly opened handle rather than the suspect one");
+  assert.match(
+    handler.slice(0, 700),
+    /return openStore\(storePath, \{ unconfinedModuleDerivedPath: true \}\)/,
+    "and must hand back a freshly opened handle rather than the suspect one -- on the module-derived path the WR-25 escape option names",
+  );
 });
 
 test("WR-17, STRUCTURAL: every openStore AFTER the rename in revertTo is inside a handler, and the reopen failure reports a revert that LANDED ON DISK", () => {
@@ -3904,7 +3917,7 @@ test("CR-08: a retained snapshot TRUNCATED to zero bytes is REFUSED by name -- t
     // failure rather than passing -- the presence checks are what name it.
     assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
 
-    const validate = body.indexOf('openStore(staging, { mustExist: true })');
+    const validate = body.indexOf('openStore(staging, { mustExist: true, unconfinedModuleDerivedPath: true })');
     const closeCaller = body.indexOf("closeStore(handle)");
     const rename = body.indexOf("renameSync(staging, storePath)");
     assert.ok(validate >= 0, "step 3b's open of the STAGED copy must be present in revertTo's body");
@@ -4471,8 +4484,12 @@ test("WR-18, STRUCTURAL: revertTo's step-6 sweep call BINDS its result and acts 
   // nothing branches on is a discard with an extra local.
   const after = body.slice(call);
   assert.match(after, /if \(reopenNeeded\)/, "and must branch on it, so a connection whose transaction state is unknown is not returned");
-  assert.match(after.slice(0, 400), /closeStore\(restored\)/, "closing the suspect connection");
-  assert.match(after.slice(0, 400), /return openStore\(storePath\)/, "and handing back a freshly opened one");
+  assert.match(after.slice(0, 700), /closeStore\(restored\)/, "closing the suspect connection");
+  assert.match(
+    after.slice(0, 700),
+    /return openStore\(storePath, \{ unconfinedModuleDerivedPath: true \}\)/,
+    "and handing back a freshly opened one, on the module-derived path the escape option names",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -4606,6 +4623,63 @@ test("WR-21 discrimination: two ADJACENT scopes are both accepted -- touching at
         ],
         "0x2000 and 0x2001 touch and do not overlap -- both scopes are stored",
       );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WR-25 -- workspace confinement is `openStore`'s DEFAULT, and the unconfined
+// path is a word a grep can find.
+//
+// `anno-types.ts`'s header names three things nothing upstream validates: "an
+// address of 65536, a misspelled data type, and a store path pointing outside
+// the workspace all look identical to the transport". The store path was the
+// only one of the three whose mitigation a caller could simply forget.
+// ---------------------------------------------------------------------------
+
+test("WR-25: openStore with NO options refuses by name -- and, the part that matters, creates NO file at the path it refused", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+
+    let caught: unknown;
+    try {
+      openStore(path);
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught instanceof AnnoStorePathError, `an open with neither a workspaceRoot nor the escape is REFUSED BY NAME; got ${caught}`);
+    assert.match((caught as Error).message, /workspace root/, "and the message says what is missing");
+    assert.ok((caught as Error).message.includes(path), "and names the path it refused");
+
+    // THE ASSERTION A CLASS-ONLY CONTROL WOULD MISS. `openStore`'s default
+    // behaviour is to CREATE and initialise an absent store, so a guard placed
+    // after `new DatabaseSync` would throw the right class over a file it had
+    // already made. The refusal has to be before the constructor, and this is
+    // the assertion that proves it is.
+    assert.equal(existsSync(path), false, "the refused open created NOTHING at the path");
+  });
+});
+
+test("WR-25 companion: a CONFINED open of a legitimate in-workspace path still succeeds -- the default was not bought by refusing everything", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(currentRevision(handle), 0, "a freshly created confined store starts at revision 0");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-25 companion: the escape option opens the same path successfully, so the hatch is real and the seam pin is pinning something that works", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "derived.annostore");
+    const handle = openStore(path, { unconfinedModuleDerivedPath: true });
+    try {
+      assert.equal(currentRevision(handle), 0, "the escape path creates and initialises exactly as the confined path does");
     } finally {
       closeStore(handle);
     }

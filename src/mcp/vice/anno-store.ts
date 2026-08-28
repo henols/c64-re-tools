@@ -361,6 +361,18 @@ function fsyncPath(path: string): void {
  * exist yet, and REFUSING it when it exists but is not a store this build can
  * speak to.
  *
+ * A `workspaceRoot` IS REQUIRED unless the caller explicitly asks for the
+ * unconfined path with `unconfinedModuleDerivedPath: true`, and the inversion is
+ * deliberate (WR-25). Confinement used to be opt-IN, which made the mitigation
+ * for the one unvalidated input this module's own header calls out the one a
+ * caller could forget -- and two of phase 28's blockers were confinement
+ * escapes. The escape exists for exactly one shape: a path THIS MODULE derived
+ * itself (a snapshot image path, a staging path, or the live store path
+ * `revertTo` already resolved), where there is no caller argument left to
+ * confine. Every such site below carries a one-line comment naming the
+ * module-derived value that produced its path, and `anno-seam.test.ts` pins
+ * that no other shipped module names the option at all.
+ *
  * When `workspaceRoot` is supplied the path is confined to it first. The
  * fresh-versus-existing decision is made with `existsSync` BEFORE the
  * connection is constructed, because constructing `DatabaseSync` creates the
@@ -393,7 +405,33 @@ function fsyncPath(path: string): void {
  * annotation store this build can speak to" and a second list of them would be
  * a second answer to the one question this option exists to answer once.
  */
-export function openStore(path: string, opts: { workspaceRoot?: string; mustExist?: boolean } = {}): AnnoStoreHandle {
+export function openStore(
+  path: string,
+  opts: { workspaceRoot?: string; mustExist?: boolean; unconfinedModuleDerivedPath?: boolean } = {},
+): AnnoStoreHandle {
+  // CONFINEMENT IS THE DEFAULT, AND THE ESCAPE IS A WORD A GREP CAN FIND
+  // (WR-25). `anno-types.ts`'s header names the three things nothing upstream
+  // validates -- "an address of 65536, a misspelled data type, and a store path
+  // pointing outside the workspace all look identical to the transport" -- and
+  // this was the only one of the three whose mitigation a caller could simply
+  // forget. Two of this phase's blockers (CR-03, CR-04) were confinement
+  // escapes.
+  //
+  // REFUSED BEFORE THE PATH IS RESOLVED AND LONG BEFORE `new DatabaseSync`, for
+  // the same reason `mustExist` is refused where it is and recorded in its own
+  // comment: this function's default behaviour is to CREATE the file, so after
+  // the constructor there is no longer a question to ask -- the store would
+  // already exist wherever the argument pointed.
+  if (opts.workspaceRoot === undefined && opts.unconfinedModuleDerivedPath !== true) {
+    throw new AnnoStorePathError(
+      `${path}: refusing to open an annotation store without a workspace root. The MCP transport validates NOTHING -- ` +
+        `\`vice-proxy.ts\`'s raw-schema validator is \`validate: (value) => ({ value })\` -- so an unconfined store path is a store file ` +
+        `created wherever the caller's argument pointed. Pass { workspaceRoot } to confine the path, or ` +
+        `{ unconfinedModuleDerivedPath: true } if and only if THIS MODULE derived the path itself.`,
+      { path },
+    );
+  }
+
   const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot);
   const fresh = !existsSync(resolved);
 
@@ -651,7 +689,10 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  */
 function snapshotOpenFailure(handle: AnnoStoreHandle, revision: number): string | null {
   try {
-    closeStore(openStore(snapshotPathFor(handle, revision), { mustExist: true }));
+    // MODULE-DERIVED PATH: `snapshotPathFor(handle, revision)` -- built from the
+    // handle's own already-confined store path, so there is no caller argument
+    // left to confine. `mustExist` is unchanged: this open JUDGES, never creates.
+    closeStore(openStore(snapshotPathFor(handle, revision), { mustExist: true, unconfinedModuleDerivedPath: true }));
     return null;
   } catch (e) {
     return (e as Error).message;
@@ -2342,7 +2383,9 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // rather than unlinked, because a corrupt image a pointer row still claims is
   // EVIDENCE.
   try {
-    closeStore(openStore(staging, { mustExist: true }));
+    // MODULE-DERIVED PATH: `staging`, the per-attempt staging name this function
+    // built next to the store it is reverting. `mustExist` is unchanged.
+    closeStore(openStore(staging, { mustExist: true, unconfinedModuleDerivedPath: true }));
   } catch (e) {
     discardSnapshot(staging);
     throw new AnnoStoreError(
@@ -2472,7 +2515,9 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // reaches the caller as a bare OS error.
   let restored: AnnoStoreHandle;
   try {
-    restored = openStore(storePath);
+    // MODULE-DERIVED PATH: `storePath` is `handle.path`, already confined by the
+    // open that produced the caller's handle.
+    restored = openStore(storePath, { unconfinedModuleDerivedPath: true });
   } catch (e) {
     if (e instanceof ViceError) throw e;
     throw new AnnoStoreError(
@@ -2510,7 +2555,8 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
       // deliberately ignored -- see above
     }
     try {
-      return openStore(storePath);
+      // MODULE-DERIVED PATH: `storePath` is `handle.path`, as above.
+      return openStore(storePath, { unconfinedModuleDerivedPath: true });
     } catch (e) {
       if (e instanceof ViceError) throw e;
       throw new AnnoStoreError(
