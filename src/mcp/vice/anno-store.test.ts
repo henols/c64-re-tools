@@ -2573,6 +2573,188 @@ test("WR-11, STRUCTURAL: the CAS-failure refusal carries BOTH revisions, and rea
   );
 });
 
+// ---------------------------------------------------------------------------
+// WR-01, WR-02 and WR-04 -- the three regions the phase-28 verification listed
+// under `## Anti-Patterns Found` as unguarded.
+// ---------------------------------------------------------------------------
+
+test("WR-01: a throw between the staged snapshot and the pointer-row insert leaves no open transaction, no staged .tmp, and an error inside the ViceError family", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      // One accepted write, so the ring directory exists and the revision the
+      // collision below is planted against is a real one.
+      setDataType(store, { start: 0x0400, endInclusive: 0x07e7, dataType: "screencode" });
+      const snapshotDir = snapshotDirFor(store);
+      const tmpEntries = (): string[] =>
+        readdirSync(snapshotDir)
+          .filter((name) => name.endsWith(".tmp"))
+          .sort();
+
+      // NON-VACUITY FIRST, the same way and for the same reason as
+      // "a refusal leaves NOTHING behind on disk": "no .tmp entry" is trivially
+      // true of a directory in which a .tmp entry is impossible, so staging one
+      // through the production code proves the reader can see one when there is
+      // one.
+      const planted = stageSnapshot(store, currentRevision(store));
+      assert.equal(tmpEntries().length, 1, "a staged snapshot IS visible to this reader, so its absence below is a measurement");
+      rmSync(planted, { force: true });
+      assert.deepEqual(tmpEntries(), [], "and the directory is clean again before the refusal below");
+
+      // THE PLANTED COLLISION, AND IT IS DETERMINISTIC. `anno_snapshot`'s only
+      // column is its primary key, and the next write's pointer-row insert
+      // claims the CURRENT revision -- so a row already sitting at that
+      // revision makes that insert fail with certainty, at the deepest point of
+      // the staging -> publish -> insert window and with no race and no
+      // privilege involved.
+      const before = currentRevision(store);
+      store.db.prepare("insert into anno_snapshot(revision) values (?)").run(before);
+
+      assert.throws(
+        () => setDataType(store, { start: 0x5000, endInclusive: 0x500f, dataType: "byte" }),
+        (e: unknown) => {
+          // HALF 1 -- FAMILY MEMBERSHIP. A bare SQLite `Error` is what the
+          // pre-fix code produced here, so `instanceof ViceError` is the
+          // assertion that distinguishes the two worlds.
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}: ${(e as Error).message}`);
+          assert.ok(e instanceof ViceError, "and it must be inside the ViceError family -- a bare SQLite Error here is the defect");
+          assert.ok(e.message.includes(path), `the refusal must name the store path, got ${e.message}`);
+          return true;
+        },
+      );
+
+      // HALF 2 -- THE COMPARE-AND-SWAP WAS ROLLED BACK. An open transaction
+      // with the CAS applied reads as an advanced revision for a write that was
+      // refused.
+      assert.equal(before, 1, "the fixture is at the revision this test thinks it is at");
+      assert.equal(currentRevision(store), before, "a refused write must leave the revision exactly where it was");
+
+      // HALF 3 -- NOTHING STAGED SURVIVES.
+      assert.deepEqual(tmpEntries(), [], "the refused write leaves no staging file behind");
+
+      // HALF 4 -- AND THE HANDLE IS STILL USABLE, which is the half that proves
+      // NO TRANSACTION WAS LEFT OPEN: a following write's `vacuum into` cannot
+      // run inside one at all, and its own compare-and-swap would be reading a
+      // revision nobody committed.
+      store.db.prepare("delete from anno_snapshot where revision = ?").run(before);
+      setDataType(store, { start: 0x6000, endInclusive: 0x600f, dataType: "byte" });
+      assert.equal(currentRevision(store), before + 1, "an unobstructed write on the SAME handle advances the revision by exactly one");
+      assert.equal(listRanges(store).filter((row) => row.start === 0x6000).length, 1, "and its row is really there");
+      assert.equal(listRanges(store).filter((row) => row.start === 0x5000).length, 0, "while the refused write's row is absent");
+    } finally {
+      closeStore(store);
+    }
+  });
+
+  // THE REACHABLE ARM OF THE PRE-LOCK HALF, in its own fixture because it needs
+  // a store whose ring directory does not exist yet. A regular FILE sitting
+  // where the ring directory should be makes `stageSnapshot`'s `mkdirSync`
+  // throw, with no privilege and no race -- and that call sits BEFORE
+  // `begin immediate`, so it is a different arm from the collision above.
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const ring = snapshotDirFor(store);
+      assert.ok(!existsSync(ring), "the ring directory must genuinely not exist yet, or this arm proves nothing");
+      writeFileSync(ring, "");
+      assert.ok(statSync(ring).isFile(), "and what is planted there must be a regular FILE, not a directory");
+
+      assert.throws(
+        () => setDataType(store, { start: 0x0400, endInclusive: 0x0403, dataType: "byte" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}: ${(e as Error).message}`);
+          assert.ok(e instanceof ViceError, "the pre-lock arm must be inside the ViceError family too");
+          assert.ok(e.message.includes(path), `and it must name the store path, got ${e.message}`);
+          return true;
+        },
+      );
+      assert.equal(currentRevision(store), 0, "nothing advanced -- the refusal happened before the transaction was even opened");
+
+      rmSync(ring, { force: true });
+      setDataType(store, { start: 0x0400, endInclusive: 0x0403, dataType: "byte" });
+      assert.equal(currentRevision(store), 1, "and the store is usable again once the planted file is removed");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-02 and WR-04, STRUCTURAL: the two remaining unguarded calls are inside handlers", () => {
+  // WHY STRUCTURAL RATHER THAN BEHAVIOURAL, stated because a structural
+  // assertion that does not say why it is structural reads as laziness. Neither
+  // failure is deterministically constructible in-process:
+  //
+  //   * WR-02 -- a failure of the step-9 `pruneSnapshots` call AFTER a
+  //     successful transaction -- needs a second connection to acquire the
+  //     write lock in the instant between one connection's last statement and
+  //     its next. `runWriteSequence` is fully synchronous, so no in-process
+  //     interleave can land in that window, and a spawned child racing it would
+  //     be timing-dependent: a flaky probe is worse evidence than an honest
+  //     structural one.
+  //   * WR-04 -- a failure of `pragma integrity_check` -- needs a genuinely
+  //     corrupt SQLite page, which cannot be manufactured reliably from a test.
+  //
+  // THE REACHABLE ARMS ARE PINNED BEHAVIOURALLY ELSEWHERE, and are named here
+  // so the pair is visible as a pair. WR-02's NON-throwing path is exercised by
+  // every ordinary accepted-write test in this file -- most directly by "the
+  // snapshot ring is BOUNDED at MAX_SNAPSHOT_REVISIONS", whose whole subject is
+  // step 9 running to completion, and by "a prune whose sweep DEFERRED returns
+  // early", which drives the contended path and asserts it does not throw.
+  // WR-04's family membership is pinned by the four corrupt-file refusal tests
+  // -- "a zero-length store file is REFUSED", "a file that is not a database at
+  // all is refused", "a store whose schema_version is not this build's is
+  // refused" and "a store truncated mid-file is refused" -- each of which
+  // asserts an `AnnoStoreCorruptError` naming the path. This is the pattern
+  // plan 28-08 established for exactly this situation.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): both targets are identified by
+  // SQL text inside string literals, which strict mode blanks.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  /** The one instrument, applied to both sites: the call must sit inside a
+   * `try` that is still OPEN at that point -- so the nearest preceding `try {`
+   * must not have been closed by a `} catch` before the call is reached -- and a
+   * matching `} catch` must follow it. A bare "there is a try somewhere above"
+   * would be satisfied by an unrelated, already-closed handler. */
+  const assertInsideHandler = (fnName: string, callNeedle: string, floor: number): void => {
+    const fnStart = stripped.indexOf(fnName);
+    assert.ok(fnStart >= 0, `${fnName} must be findable in the stripped source`);
+    const fnEnd = stripped.indexOf("\n}", fnStart);
+    assert.ok(fnEnd > fnStart, `and ${fnName}'s body must terminate at a column-zero closing brace`);
+    const body = stripped.slice(fnStart, fnEnd);
+
+    // NON-VACUITY FIRST: a failed extraction would satisfy every comparison
+    // below trivially.
+    assert.ok(body.length > floor, `the extracted ${fnName} body must be substantial, got ${body.length} characters`);
+    const call = body.indexOf(callNeedle);
+    assert.ok(call >= 0, `${callNeedle} must be present in the extracted ${fnName} body`);
+
+    const openedTry = body.lastIndexOf("try {", call);
+    assert.ok(openedTry >= 0, `${callNeedle} must have a try opening above it inside ${fnName}`);
+    assert.equal(
+      body.slice(openedTry, call).indexOf("} catch"),
+      -1,
+      `the try above ${callNeedle} must still be OPEN where the call is made -- an already-closed handler guards nothing`,
+    );
+    const closingCatch = body.indexOf("} catch", call);
+    assert.ok(
+      closingCatch > call,
+      `and a matching catch must follow ${callNeedle}, so a failure there cannot escape (call at ${call}, catch at ${closingCatch})`,
+    );
+  };
+
+  // WR-02: the post-commit prune. Its catch must NOT rethrow -- once the
+  // transaction has returned the write HAPPENED, and a housekeeping failure
+  // that throws makes the caller retry an additive verb and produce a second
+  // row.
+  assertInsideHandler("function runWriteSequence", "pruneSnapshots(handle)", 800);
+
+  // WR-04: the last known `ViceError`-family escape in `openStore`.
+  assertInsideHandler("export function openStore", "pragma integrity_check", 800);
+});
+
 test("STORE-05 ordering: a REFUSED stale write leaves the surviving rows in the identical ascending-id order they had before the attempt -- in the connection and on disk", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");

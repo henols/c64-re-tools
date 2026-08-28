@@ -166,6 +166,11 @@ import {
   type XrefRow,
 } from "./anno-types.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix, R2000ConfidenceGradeError } from "./r2000-confidence.ts";
+// Imported for ONE purpose: the family predicate the guarded regions below use to
+// decide "rethrow unchanged" versus "wrap". Every `Anno*Error` in `anno-types.ts`
+// already extends it, so nothing new enters the module graph -- `anno-types.ts`
+// imports the same class from the same file.
+import { ViceError } from "./vice.ts";
 
 /**
  * What every write entry point in this module returns.
@@ -411,7 +416,21 @@ export function openStore(path: string, opts: { workspaceRoot?: string } = {}): 
     throw new AnnoStoreCorruptError(`${resolved}: schema_version ${meta.schema_version}, expected ${SCHEMA_VERSION}`, { path: resolved });
   }
 
-  const check = db.prepare("pragma integrity_check").all() as { integrity_check: string }[];
+  // WR-04, THE LAST KNOWN FAMILY ESCAPE IN THIS FUNCTION. The two blocks either
+  // side of this one are already wrapped, and for the same two reasons: an
+  // unwrapped failure here leaks the CONNECTION as well as escaping the
+  // `ViceError` family, so the caller loses the file handle with no way to
+  // reach it. The shape deliberately matches those two -- close, then refuse
+  // with `AnnoStoreCorruptError` naming the path -- because a store whose
+  // integrity check cannot even RUN is not a store this build can speak to,
+  // which is the same fact the non-`ok` branch below reports.
+  let check: { integrity_check: string }[];
+  try {
+    check = db.prepare("pragma integrity_check").all() as { integrity_check: string }[];
+  } catch (e) {
+    db.close();
+    throw new AnnoStoreCorruptError(`${resolved}: integrity_check could not be run at all (${(e as Error).message})`, { path: resolved });
+  }
   if (check.length !== 1 || check[0].integrity_check !== "ok") {
     db.close();
     throw new AnnoStoreCorruptError(`${resolved}: integrity_check reported ${JSON.stringify(check)}`, { path: resolved });
@@ -1009,40 +1028,102 @@ function runWriteSequence<T>(
     );
   }
 
-  const staging = stageSnapshot(handle, rev);
-
-  handle.db.exec("begin immediate");
-
-  const cas = handle.db.prepare("update anno_meta set revision = revision + 1 where id = 1 and revision = ?").run(rev);
-  if (Number(cas.changes) !== 1) {
-    // THE SECOND NUMBER IS READ BEFORE THE ROLLBACK, and the order is the
-    // point: this is the one refusal path on which a CONCURRENT writer moved
-    // the revision, so it is the path on which the second number is most
-    // informative -- and it is only visible while this transaction still sees
-    // it. Reporting "the revision moved" with one number is the word
-    // "conflict" with extra steps: the caller cannot tell a lost race from a
-    // mistyped base, and cannot say which two values disagreed.
-    const moved = handle.db.prepare("select revision from anno_meta where id = 1").get() as { revision: number } | undefined;
-    handle.db.exec("rollback");
-    discardSnapshot(staging);
-    throw new AnnoStoreStaleRevisionError(
-      `refusing the write: the revision moved under us (expected ${rev}, found ${moved === undefined ? "no meta row" : moved.revision})`,
-      { baseRevision: rev, currentRevision: moved?.revision },
+  // WR-01, THE PRE-LOCK ARM. `stageSnapshot` runs BEFORE `begin immediate`, so
+  // it gets its own handler rather than sharing the outer one below: there is
+  // no transaction to roll back yet and no staged file to discard, so the two
+  // arms genuinely differ in what they have to undo. The reachable input is a
+  // regular FILE sitting where the ring directory should be, which makes
+  // `mkdirSync` throw `EEXIST` with no privilege and no race involved -- and
+  // unwrapped that escaped as a bare `Error`.
+  let staging: string;
+  try {
+    staging = stageSnapshot(handle, rev);
+  } catch (e) {
+    if (e instanceof ViceError) throw e;
+    throw new AnnoStoreError(
+      `${handle.path}: the write sequence failed while staging the pre-mutation snapshot for revision ${rev} ` +
+        `(${(e as Error).message}). Nothing has been changed -- the transaction was not opened.`,
+      { data: { path: handle.path, revision: rev, step: "stage the pre-mutation snapshot" } },
     );
   }
 
-  // ONLY THE WINNER REACHES HERE, which is the whole ownership discipline: the
-  // publication sits between the won compare-and-swap and the pointer-row
-  // insert, so the writer that puts the bytes at the revision's path is exactly
-  // the writer whose row will claim them. A loser never names this path at all.
-  const snapPath = snapshotPathFor(handle, rev);
-  publishSnapshot(staging, snapPath);
+  // WR-01, THE MAIN WINDOW: `begin immediate`, the compare-and-swap, the
+  // publication and the pointer-row insert, wrapped as ONE region. Its catch
+  // undoes both kinds of state this region can leave behind -- an open
+  // transaction with the compare-and-swap applied, and a staged `.tmp` -- and
+  // only then rethrows. A `ViceError` goes through UNCHANGED so no existing
+  // refusal's class or message moves; anything else is wrapped, which is what
+  // keeps the family closed.
+  //
+  // THE INNER ROLLBACK AND DISCARD IN THE CAS-FAILURE BRANCH BELOW ARE NOT
+  // REDUNDANT AND MUST NOT BE "SIMPLIFIED" AWAY. `anno-store.test.ts`'s WR-11
+  // control extracts the slice between `cas.changes` and `publishSnapshot` and
+  // asserts a `rollback` is present inside it, positioned after the
+  // `select revision from anno_meta` read -- that positioning is a VERIFIED
+  // behaviour, because the second number is only visible while that transaction
+  // still sees it. What this handler's own second attempt does on a connection
+  // that branch already rolled back is throw "no transaction is active", which
+  // its own swallowing `try` absorbs; and its second `discardSnapshot` is a
+  // `force: true` no-op.
+  try {
+    handle.db.exec("begin immediate");
 
-  // THE ROW CARRIES A REVISION NUMBER AND NOTHING ELSE. Its location is not
-  // persisted: `snapshotPathFor(handle, revision)` recomputes it at every read
-  // and every delete, so the row cannot come to disagree with the file it
-  // claims (see `retainedRevisions`).
-  handle.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
+    const cas = handle.db.prepare("update anno_meta set revision = revision + 1 where id = 1 and revision = ?").run(rev);
+    if (Number(cas.changes) !== 1) {
+      // THE SECOND NUMBER IS READ BEFORE THE ROLLBACK, and the order is the
+      // point: this is the one refusal path on which a CONCURRENT writer moved
+      // the revision, so it is the path on which the second number is most
+      // informative -- and it is only visible while this transaction still sees
+      // it. Reporting "the revision moved" with one number is the word
+      // "conflict" with extra steps: the caller cannot tell a lost race from a
+      // mistyped base, and cannot say which two values disagreed.
+      const moved = handle.db.prepare("select revision from anno_meta where id = 1").get() as { revision: number } | undefined;
+      handle.db.exec("rollback");
+      discardSnapshot(staging);
+      throw new AnnoStoreStaleRevisionError(
+        `refusing the write: the revision moved under us (expected ${rev}, found ${moved === undefined ? "no meta row" : moved.revision})`,
+        { baseRevision: rev, currentRevision: moved?.revision },
+      );
+    }
+
+    // ONLY THE WINNER REACHES HERE, which is the whole ownership discipline: the
+    // publication sits between the won compare-and-swap and the pointer-row
+    // insert, so the writer that puts the bytes at the revision's path is
+    // exactly the writer whose row will claim them. A loser never names this
+    // path at all.
+    const snapPath = snapshotPathFor(handle, rev);
+    publishSnapshot(staging, snapPath);
+
+    // THE ROW CARRIES A REVISION NUMBER AND NOTHING ELSE. Its location is not
+    // persisted: `snapshotPathFor(handle, revision)` recomputes it at every read
+    // and every delete, so the row cannot come to disagree with the file it
+    // claims (see `retainedRevisions`).
+    handle.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
+  } catch (e) {
+    try {
+      handle.db.exec("rollback");
+    } catch {
+      // Deliberately ignored. On the CAS-failure path this connection has
+      // already been rolled back, so this second attempt reports "no
+      // transaction is active" -- and there is nothing useful to do with a
+      // second error anyway: reporting it would replace the caller's actual
+      // refusal.
+    }
+    // Unconditional and safe unconditionally: `force: true` on a name the
+    // publication may already have renamed away is a no-op, so this call site
+    // does not have to know which side of the publication the failure landed on.
+    // What it removes is the case that matters -- a failure BEFORE the rename,
+    // which would otherwise leave a `.tmp` nothing addresses and that the
+    // reconciliation sweep is deliberately anchored NOT to match, so nothing
+    // would ever clean it up.
+    discardSnapshot(staging);
+    if (e instanceof ViceError) throw e;
+    throw new AnnoStoreError(
+      `${handle.path}: the write sequence failed between the staged snapshot and the pointer-row insert for revision ${rev} ` +
+        `(${(e as Error).message}). The transaction has been rolled back and the staged snapshot discarded, so the revision is unchanged.`,
+      { data: { path: handle.path, revision: rev, step: "publish the snapshot and insert its pointer row" } },
+    );
+  }
 
   // A REFUSAL RAISED INSIDE THE MUTATION MUST ROLL THE WHOLE SEQUENCE BACK.
   // Several entry points below refuse from inside their mutation on purpose,
@@ -1083,7 +1164,26 @@ function runWriteSequence<T>(
     // and OUTSIDE the transaction (trap 10). It sits inside the `doCommit`
     // branch because a sequence that never commits has no accepted write to
     // bound.
-    pruneSnapshots(handle);
+    //
+    // WR-02: WRAPPED, AND DELIBERATELY NOT RETHROWN. By this line the
+    // transaction has already returned, so THE WRITE HAPPENED -- the mutation
+    // and the pointer row are durable. A housekeeping failure that threw from
+    // here would report a write that succeeded as a failure, and the caller
+    // would retry an ADDITIVE verb and produce a second row. That is WR-02's
+    // exact complaint, and it became more likely rather than less once the
+    // sweep started taking the write lock.
+    //
+    // The consequence of swallowing is an UN-PRUNED RING -- extra files, the
+    // direction trap 10's own premise calls harmless and reconcilable by
+    // revision number -- and the next accepted write's sweep resolves it. There
+    // is deliberately NO logging channel: this module has none, and introducing
+    // one here would be new surface with its own stdio hazards on an MCP
+    // transport.
+    try {
+      pruneSnapshots(handle);
+    } catch {
+      // deliberately ignored -- see above
+    }
   }
 
   return { revision: rev + 1, result };
