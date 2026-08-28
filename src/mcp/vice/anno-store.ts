@@ -611,12 +611,83 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * in the kill window SURVIVES a reopen and is identified by its revision, and
  * that is a verified truth of plan 28-06 -- merely LOOKING at a store must not
  * change it, and the orphan a kill window leaves is deliberately the harmless
- * direction. Reconciling on open would redden that test, and rightly.
+ * direction. Reconciling on open would redden that test, and rightly. BOTH
+ * SITES ARE OUTSIDE ANY OPEN TRANSACTION, which is now a REQUIREMENT rather
+ * than an incidental fact: this function opens and closes a transaction of its
+ * own, so calling it from inside one is not supported.
+ *
+ * IT NOW TAKES THE STORE'S WRITE LOCK BEFORE IT DECIDES ANYTHING, and the
+ * reason is a reproduced defect (CR-02) rather than caution. A snapshot becomes
+ * a FILESYSTEM fact (the `renameSync` inside `publishSnapshot`) before it
+ * becomes a TRANSACTIONAL one (the pointer-row insert), so a sweep reading only
+ * its own committed view sees a live writer's published file as unowned and
+ * unlinks it -- after which the winning writer's own pointer row advertises a
+ * revision whose file is gone. That is the orphan-ROW state trap 10 calls
+ * unsurvivable, manufactured by the reconciliation written to prevent it, and
+ * the destroyed revision is permanently unrevertible.
+ *
+ * THE LOCK IS THE EXACT INSTRUMENT, NOT A TIMING HEURISTIC, and the exactness
+ * is derived rather than measured: publication is reachable only from behind a
+ * WON compare-and-swap, and the compare-and-swap runs inside `begin immediate`,
+ * so a writer that is published-but-uncommitted HOLDS this same write lock. The
+ * publish-to-commit window and the write-lock hold are the same interval. A
+ * grace bound over file mtimes was the offered alternative and is refused on the
+ * record: it is a guess about how long a writer may sit between its rename and
+ * its transaction's end, it is wrong for a writer that is paged out or stopped
+ * at a debugger, and the next reproduction of this defect would arrive as a
+ * request to raise the constant.
+ *
+ * `deferred` IS WHAT DECLINING LOOKS LIKE, AND DECLINING IS CORRECT RATHER THAN
+ * BEST-EFFORT. When the lock cannot be taken within the connection's five-second
+ * `busy_timeout`, this function changes NOTHING and returns
+ * `{ droppedRows: [], droppedFiles: [], deferred: true }`. A sweep that pressed
+ * on would be judging a state it cannot establish -- exactly the guess the lock
+ * exists to remove -- so it abstains and REPORTS the abstention, which is what
+ * lets a caller and a test assert it rather than infer it from an absence. The
+ * cost is that the ring may temporarily exceed `MAX_SNAPSHOT_REVISIONS` files
+ * until the next accepted write sweeps successfully: extra FILES, the direction
+ * trap 10's own premise calls harmless and reconcilable by revision number.
+ *
+ * THE NEW CALLER-VISIBLE LATENCY, STATED HERE BECAUSE A READER OF THE OLD
+ * COMMENT WOULD NOT EXPECT IT. Before this change the sweep took no write lock
+ * and could not block at all. After it, under contention, a caller blocks HERE
+ * for up to the connection's five-second `busy_timeout` before it proceeds --
+ * at BOTH of the two call sites: every accepted write (through `pruneSnapshots`
+ * at `runWriteSequence` step 9) and every `revertTo` (through its own step-6
+ * sweep on the restored handle). Phase 29 puts both on an MCP tool path. Each is
+ * bounded at ONE timeout and not two, because `pruneSnapshots` returns early
+ * when this function reports `deferred` rather than running its own autocommit
+ * deletes into the same contention. An honest cost stated at the seam is worth
+ * more than a fast comment.
+ *
+ * AND THE ROW DELETES ARE COMMITTED BEFORE ANY UNLINK, for exactly the reason
+ * `pruneSnapshots`' own loop deletes the row first. The sweep's transaction is
+ * the one genuinely new hazard this repair introduces: a sweep interrupted
+ * between its row deletes and its unlinks must leave extra FILES and never a
+ * pointer row aimed at a deleted file. Pinned by a source-order control in
+ * `anno-store.test.ts`, because all three statements are present in either
+ * arrangement and a presence assertion cannot see the difference.
  */
-export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: number[]; droppedFiles: string[] } {
+export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: number[]; droppedFiles: string[]; deferred: boolean } {
   const droppedRows: number[] = [];
   const droppedFiles: string[] = [];
 
+  // STEP 1. Take the store's write lock BEFORE reading anything, so no writer
+  // can be mid-publication while this function decides. Every failure is
+  // treated the same way and none is rethrown: the expected one is
+  // `SQLITE_BUSY` after the connection's five-second `busy_timeout` (another
+  // writer holds the lock), and any other failure equally means this function
+  // cannot establish the moment it is required to judge from. Declining is the
+  // whole contract -- a partial sweep is precisely what must not happen.
+  try {
+    handle.db.exec("begin immediate");
+  } catch {
+    return { droppedRows, droppedFiles, deferred: true };
+  }
+
+  // STEP 2. With the lock held, compute the full drop set for BOTH directions
+  // before changing anything.
+  //
   // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
   // "retained" means with a second `existsSync` of its own -- a fourth
   // independent decision is exactly how the first three came to disagree, and
@@ -625,28 +696,58 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
   const retained = new Set(retainedRevisions(handle));
 
   const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
-  const dropRow = handle.db.prepare("delete from anno_snapshot where revision = ?");
-  for (const row of rows) {
-    if (retained.has(row.revision)) continue;
-    dropRow.run(row.revision);
-    droppedRows.push(row.revision);
-  }
+  const orphanRows = rows.map((row) => row.revision).filter((revision) => !retained.has(revision));
 
   // A store that has never been written has no ring directory at all, and
-  // `readdirSync` throws on an absent one. That is not a half-state.
+  // `readdirSync` throws on an absent one. That is not a half-state -- and the
+  // check lives HERE, inside the drop-set computation, rather than returning
+  // early: an early return from this point would leave the sweep's own
+  // transaction OPEN on the caller's connection. With no directory there are
+  // simply no orphan files, and the function falls through to close its
+  // transaction like any other run.
   //
   // NAMED THROUGH `snapshotDirFor` AND ONLY THROUGH IT, which is what confines
   // this sweep to a ring this store can be the owner of. It cannot see -- and
   // therefore cannot delete -- a legacy `<dir>/snapshots` ring, or a ring
   // belonging to a neighbouring store file in the same directory.
   const snapshotDir = snapshotDirFor(handle);
-  if (!existsSync(snapshotDir)) return { droppedRows, droppedFiles };
+  const orphanFiles: string[] = [];
+  if (existsSync(snapshotDir)) {
+    for (const name of readdirSync(snapshotDir).sort()) {
+      const match = SNAPSHOT_FILE_PATTERN.exec(name);
+      if (!match) continue;
+      if (retained.has(Number(match[1]))) continue;
+      orphanFiles.push(join(snapshotDir, name));
+    }
+  }
 
-  for (const name of readdirSync(snapshotDir).sort()) {
-    const match = SNAPSHOT_FILE_PATTERN.exec(name);
-    if (!match) continue;
-    if (retained.has(Number(match[1]))) continue;
-    const orphan = join(snapshotDir, name);
+  // STEP 3. Delete the orphan pointer rows -- the direction the revert path
+  // cannot survive.
+  const dropRow = handle.db.prepare("delete from anno_snapshot where revision = ?");
+  for (const revision of orphanRows) {
+    dropRow.run(revision);
+    droppedRows.push(revision);
+  }
+
+  // STEP 4. Close the sweep's own transaction through THE module's single
+  // commit site. It must be `commitTransaction` and never a second
+  // `handle.db.exec` of the bare word: `anno-seam.test.ts` asserts this module
+  // contains exactly ONE such statement, because the durability proof's planted
+  // violation must have a single site -- a second literal would split that
+  // planting and let half of it survive.
+  commitTransaction(handle.db);
+
+  // STEP 5, AND ITS POSITION IS THE POINT: only now, with the rows durably
+  // gone, unlink the orphan files. An interruption between step 4 and here
+  // leaves extra FILES, which trap 10's premise calls harmless and
+  // reconcilable by revision number, and never a pointer row aimed at a
+  // deleted file.
+  //
+  // Each unlink is `force: true` inside a SWALLOWING `try`, and only a unlink
+  // that actually happened is reported: an undeletable file must not make the
+  // store unwritable, and leaving it unreported means the NEXT reconciliation
+  // sees it again rather than the store believing it is gone.
+  for (const orphan of orphanFiles) {
     try {
       rmSync(orphan, { force: true });
       droppedFiles.push(orphan);
@@ -657,7 +758,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
     }
   }
 
-  return { droppedRows, droppedFiles };
+  return { droppedRows, droppedFiles, deferred: false };
 }
 
 /**
@@ -683,6 +784,12 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
  * second literal would drift the moment the first one is edited, silently, and
  * a store whose pruning bound disagrees with its declared bound has a revert
  * history shorter than it says it has.
+ *
+ * ITS FIRST STATEMENT NOW TAKES AND RELEASES A TRANSACTION, so `pruneSnapshots`
+ * itself must not be called from inside one -- and under contention that first
+ * statement can block for the connection's five-second `busy_timeout`. See
+ * `reconcileSnapshotRing` for the whole argument and for the latency this adds
+ * at both of its call sites.
  */
 export function pruneSnapshots(handle: AnnoStoreHandle): void {
   // FIRST, BEFORE THE BOUND IS COMPUTED: resolve any half-state, so the bound
@@ -690,7 +797,28 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
   // directory bound hold AFTER A REVERT as well as after a forward-only run --
   // a restore leaves up to `MAX_SNAPSHOT_REVISIONS` files claimed by no row,
   // and a prune that iterates rows alone can never see them.
-  reconcileSnapshotRing(handle);
+  //
+  // AND ITS REPORT IS CONSUMED RATHER THAN DISCARDED. When the sweep DECLINED
+  // to judge -- it could not take the write lock inside the connection's
+  // five-second `busy_timeout`, so another writer is mid-publication -- this
+  // function returns here, before the doomed-set `select`. Two reasons, and the
+  // second is the load-bearing one:
+  //
+  //   1. It bounds the added latency at ONE `busy_timeout` rather than two. The
+  //      doomed-set deletes below are autocommit WRITES, so under the same
+  //      contention they would block a second five seconds and then fail
+  //      `SQLITE_BUSY` -- which the step-9 call site's wrap swallows, making the
+  //      worst case roughly ten seconds of silent added latency for work that is
+  //      guaranteed to be redone.
+  //   2. The doomed set would be computed over a ring the sweep just declined to
+  //      reconcile. Acting on it is the same guess the sweep abstained from,
+  //      with an extra step: a prune that presses on where its own sweep
+  //      abstained publishes a bound the store cannot support.
+  //
+  // The cost is one more accepted write's worth of un-pruned ring -- extra
+  // FILES, the direction trap 10's premise calls harmless and reconcilable by
+  // revision number, and the same direction a deferred sweep already accepts.
+  if (reconcileSnapshotRing(handle).deferred) return;
 
   const floor = currentRevision(handle) - MAX_SNAPSHOT_REVISIONS;
   const doomed = handle.db.prepare("select revision from anno_snapshot where revision < ? order by revision").all(floor) as {
@@ -1300,8 +1428,26 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // revisions whose files an earlier prune removed, and it leaves every
   // snapshot taken AFTER `revision` unclaimed by any row. Both halves are
   // resolved here, so the handle this function hands back never advertises a
-  // revision it cannot deliver and the directory bound holds after a revert as
-  // well as before one.
+  // revision it cannot deliver and the directory bound holds after a revert
+  // -- RECORDED RATHER THAN QUIETLY DELETED, because the second half of that
+  // sentence became false and a rationale that became false is evidence. It
+  // previously ended "and the directory bound holds after a revert as well as
+  // before one", which is now an over-claim: `reconcileSnapshotRing` takes the
+  // store's write lock before it judges, and under contention it DECLINES and
+  // reports `deferred`, handing back a ring it did not reconcile.
+  //
+  //   * THE FIRST CLAUSE SURVIVES UNCHANGED, and is not weakened: the handle
+  //     still never advertises a revision it cannot deliver, because the
+  //     published floor routes through `retainedRevisions`, which requires BOTH
+  //     halves of a revision's record regardless of whether the sweep ran.
+  //   * THE SECOND CLAUSE IS CONDITIONAL. The directory bound holds after a
+  //     revert as well as before one unless the sweep deferred, in which case
+  //     the restored ring stays over-full until the next accepted write sweeps
+  //     it -- extra FILES, the harmless direction, reported rather than silent.
+  //
+  // AND THIS IS THE SECOND OF THE TWO BLOCKING SITES. Under contention the
+  // sweep below can itself stall for up to the connection's five-second
+  // `busy_timeout` before `revertTo` returns.
   const restored = openStore(storePath);
   reconcileSnapshotRing(restored);
   return restored;

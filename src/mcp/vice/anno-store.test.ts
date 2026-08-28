@@ -47,6 +47,7 @@ import {
 import {
   addScope,
   applyWrite,
+  applyWriteWithoutCommit,
   closeStore,
   contradictedCommentsFor,
   createProjectEnum,
@@ -1917,6 +1918,208 @@ test("STORE-04 idempotency across the half-states: a second pruneSnapshots repor
       closeStore(store);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// CR-02 -- WHO MAY JUDGE AN UNCLAIMED SNAPSHOT FILE.
+//
+// Reproduced against committed code by the phase-28 verifier: a snapshot
+// becomes a FILESYSTEM fact (the `renameSync` inside `publishSnapshot`) before
+// it becomes a TRANSACTIONAL one (the pointer-row insert), and
+// `reconcileSnapshotRing` decided ownership from its own connection's
+// COMMITTED view only. For the width of that window a live writer's published
+// file looks unowned, so the sweep unlinked it -- destroying a revision that
+// the winning writer's committed pointer row then advertised and could never
+// deliver, which is the orphan-ROW state trap 10 calls unsurvivable,
+// manufactured by the reconciliation that exists to prevent it.
+//
+// THE REMEDY IS AN EXCLUSION, NOT A TIMING GUESS. Publication is reachable only
+// from behind a won compare-and-swap, and the compare-and-swap runs inside
+// `begin immediate` -- so a published-but-uncommitted writer HOLDS the store's
+// write lock. A sweep that takes `begin immediate` before it reads anything
+// therefore cannot run at all while any writer is inside that window. The
+// publish-to-commit window and the write-lock hold are the same interval.
+//
+// BOTH TESTS BELOW BLOCK FOR ABOUT FIVE SECONDS BY DESIGN. That is the
+// connection's `busy_timeout`, and waiting is the whole point: the sweep waits
+// rather than guessing. Neither is a hang, and neither may be "fixed" by
+// shortening the timeout -- that would turn an exact exclusion back into the
+// tuned constant this defect was closed by refusing.
+// ---------------------------------------------------------------------------
+
+test("CR-02: a sweep cannot delete a snapshot a concurrent writer has published but not yet committed -- the sweep either holds the write lock or does nothing", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const a = openStore(path, { workspaceRoot: dir });
+    let b: ReturnType<typeof openStore> | undefined = openStore(path, { workspaceRoot: dir });
+    try {
+      // Two accepted writes through A, so the ring holds revisions 0 and 1 and
+      // the store is at revision 2. The file the sweep must NOT touch is the
+      // one B is about to publish for revision 2.
+      setDataType(a, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      setDataType(a, { start: 0x1010, endInclusive: 0x101f, dataType: "byte" });
+      assert.equal(currentRevision(a), 2, "two accepted writes put the store at revision 2");
+
+      // B IS HELD DETERMINISTICALLY BETWEEN ITS RENAME AND ITS TRANSACTION'S
+      // END. `applyWriteWithoutCommit` is the existing seam-private export
+      // whose entire purpose is exactly this: it drives the IDENTICAL shipped
+      // write sequence and stops one statement short of the end, so B sits with
+      // its snapshot published, its pointer row inserted-but-unpublished and the
+      // store's write lock held.
+      const held = currentRevision(b);
+      applyWriteWithoutCommit(b, (db) => {
+        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(0x3000, 0x300f, "byte", null);
+      });
+
+      // NON-VACUITY, BOTH HALVES, BEFORE THE SWEEP RUNS. The file has to be
+      // genuinely on disk and genuinely unclaimed by anything A can see, or the
+      // assertion below is about a state that never existed.
+      const published = snapshotPathFor(b, held);
+      assert.ok(existsSync(published), `B's published snapshot for r${held} must be on disk, that is the state under test`);
+      const claimed = a.db.prepare("select revision from anno_snapshot where revision = ?").get(held) as { revision: number } | undefined;
+      assert.equal(claimed, undefined, `no COMMITTED pointer row may claim r${held} yet -- the window is exactly this disagreement`);
+      assert.ok(!retainedRevisions(a).includes(held), "and A's own retained set does not include it, so the sweep would judge it unowned");
+
+      const started = Date.now();
+      const swept = reconcileSnapshotRing(a);
+      const elapsed = Date.now() - started;
+
+      // THE ELAPSED TIME IS ITS OWN ASSERTION, and it is the half that reddens
+      // if a future edit removes the `begin immediate` while keeping the
+      // drop-set computation -- the most plausible way this repair gets undone.
+      assert.ok(
+        elapsed >= 1000,
+        `the sweep must genuinely have BLOCKED on the write lock rather than completing for an unrelated reason, elapsed ${elapsed}ms`,
+      );
+      assert.equal(swept.deferred, true, "a sweep that cannot take the write lock DECLINES and says so rather than judging");
+      assert.deepEqual(swept.droppedRows, [], "a declining sweep drops no pointer row");
+      assert.deepEqual(swept.droppedFiles, [], "and unlinks no file");
+      assert.ok(
+        existsSync(published),
+        `B's published snapshot for r${held} must STILL be on disk -- deleting it is CR-02, and it makes r${held} permanently unrevertible`,
+      );
+    } finally {
+      // Closing a connection with an open transaction rolls it back, which is
+      // what releases the write lock and discards B's uncommitted pointer row.
+      if (b !== undefined) closeStore(b);
+      b = undefined;
+      closeStore(a);
+    }
+  });
+});
+
+test("a prune whose sweep DEFERRED returns early: one busy_timeout and not two, nothing dropped, and the deferred work done by the next uncontended prune", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const a = openStore(path, { workspaceRoot: dir });
+    let b: ReturnType<typeof openStore> | undefined = openStore(path, { workspaceRoot: dir });
+    try {
+      // Its OWN fixture, deliberately not shared with the CR-02 test above:
+      // that one holds two revisions on purpose, which would make every
+      // assertion below vacuous.
+      const writes = MAX_SNAPSHOT_REVISIONS + 2;
+      for (let i = 0; i < writes; i += 1) {
+        setDataType(a, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const floor = currentRevision(a) - MAX_SNAPSHOT_REVISIONS;
+
+      // THE DOOMED SET IS PLANTED, NOT ASSUMED. Step 9's own prune has already
+      // trimmed the ring, so at this point the doomed set is EMPTY and a test
+      // asserting "nothing was pruned" would pass against any implementation.
+      // Each planted revision gets BOTH halves -- a pointer row AND a file --
+      // so it is a genuine doomed-set member rather than an orphan row the
+      // sweep would drop for a different reason.
+      const planted = [floor - 2, floor - 1];
+      for (const rev of planted) {
+        a.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
+        writeFileSync(snapshotPathFor(a, rev), "");
+      }
+      const plantedRows = (): number[] =>
+        (a.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[])
+          .map((row) => row.revision)
+          .filter((revision) => planted.includes(revision));
+      // NON-VACUITY PIN, BEFORE ANY CONTENTION.
+      assert.deepEqual(plantedRows(), planted, "both planted pointer rows must really be there, or the assertions below prove nothing");
+      for (const rev of planted) {
+        assert.ok(rev < floor, `planted revision ${rev} must be strictly below the floor ${floor} -- that is what makes it doomed`);
+        assert.ok(existsSync(snapshotPathFor(a, rev)), `and its file must exist, or the sweep would drop the row as an orphan instead`);
+      }
+
+      // The same deterministic hold as the CR-02 test.
+      applyWriteWithoutCommit(b, (db) => {
+        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(0x4000, 0x400f, "byte", null);
+      });
+
+      const started = Date.now();
+      pruneSnapshots(a); // must NOT throw
+      const elapsed = Date.now() - started;
+
+      assert.ok(elapsed >= 1000, `the prune's own sweep must genuinely have blocked on the write lock, elapsed ${elapsed}ms`);
+      assert.ok(
+        elapsed < 8000,
+        `the added latency must be bounded at ONE busy_timeout and not two: a prune that pressed on into its own doomed-set deletes would ` +
+          `block a second five seconds and then throw SQLITE_BUSY, elapsed ${elapsed}ms`,
+      );
+      assert.deepEqual(plantedRows(), planted, "a deferred sweep means deferred PRUNING: no pointer row may be deleted over a ring the sweep declined to reconcile");
+      for (const rev of planted) {
+        assert.ok(existsSync(snapshotPathFor(a, rev)), `and the planted file for r${rev} is still there`);
+      }
+
+      // THE HALF THAT PROVES THE WORK WAS DEFERRED RATHER THAN ABANDONED.
+      // Without it this test would pass against an implementation that simply
+      // never prunes.
+      closeStore(b);
+      b = undefined;
+      pruneSnapshots(a);
+      assert.deepEqual(plantedRows(), [], "the next UNCONTENDED prune does the work the contended one deferred");
+      for (const rev of planted) {
+        assert.ok(!existsSync(snapshotPathFor(a, rev)), `and unlinks the planted file for r${rev}`);
+      }
+    } finally {
+      if (b !== undefined) closeStore(b);
+      closeStore(a);
+    }
+  });
+});
+
+test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRing the pointer-row delete precedes the commit, and the commit precedes the unlink", () => {
+  // A BEHAVIOURAL assertion cannot see this, for the same reason the prune's
+  // own source-order control exists: all three statements are present in every
+  // arrangement and all three leave the same end state when nothing kills the
+  // process, so only the ORDER distinguishes the harmless half-state from the
+  // forbidden one. The sweep's own transaction is the NEW hazard this repair
+  // introduces -- an interruption between its row deletes and its unlinks -- and
+  // committing the rows first is what makes that interruption leave extra
+  // FILES rather than a pointer row aimed at a deleted file.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement is SQL
+  // text inside a string literal, which strict mode blanks.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+  const start = stripped.indexOf("export function reconcileSnapshotRing");
+  assert.ok(start >= 0, "reconcileSnapshotRing must be findable in the stripped source");
+  const end = stripped.indexOf("\n}", start);
+  assert.ok(end > start, "and its body must terminate at a column-zero closing brace");
+  const body = stripped.slice(start, end);
+
+  // NON-VACUITY FIRST: a failed extraction, or a body missing any of the three
+  // statements, would satisfy the ordering comparisons trivially.
+  assert.ok(body.length > 400, `the extracted reconcileSnapshotRing body must be substantial, got ${body.length} characters`);
+  const rowDelete = body.indexOf("delete from anno_snapshot");
+  const commitCall = body.indexOf("commitTransaction");
+  const unlink = body.indexOf("rmSync");
+  assert.ok(rowDelete >= 0, "the pointer-row delete must be present in the extracted body");
+  assert.ok(commitCall >= 0, "and the module's one commit site must be called from inside the sweep's own transaction");
+  assert.ok(unlink >= 0, "and so must the unlink");
+
+  assert.ok(
+    rowDelete < commitCall,
+    `the pointer-row delete must run INSIDE the sweep's transaction, before it is closed (delete at ${rowDelete}, commitTransaction at ${commitCall})`,
+  );
+  assert.ok(
+    commitCall < unlink,
+    "the row deletes must be DURABLE BEFORE any file is unlinked: an interrupted sweep then leaves extra FILES -- harmless and reconcilable " +
+      `by revision number -- and never a pointer row aimed at a deleted file (commitTransaction at ${commitCall}, unlink at ${unlink})`,
+  );
 });
 
 test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {
