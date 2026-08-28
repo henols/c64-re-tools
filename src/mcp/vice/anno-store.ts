@@ -1262,7 +1262,67 @@ function runWriteSequence<T>(
   }
 
   if (doCommit) {
-    commitTransaction(handle.db);
+    // CR-06, THE COMMIT ARM. This is the ONE statement in the sequence whose
+    // failure leaves the transaction OPEN with everything already applied -- the
+    // compare-and-swap, the caller's mutation and the pointer-row insert -- and
+    // it was outside every handler until this arm was added. A concurrent READER
+    // is enough to trigger it: `COMMIT` of a write transaction needs SQLite's
+    // EXCLUSIVE lock, and step 4's `begin immediate` never excluded readers. It
+    // was reproduced with a genuinely separate OS process holding a read
+    // transaction: a bare `Error: database is locked` after the connection's
+    // 5000 ms `busy_timeout`, outside the `ViceError` family, with the write
+    // lock still held and `currentRevision()` on this connection reporting the
+    // ADVANCED revision for a write that never landed. On the Phase 29 tool
+    // path a handle lives as long as the session, so the leaked write lock
+    // locks every other connection out for that long.
+    //
+    // THE ROLLBACK IS THE REPAIR, not the refusal: it releases the store's write
+    // lock and undoes the compare-and-swap, the caller's mutation and the
+    // pointer-row insert TOGETHER, so `currentRevision()` on this connection
+    // goes back to `rev` and the handle is immediately usable again. Its inner
+    // `catch` swallows for the same stated reason as the two handlers above --
+    // there is nothing useful to do with a second error and reporting it would
+    // replace the caller's actual refusal.
+    //
+    // `discardSnapshot(staging)` is a NO-OP by the time control reaches here:
+    // `publishSnapshot` has already renamed the staged file onto the revision's
+    // published path, so nothing exists under the staging name and `force: true`
+    // returns quietly. It is called anyway so this arm matches the other two and
+    // no future reader has to prove which side of the publication it is on. The
+    // PUBLISHED file is deliberately left behind: with the pointer row rolled
+    // back it is an orphan FILE -- the harmless direction, which the next
+    // accepted write's sweep reclaims.
+    //
+    // The refusal carries `code` from the underlying error when it has one
+    // (IN-05's cheap half, on this wrap only), so a caller can ask whether the
+    // failure was lock contention without substring-matching the message.
+    // `cause` is deliberately NOT added: that needs a new field on
+    // `ViceErrorOptions` in `vice.ts`, a shared module outside this phase.
+    try {
+      commitTransaction(handle.db);
+    } catch (e) {
+      try {
+        handle.db.exec("rollback");
+      } catch {
+        // deliberately ignored -- see above
+      }
+      discardSnapshot(staging);
+      if (e instanceof ViceError) throw e;
+      throw new AnnoStoreError(
+        `${handle.path}: the write for revision ${rev + 1} could not be committed (${(e as Error).message}). ` +
+          `Nothing was written and the transaction has been rolled back, so the store is still at revision ${rev}.`,
+        {
+          code: (e as { code?: number | string }).code,
+          // "committing", NOT "commit", and the spelling is load-bearing:
+          // `anno-seam.test.ts`'s single-commit-site control counts `/\bcommit\b/i`
+          // over this module's stripped source with STRING LITERALS KEPT, so a
+          // `step` reading "commit ..." would be counted as a second commit
+          // statement and redden that control. The gerund has no word boundary
+          // after `commit`, exactly as `commitTransaction` and `doCommit` do not.
+          data: { path: handle.path, revision: rev, step: "committing the write transaction" },
+        },
+      );
+    }
     // STEP 9, AND ITS POSITION IS THE POINT: the prune runs AFTER the commit
     // and OUTSIDE the transaction (trap 10). It sits inside the `doCommit`
     // branch because a sequence that never commits has no accepted write to
