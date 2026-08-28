@@ -183,8 +183,27 @@ export interface AnnoWriteResult {
 }
 
 /**
- * The complete on-disk schema, created in full at first open so
- * `SCHEMA_VERSION` stays 1 and no later work alters an on-disk shape.
+ * The complete on-disk schema, created in full at first open.
+ *
+ * THE REVERSAL THIS RECORDS, kept rather than deleted because a rationale that
+ * became false is evidence. This paragraph used to read "created in full at
+ * first open so `SCHEMA_VERSION` stays 1 and no later work alters an on-disk
+ * shape". The FIRST half is still true and is why every table below exists from
+ * the very first write. The SECOND half became false: `anno_snapshot` carried a
+ * `path text not null` column holding the snapshot's ABSOLUTE location, and two
+ * destructive consequences were reproduced against committed code -- two stores
+ * in one directory sharing one ring (CR-01) and a directory rename plus one
+ * write destroying the whole revert history (CR-03). The column is DROPPED at
+ * `SCHEMA_VERSION` 2 and the location is computed from the handle by
+ * `snapshotDirFor()` at every read and every delete, so there is no persisted
+ * absolute string left for a second namespace -- a bind mount seen from the
+ * host and from a container is this repo's own everyday case -- to disagree
+ * with. `anno-types.ts`'s `SCHEMA_VERSION` doc comment carries the whole
+ * argument and the reason a version-1 store is refused rather than migrated.
+ *
+ * THE DDL CHANGE TOUCHED ONLY `anno_snapshot`. Every other table's column list
+ * below, including the reserved and uninterpreted `bank` columns, is
+ * byte-identical to version 1's.
  *
  * `anno_xref` and its `access_kind` column exist from the very first write.
  * Two requirement texts look like they conflict here and do not: `STORE-05`
@@ -254,8 +273,7 @@ create table anno_xref (
 );
 
 create table anno_snapshot (
-  revision integer primary key,
-  path text not null
+  revision integer primary key
 );
 
 create index anno_range_end_start on anno_range(end_inclusive, start);
@@ -455,12 +473,12 @@ export function snapshotDirFor(handle: AnnoStoreHandle): string {
   return join(handle.dir, basename(handle.path) + SNAPSHOT_DIR_SUFFIX);
 }
 
-/** Where the pre-mutation snapshot of `revision` lives: a `snapshots/` sibling
- * directory of the store file, holding one file per revision. The extension
- * and the layout are decided here on purpose -- changing either later is a
- * user-visible file rename. */
+/** Where the pre-mutation snapshot of `revision` lives: inside the ring
+ * `snapshotDirFor()` names -- a sibling directory named after the store FILE --
+ * holding one file per revision. The extension and the layout are decided here
+ * on purpose -- changing either later is a user-visible file rename. */
 export function snapshotPathFor(handle: AnnoStoreHandle, revision: number): string {
-  return join(handle.dir, "snapshots", `r${revision}.db`);
+  return join(snapshotDirFor(handle), `r${revision}.db`);
 }
 
 /** What `oldestRetainedRevision()` reports when the ring holds NO snapshot at
@@ -473,9 +491,9 @@ export function snapshotPathFor(handle: AnnoStoreHandle, revision: number): stri
 export const NO_RETAINED_REVISION = -1;
 
 /**
- * The anchored filename of one snapshot inside the `snapshots/` sibling
- * directory, and the source of the revision number the reconciliation below
- * derives from a filename alone.
+ * The anchored filename of one snapshot inside the ring directory
+ * `snapshotDirFor()` names, and the source of the revision number the
+ * reconciliation below derives from a filename alone.
  *
  * ANCHORED ON PURPOSE, and the anchoring is load-bearing rather than tidy:
  * plan 28-08 introduces per-attempt STAGING files in this same directory under
@@ -495,9 +513,25 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  * retained revisions in ascending order.
  *
  * A revision is retained when BOTH halves of its record exist: its pointer row
- * in `anno_snapshot` AND its file in `snapshots/`. The pointer row is the
- * INDEX -- it is what a revision number is looked up in -- and the file is the
- * EXISTENCE WITNESS. Neither half is sufficient on its own, and the reason is
+ * in `anno_snapshot` AND its file in the ring `snapshotDirFor()` names. The
+ * pointer row is the INDEX -- it is what a revision number is looked up in --
+ * and the file is the EXISTENCE WITNESS.
+ *
+ * THE WITNESS IS NOW COMPUTED FROM THE HANDLE, not read from the row. Version 1
+ * persisted the snapshot's absolute path in `anno_snapshot.path` and tested THAT
+ * for existence, which is a SECOND TRUTH about one file -- and two truths about
+ * one file are two things that can disagree. They did, twice, both reproduced:
+ * a directory rename invalidated every persisted path at once, after which this
+ * function reported NO retained revisions while the files sat there on disk, and
+ * the next write's prune destroyed them (CR-03). The same shape covers every
+ * adjacent case rather than just that one repro -- a bind mount seen from two
+ * namespaces (this repo's entire architecture is built around that boundary), a
+ * symlinked ancestor, a container/host path pair, a case-insensitive filesystem,
+ * a `realpath` that changes between two opens. Dropping the column removes the
+ * PRIMITIVE: there is no persisted absolute string left, so there is nothing for
+ * a second namespace to disagree with.
+ *
+ * Neither half is sufficient on its own, and the reason is
  * measured rather than theoretical: the snapshot image is a `vacuum into` of
  * the WHOLE store, so it carries the `anno_snapshot` table with it, and
  * restoring it reinstates pointer rows for revisions whose FILES an earlier
@@ -516,11 +550,8 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  * exist to catch it.
  */
 export function retainedRevisions(handle: AnnoStoreHandle): number[] {
-  const rows = handle.db.prepare("select revision, path from anno_snapshot order by revision").all() as {
-    revision: number;
-    path: string;
-  }[];
-  return rows.filter((row) => existsSync(row.path)).map((row) => row.revision);
+  const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
+  return rows.filter((row) => existsSync(snapshotPathFor(handle, row.revision))).map((row) => row.revision);
 }
 
 /**
@@ -601,9 +632,14 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
     droppedRows.push(row.revision);
   }
 
-  // A store that has never been written has no `snapshots/` directory at all,
-  // and `readdirSync` throws on an absent one. That is not a half-state.
-  const snapshotDir = join(handle.dir, "snapshots");
+  // A store that has never been written has no ring directory at all, and
+  // `readdirSync` throws on an absent one. That is not a half-state.
+  //
+  // NAMED THROUGH `snapshotDirFor` AND ONLY THROUGH IT, which is what confines
+  // this sweep to a ring this store can be the owner of. It cannot see -- and
+  // therefore cannot delete -- a legacy `<dir>/snapshots` ring, or a ring
+  // belonging to a neighbouring store file in the same directory.
+  const snapshotDir = snapshotDirFor(handle);
   if (!existsSync(snapshotDir)) return { droppedRows, droppedFiles };
 
   for (const name of readdirSync(snapshotDir).sort()) {
@@ -625,7 +661,8 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
 }
 
 /**
- * Bounds the `snapshots/` sibling directory at `MAX_SNAPSHOT_REVISIONS` by
+ * Bounds the store's own snapshot ring directory (`snapshotDirFor()`) at
+ * `MAX_SNAPSHOT_REVISIONS` by
  * deleting every snapshot older than the newest `MAX_SNAPSHOT_REVISIONS`
  * revisions -- ITS POINTER ROW FIRST, THE FILE SECOND.
  *
@@ -656,9 +693,8 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
   reconcileSnapshotRing(handle);
 
   const floor = currentRevision(handle) - MAX_SNAPSHOT_REVISIONS;
-  const doomed = handle.db.prepare("select revision, path from anno_snapshot where revision < ? order by revision").all(floor) as {
+  const doomed = handle.db.prepare("select revision from anno_snapshot where revision < ? order by revision").all(floor) as {
     revision: number;
-    path: string;
   }[];
 
   for (const row of doomed) {
@@ -681,7 +717,11 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
     // deleted unconditionally after a swallowed failure, so the file became
     // invisible to the bound forever (WR-01's secondary point).
     try {
-      rmSync(row.path, { force: true });
+      // THE PATH IS COMPUTED HERE, at the delete, from the handle -- never read
+      // from the row. A persisted absolute path is environment-controlled input
+      // to an `rmSync`; the only path this delete can name is
+      // `join(snapshotDirFor(handle), "r<digits>.db")`.
+      rmSync(snapshotPathFor(handle, row.revision), { force: true });
     } catch {
       // deliberately ignored -- see above
     }
@@ -870,7 +910,11 @@ function runWriteSequence<T>(
   const snapPath = snapshotPathFor(handle, rev);
   publishSnapshot(staging, snapPath);
 
-  handle.db.prepare("insert into anno_snapshot(revision, path) values (?, ?)").run(rev, snapPath);
+  // THE ROW CARRIES A REVISION NUMBER AND NOTHING ELSE. Its location is not
+  // persisted: `snapshotPathFor(handle, revision)` recomputes it at every read
+  // and every delete, so the row cannot come to disagree with the file it
+  // claims (see `retainedRevisions`).
+  handle.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
 
   // A REFUSAL RAISED INSIDE THE MUTATION MUST ROLL THE WHOLE SEQUENCE BACK.
   // Several entry points below refuse from inside their mutation on purpose,
@@ -1176,8 +1220,14 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * commented, because the ordering is the guarantee.
  */
 export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
-  // STEP 1. The pointer row -- the INDEX half of "retained".
-  const pointer = handle.db.prepare("select path from anno_snapshot where revision = ?").get(revision) as { path: string } | undefined;
+  // STEP 1. The pointer row -- the INDEX half of "retained". An EXISTENCE check
+  // and nothing more: the row carries only its revision number, and the FILE's
+  // location is computed below from the handle rather than read from the row
+  // (see `retainedRevisions` for why a persisted path was removed).
+  const pointer = handle.db.prepare("select revision from anno_snapshot where revision = ?").get(revision) as
+    | { revision: number }
+    | undefined;
+  const snapPath = snapshotPathFor(handle, revision);
 
   // STEP 2, AND ITS POSITION IS THE WHOLE POINT: refuse BEFORE anything is
   // destroyed, and refuse a MISSING FILE with the same named error a missing
@@ -1188,7 +1238,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // "available revisions" figures are built from `retainedRevisions()` and
   // never from the raw rows, so a refusal cannot steer the caller at a
   // revision the very next call would also refuse.
-  if (!pointer || !existsSync(pointer.path)) {
+  if (!pointer || !existsSync(snapPath)) {
     const available = retainedRevisions(handle);
     const oldest = available.length === 0 ? NO_RETAINED_REVISION : available[0];
     throw new AnnoStoreError(
@@ -1201,7 +1251,6 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     );
   }
 
-  const snapPath = pointer.path;
   const storePath = handle.path;
   const dir = handle.dir;
   const staging = `${storePath}.revert-${process.pid}-${revision}`;

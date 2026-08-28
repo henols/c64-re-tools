@@ -113,19 +113,56 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { OPCODES } from "./disasm-opcodes.ts";
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
 
-/** The on-disk schema version every store file carries in `anno_meta`. A
+/**
+ * The on-disk schema version every store file carries in `anno_meta`. A
  * store whose `schema_version` is not this exact value is REFUSED, never
- * silently upgraded. */
-export const SCHEMA_VERSION = 1;
+ * silently upgraded.
+ *
+ * VERSION 2, AND THE REVERSAL IS RECORDED RATHER THAN SILENTLY OVERWRITTEN,
+ * because a rationale that became false is evidence (`anno-store.ts`'s header
+ * discipline, 28-07 P3).
+ *
+ * The sentence still true: a store whose declared version is not this exact
+ * value is refused by name, never upgraded in place.
+ *
+ * The sentence that became false: this constant was `1`, and the DDL beside it
+ * claimed "`SCHEMA_VERSION` stays 1 and no later work alters an on-disk shape".
+ * Version 1 named a snapshot through a PERSISTED ABSOLUTE STRING in
+ * `anno_snapshot.path`, inside a ring directory whose name was the fixed
+ * `<dir>/snapshots`. Two consequences were reproduced against committed code:
+ *
+ *   * TWO STORES IN ONE DIRECTORY SHARED ONE RING under the same
+ *     `r<revision>.db` filenames, so `revertTo` on one store restored the
+ *     OTHER store's whole database, silently and with no error (CR-01).
+ *   * RENAMING THE CONTAINING DIRECTORY invalidated every persisted absolute
+ *     path at once, after which `retainedRevisions()` reported none and the
+ *     next accepted write's prune destroyed the entire revert history (CR-03).
+ *
+ * Version 2 drops `anno_snapshot.path` -- there is no persisted string left for
+ * a second namespace to disagree with -- and derives the location from the
+ * handle at every read and every delete via `snapshotDirFor()`.
+ *
+ * A VERSION-1 STORE IS REFUSED, NOT UPGRADED, and the reason is that the
+ * version-1 ring's OWNERSHIP is not recoverable: CR-01 means two stores may
+ * both have written into `<dir>/snapshots`, and nothing recorded which file
+ * belonged to which store. Any migration would have to guess, attributing one
+ * store's history to another -- CR-01 again with a new cause and no test
+ * watching. The legacy directory is therefore left on disk untouched: never
+ * adopted, never migrated, never deleted, so the bytes stay recoverable by
+ * hand.
+ */
+export const SCHEMA_VERSION = 2;
 
 /** The 6510's address space, inclusive at both ends. */
 export const ADDRESS_MIN = 0x0000;
 export const ADDRESS_MAX = 0xffff;
 
-/** How many pre-mutation snapshots the `snapshots/` sibling directory may
- * hold before the oldest is pruned. Declared here because the bound is a
- * property of the store's format; the pruning that enforces it belongs to the
- * revert surface (`STORE-04`). */
+/** How many pre-mutation snapshots the store's own snapshot ring directory
+ * (`anno-store.ts`'s `snapshotDirFor()` -- a sibling named after the store
+ * FILE, not the fixed `<dir>/snapshots` version 1 used) may hold before the
+ * oldest is pruned. Declared here because the bound is a property of the
+ * store's format; the pruning that enforces it belongs to the revert surface
+ * (`STORE-04`). */
 export const MAX_SNAPSHOT_REVISIONS = 32;
 
 /**

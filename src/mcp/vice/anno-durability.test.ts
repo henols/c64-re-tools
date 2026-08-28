@@ -126,7 +126,7 @@ function observeMutateKillReopen(mode: "commit" | "no-commit"): Observation {
     try {
       const rows = listRanges(reopened);
       const revisionAfterKill = currentRevision(reopened);
-      const snapshotDir = join(dir, "snapshots");
+      const snapshotDir = join(dir, "proj.annostore.snapshots");
       const snapshotFilesAfterKill = existsSync(snapshotDir) ? readdirSync(snapshotDir).sort() : [];
       const snapshotRowsAfterKill = (
         reopened.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]
@@ -307,7 +307,7 @@ test("an orphan snapshot file left in the kill window is identified by its revis
     // not about the window's width. The revision this orphan claims is chosen
     // ABOVE every real one, which is the case that would matter if the read
     // path ever consulted the directory listing instead of the pointer rows.
-    const snapshotDir = join(dir, "snapshots");
+    const snapshotDir = join(dir, "proj.annostore.snapshots");
     const realSnapshots = readdirSync(snapshotDir).sort();
     assert.ok(realSnapshots.includes("r0.db"), `the pre-mutation snapshot must be on disk, found ${realSnapshots.join(", ")}`);
     const orphan = join(snapshotDir, "r99.db");

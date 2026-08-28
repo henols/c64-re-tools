@@ -991,7 +991,7 @@ test("the snapshot ring is BOUNDED at MAX_SNAPSHOT_REVISIONS: after more writes 
       }
       assert.equal(currentRevision(store), writes, "every one of the writes was accepted and advanced the revision by exactly one");
 
-      const files = readdirSync(join(dir, "snapshots")).sort();
+      const files = readdirSync(join(dir, "proj.annostore.snapshots")).sort();
       assert.ok(
         files.length <= MAX_SNAPSHOT_REVISIONS,
         `the snapshots directory must hold at most ${MAX_SNAPSHOT_REVISIONS} files, found ${files.length}: ${files.join(", ")}`,
@@ -1144,12 +1144,30 @@ test("idempotency of revert: reverting to r yields the state at r, and a SECOND 
  * Deliberately not routed through `retainedRevisions()`: a measurement taken
  * with the function under test would agree with it by construction, which is
  * the one thing a control must not do.
+ *
+ * AND THE SAME REASONING COVERS THE LAYOUT, AND COVERS THE SUFFIX CONSTANT
+ * EXACTLY AS MUCH AS THE HELPER. The ring directory is spelled out HERE, in the
+ * test -- never through `snapshotDirFor()`, and never through an imported
+ * `SNAPSHOT_DIR_SUFFIX`. If a future edit moves the ring, this site must go RED;
+ * a site that asks the code under test where the ring is, or that reuses the
+ * constant the code decides it with, would silently follow it there instead.
+ *
+ * THE STORE FILENAME IS AN EXPLICIT PARAMETER, and it is the independent control
+ * the CR-01 two-stores-in-one-directory test needs: that test's whole subject is
+ * two rings in ONE directory, and a control hardcoded to `proj.annostore` cannot
+ * be pointed at `game.annostore` to express it. Duplicating this helper to work
+ * around that is how the two halves of one control drift apart. The default
+ * keeps every other caller unchanged.
  */
-function ringHalves(handle: ReturnType<typeof openStore>, dir: string): { rowRevisions: number[]; fileRevisions: number[] } {
+function ringHalves(
+  handle: ReturnType<typeof openStore>,
+  dir: string,
+  storeFile: string = "proj.annostore",
+): { rowRevisions: number[]; fileRevisions: number[] } {
   const rowRevisions = (handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
     (row) => row.revision,
   );
-  const snapshotDir = join(dir, "snapshots");
+  const snapshotDir = join(dir, `${storeFile}.snapshots`);
   const fileRevisions = (existsSync(snapshotDir) ? readdirSync(snapshotDir) : [])
     .map((name) => /^r(\d+)\.db$/.exec(name))
     .filter((match): match is RegExpExecArray => match !== null)
@@ -1160,13 +1178,20 @@ function ringHalves(handle: ReturnType<typeof openStore>, dir: string): { rowRev
 
 /** The revisions whose pointer row survives WITHOUT its file -- the forbidden
  * direction, and the state the whole gap exists to close. Read straight off
- * the rows, again independently of the code under test. */
-function orphanRowRevisions(handle: ReturnType<typeof openStore>): number[] {
-  const rows = handle.db.prepare("select revision, path from anno_snapshot order by revision").all() as {
-    revision: number;
-    path: string;
-  }[];
-  return rows.filter((row) => !existsSync(row.path)).map((row) => row.revision);
+ * the rows, again independently of the code under test.
+ *
+ * THE ROW NO LONGER CARRIES A PATH TO TEST. `anno_snapshot` has exactly one
+ * column from `SCHEMA_VERSION` 2 on, so this is the difference of the two halves
+ * `ringHalves` reads -- and it is expressed THROUGH `ringHalves` rather than by
+ * spelling the ring directory a SECOND time in this file. One layout spelling in
+ * the test tree is the point: two would be two halves of one control, free to
+ * drift apart, which is the very failure mode the store side was just fixed for.
+ * `ringHalves` is itself independent of the code under test, so the difference
+ * is too. */
+function orphanRowRevisions(handle: ReturnType<typeof openStore>, dir: string, storeFile: string = "proj.annostore"): number[] {
+  const { rowRevisions, fileRevisions } = ringHalves(handle, dir, storeFile);
+  const onDisk = new Set(fileRevisions);
+  return rowRevisions.filter((revision) => !onDisk.has(revision));
 }
 
 // ---------------------------------------------------------------------------
@@ -1282,7 +1307,7 @@ test("a SECOND revert after a prune: the reconciled ring holds no half-state, th
       // row-only reading of "retained" reddens: the restored image reinstates
       // rows 0..firstFloor-1 whose files the prune removed.
       assert.deepEqual(
-        orphanRowRevisions(store),
+        orphanRowRevisions(store, dir),
         [],
         "a pointer row aimed at a deleted file is the one failure direction the revert path cannot survive",
       );
@@ -1340,7 +1365,7 @@ test("a SECOND revert after a prune: the reconciled ring holds no half-state, th
       } else {
         store = revertTo(store, secondFloor);
         assert.equal(currentRevision(store), secondFloor, "the second revert lands on exactly the floor the store published");
-        assert.deepEqual(orphanRowRevisions(store), [], "and the ring it leaves behind still holds no orphan row");
+        assert.deepEqual(orphanRowRevisions(store, dir), [], "and the ring it leaves behind still holds no orphan row");
       }
     } finally {
       closeStore(store);
@@ -1401,7 +1426,7 @@ test("the DETERMINISTIC succeeding second revert: after a first revert, three re
       const after = ringHalves(store, dir);
       assert.equal(after.fileRevisions.length, after.rowRevisions.length, "the ring the second revert leaves behind holds no half-state either");
       assert.deepEqual(after.fileRevisions, after.rowRevisions, "with the two halves agreeing by revision number");
-      assert.deepEqual(orphanRowRevisions(store), [], "and no pointer row surviving its file");
+      assert.deepEqual(orphanRowRevisions(store, dir), [], "and no pointer row surviving its file");
     } finally {
       closeStore(store);
     }
@@ -1555,7 +1580,7 @@ test("prune half-state A, the orphan ROW (the forbidden direction): a pointer ro
         (row) => row.revision,
       );
       assert.ok(!rowsAfter.includes(victim), `the orphan ROW must be gone after one accepted write, rows are ${JSON.stringify(rowsAfter)}`);
-      assert.deepEqual(orphanRowRevisions(store), [], "and no orphan row survives at all");
+      assert.deepEqual(orphanRowRevisions(store, dir), [], "and no orphan row survives at all");
     } finally {
       closeStore(store);
     }
@@ -1602,7 +1627,7 @@ test("prune half-state B, the orphan FILE (the harmless direction): the store st
         !existsSync(snapshotPathFor(store, victim)),
         `the orphan FILE for r${victim} must be swept by the next accepted write's prune`,
       );
-      const files = readdirSync(join(dir, "snapshots"));
+      const files = readdirSync(join(dir, "proj.annostore.snapshots"));
       assert.ok(
         files.length <= MAX_SNAPSHOT_REVISIONS,
         `the directory bound must hold THROUGH the half-state, found ${files.length} files: ${files.sort().join(", ")}`,
@@ -1675,7 +1700,7 @@ test("STORE-04 idempotency across the half-states: a second pruneSnapshots repor
       store.db.prepare("delete from anno_snapshot where revision = ?").run(retained[0]); // an orphan FILE
       pruneSnapshots(store);
 
-      const filesAfterFirst = readdirSync(join(dir, "snapshots")).sort();
+      const filesAfterFirst = readdirSync(join(dir, "proj.annostore.snapshots")).sort();
       const rowsAfterFirst = ringHalves(store, dir).rowRevisions;
       assert.ok(rowsAfterFirst.length > 0, "the reconciled ring is not empty, so the second prune has something it could wrongly touch");
 
@@ -1684,7 +1709,7 @@ test("STORE-04 idempotency across the half-states: a second pruneSnapshots repor
       assert.deepEqual(second.droppedRows, [], "a reconciled ring has no row left to drop");
       assert.deepEqual(second.droppedFiles, [], "and no file left to sweep");
       pruneSnapshots(store);
-      assert.deepEqual(readdirSync(join(dir, "snapshots")).sort(), filesAfterFirst, "the second prune left the files exactly as the first did");
+      assert.deepEqual(readdirSync(join(dir, "proj.annostore.snapshots")).sort(), filesAfterFirst, "the second prune left the files exactly as the first did");
       assert.deepEqual(ringHalves(store, dir).rowRevisions, rowsAfterFirst, "and the pointer rows exactly as the first did");
 
       // DOUBLE REVERT. The observable store state after "revert to r" and
@@ -1718,7 +1743,7 @@ test("idempotency of open: opening and closing a store twice with no write betwe
     setDataType(first, { start: 0x0810, endInclusive: 0x084f, dataType: "lo_hi_address" });
     const revisionAfterWrite = currentRevision(first);
     const rowsAfterWrite = listRanges(first);
-    const snapshotsAfterWrite = readdirSync(join(dir, "snapshots")).sort();
+    const snapshotsAfterWrite = readdirSync(join(dir, "proj.annostore.snapshots")).sort();
     closeStore(first);
 
     // Opening is a READ, and it must stay one: an open that took a snapshot,
@@ -1730,7 +1755,7 @@ test("idempotency of open: opening and closing a store twice with no write betwe
       try {
         assert.equal(currentRevision(handle), revisionAfterWrite, `open pass ${pass} must not advance the revision`);
         assert.deepEqual(listRanges(handle), rowsAfterWrite, `open pass ${pass} must not change the rows`);
-        assert.deepEqual(readdirSync(join(dir, "snapshots")).sort(), snapshotsAfterWrite, `open pass ${pass} must not add a snapshot`);
+        assert.deepEqual(readdirSync(join(dir, "proj.annostore.snapshots")).sort(), snapshotsAfterWrite, `open pass ${pass} must not add a snapshot`);
       } finally {
         closeStore(handle);
       }
@@ -1999,7 +2024,7 @@ test("a refusal leaves NOTHING behind on disk: neither a stale-base refusal nor 
     const store = openStore(path, { workspaceRoot: dir });
     try {
       setDataType(store, { start: 0x0400, endInclusive: 0x07e7, dataType: "screencode" });
-      const snapshotDir = join(dir, "snapshots");
+      const snapshotDir = join(dir, "proj.annostore.snapshots");
       const tmpEntries = (): string[] => readdirSync(snapshotDir).filter((name) => name.endsWith(".tmp")).sort();
 
       // NON-VACUITY FIRST, and it has to be taken this way round: "no .tmp
