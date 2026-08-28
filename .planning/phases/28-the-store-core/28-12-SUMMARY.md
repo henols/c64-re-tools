@@ -320,3 +320,9 @@ None - no external service configuration required.
 ---
 *Phase: 28-the-store-core*
 *Completed: 2026-08-28*
+
+## Self-Check: PASSED
+
+All modified files present on disk; the CR-04 todo absent from `pending/` and
+present in `completed/`; all three commits (`9e58487`, `001144c`, `03edbbf`)
+present in `git log`.
