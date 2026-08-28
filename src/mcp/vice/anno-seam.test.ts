@@ -13,11 +13,14 @@
 // emits an `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
+import { AnnoStorePathError } from "./anno-types.ts";
+import { closeStore, openStore } from "./anno-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -514,4 +517,100 @@ test("non-vacuity of the test-tree scan: a planted test file naming the specifie
 
   const clean = "// a store test that goes through the seam's own entry points, as every one of them must\nimport { openStore } from './anno-store.ts';\n";
   assert.equal(namesNodeSqlite(stripForSpecifierScan(clean)), false, "and a test file that only goes through the seam must not be reported");
+});
+
+// ---------------------------------------------------------------------------
+// WR-25 -- `openStore`'s unconfined ESCAPE HATCH, pinned to its enumerated
+// sites in the SEAM_PRIVATE_EXPORTS style.
+//
+// Confinement became `openStore`'s default in 28-21, and the escape is what
+// keeps the module's own derived-path opens working. An escape that spreads
+// silently is the old unsafe default returning by another name, which is why
+// this pin exists at all and why it asserts a POSITIVE count rather than only
+// an absence.
+// ---------------------------------------------------------------------------
+
+/** The literal a CALL SITE spells when it asks for the unconfined path. The
+ * option's declaration (`unconfinedModuleDerivedPath?: boolean`) and the
+ * guard's own read (`opts.unconfinedModuleDerivedPath !== true`) deliberately
+ * do NOT match this, so the count below counts uses and not mentions. */
+const ESCAPE_AT_A_CALL_SITE = "unconfinedModuleDerivedPath: true";
+
+/**
+ * The enumerated module-derived opens inside the seam, read off the code at
+ * plan time and asserted here so a fifth one cannot arrive unnoticed:
+ *   1. `snapshotOpenFailure`'s judging open of `snapshotPathFor(handle, revision)`
+ *   2. `revertTo` step 3b's open of the staged copy
+ *   3. `revertTo` step 6's reopen after the rename
+ *   4. `revertTo` step 6's second reopen, on the failed-sweep recovery path
+ */
+const ENUMERATED_DERIVED_OPENS = 4;
+
+test("WR-25 pin: the unconfined escape is used by NO shipped module but the seam, and exactly at its enumerated module-derived opens", () => {
+  // STRICT `codeOnly()` (literal bodies BLANKED, the default): the option's own
+  // name appears inside `openStore`'s refusal MESSAGE, and a guard that counted
+  // that would be counting prose. This is the same reason the extension-loading
+  // gate above uses strict mode.
+  const seamCode = codeOnly(seamSource());
+
+  // THE POSITIVE COUNT IS THE PRIMARY ASSERTION -- it states what must be true
+  // rather than only what must be absent, so a rename that made every scan below
+  // find nothing cannot pass this test.
+  const uses = seamCode.split(ESCAPE_AT_A_CALL_SITE).length - 1;
+  assert.equal(
+    uses,
+    ENUMERATED_DERIVED_OPENS,
+    `the seam must ask for the unconfined path at exactly its ${ENUMERATED_DERIVED_OPENS} enumerated module-derived opens, found ${uses} -- ` +
+      "a fifth use is either a new derived-path open that belongs in the enumeration above, or the old unsafe default returning by another name",
+  );
+
+  const others = shippedTsModules().filter((name) => name !== THE_ONE_SEAM);
+  assert.ok(others.length > 10, `the comparison set must be non-empty, got ${others.length}`);
+  const leaked = others.filter((name) => codeOnly(readFileSync(join(HERE, name), "utf8")).includes("unconfinedModuleDerivedPath"));
+  assert.deepEqual(
+    leaked,
+    [],
+    "no shipped module other than the seam may name the unconfined escape at all -- a path a consumer supplied is never a path this module derived",
+  );
+});
+
+test("WR-25 pin, NON-VACUITY: the scanned shipped module set is real and the seam's stripped source still contains openStore", () => {
+  // The absence half above is trivially satisfied by an empty or unreadable
+  // scan, and the count half is trivially satisfied by a source that was never
+  // read. Both sides are pinned here.
+  const scanned = shippedTsModules();
+  assert.ok(scanned.length > 10, `the shipped module set must be substantial, got ${scanned.length}`);
+  assert.ok(scanned.includes(THE_ONE_SEAM), `the scanned set must contain ${THE_ONE_SEAM}, or the count above scanned nothing`);
+
+  const seamCode = codeOnly(seamSource());
+  assert.ok(seamCode.includes("openStore"), "openStore must exist in the seam's stripped source, or the pin above is decoration");
+});
+
+test("WR-25: the guard itself exists -- openStore refuses BEHAVIOURALLY when neither a workspaceRoot nor the escape is supplied", () => {
+  // ASSERTED THROUGH THE ENTRY POINT, NOT AGAINST SOURCE TEXT, and that is
+  // deliberate: prohibition 28-18 P1 forbids a structural invariant from
+  // constraining the wording of a user-facing message, and a source-text match
+  // on the refusal is one edit away from doing exactly that. The pin above is
+  // structural because it counts CALL SITES; this one is behavioural because it
+  // is about what the function DOES.
+  const dir = mkdtempSync(join(tmpdir(), "anno-seam-"));
+  try {
+    const path = join(dir, "proj.annostore");
+
+    let caught: unknown;
+    try {
+      openStore(path);
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught instanceof AnnoStorePathError, `an unconfined open with no escape must be refused by name; got ${caught}`);
+    assert.equal(existsSync(path), false, "and the refusal must precede creation -- nothing exists at the refused path");
+
+    // AND THE ESCAPE STILL WORKS, so the guard is a gate and not a wall.
+    const handle = openStore(path, { unconfinedModuleDerivedPath: true });
+    closeStore(handle);
+    assert.equal(existsSync(path), true, "the escape opens the same path and creates the store");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
