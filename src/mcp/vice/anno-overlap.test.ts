@@ -96,7 +96,16 @@ import {
   type DataType,
   type RangeRow,
 } from "./anno-types.ts";
-import { applyWrite, closeStore, currentRevision, listRanges, openStore, setComment, setDataType } from "./anno-store.ts";
+import {
+  applyWrite,
+  closeStore,
+  currentRevision,
+  listRanges,
+  openStore,
+  setComment,
+  setDataType,
+  type SetDataTypeResult,
+} from "./anno-store.ts";
 import { codeOnly } from "./shipped-modules.ts";
 import { ViceError } from "./vice.ts";
 
@@ -226,6 +235,13 @@ interface RunCaseResult {
    * an accepted one -- the `after` values below are then the real post-refusal
    * state and can be compared with `before` directly. */
   thrown: unknown;
+  /** The write's own RESULT object, or `null` when the retype threw or when the
+   * retype callback is one of this file's plantings (which do not go through
+   * `setDataType` and therefore have no result to report). Captured because the
+   * row set alone cannot see CR-10's class: a re-paired split table is legal,
+   * re-acceptable and decodable, so the only observable difference between a
+   * correct write and a silently corrupting one is what the store SAYS. */
+  result: SetDataTypeResult | null;
   revisionBefore: number;
   revisionAfter: number;
 }
@@ -237,7 +253,7 @@ interface RunCaseResult {
  * for the non-split and split tables, for the same reason. */
 function runCase(
   kase: { readonly c: number; readonly d: number },
-  retype: (store: ReturnType<typeof openStore>, start: number, endInclusive: number, dataType: DataType) => void,
+  retype: (store: ReturnType<typeof openStore>, start: number, endInclusive: number, dataType: DataType) => SetDataTypeResult | null,
   opts: RunCaseOptions = {},
 ): RunCaseResult {
   const seedStart = opts.seedStart ?? A;
@@ -252,8 +268,9 @@ function runCase(
     const beforeCovered = coveredAddresses(before);
     const revisionBefore = currentRevision(store);
     let thrown: unknown = null;
+    let result: SetDataTypeResult | null = null;
     try {
-      retype(store, kase.c, kase.d, newType);
+      result = retype(store, kase.c, kase.d, newType);
     } catch (e) {
       thrown = e;
     }
@@ -266,6 +283,7 @@ function runCase(
       afterCovered,
       lost: lostAddresses(beforeCovered, afterCovered),
       thrown,
+      result,
       revisionBefore,
       revisionAfter: currentRevision(store),
     };
@@ -273,14 +291,16 @@ function runCase(
   return captured;
 }
 
-/** The production retype path, through its own exported entry point. */
+/** The production retype path, through its own exported entry point. It RETURNS
+ * the write's result, because `reinterpretedSplitTables` is the only channel
+ * through which a split-table fragmentation is observable at all (CR-10). */
 function productionRetype(
   store: ReturnType<typeof openStore>,
   start: number,
   endInclusive: number,
   dataType: DataType,
-): void {
-  setDataType(store, { start, endInclusive, dataType });
+): SetDataTypeResult {
+  return setDataType(store, { start, endInclusive, dataType });
 }
 
 for (const kase of CASES) {
@@ -303,6 +323,18 @@ for (const kase of CASES) {
       r.lost,
       [],
       `case ${kase.n}: every address that carried a type before the retype must still carry one afterwards`,
+    );
+
+    // THE POSITIVE DISCRIMINATION for CR-10's report (case-by-case, over a
+    // NON-SPLIT overlapped row). Without this, an implementation that reported
+    // NOTHING ANYWHERE would satisfy every split-side assertion in this file by
+    // being empty everywhere. A non-split row's meaning does not depend on its
+    // extent, so there is nothing to disclose -- and the field is EMPTY rather
+    // than absent, so the caller still reads it unconditionally.
+    assert.deepEqual(
+      r.result?.reinterpretedSplitTables,
+      [],
+      `case ${kase.n}: a NON-SPLIT overlapped row is re-paired by nothing, so the write reports no re-interpretation`,
     );
 
     // ...and the addresses the caller asked for really do carry the new type.
@@ -354,7 +386,7 @@ function retypeByFilterAndInsert(
   start: number,
   endInclusive: number,
   dataType: DataType,
-): void {
+): null {
   applyWrite(store, (db) => {
     const overlapping = db.prepare("select id from anno_range where end_inclusive >= ? and start <= ?").all(start, endInclusive) as {
       id: number;
@@ -365,6 +397,11 @@ function retypeByFilterAndInsert(
     db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
     return true;
   });
+  // A planting does not go through `setDataType`, so it has NO result object --
+  // which is itself the point: a writer that bypasses the entry point cannot
+  // disclose anything, and `null` says so rather than pretending to an empty
+  // report.
+  return null;
 }
 
 test("planting A, OBSERVED and SELECTIVE: filter-and-insert loses bytes in exactly the three cases that have a head or a tail, and is indistinguishable from the real path in the other two", () => {
@@ -817,14 +854,85 @@ test("IN-06: a remainder carries the overlapped row's own `bank` forward, while 
  * in `listRanges()` order -- or `refused`, the remainder rule declining the
  * whole retype. A geometry appears TWICE where the same shape can be either,
  * depending only on which side of an entry boundary the caller's edge falls. */
+
+/**
+ * ONE HAND-DERIVED EXPECTATION of what a fragmenting write DISCLOSED.
+ *
+ * EVERY COUPLE IN EVERY ENTRY BELOW IS WRITTEN OUT FROM THE LAYOUT RULE IN
+ * WORDS -- a table of `n` entries pairs its own byte `i` with its own byte
+ * `n + i` -- and this file deliberately does NOT import the production pairing
+ * function. That makes the table an INDEPENDENT ORACLE rather than the
+ * implementation checking itself, the same pattern `anno-index.test.ts` uses for
+ * its narrowest-wins oracle. Importing `resolveSplitTargets` IS expected and
+ * correct: it is the module's authority on what a row MEANS, and the round-6
+ * verifier names it as the observation for this class.
+ */
+interface ExpectedReinterpretation {
+  readonly rowStart: number;
+  readonly rowEndInclusive: number;
+  readonly dataType: DataType;
+  readonly entryPairsBefore: readonly (readonly [number, number])[];
+  readonly survivors: readonly {
+    readonly start: number;
+    readonly endInclusive: number;
+    readonly entryPairs: readonly (readonly [number, number])[];
+  }[];
+  readonly preservedCount: number;
+}
+
+/** The eight couples the 16-byte `$1000..$100f` seed reads BEFORE any write:
+ * n = 8, so entry `i` reads offset `i` and offset `8 + i`. Written out once by
+ * hand and shared by every entry below, because it is the same table. */
+const SEED_PAIRS_BEFORE: readonly (readonly [number, number])[] = [
+  [0x1000, 0x1008],
+  [0x1001, 0x1009],
+  [0x1002, 0x100a],
+  [0x1003, 0x100b],
+  [0x1004, 0x100c],
+  [0x1005, 0x100d],
+  [0x1006, 0x100e],
+  [0x1007, 0x100f],
+];
+
+/** The 4-byte head `$1000..$1003` as a TWO-entry table: entry `i` reads `i` and `2 + i`. */
+const HEAD_1000_1003: readonly (readonly [number, number])[] = [
+  [0x1000, 0x1002],
+  [0x1001, 0x1003],
+];
+
+/** The 8-byte tail `$1008..$100f` as a FOUR-entry table: entry `i` reads `i` and `4 + i`. */
+const TAIL_1008_100F: readonly (readonly [number, number])[] = [
+  [0x1008, 0x100c],
+  [0x1009, 0x100d],
+  [0x100a, 0x100e],
+  [0x100b, 0x100f],
+];
+
+/** The 8-byte head `$1000..$1007` as a FOUR-entry table. */
+const HEAD_1000_1007: readonly (readonly [number, number])[] = [
+  [0x1000, 0x1004],
+  [0x1001, 0x1005],
+  [0x1002, 0x1006],
+  [0x1003, 0x1007],
+];
+
 interface SplitOverlapCase {
   /** The case number from the five-case table in this file's header. */
   readonly n: number;
   readonly name: string;
-  /** `[c, d]` -- the new range, always retyped to `byte`. */
+  /** `[c, d]` -- the new range. */
   readonly c: number;
   readonly d: number;
   readonly predicate: string;
+  /** What the case retypes the new range TO. Defaults to `byte`; the SAME-TYPE
+   * subrange geometry sets it to `lo_hi_address`, so that case lives in the
+   * table rather than as a one-off test outside it. */
+  readonly newType?: DataType;
+  /** What the write is expected to DISCLOSE. Absent means "the array is empty",
+   * and the per-case test asserts that POSITIVELY -- never by omission, so a
+   * full-cover case is checked to report nothing rather than merely not
+   * checked. */
+  readonly reinterpreted?: readonly ExpectedReinterpretation[];
   /** The expected row set, `[start, endInclusive, dataType]` each, in
    * `listRanges()` (ascending id) order. Absent for a refusing case. */
   readonly rows?: readonly (readonly [number, number, DataType])[];
@@ -865,7 +973,20 @@ const SPLIT_CASES: readonly SplitOverlapCase[] = [
       [0x1008, 0x100f, "lo_hi_address"],
       [0x1004, 0x1007, "byte"],
     ],
-    why: "head 4 bytes and tail 8 bytes -- both even, both legal lo_hi_address tables",
+    reinterpreted: [
+      {
+        rowStart: 0x1000,
+        rowEndInclusive: 0x100f,
+        dataType: "lo_hi_address",
+        entryPairsBefore: SEED_PAIRS_BEFORE,
+        survivors: [
+          { start: 0x1000, endInclusive: 0x1003, entryPairs: HEAD_1000_1003 },
+          { start: 0x1008, endInclusive: 0x100f, entryPairs: TAIL_1008_100F },
+        ],
+        preservedCount: 0,
+      },
+    ],
+    why: "head 4 bytes and tail 8 bytes -- both even, both legal lo_hi_address tables, and BOTH re-paired: an 8-entry table becomes a 2-entry and a 4-entry one, sharing not one couple with the original",
   },
   {
     n: 3,
@@ -886,7 +1007,17 @@ const SPLIT_CASES: readonly SplitOverlapCase[] = [
       [0x1008, 0x100f, "lo_hi_address"],
       [0x0ff8, 0x1007, "byte"],
     ],
-    why: "tail $1008..$100f is 8 bytes -- even",
+    reinterpreted: [
+      {
+        rowStart: 0x1000,
+        rowEndInclusive: 0x100f,
+        dataType: "lo_hi_address",
+        entryPairsBefore: SEED_PAIRS_BEFORE,
+        survivors: [{ start: 0x1008, endInclusive: 0x100f, entryPairs: TAIL_1008_100F }],
+        preservedCount: 0,
+      },
+    ],
+    why: "tail $1008..$100f is 8 bytes -- even, and re-paired: the surviving four entries read four couples the original table never had",
   },
   {
     n: 4,
@@ -907,7 +1038,17 @@ const SPLIT_CASES: readonly SplitOverlapCase[] = [
       [0x1000, 0x1007, "lo_hi_address"],
       [0x1008, 0x101f, "byte"],
     ],
-    why: "head $1000..$1007 is 8 bytes -- even",
+    reinterpreted: [
+      {
+        rowStart: 0x1000,
+        rowEndInclusive: 0x100f,
+        dataType: "lo_hi_address",
+        entryPairsBefore: SEED_PAIRS_BEFORE,
+        survivors: [{ start: 0x1000, endInclusive: 0x1007, entryPairs: HEAD_1000_1007 }],
+        preservedCount: 0,
+      },
+    ],
+    why: "head $1000..$1007 is 8 bytes -- even, and re-paired: the caller's range runs PAST the table's end, so this is the geometry a reader is least likely to think of as an edit to the table at all",
   },
   {
     n: 5,
@@ -917,6 +1058,63 @@ const SPLIT_CASES: readonly SplitOverlapCase[] = [
     predicate: "a < c && c <= b && d >= b",
     refused: true,
     why: "head $1000..$1008 is 9 bytes -- odd",
+  },
+  {
+    n: 5,
+    name: "MIDPOINT split -- the caller's range abuts the table's exact halfway point",
+    c: 0x1008,
+    d: SPLIT_B,
+    predicate: "a < c && c <= b && d >= b",
+    rows: [
+      [0x1000, 0x1007, "lo_hi_address"],
+      [0x1008, 0x100f, "byte"],
+    ],
+    reinterpreted: [
+      {
+        rowStart: 0x1000,
+        rowEndInclusive: 0x100f,
+        dataType: "lo_hi_address",
+        entryPairsBefore: SEED_PAIRS_BEFORE,
+        survivors: [{ start: 0x1000, endInclusive: 0x1007, entryPairs: HEAD_1000_1007 }],
+        preservedCount: 0,
+      },
+    ],
+    why:
+      "THE SHARPEST INSTANCE OF ADJACENCY, not a duplicate of the even-head entry above it: that one's range runs PAST the table, " +
+      "while this one ENDS exactly at b, cutting the 16-byte table at its own halfway point $1007/$1008 -- the single boundary a " +
+      "reader most expects the two halves to survive. It preserves nothing either. Every one of the surviving four entries now " +
+      "reads its partner 4 bytes away instead of 8",
+  },
+  {
+    n: 3,
+    name: "SAME-TYPE subrange -- lo_hi_address over a sub-range of a lo_hi_address table",
+    c: 0x1004,
+    d: 0x1007,
+    predicate: "a < c && d < b",
+    newType: "lo_hi_address",
+    rows: [
+      [0x1000, 0x1003, "lo_hi_address"],
+      [0x1008, 0x100f, "lo_hi_address"],
+      [0x1004, 0x1007, "lo_hi_address"],
+    ],
+    reinterpreted: [
+      {
+        rowStart: 0x1000,
+        rowEndInclusive: 0x100f,
+        dataType: "lo_hi_address",
+        entryPairsBefore: SEED_PAIRS_BEFORE,
+        survivors: [
+          { start: 0x1000, endInclusive: 0x1003, entryPairs: HEAD_1000_1003 },
+          { start: 0x1008, endInclusive: 0x100f, entryPairs: TAIL_1008_100F },
+        ],
+        preservedCount: 0,
+      },
+    ],
+    why:
+      "THE SHARPEST INSTANCE OF THE FULLY-INSIDE GEOMETRY, not a duplicate of the even-remainder entry above it: nothing about the " +
+      "TYPE changed anywhere. The caller asked for lo_hi_address over a sub-range of a lo_hi_address table and got three " +
+      "lo_hi_address tables, none of whose couples is one of the original eight. ONE record with TWO survivors -- survivors are not " +
+      "records, so this case says nothing about the report's ARRAY order; the two-row SEQUENCE step covers that",
   },
 ];
 
@@ -960,9 +1158,33 @@ test("the SPLIT case definitions really do satisfy their own predicates, and the
     [1, 2, 3, 4, 5],
     "all five geometries are exercised against the split row",
   );
-  assert.equal(SPLIT_CASES.length, 8, "eight entries -- a shrunken table is a weakened proof");
-  assert.equal(SPLIT_CASES.filter((k) => k.refused === true).length, 3, "three refusing entries: cases 3, 4 and 5 with an odd remainder");
-  assert.equal(SPLIT_CASES.filter((k) => k.rows !== undefined).length, 5, "five entries whose row set is asserted by value");
+  assert.equal(SPLIT_CASES.length, 10, "ten entries -- eight, plus the midpoint split and the same-type subrange; a shrunken table is a weakened proof");
+  assert.equal(
+    SPLIT_CASES.filter((k) => k.refused === true).length,
+    3,
+    "three refusing entries: cases 3, 4 and 5 with an odd remainder. UNCHANGED at 3 on purpose -- see the reinterpreting floor below",
+  );
+  assert.equal(SPLIT_CASES.filter((k) => k.rows !== undefined).length, 7, "seven entries whose row set is asserted by value");
+
+  // THE FOURTH FLOOR, added with CR-10. The three counts above were all
+  // satisfiable by a table that had quietly lost the geometries whose remainder
+  // is LEGAL -- which is the half CR-10 lives in. This one makes a lost
+  // fragmenting geometry visible.
+  assert.equal(
+    SPLIT_CASES.filter((k) => k.reinterpreted !== undefined && k.reinterpreted.length > 0).length,
+    5,
+    "five entries assert a DISCLOSURE by value: the even-remainder fully-inside case, the even tail, the even head, the midpoint " +
+      "split and the same-type subrange. A table that silently lost one of them would still satisfy the three counts above",
+  );
+
+  // Every expectation in the table names a preserved count of ZERO, and that is
+  // a consequence of the layout rather than a convention: no proper fragment of
+  // a split table preserves a single entry pair, at any boundary.
+  for (const kase of SPLIT_CASES) {
+    for (const expected of kase.reinterpreted ?? []) {
+      assert.equal(expected.preservedCount, 0, `case ${kase.n} (${kase.name}): no proper fragment preserves a couple, at any boundary`);
+    }
+  }
 });
 
 for (const kase of SPLIT_CASES) {
@@ -972,7 +1194,7 @@ for (const kase of SPLIT_CASES) {
       seedStart: SPLIT_A,
       seedEndInclusive: SPLIT_B,
       seedType: "lo_hi_address",
-      newType: "byte",
+      newType: kase.newType ?? "byte",
     });
 
     if (kase.refused === true) {
@@ -1011,8 +1233,149 @@ for (const kase of SPLIT_CASES) {
       `case ${kase.n}: invariant A -- the table claims exactly the addresses typed before plus the ones just typed`,
     );
     assert.deepEqual(r.lost, [], `case ${kase.n}: invariant B -- no previously typed address lost its type`);
+
+    // THE DISCLOSURE, BY VALUE (CR-10). Asserted for EVERY accepted entry --
+    // never omitted -- so the two full-cover geometries are positively checked to
+    // report NOTHING rather than merely left unchecked. They report nothing
+    // because no remainder exists, so no preservation is claimed and none is
+    // owed.
+    assert.deepEqual(
+      (r.result?.reinterpretedSplitTables ?? []).map((record) => ({
+        rowStart: record.rowStart,
+        rowEndInclusive: record.rowEndInclusive,
+        dataType: record.dataType,
+        entryPairsBefore: record.entryPairsBefore.map((pair) => [pair[0], pair[1]]),
+        survivors: record.survivors.map((survivor) => ({
+          start: survivor.start,
+          endInclusive: survivor.endInclusive,
+          entryPairs: survivor.entryPairs.map((pair) => [pair[0], pair[1]]),
+        })),
+        preservedCount: record.preservedEntryPairs.length,
+      })),
+      (kase.reinterpreted ?? []).map((expected) => ({
+        rowStart: expected.rowStart,
+        rowEndInclusive: expected.rowEndInclusive,
+        dataType: expected.dataType,
+        entryPairsBefore: expected.entryPairsBefore.map((pair) => [pair[0], pair[1]]),
+        survivors: expected.survivors.map((survivor) => ({
+          start: survivor.start,
+          endInclusive: survivor.endInclusive,
+          entryPairs: survivor.entryPairs.map((pair) => [pair[0], pair[1]]),
+        })),
+        preservedCount: expected.preservedCount,
+      })),
+      `case ${kase.n} (${kase.name}): the write must disclose exactly what it cost -- both entry-pair sets, hand-derived`,
+    );
   });
 }
+
+test("CR-10, THE TARGET-SET COMPARISON over every accepted split geometry: what the surviving rows DECODE TO shares nothing with what the table recorded", () => {
+  // THE ONLY OBSERVATION THAT CAN SEE THIS CLASS. Parity cannot: every fragment
+  // here is even. The row set cannot: it is correct. The round-trip invariant's
+  // decodability check cannot: a re-paired table decodes perfectly. Only
+  // resolving the SAME bytes before and after and comparing the 16-bit targets
+  // distinguishes "still documented" from "documented wrong".
+  const original = resolveSplitTargets(syntheticImage(SPLIT_A, SPLIT_B), "lo_hi_address");
+  assert.deepEqual(
+    [...original.targets],
+    [0x0800, 0x0901, 0x0a02, 0x0b03, 0x0c04, 0x0d05, 0x0e06, 0x0f07],
+    "the eight targets the seed table records over the 00 01 02 ... 0f image",
+  );
+
+  let fragmenting = 0;
+  let fullCover = 0;
+  for (const kase of SPLIT_CASES) {
+    if (kase.refused === true) continue;
+    const r = runCase(kase, productionRetype, {
+      seedStart: SPLIT_A,
+      seedEndInclusive: SPLIT_B,
+      seedType: "lo_hi_address",
+      newType: kase.newType ?? "byte",
+    });
+    const surviving = survivingSplitTargets(r.after, SPLIT_A, SPLIT_B);
+    const label = `case ${kase.n} (${kase.name})`;
+
+    if ((kase.reinterpreted ?? []).length === 0) {
+      // A full cover leaves NO split row inside the seed span, so there is
+      // nothing to compare -- and nothing was claimed preserved.
+      fullCover += 1;
+      assert.deepEqual(surviving, [], `${label}: a full cover leaves no surviving split row to compare, so no preservation is claimed`);
+      continue;
+    }
+
+    fragmenting += 1;
+    assert.ok(surviving.length > 0, `${label}: a fragmenting geometry must leave a surviving split row, or the comparison is vacuous`);
+    const kept = surviving.filter((target) => original.targets.includes(target));
+    assert.deepEqual(
+      kept,
+      [],
+      `${label}: the surviving rows decode CLEANLY to values the table never recorded. original: ` +
+        `${[...original.targets].map((t) => `$${t.toString(16).padStart(4, "0")}`).join(" ")} ; surviving: ` +
+        `${surviving.map((t) => `$${t.toString(16).padStart(4, "0")}`).join(" ")}. Decodability is not preservation`,
+    );
+  }
+
+  assert.equal(fragmenting, 5, "all five fragmenting geometries were compared, not one");
+  assert.equal(fullCover, 2, "and both full-cover geometries were checked to leave nothing to compare");
+});
+
+test("CR-10, THE ROUND-6 VERIFIER'S OWN FIVE DRIVES, re-run verbatim through production entry points", () => {
+  // The five geometries the round-6 verification report drove, at ITS OWN caller
+  // ranges -- two of which (the head-overlap and the tail-overlap) are not the
+  // ranges the case table above happens to use. Re-driven here so the report's
+  // numbers are reproduced literally rather than approximated by a neighbouring
+  // geometry, and so a later reader can line this test up with the report line
+  // for line.
+  const original = resolveSplitTargets(syntheticImage(SPLIT_A, SPLIT_B), "lo_hi_address");
+  const drives: readonly {
+    readonly name: string;
+    readonly c: number;
+    readonly d: number;
+    readonly newType: DataType;
+    readonly survivingRows: number;
+    readonly survivingTargets: readonly number[];
+    readonly survivorPairCounts: readonly number[];
+  }[] = [
+    { name: "mid EVEN fragment", c: 0x1004, d: 0x1007, newType: "byte", survivingRows: 2, survivingTargets: [0x0200, 0x0301, 0x0c08, 0x0d09, 0x0e0a, 0x0f0b], survivorPairCounts: [2, 4] },
+    { name: "head-overlap", c: 0x0ffe, d: 0x1003, newType: "byte", survivingRows: 1, survivingTargets: [0x0a04, 0x0b05, 0x0c06, 0x0d07, 0x0e08, 0x0f09], survivorPairCounts: [6] },
+    { name: "tail-overlap", c: 0x100c, d: 0x1011, newType: "byte", survivingRows: 1, survivingTargets: [0x0600, 0x0701, 0x0802, 0x0903, 0x0a04, 0x0b05], survivorPairCounts: [6] },
+    { name: "midpoint split", c: 0x1008, d: 0x100f, newType: "byte", survivingRows: 1, survivingTargets: [0x0400, 0x0501, 0x0602, 0x0703], survivorPairCounts: [4] },
+    { name: "SAME-TYPE subrange", c: 0x1004, d: 0x1007, newType: "lo_hi_address", survivingRows: 3, survivingTargets: [0x0200, 0x0301, 0x0c08, 0x0d09, 0x0e0a, 0x0f0b, 0x0604, 0x0705], survivorPairCounts: [2, 4] },
+  ];
+
+  for (const drive of drives) {
+    inFreshStore((store) => {
+      seedSplitRow(store);
+      const result = setDataType(store, { start: drive.c, endInclusive: drive.d, dataType: drive.newType });
+      assert.equal(result.changed, true, `${drive.name}: ACCEPTED, exactly as the report records`);
+      assert.deepEqual(result.contradictedComments, [], `${drive.name}: contradicted=0, exactly as the report records`);
+
+      const rows = listRanges(store);
+      const splitRows = rows.filter((row) => isSplitDataType(row.dataType) && row.start >= SPLIT_A && row.endInclusive <= SPLIT_B);
+      assert.equal(splitRows.length, drive.survivingRows, `${drive.name}: the number of surviving split rows the report records`);
+
+      const surviving = survivingSplitTargets(rows, SPLIT_A, SPLIT_B);
+      assert.deepEqual(surviving, [...drive.survivingTargets], `${drive.name}: the surviving target set the report records, by value`);
+      assert.deepEqual(
+        surviving.filter((target) => original.targets.includes(target)),
+        [],
+        `${drive.name}: preserved 0 of 8 -- the report's own verdict, re-observed`,
+      );
+
+      // AND THE DIFFERENCE THIS ROUND MAKES: the report says the call was silent.
+      // It is not any more.
+      assert.equal(result.reinterpretedSplitTables.length, 1, `${drive.name}: ONE overlapped row was fragmented, so ONE record`);
+      const record = result.reinterpretedSplitTables[0];
+      assert.equal(record.entryCountBefore, 8, `${drive.name}: the record says the table WAS 16 bytes wide -- the fact nothing recorded before`);
+      assert.deepEqual(
+        record.survivors.map((survivor) => survivor.entryCount),
+        [...drive.survivorPairCounts],
+        `${drive.name}: each survivor's entry count, head then tail`,
+      );
+      assert.deepEqual(record.preservedEntryPairs, [], `${drive.name}: and it says, in its own report, that it preserved nothing`);
+    });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // WR-08: the two shapes STORE-02's evidence could not distinguish, PINNED.
@@ -1426,7 +1789,7 @@ function retypeWithoutRemainderRule(
   start: number,
   endInclusive: number,
   dataType: DataType,
-): void {
+): null {
   applyWrite(store, (db) => {
     const overlapping = db
       .prepare("select id, start, end_inclusive, data_type, bank from anno_range where end_inclusive >= ? and start <= ? order by id")
@@ -1463,6 +1826,7 @@ function retypeWithoutRemainderRule(
     db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
     return true;
   });
+  return null; // see `retypeByFilterAndInsert` -- a planting has no report.
 }
 
 test("planting C, OBSERVED: the same sequence through a writer without the remainder rule leaves rows the store would refuse, named by value", () => {
