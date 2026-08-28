@@ -604,10 +604,38 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  *
  * The ring has two truths that can disagree, and therefore two half-states:
  *
- *   * AN ORPHAN ROW (a pointer row whose file is gone) is the direction the
- *     revert path CANNOT survive: the store advertises a revision it will then
- *     fail to deliver. Every such row is deleted, and its revision is reported
- *     in `droppedRows`.
+ *   * AN ORPHAN ROW (a pointer row whose file is gone) IS NO LONGER SWEPT AT
+ *     ALL, and the reversal is recorded here rather than left to be inferred
+ *     from an absence. This function used to delete every such row. CR-05
+ *     reproduced, twice, what that costs: the ring is named from
+ *     `basename(handle.path)` -- a PATH SPELLING -- so a SYMLINK ALIAS of the
+ *     store file, or a store-file rename (`mv proj.annostore
+ *     other.annostore`), makes `retainedRevisions()` report every EXISTING
+ *     pointer row as unretained, after which this sweep classified them as
+ *     orphan rows and deleted them under its own committed transaction. A
+ *     reachable revert history was destroyed irreversibly, and restoring the
+ *     original name recovered nothing.
+ *
+ *     THE ROW DIRECTION IS ABANDONED RATHER THAN GUARDED because this sweep
+ *     cannot establish ownership of it in ANY spelling, and a repair that
+ *     judges a state it cannot have produced is the guess prohibitions 28-10 P3
+ *     / 28-11 P4 forbid. Trap 10 calls the orphan-ROW direction "the one the
+ *     revert path cannot survive" and that was true when it was written; it is
+ *     not true of this code. `retainedRevisions()` requires BOTH halves,
+ *     `oldestRetainedRevision()` routes through it, and `revertTo` step 2
+ *     refuses on `!pointer || !existsSync(snapPath)` BEFORE anything is
+ *     destroyed. Every consumer of "retained" already requires the FILE, so an
+ *     orphan row is INERT: the store never advertises it and never follows it.
+ *     Deleting it was hygiene, and hygiene that destroyed a reachable revert
+ *     history is a worse failure than the state it tidied.
+ *
+ *     ROWS STAY BOUNDED WITHOUT THIS SWEEP. `pruneSnapshots`' doomed loop
+ *     deletes every row below `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so
+ *     an orphan row is reaped on the ordinary path once it ages out -- and
+ *     under a wrong spelling that reaping is exactly what the correct spelling
+ *     would also have done at the same revision, so the behaviour converges to
+ *     correct instead of diverging into loss. The residual is extra ROWS, which
+ *     is the direction this module's own trap-10 premise calls harmless.
  *   * AN ORPHAN FILE (a snapshot file no surviving pointer row claims) is the
  *     harmless direction, and it is harmless only until it is FORGOTTEN: the
  *     bound is computed over rows, so an unclaimed file is invisible to it
@@ -659,7 +687,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * `deferred` IS WHAT DECLINING LOOKS LIKE, AND DECLINING IS CORRECT RATHER THAN
  * BEST-EFFORT. When the lock cannot be taken within the connection's five-second
  * `busy_timeout`, this function changes NOTHING and returns
- * `{ droppedRows: [], droppedFiles: [], deferred: true }`. A sweep that pressed
+ * `{ droppedFiles: [], deferred: true }`. A sweep that pressed
  * on would be judging a state it cannot establish -- exactly the guess the lock
  * exists to remove -- so it abstains and REPORTS the abstention, which is what
  * lets a caller and a test assert it rather than infer it from an absence. The
@@ -679,16 +707,18 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * deletes into the same contention. An honest cost stated at the seam is worth
  * more than a fast comment.
  *
- * AND THE ROW DELETES ARE COMMITTED BEFORE ANY UNLINK, for exactly the reason
- * `pruneSnapshots`' own loop deletes the row first. The sweep's transaction is
- * the one genuinely new hazard this repair introduces: a sweep interrupted
- * between its row deletes and its unlinks must leave extra FILES and never a
- * pointer row aimed at a deleted file. Pinned by a source-order control in
- * `anno-store.test.ts`, because all three statements are present in either
- * arrangement and a presence assertion cannot see the difference.
+ * AND THE TRANSACTION IS STILL CLOSED BEFORE ANY UNLINK, for exactly the reason
+ * `pruneSnapshots`' own loop deletes the row first. This used to be stated as
+ * "the row deletes are committed before any unlink"; there are no row deletes
+ * left (see the ORPHAN ROW bullet above), so what the ordering now guarantees is
+ * narrower and is stated narrowly: an interruption between the commit and the
+ * unlinks leaves extra FILES, never a pointer row aimed at a deleted file.
+ * Pinned by a source-order control in `anno-store.test.ts`, which since CR-05
+ * asserts the ABSENCE of any pointer-row delete in this body as well as the
+ * surviving commit-before-unlink order -- a presence assertion cannot see
+ * either.
  */
-export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: number[]; droppedFiles: string[]; deferred: boolean } {
-  const droppedRows: number[] = [];
+export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: string[]; deferred: boolean } {
   const droppedFiles: string[] = [];
 
   // STEP 1. Take the store's write lock BEFORE reading anything, so no writer
@@ -701,11 +731,11 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
   try {
     handle.db.exec("begin immediate");
   } catch {
-    return { droppedRows, droppedFiles, deferred: true };
+    return { droppedFiles, deferred: true };
   }
 
-  // STEP 2. With the lock held, compute the full drop set for BOTH directions
-  // before changing anything.
+  // STEP 2. With the lock held, compute the drop set -- which since CR-05 has
+  // exactly ONE direction, the FILE direction -- before changing anything.
   //
   // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
   // "retained" means with a second `existsSync` of its own -- a fourth
@@ -713,9 +743,6 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
   // it would also make the row-only regression invisible to the proofs that
   // exist to catch it.
   const retained = new Set(retainedRevisions(handle));
-
-  const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
-  const orphanRows = rows.map((row) => row.revision).filter((revision) => !retained.has(revision));
 
   // A store that has never been written has no ring directory at all, and
   // `readdirSync` throws on an absent one. That is not a half-state -- and the
@@ -740,13 +767,10 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
     }
   }
 
-  // STEP 3. Delete the orphan pointer rows -- the direction the revert path
-  // cannot survive.
-  const dropRow = handle.db.prepare("delete from anno_snapshot where revision = ?");
-  for (const revision of orphanRows) {
-    dropRow.run(revision);
-    droppedRows.push(revision);
-  }
+  // STEP 3 IS GONE ON PURPOSE, and its absence is the fix. It deleted every
+  // pointer row this handle's spelling of the ring could not vouch for; under a
+  // second spelling of the same store file that was every row it had (CR-05).
+  // The whole argument is in the ORPHAN ROW bullet above.
 
   // STEP 4. Close the sweep's own transaction through THE module's single
   // commit site. It must be `commitTransaction` and never a second
@@ -756,11 +780,11 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
   // planting and let half of it survive.
   commitTransaction(handle.db);
 
-  // STEP 5, AND ITS POSITION IS THE POINT: only now, with the rows durably
-  // gone, unlink the orphan files. An interruption between step 4 and here
-  // leaves extra FILES, which trap 10's premise calls harmless and
-  // reconcilable by revision number, and never a pointer row aimed at a
-  // deleted file.
+  // STEP 5, AND ITS POSITION IS THE POINT: only now, with the sweep's
+  // transaction durably closed, unlink the orphan files. An interruption
+  // between step 4 and here leaves extra FILES, which trap 10's premise calls
+  // harmless and reconcilable by revision number, and never a pointer row aimed
+  // at a deleted file.
   //
   // Each unlink is `force: true` inside a SWALLOWING `try`, and only a unlink
   // that actually happened is reported: an undeletable file must not make the
@@ -777,7 +801,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedRows: n
     }
   }
 
-  return { droppedRows, droppedFiles, deferred: false };
+  return { droppedFiles, deferred: false };
 }
 
 /**

@@ -23,6 +23,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -1488,26 +1489,44 @@ test("a SECOND revert after a prune: the reconciled ring holds no half-state, th
       store = revertTo(store, firstFloor);
       assert.equal(currentRevision(store), firstFloor, "the first revert lands on the revision it was asked for");
 
-      // (a) NO POINTER ROW MAY SURVIVE ITS FILE. This is the assertion the
-      // row-only reading of "retained" reddens: the restored image reinstates
-      // rows 0..firstFloor-1 whose files the prune removed.
-      assert.deepEqual(
-        orphanRowRevisions(store, dir),
-        [],
-        "a pointer row aimed at a deleted file is the one failure direction the revert path cannot survive",
-      );
+      // (a) NO REVISION THE STORE ADVERTISES MAY LACK EITHER HALF. This used
+      // to demand `orphanRowRevisions == []`, i.e. that no pointer row survive
+      // its file. CR-05 removed the statement that made that true: the sweep
+      // deleted rows it could not establish ownership of, and under a second
+      // spelling of the same store file that was every row the store had, so
+      // the row direction was abandoned. Measured on this path, the restored
+      // image reinstates rows 0..firstFloor-1 whose files an earlier prune
+      // removed and they are now TOLERATED: rows [0..firstFloor-1], files [].
+      //
+      // The invariant that survives -- and the only one worth asserting -- is
+      // that nothing the store ADVERTISES is half-present. `retainedRevisions`
+      // may legitimately be empty here (see the comment above the pre-revert
+      // block: after this revert the ring is empty), so the check is over its
+      // elements, not its length.
+      const advertised = retainedRevisions(store);
+      const halvesAfterRevert = ringHalves(store, dir);
+      for (const revision of advertised) {
+        assert.ok(
+          halvesAfterRevert.rowRevisions.includes(revision) && halvesAfterRevert.fileRevisions.includes(revision),
+          `the store advertises r${revision} as retained, so BOTH halves of its record must exist -- rows ${JSON.stringify(halvesAfterRevert.rowRevisions)}, files ${JSON.stringify(halvesAfterRevert.fileRevisions)}`,
+        );
+      }
 
       // (b) AND NO FILE MAY SURVIVE UNCLAIMED. A revert orphans every snapshot
       // taken after the revision restored -- up to MAX_SNAPSHOT_REVISIONS of
       // them -- and the bound is computed over rows, so an unclaimed file is
-      // invisible to it forever (CR-01 consequence 4).
-      const afterRevert = ringHalves(store, dir);
-      assert.equal(
-        afterRevert.fileRevisions.length,
-        afterRevert.rowRevisions.length,
-        `the two halves of the ring must agree after a revert: files ${JSON.stringify(afterRevert.fileRevisions)} vs rows ${JSON.stringify(afterRevert.rowRevisions)}`,
-      );
-      assert.deepEqual(afterRevert.fileRevisions, afterRevert.rowRevisions, "and they must agree BY REVISION NUMBER, not merely in count");
+      // invisible to it forever (CR-01 consequence 4). Since CR-05 the two
+      // halves are no longer EQUAL -- the rows are a strict superset, measured
+      // [0..firstFloor-1] against [] -- so the claim is SUBSET, not deep-equal:
+      // the unclaimed-FILE direction is still swept and still asserted, while
+      // the row direction is tolerated.
+      const afterRevert = halvesAfterRevert;
+      for (const revision of afterRevert.fileRevisions) {
+        assert.ok(
+          afterRevert.rowRevisions.includes(revision),
+          `no snapshot FILE may survive unclaimed by a pointer row: r${revision} is on disk with no row, files ${JSON.stringify(afterRevert.fileRevisions)} vs rows ${JSON.stringify(afterRevert.rowRevisions)}`,
+        );
+      }
       assert.ok(
         afterRevert.fileRevisions.length <= MAX_SNAPSHOT_REVISIONS,
         `the directory bound must hold AFTER a revert as well as before it, found ${afterRevert.fileRevisions.length} files`,
@@ -1550,7 +1569,19 @@ test("a SECOND revert after a prune: the reconciled ring holds no half-state, th
       } else {
         store = revertTo(store, secondFloor);
         assert.equal(currentRevision(store), secondFloor, "the second revert lands on exactly the floor the store published");
-        assert.deepEqual(orphanRowRevisions(store, dir), [], "and the ring it leaves behind still holds no orphan row");
+        // CR-05, re-stated for consistency with the (a) block above: an orphan
+        // ROW is tolerated, so the claim is the ADVERTISED-revision invariant
+        // rather than an empty orphan set. MEASURED UNREACHED on this path --
+        // `secondFloor` is NO_RETAINED_REVISION both before and after the
+        // change, so this arm never executes -- and re-stated anyway so it does
+        // not become a trap the day the state changes.
+        const afterSecond = ringHalves(store, dir);
+        for (const revision of retainedRevisions(store)) {
+          assert.ok(
+            afterSecond.rowRevisions.includes(revision) && afterSecond.fileRevisions.includes(revision),
+            `the store advertises r${revision}, so both halves of its record must exist after the second revert`,
+          );
+        }
       }
     } finally {
       closeStore(store);
@@ -1592,8 +1623,25 @@ test("the DETERMINISTIC succeeding second revert: after a first revert, three re
       }
 
       const republished = ringHalves(store, dir);
-      assert.equal(republished.rowRevisions.length, 3, "the three writes republished exactly three pointer rows");
-      assert.deepEqual(republished.fileRevisions, republished.rowRevisions, "and three files that agree with them by revision number");
+      // CR-05 RE-BASED THIS PAIR ONTO THE HALF THE THREE WRITES ACTUALLY
+      // PRODUCE. It used to assert `rowRevisions.length === 3` and that the two
+      // halves deep-equal. Since the sweep abstains from the row direction, the
+      // rows carried over from before the revert survive alongside the three
+      // republished ones -- measured 11 rows ([0..10]) against 3 files
+      // ([8,9,10]) -- so both old assertions are red for a state that is
+      // correct. The three writes' own product is the FILE half: that is what
+      // is asserted, plus the surviving no-unclaimed-FILE direction.
+      assert.deepEqual(
+        republished.fileRevisions,
+        [revBefore, revBefore + 1, revBefore + 2],
+        "the three writes republished exactly three snapshot FILES, at the three consecutive revisions starting where the first revert landed",
+      );
+      for (const revision of republished.fileRevisions) {
+        assert.ok(
+          republished.rowRevisions.includes(revision),
+          `no snapshot FILE may survive unclaimed: r${revision} has no pointer row, rows ${JSON.stringify(republished.rowRevisions)}`,
+        );
+      }
 
       const floor = oldestRetainedRevision(store);
       assert.notEqual(floor, NO_RETAINED_REVISION, "the ring is not empty, so the store must publish a floor rather than the empty sentinel");
@@ -1608,10 +1656,26 @@ test("the DETERMINISTIC succeeding second revert: after a first revert, three re
         "and restored EXACTLY the row set captured before the three republishing writes -- the array, not its length",
       );
 
+      // CR-05: the same three sites as in the two-arm test above, re-stated the
+      // same way. Measured after this second revert: rows [0..7], files [] --
+      // so a length equality (0 vs 8), a deep-equal ([] vs [0..7]) and an empty
+      // orphan set are all red for a state that is correct. What survives is
+      // that no FILE is unclaimed and that nothing the store ADVERTISES is
+      // half-present; the tolerated rows are inert because every consumer of
+      // "retained" requires the file as well as the row.
       const after = ringHalves(store, dir);
-      assert.equal(after.fileRevisions.length, after.rowRevisions.length, "the ring the second revert leaves behind holds no half-state either");
-      assert.deepEqual(after.fileRevisions, after.rowRevisions, "with the two halves agreeing by revision number");
-      assert.deepEqual(orphanRowRevisions(store, dir), [], "and no pointer row surviving its file");
+      for (const revision of after.fileRevisions) {
+        assert.ok(
+          after.rowRevisions.includes(revision),
+          `no snapshot FILE may survive unclaimed after the second revert: r${revision} has no pointer row, rows ${JSON.stringify(after.rowRevisions)}`,
+        );
+      }
+      for (const revision of retainedRevisions(store)) {
+        assert.ok(
+          after.rowRevisions.includes(revision) && after.fileRevisions.includes(revision),
+          `the store advertises r${revision} as retained, so BOTH halves of its record must exist -- rows ${JSON.stringify(after.rowRevisions)}, files ${JSON.stringify(after.fileRevisions)}`,
+        );
+      }
     } finally {
       closeStore(store);
     }
@@ -1723,7 +1787,7 @@ test("STORE-02 non-vacuity: the code this gap closure adds is inside the source 
 // statements directly.
 // ---------------------------------------------------------------------------
 
-test("prune half-state A, the orphan ROW (the forbidden direction): a pointer row whose file is gone is never retained, never published as the floor, refused BY NAME rather than crashed on, and swept by the next accepted write", () => {
+test("prune half-state A, the orphan ROW (the inert direction): a pointer row whose file is gone is never retained, never published as the floor, refused BY NAME rather than crashed on, and TOLERATED by the next accepted write", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const store = openStore(path, { workspaceRoot: dir });
@@ -1760,12 +1824,50 @@ test("prune half-state A, the orphan ROW (the forbidden direction): a pointer ro
       assert.ok(listRanges(store).length > 0, "and the rows still readable through it");
 
       // One further accepted write, whose prune reconciles first.
+      //
+      // CR-05 INVERTED THESE TWO ASSERTIONS, AND THE INVERSION IS THE FINDING.
+      // They used to demand that the orphan ROW be GONE after one accepted
+      // write. The sweep that deleted it could not distinguish this row from a
+      // row belonging to a ring reached under another spelling of the same
+      // store file -- a symlink alias, or `mv proj.annostore other.annostore` --
+      // and deleting rows under that ambiguity destroyed a reachable revert
+      // history irreversibly (CR-05, reproduced twice). The sweep now abstains
+      // from the row direction entirely, so with `writes` at
+      // MAX_SNAPSHOT_REVISIONS + 8 the victim is the NEWEST retained revision:
+      // it sits far above the prune's floor of
+      // `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so its row SURVIVES.
+      //
+      // What this test now demonstrates is that the surviving row is INERT --
+      // tolerated, not resolved -- and the three properties that make it so are
+      // the ones already asserted above against this very revision: it is not
+      // retained, it is never published as the floor, and `revertTo` to it
+      // refuses BY NAME inside the ViceError family. They are re-asserted here
+      // AFTER the accepted write, because "still harmless once the sweep has
+      // run over it" is the claim, not "harmless before it".
       setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
       const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
         (row) => row.revision,
       );
-      assert.ok(!rowsAfter.includes(victim), `the orphan ROW must be gone after one accepted write, rows are ${JSON.stringify(rowsAfter)}`);
-      assert.deepEqual(orphanRowRevisions(store, dir), [], "and no orphan row survives at all");
+      assert.ok(
+        rowsAfter.includes(victim),
+        `the orphan ROW must SURVIVE the accepted write -- the sweep no longer deletes a row it cannot establish ownership of (CR-05), rows are ${JSON.stringify(rowsAfter)}`,
+      );
+      assert.deepEqual(
+        orphanRowRevisions(store, dir),
+        [victim],
+        "and the orphan row set is exactly the one this test constructed -- the sweep tolerated it and manufactured no other",
+      );
+      assert.ok(!retainedRevisions(store).includes(victim), "the surviving row is still NOT retained -- both halves are required, and its file is gone");
+      assert.notEqual(oldestRetainedRevision(store), victim, "and it is still never published as the floor");
+      assert.throws(
+        () => revertTo(store, victim),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.ok(e instanceof ViceError, "the refusal stays inside the ViceError family even with the row present");
+          assert.match(e.message, new RegExp(`cannot revert to revision ${victim}`), "and it names the revision that was asked for");
+          return true;
+        },
+      );
     } finally {
       closeStore(store);
     }
@@ -1891,7 +1993,16 @@ test("STORE-04 idempotency across the half-states: a second pruneSnapshots repor
 
       // SECOND PRUNE, back to back. Nothing may move in either direction.
       const second = reconcileSnapshotRing(store);
-      assert.deepEqual(second.droppedRows, [], "a reconciled ring has no row left to drop");
+      // CR-05: the sweep no longer has a ROW direction at all, so there is no
+      // `droppedRows` to compare against `[]`. The assertion is the FIELD'S
+      // ABSENCE rather than a deleted line, so a future re-introduction of
+      // row-sweeping is caught here: a field that can only ever answer one
+      // value is a claim the next reader has to falsify by experiment.
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(second, "droppedRows"),
+        false,
+        "the sweep result must carry no droppedRows field -- the row direction was abandoned by CR-05, not left permanently empty",
+      );
       assert.deepEqual(second.droppedFiles, [], "and no file left to sweep");
       pruneSnapshots(store);
       assert.deepEqual(readdirSync(join(dir, "proj.annostore.snapshots")).sort(), filesAfterFirst, "the second prune left the files exactly as the first did");
@@ -1992,7 +2103,15 @@ test("CR-02: a sweep cannot delete a snapshot a concurrent writer has published 
         `the sweep must genuinely have BLOCKED on the write lock rather than completing for an unrelated reason, elapsed ${elapsed}ms`,
       );
       assert.equal(swept.deferred, true, "a sweep that cannot take the write lock DECLINES and says so rather than judging");
-      assert.deepEqual(swept.droppedRows, [], "a declining sweep drops no pointer row");
+      // CR-05: the row direction is gone from the sweep entirely, so the
+      // declining sweep's "drops no pointer row" claim is now carried by the
+      // field's ABSENCE -- asserted rather than deleted, so re-introducing
+      // row-sweeping reddens this control too.
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(swept, "droppedRows"),
+        false,
+        "the sweep result must carry no droppedRows field -- no sweep, declining or not, can delete a pointer row since CR-05",
+      );
       assert.deepEqual(swept.droppedFiles, [], "and unlinks no file");
       assert.ok(
         existsSync(published),
@@ -2082,18 +2201,33 @@ test("a prune whose sweep DEFERRED returns early: one busy_timeout and not two, 
   });
 });
 
-test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRing the pointer-row delete precedes the commit, and the commit precedes the unlink", () => {
-  // A BEHAVIOURAL assertion cannot see this, for the same reason the prune's
-  // own source-order control exists: all three statements are present in every
-  // arrangement and all three leave the same end state when nothing kills the
-  // process, so only the ORDER distinguishes the harmless half-state from the
-  // forbidden one. The sweep's own transaction is the NEW hazard this repair
-  // introduces -- an interruption between its row deletes and its unlinks -- and
-  // committing the rows first is what makes that interruption leave extra
-  // FILES rather than a pointer row aimed at a deleted file.
+test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRing there is NO pointer-row delete at all, and the commit precedes the unlink", () => {
+  // A BEHAVIOURAL assertion cannot see either clause, for the same reason the
+  // prune's own source-order control exists: the surviving statements are
+  // present in every arrangement and leave the same end state when nothing
+  // kills the process, so only the ORDER distinguishes the harmless half-state
+  // from the forbidden one. The sweep's own transaction is the hazard the 28-11
+  // repair introduced -- an interruption between the transaction and the
+  // unlinks -- and closing the transaction first is what makes that
+  // interruption leave extra FILES rather than a pointer row aimed at a deleted
+  // file.
   //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement is SQL
-  // text inside a string literal, which strict mode blanks.
+  // WHY THE ROW-DELETE CLAUSE CHANGED FROM AN ORDERING TO AN ABSENCE (CR-05):
+  // this control used to assert that the pointer-row delete PRECEDED the
+  // commit. That statement was removed on purpose. The sweep could not
+  // distinguish a row belonging to this ring from a row belonging to a ring
+  // reached under a second spelling of the same store file -- a symlink alias,
+  // or `mv proj.annostore other.annostore` -- and deleting rows under that
+  // ambiguity destroyed a reachable revert history irreversibly, reproduced
+  // twice through production entry points. The ABSENCE is now the guarantee,
+  // and it is asserted here rather than left implicit so a future
+  // re-introduction is caught at the statement rather than at the next
+  // destroyed history.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement whose
+  // absence is asserted would be SQL text inside a string literal, which strict
+  // mode blanks -- and a blanked literal would make the absence assertion pass
+  // vacuously.
   const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
   const start = stripped.indexOf("export function reconcileSnapshotRing");
   assert.ok(start >= 0, "reconcileSnapshotRing must be findable in the stripped source");
@@ -2101,19 +2235,33 @@ test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRin
   assert.ok(end > start, "and its body must terminate at a column-zero closing brace");
   const body = stripped.slice(start, end);
 
-  // NON-VACUITY FIRST: a failed extraction, or a body missing any of the three
-  // statements, would satisfy the ordering comparisons trivially.
+  // NON-VACUITY FIRST: a failed extraction, or a body missing either surviving
+  // statement, would satisfy both the ordering comparison AND the absence
+  // assertion trivially. The length bound and the two presence checks are
+  // exactly what stops the absence clause from being satisfied by an empty
+  // string.
   assert.ok(body.length > 400, `the extracted reconcileSnapshotRing body must be substantial, got ${body.length} characters`);
   const rowDelete = body.indexOf("delete from anno_snapshot");
   const commitCall = body.indexOf("commitTransaction");
   const unlink = body.indexOf("rmSync");
-  assert.ok(rowDelete >= 0, "the pointer-row delete must be present in the extracted body");
-  assert.ok(commitCall >= 0, "and the module's one commit site must be called from inside the sweep's own transaction");
-  assert.ok(unlink >= 0, "and so must the unlink");
-
+  assert.ok(commitCall >= 0, "the module's one commit site must be called from inside the sweep's own transaction");
+  assert.ok(unlink >= 0, "and the unlink must be present in the extracted body");
+  // AND THE POSITIVE CONTROL FOR THE ABSENCE CLAUSE, which is the assertion
+  // that stops it passing for the wrong reason. If `codeOnly(src, true)` ever
+  // stopped keeping literal bodies, the search string would be blanked
+  // everywhere and "no pointer-row delete in the sweep" would be true of a
+  // source that still had one. `pruneSnapshots` is REQUIRED to contain exactly
+  // this statement (its own source-order control asserts the ordering), so
+  // finding it there proves the needle is findable when it is present.
   assert.ok(
-    rowDelete < commitCall,
-    `the pointer-row delete must run INSIDE the sweep's transaction, before it is closed (delete at ${rowDelete}, commitTransaction at ${commitCall})`,
+    stripped.indexOf("delete from anno_snapshot", stripped.indexOf("export function pruneSnapshots")) >= 0,
+    "pruneSnapshots must still contain the pointer-row delete in the stripped source -- otherwise literal bodies are being blanked and the absence assertion below is vacuous",
+  );
+
+  assert.equal(
+    rowDelete,
+    -1,
+    `the sweep must contain NO pointer-row delete at all (CR-05): it cannot establish ownership of the row direction under a second spelling of the store file, so it abstains from it entirely (found one at ${rowDelete})`,
   );
   assert.ok(
     commitCall < unlink,
@@ -2796,6 +2944,90 @@ test("STORE-05 ordering: a REFUSED stale write leaves the surviving rows in the 
       assert.deepEqual(listRanges(reopened), before, "and the identical array after a close and a reopen, so the property is proven on disk");
     } finally {
       closeStore(reopened);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-05 -- A SECOND SPELLING OF THE SAME STORE FILE.
+//
+// Reproduced twice by the phase-28 round-3 verifier, through production entry
+// points, against committed code: the snapshot ring is named from
+// `basename(handle.path)`, so a SYMLINK ALIAS of the store file (or a rename of
+// the store file) names a DIFFERENT ring. `retainedRevisions()` then reports
+// every existing pointer row as unretained -- its file is not in THIS ring --
+// and the sweep at the top of the next prune classified all of them as orphan
+// ROWS and deleted them under its own committed transaction. The revert history
+// was destroyed irreversibly and restoring the original name recovered nothing.
+//
+// The fix is not a better spelling: it is that the sweep ABSTAINS from the row
+// direction entirely, because it cannot establish ownership of it in ANY
+// spelling. The two tests below drive the two reproduced routes.
+// ---------------------------------------------------------------------------
+
+test("CR-05: a store reached through a SYMLINK ALIAS keeps every pointer row and every snapshot file -- the sweep can no longer delete a row it does not own", () => {
+  inTempDir((dir) => {
+    const realPath = join(dir, "real.annostore");
+    let store = openStore(realPath, { workspaceRoot: dir });
+    let aliasHandle: ReturnType<typeof openStore> | undefined;
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const retainedBefore = retainedRevisions(store);
+      const floorBefore = oldestRetainedRevision(store);
+      const realRing = snapshotDirFor(store);
+      const filesBefore = readdirSync(realRing).sort();
+      assert.ok(retainedBefore.length > 0, "the pre-alias ring must genuinely hold retained revisions, or everything below is trivially satisfied");
+      assert.notEqual(floorBefore, NO_RETAINED_REVISION, "and it must publish a floor");
+      closeStore(store);
+
+      // THE SECOND SPELLING. A RELATIVE symlink, because that is the ordinary
+      // unprivileged way one inode acquires two names and it is what the
+      // verifier reproduced.
+      const aliasPath = join(dir, "alias.annostore");
+      symlinkSync("real.annostore", aliasPath);
+
+      // OPENED WITH NO `workspaceRoot`, WHICH IS LOAD-BEARING: that is the exact
+      // shape `revertTo` itself uses (`openStore(storePath)`), and supplying a
+      // root would realpath the alias back onto the real name and make this test
+      // prove nothing.
+      aliasHandle = openStore(aliasPath);
+      const aliasRing = snapshotDirFor(aliasHandle);
+      assert.notEqual(
+        aliasRing,
+        realRing,
+        "NON-VACUITY: the alias handle must name a DIFFERENT ring directory -- a test that accidentally opened the same ring would prove nothing",
+      );
+
+      // ONE accepted write through the alias. Before this change, this single
+      // write's prune swept every pointer row the store had.
+      setDataType(aliasHandle, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+      closeStore(aliasHandle);
+      aliasHandle = undefined;
+
+      // REOPENED BY THE REAL PATH -- the direction that has to still work.
+      store = openStore(realPath, { workspaceRoot: dir });
+      const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+        (row) => row.revision,
+      );
+      for (const revision of retainedBefore) {
+        assert.ok(rowsAfter.includes(revision), `the pointer row for r${revision} must survive a write through the alias, rows are ${JSON.stringify(rowsAfter)}`);
+        assert.ok(existsSync(snapshotPathFor(store, revision)), `and so must its snapshot file, r${revision}`);
+      }
+      assert.deepEqual(readdirSync(realRing).sort(), filesBefore, "the real ring's files are untouched by the alias write");
+      assert.deepEqual(
+        retainedRevisions(store),
+        retainedBefore,
+        "and the store reports exactly the retained list it reported before the alias write -- the revert history is still reachable",
+      );
+      assert.equal(oldestRetainedRevision(store), floorBefore, "the published floor is unchanged");
+
+      store = revertTo(store, 1);
+      assert.equal(currentRevision(store), 1, "and reverting to r1 SUCCEEDS -- before this change the same sequence refused, with every row deleted");
+    } finally {
+      if (aliasHandle !== undefined) closeStore(aliasHandle);
+      closeStore(store);
     }
   });
 });
