@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 21
 waived_count: 0
 fixed_count: 4
-total_count: 23
-last_updated: 2026-08-28T16:57:13.978Z
+total_count: 25
+last_updated: 2026-08-28T17:16:14.108Z
 ---
 
 # Broken Windows Ledger
@@ -38,6 +38,8 @@ last_updated: 2026-08-28T16:57:13.978Z
 | 21 | 28 | deviation | src/mcp/vice/anno-store.ts |  | Plan 28-06's third planting (make the step-5 CAS unconditional) does NOT redden the cross-process test: that refusal comes from the step-2 base-revision check. The tautological CAS reddens only anno-seam.test.ts's structural CAS assertion; the semantic red was obtained by removing the step-2 check instead. Both results recorded at the test site | open |  | 2026-08-27T18:38:16.829Z |  |
 | 22 | 28 | deviation | src/mcp/vice/anno-confinement.test.ts |  | Case 15 cannot assert the plan's expected 40-hop message: the manual bound is structurally unreachable in ancestor position because the kernel's MAXSYMLINKS throws ELOOP at lstat first. Recorded as the finding; the leaf spelling's 40 is asserted beside it. | open |  | 2026-08-28T12:05:16.879Z |  |
 | 23 | 28 | deviation | src/mcp/vice/anno-store.ts |  | publishSnapshot's directory fsync is BEST EFFORT (guarded), not unguarded as 28-17 task 1's action text read: a mandatory directory fsync needs the same read bit readdirSync needs, so it refuses every write against a writable-but-unreadable ring and destroys CR-07's precondition. Failure leaves an orphan ROW (bounded, non-destructive). | open |  | 2026-08-28T16:57:13.978Z |  |
+| 24 | 28 | unrun-verify | src/mcp/vice/anno-store.ts | 432 | openStore's 'integrity_check could not be run at all' arm has no reachable input without filesystem- or SQLite-level fault injection: presence and wiring verified in source, no test exercises it. Carried forward OPEN by round 4 (28-16..28-18) and claimed closed by nothing; recorded as an explicit row in 28-REVIEW.md's round-4 disposition table. | open |  | 2026-08-28T17:16:13.859Z |  |
+| 25 | 28 | deviation | src/mcp/vice/anno-store.ts |  | 28-18's closing gate: deleting step 3b's staged-image validation reddens ONE test (the truncated-image CR-08 test), not the two 28-18 task 3's action text names. The foreign-bytes sibling is absorbed by step 2's snapshotOpenFailure gate one step earlier -- 28-16-SUMMARY.md records the identical re-observation on its own final tree. | open |  | 2026-08-28T17:16:14.108Z |  |
 
 ````json
 [
@@ -315,6 +317,30 @@ last_updated: 2026-08-28T16:57:13.978Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-28T16:57:13.978Z",
+    "resolved_at": null
+  },
+  {
+    "id": 24,
+    "kind": "unrun-verify",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.ts",
+    "line": 432,
+    "description": "openStore's 'integrity_check could not be run at all' arm has no reachable input without filesystem- or SQLite-level fault injection: presence and wiring verified in source, no test exercises it. Carried forward OPEN by round 4 (28-16..28-18) and claimed closed by nothing; recorded as an explicit row in 28-REVIEW.md's round-4 disposition table.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-28T17:16:13.859Z",
+    "resolved_at": null
+  },
+  {
+    "id": 25,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.ts",
+    "line": null,
+    "description": "28-18's closing gate: deleting step 3b's staged-image validation reddens ONE test (the truncated-image CR-08 test), not the two 28-18 task 3's action text names. The foreign-bytes sibling is absorbed by step 2's snapshotOpenFailure gate one step earlier -- 28-16-SUMMARY.md records the identical re-observation on its own final tree.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-28T17:16:14.108Z",
     "resolved_at": null
   }
 ]
