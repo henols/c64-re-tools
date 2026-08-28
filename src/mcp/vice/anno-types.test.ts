@@ -569,8 +569,12 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
       "STILL FORBIDDEN, unchanged: either host/container path-translation seam, any transport import, any census import, and the SQLite " +
       "builtin, which belongs to anno-store.ts alone under STORE-07. WHY THE THREE-ENTRY VERSION BECAME FALSE: workspace confinement has " +
       "to answer whether a path resolves outside the root once symbolic links are followed, and that is a filesystem question. The string " +
-      "comparison the shorter list implied WAS the gap CR-03 reported, and node:fs is the minimum that closes it -- existsSync and " +
-      "realpathSync, nothing more. WHY node:fs IS NOT WHAT THE OLD SENTENCE GUARDED AGAINST: it is a Node builtin, not a seam. The failure " +
+      "comparison the shorter list implied WAS the gap CR-03 reported, and node:fs is the minimum that closes it. WHAT THAT MINIMUM IS " +
+      "GREW ON 2026-08-28, and the growth is recorded rather than quietly absorbed: it was existsSync and realpathSync; it is now those " +
+      "two plus lstatSync and readlinkSync, which is what it takes to stop the ancestor walk at a path ENTRY rather than at a path that " +
+      "RESOLVES (28-VERIFICATION.md gap 2 / 28-REVIEW.md CR-04 -- existsSync follows links, so a DANGLING one read as absent and the walk " +
+      "stepped past it while openStore created the store file outside the root). Four named bindings on one builtin specifier, nothing " +
+      "more. WHY node:fs IS NOT WHAT THE OLD SENTENCE GUARDED AGAINST: it is a Node builtin, not a seam. The failure " +
       "that rationale feared was a store module growing a dependency on the transport or on path translation, and the guard that actually " +
       "enforces that is hostpath-consumers.test.ts's closed consumer set -- which anno-types.ts is still absent from, and which did not " +
       "move. A reader who widens this list further should be looking there.",

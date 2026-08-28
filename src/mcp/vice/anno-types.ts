@@ -107,7 +107,7 @@
 //      code units, so a multi-byte comment passes a code-unit check and then
 //      exceeds the byte bound on disk. `assertCommentText()` measures with a
 //      `TextEncoder`.
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { OPCODES } from "./disasm-opcodes.ts";
@@ -742,8 +742,42 @@ export function parseStoreAddress(input: unknown, opts: { what?: string } = {}):
 }
 
 /**
+ * The maximum number of DANGLING-symlink hops `realpathOfNearestExisting` will
+ * take before refusing. 40 is not an arbitrary comfort number: it is Linux's own
+ * `MAXSYMLINKS`, so a chain this walk refuses is a chain the kernel would refuse
+ * too, and the two disagree about no input.
+ *
+ * The bound exists because a CYCLE (`a -> b`, `b -> a`) is otherwise an infinite
+ * loop inside a function whose input arrives UNVALIDATED from the transport (see
+ * this module's header). `realpathSync` gets `ELOOP` from the kernel for free;
+ * the manual hop below is ours, so the bound has to be ours too.
+ */
+const MAX_SYMLINK_HOPS = 40;
+
+/**
+ * Does the path ENTRY `p` exist -- that is, does this NAME exist in its
+ * directory?
+ *
+ * THIS IS THE WHOLE OF `CR-04`, in two sentences. `existsSync` answers a
+ * different question: "does this path RESOLVE to something?", which follows
+ * symbolic links and therefore reports `false` for a dangling one. `lstat`
+ * answers "does this NAME exist?", which does not follow the link. The two
+ * answers differ for exactly one input class -- a symlink whose target is absent
+ * -- and confinement has always needed the second question while asking the
+ * first.
+ *
+ * `throwIfNoEntry: false` makes the absent case a value rather than an
+ * exception, so the caller has one branch instead of a `try` around a
+ * predicate.
+ */
+function pathEntryExists(p: string): boolean {
+  return lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+}
+
+/**
  * Returns the REAL absolute path of `p`, resolved through the deepest ancestor
- * that actually exists on disk, with the non-existent tail re-joined after it.
+ * whose path ENTRY exists on disk, with the non-existent tail re-joined after
+ * it.
  *
  * WHY THE WALK. The common case is a store file that does NOT exist yet -- the
  * store is created on first open -- so a bare `realpathSync(p)` would throw
@@ -758,34 +792,113 @@ export function parseStoreAddress(input: unknown, opts: { what?: string } = {}):
  * the location a write lands at, which is the only thing confinement can
  * honestly compare.
  *
- * Nothing exists anywhere on the path (the walk reached the filesystem root):
- * there is nothing to resolve, so the plainly-resolved path is the honest
- * answer and is returned unchanged.
+ * REVERSED 2026-08-28, and the reversal is the record rather than a deletion
+ * (this module's header discipline, 28-07 P3). The premise that was RIGHT and
+ * stays: the deepest EXISTING ancestor is the correct stopping point, and the
+ * tail belongs after it. The sentence that became FALSE: this walk used to stop
+ * at "the first path that `existsSync` reports present". `existsSync` FOLLOWS
+ * links, so it reports `false` for a dangling one, and the walk stepped straight
+ * PAST the link instead of stopping at it -- after which the confinement
+ * compared a path the filesystem would later resolve somewhere else entirely.
+ * Reproduced against committed code at `a8187d2`: a dangling leaf link written
+ * `../outside/p.annostore` was ACCEPTED (`A) confinement ACCEPTED, returned:
+ * /tmp/annosym-XXXX/ws/p.annostore`) and `openStore` created the store file
+ * OUTSIDE the workspace root (`A) file created OUTSIDE workspace: true`);
+ * separately, a dangling DIRECTORY link was accepted at the predicate
+ * (`B dangling dir -> ACCEPTED`). `28-VERIFICATION.md` gap 2 / `28-REVIEW.md`
+ * CR-04. The walk now stops on `pathEntryExists`, which is `lstat` and does not
+ * follow the link.
  *
- * Every `realpathSync` failure is rethrown as `AnnoStorePathError` naming the
- * path, so a permission error resolving an ancestor stays inside the
- * `ViceError` family instead of escaping as a bare `Error`.
+ * THE DANGLING STOPPING ENTRY IS RESOLVED BY HAND, because nothing else will:
+ * `realpathSync` cannot resolve a chain whose end does not exist. The hop reads
+ * the link and resolves its target AGAINST THE LINK'S OWN DIRECTORY, never
+ * against the process cwd -- a relative target (`../outside/x`) is the common
+ * form, and resolving it against the cwd is the one way a naive `readlinkSync`
+ * fix gets this wrong. `tail` is deliberately NOT touched by a hop: the link's
+ * own name is CONSUMED by the hop, and the segments below it still hang below
+ * whatever the link resolves to. After the hop the loop re-enters the same walk,
+ * so a CHAIN of dangling links is this one case repeated rather than a new one,
+ * and a hop that lands on a LIVE entry falls through to `realpathSync`, which
+ * resolves the rest of the chain itself. There is no third state.
+ *
+ * Nothing exists anywhere on the path (the walk reached the filesystem root):
+ * there is nothing to resolve, so the answer is built from `current` and `tail`.
+ * Those two are equal to the pre-walk `resolved` when no hop has happened, and
+ * AFTER a hop `resolved` describes a path the walk is no longer on -- returning
+ * it there would be a stale answer about the wrong location.
+ *
+ * Every `realpathSync`, `lstatSync` and `readlinkSync` failure is rethrown as
+ * `AnnoStorePathError` naming the path, so a permission error resolving an
+ * ancestor stays inside the `ViceError` family instead of escaping as a bare
+ * `Error`.
  */
 function realpathOfNearestExisting(p: string): string {
   const resolved = resolve(p);
   const tail: string[] = [];
   let current = resolved;
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) return resolved;
-    tail.unshift(basename(current));
-    current = parent;
+  let hops = 0;
+
+  for (;;) {
+    let reachedFilesystemRoot = false;
+    while (!pathEntryExists(current)) {
+      const parent = dirname(current);
+      if (parent === current) {
+        reachedFilesystemRoot = true;
+        break;
+      }
+      tail.unshift(basename(current));
+      current = parent;
+    }
+    if (reachedFilesystemRoot) {
+      return tail.length === 0 ? current : join(current, ...tail);
+    }
+
+    // The stopping ENTRY exists. Is it a symlink whose target does not? That is
+    // the one class `existsSync` could not see, and the only one needing a hop.
+    let stoppedAtDanglingLink: boolean;
+    try {
+      stoppedAtDanglingLink = lstatSync(current).isSymbolicLink() && !existsSync(current);
+    } catch (e) {
+      throw new AnnoStorePathError(
+        `cannot stat ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+        { path: resolved },
+      );
+    }
+
+    if (stoppedAtDanglingLink) {
+      hops += 1;
+      if (hops > MAX_SYMLINK_HOPS) {
+        throw new AnnoStorePathError(
+          `cannot resolve ${JSON.stringify(resolved)}: more than ${MAX_SYMLINK_HOPS} symbolic-link hops while resolving ` +
+            `${JSON.stringify(current)} -- a symlink cycle or an over-long chain, refused rather than followed`,
+          { path: resolved },
+        );
+      }
+      let link: string;
+      try {
+        link = readlinkSync(current);
+      } catch (e) {
+        throw new AnnoStorePathError(
+          `cannot read the symbolic link ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+          { path: resolved },
+        );
+      }
+      // Against the LINK'S directory, never the process cwd.
+      current = resolve(dirname(current), link);
+      continue;
+    }
+
+    let real: string;
+    try {
+      real = realpathSync(current);
+    } catch (e) {
+      throw new AnnoStorePathError(
+        `cannot resolve the real path of ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+        { path: resolved },
+      );
+    }
+    return tail.length === 0 ? real : join(real, ...tail);
   }
-  let real: string;
-  try {
-    real = realpathSync(current);
-  } catch (e) {
-    throw new AnnoStorePathError(
-      `cannot resolve the real path of ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
-      { path: resolved },
-    );
-  }
-  return tail.length === 0 ? real : join(real, ...tail);
 }
 
 /**

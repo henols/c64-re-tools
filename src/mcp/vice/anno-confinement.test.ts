@@ -53,7 +53,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { closeStore, openStore } from "./anno-store.ts";
 import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.ts";
@@ -214,5 +214,95 @@ test("6. a symlinked workspace ROOT does not make every path look foreign", () =
     } finally {
       closeStore(handle);
     }
+  });
+});
+
+test("7. a DANGLING leaf symlink pointing outside the workspace is REFUSED, and nothing is created outside the root", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+
+    // THE PLANT IS RELATIVE ON PURPOSE. `../outside/p.annostore` is the common
+    // form a link is written in, and resolving it against the PROCESS CWD
+    // instead of against the link's own directory is the one detail a naive
+    // `readlinkSync` fix gets wrong. Written absolute, this test would pass
+    // against that wrong fix; written relative, it does not.
+    symlinkSync(join("..", "outside", "p.annostore"), join(ws, "p.annostore"));
+
+    // NON-VACUITY PIN. A LIVE target would make this the already-passing case 1
+    // (28-09 fixed live links); the whole of CR-04 is the class of name whose
+    // ENTRY exists while its target does not, so the absence is the fixture.
+    assert.equal(
+      existsSync(join(outside, "p.annostore")),
+      false,
+      "precondition: the link's target must NOT exist -- a live target turns this into test 1 and the dangling bypass would go unmeasured",
+    );
+
+    const storePath = join(ws, "p.annostore");
+    assert.throws(
+      () => openStore(storePath, { workspaceRoot: ws }),
+      AnnoStorePathError,
+      "a DANGLING symlink whose target is outside the workspace root must be refused: `existsSync` reports false for it, so the old walk " +
+        "stepped straight PAST the link instead of stopping at it -- the verifier observed `A) confinement ACCEPTED`",
+    );
+
+    // THE HALF THE FINDING ACTUALLY WAS, in test 1's two-part shape. The
+    // verifier's line was `A) file created OUTSIDE workspace: true`: the
+    // confinement returned an in-workspace path while the store file landed
+    // outside the root. A fix that threw but still touched the filesystem would
+    // satisfy the class assertion above and leave the reported defect in place.
+    assert.deepEqual(
+      readdirSync(outside),
+      [],
+      "the refusal must happen BEFORE anything is opened: the directory outside the workspace root must be untouched",
+    );
+    assert.equal(
+      existsSync(join(outside, "p.annostore")),
+      false,
+      "the reproduced defect was a store file created outside the workspace root THROUGH a dangling link -- this is the assertion that catches it",
+    );
+  });
+});
+
+test("9. a dangling link pointing INSIDE the workspace is still FOLLOWED -- the over-refusal control, restated for the dangling case", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+    // Neither `<ws>/real` nor the store file under it exists: the link is
+    // dangling in exactly the way test 7's is, and points INSIDE the root.
+    symlinkSync(join(ws, "real", "p.annostore"), join(ws, "link"));
+    assert.equal(existsSync(join(ws, "real")), false, "precondition: the link's target directory does not exist, so the link is dangling");
+
+    // THIS IS WHAT MAKES TEST 7 MEAN ANYTHING. The easy wrong fix -- refuse
+    // whenever the stopping entry is a symlink -- passes test 7 and every other
+    // refusal case while proving nothing, and it also refuses legitimate
+    // layouts. Test 2 pins this for the LIVE case; the dangling case needs its
+    // own control because the code path that handles it is a different one.
+    //
+    // TWO ASSERTIONS, AND THEY REDDEN AGAINST DIFFERENT WRONG IMPLEMENTATIONS,
+    // which is why neither is folded into the other:
+    //
+    //   * NOT REFUSED. This is the over-refusal control proper. It holds against
+    //     the pre-change code (which stepped past the link entirely) and it
+    //     reddens against a blanket "refuse whenever the stopping entry is a
+    //     symlink" fix -- confirmed by hand against exactly that implementation.
+    //   * FOLLOWED to the link's target. The pre-change code returned the LINK's
+    //     own path (`.../ws/link`, observed) rather than the target's, so this
+    //     half is RED before the fix too. It is the half that says the walk
+    //     RESOLVES a dangling link rather than merely tolerating it: a fix that
+    //     kept stepping past the link would still pass the "not refused" half
+    //     while leaving the whole of CR-04 in place.
+    const resolvedStore = storePathWithinWorkspace(join(ws, "link"), ws);
+    assert.ok(
+      resolvedStore === ws || resolvedStore.startsWith(ws + sep),
+      `a dangling link pointing inside the workspace must NOT be refused and must stay inside the root -- got ${JSON.stringify(resolvedStore)}`,
+    );
+    assert.equal(
+      resolvedStore,
+      join(ws, "real", "p.annostore"),
+      "a dangling link pointing inside the workspace is FOLLOWED to its target location under the root -- the refusal must discriminate, not blanket",
+    );
   });
 });
