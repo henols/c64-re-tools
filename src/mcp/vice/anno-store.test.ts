@@ -3169,70 +3169,75 @@ test("CR-05 (b): renaming the store FILE, writing, and renaming back leaves the 
   });
 });
 
-test("CR-07: a sweep that throws inside its own transaction leaves the caller's connection with NO open transaction", () => {
-  inTempDir((dir) => {
-    // ROOT IGNORES THE MODE BITS, so the construction below would silently
-    // prove nothing: `readdirSync` would succeed, the sweep would never throw,
-    // and every assertion would pass for the wrong reason.
-    if (process.getuid?.() === 0) {
-      assert.ok(
-        true,
-        "SKIPPED as root: an unreadable directory is not constructible when the mode bits are ignored, and a test that cannot build its own precondition must say so rather than pass",
-      );
-      return;
-    }
-
-    const path = join(dir, "proj.annostore");
-    const store = openStore(path, { workspaceRoot: dir });
-    const ring = join(dir, "proj.annostore.snapshots");
-    try {
-      for (let i = 0; i < 3; i += 1) {
-        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
-      }
-      const rowsBefore = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
-        (row) => row.revision,
-      );
-      assert.ok(rowsBefore.length > 0, "the ring must genuinely hold rows, or 'unchanged apart from the new one' is trivially satisfied");
-      const revisionBefore = currentRevision(store);
-
+test(
+  "CR-07: a sweep that throws inside its own transaction leaves the caller's connection with NO open transaction",
+  {
+    // ROOT IGNORES THE MODE BITS, so the construction below cannot be built as
+    // root: `readdirSync` would succeed, the sweep would never throw, and every
+    // assertion would pass for the wrong reason. THE RUNNER REPORTS THIS SKIP
+    // (WR-14). This used to be an in-body vacuous truth assertion carrying its
+    // reason as a message -- which node:test never surfaces and never counts as a
+    // skip, so the suite read 159/159 with this file's only behavioural CR-07
+    // control silently not executed. The precondition is therefore declared where
+    // the runner can COUNT it, in the same form as `anno-confinement.test.ts`
+    // case 14, and its marker string is gone from this file entirely so a
+    // re-introduction is greppable.
+    skip: process.getuid?.() === 0 ? "running as root: root ignores directory mode bits, so an unreadable ring directory is not constructible and this case would pass vacuously" : false,
+  },
+  () => {
+    inTempDir((dir) => {
+      const path = join(dir, "proj.annostore");
+      const store = openStore(path, { workspaceRoot: dir });
+      const ring = join(dir, "proj.annostore.snapshots");
       try {
-        // WRITABLE BUT NOT READABLE. The sweep can still stage and publish into
-        // this directory and can still `existsSync` a path inside it, so the
-        // write itself is entirely ordinary; only the sweep's `readdirSync`
-        // throws. That is the whole point -- the failure is reachable from an
-        // ORDINARY setDataType, not from a test-only entry point.
-        chmodSync(ring, 0o300);
-
-        // PROHIBITION 28-11 P5: the committed write is NOT converted into a
-        // caller-visible failure. Step 9's WR-02 wrap swallows the housekeeping
-        // throw, which is correct -- and is also what made this defect silent.
-        const result = setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
-        assert.equal(result.revision, revisionBefore + 1, "the write is accepted and reports the advanced revision -- a committed write is never reported as a failure");
-
-        // THE ASSERTION THIS TEST EXISTS FOR. Against the pre-task code the
-        // sweep's `begin immediate` was still open on this very connection, so
-        // this statement threw "cannot start a transaction within a
-        // transaction" and the handle was permanently wedged.
-        store.db.exec("begin immediate");
-        store.db.exec("rollback");
-
-        const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+        for (let i = 0; i < 3; i += 1) {
+          setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+        }
+        const rowsBefore = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
           (row) => row.revision,
         );
-        assert.deepEqual(
-          rowsAfter,
-          [...rowsBefore, revisionBefore],
-          "the rolled-back sweep changed no pointer row -- the rows are the pre-write set plus exactly the one this write inserted",
-        );
+        assert.ok(rowsBefore.length > 0, "the ring must genuinely hold rows, or 'unchanged apart from the new one' is trivially satisfied");
+        const revisionBefore = currentRevision(store);
+
+        try {
+          // WRITABLE BUT NOT READABLE. The sweep can still stage and publish into
+          // this directory and can still `existsSync` a path inside it, so the
+          // write itself is entirely ordinary; only the sweep's `readdirSync`
+          // throws. That is the whole point -- the failure is reachable from an
+          // ORDINARY setDataType, not from a test-only entry point.
+          chmodSync(ring, 0o300);
+
+          // PROHIBITION 28-11 P5: the committed write is NOT converted into a
+          // caller-visible failure. Step 9's WR-02 wrap swallows the housekeeping
+          // throw, which is correct -- and is also what made this defect silent.
+          const result = setDataType(store, { start: 0x7000, endInclusive: 0x700f, dataType: "code" });
+          assert.equal(result.revision, revisionBefore + 1, "the write is accepted and reports the advanced revision -- a committed write is never reported as a failure");
+
+          // THE ASSERTION THIS TEST EXISTS FOR. Against the pre-task code the
+          // sweep's `begin immediate` was still open on this very connection, so
+          // this statement threw "cannot start a transaction within a
+          // transaction" and the handle was permanently wedged.
+          store.db.exec("begin immediate");
+          store.db.exec("rollback");
+
+          const rowsAfter = (store.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
+            (row) => row.revision,
+          );
+          assert.deepEqual(
+            rowsAfter,
+            [...rowsBefore, revisionBefore],
+            "the rolled-back sweep changed no pointer row -- the rows are the pre-write set plus exactly the one this write inserted",
+          );
+        } finally {
+          // Restored unconditionally so the temp directory can be removed.
+          chmodSync(ring, 0o700);
+        }
       } finally {
-        // Restored unconditionally so the temp directory can be removed.
-        chmodSync(ring, 0o700);
+        closeStore(store);
       }
-    } finally {
-      closeStore(store);
-    }
-  });
-});
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // 28-14 task 2 -- `revertTo` step 6: a housekeeping failure never costs the
@@ -3241,89 +3246,91 @@ test("CR-07: a sweep that throws inside its own transaction leaves the caller's 
 // rather than left for a reader to assume from a green tick.
 // ---------------------------------------------------------------------------
 
-test("revertTo returns a usable handle even when its step-6 sweep cannot read the ring (composite: 28-13's non-throwing sweep plus this handler)", () => {
-  // WHAT THIS CONTROL DOES AND DOES NOT DISCRIMINATE, stated plainly because
-  // round 3 found three live blockers sitting under green controls whose reach
-  // was never declared.
-  //
-  // IT PINS: the end-to-end property -- `revertTo` never hands the caller an
-  // exception, and never hands them nothing, for a revert that has already
-  // succeeded on disk when the ring is unreadable at step 6.
-  //
-  // IT DOES NOT DISCRIMINATE plan 28-14 task 2's `try`/`catch` around the sweep.
-  // It passes IDENTICALLY with and without that handler, because plan 28-13
-  // bracketed `reconcileSnapshotRing`'s whole body in a handler that rolls back
-  // and returns `deferred: true` without rethrowing -- so the sweep does not
-  // throw here, and this test's `revertTo` call never enters task 2's `catch`.
-  // The property is therefore COMPOSITE: 28-13 supplies the reason it passes
-  // today, and 28-14 supplies the guarantee that it keeps passing if a future
-  // edit ever reintroduces a throw. The control that actually bites on task 2's
-  // edit is the structural backstop directly below this one.
-  inTempDir((dir) => {
-    // ROOT IGNORES THE MODE BITS, so the construction below would prove nothing
-    // as root: `readdirSync` would succeed and the unreadable-ring precondition
-    // would not exist at all.
-    if (process.getuid?.() === 0) {
-      assert.ok(
-        true,
-        "SKIPPED as root: an unreadable ring directory is not constructible when the mode bits are ignored, and a test that cannot build its own precondition must say so rather than pass",
-      );
-      return;
-    }
-
-    const path = join(dir, "proj.annostore");
-    const ring = join(dir, "proj.annostore.snapshots");
-    let store = openStore(path, { workspaceRoot: dir });
-    try {
-      for (let i = 0; i < 3; i += 1) {
-        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
-      }
-      const retained = retainedRevisions(store);
-      assert.ok(retained.length >= 2, `the fixture must retain at least two revisions or the target below is not a choice, got ${retained.join(", ")}`);
-      const target = retained[1];
-      assert.equal(currentRevision(store), 3, "the fixture is at the revision this test thinks it is at");
-
+test(
+  "revertTo returns a usable handle even when its step-6 sweep cannot read the ring (composite: 28-13's non-throwing sweep plus this handler)",
+  {
+    // ROOT CANNOT CONSTRUCT THIS FIXTURE, so the runner reports the skip rather
+    // than this body reporting a pass (WR-14). Root ignores directory mode bits:
+    // `readdirSync` would succeed and the unreadable-ring precondition would not
+    // exist at all. The former in-body vacuous truth assertion did the exact
+    // opposite of what its own message demanded -- it passed, invisibly, for a
+    // precondition it could not build. Same declaration form as
+    // `anno-confinement.test.ts` case 14; no third spelling.
+    skip: process.getuid?.() === 0 ? "running as root: root ignores directory mode bits, so an unreadable ring directory is not constructible and this case would pass vacuously" : false,
+  },
+  () => {
+      // WHAT THIS CONTROL DOES AND DOES NOT DISCRIMINATE, stated plainly because
+    // round 3 found three live blockers sitting under green controls whose reach
+    // was never declared.
+    //
+    // IT PINS: the end-to-end property -- `revertTo` never hands the caller an
+    // exception, and never hands them nothing, for a revert that has already
+    // succeeded on disk when the ring is unreadable at step 6.
+    //
+    // IT DOES NOT DISCRIMINATE plan 28-14 task 2's `try`/`catch` around the sweep.
+    // It passes IDENTICALLY with and without that handler, because plan 28-13
+    // bracketed `reconcileSnapshotRing`'s whole body in a handler that rolls back
+    // and returns `deferred: true` without rethrowing -- so the sweep does not
+    // throw here, and this test's `revertTo` call never enters task 2's `catch`.
+    // The property is therefore COMPOSITE: 28-13 supplies the reason it passes
+    // today, and 28-14 supplies the guarantee that it keeps passing if a future
+    // edit ever reintroduces a throw. The control that actually bites on task 2's
+    // edit is the structural backstop directly below this one.
+    inTempDir((dir) => {
+      const path = join(dir, "proj.annostore");
+      const ring = join(dir, "proj.annostore.snapshots");
+      let store = openStore(path, { workspaceRoot: dir });
       try {
-        // WRITABLE BUT NOT READABLE, the same construction the CR-07 sweep test
-        // uses: `existsSync` and `copyFileSync` on a path INSIDE the ring still
-        // work (search permission is present), so steps 1 through 5 of the
-        // revert are entirely ordinary and the revert genuinely lands on disk.
-        // Only step 6's `readdirSync` of the directory itself is refused.
-        chmodSync(ring, 0o300);
+        for (let i = 0; i < 3; i += 1) {
+          setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+        }
+        const retained = retainedRevisions(store);
+        assert.ok(retained.length >= 2, `the fixture must retain at least two revisions or the target below is not a choice, got ${retained.join(", ")}`);
+        const target = retained[1];
+        assert.equal(currentRevision(store), 3, "the fixture is at the revision this test thinks it is at");
 
-        store = revertTo(store, target);
+        try {
+          // WRITABLE BUT NOT READABLE, the same construction the CR-07 sweep test
+          // uses: `existsSync` and `copyFileSync` on a path INSIDE the ring still
+          // work (search permission is present), so steps 1 through 5 of the
+          // revert are entirely ordinary and the revert genuinely lands on disk.
+          // Only step 6's `readdirSync` of the directory itself is refused.
+          chmodSync(ring, 0o300);
 
-        assert.equal(currentRevision(store), target, "revertTo returned a handle at the revision asked for -- it did not throw for a revert that already landed");
-        assert.ok(Array.isArray(listRanges(store)), "and the returned handle answers listRanges");
-        // NO TRANSACTION IS OPEN on the handle handed back. A connection still
-        // inside the sweep's transaction would report "cannot start a
-        // transaction within a transaction" here.
-        store.db.exec("begin immediate");
-        store.db.exec("rollback");
+          store = revertTo(store, target);
+
+          assert.equal(currentRevision(store), target, "revertTo returned a handle at the revision asked for -- it did not throw for a revert that already landed");
+          assert.ok(Array.isArray(listRanges(store)), "and the returned handle answers listRanges");
+          // NO TRANSACTION IS OPEN on the handle handed back. A connection still
+          // inside the sweep's transaction would report "cannot start a
+          // transaction within a transaction" here.
+          store.db.exec("begin immediate");
+          store.db.exec("rollback");
+        } finally {
+          // Restored unconditionally so the temp directory can be removed.
+          chmodSync(ring, 0o700);
+        }
+
+        // NON-VACUITY OF THE PRECONDITION, asserted only after the mode is
+        // restored (the reader below needs the directory readable). Had step 6's
+        // sweep actually run to completion it would have dropped the snapshot
+        // FILES no restored pointer row claims. All three still being there is the
+        // measurement that the sweep genuinely could not read the ring -- without
+        // it, "revertTo returned a handle" would be equally true of a run in which
+        // the chmod did nothing.
+        assert.deepEqual(
+          readdirSync(ring)
+            .filter((name) => name.endsWith(".db"))
+            .sort(),
+          ["r0.db", "r1.db", "r2.db"],
+          "the unreadable ring was genuinely not swept -- every snapshot file the sweep would have reclaimed is still there",
+        );
       } finally {
-        // Restored unconditionally so the temp directory can be removed.
-        chmodSync(ring, 0o700);
+        closeStore(store);
       }
-
-      // NON-VACUITY OF THE PRECONDITION, asserted only after the mode is
-      // restored (the reader below needs the directory readable). Had step 6's
-      // sweep actually run to completion it would have dropped the snapshot
-      // FILES no restored pointer row claims. All three still being there is the
-      // measurement that the sweep genuinely could not read the ring -- without
-      // it, "revertTo returned a handle" would be equally true of a run in which
-      // the chmod did nothing.
-      assert.deepEqual(
-        readdirSync(ring)
-          .filter((name) => name.endsWith(".db"))
-          .sort(),
-        ["r0.db", "r1.db", "r2.db"],
-        "the unreadable ring was genuinely not swept -- every snapshot file the sweep would have reclaimed is still there",
-      );
-    } finally {
-      closeStore(store);
-    }
-  });
-});
+    });
+  },
+);
 
 test("revertTo step 6, STRUCTURAL BACKSTOP: the sweep call sits inside a handler, so a future edit that reintroduces a throw cannot cost the caller a handle", () => {
   // WHY THIS IS A BACKSTOP, AND WHY IT IS THE CONTROL THAT BITES -- both stated,
