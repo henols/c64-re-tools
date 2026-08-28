@@ -4282,3 +4282,195 @@ test("WR-16: the commit-failure refusal reports the rollback it OBSERVED -- roll
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// WR-18: `rollbackFailed` gets a PRODUCTION reader at both of its call sites,
+// without converting a committed write into a caller-visible failure.
+//
+// 28-17 added `rollbackFailed` to `reconcileSnapshotRing`'s result to report the
+// ONE state its own handler cannot fix: the sweep's `rollback` threw, so the
+// connection may still hold an open transaction and the store's write lock.
+// Nothing read it. `pruneSnapshots` discarded it and `revertTo`'s step-6 call
+// discarded it too, so `revertTo` could hand back a connection still inside the
+// sweep's transaction -- CR-07's exact reported symptom, re-created on the revert
+// path. A field whose only reader asserts it is always `false` is what this
+// module's own doc mocks: "a field that can only ever answer one value is a claim
+// the next reader has to falsify by experiment".
+// ---------------------------------------------------------------------------
+
+test("WR-18, BEHAVIOURAL: a handle whose transaction state is UNKNOWN refuses the next write BY NAME with the close-and-reopen remedy, and reopening recovers", () => {
+  // WHAT THIS CONTROL CONSTRUCTS, STATED PLAINLY: it sets the handle's field
+  // DIRECTLY. That is the test building the STATE, not simulating the sweep --
+  // reaching `rollbackFailed: true` naturally requires `db.exec("rollback")`
+  // itself to throw on a connection whose `begin immediate` succeeded, which has
+  // no reachable input without filesystem- or SQLite-level fault injection. That
+  // end-to-end arm is filed as a `backstop` truth in this plan's summary with
+  // exactly that reason, and NO test in this file claims to exercise it.
+  //
+  // What IS proved here is everything downstream of the state: the refusal's
+  // class, its message, its position (before any transaction is begun), and that
+  // the remedy the message names actually works.
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      const revisionBefore = currentRevision(store);
+      assert.equal(store.transactionStateUnknown, false, "a freshly opened handle must start clean, or the flip below proves nothing");
+
+      store.transactionStateUnknown = true;
+
+      let refusal: Error | undefined;
+      assert.throws(
+        () => setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          assert.ok(e.message.includes(path), `the refusal must name the store path, got: ${e.message}`);
+          assert.match(e.message, /CLOSE IT AND REOPEN/, "and give the close-and-reopen remedy in the same words the commit handler uses");
+          assert.match(e.message, /housekeeping sweep/, "and say what put the connection in this state");
+          refusal = e;
+          return true;
+        },
+      );
+      assert.ok(refusal !== undefined, "the refusal must have been captured");
+
+      // THE REFUSAL IS BEFORE `begin immediate`, which is the whole point: it
+      // replaces SQLite's bare "cannot start a transaction within a transaction"
+      // rather than following it. Nothing was written.
+      assert.equal(currentRevision(store), revisionBefore, "the refused write must not have moved the revision");
+
+      // AND THE RECOVERY THE MESSAGE NAMES ACTUALLY WORKS. A remedy nothing
+      // exercises is a claim, not a remedy.
+      closeStore(store);
+      store = openStore(path, { workspaceRoot: dir });
+      assert.equal(store.transactionStateUnknown, false, "a freshly opened handle on the same path starts clean");
+      const recovered = setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+      assert.equal(recovered.revision, revisionBefore + 1, `and writes normally, returning revision ${revisionBefore + 1}`);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-18, THE 28-11 P5 DIRECTION: an ordinary accepted write still returns its revision and changed, and leaves the handle's transaction state KNOWN", () => {
+  // THE PROHIBITION THIS PLAN IS MOST AT RISK OF BREAKING, asserted rather than
+  // reasoned about: a fix that consumes a housekeeping fact must NOT convert a
+  // committed write into a caller-visible failure. The accepted write returns
+  // success with its revision; only the NEXT call on a marked handle refuses.
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const first = setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      assert.equal(first.revision, 1, "an accepted write returns its revision");
+      assert.equal(first.changed, true, "and reports that it changed something");
+      assert.equal(store.transactionStateUnknown, false, "and leaves the handle's transaction state KNOWN -- a healthy sweep marks nothing");
+
+      // And again, past the point where a prune has real work to do, so the
+      // sweep genuinely ran rather than returning early on an empty ring.
+      for (let i = 1; i <= MAX_SNAPSHOT_REVISIONS + 2; i += 1) {
+        const r = setDataType(store, { start: 0x2000 + i * 0x10, endInclusive: 0x2000 + i * 0x10 + 0x0f, dataType: "byte" });
+        assert.equal(r.revision, i + 1, `write ${i + 1} returns its revision`);
+      }
+      assert.equal(store.transactionStateUnknown, false, "and a run long enough to prune still leaves the handle clean");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-18, STRUCTURAL: pruneSnapshots' return value is BOUND at runWriteSequence's step-9 call site rather than discarded", () => {
+  // WHY THIS IS STRUCTURAL, stated because this file's conventions forbid a
+  // structural assertion that does not say why it is one. The behaviour it pins
+  // -- that step 9 records a reported rollback failure on the handle -- can only
+  // fire when `reconcileSnapshotRing`'s own `rollback` throws, which has no
+  // reachable input without fault injection. The behavioural controls above
+  // prove what happens once the state EXISTS; this one is the only thing in the
+  // suite that fails when the wiring producing it is removed.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
+  // identified by source text and strict mode would blank the SQL literals that
+  // make the body substantial.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  const fnStart = stripped.indexOf("function runWriteSequence");
+  assert.ok(fnStart >= 0, "runWriteSequence must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and its body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+  assert.ok(body.length > 800, `the extracted runWriteSequence body must be substantial, got ${body.length} characters`);
+
+  const call = body.indexOf("pruneSnapshots(handle)");
+  assert.ok(call >= 0, "the step-9 prune call must be present in the extracted body");
+
+  // THE BINDING ITSELF. A bare `pruneSnapshots(handle);` statement -- the shape
+  // this task started from -- has nothing between the start of its line and the
+  // call, which is precisely what this assertion rejects.
+  const lineStart = body.lastIndexOf("\n", call) + 1;
+  const callLine = body.slice(lineStart, body.indexOf("\n", call));
+  assert.match(
+    callLine,
+    /(if|const|let|return)\b[^\n]*pruneSnapshots\(handle\)/,
+    `step 9 must BIND or TEST pruneSnapshots' return rather than discarding it, got: ${callLine.trim()}`,
+  );
+
+  // AND THE FACT MUST LAND SOMEWHERE A LATER CALL CAN SEE IT. A binding that
+  // goes nowhere is the same discard with an extra local.
+  assert.match(
+    body.slice(call, call + 200),
+    /handle\.transactionStateUnknown = true/,
+    "and must record the reported rollback failure on the handle, which is what carries it to the next call",
+  );
+
+  // THE 28-11 P5 HALF, STRUCTURALLY: the consumption must not be a throw. A
+  // rethrow here would report a committed write as a failure.
+  assert.equal(
+    body.slice(call, call + 200).indexOf("throw"),
+    -1,
+    "and must NOT throw from step 9 -- the write is already committed (28-11 P5)",
+  );
+});
+
+test("WR-18, STRUCTURAL: revertTo's step-6 sweep call BINDS its result and acts on it, so a reported rollback failure is not handed back as a clean handle", () => {
+  // WHY THIS IS STRUCTURAL: same reason as the step-9 control above. The
+  // `rollbackFailed: true` arm has no reachable input without fault injection,
+  // so no behavioural control in this file can distinguish a bound result from a
+  // discarded one. This assertion is the only thing that does.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`).
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  const fnStart = stripped.indexOf("export function revertTo");
+  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and revertTo's body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+  assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
+
+  const call = body.indexOf("reconcileSnapshotRing(restored)");
+  assert.ok(call >= 0, "the step-6 sweep call must be present in the extracted revertTo body");
+
+  // THE BINDING. `reconcileSnapshotRing(restored);` on a line of its own -- the
+  // shape this task started from -- fails here.
+  const lineStart = body.lastIndexOf("\n", call) + 1;
+  const callLine = body.slice(lineStart, body.indexOf("\n", call));
+  assert.match(
+    callLine,
+    /(=|return)[^\n]*reconcileSnapshotRing\(restored\)/,
+    `step 6 must BIND the sweep's result rather than discarding it, got: ${callLine.trim()}`,
+  );
+
+  // AND IT MUST READ THE FIELD THIS PLAN WIRED, not merely bind something.
+  assert.match(
+    callLine,
+    /rollbackFailed/,
+    `and must read rollbackFailed off it -- the one state the sweep reports without throwing, got: ${callLine.trim()}`,
+  );
+
+  // AND THE RESULT MUST BE REFERENCED AGAIN INSIDE THE FUNCTION: a bound value
+  // nothing branches on is a discard with an extra local.
+  const after = body.slice(call);
+  assert.match(after, /if \(reopenNeeded\)/, "and must branch on it, so a connection whose transaction state is unknown is not returned");
+  assert.match(after.slice(0, 400), /closeStore\(restored\)/, "closing the suspect connection");
+  assert.match(after.slice(0, 400), /return openStore\(storePath\)/, "and handing back a freshly opened one");
+});

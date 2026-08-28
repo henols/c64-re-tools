@@ -298,6 +298,31 @@ export interface AnnoStoreHandle {
   db: DatabaseSync;
   path: string;
   dir: string;
+  /**
+   * THIS CONNECTION'S TRANSACTION STATE IS UNKNOWN: a housekeeping sweep run on
+   * it reported that its own `rollback` threw, so it may still hold an open
+   * transaction and the store's write lock (WR-18).
+   *
+   * THE REMEDY IS THE ONE THE COMMIT HANDLER ALREADY PRINTS, in the same words:
+   * CLOSE IT AND REOPEN rather than reusing it. Node 22's `DatabaseSync` exposes
+   * no transaction-state accessor -- the surface is `open, close, prepare, exec,
+   * function, location, aggregate, createSession, applyChangeset,
+   * enableLoadExtension, loadExtension`, measured on this host -- so this field
+   * is the only thing that can carry the fact from the call that produced it to
+   * the call that must act on it.
+   *
+   * WHY THE FACT LIVES ON THE HANDLE AND NOT ON THE WRITE'S RESULT. The write
+   * that produced it COMMITTED; reporting it as that write's failure is exactly
+   * what prohibition 28-11 P5 forbids, and would send a caller to retry an
+   * additive verb. So the accepted write returns its revision unchanged and it
+   * is the NEXT call on this connection that refuses BY NAME -- which is what
+   * turns CR-07's bare `cannot start a transaction within a transaction` into a
+   * diagnosis.
+   *
+   * `false` on every freshly opened handle, set in `openStore` at the one place
+   * the handle object is built.
+   */
+  transactionStateUnknown: boolean;
 }
 
 /** The ONE `commit` statement in this module. Both the first-open schema
@@ -398,7 +423,7 @@ export function openStore(path: string, opts: { workspaceRoot?: string; mustExis
   } catch (e) {
     throw new AnnoStorePathError(`${resolved}: cannot open an annotation store here (${(e as Error).message})`, { path: resolved });
   }
-  const handle: AnnoStoreHandle = { db, path: resolved, dir: dirname(resolved) };
+  const handle: AnnoStoreHandle = { db, path: resolved, dir: dirname(resolved), transactionStateUnknown: false };
 
   if (fresh) {
     // WRAPPED FOR THE CONNECTION, NOT ONLY FOR THE MESSAGE. The most plausible
@@ -1122,7 +1147,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
  * `reconcileSnapshotRing` for the whole argument and for the latency this adds
  * at both of its call sites.
  */
-export function pruneSnapshots(handle: AnnoStoreHandle): void {
+export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
   // FIRST, BEFORE THE BOUND IS COMPUTED: resolve any half-state, so the bound
   // is computed over a ring whose rows and files agree. This is what makes the
   // directory bound hold AFTER A REVERT as well as after a forward-only run --
@@ -1149,7 +1174,23 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
   // The cost is one more accepted write's worth of un-pruned ring -- extra
   // FILES, the direction trap 10's premise calls harmless and reconcilable by
   // revision number, and the same direction a deferred sweep already accepts.
-  if (reconcileSnapshotRing(handle).deferred) return;
+  //
+  // AND ITS `rollbackFailed` IS CONSUMED FOR THE SAME REASON, RETURNED RATHER
+  // THAN DISCARDED (WR-18). The argument recorded above for consuming
+  // `.deferred` is the argument for consuming this one, so it is extended here
+  // rather than restated: a fact this function throws away is a fact its caller
+  // cannot act on, and `rollbackFailed` reports the ONE state the sweep's own
+  // handler cannot fix -- its `rollback` threw, so the connection may still hold
+  // an open transaction and the store's write lock. Until this return existed
+  // the field had no production reader anywhere, which is what a field whose
+  // only reader is a test asserting it is always `false` amounts to.
+  //
+  // IT IS RETURNED, NOT THROWN, and the distinction is prohibition 28-11 P5:
+  // both call sites reach this function AFTER a write or a revert has already
+  // landed, so a throw here would convert a committed write into a
+  // caller-visible failure.
+  const swept = reconcileSnapshotRing(handle);
+  if (swept.deferred) return swept.rollbackFailed;
 
   const floor = currentRevision(handle) - MAX_SNAPSHOT_REVISIONS;
   const doomed = handle.db.prepare("select revision from anno_snapshot where revision < ? order by revision").all(floor) as {
@@ -1185,6 +1226,11 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
       // deliberately ignored -- see above
     }
   }
+
+  // Control only reaches here through a sweep that returned `deferred: false`,
+  // which is only produced after its own commit -- so no rollback was attempted
+  // at all and the answer is exact rather than a default.
+  return false;
 }
 
 /**
@@ -1399,6 +1445,29 @@ function runWriteSequence<T>(
   doCommit: boolean,
   baseRevision?: number,
 ): { revision: number; result: T } {
+  // BEFORE `begin immediate`, AND BEFORE ANYTHING IS READ (WR-18). A previous
+  // write's housekeeping sweep ran on THIS connection and reported that its own
+  // `rollback` threw, so the connection may still hold an open transaction and
+  // the store's write lock. Without this refusal the next `begin immediate`
+  // surfaces SQLite's bare `cannot start a transaction within a transaction` --
+  // CR-07's exact reported symptom, outside the `ViceError` family, with nothing
+  // naming the cause or the remedy.
+  //
+  // AN EXISTING IN-FAMILY CLASS, NOT A NEW ONE: this is the same fact the commit
+  // handler and the publish handler already report in prose, so it is reported
+  // in the same words -- CLOSE IT AND REOPEN -- rather than given a second
+  // vocabulary a caller would have to learn.
+  if (handle.transactionStateUnknown) {
+    throw new AnnoStoreError(
+      `${handle.path}: refusing the write -- a previous write's housekeeping sweep on this connection could not roll back its own ` +
+        `transaction, so this connection may still hold an open transaction and the store's write lock. Its transaction state cannot ` +
+        `be established from this process (Node's DatabaseSync exposes no transaction-state accessor), so it is not reused: CLOSE IT ` +
+        `AND REOPEN rather than reusing it. The store on disk is unharmed -- the write that produced this state COMMITTED -- and a ` +
+        `freshly opened handle on the same path writes normally.`,
+      { data: { path: handle.path, step: "refuse a handle whose transaction state is unknown" } },
+    );
+  }
+
   const rev = currentRevision(handle);
 
   if (baseRevision !== undefined && baseRevision !== rev) {
@@ -1655,8 +1724,21 @@ function runWriteSequence<T>(
     // is deliberately NO logging channel: this module has none, and introducing
     // one here would be new surface with its own stdio hazards on an MCP
     // transport.
+    //
+    // AND ITS REPORT IS CONSUMED (WR-18). `pruneSnapshots` returns the sweep's
+    // `rollbackFailed` -- the one state the sweep's own handler cannot fix --
+    // and it is RECORDED ON THE HANDLE rather than thrown or logged. Not thrown,
+    // because by this line the write is committed and 28-11 P5 forbids reporting
+    // a committed write as a failure; not logged, because this module has no
+    // logging channel and introducing one here would be new surface with stdio
+    // hazards on an MCP transport (see the paragraph above).
+    //
+    // THE WRITE'S OWN RESULT IS STILL A SUCCESS WITH ITS REVISION. The fact is
+    // carried on the HANDLE precisely so the write that succeeded is not the
+    // call that reports it: the NEXT call on this connection refuses by name at
+    // the head of this function, with the close-and-reopen remedy.
     try {
-      pruneSnapshots(handle);
+      if (pruneSnapshots(handle)) handle.transactionStateUnknown = true;
     } catch {
       // deliberately ignored -- see above
     }
@@ -2400,9 +2482,28 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
       { data: { path: storePath, revision, step: "reopen after revert" } },
     );
   }
+  //
+  // AND THE SWEEP'S RESULT IS BOUND RATHER THAN DISCARDED (WR-18), WHICH IS THE
+  // ARM THE `catch` ABOVE CANNOT SEE. `reconcileSnapshotRing` does not throw
+  // when its own `rollback` fails -- rethrowing there is forbidden by 28-11 P5,
+  // because on this very call site it would convert a LANDED revert into a
+  // caller-visible failure -- so it REPORTS the fact in `rollbackFailed`
+  // instead. Reaching that state WITHOUT a throw is exactly why the existing
+  // catch arm alone was not enough: `revertTo` would hand back a connection that
+  // may still hold the store's write lock, which is CR-07's reported symptom
+  // re-created on the revert path.
+  //
+  // THE REMEDY IS THE SAME BLOCK, REUSED RATHER THAN COPIED: close the
+  // connection whose transaction state is unknown and hand back a freshly opened
+  // one. `revertTo` must not return a handle it cannot vouch for, and a second
+  // copy of the remedy is a second place it can drift.
+  let reopenNeeded: boolean;
   try {
-    reconcileSnapshotRing(restored);
+    reopenNeeded = reconcileSnapshotRing(restored).rollbackFailed;
   } catch {
+    reopenNeeded = true;
+  }
+  if (reopenNeeded) {
     try {
       closeStore(restored);
     } catch {
