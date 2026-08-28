@@ -1724,8 +1724,46 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // AND THIS IS THE SECOND OF THE TWO BLOCKING SITES. Under contention the
   // sweep below can itself stall for up to the connection's five-second
   // `busy_timeout` before `revertTo` returns.
+  //
+  // CR-07's THIRD PROPERTY: THE SWEEP IS HOUSEKEEPING AND MUST NEVER COST THE
+  // CALLER A HANDLE. By this line the revert has ALREADY SUCCEEDED ON DISK --
+  // step 5's rename and directory fsync have returned, so the store file at
+  // `storePath` IS the reverted image whatever happens next. Round 3 observed
+  // this exact line throw a bare, non-family `Error: EACCES` from
+  // `readdirSync` on an unreadable ring directory AFTER a successful
+  // `rev 4 -> rev 2`: the caller got no handle at all for a revert that had
+  // landed, and the connection opened one statement above was left with nothing
+  // able to close it.
+  //
+  // THE HANDLER CLOSES AND REOPENS RATHER THAN RETURNING `restored`, and that
+  // is deliberate, not defensive noise. If the sweep threw, that connection's
+  // transaction state is UNKNOWN -- handing back a connection that may still
+  // hold the store's write lock is the defect being closed, not a repair of it.
+  // The reopen routes through `openStore`, which is already inside the
+  // `ViceError` family, so a genuine failure to reopen refuses BY NAME rather
+  // than escaping as a bare error. The inner `try` around `closeStore` swallows
+  // for the same reason every other inner rollback in this module does: there
+  // is nothing useful to do with a second error while unwinding the first.
+  //
+  // STATED HONESTLY: AFTER PLAN 28-13 THIS `catch` IS NOT REACHABLE FROM ANY
+  // INPUT. That plan bracketed `reconcileSnapshotRing`'s whole body in a handler
+  // that rolls back and returns `{ droppedFiles: [], deferred: true }` without
+  // rethrowing, so no reachable input makes the sweep throw. This handler is
+  // therefore DEFENCE IN DEPTH against a future edit that reintroduces a throw
+  // -- not a currently reachable arm -- and `anno-store.test.ts` says the same
+  // thing in both of its controls rather than letting a green test imply a
+  // behavioural proof it does not carry.
   const restored = openStore(storePath);
-  reconcileSnapshotRing(restored);
+  try {
+    reconcileSnapshotRing(restored);
+  } catch {
+    try {
+      closeStore(restored);
+    } catch {
+      // deliberately ignored -- see above
+    }
+    return openStore(storePath);
+  }
   return restored;
 }
 

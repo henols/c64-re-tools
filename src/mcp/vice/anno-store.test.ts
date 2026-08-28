@@ -3154,3 +3154,150 @@ test("CR-07: a sweep that throws inside its own transaction leaves the caller's 
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 28-14 task 2 -- `revertTo` step 6: a housekeeping failure never costs the
+// caller a handle for a revert that already succeeded on disk (CR-07's third
+// property, gap-1 missing item 4). TWO controls, and their reach is DECLARED
+// rather than left for a reader to assume from a green tick.
+// ---------------------------------------------------------------------------
+
+test("revertTo returns a usable handle even when its step-6 sweep cannot read the ring (composite: 28-13's non-throwing sweep plus this handler)", () => {
+  // WHAT THIS CONTROL DOES AND DOES NOT DISCRIMINATE, stated plainly because
+  // round 3 found three live blockers sitting under green controls whose reach
+  // was never declared.
+  //
+  // IT PINS: the end-to-end property -- `revertTo` never hands the caller an
+  // exception, and never hands them nothing, for a revert that has already
+  // succeeded on disk when the ring is unreadable at step 6.
+  //
+  // IT DOES NOT DISCRIMINATE plan 28-14 task 2's `try`/`catch` around the sweep.
+  // It passes IDENTICALLY with and without that handler, because plan 28-13
+  // bracketed `reconcileSnapshotRing`'s whole body in a handler that rolls back
+  // and returns `deferred: true` without rethrowing -- so the sweep does not
+  // throw here, and this test's `revertTo` call never enters task 2's `catch`.
+  // The property is therefore COMPOSITE: 28-13 supplies the reason it passes
+  // today, and 28-14 supplies the guarantee that it keeps passing if a future
+  // edit ever reintroduces a throw. The control that actually bites on task 2's
+  // edit is the structural backstop directly below this one.
+  inTempDir((dir) => {
+    // ROOT IGNORES THE MODE BITS, so the construction below would prove nothing
+    // as root: `readdirSync` would succeed and the unreadable-ring precondition
+    // would not exist at all.
+    if (process.getuid?.() === 0) {
+      assert.ok(
+        true,
+        "SKIPPED as root: an unreadable ring directory is not constructible when the mode bits are ignored, and a test that cannot build its own precondition must say so rather than pass",
+      );
+      return;
+    }
+
+    const path = join(dir, "proj.annostore");
+    const ring = join(dir, "proj.annostore.snapshots");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      const retained = retainedRevisions(store);
+      assert.ok(retained.length >= 2, `the fixture must retain at least two revisions or the target below is not a choice, got ${retained.join(", ")}`);
+      const target = retained[1];
+      assert.equal(currentRevision(store), 3, "the fixture is at the revision this test thinks it is at");
+
+      try {
+        // WRITABLE BUT NOT READABLE, the same construction the CR-07 sweep test
+        // uses: `existsSync` and `copyFileSync` on a path INSIDE the ring still
+        // work (search permission is present), so steps 1 through 5 of the
+        // revert are entirely ordinary and the revert genuinely lands on disk.
+        // Only step 6's `readdirSync` of the directory itself is refused.
+        chmodSync(ring, 0o300);
+
+        store = revertTo(store, target);
+
+        assert.equal(currentRevision(store), target, "revertTo returned a handle at the revision asked for -- it did not throw for a revert that already landed");
+        assert.ok(Array.isArray(listRanges(store)), "and the returned handle answers listRanges");
+        // NO TRANSACTION IS OPEN on the handle handed back. A connection still
+        // inside the sweep's transaction would report "cannot start a
+        // transaction within a transaction" here.
+        store.db.exec("begin immediate");
+        store.db.exec("rollback");
+      } finally {
+        // Restored unconditionally so the temp directory can be removed.
+        chmodSync(ring, 0o700);
+      }
+
+      // NON-VACUITY OF THE PRECONDITION, asserted only after the mode is
+      // restored (the reader below needs the directory readable). Had step 6's
+      // sweep actually run to completion it would have dropped the snapshot
+      // FILES no restored pointer row claims. All three still being there is the
+      // measurement that the sweep genuinely could not read the ring -- without
+      // it, "revertTo returned a handle" would be equally true of a run in which
+      // the chmod did nothing.
+      assert.deepEqual(
+        readdirSync(ring)
+          .filter((name) => name.endsWith(".db"))
+          .sort(),
+        ["r0.db", "r1.db", "r2.db"],
+        "the unreadable ring was genuinely not swept -- every snapshot file the sweep would have reclaimed is still there",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("revertTo step 6, STRUCTURAL BACKSTOP: the sweep call sits inside a handler, so a future edit that reintroduces a throw cannot cost the caller a handle", () => {
+  // WHY THIS IS A BACKSTOP, AND WHY IT IS THE CONTROL THAT BITES -- both stated,
+  // because a structural assertion that does not say why it is structural reads
+  // as laziness and this file's own conventions forbid it.
+  //
+  // WHY STRUCTURAL: plan 28-13 made `reconcileSnapshotRing` non-throwing on
+  // every reachable input -- its body is bracketed by a handler that rolls back
+  // and returns `deferred: true` without rethrowing. There is therefore NO test
+  // input that reaches `revertTo`'s step-6 `catch`, and a behavioural control
+  // claiming to prove that handler would be claiming something it cannot.
+  //
+  // WHY IT BITES ANYWAY: the handler is defence in depth against a future edit
+  // that reintroduces a throw inside the sweep -- precisely the edit rounds 1, 2
+  // and 3 each made in this file. This assertion is what fails when someone
+  // removes the handler, and it is the ONLY control in this file that does. The
+  // composite control above pins the end-to-end property and passes with or
+  // without the handler; it is not evidence for this edit.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
+  // identified by source text and strict mode would blank the SQL literals that
+  // make the body substantial.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  const fnStart = stripped.indexOf("export function revertTo");
+  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and revertTo's body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+
+  // NON-VACUITY FIRST: a failed extraction would satisfy every comparison below
+  // trivially.
+  assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
+  const call = body.indexOf("reconcileSnapshotRing(restored)");
+  assert.ok(call >= 0, "the sweep call must be present in the extracted revertTo body");
+
+  const openedTry = body.lastIndexOf("try {", call);
+  assert.ok(openedTry >= 0, "the sweep call must have a try opening above it inside revertTo");
+  assert.equal(
+    body.slice(openedTry, call).indexOf("} catch"),
+    -1,
+    "the try above the sweep call must still be OPEN where the call is made -- an already-closed handler guards nothing",
+  );
+  const closingCatch = body.indexOf("} catch", call);
+  assert.ok(
+    closingCatch > call,
+    `and a matching catch must follow the sweep call, so a throw there cannot escape (call at ${call}, catch at ${closingCatch})`,
+  );
+
+  // AND THE HANDLER MUST STILL HAND BACK A HANDLE. A `catch` that merely
+  // swallowed would return `restored` -- a connection whose transaction state is
+  // unknown -- which is the defect, not the repair.
+  const handler = body.slice(closingCatch);
+  assert.match(handler.slice(0, 400), /closeStore\(restored\)/, "the handler must close the connection whose transaction state is unknown");
+  assert.match(handler.slice(0, 400), /return openStore\(storePath\)/, "and must hand back a freshly opened handle rather than the suspect one");
+});
