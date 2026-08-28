@@ -595,15 +595,102 @@ export const NO_RETAINED_REVISION = -1;
 const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
 
 /**
+ * THE file-half witness, and the ONLY answer in this module to "can revision
+ * `r`'s snapshot image be opened as an annotation store this build can speak
+ * to". Returns `null` when it can, and the underlying refusal's MESSAGE when it
+ * cannot.
+ *
+ * IT REPLACED A PRESENCE TEST AT BOTH OF THE TWO SITES THAT CARRIED ONE -- the
+ * filter inside `retainedRevisions` and `revertTo`'s step-2 gate -- and the
+ * promotion is the whole of CR-08's supporting half. Presence was never a
+ * witness that a file is a store: this module's FIRST MEASURED FACT (header,
+ * `:22-31`) is that a ZERO-LENGTH FILE OPENS as a SQLite database and reports
+ * `integrity_check ok`. So the store advertised a revision whose image was not a
+ * database, and a caller following that published floor destroyed the live store
+ * irrecoverably. After this function there is no presence test on a snapshot
+ * path left anywhere in the module, and a test asserts that as an absence.
+ *
+ * IT RETURNS THE REASON RATHER THAN A BOOLEAN because two callers need two
+ * different things from one question: the filter needs only "did it open", and
+ * `revertTo`'s refusal QUOTES the reason so the caller can tell an absent image
+ * from a corrupt one without a second predicate to disagree with the first.
+ *
+ * `mustExist` IS WHAT MAKES THIS A JUDGEMENT RATHER THAN A CREATION.
+ * `openStore`'s default is to create and initialise an absent store, so a
+ * witness built without that option would manufacture the very empty store it
+ * was asked to detect, in the ring, and then report it healthy. See
+ * `openStore`'s doc comment for why the read-only half is inseparable from it.
+ */
+function snapshotOpenFailure(handle: AnnoStoreHandle, revision: number): string | null {
+  try {
+    closeStore(openStore(snapshotPathFor(handle, revision), { mustExist: true }));
+    return null;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+/**
+ * The pointer-ROW question, and NOT a second answer to "what is retained":
+ * which revisions does `anno_snapshot` CLAIM, in ascending order, regardless of
+ * whether their images can be opened.
+ *
+ * NAMED DIFFERENTLY BECAUSE IT IS A DIFFERENT QUESTION, and the naming is the
+ * guard against it being mistaken for a fourth independent decision about
+ * "retained". Its one consumer is `reconcileSnapshotRing`'s keep-set: a sweep
+ * over FILES asks "is this file claimed by a row", which is not the same
+ * question as "can a caller revert to this revision". The two answers were
+ * identical for every input reachable before the promotion above -- the presence
+ * half of the old definition is trivially true of a file `readdirSync` just
+ * returned -- and they begin to diverge only now, in the safe direction: an
+ * image that fails to open but that a row still claims stays on disk as
+ * EVIDENCE instead of being unlinked by a sweep that would otherwise perform a
+ * second destruction while calling itself a repair.
+ */
+function claimedRevisions(handle: AnnoStoreHandle): number[] {
+  const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
+  return rows.map((row) => row.revision);
+}
+
+/**
  * THE definition of "revision `r` is retained", and the only one. Returns the
  * retained revisions in ascending order.
  *
- * A revision is retained when BOTH halves of its record exist: its pointer row
- * in `anno_snapshot` AND its file in the ring `snapshotDirFor()` names. The
- * pointer row is the INDEX -- it is what a revision number is looked up in --
- * and the file is the EXISTENCE WITNESS.
+ * A revision is retained when its pointer row in `anno_snapshot` exists AND its
+ * image in the ring `snapshotDirFor()` names OPENS as an annotation store this
+ * build can speak to. The pointer row is the INDEX -- it is what a revision
+ * number is looked up in -- and the image is proved by `snapshotOpenFailure`,
+ * which opens it.
  *
- * THE WITNESS IS NOW COMPUTED FROM THE HANDLE, not read from the row. Version 1
+ * THE FILE HALF WAS PROMOTED FROM PRESENCE TO OPENABILITY, and the reversal is
+ * recorded here because a rationale that became false is evidence. The
+ * previous witness was `existsSync` alone. It advertised a revision whose image
+ * was NOT a database -- a snapshot truncated to zero bytes by a crash between
+ * `vacuum into` and its fsync, a partial copy, bit rot, a file another tool
+ * wrote -- and `revertTo` gated on the same presence test, so following the
+ * store's OWN published floor took a 69,632-byte live store to 0 bytes with no
+ * handle returned and every later `openStore` refusing. The bytes destroyed
+ * were the only copy: the CURRENT revision has no snapshot, by design. Presence
+ * could never have been the witness, and the module knew why before it was
+ * written -- a ZERO-LENGTH FILE OPENS and reports `integrity_check ok`, so
+ * "the annotations are gone" and "there are no annotations" read the same and
+ * the refusal has to be the store's own. That reasoning was applied to
+ * `openStore` and not to the image `revertTo` installs.
+ *
+ * THE COST, IN THE SAME PARAGRAPH AS THE CLAIM. This function now OPENS up to
+ * `MAX_SNAPSHOT_REVISIONS` (32) SQLite databases per call, each running an
+ * `anno_meta` read, a `schema_version` comparison and `pragma integrity_check`
+ * (0.73 ms measured on a 100 KB store). That is affordable because every one of
+ * its call sites is QUERY-TIME, and it is affordable only because of that:
+ * `oldestRetainedRevision()` (which has no shipped caller at all today) and
+ * `revertTo()`'s step-2 gate and refusal list. NOTHING ON THE WRITE PATH READS
+ * IT -- `reconcileSnapshotRing`'s keep-set moved to `claimedRevisions` in the
+ * same change, which is what keeps the 32 opens out of every accepted write and
+ * out of the sweep's own write lock. If a caller ever needs "retained" on a
+ * per-write hot path, the answer has to be cached or narrowed and THAT becomes
+ * the single decision -- not a fourth one alongside this.
+ *
+ * THE WITNESS IS COMPUTED FROM THE HANDLE, not read from the row. Version 1
  * persisted the snapshot's absolute path in `anno_snapshot.path` and tested THAT
  * for existence, which is a SECOND TRUTH about one file -- and two truths about
  * one file are two things that can disagree. They did, twice, both reproduced:
@@ -621,24 +708,26 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  * measured rather than theoretical: the snapshot image is a `vacuum into` of
  * the WHOLE store, so it carries the `anno_snapshot` table with it, and
  * restoring it reinstates pointer rows for revisions whose FILES an earlier
- * prune already deleted. A row without a file is not a revision anyone can
- * revert to, and reporting it as one steers the caller straight into a raw
- * `ENOENT` out of `copyFileSync`.
+ * prune already deleted. A row without a usable image is not a revision anyone
+ * can revert to, and reporting it as one steers the caller straight into a raw
+ * `ENOENT` out of `copyFileSync` -- or, once the image is present but not a
+ * database, into the destruction of the live store.
  *
- * ITS CONSUMERS ARE NAMED HERE so a reader can see the set is closed:
- * `oldestRetainedRevision()` (the published floor), `revertTo()` (the refusal,
- * and the "available revisions" list inside its message),
- * `reconcileSnapshotRing` (which orphan FILES to unlink -- since CR-05 that
- * resolver decides only the FILE half of a half-state, never the ROW half) and,
- * through that resolver, `pruneSnapshots()` (the bound). Every one of them reads this
- * function rather than deciding for itself what "retained" means -- three
- * independent decisions is precisely how the three answers came to disagree,
- * and a fourth would also hide the row-only regression from the proofs that
- * exist to catch it.
+ * ITS CONSUMERS ARE NAMED HERE so a reader can see the set is closed, and the
+ * set is SMALLER than it was: `oldestRetainedRevision()` (the published floor)
+ * and `revertTo()` (the step-2 gate, and the "available revisions" list inside
+ * its refusal). `reconcileSnapshotRing` IS NO LONGER ONE OF THEM -- it reads
+ * `claimedRevisions` instead, because a sweep over FILES asks a different
+ * question, and because reading this function from inside that sweep's own
+ * `begin immediate` would have opened up to 32 databases with the store's write
+ * lock held. Every remaining consumer reads this function rather than deciding
+ * for itself what "retained" means: three independent decisions is precisely how
+ * the three answers came to disagree, CR-08 was the gap between two of them, and
+ * a fourth would also hide the row-only regression from the proofs that exist to
+ * catch it.
  */
 export function retainedRevisions(handle: AnnoStoreHandle): number[] {
-  const rows = handle.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[];
-  return rows.filter((row) => existsSync(snapshotPathFor(handle, row.revision))).map((row) => row.revision);
+  return claimedRevisions(handle).filter((revision) => snapshotOpenFailure(handle, revision) === null);
 }
 
 /**
@@ -657,8 +746,12 @@ export function retainedRevisions(handle: AnnoStoreHandle): number[] {
  * published `0` on a store whose `r0.db` the prune had already removed, and
  * following that floor threw a bare `ENOENT` -- the argument above was right
  * and its implementation was one existence check short. So the floor is now
- * the first element of `retainedRevisions()`, which requires the file as well
- * as the row: the store cannot publish a number it will then refuse.
+ * the first element of `retainedRevisions()` -- and that reading was then one
+ * step short a SECOND time, in the same direction: an existence check published
+ * `0` on a store whose `r0.db` was present but was not a database, and
+ * following THAT floor destroyed the live store (CR-08). The floor now requires
+ * the image to OPEN, not merely to exist, so the store still cannot publish a
+ * number it will then refuse -- in either direction.
  */
 export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
   const retained = retainedRevisions(handle);
@@ -689,13 +782,40 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  *     judges a state it cannot have produced is the guess prohibitions 28-10 P3
  *     / 28-11 P4 forbid. Trap 10 calls the orphan-ROW direction "the one the
  *     revert path cannot survive" and that was true when it was written; it is
- *     not true of this code. `retainedRevisions()` requires BOTH halves,
- *     `oldestRetainedRevision()` routes through it, and `revertTo` step 2
- *     refuses on `!pointer || !existsSync(snapPath)` BEFORE anything is
- *     destroyed. Every consumer of "retained" already requires the FILE, so an
- *     orphan row is INERT: the store never advertises it and never follows it.
- *     Deleting it was hygiene, and hygiene that destroyed a reachable revert
- *     history is a worse failure than the state it tidied.
+ *     not true of this code. `retainedRevisions()` requires the image to OPEN
+ *     as an annotation store, `oldestRetainedRevision()` routes through it, and
+ *     `revertTo` step 2 refuses on the SAME witness -- `snapshotOpenFailure` --
+ *     BEFORE anything is destroyed, in three arms rather than one: no pointer
+ *     row, an image that will not open, and (step 3b) a staged copy that will
+ *     not open. So the store never advertises an unusable revision and never
+ *     follows one.
+ *
+ *     AND THE BASIS OF "INERT" HAS CHANGED, so it is restated rather than left
+ *     to be re-derived. The old basis was that every consumer of "retained"
+ *     required the FILE, so a row nothing looked at was invisible to the whole
+ *     ring. That is no longer true: the keep-set below reads
+ *     `claimedRevisions`, so this sweep now looks at rows the advertisement
+ *     ignores. THE NEW BASIS IS BETTER RATHER THAN WEAKER, and it is the
+ *     conclusion CR-08 forced: a row the sweep KEEPS is precisely what makes a
+ *     corrupt image survive on disk as EVIDENCE instead of being unlinked. A
+ *     sweep that deleted the image of a failure would be destroying the only
+ *     record of the failure that has to be diagnosed -- a second destruction
+ *     dressed as a repair. The CR-05 conclusion is unchanged: the row direction
+ *     stays abandoned, for the ownership reason above.
+ *
+ *     THE KEEP-SET QUERY RUNS ON THE CONNECTION ALREADY IN HAND, and that is
+ *     the second, independent reason it reads `claimedRevisions` rather than
+ *     `retainedRevisions`. This function computes its keep-set INSIDE its own
+ *     `begin immediate`, with the store's WRITE LOCK held. Under the promoted
+ *     meaning of "retained", reading that function here would have opened up to
+ *     `MAX_SNAPSHOT_REVISIONS` (32) SQLite databases while holding that lock, on
+ *     every accepted write. `claimedRevisions` is one `select` on the connection
+ *     this function already has, so the promoted witness is NEVER invoked while
+ *     this sweep holds the store's write lock, and the 32-image cost stays
+ *     confined to query time.
+ *
+ *     Deleting an orphan row was hygiene, and hygiene that destroyed a
+ *     reachable revert history is a worse failure than the state it tidied.
  *
  *     ROWS STAY BOUNDED WITHOUT THIS SWEEP. `pruneSnapshots`' doomed loop
  *     deletes every row below `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so
@@ -825,8 +945,8 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   // FIX (CR-07). `begin immediate` above has already opened a transaction on
   // the CALLER's connection. Before this handler existed, any throw between
   // that statement and the commit -- `readdirSync` on a ring directory that
-  // became unreadable, an `EIO` out of the `existsSync` sweep inside
-  // `retainedRevisions`, anything -- propagated out with the transaction still
+  // became unreadable, a failure of the keep-set `select`, anything --
+  // propagated out with the transaction still
   // OPEN. Step 9's WR-02 wrap then swallowed it, so an ordinary `setDataType`
   // reported SUCCESS while leaving the handle permanently inside a transaction:
   // every later write failed with "cannot start a transaction within a
@@ -838,12 +958,31 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
     // STEP 2. With the lock held, compute the drop set -- which since CR-05 has
     // exactly ONE direction, the FILE direction -- before changing anything.
     //
-    // THE ONE PREDICATE, READ HERE TOO. This resolver does NOT re-decide what
-    // "retained" means with a second `existsSync` of its own -- a fourth
-    // independent decision is exactly how the first three came to disagree, and
-    // it would also make the row-only regression invisible to the proofs that
-    // exist to catch it.
-    const retained = new Set(retainedRevisions(handle));
+    // THE KEEP-SET IS THE POINTER-ROW SET, AND THAT IS A DIFFERENT QUESTION
+    // rather than a fourth answer to "what is retained". This resolver still
+    // does NOT re-decide anything with a predicate of its own -- it asks
+    // `claimedRevisions`, the ONE answer to "which revisions does
+    // `anno_snapshot` claim", exactly as it used to ask the ONE answer to "what
+    // is retained".
+    //
+    // WHY THE QUESTION IS GENUINELY DIFFERENT, AND WHY THE ANSWERS ONLY DIVERGE
+    // NOW. A sweep over FILES asks "is this file claimed by a pointer row";
+    // `retainedRevisions` asks "can a caller revert to this revision". Before
+    // CR-08's promotion those two were identical for every reachable input,
+    // because the presence half of the old definition is trivially true of a
+    // file `readdirSync` just returned. The promotion is what separates them,
+    // and the separation runs in the SAFE direction: an image that fails to open
+    // but that a row still claims is kept on disk as EVIDENCE. Leaving this
+    // keep-set on `retainedRevisions` would have made the CR-08 fix its own
+    // second destroyer -- the sweep would unlink exactly the corrupt image whose
+    // refusal has to be diagnosed, one ordinary write after the refusal.
+    //
+    // AND IT IS ONE `select` ON THE CONNECTION ALREADY IN HAND, INSIDE THE WRITE
+    // LOCK. `begin immediate` above is held for the whole of this block, so
+    // reading the promoted `retainedRevisions` here would open up to
+    // `MAX_SNAPSHOT_REVISIONS` (32) SQLite databases with the store's write lock
+    // held, on every accepted write. See the ORPHAN ROW bullet above.
+    const claimed = new Set(claimedRevisions(handle));
 
     // A store that has never been written has no ring directory at all, and
     // `readdirSync` throws on an absent one. That is not a half-state -- and the
@@ -862,7 +1001,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
       for (const name of readdirSync(snapshotDir).sort()) {
         const match = SNAPSHOT_FILE_PATTERN.exec(name);
         if (!match) continue;
-        if (retained.has(Number(match[1]))) continue;
+        if (claimed.has(Number(match[1]))) continue;
         orphanFiles.push(join(snapshotDir, name));
       }
     }
@@ -1640,11 +1779,23 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * Returns a NEW handle -- the old one is closed and must not be reused.
  *
  * ON THE REFUSAL PATH AND ON A STAGING FAILURE THE CALLER'S HANDLE IS STILL
- * OPEN. `revertTo` refuses an unretained revision -- an absent pointer ROW or
- * an absent snapshot FILE, one named `AnnoStoreError` for both -- before it
- * touches the filesystem, and it stages and fsyncs the copy before it closes
- * anything. The steps are numbered in the body and each number's POSITION is
- * commented, because the ordering is the guarantee.
+ * OPEN. `revertTo` refuses an unretained revision before it touches the
+ * filesystem, and it stages and fsyncs the copy before it closes anything. The
+ * steps are numbered in the body and each number's POSITION is commented,
+ * because the ordering is the guarantee.
+ *
+ * THE REFUSAL SET HAS THREE ARMS, and all three are `AnnoStoreError`:
+ *   * NO POINTER ROW claims the revision (step 2, first arm) -- "no snapshot is
+ *     retained for it", with the oldest retained revision, the bound and the
+ *     available list.
+ *   * A ROW CLAIMS IT BUT ITS IMAGE WILL NOT OPEN as an annotation store (step
+ *     2, second arm) -- the arm CR-08 added, covering an absent image and a
+ *     present-but-unusable one alike, with the underlying reason quoted so the
+ *     caller can tell which. This is the arm the old presence-only gate did not
+ *     have, and its absence is what let the store be destroyed installing an
+ *     image that was not a database.
+ *   * THE STAGED COPY WILL NOT OPEN (step 3b) -- the same witness in its third
+ *     position, on the exact bytes step 5 renames.
  *
  * AND THE ORDERING RULE IS NOW STATED IN FULL, because "stages and fsyncs the
  * copy before it closes anything" was the whole of it and it was not enough.
@@ -1670,15 +1821,26 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   const snapPath = snapshotPathFor(handle, revision);
 
   // STEP 2, AND ITS POSITION IS THE WHOLE POINT: refuse BEFORE anything is
-  // destroyed, and refuse a MISSING FILE with the same named error a missing
-  // ROW already produced. From the caller's side the two are one fact -- "no
-  // snapshot is retained for it" -- and the file-missing case used to reach
-  // `copyFileSync` and throw a bare `ENOENT` outside the `ViceError` family,
-  // with the caller's handle already closed. The "oldest retained" and
-  // "available revisions" figures are built from `retainedRevisions()` and
-  // never from the raw rows, so a refusal cannot steer the caller at a
-  // revision the very next call would also refuse.
-  if (!pointer || !existsSync(snapPath)) {
+  // destroyed. It has TWO ARMS, and both of them are before any filesystem
+  // mutation, so both leave the caller's handle open and the store untouched.
+  //
+  // THE FILE HALF NOW READS `snapshotOpenFailure` -- the same witness
+  // `retainedRevisions` reads, in its other position. It used to read
+  // `existsSync` and nothing more, which is CR-08: a present image that was not
+  // a database passed this gate, and the store was destroyed installing it. The
+  // "oldest retained" and "available revisions" figures are built from
+  // `retainedRevisions()` and never from the raw rows, so a refusal cannot
+  // steer the caller at a revision the very next call would also refuse.
+  //
+  // THE ARMS SPLIT ON THE ROW, NOT ON THE FILE'S PRESENCE, and that is
+  // deliberate rather than an omission. Asking "is the image absent" separately
+  // from "does the image open" would put a SECOND predicate back on a snapshot
+  // path -- a second truth about one file, which is how CR-03 and CR-08 both
+  // happened. The two file-half sub-cases are distinguished by the QUOTED
+  // REASON instead: an absent image quotes "the file does not exist", a corrupt
+  // one quotes what SQLite or `openStore` said. One witness, one message, and
+  // the caller can still tell them apart.
+  if (!pointer) {
     const available = retainedRevisions(handle);
     const oldest = available.length === 0 ? NO_RETAINED_REVISION : available[0];
     throw new AnnoStoreError(
@@ -1688,6 +1850,20 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
         `revision, because returning a revision other than the one asked for changes the caller's intent with nothing recording that it ` +
         `happened. Available revisions: ${available.length === 0 ? "(none)" : available.join(", ")}`,
       { data: { path: handle.path, revision } },
+    );
+  }
+
+  const openFailure = snapshotOpenFailure(handle, revision);
+  if (openFailure !== null) {
+    const available = retainedRevisions(handle);
+    throw new AnnoStoreError(
+      `cannot revert to revision ${revision}: a pointer row claims it, but its snapshot ${snapPath} is not a readable annotation store ` +
+        `(${openFailure}). Presence was never the witness -- a ZERO-LENGTH FILE OPENS as a SQLite database and reports integrity_check ` +
+        `ok -- so the image is OPENED before anything is replaced, and this one did not open. NOTHING has been replaced: ${handle.path} is ` +
+        `still at revision ${currentRevision(handle)} and this handle is still open and usable. The snapshot is left on disk for ` +
+        `inspection rather than unlinked, because a corrupt image a pointer row still claims is EVIDENCE. Available revisions: ` +
+        `${available.length === 0 ? "(none)" : available.join(", ")}`,
+      { data: { path: handle.path, snapshotPath: snapPath, operation: "validate", revision } },
     );
   }
 
