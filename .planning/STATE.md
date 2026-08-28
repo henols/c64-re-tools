@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
 status: executing
-stopped_at: Completed 28-13-PLAN.md
-last_updated: "2026-08-28T11:25:03.621Z"
+stopped_at: Completed 28-14-PLAN.md
+last_updated: "2026-08-28T11:46:50.091Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 28 third gap-closure round executing (28-13..28-15)
-state_head: f7a0bf369c7c0917ee93e83dc4601e6e3e1a1d0a
+state_head: fbc5e6fd102cc0a8ad1cafefdbdc8dc6b1d943df
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 17
 ---
 
@@ -146,9 +146,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 28 (The Store Core) — EXECUTING
-Plan: 13 of 15 executed; third gap-closure round (28-13..28-15) EXECUTING
-Status: 10/12 must-haves at last verification. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false and are what this round closes: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). Plan 28-13 has now closed CR-05 and CR-07 in the sweep: the reconciler abstains from the pointer-ROW direction entirely and its transaction has a structural lifetime, both pinned behaviourally through production entry points. CR-06 and WR-12 remain open and are 28-14's and 28-15's subjects. All six STORE requirements remain reverted out of Complete until this round re-verifies. See 28-VERIFICATION.md and 28-REVIEW.md.
-Last activity: 2026-08-28 — 28-13 executed (CR-05 and CR-07 closed in `reconcileSnapshotRing`); 28-14 and 28-15 still to run
+Plan: 14 of 15 executed; third gap-closure round (28-13..28-15) EXECUTING
+Status: 10/12 must-haves at last verification. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false and are what this round closes: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). Plan 28-13 has now closed CR-05 and CR-07 in the sweep: the reconciler abstains from the pointer-ROW direction entirely and its transaction has a structural lifetime, both pinned behaviourally through production entry points. Plan 28-14 has now closed CR-06 and CR-07's third property: step 8's commit sits inside a handler that rolls back — so a reader in another OS process can no longer make an accepted write escape the ViceError family, hold the store's write lock, or leave currentRevision() reporting a write that never landed — and revertTo always hands back a usable handle for a revert that already succeeded on disk. The CR-06 closure is proven cross-process against a genuinely separate reader, with a negative control that reproduces the review's bare `Error: database is locked` verbatim against the pre-plan code. WR-12 remains open and is 28-15's subject. All six STORE requirements remain reverted out of Complete until this round re-verifies. See 28-VERIFICATION.md and 28-REVIEW.md.
+Last activity: 2026-08-28 — 28-14 executed (CR-06 and CR-07's third property closed at `runWriteSequence` step 8 and `revertTo` step 6); 28-15 still to run
 
 ## Performance Metrics
 
@@ -303,6 +303,7 @@ Last activity: 2026-08-28 — 28-13 executed (CR-05 and CR-07 closed in `reconci
 | Phase 28 P11 | 22 min | 2 tasks | 2 files |
 | Phase 28 P12 | 24 min | 2 tasks | 4 files |
 | Phase 28 P13 | 12 min | 3 tasks | 3 files |
+| Phase 28 P14 | 14 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -635,6 +636,8 @@ Recent decisions affecting current work:
 - [Phase 28]: The store confinement's check-then-open window is a STATED limit, never a handled case — The confinement decision and the file creation are two separate filesystem operations, and a link planted between them redirects the write while every refusal test still passes. `node:sqlite`'s `DatabaseSync` constructor takes a path, not a file descriptor, so there is no `O_NOFOLLOW`/`openat` route to making the check and the open one operation. Recorded in `anno-confinement.test.ts`'s header beside the controls, and as a `backstop` truth -- never described as closed.
 - [Phase 28]: The snapshot ring's identity model names a PATH SPELLING, and no repair of the spelling was adopted: `reconcileSnapshotRing` abstains from the pointer-ROW direction entirely and sweeps only the FILE direction (28-13, CR-05). — An orphan ROW is inert, not fatal — every consumer of "retained" already requires the FILE, so `revertTo` refuses before destroying anything. Rows stay bounded without the sweep because `pruneSnapshots`' doomed loop reaps everything below `currentRevision() - MAX_SNAPSHOT_REVISIONS`. The route has no deletion side at all, and needs no schema bump. The two rejected routes (the review's literal decline condition, and a ring id minted into anno_meta) are recorded verbatim in 28-13-SUMMARY.md so round five does not re-propose them.
 - [Phase 28]: `deferred` is WIDENED to mean "this sweep changed nothing" — covering both write-lock contention and a sweep that rolled back — and no second discriminator was added (28-13, CR-07). — Its only consumer, `pruneSnapshots`, returns early identically in both cases, so a discriminator would have no reader; and CR-07's concealment complaint is removed at its source by the structural try/catch rather than labelled. A field describing a state the code can no longer reach is the comment prohibition 28-07 P3 forbids, in the shape of an enum.
+- [Phase 28]: Step 8's commit handler ROLLS BACK rather than merely wrapping — the rollback is what releases the store's write lock and undoes the CAS, the mutation and the pointer-row insert together — Wrapping alone would have closed only the family-escape half of CR-06 and left both the leaked write lock and the phantom advanced revision. Proven cross-process: against the pre-plan code the same construction throws a bare Error: database is locked outside the family, with the transaction open.
+- [Phase 28]: revertTo's step-6 handler CLOSES the restored connection and REOPENS rather than returning the same handle — If the sweep threw, that connection's transaction state is unknown; handing back a connection that may hold the store's write lock is the defect being closed, not a repair of it. The reopen routes through openStore, which is already inside the ViceError family. After 28-13 the arm is unreachable, so the handler is defence-in-depth pinned by a declared structural backstop.
 
 ### Pending Todos
 
@@ -1226,8 +1229,44 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:24:13.512Z
-Stopped at: Completed 28-13-PLAN.md
+Last session: 2026-08-28T11:46:49.891Z
+Stopped at: Completed 28-14-PLAN.md
+  Plan 28-14 is complete: 3 tasks, 3 task commits (`03a1855`, `777d900`,
+  `328cf62`), 14 min. It is the SECOND of the third gap-closure round's three
+  plans (28-13..28-15); 28-15 (WR-12, the confinement predicate) remains.
+  **CR-06 closed, and proved cross-process.** Step 8's `commitTransaction` --
+  the one statement whose failure leaves the transaction OPEN with the CAS, the
+  mutation and the pointer row all applied -- now sits inside a handler that
+  rolls back (releasing the store's write lock and undoing all three together),
+  discards the staging name, rethrows a `ViceError` unchanged and otherwise
+  refuses by name stating that nothing was written and the store is still at
+  revision N. IN-05's cheap half is folded in on this wrap only (`code` from the
+  underlying error); `vice.ts` and `ViceErrorOptions` are untouched, so the
+  `cause` half stays out of scope. **CR-07's third property closed:** `revertTo`
+  step 6's sweep is wrapped, and on a throw the handler closes the `restored`
+  connection (whose transaction state would be unknown) and returns a freshly
+  opened handle through `openStore`. A fourth `anno-durability-mutator.mjs`
+  mode, `hold-read`, holds a real SQLite SHARED lock in a separate OS process
+  behind a marker-file handshake and a hard-capped spin -- the construction that
+  makes the contention real rather than simulated. THREE CONTROLS, EACH WITH ITS
+  REACH DECLARED AND MEASURED: the cross-process CR-06 test is behavioural and
+  discriminating (against `8743bcf` it fails with `expected AnnoStoreError, got
+  Error: database is locked`, the review's reproduction verbatim); the
+  unreadable-ring `revertTo` control is behavioural but COMPOSITE and
+  NON-discriminating for this plan (measured: green with the handler removed);
+  the step-6 structural check is a BACKSTOP and is the only control in the tree
+  that bites on this edit (measured: it and only it goes red when the handler is
+  removed). One deviation worth carrying: the refusal's `data.step` is spelled
+  "committing", not "commit", because `anno-seam.test.ts` counts `/\bcommit\b/i`
+  over stripped source WITH LITERALS KEPT -- the reason is recorded inline at the
+  site so a tidy-up cannot silently redden that control. Gates: 141/141 across
+  all seven `anno-*.test.ts` files with real exit code 0 (was 138), `tsc
+  --noEmit` clean, one `db.exec("commit")` site, and the whole `anno-store.ts`
+  diff is exactly two hunks -- `runWriteSequence`'s `doCommit` branch and
+  `revertTo`'s step 6. Zero deletions. The whole-glob `npm test` was NOT run and
+  is not a signal for this plan. Next: 28-15.
+
+Previously stopped at: Completed 28-08-PLAN.md (gap closure: CR-02, WR-11 and WR-04 closed); next 28-09
   Plan 28-08 is complete: 2 tasks, 2 task commits (`6846492`, `f5805ae`), 21
   min. It is the SECOND of the three gap-closure plans (waves 5-7); 28-09 (gap
   3, CR-03's symlink confinement bypass) remains. **CR-02 is closed at the
