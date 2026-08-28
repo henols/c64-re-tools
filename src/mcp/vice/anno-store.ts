@@ -1612,12 +1612,14 @@ function runWriteSequence<T>(
           code: (e as { code?: number | string }).code,
           // `rolledBack` is carried in `data` as well as in the prose so a caller
           // can branch on the fact instead of substring-matching a message.
-          // "committing", NOT "commit", and the spelling is load-bearing:
-          // `anno-seam.test.ts`'s single-commit-site control counts `/\bcommit\b/i`
-          // over this module's stripped source with STRING LITERALS KEPT, so a
-          // `step` reading "commit ..." would be counted as a second commit
-          // statement and redden that control. The gerund has no word boundary
-          // after `commit`, exactly as `commitTransaction` and `doCommit` do not.
+          // The wording here is FREE. It used to be constrained: the
+          // single-commit-site control in `anno-seam.test.ts` counted the WORD
+          // `commit` over this module's stripped source, so a `step` value
+          // reading "commit ..." reddened a control in a different file. WR-15
+          // replaced that count with a match on `exec()` calls carrying a bare
+          // statement literal, which no error message can satisfy, and the
+          // constraint went with it -- this value is unchanged only because
+          // changing it would be a gratuitous behaviour change.
           data: { path: handle.path, revision: rev, rolledBack, step: "committing the write transaction" },
         },
       );

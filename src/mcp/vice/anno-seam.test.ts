@@ -380,7 +380,13 @@ test("the revision compare-and-swap is structurally intact: begin immediate, an 
  * controls, so the coverage the fixtures prove is the coverage the seam
  * assertion gets -- never two matchers that can drift apart. */
 function commitStatements(source: string): string[] {
-  return source.match(/\bcommit\b/gi) ?? [];
+  // An `exec()` call whose SINGLE argument is a bare statement literal, in any
+  // of the three spellings SQLite treats as the same statement, under any of
+  // the three quote characters, tolerant of whitespace inside and around the
+  // literal. Anything that is not that shape -- an identifier, an interpolated
+  // string, a sentence in an error message -- is not a commit statement and is
+  // not counted.
+  return source.match(/\bexec\(\s*(['"`])\s*(?:commit|end(?:\s+transaction)?)\s*\1\s*\)/gi) ?? [];
 }
 
 /** All three spellings SQLite accepts for the SAME statement, as a LOCAL
