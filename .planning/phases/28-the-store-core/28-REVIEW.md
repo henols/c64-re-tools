@@ -1,6 +1,6 @@
 ---
 phase: 28-the-store-core
-reviewed: 2026-08-28T22:30:00Z
+reviewed: 2026-08-29T00:00:00Z
 depth: standard
 files_reviewed: 15
 files_reviewed_list:
@@ -20,19 +20,31 @@ files_reviewed_list:
   - src/mcp/vice/package.json
   - src/mcp/vice/r2000-coverage.test.ts
 findings:
-  critical: 2
-  warning: 21
-  info: 8
-  total: 31
+  critical: 3
+  warning: 26
+  info: 11
+  total: 40
 status: issues_found
 ---
 
-# Phase 28: Code Review Report (round 5, post 28-16 / 28-17 / 28-18)
+# Phase 28: Code Review Report (rounds 1-6, cumulative)
 
-**Reviewed:** 2026-08-28
+**Reviewed:** 2026-08-29 (round 6, post 28-19 / 28-20 / 28-21 / 28-22)
 **Depth:** standard
 **Files Reviewed:** 15
 **Status:** issues_found
+
+> **THIS FILE IS APPEND-AND-PRESERVE.** Every finding id and every disposition
+> table below is kept verbatim across rounds, because
+> `src/mcp/vice/docs-review-disposition.test.ts` (AUDIT-01) asserts that every id
+> appearing anywhere in this file is named in a recognised disposition source --
+> deleting a finding deletes the disposition that references it. Round 6's
+> findings are in **[Round 6 Findings](#round-6-findings-post-28-19--28-20--28-21--28-22)**
+> at the end of the file; everything above it is rounds 3-5, unchanged. Round 6
+> opens `CR-10`, `WR-26`-`WR-30` and `IN-09`-`IN-11`; the next free ids are
+> `CR-11`, `WR-31`, `IN-12`.
+>
+> The summary immediately below is **round 5's**, kept as written.
 
 ## Summary
 
@@ -1422,9 +1434,578 @@ and skip keys past `ADDRESS_MAX`, or note in the helper that the counts are lowe
 bounds.
 
 
+## Round 6 Findings (post 28-19 / 28-20 / 28-21 / 28-22)
+
+**Reviewed:** 2026-08-29
+**Depth:** standard
+**Files Reviewed:** 15 (the identical set; the diff under review is
+`9db1e3d..HEAD`, which touched six of them: `anno-store.ts`, `anno-types.ts`,
+`anno-store.test.ts`, `anno-overlap.test.ts`, `anno-seam.test.ts`,
+`anno-durability-mutator.mjs`)
+
+**Measured state, re-measured here rather than taken from the handoff:** the
+eight `anno-*` / `block-class` test files are **210 pass / 0 fail / 0 skipped**
+(`node --test`, 13.5 s).
+
+### Round-6 verdicts on the four round-5 plans
+
+Every id the fifth gap-closure round claimed is checked in the code, and where
+the claim is behavioural it is re-driven through production entry points on a
+scratch store. **All five behavioural claims reproduce.** Two of them close
+their reported cause and leave a residual this round files as a NEW id rather
+than as a re-opening — the residuals are different defects at the same site.
+
+| Round-5 id | Round-6 verdict | Evidence re-measured here |
+|---|---|---|
+| CR-09 | **Closed for its reported cause; residual filed as CR-10.** The gate is `retype()`'s pre-delete loop (`anno-store.ts:1979-1990`) calling `remainderRefusal()` (`:1855-1896`), which asks `assertRangeShape()` itself rather than re-implementing the even-count rule. Re-driven: `setDataType($3000..$300f, lo_hi_address)` then `setDataType($3004..$3004, byte)` throws `AnnoSplitRemainderError` naming both spans and the 11-byte remainder; the row set and the revision are unchanged. The residual is that **an EVEN remainder is accepted and silently re-pairs every entry in the table** — see CR-10. |
+| WR-18 | **Closed as written; residual filed as WR-26.** `rollbackFailed` has two production readers (`anno-store.ts:1234` in `pruneSnapshots`, `:2547` in `revertTo` step 6) and the fact is carried on `AnnoStoreHandle.transactionStateUnknown` (`:325`), read at `runWriteSequence`'s first statement (`:1501`). The residual: **the flag is set at ONE of the four sites that can observe a failed rollback**, and the other three are the ones that already know the fact. |
+| WR-19 | **Closed for the two spellings it names; residual filed as WR-27.** `commitStatements()` (`anno-seam.test.ts:378-397`) now tests statement contents inside an `exec()` literal. Re-measured with the exact regex: `db.exec("commit;")` → 1, `db.exec("insert into t values (1); commit")` → 1, the prose fixture → 0. The residual: **`db.prepare("commit").run()` — the idiom this module uses for every other statement — is a fully working commit that the matcher counts as 0** (verified against `node:sqlite`, not argued). |
+| WR-21 | **Closed; residual filed as WR-28.** Re-driven: `addScope($2000..$2100)` → `{revision:1,changed:true}`, the repeat → `{revision:2,changed:false}` with `listScopes().length === 1`, and a nested `$2050..$2060` throws `AnnoRangeShapeError`. The residual: **the refusal is unrecoverable** — there is no scope delete verb anywhere in the module (`grep 'delete from anno_' anno-store.ts` returns exactly two hits, neither on `anno_scope`), so a mistyped scope permanently blocks its span once it ages past the 32-revision ring. |
+| WR-22 | **Closed.** `assertRevisionArgument()` (`anno-store.ts:2229-2246`) is `revertTo`'s first statement (`:2252`). Re-driven over eight values — `"1"`, `1.5`, `-1`, `NaN`, `Infinity`, `true`, `null`, `undefined` — all eight throw `AnnoRevisionArgumentError` and none reaches the pointer-row `select`. Nothing to add. |
+| WR-24 | **Closed.** `anno-store.ts:2337` is `${storePath}.revert-${process.pid}.${randomUUID()}.tmp` and all three cleanups are `discardSnapshot(staging)`; `grep -c 'rmSync(staging'` inside `revertTo` is 0. |
+| WR-25 | **Closed; two notes filed as IN-11.** The guard is `openStore`'s first statement (`:425-433`), before `resolve()` and before `new DatabaseSync`, and the four escape sites are the enumerated module-derived opens (`:695`, `:2388`, `:2520`, `:2559`). Re-driven: `openStore(path)` throws `AnnoStorePathError` and `existsSync(path)` is `false` afterwards. |
+| WR-20, WR-23, IN-07, IN-08 | **Accepted by the round-5 verifier; re-checked as unchanged and carried forward.** `contradictedCommentsFor` is byte-identical (`:2039-2044`), the four module-level-mutable-state scans still disagree, and neither `NO_ROW` nor `assertEnumName`'s `what` was touched. |
+
+### What this round attacked, and what it found
+
+Rounds 1-5 argued about the snapshot ring and the revert path. This round
+attacked the two areas the fifth round's own fixes created: **the semantics the
+new remainder gate does NOT check**, and **the wiring of the new poisoned-handle
+flag**. Both yielded.
+
+* **CR-10 (BLOCKER)** — the remainder gate checks byte-count parity and nothing
+  else, so an ordinary `setDataType` that fragments a split table on an EVEN
+  boundary is accepted, silently re-pairs every entry in both remainders, and
+  reports `changed: true`. That is the exact "irreversible split ORIENTATION"
+  loss `retype()`'s own DECISION 1 comment cites as its reason for refusing the
+  odd case — and `anno-overlap.test.ts:592` pins the corrupted row set as
+  correct.
+* **WR-26** — `handle.transactionStateUnknown` is set at one of four
+  rollback-failure sites. The three that do not set it are the three that
+  compute the fact and print it in prose.
+* **WR-27** — the single-commit-site control still cannot see
+  `prepare("commit").run()`, measured working.
+* **WR-28** — `addScope`'s new refusal has no inverse verb.
+* **WR-29** — 28-20 inserted `assertRevisionArgument` between `revertTo`'s
+  120-line contract comment and `revertTo`, so the contract now documents the
+  private validator.
+* **WR-30** — `pruneSnapshots` changed from `void` to `boolean` with no
+  documentation of what the boolean means, in a module that documents
+  everything.
+
+Nothing new was found in `anno-index.ts`, `block-class.ts`, `package.json` or
+`r2000-coverage.test.ts`; all four are unchanged since round 5 and their open
+items (IN-03, IN-08, WR-10) are carried forward. **There is still no SQL
+injection and no new one was introduced**: the round's new SQL is three bound
+`prepare().run()`/`get()` statements in `addScope` and `retype`, and the new
+staging name is `pid` + `randomUUID()`. No debug artifacts, no `eval`, no
+dynamic `Function`, no new host-path consumer (`anno-store.ts` and
+`anno-types.ts` are still absent from `hostpath-consumers.test.ts`'s closed set).
+
+**Note for the orchestrator:** the nine new ids below will red
+`docs-review-disposition.test.ts` (AUDIT-01) until each is named in a recognised
+disposition source. That is the guard working, not a defect in it.
+
+### CR-10: an EVEN split-table remainder is accepted and silently re-pairs every entry in the table — the parity gate 28-19 added does not protect the orientation its own comment says it protects
+
+**File:** `src/mcp/vice/anno-store.ts:1959-2004` (`retype()`, the gate at
+`:1979-1990` and the remainder inserts at `:1995` and `:1998`), with
+`src/mcp/vice/anno-types.ts:784-789` (`assertRangeShape`'s only split rule) and
+`:1329-1355` (`resolveSplitTargets`)
+**Severity:** BLOCKER
+*(new in round 6; the residual of CR-09's fix, not a re-opening of it)*
+
+**Issue:**
+A split table's layout is **first half / second half**, stated by
+`resolveSplitTargets`'s own doc comment and implemented at
+`anno-types.ts:1347-1352`: entry `i` of an `n`-entry table is
+`bytes[i] | (bytes[n + i] << 8)`. The pairing of a byte with its partner is
+therefore a function of **the row's start and the row's length**, and any change
+to either re-pairs every entry.
+
+`assertRangeShape()` knows exactly one rule about split tables — the byte count
+must be even (`anno-types.ts:784`). CR-09's fix asks that one rule about each
+remainder. So the gate refuses the ODD fragment and **accepts every even one**,
+including every even fragment that destroys the pairing.
+
+Reproduced through the public entry points only, on a fresh store, no
+hand-editing and no test-only export:
+
+```
+setDataType(h, { start: 0x1000, endInclusive: 0x100f, dataType: "lo_hi_address" })
+setDataType(h, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" })
+   -> { revision: 2, changed: true, contradictedComments: [] }
+
+listRanges(h) ->
+  { id: 2, start: 0x1000, endInclusive: 0x1003, dataType: 'lo_hi_address', bank: null }
+  { id: 3, start: 0x1008, endInclusive: 0x100f, dataType: 'lo_hi_address', bank: null }
+  { id: 4, start: 0x1004, endInclusive: 0x1007, dataType: 'byte',          bank: null }
+```
+
+Both remainders are even, both are re-acceptable at `setDataType`, both decode
+under `resolveSplitTargets` — and **both mean something different from what they
+meant before the call**:
+
+| entry | pairing BEFORE (one 8-entry table) | pairing AFTER (row id 2, a 2-entry table) |
+|---|---|---|
+| 0 | `$1000` lo with `$1008` hi | `$1000` lo with `$1002` hi |
+| 1 | `$1001` lo with `$1009` hi | `$1001` lo with `$1003` hi |
+
+Every one of the eight recorded targets is now a different 16-bit value. There
+is no report, no `contradictedComments` entry, no refusal, and no field
+recording that the table was ever 16 bytes wide — so the recovery cost is the
+one `anno-types.ts`'s header names for orientation loss: "a hand re-annotation
+of every split table in every project file".
+
+**Three things make this a BLOCKER rather than the WARNING its parity sibling
+would have been.**
+
+1. **It is strictly worse than CR-09, which was rated BLOCKER.** CR-09 produced
+   an 11-byte row that `resolveSplitTargets()` REFUSES — a loud, detectable
+   shape. This produces a row that resolves happily and returns wrong numbers.
+   A refusal is recoverable; a plausible wrong answer is not.
+2. **The module's own stated reason for refusing the odd case applies verbatim
+   to this case, and was not followed through.** `retype()`'s DECISION 1
+   comment (`:1921-1941`) rejects demoting an illegal remainder "because it
+   destroys the recorded split ORIENTATION, which this module's own header calls
+   the one irreversible decision in this area with no field to migrate -- a
+   one-way data decision taken silently on the caller's behalf". The accepted
+   path above takes exactly that decision, silently, on the caller's behalf.
+3. **The suite pins the defect as correct.**
+   `anno-overlap.test.ts:592` ("the LEGAL remainder case on the same split
+   row") asserts the three-row set above BY VALUE and calls it legal, and the
+   round-trip invariant at `:1190` asks only that every row be "re-acceptable at
+   setDataType and decodable by resolveSplitTargets". Decodability is not
+   preservation: a re-paired table decodes perfectly. So no control in the suite
+   can go red on this, and the one control closest to it certifies it.
+
+**Fix:** the honest rule for a first-half/second-half layout is that a split row
+cannot be fragmented at all — there is no interior boundary at which the halves
+survive, including the midpoint (splitting `$1000..$100f` at `$1008` yields two
+8-byte tables whose entries pair within themselves, which is also wrong).
+So refuse the partial overlap of a split row outright, in the SAME pre-delete
+gate CR-09 added, and reuse its error class:
+
+```ts
+// In the gate loop, BEFORE remainderRefusal() -- a split row that is only
+// PARTIALLY covered cannot be preserved at all. Its layout is
+// first-half/second-half (`resolveSplitTargets`), so entry i pairs byte i with
+// byte n + i: changing either end of the row re-pairs EVERY entry. An even
+// remainder is not a legal fragment, only a legally SHAPED one -- the parity
+// rule is the only thing `assertRangeShape` knows about split tables, and it
+// is not the rule that matters here.
+if (isSplitDataType(row.data_type as DataType) && (row.start < start || row.end_inclusive > endInclusive)) {
+  throw new AnnoSplitRemainderError(
+    `typing ${hexRange(start, endInclusive)} would fragment the ${row.data_type} table id ${row.id} ` +
+      `(${hexRange(row.start, row.end_inclusive)}): a split table stores every entry's low byte in its FIRST half and its high byte ` +
+      `in its SECOND half, so any change to either end re-pairs every entry in it. The whole retype is REFUSED rather than silently ` +
+      `re-interpreting ${(row.end_inclusive - row.start + 1) / 2} targets. Retype the WHOLE table (${hexRange(row.start, row.end_inclusive)}) ` +
+      `to the type you want first, then type the sub-range.`,
+    { start: row.start, endInclusive: row.end_inclusive, rowId: row.id, rowStart: row.start, rowEndInclusive: row.end_inclusive,
+      dataType: row.data_type as DataType },
+  );
+}
+```
+
+The parity check stays: it is still the right refusal for a NON-split remainder
+of a row whose type later gains an even-count rule, and removing it would drop
+CR-09's control. Two test changes belong in the same commit: rewrite
+`anno-overlap.test.ts:592` to assert the REFUSAL (it currently certifies the
+defect), and add the pairing table above as the evidence — an assertion over
+`resolveSplitTargets`'s targets before and after, which is the only assertion
+that can see this class of loss. `SEQUENCE`'s `expect` values in the round-trip
+invariant will need re-deriving; the `refusals >= 3` non-vacuity floor rises
+with them.
+
+### WR-26: the poisoned-handle flag is set at ONE of the four sites that observe a failed rollback, and the three that skip it are the three that already computed the fact
+
+**File:** `src/mcp/vice/anno-store.ts:1782` (the only site that sets it), with
+the three that do not: `:1601-1612` (the publish handler), `:1717-1745` (the
+commit handler) and `:1650-1663` (the mutation-refusal handler)
+**Severity:** WARNING
+*(new in round 6; the residual of WR-18's fix)*
+
+**Issue:**
+28-20 added `AnnoStoreHandle.transactionStateUnknown` and a refusal at
+`runWriteSequence`'s first statement (`:1501-1510`) whose stated purpose is to
+replace SQLite's bare `cannot start a transaction within a transaction` — CR-07's
+symptom — with a named refusal. It is set in exactly one place:
+
+```
+$ grep -n 'transactionStateUnknown' anno-store.ts
+325   the field
+464   openStore: initialised false
+1501  runWriteSequence: the refusal reads it
+1782  runWriteSequence step 9: `if (pruneSnapshots(handle)) handle.transactionStateUnknown = true;`
+```
+
+Three other sites in the same file compute the identical fact into a local named
+`rolledBack` and then throw it away:
+
+```ts
+// :1601 (publish handler) and :1717 (commit handler), same shape
+let rolledBack = true;
+try { handle.db.exec("rollback"); } catch { rolledBack = false; }
+…
+throw new AnnoStoreError(… rolledBack ? "…rolled back…" : "…CLOSE IT AND REOPEN…",
+  { data: { …, rolledBack, … } });          // <-- the fact is reported and DISCARDED
+
+// :1650 (the mutation-refusal handler) does not even track it
+try { handle.db.exec("rollback"); } catch { /* deliberately ignored */ }
+throw mutationError;
+```
+
+The consequence is that the state the new gate exists to name stays reachable
+from the two paths most likely to produce it, and it is WORSE than the sweep
+path it does cover, because on these paths the transaction that stays open holds
+the revision compare-and-swap:
+
+1. the commit fails and its rollback fails; the caller is told to close and
+   reopen but the handle is not marked;
+2. the caller — an MCP tool handler that catches, reports and continues, which
+   is the Phase 29 shape — calls `setDataType` again;
+3. `handle.transactionStateUnknown` is `false`, so the gate passes;
+4. `currentRevision(handle)` reads **inside the still-open transaction** and
+   returns `rev + 1`, a revision the disk does not have — the exact
+   discrepancy the commit handler's own message warns about ("this connection
+   may report `${rev + 1}` for a write that never landed");
+5. `begin immediate` throws SQLite's bare
+   `cannot start a transaction within a transaction`, outside the `ViceError`
+   family — CR-07's reported symptom, from the site that had the fact in a local
+   variable one statement earlier.
+
+The mutation-refusal handler (`:1650-1663`) is the newest of the three and the most
+exposed: 28-21's `addScope` overlap refusal throws from inside `mutate`, so
+every refused scope now runs that rollback.
+
+**Fix:** one assignment at each site, before the throw, next to the existing
+`rolledBack` local:
+
+```ts
+if (!rolledBack) handle.transactionStateUnknown = true;
+```
+
+and at `:1650`, track the fact rather than swallowing it:
+
+```ts
+} catch (mutationError) {
+  try {
+    handle.db.exec("rollback");
+  } catch {
+    // A ROLLBACK THAT FAILED IS NOT A ROLLBACK. The caller's refusal is still
+    // what gets thrown -- but this connection may hold an open transaction with
+    // the compare-and-swap applied, so the NEXT call must refuse by name rather
+    // than surfacing SQLite's bare "cannot start a transaction within a
+    // transaction".
+    handle.transactionStateUnknown = true;
+  }
+  discardSnapshot(staging);
+  throw mutationError;
+}
+```
+
+`anno-store.test.ts`'s WR-18 behavioural control already proves what happens
+once the flag is set, so the new controls only have to prove it gets set — three
+structural assertions in the shape of the existing
+`assert.match(body.slice(call, call + 200), /handle\.transactionStateUnknown = true/)`
+control at `:4434`, one per handler.
+
+### WR-27: the single-commit-site control is still blind to `prepare("commit").run()` — the spelling this module uses for every other statement, verified as a working commit
+
+**File:** `src/mcp/vice/anno-seam.test.ts:378-397` (`commitStatements`), used at
+`:506`
+**Severity:** WARNING
+*(new in round 6; the second residual of WR-15 → WR-19)*
+
+**Issue:**
+WR-19's repair matches a commit statement **inside an `exec()` call**:
+
+```ts
+for (const m of source.matchAll(/\bexec\(\s*(['"`])([\s\S]*?)\1\s*\)/g)) {
+  if (COMMIT_STATEMENT_RE.test(m[2] as string)) out.push(m[0]);
+}
+```
+
+`exec()` is not the only way to commit, and it is not even this module's usual
+way: `anno-store.ts` issues **every** other statement through
+`prepare(...).run()` / `.get()` / `.all()`, and reserves `exec()` for the four
+transaction keywords and the DDL. Measured on this host, Node 22, `node:sqlite`:
+
+```
+db.exec("begin immediate"); db.prepare("insert into t values (1)").run();
+db.prepare("commit").run();
+   -> a SECOND connection reads { c: 1 }        // the transaction committed
+```
+
+and measured with the file's own regex:
+
+```
+'db.prepare("commit").run();'                  -> 0 matches
+'handle.db.prepare("end transaction").run();'  -> 0 matches
+'const s = db.prepare("commit"); s.run();'     -> 0 matches
+'db.exec("commit");'                           -> 1 match
+```
+
+So a second, fully working commit site written in the module's own dominant
+idiom leaves the control at 1 and green. The control's entire purpose is that
+`anno-durability-mutator.mjs`'s `no-commit` planting has a unique site to
+remove; with a `prepare`-spelled commit present, `applyWriteWithoutCommit` still
+commits and the durability proof plants nothing while reporting a pass. This is
+the same defect class as WR-15 and WR-19, one layer out: the matcher was widened
+along the axis the last residual named instead of along the axis that decides
+what SQLite executes.
+
+**Fix:** match the CALL, not the method name — every route from a string literal
+to SQLite, which is `exec()` and `prepare()`:
+
+```ts
+// EVERY ROUTE FROM A LITERAL TO SQLITE, not just exec(). `prepare("commit").run()`
+// is a fully working commit (measured) and is the idiom this module uses for
+// every other statement, so a matcher that only knows exec() is blind to the
+// spelling a contributor is most likely to write.
+for (const m of source.matchAll(/\b(?:exec|prepare)\(\s*(['"`])([\s\S]*?)\1\s*\)/g)) {
+  if (COMMIT_STATEMENT_RE.test(m[2] as string)) out.push(m[0]);
+}
+```
+
+Add `db.prepare("commit").run();` and `handle.db.prepare("END TRANSACTION").run();`
+to a new fixture with its own expected count (not folded into
+`SIX_SPELLINGS_FIXTURE`, for the reason `MULTI_STATEMENT_FIXTURE`'s own comment
+gives), and re-verify `NO_STATEMENT_FIXTURE` still yields 0 — it contains
+`prepare` calls with non-commit literals, so it is already the right negative
+control. `commitTransaction()` itself uses `exec`, so the seam's own count stays
+1.
+
+### WR-28: `addScope`'s new overlap refusal is unrecoverable — there is no scope delete verb, so one mistyped scope permanently blocks its span
+
+**File:** `src/mcp/vice/anno-store.ts:2761-2801` (`addScope`, the refusal at `:2790-2799`), with the module's
+complete delete surface
+**Severity:** WARNING
+*(new in round 6; the residual of WR-21's fix)*
+
+**Issue:**
+28-21 made `addScope` refuse any scope overlapping an existing one. The store has
+no verb that removes a scope — or a label, a comment, an xref or an enum:
+
+```
+$ grep -n 'delete from anno_' src/mcp/vice/anno-store.ts
+1250:  delete from anno_snapshot where revision = ?     (the prune)
+1993:  delete from anno_range where id = ?              (retype's split-and-preserve)
+```
+
+So `addScope($1000, $ffff)` — one transposed end, and both ends arrive
+unvalidated from a transport whose validator is `validate: (value) => ({ value })`
+— makes **every future scope from `$1000` up permanently unaddable**. The only
+route back is `revertTo`, which is bounded at `MAX_SNAPSHOT_REVISIONS` (32): once
+32 further writes have happened, the mistake is permanent for the life of the
+project file, and the store's own published floor will refuse the revision that
+would undo it, by name.
+
+Before 28-21 the same typo was recoverable — the corrected scope was simply added
+alongside, and a downstream consumer picked the one it wanted. The refusal is the
+right rule (`ScopeRow`'s doc comment and the mirrored schema both say nested
+scopes are unsupported); what is missing is its inverse. A write verb whose
+mistakes cannot be undone is a data-loss surface even when every individual
+refusal is correct.
+
+**Fix:** ship the inverse verb in the same phase as the refusal. It is the
+smallest entry point in the module and it fits the existing shape exactly:
+
+```ts
+/** Removes the scope covering exactly `start..endInclusive`, or reports
+ * `changed: false` when no such scope exists. THE INVERSE OF `addScope`'s
+ * OVERLAP REFUSAL, and it ships with it rather than after it: a refusal with no
+ * inverse turns one mistyped end into a permanently unusable span, because the
+ * snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS and a revert past the bound
+ * is refused by name. Exact-span only -- a delete that guessed which overlapping
+ * scope the caller meant would be the substitution trap 7 forbids. */
+export function removeScope(
+  handle: AnnoStoreHandle,
+  args: { start: number | string; endInclusive: number | string; baseRevision?: number },
+): AnnoWriteResult {
+  const start = parseStoreAddress(args.start, { what: "start" });
+  const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
+  assertRangeShape(start, endInclusive, "byte");
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => Number(db.prepare("delete from anno_scope where start = ? and end_inclusive = ?").run(start, endInclusive).changes) > 0,
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+```
+
+If a delete verb is out of scope for Phase 28, say so IN `addScope`'s doc comment
+next to the refusal — "there is deliberately no inverse verb yet; a mistyped
+scope is recoverable only by `revertTo` within the ring bound" — so the trap is
+recorded where the caller reads about the refusal, rather than discovered.
+
+### WR-29: `revertTo`'s 120-line contract comment now documents `assertRevisionArgument` instead
+
+**File:** `src/mcp/vice/anno-store.ts:2166-2228` (the two adjacent doc blocks)
+and `:2247` (the function they were written for)
+**Severity:** WARNING
+*(new in round 6, introduced by 28-20)*
+
+**Issue:**
+28-20 inserted `assertRevisionArgument` between `revertTo`'s doc comment and
+`revertTo`. The file now reads:
+
+```ts
+/**
+ * Restores the whole store to the state it had at `revision` …
+ * … THE REFUSAL SET HAS THREE ARMS …
+ * … NOTHING IS CLOSED AND NOTHING IS RENAMED UNTIL THE STAGED IMAGE HAS BEEN
+ * OPENED AS AN ANNOTATION STORE THIS BUILD CAN SPEAK TO …
+ */
+/**
+ * The one gate on a revision-shaped argument …
+ */
+function assertRevisionArgument(value: unknown, parameter: string): number { … }
+
+export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
+```
+
+Two consecutive JSDoc blocks: TypeScript, every IDE and every doc generator
+attach BOTH to `assertRevisionArgument`, and `revertTo` — the module's most
+dangerous function, the one that closes the caller's handle and renames a file
+over the store — is left with no doc comment at all. In a module whose entire
+review history turns on comments that must stay true (28-07 P3, the recorded
+reversals, "a rationale that became false is evidence"), a contract detached from
+its function is not cosmetic: the next editor of `revertTo` hovers it and sees
+nothing, and the ordering guarantee the comment exists to enforce
+("NOTHING IS CLOSED AND NOTHING IS RENAMED UNTIL…") is invisible at the point of
+edit.
+
+**Fix:** move `assertRevisionArgument` and its own doc block ABOVE `revertTo`'s
+contract comment, so each block sits immediately above the function it describes.
+The validator is private and its position is free; the contract's position is
+not. Consider a one-line structural control in `anno-store.test.ts` — the file
+already extracts function bodies from the stripped source — asserting that the
+text `export function revertTo` is preceded by a `*/` within a line or two, which
+is what "the contract is attached" means mechanically.
+
+### WR-30: `pruneSnapshots` changed from `void` to `boolean` with no documentation of the boolean, and only the in-module caller translates it
+
+**File:** `src/mcp/vice/anno-store.ts:1160-1190` (the doc comment) and `:1191`
+(the signature), with the single translating caller at `:1782`
+**Severity:** WARNING
+*(new in round 6, introduced by 28-20)*
+
+**Issue:**
+`pruneSnapshots` is an EXPORTED function of a module listed in
+`package.json`'s `files[]`. 28-20 changed it to return `boolean`. Its doc
+comment — 31 lines, covering the trap-10 ordering, the two-statement kill window,
+the imported bound and the `busy_timeout` cost — says nothing about the return
+value at all, and the value is not self-describing: `true` does not mean
+"pruned", it means "the sweep's own rollback threw, so this connection may still
+hold an open transaction and the store's write lock".
+
+The translation from that boolean to `handle.transactionStateUnknown` exists at
+exactly one call site (`:1782`). Any other caller — and this is a public export,
+so Phase 29's tool layer is a plausible one — gets `true`, has no documented way
+to know what it means, drops it, and is left holding precisely the connection
+WR-18 was raised about, with the poisoned-handle gate never armed.
+
+**Fix:** document it, and make the safe translation the function's own job rather
+than its caller's:
+
+```ts
+/**
+ * …
+ * RETURNS whether the sweep reported that its OWN rollback failed -- the one
+ * state it cannot fix and cannot throw about (28-11 P5). `true` means this
+ * connection may still hold an open transaction and the store's write lock, and
+ * the handle has been marked `transactionStateUnknown` so the NEXT write refuses
+ * by name. It does NOT mean anything was pruned; nothing here reports that.
+ */
+export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
+  …
+  const swept = reconcileSnapshotRing(handle);
+  if (swept.deferred) {
+    if (swept.rollbackFailed) handle.transactionStateUnknown = true;   // <-- here, not at the caller
+    return swept.rollbackFailed;
+  }
+```
+
+with `runWriteSequence` step 9 reduced to `pruneSnapshots(handle);` — the
+existing structural control at `anno-store.test.ts:4395` then has to move to this
+function, which is where the fact now lands. That also fixes WR-26's fourth
+corner for free: every route that can leave a transaction open marks the handle
+at the site that discovers it.
+
+### IN-09: `AnnoSplitRemainderError` inherits `start`/`endInclusive` and fills them with the REMAINDER, where every other member of the family fills them with the caller's range
+
+**File:** `src/mcp/vice/anno-types.ts:544-592` (the class) and
+`src/mcp/vice/anno-store.ts:1885-1893` (its only construction site)
+**Severity:** WARNING (informational tier)
+*(new in round 6)*
+**Issue:** the class documents itself as extending `AnnoRangeShapeError` so
+"every existing `instanceof AnnoRangeShapeError` caller keeps working". Such a
+caller reads `.start`/`.endInclusive`. Everywhere else in the module those two
+fields are the span the CALLER named — `assertRangeShape` passes the argued
+range, `addScope`'s overlap refusal passes the incoming scope. Here they are the
+remainder the store computed, which the caller never mentioned and cannot act on
+directly, and they duplicate `remainderStart`/`remainderEndInclusive` exactly. A
+generic handler that highlights `e.start..e.endInclusive` highlights the wrong
+span, and does so silently.
+**Fix:** pass the CALLER's range to `super` and let the remainder live only in
+its own two named fields:
+`super(message, { start: options.callerStart, endInclusive: options.callerEndInclusive })`,
+with `remainderRefusal` supplying `callerStart`/`callerEndInclusive` (it already
+takes both). Then drop `start`/`endInclusive` from
+`AnnoSplitRemainderErrorOptions`, which today only exist to be duplicated.
+
+### IN-10: `remainderRefusal`'s repair advice is computed per row, so it can name a value another overlapped row would refuse
+
+**File:** `src/mcp/vice/anno-store.ts:1872-1881`
+**Severity:** WARNING (informational tier)
+*(new in round 6)*
+**Issue:** the refusal ends with "The nearest `${boundaryName}` values that would
+leave an even ${side} are `${boundary - 1}` and `${boundary + 1}`". The gate loops
+over every overlapping row and throws on the FIRST illegal remainder, so the
+advice is computed from one row while the retype may overlap several. With two
+split rows of opposite parity at either end of the caller's range, following the
+printed advice moves the boundary into the other row's illegal remainder and the
+retry is refused again, with the same shape of message pointing the other way.
+Both suggested values are in range (a head remainder implies `row.start < start`,
+a tail one implies `endInclusive < row.end_inclusive`), so this is a diagnostic
+quality issue and not an out-of-range suggestion.
+**Fix:** either qualify the sentence ("…for THIS row; other overlapped rows may
+impose their own boundaries"), or collect every remainder refusal in the gate
+loop and report them together — the latter is the better answer if CR-10's
+whole-row refusal lands, because a caller then wants the full list of tables its
+range would fragment.
+
+### IN-11: the WR-25 escape pin counts one exact substring, so a fifth escape spelled without the space is invisible
+
+**File:** `src/mcp/vice/anno-seam.test.ts:639` (`ESCAPE_AT_A_CALL_SITE`) and
+`:661-668` (the count), with the same shape at
+`src/mcp/vice/anno-store.test.ts:3694`, `:3920` and `:4490`
+**Severity:** WARNING (informational tier)
+*(new in round 6)*
+**Issue:** the pin is
+`const ESCAPE_AT_A_CALL_SITE = "unconfinedModuleDerivedPath: true";` counted by
+`split(...).length - 1` and compared for exact equality with 4. The repo has no
+formatter config of any kind (no `.eslintrc*`, no `.prettierrc*`, no
+`biome.json`), so spelling is a matter of habit: a fifth escape written
+`{unconfinedModuleDerivedPath:true}` or `{ unconfinedModuleDerivedPath : true }`
+leaves the count at 4 and the test green, which is the silent direction. The
+loud direction — reformatting an existing site drops the count to 3 and reddens —
+is fine. The cross-module scan at `:671` is spelling-independent
+(`includes("unconfinedModuleDerivedPath")`), so only additional sites INSIDE the
+seam can evade. Same class as WR-20: a structural control that reads as
+enforcement and can be stepped around by an equivalent spelling.
+**Fix:** count a regex rather than a substring —
+`(seamCode.match(/unconfinedModuleDerivedPath\s*:\s*true/g) ?? []).length` — and
+give the count its own local fixture carrying all three spellings, in the style
+`commitStatements`'s fixtures already establish in the same file.
+
 ---
 
-_Reviewed: 2026-08-28_
+_Reviewed: 2026-08-29_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Round: 6 (ADDITIVE to round 5, which is preserved verbatim below the title. Round 6 re-verifies all nine round-5 ids that were dispositioned `fix`, re-checks the four dispositioned `accept`, and opens CR-10, WR-26, WR-27, WR-28, WR-29, WR-30, IN-09, IN-10 and IN-11. Two of the round-5 fixes -- CR-09's parity gate and WR-18's poisoned-handle flag -- reproduce as claimed and leave residuals filed as new ids, never as re-openings. Both carried-forward human-verification items remain open and are unchanged.)_
+
 _Round: 5 (supersedes the round-4 review of the same file set; CR-08, WR-13, WR-14, WR-16 and WR-17 are dispositioned CLOSED with evidence, WR-15 CLOSED for its synonym half with the residual filed as WR-19, WR-16's residual filed as WR-18, and every other round-3/round-4 id is carried forward explicitly. Both prior disposition tables are preserved verbatim.)_
