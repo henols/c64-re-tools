@@ -90,6 +90,9 @@ import {
   ADDRESS_MIN,
   AnnoRangeShapeError,
   AnnoSplitRemainderError,
+  assertRangeShape,
+  isSplitDataType,
+  resolveSplitTargets,
   type DataType,
   type RangeRow,
 } from "./anno-types.ts";
@@ -1065,4 +1068,322 @@ test("post-split row order is DETERMINISTIC and survives a close and a reopen: h
       closeStore(reopened);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// THE ROUND-TRIP RE-ACCEPTANCE INVARIANT, AND PLANTING C.
+// ---------------------------------------------------------------------------
+//
+// THE CLASS-LEVEL STATEMENT of everything above: a row the store RETURNS must
+// be a row the store would ACCEPT. Every hand-written case above catches one
+// instance of a violation; this catches the class, so a future internal writer
+// added without the shape gate is caught by an assertion rather than by whether
+// somebody remembered to add a case for it.
+//
+// WHAT THIS INVARIANT PROVES, AND WHAT IT DOES NOT -- stated, not implied.
+// It is driven over a DETERMINISTIC FINITE SEQUENCE of writes. It is therefore
+// direct evidence for the geometries that sequence constructs, and a BACKSTOP
+// for the unbounded input space of every reachable start/end pair. No
+// property-based sweep over all 65,536 address pairs is run here. A later
+// reader must not read the invariant's green as a proof over the whole input
+// space; the same limit is filed as a structured `backstop` truth in this
+// plan's SUMMARY.
+
+/**
+ * The rows `listRanges()` produced that the store would REFUSE at its own entry
+ * point. Returns ROWS rather than a boolean so a failure message can name the
+ * offending row by value instead of merely reporting that one exists.
+ *
+ * Two questions, both asked of the module's own functions rather than
+ * re-implemented here:
+ *   * `assertRangeShape(start, endInclusive, dataType)` -- the exact call
+ *     `setDataType()` makes on a caller's range, which is what makes this a
+ *     ROUND TRIP rather than a second opinion;
+ *   * for a split member, `resolveSplitTargets()` over a byte array of the
+ *     row's span -- the module's own resolver, and the one function ROADMAP
+ *     criterion 1 names as the observable consequence of recording orientation.
+ *     A row that shape-checks but cannot be decoded is still un-documented.
+ *
+ * Split membership is asked through the exported `isSplitDataType` predicate.
+ * A hand-written list of the four names here would be a second copy of the
+ * vocabulary, which is the module header's trap 2.
+ */
+function rowsTheStoreWouldRefuse(rows: readonly RangeRow[]): { row: RangeRow; reason: string }[] {
+  const refused: { row: RangeRow; reason: string }[] = [];
+  for (const row of rows) {
+    try {
+      assertRangeShape(row.start, row.endInclusive, row.dataType);
+    } catch (e) {
+      refused.push({ row, reason: `assertRangeShape: ${(e as Error).message}` });
+      continue;
+    }
+    if (isSplitDataType(row.dataType)) {
+      try {
+        resolveSplitTargets(new Uint8Array(row.endInclusive - row.start + 1), row.dataType);
+      } catch (e) {
+        refused.push({ row, reason: `resolveSplitTargets: ${(e as Error).message}` });
+      }
+    }
+  }
+  return refused;
+}
+
+/** Formats the offenders for a failure message -- by value, so the message
+ * names the row rather than its count. */
+function describeRefused(refused: readonly { row: RangeRow; reason: string }[]): string {
+  return refused
+    .map(({ row, reason }) => `id=${row.id} ${row.start}..${row.endInclusive} ${row.dataType} (${row.endInclusive - row.start + 1} bytes) -- ${reason}`)
+    .join("; ");
+}
+
+/** The seed every sequence run starts from: one row of each of the four split
+ * layouts plus one non-split row, all 16 bytes so an entry boundary falls on
+ * every even offset. Written through the production entry point. */
+const SEQUENCE_SEED: readonly (readonly [number, number, DataType])[] = [
+  [0x1000, 0x100f, "lo_hi_address"],
+  [0x1100, 0x110f, "hi_lo_address"],
+  [0x1200, 0x120f, "lo_hi_word"],
+  [0x1300, 0x130f, "hi_lo_word"],
+  [0x1400, 0x140f, "byte"],
+];
+
+interface SequenceStep {
+  readonly start: number;
+  readonly endInclusive: number;
+  readonly dataType: DataType;
+  /** What the PRODUCTION path does with this step, applied to the SEED state. */
+  readonly expect: "accepted" | "refused";
+  readonly note: string;
+}
+
+/**
+ * A DETERMINISTIC, TABLE-DRIVEN sequence. Determinism is required so a red is
+ * reproducible: there is no pseudo-random generator here at all, and if one is
+ * ever added it must be a small test-local one with a FIXED seed recorded in
+ * this comment -- never `Math.random`, whose failures cannot be re-run.
+ *
+ * The sequence covers all four split members, one non-split member, both
+ * accepted and refused writes, an identical repeat (idempotency), a union
+ * retype spanning three rows, and a write that CREATES a split row.
+ */
+const SEQUENCE: readonly SequenceStep[] = [
+  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", note: "lo_hi_address, head 4 and tail 8 -- both even" },
+  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", note: "the identical write again -- idempotency" },
+  { start: 0x1105, endInclusive: 0x1105, dataType: "byte", expect: "refused", note: "hi_lo_address, head $1100..$1104 is 5 bytes -- odd" },
+  { start: 0x1102, endInclusive: 0x1109, dataType: "code", expect: "accepted", note: "hi_lo_address, head 2 and tail 6 -- both even" },
+  { start: 0x1203, endInclusive: 0x120f, dataType: "code", expect: "refused", note: "lo_hi_word, head $1200..$1202 is 3 bytes -- odd" },
+  { start: 0x1200, endInclusive: 0x1205, dataType: "petscii", expect: "accepted", note: "lo_hi_word, no head, tail 10 -- even" },
+  { start: 0x1300, endInclusive: 0x1300, dataType: "word", expect: "refused", note: "hi_lo_word, tail $1301..$130f is 15 bytes -- odd" },
+  { start: 0x130a, endInclusive: 0x130f, dataType: "screencode", expect: "accepted", note: "hi_lo_word, head 10 -- even, no tail" },
+  { start: 0x1404, endInclusive: 0x1407, dataType: "word", expect: "accepted", note: "a non-split row -- its remainders can never be illegal" },
+  { start: 0x1400, endInclusive: 0x140f, dataType: "address", expect: "accepted", note: "a union retype spanning all three rows of $1400" },
+  { start: 0x1408, endInclusive: 0x140b, dataType: "lo_hi_address", expect: "accepted", note: "CREATES a split row inside a non-split one" },
+];
+
+/** Seeds a store with `SEQUENCE_SEED` through the production entry point. */
+function seedSequenceStore(store: ReturnType<typeof openStore>): void {
+  for (const [start, endInclusive, dataType] of SEQUENCE_SEED) {
+    setDataType(store, { start, endInclusive, dataType });
+  }
+}
+
+test("THE ROUND-TRIP INVARIANT: after every write of a deterministic sequence, every row listRanges() returns is re-acceptable at setDataType and decodable by resolveSplitTargets", () => {
+  let accepted = 0;
+  let refusals = 0;
+  let finalRows = 0;
+  let finalSplitRows = 0;
+
+  inFreshStore((store) => {
+    seedSequenceStore(store);
+    assert.deepEqual(
+      rowsTheStoreWouldRefuse(listRanges(store)),
+      [],
+      "the seed itself is round-trippable -- otherwise the sequence starts already violating the invariant",
+    );
+
+    for (const [i, step] of SEQUENCE.entries()) {
+      const rowsBefore = listRanges(store);
+      const revisionBefore = currentRevision(store);
+      let thrown: unknown = null;
+      try {
+        setDataType(store, { start: step.start, endInclusive: step.endInclusive, dataType: step.dataType });
+      } catch (e) {
+        thrown = e;
+      }
+
+      if (step.expect === "refused") {
+        refusals += 1;
+        assert.ok(
+          thrown instanceof AnnoSplitRemainderError,
+          `step ${i} (${step.note}): expected a refusal, got ${thrown === null ? "acceptance" : String(thrown)}`,
+        );
+        assert.deepEqual(listRanges(store), rowsBefore, `step ${i}: a refusal leaves the row set byte-identical`);
+        assert.equal(currentRevision(store), revisionBefore, `step ${i}: a refusal does not advance the revision`);
+      } else {
+        accepted += 1;
+        assert.equal(thrown, null, `step ${i} (${step.note}): expected acceptance, got ${String(thrown)}`);
+      }
+
+      // THE INVARIANT, after EVERY write -- accepted or refused. A refused
+      // write is checked too because a partially applied refusal is exactly the
+      // state that would leave an unacceptable row behind.
+      const refused = rowsTheStoreWouldRefuse(listRanges(store));
+      assert.deepEqual(
+        refused,
+        [],
+        `step ${i} (${step.note}): the store returned a row it would refuse at its own entry point -- ${describeRefused(refused)}`,
+      );
+    }
+
+    const final = listRanges(store);
+    finalRows = final.length;
+    finalSplitRows = final.filter((row) => isSplitDataType(row.dataType)).length;
+
+    // THE FOUR SPLIT MEMBERS ARE ALL STILL REPRESENTED, so the invariant was
+    // asked about each orientation and each of address-versus-word, not only
+    // about whichever one happened to survive.
+    assert.deepEqual(
+      [...new Set(final.filter((row) => isSplitDataType(row.dataType)).map((row) => row.dataType))].sort(),
+      ["hi_lo_address", "hi_lo_word", "lo_hi_address", "lo_hi_word"],
+      "all four split layouts are present in the final row set",
+    );
+  });
+
+  // NON-VACUITY, in `anno-index.test.ts`'s style. Without these three counts a
+  // sequence that silently degenerated to zero writes -- or to zero split rows,
+  // or to zero refusals -- would satisfy the invariant trivially, which is the
+  // exact failure mode this whole round exists to close.
+  assert.ok(accepted >= 8, `the sequence must actually write: ${accepted} accepted writes, expected at least 8`);
+  assert.ok(refusals >= 3, `the sequence must actually exercise the refusal path: ${refusals} refusals, expected at least 3`);
+  assert.ok(finalSplitRows >= 4, `the invariant must be asked about split rows: ${finalSplitRows} split rows survive, expected at least 4`);
+  assert.equal(finalRows, 13, "the sequence's final row count, pinned so a silently shortened sequence is visible");
+});
+
+/**
+ * PLANTING C: split-and-preserve WITHOUT the remainder rule -- `retype()` as it
+ * stood before this rule existed. Test-local on purpose, and driven through
+ * `applyWrite()`, the same write sequence the production path uses, so the ONLY
+ * difference between the two measurements below is the missing gate.
+ */
+function retypeWithoutRemainderRule(
+  store: ReturnType<typeof openStore>,
+  start: number,
+  endInclusive: number,
+  dataType: DataType,
+): void {
+  applyWrite(store, (db) => {
+    const overlapping = db
+      .prepare("select id, start, end_inclusive, data_type, bank from anno_range where end_inclusive >= ? and start <= ? order by id")
+      .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string; bank: number | null }[];
+
+    if (
+      overlapping.length === 1 &&
+      overlapping[0].start === start &&
+      overlapping[0].end_inclusive === endInclusive &&
+      overlapping[0].data_type === dataType
+    ) {
+      return false;
+    }
+
+    for (const row of overlapping) {
+      db.prepare("delete from anno_range where id = ?").run(row.id);
+      if (row.start < start) {
+        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+          row.start,
+          start - 1,
+          row.data_type,
+          row.bank,
+        );
+      }
+      if (row.end_inclusive > endInclusive) {
+        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+          endInclusive + 1,
+          row.end_inclusive,
+          row.data_type,
+          row.bank,
+        );
+      }
+    }
+    db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
+    return true;
+  });
+}
+
+test("planting C, OBSERVED: the same sequence through a writer without the remainder rule leaves rows the store would refuse, named by value", () => {
+  // Checked after EVERY step, exactly as the invariant above checks it, so the
+  // planting is caught at the step that introduces the violation rather than
+  // only at the end -- a later step can delete an offending row and hide it.
+  let firstOffendingStep = -1;
+  let firstOffenders!: { row: RangeRow; reason: string }[];
+  let finalRefused!: { row: RangeRow; reason: string }[];
+  inFreshStore((store) => {
+    seedSequenceStore(store);
+    for (const [i, step] of SEQUENCE.entries()) {
+      retypeWithoutRemainderRule(store, step.start, step.endInclusive, step.dataType);
+      const refused = rowsTheStoreWouldRefuse(listRanges(store));
+      if (refused.length > 0 && firstOffendingStep === -1) {
+        firstOffendingStep = i;
+        firstOffenders = refused;
+      }
+    }
+    finalRefused = rowsTheStoreWouldRefuse(listRanges(store));
+  });
+
+  assert.notEqual(firstOffendingStep, -1, "the planting MUST leave at least one unacceptable row -- otherwise the invariant is not discriminating");
+  assert.equal(firstOffendingStep, 2, "and it does so at step 2, the first step whose remainder is an odd split table");
+
+  // NAMED BY VALUE, not counted: the odd hi_lo_address head that step 2's
+  // one-byte retype leaves behind.
+  assert.deepEqual(
+    firstOffenders.map(({ row }) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType })),
+    [{ start: 0x1100, endInclusive: 0x1104, dataType: "hi_lo_address" }],
+    `the offending row at step 2, by value: ${describeRefused(firstOffenders)}`,
+  );
+  assert.ok(firstOffenders[0].reason.includes("assertRangeShape"), "and it is refused by the store's own shape rule");
+
+  // ...and one survives all the way to the end, so the damage is not merely
+  // transient: an odd hi_lo_word row nothing later overwrites.
+  assert.deepEqual(
+    finalRefused.map(({ row }) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType })),
+    [{ start: 0x1301, endInclusive: 0x1309, dataType: "hi_lo_word" }],
+    `the offending rows left standing at the end: ${describeRefused(finalRefused)}`,
+  );
+});
+
+test("planting C, SELECTIVE and MEASURED: it can differ from the production path on exactly the three steps whose remainder is illegal, and is indistinguishable on the other eight", () => {
+  // MEASURED, not assumed -- the same shape planting A uses. Each step is
+  // applied ALONE to a freshly seeded store, so the comparison is per-step and
+  // does not inherit a divergence from an earlier one.
+  const differs: number[] = [];
+  const identical: number[] = [];
+
+  for (const [i, step] of SEQUENCE.entries()) {
+    let real: string | null = null;
+    inFreshStore((store) => {
+      seedSequenceStore(store);
+      try {
+        setDataType(store, { start: step.start, endInclusive: step.endInclusive, dataType: step.dataType });
+        real = JSON.stringify(listRanges(store).map((row) => [row.start, row.endInclusive, row.dataType]));
+      } catch {
+        real = null; // refused
+      }
+    });
+
+    let planted!: string;
+    inFreshStore((store) => {
+      seedSequenceStore(store);
+      retypeWithoutRemainderRule(store, step.start, step.endInclusive, step.dataType);
+      planted = JSON.stringify(listRanges(store).map((row) => [row.start, row.endInclusive, row.dataType]));
+    });
+
+    if (real === null) {
+      differs.push(i);
+    } else {
+      assert.equal(planted, real, `step ${i} (${step.note}): the planting must be INDISTINGUISHABLE where the remainder is legal`);
+      identical.push(i);
+    }
+  }
+
+  assert.deepEqual(differs, [2, 4, 6], "the planting differs on exactly the three steps whose remainder is an odd split table");
+  assert.deepEqual(identical, [0, 1, 3, 5, 7, 8, 9, 10], "and on the other eight it produces the identical row set -- which is why a table of legal-only cases would let it through");
 });
