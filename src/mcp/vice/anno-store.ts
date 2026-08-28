@@ -477,16 +477,47 @@ const SNAPSHOT_DIR_SUFFIX = ".snapshots";
  * `SNAPSHOT_DIR_SUFFIX`. For a store at `<dir>/proj.annostore` that is
  * `<dir>/proj.annostore.snapshots`.
  *
- * THE RESIDUAL, STATED RATHER THAN CLAIMED CLOSED. Renaming the store FILE
- * itself (`mv proj.annostore other.annostore`) re-points the ring name, so the
- * old ring becomes unreachable. It is deliberately NEVER DELETED -- the sweep
- * only ever reads `snapshotDirFor(handle)`, so it cannot see a ring it does not
- * name -- and `retainedRevisions()` then honestly reports `[]`. That is an
- * UNDER-claim, and it is accepted: the alternative is guessing which ring a
- * renamed store used to own, which is CR-01 again with a new cause and no test
- * watching. Renaming the containing DIRECTORY is a different case and is not a
- * residual at all: the ring moves with the directory, so nothing is lost
- * (pinned by the CR-03 rename test).
+ * THE RESIDUAL, STATED RATHER THAN CLAIMED CLOSED -- AND RESTATED AFTER THIS
+ * PARAGRAPH'S EARLIER VERSION WAS FALSIFIED BY DRIVING THE CODE (CR-05). What
+ * it got RIGHT and keeps: the location is a pure function of the handle, the
+ * sweep only ever reads `snapshotDirFor(handle)` so it cannot see a ring it
+ * does not name, and renaming the containing DIRECTORY is not a residual at all
+ * -- the ring moves with the directory, so nothing is lost (pinned by the CR-03
+ * rename test). What became FALSE: it claimed the old ring was never deleted at
+ * all and that `retainedRevisions()` reporting an empty list was therefore a
+ * truthful under-claim. That was true of the FILES and false of the ROWS -- so
+ * the claim is not repeated here even to disown it, because the next reader
+ * greps this file for the guarantee, not for its refutation. The verifier drove
+ * it in round 3: the next
+ * write's sweep classified every pointer row as an orphan and deleted them
+ * irreversibly, and restoring the original name recovered nothing.
+ *
+ * WHAT THE CODE ACTUALLY DOES NOW. A second spelling of the same store file --
+ * a SYMLINK ALIAS, or a store-file rename (`mv proj.annostore
+ * other.annostore`) -- names a DIFFERENT ring, so a handle opened under it
+ * publishes into a SECOND ring. The first ring's files are never deleted, and
+ * since CR-05 its pointer rows are never deleted BY THE SWEEP -- but
+ * `pruneSnapshots`' doomed loop still deletes every row below
+ * `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so restoring the original name
+ * restores the floor ONLY while the wrong-spelling handle has not advanced past
+ * `MAX_SNAPSHOT_REVISIONS` further revisions. The bound is stated in the same
+ * sentence as the claim on purpose: an unqualified "the rows survive, so
+ * renaming back recovers the floor" with the qualifier in a later sentence is a
+ * paragraph a reader takes the unqualified half of, which is the 28-07 P3
+ * failure this correction exists to remove, reproduced by the correction.
+ *
+ * TWO RESIDUALS SURVIVE, BOTH ACCEPTED ON THE RECORD.
+ *   * Each spelling accretes its OWN ring, so `MAX_SNAPSHOT_REVISIONS` bounds
+ *     each ring but not the on-disk footprint across spellings.
+ *   * Prohibition 28-07 P2 remains VIOLATED in the UNDER-CLAIM direction under
+ *     a second spelling: opened that way the store reports
+ *     `retainedRevisions() == []` and `oldestRetainedRevision() ==
+ *     NO_RETAINED_REVISION` while the first ring's files sit on disk. Abandoning
+ *     the row sweep removed the DESTRUCTION that under-claim used to drive; it
+ *     did not remove the under-claim. Closing it would mean teaching
+ *     `retainedRevisions` to read a ring whose ownership this handle cannot
+ *     establish, which is prohibition 28-10 P3 / 28-11 P4 -- the guess the whole
+ *     decision exists to refuse.
  */
 export function snapshotDirFor(handle: AnnoStoreHandle): string {
   return join(handle.dir, basename(handle.path) + SNAPSHOT_DIR_SUFFIX);
@@ -561,8 +592,9 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  * ITS CONSUMERS ARE NAMED HERE so a reader can see the set is closed:
  * `oldestRetainedRevision()` (the published floor), `revertTo()` (the refusal,
  * and the "available revisions" list inside its message),
- * `reconcileSnapshotRing` (which half of a half-state to drop) and, through
- * that resolver, `pruneSnapshots()` (the bound). Every one of them reads this
+ * `reconcileSnapshotRing` (which orphan FILES to unlink -- since CR-05 that
+ * resolver decides only the FILE half of a half-state, never the ROW half) and,
+ * through that resolver, `pruneSnapshots()` (the bound). Every one of them reads this
  * function rather than deciding for itself what "retained" means -- three
  * independent decisions is precisely how the three answers came to disagree,
  * and a fourth would also hide the row-only regression from the proofs that
@@ -1597,11 +1629,24 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // STEP 6. Reconcile the RESTORED ring before the handle leaves this
   // function. The image just restored carries `anno_snapshot` rows for
   // revisions whose files an earlier prune removed, and it leaves every
-  // snapshot taken AFTER `revision` unclaimed by any row. Both halves are
-  // resolved here, so the handle this function hands back never advertises a
-  // revision it cannot deliver and the directory bound holds after a revert
-  // -- RECORDED RATHER THAN QUIETLY DELETED, because the second half of that
-  // sentence became false and a rationale that became false is evidence. It
+  // snapshot taken AFTER `revision` unclaimed by any row. ONLY THE FILE HALF IS
+  // RESOLVED HERE, and the ROW half is deliberately left: since CR-05 the sweep
+  // abstains from the pointer-row direction entirely, because it cannot
+  // establish ownership of a row under a second spelling of the store file, so
+  // the restored image's stale rows are TOLERATED rather than deleted. This
+  // sentence previously claimed BOTH halves were resolved here -- the reversal
+  // is RECORDED RATHER THAN QUIETLY REWRITTEN, because a rationale that became
+  // false is evidence; the falsified sentence itself is not repeated verbatim,
+  // because the next reader greps this file for the guarantee it asserts, not
+  // for its refutation.
+  // The handle this function hands back still never advertises a revision it
+  // cannot deliver, and that does not depend on the sweep at all: the published
+  // floor routes through `retainedRevisions`, which requires BOTH halves of a
+  // revision's record regardless of whether either half was ever swept.
+  //
+  // The directory bound is the OTHER clause of the original sentence, and it
+  // was already qualified once for a different reason -- that qualification is
+  // still exactly true and is extended, not replaced. It
   // previously ended "and the directory bound holds after a revert as well as
   // before one", which is now an over-claim: `reconcileSnapshotRing` takes the
   // store's write lock before it judges, and under contention it DECLINES and
