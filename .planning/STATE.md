@@ -6,14 +6,14 @@ current_phase: 28
 current_phase_name: The Store Core
 status: gaps_found
 stopped_at: Completed 28-12-PLAN.md
-last_updated: "2026-08-28T09:37:22.519Z"
+last_updated: "2026-08-28T10:35:12.225Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 28 second gap-closure round executed (28-10..28-12); round-3 re-verification returned gaps_found at 10/12
-state_head: 8c19362c32cb1d2065cb4692dfe593a516ad6924
+state_head: c6d0278ea9e7e3dfc43a2762d06028f096c9e078
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 17
+  total_plans: 20
   completed_plans: 17
   percent: 17
 ---
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — GAPS FOUND
-Plan: 12 of 12 executed; second gap-closure round (28-10..28-12) complete
+Phase: 28 (The Store Core) — READY TO EXECUTE
+Plan: 12 of 15 executed; third gap-closure round (28-13..28-15) PLANNED, not yet executed
 Status: 10/12 must-haves. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). All six STORE requirements reverted out of Complete. See 28-VERIFICATION.md and 28-REVIEW.md.
-Last activity: 2026-08-28 — Phase 28 second gap-closure round executed; round-3 verification returned gaps_found at 10/12
+Last activity: 2026-08-28 — third gap-closure round planned (28-13..28-15, waves 11-13); plan-checker PASSED after two revision iterations (8 issues -> 3 -> 0)
 
 ## Performance Metrics
 
