@@ -1095,13 +1095,13 @@ by `.planning/quick/260823-kf6`.
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
 | capture | 2026-08-26-frame-exact-emulator-stop-is-unowned | major | Pending |
 | docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
-| store | 2026-08-28-phase-28-review-cr-04-dangling-symlink-confinement-bypass | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
+| store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
-close (one on 2026-08-24, five on 2026-08-26, one on 2026-08-28), the first of
+close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28), the first of
 them the first pending todo since Phase 17 plan 17-01 emptied the tree. The
-2026-08-28 row was filed by a `/gsd-explore` session and its ledger row was
+`phase-7-pitfall-5-…` row was filed by a `/gsd-explore` session and its ledger row was
 added only after `docs-deferred-ledger.test.ts` direction A went red on it --
 the third occurrence of that same file-without-row cause recorded in this
 paragraph, which is itself the argument for filing the row in the same edit as
