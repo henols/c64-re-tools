@@ -25,6 +25,17 @@
 //   5. overlap at the HIGH end       `a < c && c <= b && d >= b`
 //        -> `[a, c-1]` old type, `[c, d]` new type
 //
+// EACH GEOMETRY IS EXERCISED TWICE: once over a NON-SPLIT existing row (the
+// `CASES` table below, a `byte` row retyped to `code`) and once over a SPLIT
+// existing row (`SPLIT_CASES`, a `lo_hi_address` table retyped to `byte`). For
+// a split row the LEGALITY OF EACH REMAINDER is part of the case's expected
+// outcome, because a split-table layout needs an even byte count: the same
+// geometry can be a legal three-row split or a refusal depending only on where
+// the caller's boundary falls. A table that exercised the geometries over a
+// non-split row alone would report full coverage of five shapes while leaving
+// the entire split class untested -- which is how CR-09 survived five review
+// rounds and 169 green tests.
+//
 // CASE 3'S PREDICATE HAS BOTH INEQUALITIES STRICT -- `a < c` AND `d < b`.
 // Written with an equality at the low end (`c === a`) it is really case 4, and
 // case 3 stops being tested at all: the three-row result never occurs, the
@@ -191,35 +202,70 @@ test("the five case definitions really do satisfy their own predicates -- case 3
   assert.equal(CASES.length, 5, "all five cases are enumerated -- a shrunken table is a weakened proof");
 });
 
-/** Runs one case against a retype callback and reports everything both
- * invariants need. The SAME harness drives the production path and the
- * planting, so the two results are comparable by construction rather than by
- * two hand-written measurements that could drift. */
-function runCase(
-  kase: OverlapCase,
-  retype: (store: ReturnType<typeof openStore>, start: number, endInclusive: number, dataType: DataType) => void,
-): {
+/** What the seed range is and what the case retypes it to. Defaulted to the
+ * non-split fixture the five original cases use, so every existing call site
+ * reads exactly as it did before the split table was added. */
+interface RunCaseOptions {
+  readonly seedStart?: number;
+  readonly seedEndInclusive?: number;
+  readonly seedType?: DataType;
+  readonly newType?: DataType;
+}
+
+interface RunCaseResult {
   before: RangeRow[];
   after: RangeRow[];
   beforeCovered: Set<number>;
   afterCovered: Set<number>;
   lost: number[];
-} {
-  let captured!: {
-    before: RangeRow[];
-    after: RangeRow[];
-    beforeCovered: Set<number>;
-    afterCovered: Set<number>;
-    lost: number[];
-  };
+  /** The refusal the retype threw, or `null` when it was accepted. Captured
+   * rather than propagated so a REFUSING case is measured on the same path as
+   * an accepted one -- the `after` values below are then the real post-refusal
+   * state and can be compared with `before` directly. */
+  thrown: unknown;
+  revisionBefore: number;
+  revisionAfter: number;
+}
+
+/** Runs one case against a retype callback and reports everything both
+ * invariants need. The SAME harness drives the production path and the
+ * planting, so the two results are comparable by construction rather than by
+ * two hand-written measurements that could drift. It is also the ONE harness
+ * for the non-split and split tables, for the same reason. */
+function runCase(
+  kase: { readonly c: number; readonly d: number },
+  retype: (store: ReturnType<typeof openStore>, start: number, endInclusive: number, dataType: DataType) => void,
+  opts: RunCaseOptions = {},
+): RunCaseResult {
+  const seedStart = opts.seedStart ?? A;
+  const seedEndInclusive = opts.seedEndInclusive ?? B;
+  const seedType = opts.seedType ?? "byte";
+  const newType = opts.newType ?? "code";
+
+  let captured!: RunCaseResult;
   inFreshStore((store) => {
-    setDataType(store, { start: A, endInclusive: B, dataType: "byte" });
+    setDataType(store, { start: seedStart, endInclusive: seedEndInclusive, dataType: seedType });
     const before = listRanges(store);
     const beforeCovered = coveredAddresses(before);
-    retype(store, kase.c, kase.d, "code");
+    const revisionBefore = currentRevision(store);
+    let thrown: unknown = null;
+    try {
+      retype(store, kase.c, kase.d, newType);
+    } catch (e) {
+      thrown = e;
+    }
     const after = listRanges(store);
     const afterCovered = coveredAddresses(after);
-    captured = { before, after, beforeCovered, afterCovered, lost: lostAddresses(beforeCovered, afterCovered) };
+    captured = {
+      before,
+      after,
+      beforeCovered,
+      afterCovered,
+      lost: lostAddresses(beforeCovered, afterCovered),
+      thrown,
+      revisionBefore,
+      revisionAfter: currentRevision(store),
+    };
   });
   return captured;
 }
@@ -237,6 +283,7 @@ function productionRetype(
 for (const kase of CASES) {
   test(`overlap case ${kase.n} (${kase.name}, ${kase.predicate}): both invariants hold`, () => {
     const r = runCase(kase, productionRetype);
+    assert.equal(r.thrown, null, `case ${kase.n}: a NON-SPLIT existing row has no remainder rule to trip -- the retype is accepted`);
 
     // INVARIANT A -- no typed byte is lost. The right-hand side is the UNION,
     // not the before-total: case 2 legitimately grows the total.
@@ -603,6 +650,289 @@ test("IN-06: a remainder carries the overlapped row's own `bank` forward, while 
       ],
       "both remainders keep the overlapped row's bank; the newly typed range gets null",
     );
+  });
+});
+
+/** One geometry against the SPLIT existing row, with its expected outcome. The
+ * outcome is one of exactly two kinds: `rows` -- the row set asserted BY VALUE
+ * in `listRanges()` order -- or `refused`, the remainder rule declining the
+ * whole retype. A geometry appears TWICE where the same shape can be either,
+ * depending only on which side of an entry boundary the caller's edge falls. */
+interface SplitOverlapCase {
+  /** The case number from the five-case table in this file's header. */
+  readonly n: number;
+  readonly name: string;
+  /** `[c, d]` -- the new range, always retyped to `byte`. */
+  readonly c: number;
+  readonly d: number;
+  readonly predicate: string;
+  /** The expected row set, `[start, endInclusive, dataType]` each, in
+   * `listRanges()` (ascending id) order. Absent for a refusing case. */
+  readonly rows?: readonly (readonly [number, number, DataType])[];
+  /** Set on the cases whose remainder is an odd-length split table. */
+  readonly refused?: true;
+  /** Which remainder is illegal, restated so the table documents the reason
+   * rather than only the verdict. */
+  readonly why?: string;
+}
+
+const SPLIT_CASES: readonly SplitOverlapCase[] = [
+  {
+    n: 1,
+    name: "identical range retyped to byte",
+    c: SPLIT_A,
+    d: SPLIT_B,
+    predicate: "c === a && d === b",
+    rows: [[0x1000, 0x100f, "byte"]],
+    why: "no remainder exists, so the rule cannot fire",
+  },
+  {
+    n: 2,
+    name: "new fully CONTAINS the split row",
+    c: 0x0ff0,
+    d: 0x101f,
+    predicate: "c <= a && d >= b",
+    rows: [[0x0ff0, 0x101f, "byte"]],
+    why: "the split row is gone entirely -- again no remainder",
+  },
+  {
+    n: 3,
+    name: "new fully INSIDE the split row, BOTH remainders even (LOAD-BEARING)",
+    c: 0x1004,
+    d: 0x1007,
+    predicate: "a < c && d < b",
+    rows: [
+      [0x1000, 0x1003, "lo_hi_address"],
+      [0x1008, 0x100f, "lo_hi_address"],
+      [0x1004, 0x1007, "byte"],
+    ],
+    why: "head 4 bytes and tail 8 bytes -- both even, both legal lo_hi_address tables",
+  },
+  {
+    n: 3,
+    name: "new fully INSIDE the split row, ODD tail remainder (the CR-09 drive)",
+    c: 0x1004,
+    d: 0x1004,
+    predicate: "a < c && d < b",
+    refused: true,
+    why: "tail $1005..$100f is 11 bytes -- an odd lo_hi_address table the store refuses",
+  },
+  {
+    n: 4,
+    name: "overlap at the LOW end leaving an EVEN tail",
+    c: 0x0ff8,
+    d: 0x1007,
+    predicate: "c <= a && a <= d && d < b",
+    rows: [
+      [0x1008, 0x100f, "lo_hi_address"],
+      [0x0ff8, 0x1007, "byte"],
+    ],
+    why: "tail $1008..$100f is 8 bytes -- even",
+  },
+  {
+    n: 4,
+    name: "overlap at the LOW end leaving an ODD tail",
+    c: 0x0ff8,
+    d: 0x1006,
+    predicate: "c <= a && a <= d && d < b",
+    refused: true,
+    why: "tail $1007..$100f is 9 bytes -- odd",
+  },
+  {
+    n: 5,
+    name: "overlap at the HIGH end leaving an EVEN head",
+    c: 0x1008,
+    d: 0x101f,
+    predicate: "a < c && c <= b && d >= b",
+    rows: [
+      [0x1000, 0x1007, "lo_hi_address"],
+      [0x1008, 0x101f, "byte"],
+    ],
+    why: "head $1000..$1007 is 8 bytes -- even",
+  },
+  {
+    n: 5,
+    name: "overlap at the HIGH end leaving an ODD head",
+    c: 0x1009,
+    d: 0x101f,
+    predicate: "a < c && c <= b && d >= b",
+    refused: true,
+    why: "head $1000..$1008 is 9 bytes -- odd",
+  },
+];
+
+test("the SPLIT case definitions really do satisfy their own predicates, and the table covers all five geometries with both outcomes", () => {
+  // Same guard as the non-split table's: a weakened entry -- case 3 written
+  // with an equality at either end, say -- would silently stop testing the
+  // geometry it claims to, and a table that tested four shapes while labelling
+  // itself five would pass unnoticed.
+  for (const kase of SPLIT_CASES) {
+    const label = `case ${kase.n} (${kase.name})`;
+    switch (kase.n) {
+      case 1:
+        assert.ok(kase.c === SPLIT_A && kase.d === SPLIT_B, `${label}: the identical range`);
+        break;
+      case 2:
+        assert.ok(kase.c <= SPLIT_A && kase.d >= SPLIT_B, `${label}: fully contains the existing row`);
+        break;
+      case 3:
+        assert.ok(SPLIT_A < kase.c, `${label}: the LOW inequality is STRICT -- written as c === a this is case 4`);
+        assert.ok(kase.d < SPLIT_B, `${label}: the HIGH inequality is STRICT -- written as d === b this is case 5`);
+        break;
+      case 4:
+        assert.ok(kase.c <= SPLIT_A && SPLIT_A <= kase.d && kase.d < SPLIT_B, `${label}: overlaps the low end and stops short of b`);
+        break;
+      case 5:
+        assert.ok(SPLIT_A < kase.c && kase.c <= SPLIT_B && kase.d >= SPLIT_B, `${label}: starts inside and runs past b`);
+        break;
+      default:
+        assert.fail(`${label}: not one of the five geometries`);
+    }
+    // Exactly one outcome kind per entry -- never both, never neither.
+    assert.equal(
+      kase.refused === true,
+      kase.rows === undefined,
+      `${label}: an entry is either a refusal or a row set asserted by value`,
+    );
+  }
+
+  assert.deepEqual(
+    [...new Set(SPLIT_CASES.map((k) => k.n))].sort((x, y) => x - y),
+    [1, 2, 3, 4, 5],
+    "all five geometries are exercised against the split row",
+  );
+  assert.equal(SPLIT_CASES.length, 8, "eight entries -- a shrunken table is a weakened proof");
+  assert.equal(SPLIT_CASES.filter((k) => k.refused === true).length, 3, "three refusing entries: cases 3, 4 and 5 with an odd remainder");
+  assert.equal(SPLIT_CASES.filter((k) => k.rows !== undefined).length, 5, "five entries whose row set is asserted by value");
+});
+
+for (const kase of SPLIT_CASES) {
+  const outcome = kase.refused === true ? "REFUSED" : "row set by value";
+  test(`split overlap case ${kase.n} (${kase.name}) over $1000..$100f lo_hi_address -> ${outcome}`, () => {
+    const r = runCase(kase, productionRetype, {
+      seedStart: SPLIT_A,
+      seedEndInclusive: SPLIT_B,
+      seedType: "lo_hi_address",
+      newType: "byte",
+    });
+
+    if (kase.refused === true) {
+      // THREE ASSERTIONS, NOT ONE. A refusal that quietly advanced the revision
+      // or churned a row id would satisfy a class-only check while still having
+      // cost the caller something -- and 28-11 P5 is the prohibition on exactly
+      // that. The gate runs before the first delete, so `after` is not a
+      // rolled-back state: it is a state nothing ever touched.
+      assert.ok(
+        r.thrown instanceof AnnoSplitRemainderError,
+        `case ${kase.n}: ${kase.why} -- expected AnnoSplitRemainderError, got ${String(r.thrown)}`,
+      );
+      assert.deepEqual(r.after, r.before, `case ${kase.n}: the row set is deep-equal after the refusal, ids included`);
+      assert.equal(r.revisionAfter, r.revisionBefore, `case ${kase.n}: the revision did not move`);
+      return;
+    }
+
+    assert.equal(r.thrown, null, `case ${kase.n}: ${kase.why} -- the retype must be accepted`);
+    assert.deepEqual(
+      r.after.map((row) => [row.start, row.endInclusive, row.dataType] as const),
+      kase.rows,
+      `case ${kase.n}: the resulting row set, by value and in listRanges() order`,
+    );
+    assert.deepEqual(
+      r.after.map((row) => row.bank),
+      r.after.map(() => null),
+      `case ${kase.n}: every row's bank is null -- the seed carried none, so neither remainder can invent one`,
+    );
+
+    // The two invariants the non-split table asserts, asserted here too: an
+    // accepted split must not lose a typed byte just because the row it split
+    // was a split table.
+    assert.equal(
+      totalTypedBytes(r.after),
+      unionSize(r.beforeCovered, kase.c, kase.d),
+      `case ${kase.n}: invariant A -- the table claims exactly the addresses typed before plus the ones just typed`,
+    );
+    assert.deepEqual(r.lost, [], `case ${kase.n}: invariant B -- no previously typed address lost its type`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// WR-08: the two shapes STORE-02's evidence could not distinguish, PINNED.
+// ---------------------------------------------------------------------------
+//
+// Both tests pin TODAY'S BEHAVIOUR AS INTENDED. The decision itself -- that a
+// caller-spanning retype deletes the rows it spans and inserts one, that this
+// does not contradict STORE-02, and why `changed: true` is right for it -- is
+// recorded ONCE, in `retype()`'s doc comment in `anno-store.ts`, next to its
+// STORE-02 reference. It is deliberately not restated here: two copies of a
+// decision drift, and the pin's job is the numbers.
+
+test("WR-08 pin, THE UNION RETYPE: a caller range spanning two adjacent rows leaves exactly ONE row and NEITHER original id", () => {
+  inFreshStore((store) => {
+    setDataType(store, { start: 0x1000, endInclusive: 0x1007, dataType: "byte" });
+    setDataType(store, { start: 0x1008, endInclusive: 0x100f, dataType: "byte" });
+    const before = listRanges(store);
+    assert.deepEqual(
+      before.map((row) => [row.id, row.start, row.endInclusive, row.dataType]),
+      [
+        [1, 0x1000, 0x1007, "byte"],
+        [2, 0x1008, 0x100f, "byte"],
+      ],
+      "two adjacent same-type rows, not coalesced -- the store joined nothing of its own accord",
+    );
+
+    const result = setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+    // `changed: true` even though every address resolves to `byte` before AND
+    // after. `changed` reports the ROW SET, and the row set really did change.
+    assert.equal(result.changed, true, "the row identities changed, and that is what `changed` reports");
+
+    const after = listRanges(store);
+    assert.equal(after.length, 1, "exactly one surviving row");
+    assert.deepEqual(
+      after.map((row) => [row.start, row.endInclusive, row.dataType]),
+      [[0x1000, 0x100f, "byte"]],
+      "spanning 4096..4111",
+    );
+
+    // THE ASSERTION THAT DISTINGUISHES "does not join" FROM "was never asked to".
+    const beforeIds = before.map((row) => row.id);
+    const afterIds = after.map((row) => row.id);
+    assert.deepEqual(beforeIds, [1, 2], "the ids before");
+    assert.deepEqual(afterIds, [3], "and the id after -- a NEW row, not one of the two");
+    for (const id of beforeIds) {
+      assert.ok(!afterIds.includes(id), `id ${id} did not survive the union retype`);
+    }
+  });
+});
+
+test("WR-08 pin, THE SAME-TYPE SUBRANGE: retyping a subrange to the type it already has fragments one row into three, with every id churned", () => {
+  inFreshStore((store) => {
+    setDataType(store, { start: 0x1000, endInclusive: 0x1007, dataType: "byte" });
+    setDataType(store, { start: 0x1008, endInclusive: 0x100f, dataType: "byte" });
+    setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+    const before = listRanges(store);
+    assert.deepEqual(before.map((row) => row.id), [3], "the single row the union retype left");
+
+    const result = setDataType(store, { start: 0x1004, endInclusive: 0x1007, dataType: "byte" });
+    assert.equal(result.changed, true, "three rows where there was one -- the row set changed");
+
+    const after = listRanges(store);
+    assert.deepEqual(
+      after.map((row) => [row.start, row.endInclusive, row.dataType]),
+      [
+        [0x1000, 0x1003, "byte"],
+        [0x1008, 0x100f, "byte"],
+        [0x1004, 0x1007, "byte"],
+      ],
+      "head, tail, then the newly typed range -- the same order every split produces",
+    );
+
+    const beforeIds = before.map((row) => row.id);
+    const afterIds = after.map((row) => row.id);
+    assert.deepEqual(beforeIds, [3], "the id before");
+    assert.deepEqual(afterIds, [4, 5, 6], "and the three ids after");
+    for (const id of afterIds) {
+      assert.ok(!beforeIds.includes(id), `id ${id} is new -- the split row did not survive under its own id`);
+    }
   });
 });
 
