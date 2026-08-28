@@ -1672,7 +1672,86 @@ interface SequenceStep {
   readonly dataType: DataType;
   /** What the PRODUCTION path does with this step, applied to the SEED state. */
   readonly expect: "accepted" | "refused";
+  /** How many OVERLAPPED SPLIT ROWS this step re-interprets -- derived from the
+   * step's own geometry against the state the previous steps left, never copied
+   * from a run. Zero for a refused step (it returns nothing at all), zero for a
+   * step over non-split rows, and zero for a step that FULLY COVERS a split row
+   * (nothing survives, so no preservation is claimed and none is owed). */
+  readonly expectReinterpretedRows: number;
   readonly note: string;
+}
+
+/** A canonical key for one entry-address couple, so the set arithmetic in the
+ * invariant below is exact. */
+function pairKey(low: number, high: number): string {
+  return `${low}:${high}`;
+}
+
+/** Renders a couple set for a failure message -- BY VALUE, because "two sets
+ * differ" does not tell a reader which region stopped meaning what it said. */
+function describePairKeys(keys: Iterable<string>): string {
+  const rendered = [...keys]
+    .sort()
+    .map((key) => {
+      const [low, high] = key.split(":").map(Number);
+      return `($${low.toString(16).padStart(4, "0")},$${high.toString(16).padStart(4, "0")})`;
+    });
+  return rendered.length === 0 ? "(none)" : rendered.join(" ");
+}
+
+/**
+ * Every entry-address couple across every split row in a `listRanges()` result.
+ *
+ * HAND-WRITTEN FROM THE LAYOUT RULE, and it must stay that way: a table of `n`
+ * entries pairs its own byte `i` with its own byte `n + i`. It deliberately does
+ * NOT import the production pairing function, so the invariant below is an
+ * INDEPENDENT ORACLE rather than the implementation agreeing with itself -- the
+ * same rule the `SPLIT_CASES` expectations follow. Split membership IS asked
+ * through the exported `isSplitDataType`, because a hand-written list of the four
+ * names here would be a second copy of the vocabulary (`anno-types.ts` trap 2).
+ */
+function splitPairsOf(rows: readonly RangeRow[]): Set<string> {
+  const pairs = new Set<string>();
+  for (const row of rows) {
+    if (!isSplitDataType(row.dataType)) continue;
+    const n = (row.endInclusive - row.start + 1) / 2;
+    for (let i = 0; i < n; i += 1) pairs.add(pairKey(row.start + i, row.start + n + i));
+  }
+  return pairs;
+}
+
+/**
+ * Drops every couple whose BOTH addresses lie inside `start..endInclusive`.
+ *
+ * WHY THE CARVE-OUT EXISTS: a couple the caller's own range wholly contains is a
+ * couple the caller explicitly asked to retype. It is not "un-documented
+ * silently" -- the caller named those addresses. A couple STRADDLING the
+ * caller's boundary is the opposite: half of it was never mentioned, and the
+ * region it belongs to keeps an annotation whose meaning changed.
+ *
+ * WHY IT IS APPLIED TO BOTH SIDES OF THE COMPARISON, and why ONE-SIDED IS WRONG
+ * rather than merely different. The carve-out is a property of the COMPARISON,
+ * never of the report -- the store carves nothing out of what it discloses. A
+ * fragmenting write whose caller range wholly contains an entry pair (any range
+ * covering 9 or more contiguous bytes of a 16-byte split row does) has that pair
+ * in the overlapped row's `entryPairsBefore`, and therefore on the REPORTED side
+ * too. Carving it out of the lost side alone makes the two sides differ by
+ * exactly those pairs, and REDS ON A CORRECT WRITE.
+ *
+ * No step in today's `SEQUENCE` covers more than 8 contiguous bytes of a split
+ * row, which is the ONLY reason a one-sided form would look green here. It is
+ * written symmetrically now rather than left as a trap for the next geometry
+ * somebody adds -- and the second planting below is the lost-side-only widening
+ * that proves the symmetry is load-bearing.
+ */
+function dropContained(keys: Iterable<string>, start: number, endInclusive: number): Set<string> {
+  const kept = new Set<string>();
+  for (const key of keys) {
+    const [low, high] = key.split(":").map(Number);
+    if (low >= start && high <= endInclusive) continue;
+    kept.add(key);
+  }
+  return kept;
 }
 
 /**
@@ -1686,17 +1765,29 @@ interface SequenceStep {
  * retype spanning three rows, and a write that CREATES a split row.
  */
 const SEQUENCE: readonly SequenceStep[] = [
-  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", note: "lo_hi_address, head 4 and tail 8 -- both even" },
-  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", note: "the identical write again -- idempotency" },
-  { start: 0x1105, endInclusive: 0x1105, dataType: "byte", expect: "refused", note: "hi_lo_address, head $1100..$1104 is 5 bytes -- odd" },
-  { start: 0x1102, endInclusive: 0x1109, dataType: "code", expect: "accepted", note: "hi_lo_address, head 2 and tail 6 -- both even" },
-  { start: 0x1203, endInclusive: 0x120f, dataType: "code", expect: "refused", note: "lo_hi_word, head $1200..$1202 is 3 bytes -- odd" },
-  { start: 0x1200, endInclusive: 0x1205, dataType: "petscii", expect: "accepted", note: "lo_hi_word, no head, tail 10 -- even" },
-  { start: 0x1300, endInclusive: 0x1300, dataType: "word", expect: "refused", note: "hi_lo_word, tail $1301..$130f is 15 bytes -- odd" },
-  { start: 0x130a, endInclusive: 0x130f, dataType: "screencode", expect: "accepted", note: "hi_lo_word, head 10 -- even, no tail" },
-  { start: 0x1404, endInclusive: 0x1407, dataType: "word", expect: "accepted", note: "a non-split row -- its remainders can never be illegal" },
-  { start: 0x1400, endInclusive: 0x140f, dataType: "address", expect: "accepted", note: "a union retype spanning all three rows of $1400" },
-  { start: 0x1408, endInclusive: 0x140b, dataType: "lo_hi_address", expect: "accepted", note: "CREATES a split row inside a non-split one" },
+  // The four "both even" notes below used to stop at "both even" -- which is
+  // TRUE and was never the whole story. An even remainder passes the parity gate
+  // and is still RE-PAIRED, so each note now says what the step actually does:
+  // accepted AND reported.
+  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", expectReinterpretedRows: 1, note: "lo_hi_address, head 4 and tail 8 -- both even, so accepted; both re-paired, so REPORTED" },
+  { start: 0x1004, endInclusive: 0x1007, dataType: "byte", expect: "accepted", expectReinterpretedRows: 0, note: "the identical write again -- idempotency, and it discloses NOTHING because it fragments nothing" },
+  { start: 0x1105, endInclusive: 0x1105, dataType: "byte", expect: "refused", expectReinterpretedRows: 0, note: "hi_lo_address, head $1100..$1104 is 5 bytes -- odd; a refusal returns nothing at all, so no report" },
+  { start: 0x1102, endInclusive: 0x1109, dataType: "code", expect: "accepted", expectReinterpretedRows: 1, note: "hi_lo_address, head 2 and tail 6 -- both even, so accepted; the 8-entry table becomes a 1-entry and a 3-entry one, so REPORTED" },
+  { start: 0x1203, endInclusive: 0x120f, dataType: "code", expect: "refused", expectReinterpretedRows: 0, note: "lo_hi_word, head $1200..$1202 is 3 bytes -- odd" },
+  { start: 0x1200, endInclusive: 0x1205, dataType: "petscii", expect: "accepted", expectReinterpretedRows: 1, note: "lo_hi_word, no head, tail 10 -- even, so accepted; the surviving 5 entries read 5 couples the table never had, so REPORTED" },
+  { start: 0x1300, endInclusive: 0x1300, dataType: "word", expect: "refused", expectReinterpretedRows: 0, note: "hi_lo_word, tail $1301..$130f is 15 bytes -- odd" },
+  { start: 0x130a, endInclusive: 0x130f, dataType: "screencode", expect: "accepted", expectReinterpretedRows: 1, note: "hi_lo_word, head 10 -- even and no tail, so accepted; the head is re-paired, so REPORTED" },
+  { start: 0x1404, endInclusive: 0x1407, dataType: "word", expect: "accepted", expectReinterpretedRows: 0, note: "a non-split row -- its remainders can never be illegal, and its meaning does not depend on its extent, so nothing to report" },
+  { start: 0x1400, endInclusive: 0x140f, dataType: "address", expect: "accepted", expectReinterpretedRows: 0, note: "a union retype spanning all three rows of $1400 -- none of them split" },
+  { start: 0x1408, endInclusive: 0x140b, dataType: "lo_hi_address", expect: "accepted", expectReinterpretedRows: 0, note: "CREATES a split row inside a non-split one -- a creation fragments nothing, so nothing to report" },
+  // THE ORDERING CASE, and the only one in this file where the report's ARRAY
+  // ORDER has anything to say. By this point the sequence has left
+  // `$1206..$120f lo_hi_word` (step 5) and `$1300..$1309 hi_lo_word` (step 7) on
+  // disk. This range takes the last two bytes of the first (head remainder
+  // `$1206..$120d`, 8 bytes, even) and the first two of the second (tail
+  // remainder `$1302..$1309`, 8 bytes, even), so BOTH remainders pass the parity
+  // gate and BOTH rows are re-interpreted -- ONE write, TWO records.
+  { start: 0x120e, endInclusive: 0x1301, dataType: "byte", expect: "accepted", expectReinterpretedRows: 2, note: "spans the TAIL of one split row and the HEAD of another -- one write, TWO records, ordered by ascending row id" },
 ];
 
 /** Seeds a store with `SEQUENCE_SEED` through the production entry point. */
@@ -1711,6 +1802,8 @@ test("THE ROUND-TRIP INVARIANT: after every write of a deterministic sequence, e
   let refusals = 0;
   let finalRows = 0;
   let finalSplitRows = 0;
+  let reinterpretingSteps = 0;
+  let totalReportedLostPairs = 0;
 
   inFreshStore((store) => {
     seedSequenceStore(store);
@@ -1722,10 +1815,12 @@ test("THE ROUND-TRIP INVARIANT: after every write of a deterministic sequence, e
 
     for (const [i, step] of SEQUENCE.entries()) {
       const rowsBefore = listRanges(store);
+      const pairsBefore = splitPairsOf(rowsBefore);
       const revisionBefore = currentRevision(store);
       let thrown: unknown = null;
+      let result: SetDataTypeResult | null = null;
       try {
-        setDataType(store, { start: step.start, endInclusive: step.endInclusive, dataType: step.dataType });
+        result = setDataType(store, { start: step.start, endInclusive: step.endInclusive, dataType: step.dataType });
       } catch (e) {
         thrown = e;
       }
@@ -1738,9 +1833,82 @@ test("THE ROUND-TRIP INVARIANT: after every write of a deterministic sequence, e
         );
         assert.deepEqual(listRanges(store), rowsBefore, `step ${i}: a refusal leaves the row set byte-identical`);
         assert.equal(currentRevision(store), revisionBefore, `step ${i}: a refusal does not advance the revision`);
+        assert.equal(step.expectReinterpretedRows, 0, `step ${i}: a refused step returns nothing at all, so its expectation must be 0`);
       } else {
         accepted += 1;
         assert.equal(thrown, null, `step ${i} (${step.note}): expected acceptance, got ${String(thrown)}`);
+
+        const records = result?.reinterpretedSplitTables ?? [];
+        assert.equal(
+          records.length,
+          step.expectReinterpretedRows,
+          `step ${i} (${step.note}): the store's own count of re-interpreted split rows must match the step's declared geometry`,
+        );
+        if (records.length > 0) reinterpretingSteps += 1;
+
+        // ---------------------------------------------------------------
+        // THE CLASS INVARIANT (CR-10). Stated over ENTRY PAIRS, not rows.
+        // ---------------------------------------------------------------
+        // The round-trip invariant below asks that every surviving row be
+        // re-acceptable and DECODABLE, and a re-paired split table is both --
+        // which is exactly why 210 green tests were blind to this class. What
+        // follows is the assertion that can see it:
+        //
+        //   NO SPLIT ENTRY PAIR DISAPPEARS OUTSIDE THE CALLER'S OWN RANGE
+        //   WITHOUT BEING NAMED BY THAT WRITE'S OWN REPORT.
+        //
+        // `dropContained` is applied to BOTH sides -- the lost side and the
+        // reported side -- because the carve-out belongs to the COMPARISON and
+        // never to the report. See its doc comment for why one-sided reds on a
+        // correct write.
+        const pairsAfter = splitPairsOf(listRanges(store));
+        const vanished = [...pairsBefore].filter((key) => !pairsAfter.has(key));
+        const reportedLost = records.flatMap((record) => {
+          const preserved = new Set(record.preservedEntryPairs.map((pair) => pairKey(pair[0], pair[1])));
+          return record.entryPairsBefore.map((pair) => pairKey(pair[0], pair[1])).filter((key) => !preserved.has(key));
+        });
+        totalReportedLostPairs += reportedLost.length;
+
+        const lost = dropContained(vanished, step.start, step.endInclusive);
+        const reported = dropContained(reportedLost, step.start, step.endInclusive);
+        assert.deepEqual(
+          [...lost].sort(),
+          [...reported].sort(),
+          `step ${i} (${step.note}): a split entry pair vanished outside the caller's own range and the write did not name it. ` +
+            `An unreported lost pair is a region left annotated with a meaning it does not have -- which is the exact failure this ` +
+            `store exists to prevent, and it is not caught by re-acceptability or by decodability. ` +
+            `lost-and-unreported: ${describePairKeys([...lost].filter((key) => !reported.has(key)))} ; ` +
+            `reported-but-not-lost: ${describePairKeys([...reported].filter((key) => !lost.has(key)))} ; ` +
+            `lost: ${describePairKeys(lost)} ; reported: ${describePairKeys(reported)}`,
+        );
+
+        // THE ORDERING CASE, asserted on the ONE step that produces two records.
+        // The expectation is derived from the ids the STORE ITSELF reported
+        // BEFORE the write, sorted ascending -- not from address order, and not
+        // from a pinned id value that a later re-insertion may legitimately
+        // change. That is what makes this discriminate `order by id` from
+        // `order by address` instead of restating one as the other.
+        if (step.expectReinterpretedRows === 2) {
+          const overlappedSplitIds = rowsBefore
+            .filter(
+              (row) =>
+                isSplitDataType(row.dataType) &&
+                row.endInclusive >= step.start &&
+                row.start <= step.endInclusive &&
+                (row.start < step.start || row.endInclusive > step.endInclusive),
+            )
+            .map((row) => row.id)
+            .sort((x, y) => x - y);
+          assert.equal(overlappedSplitIds.length, 2, `step ${i}: the ordering case must overlap exactly TWO split rows leaving a remainder`);
+          assert.deepEqual(
+            records.map((record) => record.rowId),
+            overlappedSplitIds,
+            `step ${i}: the report's array order is ASCENDING OVERLAPPED-ROW ID, matching the gate's own \`order by id\``,
+          );
+          for (const record of records) {
+            assert.deepEqual(record.preservedEntryPairs, [], `step ${i}: neither re-interpreted row preserved a couple`);
+          }
+        }
       }
 
       // THE INVARIANT, after EVERY write -- accepted or refused. A refused
@@ -1772,10 +1940,36 @@ test("THE ROUND-TRIP INVARIANT: after every write of a deterministic sequence, e
   // sequence that silently degenerated to zero writes -- or to zero split rows,
   // or to zero refusals -- would satisfy the invariant trivially, which is the
   // exact failure mode this whole round exists to close.
-  assert.ok(accepted >= 8, `the sequence must actually write: ${accepted} accepted writes, expected at least 8`);
+  assert.ok(accepted >= 9, `the sequence must actually write: ${accepted} accepted writes, expected at least 9`);
+  // THE REFUSAL FLOOR DOES NOT RISE, and that is a consequence of the answer
+  // taken rather than an oversight. The round-6 verification report's `missing`
+  // item 3 says "the `refusals >= 3` non-vacuity floor rises with them" -- that
+  // sentence was written for ANSWER (a), which refuses every partial overlap of
+  // a split row. The answer actually taken is (b): the even fragmentation is
+  // ACCEPTED and REPORTED, so parity remains the ONLY thing this store refuses
+  // and the three parity refusals are still the whole refusal set. The floor
+  // that rises instead is `reinterpretingSteps` immediately below. The
+  // divergence from the verifier's instruction is recorded here rather than left
+  // to look like a forgotten line.
   assert.ok(refusals >= 3, `the sequence must actually exercise the refusal path: ${refusals} refusals, expected at least 3`);
   assert.ok(finalSplitRows >= 4, `the invariant must be asked about split rows: ${finalSplitRows} split rows survive, expected at least 4`);
-  assert.equal(finalRows, 13, "the sequence's final row count, pinned so a silently shortened sequence is visible");
+  assert.equal(finalRows, 14, "the sequence's final row count, pinned so a silently shortened sequence is visible");
+
+  // THE TWO FLOORS CR-10 ADDS. Without them a sequence that quietly stopped
+  // FRAGMENTING anything -- every step landing on an entry boundary, say --
+  // would satisfy the class invariant trivially by having nothing to compare,
+  // which is the failure mode this whole round exists to close.
+  assert.equal(
+    reinterpretingSteps,
+    5,
+    `the sequence must actually fragment split tables: ${reinterpretingSteps} steps returned a non-empty report, expected exactly 5`,
+  );
+  assert.equal(
+    totalReportedLostPairs,
+    42,
+    `the total entry pairs the sequence's own reports account for as lost: ${totalReportedLostPairs}. Pinned exactly, so a silently ` +
+      "shortened sequence or a report that quietly narrowed is visible as a number rather than as a still-passing test",
+  );
 });
 
 /**
@@ -1835,6 +2029,7 @@ test("planting C, OBSERVED: the same sequence through a writer without the remai
   // only at the end -- a later step can delete an offending row and hide it.
   let firstOffendingStep = -1;
   let firstOffenders!: { row: RangeRow; reason: string }[];
+  let refusedAfterStep10!: { row: RangeRow; reason: string }[];
   let finalRefused!: { row: RangeRow; reason: string }[];
   inFreshStore((store) => {
     seedSequenceStore(store);
@@ -1845,6 +2040,10 @@ test("planting C, OBSERVED: the same sequence through a writer without the remai
         firstOffendingStep = i;
         firstOffenders = refused;
       }
+      // The state at the end of the ORIGINAL eleven steps, captured separately
+      // -- see the comment on `refusedAfterStep10` below for why the final
+      // state is no longer the right place to ask this question.
+      if (i === 10) refusedAfterStep10 = refused;
     }
     finalRefused = rowsTheStoreWouldRefuse(listRanges(store));
   });
@@ -1861,16 +2060,36 @@ test("planting C, OBSERVED: the same sequence through a writer without the remai
   );
   assert.ok(firstOffenders[0].reason.includes("assertRangeShape"), "and it is refused by the store's own shape rule");
 
-  // ...and one survives all the way to the end, so the damage is not merely
-  // transient: an odd hi_lo_word row nothing later overwrites.
+  // ...and one survives ALL ELEVEN of the sequence's original steps, so the
+  // damage is not merely transient: an odd hi_lo_word row nothing between step 2
+  // and step 10 overwrites.
+  assert.deepEqual(
+    refusedAfterStep10.map(({ row }) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType })),
+    [{ start: 0x1301, endInclusive: 0x1309, dataType: "hi_lo_word" }],
+    `the offending rows left standing after the original eleven steps: ${describeRefused(refusedAfterStep10)}`,
+  );
+
+  // AND THEN THE TWELFTH STEP CLEANS IT UP BY ACCIDENT, which is recorded here
+  // rather than hidden. Step 11 (`$120e..$1301`) was added for the report's
+  // ORDERING case, and under the PLANTING it clips exactly one byte off the head
+  // of that surviving `$1301..$1309` row, leaving an EVEN `$1302..$1309` -- a row
+  // the store would accept. So the planting's last standing offender disappears,
+  // for a reason that has nothing to do with the remainder rule.
+  //
+  // THIS IS WHY THE SURVIVAL CLAIM IS ASKED AT STEP 10 AND NOT AT THE END. An
+  // accidental cleanup is not evidence that the planting is harmless, and moving
+  // the assertion to where the claim is actually true is the honest repair; the
+  // alternative -- asserting an empty final set and calling it the expectation --
+  // would quietly retire a control that still discriminates.
   assert.deepEqual(
     finalRefused.map(({ row }) => ({ start: row.start, endInclusive: row.endInclusive, dataType: row.dataType })),
-    [{ start: 0x1301, endInclusive: 0x1309, dataType: "hi_lo_word" }],
-    `the offending rows left standing at the end: ${describeRefused(finalRefused)}`,
+    [],
+    `after the twelfth step the planting leaves nothing refused, because that step's range overlaps the odd row's head and the ` +
+      `remainder happens to be even: ${describeRefused(finalRefused)}`,
   );
 });
 
-test("planting C, SELECTIVE and MEASURED: it can differ from the production path on exactly the three steps whose remainder is illegal, and is indistinguishable on the other eight", () => {
+test("planting C, SELECTIVE and MEASURED: it can differ from the production path on exactly the three steps whose remainder is illegal, and is indistinguishable on the other nine", () => {
   // MEASURED, not assumed -- the same shape planting A uses. Each step is
   // applied ALONE to a freshly seeded store, so the comparison is per-step and
   // does not inherit a divergence from an earlier one.
@@ -1905,5 +2124,13 @@ test("planting C, SELECTIVE and MEASURED: it can differ from the production path
   }
 
   assert.deepEqual(differs, [2, 4, 6], "the planting differs on exactly the three steps whose remainder is an odd split table");
-  assert.deepEqual(identical, [0, 1, 3, 5, 7, 8, 9, 10], "and on the other eight it produces the identical row set -- which is why a table of legal-only cases would let it through");
+  assert.deepEqual(
+    identical,
+    [0, 1, 3, 5, 7, 8, 9, 10, 11],
+    "and on the other nine it produces the identical row set -- which is why a table of legal-only cases would let it through. " +
+      "Step 11 joins this list rather than `differs` for the reason CR-10 exists: applied alone to the SEED, its two remainders " +
+      "($1200..$120d and $1302..$130f, 14 bytes each) are both EVEN, so the parity gate has nothing to say and the planting is " +
+      "indistinguishable from the production path ON THE ROW SET. What distinguishes them there is the REPORT, which this " +
+      "row-set comparison cannot see -- and that is precisely why the class invariant above is stated over entry pairs",
+  );
 });
