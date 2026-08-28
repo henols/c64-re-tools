@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 18
+open_count: 19
 waived_count: 0
 fixed_count: 4
-total_count: 22
-last_updated: 2026-08-28T12:05:16.879Z
+total_count: 23
+last_updated: 2026-08-28T16:57:13.978Z
 ---
 
 # Broken Windows Ledger
@@ -37,6 +37,7 @@ last_updated: 2026-08-28T12:05:16.879Z
 | 20 | 28 | deviation | src/mcp/vice/anno-store.test.ts |  | Plan 28-06 Test 9 as written (revertTo(r) twice leaves the same state) is unsatisfiable: a snapshot of revision r contains pointer rows for 0..r-1 only, so a second revertTo(r) is refused by name. Asserted instead as the idempotency that holds -- the observable store state after one revert and after a refused second revert is identical | open |  | 2026-08-27T18:38:16.632Z |  |
 | 21 | 28 | deviation | src/mcp/vice/anno-store.ts |  | Plan 28-06's third planting (make the step-5 CAS unconditional) does NOT redden the cross-process test: that refusal comes from the step-2 base-revision check. The tautological CAS reddens only anno-seam.test.ts's structural CAS assertion; the semantic red was obtained by removing the step-2 check instead. Both results recorded at the test site | open |  | 2026-08-27T18:38:16.829Z |  |
 | 22 | 28 | deviation | src/mcp/vice/anno-confinement.test.ts |  | Case 15 cannot assert the plan's expected 40-hop message: the manual bound is structurally unreachable in ancestor position because the kernel's MAXSYMLINKS throws ELOOP at lstat first. Recorded as the finding; the leaf spelling's 40 is asserted beside it. | open |  | 2026-08-28T12:05:16.879Z |  |
+| 23 | 28 | deviation | src/mcp/vice/anno-store.ts |  | publishSnapshot's directory fsync is BEST EFFORT (guarded), not unguarded as 28-17 task 1's action text read: a mandatory directory fsync needs the same read bit readdirSync needs, so it refuses every write against a writable-but-unreadable ring and destroys CR-07's precondition. Failure leaves an orphan ROW (bounded, non-destructive). | open |  | 2026-08-28T16:57:13.978Z |  |
 
 ````json
 [
@@ -302,6 +303,18 @@ last_updated: 2026-08-28T12:05:16.879Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-28T12:05:16.879Z",
+    "resolved_at": null
+  },
+  {
+    "id": 23,
+    "kind": "deviation",
+    "phase": "28",
+    "file": "src/mcp/vice/anno-store.ts",
+    "line": null,
+    "description": "publishSnapshot's directory fsync is BEST EFFORT (guarded), not unguarded as 28-17 task 1's action text read: a mandatory directory fsync needs the same read bit readdirSync needs, so it refuses every write against a writable-but-unreadable ring and destroys CR-07's precondition. Failure leaves an orphan ROW (bounded, non-destructive).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-28T16:57:13.978Z",
     "resolved_at": null
   }
 ]
