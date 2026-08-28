@@ -3507,3 +3507,197 @@ test("CR-08: a retained snapshot overwritten with FOREIGN BYTES is refused by th
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// CR-08's SUPPORTING HALF -- WHAT "RETAINED" MEANS.
+//
+// `revertTo`'s gate was not the only witness built on presence: the PUBLISHED
+// FLOOR was too. So the store advertised a revision whose image was not a
+// database and then destroyed itself when a caller followed its own published
+// floor. Presence and openability are promoted to ONE meaning here, read by the
+// advertisement and by the gate from the same place, because "three independent
+// decisions is precisely how the three answers came to disagree" is this
+// module's own recorded finding.
+//
+// AND THE PROMOTION INTRODUCES ITS OWN HAZARD, which TEST C below is the control
+// for: the ring's file sweep used `retainedRevisions` as its KEEP set, so
+// promoting that function would have made the sweep unlink every image that
+// failed to open -- a second destruction dressed as a repair, deleting exactly
+// the evidence of the first. The sweep asks a DIFFERENT question (`is this file
+// claimed by a pointer ROW`) and gets a differently named answer.
+// ---------------------------------------------------------------------------
+
+test("CR-08: retainedRevisions and oldestRetainedRevision never advertise a revision whose image cannot be OPENED -- with the healthy-ring control and the two distinct refusals", () => {
+  inTempDir((dir) => {
+    const store = revisionThreeStore(dir);
+    try {
+      // THE HEALTHY CONTROL FIRST, AND ON THE SAME FIXTURE. The promotion must
+      // not narrow the healthy case, and a test that only ever looks at the
+      // corrupted ring cannot see it if it does.
+      assert.deepEqual(retainedRevisions(store), [0, 1, 2], "an intact ring of three images advertises all three revisions");
+      assert.equal(oldestRetainedRevision(store), 0, "and publishes revision 0 as the floor");
+
+      const snapPath = snapshotPathFor(store, 1);
+      truncateSync(snapPath, 0);
+      assert.equal(statSync(snapPath).size, 0, "the planting must really have emptied r1.db");
+
+      // THE PROMOTION. Before it, both answers still named revision 1 -- and
+      // following that floor into `revertTo` destroyed the live store.
+      assert.deepEqual(
+        retainedRevisions(store),
+        [0, 2],
+        "a revision whose image is present but does not OPEN as an annotation store is not retained: presence was never the witness, " +
+          "because a ZERO-LENGTH FILE OPENS as a SQLite database and reports integrity_check ok",
+      );
+      assert.equal(oldestRetainedRevision(store), 0, "the floor is the first genuinely reachable revision");
+
+      // THE TWO REFUSALS ARE DISTINCT, and the distinction is the caller's only
+      // way to tell "there is nothing there" from "there is something there and
+      // it is not a store" -- which is the difference between a bound they hit
+      // and a file they should go and look at.
+      let presentButUnopenable = "";
+      assert.throws(
+        () => revertTo(store, 1),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          presentButUnopenable = e.message;
+          assert.ok(e.message.includes(snapPath), `the refusal must name the snapshot path; got ${e.message}`);
+          assert.match(
+            e.message,
+            /is not a readable annotation store/,
+            "and must say the snapshot is present but unreadable rather than absent",
+          );
+          assert.match(e.message, /Available revisions: 0, 2/, "and its available-revisions list must be the promoted one");
+          return true;
+        },
+      );
+
+      let noRowAtAll = "";
+      assert.throws(
+        () => revertTo(store, 99),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreError, `expected AnnoStoreError, got ${String(e)}`);
+          noRowAtAll = e.message;
+          assert.match(e.message, /no snapshot is retained for it/, "a revision with no pointer row at all keeps the pre-existing wording");
+          assert.match(
+            e.message,
+            /Available revisions: 0, 2/,
+            "and its available-revisions list is built from the promoted retainedRevisions, so a refusal cannot steer the caller at a " +
+              "revision the very next call would also refuse",
+          );
+          return true;
+        },
+      );
+
+      assert.notEqual(
+        presentButUnopenable,
+        noRowAtAll,
+        "the two refusals must not be the same message: one says go and look at the file, the other says there is no file",
+      );
+
+      // AND NEITHER REFUSAL COST THE CALLER ANYTHING: both arms are before any
+      // filesystem mutation.
+      assert.equal(currentRevision(store), 3, "the handle still answers after both refusals");
+      assert.equal(listRanges(store).length, 3, "with its rows intact");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("CR-08: every revision retainedRevisions() advertises can actually be reverted to -- the loop is over the ADVERTISED LIST, never over literals, and the fixture is rebuilt per iteration", () => {
+  inTempDir((root) => {
+    // ONE BUILDER, USED FOR THE PRISTINE READ AND FOR EVERY ITERATION, so the
+    // loop's stores and the store the list was read from are the same shape by
+    // construction rather than by two parallel fixtures agreeing.
+    const buildAt = (sub: string): ReturnType<typeof openStore> => {
+      const d = join(root, sub);
+      mkdirSync(d);
+      const s = revisionThreeStore(d);
+      // THE CORRUPT IMAGE IS PART OF THE FIXTURE, not a separate test. An
+      // all-healthy ring makes this invariant vacuous: it would pass against
+      // the very implementation that advertised an unopenable revision, because
+      // there would be none to advertise.
+      truncateSync(snapshotPathFor(s, 1), 0);
+      return s;
+    };
+
+    let advertised: number[] = [];
+    const pristine = buildAt("pristine");
+    try {
+      advertised = retainedRevisions(pristine);
+      assert.ok(advertised.length >= 2, `non-vacuity: the advertised list must have at least two members, got ${advertised.join(", ")}`);
+    } finally {
+      closeStore(pristine);
+    }
+
+    // THE PER-ITERATION REBUILD IS LOAD-BEARING, NOT HYGIENE. A second
+    // `revertTo` on an ALREADY-REVERTED store is legitimately REFUSED -- the
+    // restored image carries no pointer row for its own revision -- and that
+    // refusal is itself a pinned guarantee of this phase (see the two
+    // double-revert tests above). A loop that reverted ONE store repeatedly
+    // would therefore assert the opposite of what this phase guarantees, and
+    // would fail for a CORRECT reason from its second iteration onwards.
+    //
+    // NO REVISION LITERAL APPEARS BELOW, and that is the point: looping over
+    // the advertised list rather than over hard-coded numbers is what makes the
+    // INVARIANT the assertion. If the advertisement ever widens again, this
+    // loop widens with it and fails on the new member.
+    let iteration = 0;
+    for (const revision of advertised) {
+      iteration += 1;
+      let fresh = buildAt(`iteration-${iteration}`);
+      try {
+        fresh = revertTo(fresh, revision);
+        assert.equal(
+          currentRevision(fresh),
+          revision,
+          `revision ${revision} is advertised as retained, so reverting to it must SUCCEED and land the store on it -- a published floor ` +
+            "the store refuses on the very next call is worse than no floor at all",
+        );
+      } finally {
+        closeStore(fresh);
+      }
+    }
+  });
+});
+
+test("CR-08: the ring's file sweep does NOT unlink a corrupt image a pointer row still claims -- evidence survives, and unlinking it would be a second destruction dressed as a repair", () => {
+  inTempDir((dir) => {
+    const store = revisionThreeStore(dir);
+    try {
+      const snapPath = snapshotPathFor(store, 1);
+      truncateSync(snapPath, 0);
+
+      // A GENUINELY UNCLAIMED FILE, PLANTED ALONGSIDE IT as the positive
+      // control: without it this test would pass against a sweep that never
+      // runs at all, which is the arrangement that makes the claim below
+      // meaningless.
+      const unclaimed = snapshotPathFor(store, 99);
+      writeFileSync(unclaimed, "");
+
+      // ONE ORDINARY WRITE -- which is what runs the prune and the sweep.
+      setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "code" });
+
+      assert.ok(!existsSync(unclaimed), "the positive control: the sweep really did run, and unlinked the file no pointer row claims");
+      assert.ok(
+        existsSync(snapPath),
+        "and it left the corrupt image alone: a file a pointer row still claims is EVIDENCE, and unlinking it would delete the evidence " +
+          "of the very failure that has to be diagnosed",
+      );
+      assert.equal(statSync(snapPath).size, 0, "still at zero bytes -- not repaired, not rewritten, not touched");
+      const claimed = store.db.prepare("select revision from anno_snapshot where revision = ?").all(1) as { revision: number }[];
+      assert.equal(claimed.length, 1, "and its pointer row still exists: the sweep abstains from the row direction entirely (CR-05)");
+
+      // AND THE DIVERGENCE IS REAL RATHER THAN NOTIONAL: the sweep's keep-set
+      // and the store's advertisement now genuinely disagree about revision 1,
+      // which is exactly why they are two differently named questions.
+      assert.ok(
+        !retainedRevisions(store).includes(1),
+        "the advertisement excludes revision 1 while the sweep keeps its file -- the two answers diverge, in the safe direction",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
