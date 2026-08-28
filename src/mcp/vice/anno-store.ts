@@ -1180,12 +1180,26 @@ export function pruneSnapshots(handle: AnnoStoreHandle): void {
  * the same revision -- in this process or another -- must not share a path,
  * because `vacuum into` refuses an existing target and because two writers
  * filling one file is the very collision this staging exists to remove.
+ *
+ * AND THE IMAGE IS FSYNCED BEFORE THIS FUNCTION RETURNS (WR-13). The pointer row
+ * that names this file is inserted inside the write transaction and committed by
+ * SQLite, WHICH DOES FSYNC -- so without the `fsyncPath` below the ROW is
+ * durable and the FILE it names is not. Trap 10's durability premise covers a
+ * `SIGKILL`, where the page cache survives the dead process and the bytes land
+ * anyway; it does NOT cover a host crash, which loses the cache. The consequence
+ * is not an extra file: it is a PRESENT, PARTIAL snapshot that
+ * `retainedRevisions()` would advertise as revertible, which is exactly the input
+ * CR-08 was reproduced with. 28-16's step-2 and step-3b gates make that input a
+ * REFUSAL rather than a destruction; this call removes the input at its source
+ * rather than relying on the refusal, because a refusal on the only route back
+ * is still a lost history.
  */
 export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string {
   const snapPath = snapshotPathFor(handle, revision);
   mkdirSync(dirname(snapPath), { recursive: true });
   const staging = join(dirname(snapPath), `r${revision}.${process.pid}.${randomUUID()}.tmp`);
   handle.db.exec(`vacuum into ${sqlQuotedPath(staging)}`);
+  fsyncPath(staging);
   return staging;
 }
 
@@ -1218,9 +1232,54 @@ export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string
  * surviving row can name. `anno-store.test.ts` asserts that property over a
  * store that has been reverted and written forward again, rather than leaving
  * it as an argument.
+ *
+ * AND THE RING DIRECTORY IS FSYNCED AFTER THE RENAME (WR-13). A rename is
+ * VISIBLE immediately and DURABLE only after the directory is fsynced -- the
+ * distinction `fsyncPath`'s own doc sentence records. The pointer row that names
+ * this file is inserted inside the write transaction a few statements below and
+ * committed by SQLite, WHICH DOES FSYNC, so without this call the two halves of
+ * one revision's record have different durability: the ROW survives a host crash
+ * and the DIRECTORY ENTRY naming its image may not. Trap 10's premise -- that a
+ * kill in the window leaves EXTRA files, which are harmless -- is true of a
+ * `SIGKILL` and NOT of a host crash, which loses the page cache; the surviving
+ * half-state there is a durable row naming a file whose bytes never reached
+ * disk, i.e. the PRESENT, PARTIAL snapshot `retainedRevisions()` would advertise
+ * and the exact input CR-08 was reproduced with. 28-16 made that input a refusal
+ * rather than a destruction; this call removes the input at its source instead of
+ * relying on that refusal. The order is the same as `revertTo`'s steps 3 and 5
+ * and uses the same helper, deliberately -- a second durability idiom in one
+ * module is a second thing to keep true.
+ *
+ * AND THE DIRECTORY FSYNC IS BEST EFFORT WHILE THE IMAGE FSYNC IS NOT, which is
+ * a difference in WHICH half-state each one removes and not a difference in
+ * rigour. `stageSnapshot`'s `fsyncPath` is unguarded because it removes the
+ * DESTRUCTIVE outcome: a durable row naming a file whose BYTES never reached
+ * disk, i.e. a present, partial image `retainedRevisions()` advertises. A failure
+ * there refuses before `begin immediate`, so nothing is published and nothing is
+ * committed. THIS call removes only the OTHER outcome -- a crash losing the
+ * directory entry, which leaves an orphan ROW naming a file that is not there,
+ * the direction trap 10's premise already calls harmless, 28-13 made inert and
+ * 28-16 refuses BY NAME. Refusing an ordinary write because that harmless
+ * direction could not be closed would trade a bounded, non-destructive
+ * half-state for a store that cannot be written at all: `openSync(dir, "r")`
+ * needs the ring directory READABLE, so a writable-but-unreadable ring (mode
+ * 0300 -- measured) would make every `setDataType` throw, and that is also the
+ * precondition CR-07's only behavioural control is built from. So the two
+ * reachable outcomes after an interruption stay exactly the two this module
+ * bounds them to -- a missing entry, or an entry whose contents ARE durable --
+ * and the failure of this call moves the outcome from the second to the first
+ * rather than out of the pair.
  */
 function publishSnapshot(stagingPath: string, snapPath: string): void {
   renameSync(stagingPath, snapPath);
+  try {
+    fsyncPath(dirname(snapPath));
+  } catch {
+    // deliberately ignored -- see above. Swallowed rather than reported for the
+    // same reason `discardSnapshot` swallows: replacing the caller's ACTUAL
+    // outcome with a second error about a durability step whose failure leaves
+    // an already-bounded half-state is a worse answer than the one it replaces.
+  }
 }
 
 /**

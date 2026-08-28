@@ -2271,6 +2271,85 @@ test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRin
   );
 });
 
+test("the publish path's SOURCE ORDER is the durability guarantee (WR-13): stageSnapshot fsyncs after its vacuum, and publishSnapshot fsyncs the ring directory after its rename", () => {
+  // WHY THIS CONTROL IS STRUCTURAL AND SAYS SO. An `fsync` has NO in-process
+  // observable: it returns the same `undefined` whether the bytes reached the
+  // platter or the page cache lied, and the only witness that distinguishes the
+  // two is a host losing power. A behavioural assertion here would therefore be
+  // measuring something else -- that a file exists, that a read-back matches --
+  // and CALLING it durability, which is the 28-07 P3 shape ("a comment or a
+  // message that asserts a guarantee the code does not provide") this phase keeps
+  // re-encountering. So the claim is stated for what it is: the ORDER of two
+  // calls in the source, asserted with a positive control for the needle. The
+  // BEHAVIOURAL half of the durability story lives in `anno-durability.test.ts`,
+  // which kills a real process; this control only pins that the publish path uses
+  // the same helper in the same order the revert path already does.
+  //
+  // WHAT THE ORDER BUYS. The pointer row naming a published snapshot is inserted
+  // inside the write transaction and committed by SQLite, WHICH DOES FSYNC.
+  // Without these two calls the ROW is durable and the FILE it names is not, so a
+  // host crash (not the `SIGKILL` the durability proof covers) can leave a
+  // PRESENT, PARTIAL snapshot that `retainedRevisions()` would advertise -- the
+  // exact input CR-08 was reproduced with.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the `vacuum into` needle is SQL
+  // text inside a template literal, which strict mode blanks -- and a blanked
+  // literal would make the `fsyncPath` AFTER `vacuum into` comparison pass
+  // against a source that fsynced first.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  const extract = (declaration: string): string => {
+    const start = stripped.indexOf(declaration);
+    assert.ok(start >= 0, `${declaration} must be findable in the stripped source`);
+    const end = stripped.indexOf("\n}", start);
+    assert.ok(end > start, `and ${declaration}'s body must terminate at a column-zero closing brace`);
+    return stripped.slice(start, end);
+  };
+
+  const stage = extract("export function stageSnapshot");
+  const publish = extract("function publishSnapshot");
+
+  // NON-VACUITY FIRST: a failed extraction, or a body reduced to its signature,
+  // would satisfy both ordering comparisons trivially by leaving both indexes at
+  // -1. The length bounds and the four presence checks are what stop that.
+  assert.ok(stage.length > 200, `the extracted stageSnapshot body must be substantial, got ${stage.length} characters`);
+  assert.ok(publish.length > 40, `the extracted publishSnapshot body must be substantial, got ${publish.length} characters`);
+
+  const vacuum = stage.indexOf("vacuum into");
+  const stageFsync = stage.indexOf("fsyncPath(");
+  assert.ok(vacuum >= 0, "stageSnapshot must still take its image with `vacuum into`");
+  assert.ok(stageFsync >= 0, "and stageSnapshot must fsync the staged image before it returns");
+
+  const rename = publish.indexOf("renameSync(");
+  const publishFsync = publish.indexOf("fsyncPath(");
+  assert.ok(rename >= 0, "publishSnapshot must still publish by rename");
+  assert.ok(publishFsync >= 0, "and publishSnapshot must fsync the ring directory after that rename");
+
+  // AND THE POSITIVE CONTROL FOR THE NEEDLE, in the same style the sweep's
+  // source-order control uses for `delete from anno_snapshot`. If `fsyncPath(`
+  // ever stopped being findable -- renamed, wrapped, blanked by a change in
+  // `codeOnly` -- both `>= 0` checks above would fail loudly rather than the
+  // orderings passing for the wrong reason, but the assertion is stated anyway
+  // because `revertTo` is REQUIRED to contain this call (its steps 3 and 5 are
+  // the idiom the publish path was made to match), so finding it there proves the
+  // needle is findable when it is present.
+  assert.ok(
+    stripped.indexOf("fsyncPath(", stripped.indexOf("export function revertTo")) >= 0,
+    "revertTo must still contain fsyncPath in the stripped source -- otherwise the needle is unfindable and the two orderings below are vacuous",
+  );
+
+  assert.ok(
+    stageFsync > vacuum,
+    "the staged image must be fsynced AFTER the vacuum that fills it and before stageSnapshot returns: the pointer row that will name it " +
+      `is committed by SQLite, which fsyncs, so a row durable ahead of its file is a snapshot that is advertised and partial (vacuum into at ${vacuum}, fsyncPath at ${stageFsync})`,
+  );
+  assert.ok(
+    publishFsync > rename,
+    "the ring directory must be fsynced AFTER the rename that publishes into it: a rename is VISIBLE immediately and DURABLE only after the " +
+      `directory fsync, which is the distinction fsyncPath's own doc sentence records (renameSync at ${rename}, fsyncPath at ${publishFsync})`,
+  );
+});
+
 test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
