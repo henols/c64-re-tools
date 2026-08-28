@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
-status: gaps_found
-stopped_at: Completed 28-12-PLAN.md
-last_updated: "2026-08-28T10:35:12.225Z"
+status: executing
+stopped_at: Completed 28-13-PLAN.md
+last_updated: "2026-08-28T11:25:03.621Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 28 second gap-closure round executed (28-10..28-12); round-3 re-verification returned gaps_found at 10/12
-state_head: c6d0278ea9e7e3dfc43a2762d06028f096c9e078
+last_activity_desc: Phase 28 third gap-closure round executing (28-13..28-15)
+state_head: f7a0bf369c7c0917ee93e83dc4601e6e3e1a1d0a
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
   percent: 17
 ---
 
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — READY TO EXECUTE
-Plan: 12 of 15 executed; third gap-closure round (28-13..28-15) PLANNED, not yet executed
-Status: 10/12 must-haves. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). All six STORE requirements reverted out of Complete. See 28-VERIFICATION.md and 28-REVIEW.md.
-Last activity: 2026-08-28 — third gap-closure round planned (28-13..28-15, waves 11-13); plan-checker PASSED after two revision iterations (8 issues -> 3 -> 0)
+Phase: 28 (The Store Core) — EXECUTING
+Plan: 13 of 15 executed; third gap-closure round (28-13..28-15) EXECUTING
+Status: 10/12 must-haves at last verification. All five ROADMAP success criteria VERIFIED for a third round, and round 2's two gaps are CLOSED (CR-01/CR-02/CR-04 re-verified; CR-03 closed for its reported cause). Two NEW blockers keep the goal's REVERTIBLE clause false and are what this round closes: CR-05 (the ring is keyed on the store path's basename spelling, so a second spelling of the same file makes the next write delete every pointer row) and CR-06/CR-07/WR-12 (a transaction with no structural lifetime, plus two holes in the ViceError family — an ordinary setDataType can report SUCCESS while leaving the handle permanently wedged). Plan 28-13 has now closed CR-05 and CR-07 in the sweep: the reconciler abstains from the pointer-ROW direction entirely and its transaction has a structural lifetime, both pinned behaviourally through production entry points. CR-06 and WR-12 remain open and are 28-14's and 28-15's subjects. All six STORE requirements remain reverted out of Complete until this round re-verifies. See 28-VERIFICATION.md and 28-REVIEW.md.
+Last activity: 2026-08-28 — 28-13 executed (CR-05 and CR-07 closed in `reconcileSnapshotRing`); 28-14 and 28-15 still to run
 
 ## Performance Metrics
 
@@ -302,6 +302,7 @@ Last activity: 2026-08-28 — third gap-closure round planned (28-13..28-15, wav
 | Phase 28 P10 | 14 min | 3 tasks | 4 files |
 | Phase 28 P11 | 22 min | 2 tasks | 2 files |
 | Phase 28 P12 | 24 min | 2 tasks | 4 files |
+| Phase 28 P13 | 12 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -632,6 +633,8 @@ Recent decisions affecting current work:
 - [Phase 28]: Path-entry existence in `anno-types.ts`'s confinement walk is decided with `lstatSync(p, { throwIfNoEntry: false })`, not `existsSync` — The two answers differ for exactly one input class -- a symlink whose target is absent -- and that class was the whole of CR-04: `existsSync` follows links, so a dangling one read as absent and the walk stepped PAST it, after which the confinement compared a path the filesystem would resolve elsewhere. Reproduced: "A) confinement ACCEPTED" with "A) file created OUTSIDE workspace: true".
 - [Phase 28]: A dangling stopping entry is resolved by hand with `readlinkSync` against `dirname(current)`, bounded by `MAX_SYMLINK_HOPS = 40` — `realpathSync` cannot resolve a chain whose end does not exist, so the hop has to be ours -- and resolving a relative target against the process cwd instead of the link's own directory is the one way a naive `readlinkSync` fix gets this wrong. 40 is Linux's own MAXSYMLINKS, so a chain this walk refuses is one the kernel would refuse too; the bound exists because a cycle is otherwise an infinite loop on unvalidated transport input.
 - [Phase 28]: The store confinement's check-then-open window is a STATED limit, never a handled case — The confinement decision and the file creation are two separate filesystem operations, and a link planted between them redirects the write while every refusal test still passes. `node:sqlite`'s `DatabaseSync` constructor takes a path, not a file descriptor, so there is no `O_NOFOLLOW`/`openat` route to making the check and the open one operation. Recorded in `anno-confinement.test.ts`'s header beside the controls, and as a `backstop` truth -- never described as closed.
+- [Phase 28]: The snapshot ring's identity model names a PATH SPELLING, and no repair of the spelling was adopted: `reconcileSnapshotRing` abstains from the pointer-ROW direction entirely and sweeps only the FILE direction (28-13, CR-05). — An orphan ROW is inert, not fatal — every consumer of "retained" already requires the FILE, so `revertTo` refuses before destroying anything. Rows stay bounded without the sweep because `pruneSnapshots`' doomed loop reaps everything below `currentRevision() - MAX_SNAPSHOT_REVISIONS`. The route has no deletion side at all, and needs no schema bump. The two rejected routes (the review's literal decline condition, and a ring id minted into anno_meta) are recorded verbatim in 28-13-SUMMARY.md so round five does not re-propose them.
+- [Phase 28]: `deferred` is WIDENED to mean "this sweep changed nothing" — covering both write-lock contention and a sweep that rolled back — and no second discriminator was added (28-13, CR-07). — Its only consumer, `pruneSnapshots`, returns early identically in both cases, so a discriminator would have no reader; and CR-07's concealment complaint is removed at its source by the structural try/catch rather than labelled. A field describing a state the code can no longer reach is the comment prohibition 28-07 P3 forbids, in the shape of an enum.
 
 ### Pending Todos
 
@@ -1223,8 +1226,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-28T08:53:27.976Z
-Stopped at: Completed 28-12-PLAN.md
+Last session: 2026-08-28T11:24:13.512Z
+Stopped at: Completed 28-13-PLAN.md
   Plan 28-08 is complete: 2 tasks, 2 task commits (`6846492`, `f5805ae`), 21
   min. It is the SECOND of the three gap-closure plans (waves 5-7); 28-09 (gap
   3, CR-03's symlink confinement bypass) remains. **CR-02 is closed at the
