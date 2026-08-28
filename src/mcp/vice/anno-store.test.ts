@@ -3857,3 +3857,126 @@ test("CR-08: the ring's file sweep does NOT unlink a corrupt image a pointer row
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 28-17 task 2 -- WR-16: the three rollback handlers report the rollback that
+// HAPPENED rather than the one that was intended. ONE test, both branches,
+// because a single-branch assertion is exactly what let the asserted-but-
+// unverified wording survive: the rolled-back message passes against code that
+// never checked, so only the CONTRAST between the two messages discriminates.
+// ---------------------------------------------------------------------------
+
+test("WR-16: the commit-failure refusal reports the rollback it OBSERVED -- rolled back, or ALSO failed -- carries that fact in data, and the sweep reports the same fact without throwing", () => {
+  inTempDir((dir) => {
+    /** Replaces `db.exec` with one that throws for the named statements and
+     * passes everything else through. Driven through PRODUCTION entry points:
+     * `anno-store.ts` is not edited, and the failure enters where a real
+     * `SQLITE_BUSY` on this connection would. */
+    const plant = (store: { db: { exec: (sql: string) => void } }, matcher: RegExp): (() => void) => {
+      const real = store.db.exec.bind(store.db);
+      store.db.exec = (sql: string): void => {
+        if (matcher.test(sql)) throw new Error(`planted failure for ${JSON.stringify(sql)}`);
+        real(sql);
+      };
+      return () => {
+        store.db.exec = real;
+      };
+    };
+
+    // BRANCH A -- the ORDINARY path: the commit fails and the rollback works.
+    // The wording here is the one that was already pinned before this task, and
+    // it must survive verbatim: the change is additive, so a refusal a caller
+    // already matches on does not move.
+    {
+      const store = openStore(join(dir, "a.annostore"), { workspaceRoot: dir });
+      let restore = (): void => {};
+      try {
+        setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+        const rev = currentRevision(store);
+        restore = plant(store, /^\s*commit/i);
+        assert.throws(
+          () => setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" }),
+          (e: unknown) => {
+            assert.ok(e instanceof AnnoStoreError, "the refusal is an AnnoStoreError");
+            assert.ok(e instanceof ViceError, "and inside the ViceError family");
+            assert.match(e.message, /transaction has been rolled back/, "the ordinary branch states the rollback as the fact it observed");
+            assert.doesNotMatch(e.message, /rollback ALSO failed/, "and does not reach for the also-failed wording");
+            assert.match(e.message, new RegExp(`still at revision ${rev}\\b`), "and it still names the revision the store is at (28-08 P2)");
+            assert.equal(
+              (e.data as { rolledBack?: boolean }).rolledBack,
+              true,
+              "and it carries the fact in data, so a caller branches on the fact rather than substring-matching the prose",
+            );
+            return true;
+          },
+        );
+        restore();
+        restore = () => {};
+        assert.equal(currentRevision(store), rev, "the rollback returned, so this connection is back at the pre-write revision");
+        store.db.exec("begin immediate");
+        store.db.exec("rollback");
+      } finally {
+        restore();
+        closeStore(store);
+      }
+    }
+
+    // BRANCH B -- the branch the old wording asserted its way past: the commit
+    // fails AND so does the rollback. Node 22's `DatabaseSync` exposes no
+    // transaction-state accessor, so the recorded boolean is the only thing that
+    // can keep the message honest.
+    {
+      const store = openStore(join(dir, "b.annostore"), { workspaceRoot: dir });
+      let restore = (): void => {};
+      try {
+        setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+        const rev = currentRevision(store);
+        restore = plant(store, /^\s*(commit|rollback)/i);
+        assert.throws(
+          () => setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "code" }),
+          (e: unknown) => {
+            assert.ok(e instanceof AnnoStoreError, "the refusal is still an AnnoStoreError");
+            assert.ok(e instanceof ViceError, "and still inside the ViceError family");
+            assert.match(e.message, /rollback ALSO failed/, "the also-failed branch says so");
+            assert.doesNotMatch(
+              e.message,
+              /transaction has been rolled back/,
+              "and it does NOT report the state it is refusing FROM as its own repair -- that is the whole of WR-16",
+            );
+            assert.match(e.message, /write lock/, "it names what the caller may still be holding");
+            assert.match(e.message, new RegExp(`revision ${rev}\\b`), "and it still names the revision the store is at (28-08 P2)");
+            assert.equal((e.data as { rolledBack?: boolean }).rolledBack, false, "and data.rolledBack is the observed false, not the intended true");
+            return true;
+          },
+        );
+      } finally {
+        restore();
+        try {
+          store.db.exec("rollback");
+        } catch {
+          // The planted failure may have left this transaction open -- which is
+          // exactly what the message now admits. Swallowed so the temp
+          // directory can still be removed.
+        }
+        closeStore(store);
+      }
+    }
+
+    // AND THE THIRD SITE, which must NOT throw (28-11 P5): the sweep reports the
+    // same fact in its RESULT. An always-present boolean rather than an optional
+    // one, so a reader does not have to falsify "can this ever be true" by
+    // experiment.
+    {
+      const store = openStore(join(dir, "c.annostore"), { workspaceRoot: dir });
+      try {
+        setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+        const swept = reconcileSnapshotRing(store);
+        assert.equal(swept.rollbackFailed, false, "an ordinary sweep reports rollbackFailed: false rather than omitting the field");
+        assert.equal(swept.deferred, false, "and deferred keeps its pre-existing value on the ordinary path");
+        assert.deepEqual(swept.droppedFiles, [], "and it dropped nothing on a healthy ring");
+      } finally {
+        closeStore(store);
+      }
+    }
+  });
+});
