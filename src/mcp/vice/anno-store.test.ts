@@ -1377,6 +1377,129 @@ test("WR-22, THE POSITIVE COMPANION: revertTo(handle, 1) on a healthy store stil
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// WR-24: `revertTo` stages under a name unique PER ATTEMPT, and removes it
+// through the ONE helper the module already has.
+//
+// The finding: `revertTo`'s staging name was `${storePath}.revert-<pid>-<rev>`
+// -- unique per (pid, revision) -- where `stageSnapshot`'s is per ATTEMPT, and
+// `stageSnapshot`'s own doc comment states in capitals WHY per-attempt is the
+// rule: a revision number can recur after a revert, and two attempts at the same
+// revision must not share a path. Two consequences followed. A second attempt's
+// copy could overwrite the first's between its step-3b validation and its step-5
+// rename, so the image judged was not the image installed; and each of three
+// bare `rmSync(staging, { force: true })` cleanups could delete another
+// attempt's in-flight file.
+// ---------------------------------------------------------------------------
+
+test("WR-24, BEHAVIOURAL: several sequential reverts to the SAME revision each succeed and leave ZERO revert-staging residue behind", () => {
+  // THE HALF THAT IS GENUINELY CONSTRUCTIBLE. Two truly concurrent attempts
+  // cannot be built in-process, so what is proved here is the sequential
+  // property that actually has a reachable input: every exit `revertTo` takes
+  // removes its own staging file, through all three of its cleanup sites and
+  // through the successful path's rename. A file left behind by any one of them
+  // is precisely what a later attempt would collide with.
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      for (let i = 0; i < 6; i += 1) {
+        setDataType(store, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      assert.equal(currentRevision(store), 6, "the store must be past the revision reverted to, or the reverts prove nothing");
+
+      // FOUR sequential reverts to the SAME revision, each on the handle the
+      // previous one returned. Each rebuilds the store from revision 2's image,
+      // so revision 2 stays reachable and each attempt is a real revert rather
+      // than a no-op.
+      const REVERTS = 4;
+      let accepted = 0;
+      for (let attempt = 0; attempt < REVERTS; attempt += 1) {
+        store = revertTo(store, 2);
+        assert.equal(currentRevision(store), 2, `attempt ${attempt + 1}: revertTo(2) must return a handle at revision 2`);
+        assert.equal(listRanges(store).length, 2, `attempt ${attempt + 1}: with exactly the two ranges revision 2 held`);
+        accepted += 1;
+
+        // And the store has to be moved forward again, or attempt N+1 would be
+        // reverting to the revision it is already at.
+        setDataType(store, { start: 0x3000, endInclusive: 0x300f, dataType: "code" });
+      }
+      assert.equal(accepted, REVERTS, `all ${REVERTS} attempts at the SAME revision must have been accepted`);
+
+      const residue = readdirSync(dir).filter((n) => n.includes(".revert-"));
+      assert.equal(
+        residue.length,
+        0,
+        `no attempt may leave a revert-staging file behind for the next one to collide with, found ${JSON.stringify(residue)}`,
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-24, STRUCTURAL: revertTo's staging name derives from randomUUID, and all three of its cleanups route through discardSnapshot rather than a bare rmSync", () => {
+  // WHY THIS IS STRUCTURAL, AND WHAT ITS EVIDENCE IS WORTH -- stated in the
+  // control itself, because this file's conventions forbid a structural
+  // assertion that does not say why it is one, and because 28-17 P5 forbids a
+  // uniqueness claim whose only evidence is that the code was written down.
+  //
+  // THE COLLISION-AVOIDANCE CLAIM IS NOT PROVED HERE. Two genuinely concurrent
+  // `revertTo` attempts cannot be constructed in-process, so the in-process
+  // evidence for "no two attempts can share a staging path" is that the name is
+  // built from `randomUUID` -- PRESENCE, not behaviour. That claim is filed as a
+  // `backstop` truth in this plan's summary with exactly that reason. What this
+  // control DOES prove is that the derivation and the cleanup routing have not
+  // silently regressed, which the behavioural control above cannot see: a bare
+  // `rmSync` removes the file just as well on the sequential path.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
+  // identified by source text and strict mode would blank the literals that make
+  // the body substantial.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+
+  const fnStart = stripped.indexOf("export function revertTo");
+  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and revertTo's body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+
+  // NON-VACUITY FIRST: a failed extraction satisfies an absence assertion
+  // trivially, which is how a control comes to pass for the wrong reason.
+  assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
+
+  // THE DERIVATION. Recorded as the matched source line so the summary can quote
+  // what the control actually saw rather than what it hoped for.
+  const stagingLine = body.split("\n").find((l) => l.includes("const staging = "));
+  assert.ok(stagingLine !== undefined, "revertTo must still assign a staging path");
+  assert.match(
+    stagingLine,
+    /randomUUID\(\)/,
+    `revertTo's staging name must derive from randomUUID -- the same primitive stageSnapshot uses -- got: ${stagingLine.trim()}`,
+  );
+  assert.match(stagingLine, /\.revert-/, `and must keep the .revert- marker so a leaked file is attributable, got: ${stagingLine.trim()}`);
+
+  // THE POSITIVE COUNT IS THE PRIMARY ASSERTION. Counting the thing that must be
+  // PRESENT is what fails when a call site is quietly changed back; a count of
+  // the removed spelling alone would also pass on a body that lost a cleanup
+  // entirely.
+  const discards = body.split("discardSnapshot(staging)").length - 1;
+  assert.equal(
+    discards,
+    3,
+    `revertTo must route all three of its staging cleanups through discardSnapshot -- the module's one place a staging file is ` +
+      `removed -- found ${discards}`,
+  );
+
+  // AND THE SECONDARY ASSERTION, DELIBERATELY SCOPED TO THIS FUNCTION'S BODY
+  // and never to the module: `rmSync` is legitimately used elsewhere in
+  // `anno-store.ts` (the ring sweep, the prune loop, `discardSnapshot` itself),
+  // so a module-wide count would be asserting something false.
+  const bareRemovals = body.split("rmSync(staging").length - 1;
+  assert.equal(bareRemovals, 0, `and must contain no bare rmSync on the staging path, found ${bareRemovals}`);
+});
+
 // ---------------------------------------------------------------------------
 // THE SECOND REVERT, AND THE ONE OWNERSHIP INVARIANT BEHIND IT
 // (gap 1 = CR-01 + WR-02).

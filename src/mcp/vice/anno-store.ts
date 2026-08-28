@@ -1323,6 +1323,15 @@ function publishSnapshot(stagingPath: string, snapPath: string): void {
  * is why the call sites do not have to know which side of the publication they
  * are on.
  *
+ * AND IT IS THE ONE PLACE A STAGING FILE IS REMOVED, which is why `revertTo`'s
+ * three cleanup exits route through it too (WR-24 / WR-11). Those three used to
+ * be bare `rmSync(staging, { force: true })` calls, so the module had two
+ * answers to "where does a staging file get removed" and a later reader looking
+ * for the one place found only half of them. The swallowing semantics below are
+ * what all three of those sites want as well: each is already refusing with a
+ * named error the caller needs to read, and a second error about a temporary
+ * file would replace it.
+ *
  * Swallowing on purpose. A staging file this fails to remove is an orphan
  * `.tmp`, and an orphan `.tmp` is harmless: nothing addresses it, no pointer row
  * can name it and the reconciliation sweep does not match it. Reporting a second
@@ -2177,7 +2186,34 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
 
   const storePath = handle.path;
   const dir = handle.dir;
-  const staging = `${storePath}.revert-${process.pid}-${revision}`;
+  // THE STAGING NAME IS UNIQUE PER ATTEMPT, NOT PER (PID, REVISION) (WR-24),
+  // and it is built from `randomUUID` -- the SAME primitive `stageSnapshot`
+  // uses, so there is ONE answer in this module to "how is a staging name made
+  // unique" rather than two that can drift. `stageSnapshot`'s own doc comment
+  // states the rule in capitals and states why: a revision number can recur
+  // after a revert, and two attempts at the same revision -- in this process or
+  // another -- must not share a path. That sentence was never applied here.
+  //
+  // THE TWO FAILURE MODES THIS CLOSES, named rather than implied. (1) A second
+  // attempt at the same revision copies over the first attempt's staged bytes
+  // BETWEEN that attempt's step-3b validation and its step-5 rename, so the
+  // image judged is not the image installed -- the exact window step 3b exists
+  // to remove. (2) Any of the three cleanups below removes another attempt's
+  // IN-FLIGHT file, because under the old name all attempts at one revision
+  // addressed the same path.
+  //
+  // AND WHAT IT DOES NOT CLOSE, stated because a comment that implied otherwise
+  // would be prohibition 28-07 P3's exact shape: THE LEAK HALF STAYS OPEN UNDER
+  // WR-11. A process killed between the copy and any of the three cleanups
+  // still leaves this file behind, and it sits beside the store rather than
+  // inside the ring directory, so `reconcileSnapshotRing`'s sweep -- anchored on
+  // `r<digits>.db` inside `snapshotDirFor()` -- does not and must not match it.
+  // Nothing reclaims it. That is WR-11's other half and it is not closed here.
+  //
+  // THE PID IS KEPT deliberately: it is the diagnostic that lets a human finding
+  // a leaked file say which process produced it, and the `.revert-` marker is
+  // kept for the same reason -- uniqueness was the defect, not the labelling.
+  const staging = `${storePath}.revert-${process.pid}.${randomUUID()}.tmp`;
 
   // STEP 3. Stage and fsync the copy WITH THE CONNECTION STILL OPEN. Every
   // failure reachable here -- `ENOENT`, `ENOSPC`, `EACCES` -- therefore leaves
@@ -2190,7 +2226,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     fsyncPath(staging);
     fsyncPath(dir);
   } catch (e) {
-    rmSync(staging, { force: true });
+    discardSnapshot(staging);
     throw new AnnoStoreError(
       `cannot revert ${storePath} to revision ${revision}: staging the snapshot ${snapPath} failed during copy/fsync ` +
         `(${(e as Error).message}). Nothing has been replaced and the store connection is deliberately still OPEN and usable.`,
@@ -2226,7 +2262,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   try {
     closeStore(openStore(staging, { mustExist: true }));
   } catch (e) {
-    rmSync(staging, { force: true });
+    discardSnapshot(staging);
     throw new AnnoStoreError(
       `cannot revert ${storePath} to revision ${revision}: the retained snapshot ${snapPath} is not a readable annotation store ` +
         `(${(e as Error).message}). NOTHING has been replaced -- the store is still at revision ${currentRevision(handle)} and this ` +
@@ -2248,7 +2284,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     renameSync(staging, storePath);
     fsyncPath(dir);
   } catch (e) {
-    rmSync(staging, { force: true });
+    discardSnapshot(staging);
     throw new AnnoStoreError(
       `cannot revert ${storePath} to revision ${revision}: renaming the staged snapshot over the store failed ` +
         `(${(e as Error).message}). The store connection was already closed for the rename -- that is the one residual this path ` +
