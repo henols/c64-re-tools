@@ -383,25 +383,47 @@ test("the revision compare-and-swap is structurally intact: begin immediate, an 
  * controls, so the coverage the fixtures prove is the coverage the seam
  * assertion gets -- never two matchers that can drift apart. */
 function commitStatements(source: string): string[] {
-  // An `exec()` call whose SINGLE argument is a bare statement literal, in any
-  // of the three spellings SQLite treats as the same statement, under any of
-  // the three quote characters, tolerant of whitespace inside and around the
-  // literal. Anything that is not that shape -- an identifier, an interpolated
-  // string, a sentence in an error message -- is not a commit statement and is
-  // not counted.
-  return source.match(/\bexec\(\s*(['"`])\s*(?:commit|end(?:\s+transaction)?)\s*\1\s*\)/gi) ?? [];
+  // TWO STAGES, and the split is the whole of WR-19's repair.
+  //
+  // STAGE 1 finds every `exec()` call whose single argument is a string literal
+  // in any of the three quote characters. An `exec()` whose argument is an
+  // IDENTIFIER -- the real `db.exec(DDL)` shape -- has no literal and is not a
+  // candidate at all.
+  //
+  // STAGE 2 tests that literal's CONTENTS for a commit STATEMENT, not for the
+  // literal being one. 28-18 replaced a word count with a whole-literal match,
+  // which closed the synonym hole and left two open: `DatabaseSync.exec()` runs
+  // MULTIPLE statements, so `db.exec("commit;")` and
+  // `db.exec("insert into t values (1); commit")` both commit and both counted
+  // ZERO. What SQLite executes is the statement, so the statement is what is
+  // matched.
+  //
+  // THE STATEMENT-BOUNDARY ANCHOR IS DELIBERATE AND IS LOAD-BEARING FOR 28-18
+  // P1. The statement must START at the start of the literal or just after a
+  // `;`, and must END at a `;` or the end of the literal. A matcher that fired
+  // on any occurrence of the word inside a literal would count
+  // `step: "the commit could not be completed"` -- putting the wording of every
+  // user-facing error message back under a control in a DIFFERENT file, which is
+  // exactly the coupling 28-18 removed and this repair must not restore.
+  // `NO_STATEMENT_FIXTURE` is the control that proves it did not.
+  const COMMIT_STATEMENT_RE = /(?:^|;)\s*(?:commit|end(?:\s+transaction)?)\s*(?:;|$)/i;
+  const out: string[] = [];
+  for (const m of source.matchAll(/\bexec\(\s*(['"`])([\s\S]*?)\1\s*\)/g)) {
+    if (COMMIT_STATEMENT_RE.test(m[2] as string)) out.push(m[0]);
+  }
+  return out;
 }
 
 /**
  * THE PROVENANCE OF EVERY SPELLING BELOW, recorded here rather than
  * re-established by this file. Each of these six literals, and the
- * multi-statement one further down, was run against `node:sqlite` on Node 22.22
- * during the round-5 review and COMMITTED; the round-5 verifier then confirmed
- * the matcher's counts over them by running the regex itself. These fixture
- * strings are asserted against the MATCHER and are never executed -- this file
- * may not name `node:sqlite`, because the single-seam control that lives in this
- * very file fails the build when a second module does. Do not import a database
- * here to re-prove what is already established out of band.
+ * multi-statement one further down, was run against the SQLite builtin on Node
+ * 22.22 during the round-5 review and COMMITTED; the round-5 verifier then
+ * confirmed the matcher's counts over them by running the regex itself. These
+ * fixture strings are asserted against the MATCHER and are never executed --
+ * this file must not gain a database import, because the single-seam control
+ * that lives in this very file fails the build when a second module reaches the
+ * builtin. Do not re-prove here what is already established out of band.
  */
 
 /** The three spellings SQLite accepts for the SAME statement, bare. */
@@ -456,17 +478,30 @@ test("the seam contains exactly one commit statement, so the single planted-viol
   // stripping literals would make this assertion vacuous. Comments are still
   // stripped, so the header's prose about the commit cannot inflate the count.
   //
-  // WR-15, and this is the defect being closed: the matcher used to count the
-  // WORD `commit`, and SQLite accepts `END` and `END TRANSACTION` as exact
-  // synonyms of `COMMIT`. A second, fully working commit site spelled
-  // `db.exec("end")` was therefore invisible to the one control whose whole job
-  // is keeping the durability proof's planted violation unique -- observed
-  // passing, unchanged, with that site present. The matcher now requires an
-  // `exec()` call whose single argument is a bare statement literal in any of
-  // the three spellings, which is what SQLite executes; `commitTransaction`,
-  // `applyWriteWithoutCommit`, `doCommit` and any user-facing sentence about a
-  // commit cannot satisfy that shape, so no error message's wording is coupled
-  // to this control any more.
+  // TWO DEFECTS HAVE BEEN CLOSED HERE, IN THAT ORDER, AND THE SECOND WAS THE
+  // RESIDUE OF THE FIRST'S FIX.
+  //
+  // WR-15: the matcher counted the WORD `commit`, and SQLite accepts `END` and
+  // `END TRANSACTION` as exact synonyms of `COMMIT`. A second, fully working
+  // commit site spelled `db.exec("end")` was invisible to the one control whose
+  // whole job is keeping the durability proof's planted violation unique --
+  // observed passing, unchanged, with that site present. 28-18 replaced the
+  // word count with a match on an `exec()` whose single argument IS a bare
+  // statement literal.
+  //
+  // WR-19: that replacement required the LITERAL and the STATEMENT to be the
+  // same string, which is only the degenerate case. `DatabaseSync.exec()` runs
+  // multiple statements -- that is why `db.exec(DDL)` works -- so
+  // `db.exec("commit;")` and `db.exec("insert into t values (1); commit")` both
+  // commit, and the round-5 verifier measured both counting ZERO. The matcher
+  // now finds the STATEMENT inside the literal, anchored at a statement
+  // boundary.
+  //
+  // What it still does NOT fire on, and must not: the identifiers
+  // `commitTransaction`, `applyWriteWithoutCommit` and `doCommit`; an `exec()`
+  // whose argument is a bare identifier; and any user-facing sentence about a
+  // commit. The boundary anchor is what excludes that last one, so no error
+  // message's wording is coupled to this control (28-18 P1).
   const kept = codeOnly(seamSource(), true);
   const found = commitStatements(kept);
   assert.equal(
