@@ -4,17 +4,17 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 28
 current_phase_name: The Store Core
-status: gaps_found
-stopped_at: Phase 28 re-verified after gap closure -- 9/11 must-haves, 2 gaps remain (snapshot identity; dangling-symlink confinement)
-last_updated: "2026-08-28T05:46:12.787Z"
+status: executing
+stopped_at: Completed 28-10-PLAN.md
+last_updated: "2026-08-28T08:14:39.468Z"
 last_activity: 2026-08-28
-last_activity_desc: Phase 28 gap-closure run complete (28-07..28-09); re-verification returned gaps_found at 9/11
-state_head: 1d63e4969c434db1e3970f99b4a3419e9694ad82
+last_activity_desc: Phase 28 execution started
+state_head: 9c1c4c9d6f8e2acb298031fb08ef0e4546065e3a
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 17
-  completed_plans: 14
+  completed_plans: 15
   percent: 17
 ---
 
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — READY TO EXECUTE
-Plan: 9 of 12 executed; second gap-closure round 28-10..28-12 planned, not yet executed
-Status: 9/11 must-haves. All five ROADMAP success criteria VERIFIED, but the goal's REVERTIBLE clause is false. Two gaps open: the snapshot ring (CR-01 two stores share one ring, CR-02 the sweep deletes a concurrent writer's published snapshot, CR-03 an absolute path turns a directory move into destruction) and the DANGLING-symlink confinement bypass (CR-04). Plans 28-10..28-12 close them as one snapshot-identity design plus the confinement walk; plan-checker passed at 0 blockers after two revisions. See 28-VERIFICATION.md.
-Last activity: 2026-08-28 — Phase 28 second gap-closure round planned (28-10..28-12), verified at 0 blockers
+Phase: 28 (The Store Core) — EXECUTING
+Plan: 10 of 12 executed; executing second gap-closure round 28-10..28-12 (--gaps-only)
+Status: Executing the second gap-closure round. 9/11 must-haves verified before this run; two gaps open — the snapshot ring (CR-01/CR-02/CR-03) and the DANGLING-symlink confinement bypass (CR-04). Plans 28-10..28-12 close them.
+Last activity: 2026-08-28 — Phase 28 second gap-closure round execution started (28-10..28-12)
 
 ## Performance Metrics
 
@@ -299,6 +299,7 @@ Last activity: 2026-08-28 — Phase 28 second gap-closure round planned (28-10..
 | Phase 28 P07 | 16 min | 2 tasks | 2 files |
 | Phase 28 P08 | 21 min | 2 tasks | 3 files |
 | Phase 28 P09 | 20 min | 2 tasks | 3 files |
+| Phase 28 P10 | 14 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -621,6 +622,8 @@ Recent decisions affecting current work:
 - [Phase 28]: The WR-11 CAS-failure branch is pinned STRUCTURALLY with the reason stated in the test, and the second revision is read from anno_meta BEFORE the rollback — runWriteSequence is fully synchronous, so no in-process interleave can land between the pre-transaction read and begin immediate, and a spawned child racing it would be timing-dependent -- a flaky probe is worse evidence than an honest structural one. The reachable pre-transaction arm stays behaviourally pinned at anno-store.test.ts:320
 - [Phase 28]: Phase 28 (28-09): workspace confinement resolves REAL paths on BOTH sides through a deepest-existing-ancestor walk, and the resolution lives in the VALIDATOR (anno-types.ts), not in the persistence module. Siting it in anno-store.ts would have preserved the research map's purity row and the three-entry import pin, at the cost of splitting one confinement contract across two modules with the security-relevant half in the module whose header does not claim confinement -- a caller that skipped the pre-resolution would get a passing check and a store file outside the workspace, which is CR-03 again with a new cause and no test watching. The module that declares a contract must be the module that cannot answer it wrongly. node:fs is a Node builtin, not a seam; the closed hostpath consumer set is unchanged.
 - [Phase 28]: Phase 28 (28-09): an allow/deny control is proven by TWO plantings, not one. The pre-fix code must redden the REFUSAL test, and the over-broad wrong fix (refuse everything) must redden a DISCRIMINATING test. A confinement control that only ever refuses is indistinguishable from one that works, and a single planting cannot tell them apart. Applied here: reverting to resolve() reddened the symlink refusal (and a standalone probe reproduced the verifier's own "file created outside workspace: true"), while refusing every symlinked path left the refusal green and reddened the inside-pointing-symlink follow.
+- [Phase 28]: D-A (28-10, one-way): the snapshot ring is keyed on the store FILE and anno_snapshot.path is DROPPED, with SCHEMA_VERSION 1 -> 2 refusing a previous-shape store by name and leaving its legacy <dir>/snapshots ring untouched — Option a-bump-and-refuse. Rejected b-silent-history-loss (an existing store keeps opening but its entire revert history becomes unreachable with NO signal, and a persisted absolute-path column stays on disk for a future edit to read -- CR-03's primitive left in place) and c-migrate (with two stores in one directory the legacy ring is genuinely ambiguous, so a migration would attribute a neighbour's snapshots to whichever store opens first -- CR-01 again with a new cause and no test watching). Accepted cost: an existing store's annotations need a hand migration. Safe because the store is unreleased -- every store on disk today is a phase-28 test fixture.
+- [Phase 28]: CR-01 is fixed by renaming the LOCATION, not by an ownership predicate: two distinct store files in one directory have distinct basenames by definition of a filesystem, so distinct rings follow by construction — 28-07's per-revision ownership predicate over the shared <dir>/snapshots ring was structurally blind to CR-01 because revision numbers are not unique ACROSS stores -- two stores both write r1.db and every per-revision predicate answers "mine" to both. A location that cannot collide has no such blind spot. Residual stated rather than closed: renaming the store FILE re-points the ring name, the old ring becomes unreachable and is deliberately never deleted, and retainedRevisions() honestly reports [] -- an accepted under-claim over guessing which ring a renamed store used to own.
 
 ### Pending Todos
 
@@ -1212,8 +1215,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-27T22:01:35.120Z
-Stopped at: Completed 28-08-PLAN.md (CR-02, WR-04 and WR-11 closed); next 28-09
+Last session: 2026-08-28T08:14:39.304Z
+Stopped at: Completed 28-10-PLAN.md
   Plan 28-08 is complete: 2 tasks, 2 task commits (`6846492`, `f5805ae`), 21
   min. It is the SECOND of the three gap-closure plans (waves 5-7); 28-09 (gap
   3, CR-03's symlink confinement bypass) remains. **CR-02 is closed at the
