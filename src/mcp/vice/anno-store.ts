@@ -365,7 +365,7 @@ function fsyncPath(path: string): void {
  * unconfined path with `unconfinedModuleDerivedPath: true`, and the inversion is
  * deliberate (WR-25). Confinement used to be opt-IN, which made the mitigation
  * for the one unvalidated input this module's own header calls out the one a
- * caller could forget -- and two of phase 28's blockers were confinement
+ * caller could forget -- and two of this store's recorded blockers were confinement
  * escapes. The escape exists for exactly one shape: a path THIS MODULE derived
  * itself (a snapshot image path, a staging path, or the live store path
  * `revertTo` already resolved), where there is no caller argument left to
