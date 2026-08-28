@@ -4474,3 +4474,131 @@ test("WR-18, STRUCTURAL: revertTo's step-6 sweep call BINDS its result and acts 
   assert.match(after.slice(0, 400), /closeStore\(restored\)/, "closing the suspect connection");
   assert.match(after.slice(0, 400), /return openStore\(storePath\)/, "and handing back a freshly opened one");
 });
+
+// ---------------------------------------------------------------------------
+// WR-21 -- `addScope`'s two missing rules: idempotence and the no-nesting claim
+// its own doc comment (and `ScopeRow`'s) already made.
+//
+// MEASURED ON THE PRE-TASK TREE, through production entry points only:
+// `addScope($1000..$2000)` -> `{revision: 5, changed: true}`; the SAME call
+// again -> `{revision: 6, changed: true}`; `addScope($1400..$1500)` ->
+// `{revision: 7, changed: true}`; and `listScopes()` held THREE rows -- two
+// byte-identical and one nested. All three reported as changes.
+// ---------------------------------------------------------------------------
+
+test("WR-21: a byte-identical addScope repeat is an accepted NO-OP reporting changed:false, and the scope table still holds exactly one row", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      const first = addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
+      assert.equal(first.changed, true, "the first add is a real edit");
+      assert.equal(listScopes(handle).length, 1, "and it stored exactly one row");
+
+      const repeat = addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
+
+      // THE REPEAT SUCCEEDS -- it is not rejected. Phase 29's success criterion
+      // 5 requires a repeated edit to succeed reporting no change, and
+      // `AnnoWriteResult`'s own doc comment says `changed` is the ONLY signal
+      // distinguishing a no-op from a real edit. Both are asserted here.
+      assert.equal(repeat.changed, false, "a byte-identical repeat is an accepted NO-OP, not a second row and not a refusal");
+      assert.equal(repeat.revision, first.revision + 1, "and the revision still advances by exactly one, like every other write entry point");
+      assert.deepEqual(
+        listScopes(handle),
+        [{ id: 1, start: 0x1000, endInclusive: 0x2000 }],
+        "the table still holds exactly ONE row -- on the pre-task tree this drive left two byte-identical rows",
+      );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-21: a NESTED scope is refused BY NAME with both scopes' ends and the existing scope's id, and the table is unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
+
+      const thrown = assert.throws(
+        () => addScope(handle, { start: 0x1400, endInclusive: 0x1500 }),
+        AnnoRangeShapeError,
+        "a scope wholly inside an existing one is REFUSED -- `ScopeRow`'s doc comment says nested scopes are unsupported",
+      ) as AnnoRangeShapeError;
+
+      // BOTH NUMBERS THAT CONFLICTED (28-08 P2): the incoming scope's two ends,
+      // the existing scope's two ends, AND the existing scope's id.
+      assert.match(thrown.message, /5120/, "the incoming scope's start is in the message");
+      assert.match(thrown.message, /5376/, "and its end");
+      assert.match(thrown.message, /4096/, "the existing scope's start is in the message");
+      assert.match(thrown.message, /8192/, "and its end");
+      assert.match(thrown.message, /id=1/, "and the existing scope's id, so the caller can find the row that conflicted");
+      assert.match(thrown.message, /REFUSED/, "and the message says the write was refused rather than trimmed or split");
+
+      assert.equal(listScopes(handle).length, 1, "the refusal is raised BEFORE any write -- the table still holds exactly one row");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-21: a PARTIALLY overlapping scope is refused by the same rule and the same class", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addScope(handle, { start: 0x1000, endInclusive: 0x2000 });
+
+      const thrown = assert.throws(
+        () => addScope(handle, { start: 0x1fff, endInclusive: 0x3000 }),
+        AnnoRangeShapeError,
+        "a scope overlapping an existing one by a single byte is refused by the same rule",
+      ) as AnnoRangeShapeError;
+      assert.match(thrown.message, /id=1/, "and the same message shape names the existing row");
+
+      assert.equal(listScopes(handle).length, 1, "and nothing was stored");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-21 discrimination: two DISJOINT scopes are both accepted -- the refusal was not bought by refusing everything", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(addScope(handle, { start: 0x1000, endInclusive: 0x2000 }).changed, true);
+      assert.equal(addScope(handle, { start: 0x3000, endInclusive: 0x4000 }).changed, true);
+      assert.equal(listScopes(handle).length, 2, "two disjoint scopes are two scopes");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-21 discrimination: two ADJACENT scopes are both accepted -- touching at a boundary is not overlapping, pinned with the exact addresses", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      // THE BOUNDARY IS PINNED RATHER THAN ASSUMED. The second scope starts at
+      // EXACTLY one past the first's inclusive end. An off-by-one in the
+      // overlap predicate would silently refuse legitimate work here, and a
+      // control that used a gap of two would never see it.
+      assert.equal(addScope(handle, { start: 0x1000, endInclusive: 0x2000 }).changed, true);
+      assert.equal(addScope(handle, { start: 0x2001, endInclusive: 0x3000 }).changed, true);
+      assert.deepEqual(
+        listScopes(handle),
+        [
+          { id: 1, start: 0x1000, endInclusive: 0x2000 },
+          { id: 2, start: 0x2001, endInclusive: 0x3000 },
+        ],
+        "0x2000 and 0x2001 touch and do not overlap -- both scopes are stored",
+      );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
