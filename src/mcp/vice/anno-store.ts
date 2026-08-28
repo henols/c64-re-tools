@@ -875,7 +875,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * `deferred` IS WHAT DECLINING LOOKS LIKE, AND DECLINING IS CORRECT RATHER THAN
  * BEST-EFFORT. When the lock cannot be taken within the connection's five-second
  * `busy_timeout`, this function changes NOTHING and returns
- * `{ droppedFiles: [], deferred: true }`. A sweep that pressed
+ * `{ droppedFiles: [], deferred: true, rollbackFailed: false }`. A sweep that pressed
  * on would be judging a state it cannot establish -- exactly the guess the lock
  * exists to remove -- so it abstains and REPORTS the abstention, which is what
  * lets a caller and a test assert it rather than infer it from an absence. The
@@ -885,9 +885,26 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  *
  * `deferred` IS NOW WIDENED, AND THE WIDENING IS STATED RATHER THAN LEFT TO BE
  * INFERRED FROM THE ONE NEW RETURN SITE. It reports "THIS SWEEP CHANGED
- * NOTHING", which covers two causes: another writer holds the write lock (step
+ * NOTHING -- which holds as stated while `rollbackFailed` is `false`, and which
+ * becomes 'this sweep INTENDED to change nothing but cannot establish that its
+ * own transaction closed' when `rollbackFailed` is `true`", and it covers two
+ * causes: another writer holds the write lock (step
  * 1 above), and this sweep failed part-way and rolled back (the structural
- * handler around steps 2-4). NO SECOND DISCRIMINATOR WAS ADDED, and the reason
+ * handler around steps 2-4). The qualifier is in the SAME sentence as the claim
+ * on purpose: an unqualified guarantee with its qualifier further down is the
+ * 28-07 P3 shape this module has already had to correct once, and a reader who
+ * stops at the first sentence must not stop at a claim that is sometimes false.
+ *
+ * `rollbackFailed` IS ALWAYS PRESENT AND IS NEVER OPTIONAL, for the reason the
+ * neighbouring `droppedRows` assertion in `anno-store.test.ts` already records:
+ * a field that can only ever answer one value is a claim the next reader has to
+ * falsify by experiment. It is `false` at every ordinary return site including
+ * the lock-contention deferral, and `true` only where this function's own
+ * `rollback` threw -- which is the one state in which the sentence above cannot
+ * be honoured, and the one this function has no other way to report, because
+ * rethrowing is forbidden here (28-11 P5).
+ *
+ * NO SECOND DISCRIMINATOR WAS ADDED FOR `deferred`'s TWO CAUSES, and the reason
  * is not economy. Its only consumer, `pruneSnapshots`, returns early
  * identically in both cases, so a discriminator would have no reader -- and
  * CR-07's actual complaint, that a LEAKED transaction makes every later sweep
@@ -919,7 +936,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * surviving commit-before-unlink order -- a presence assertion cannot see
  * either.
  */
-export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: string[]; deferred: boolean } {
+export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: string[]; deferred: boolean; rollbackFailed: boolean } {
   const droppedFiles: string[] = [];
 
   // STEP 1. Take the store's write lock BEFORE reading anything, so no writer
@@ -932,7 +949,9 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   try {
     handle.db.exec("begin immediate");
   } catch {
-    return { droppedFiles, deferred: true };
+    // `rollbackFailed: false` and not omitted: nothing was begun, so there was
+    // no transaction to close and the reported abstention is exact.
+    return { droppedFiles, deferred: true, rollbackFailed: false };
   }
 
   // DECLARED OUTSIDE THE HANDLER BELOW so step 5 can still read it after the
@@ -1021,17 +1040,27 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   } catch {
     // ROLLED BACK INSIDE ITS OWN SWALLOWING `try`: there is nothing useful to
     // do with a second error here, and reporting it would replace the first.
+    // WHAT IS NEW IS THAT THE OUTCOME IS RECORDED RATHER THAN ASSUMED (WR-16).
+    // Node 22's `DatabaseSync` exposes no transaction-state accessor, so this
+    // boolean is the only thing that can tell a caller which of the two
+    // happened -- and this function cannot tell it by throwing, because
+    // rethrowing here would convert a COMMITTED write into a caller-visible
+    // failure on `revertTo`'s step-6 call site (28-11 P5).
+    let rolledBack = true;
     try {
       handle.db.exec("rollback");
     } catch {
-      // deliberately ignored -- see above
+      // deliberately ignored -- see above; only the FACT is kept.
+      rolledBack = false;
     }
     // AND DELIBERATELY NOT RETHROWN. A throw from here is swallowed by step 9's
     // WR-02 wrap anyway, so rethrowing would buy nothing on the write path --
     // and on `revertTo`'s own step-6 call site it would convert a COMMITTED
     // write into a caller-visible failure, which prohibition 28-11 P5 forbids.
-    // The sweep changed nothing, which is precisely what `deferred` reports.
-    return { droppedFiles: [], deferred: true };
+    // The sweep changed nothing, which is precisely what `deferred` reports --
+    // qualified by `rollbackFailed`, which is the one case in which "changed
+    // nothing" is an intention this function cannot establish.
+    return { droppedFiles: [], deferred: true, rollbackFailed: !rolledBack };
   }
 
   // STEP 5, AND ITS POSITION IS THE POINT: only now, with the sweep's
@@ -1055,7 +1084,9 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
     }
   }
 
-  return { droppedFiles, deferred: false };
+  // `rollbackFailed: false` on the ordinary path: control only reaches here
+  // through the commit above, so no rollback was attempted at all.
+  return { droppedFiles, deferred: false, rollbackFailed: false };
 }
 
 /**
@@ -1437,6 +1468,15 @@ function runWriteSequence<T>(
     // claims (see `retainedRevisions`).
     handle.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
   } catch (e) {
+    // THE ROLLBACK'S OUTCOME IS RECORDED, NOT ASSUMED (WR-16). The message below
+    // used to state the rollback as a fact after this `catch` had swallowed that
+    // rollback's own failure, so the one case in which the claim is false is
+    // exactly the case in which it was printed. Node 22's `DatabaseSync` exposes
+    // no transaction-state accessor -- the surface is `open, close, prepare,
+    // exec, function, location, aggregate, createSession, applyChangeset,
+    // enableLoadExtension, loadExtension`, measured on this host -- so this local
+    // is the only thing that can keep the message honest.
+    let rolledBack = true;
     try {
       handle.db.exec("rollback");
     } catch {
@@ -1444,7 +1484,8 @@ function runWriteSequence<T>(
       // already been rolled back, so this second attempt reports "no
       // transaction is active" -- and there is nothing useful to do with a
       // second error anyway: reporting it would replace the caller's actual
-      // refusal.
+      // refusal. Only the FACT is kept.
+      rolledBack = false;
     }
     // Unconditional and safe unconditionally: `force: true` on a name the
     // publication may already have renamed away is a no-op, so this call site
@@ -1457,8 +1498,13 @@ function runWriteSequence<T>(
     if (e instanceof ViceError) throw e;
     throw new AnnoStoreError(
       `${handle.path}: the write sequence failed between the staged snapshot and the pointer-row insert for revision ${rev} ` +
-        `(${(e as Error).message}). The transaction has been rolled back and the staged snapshot discarded, so the revision is unchanged.`,
-      { data: { path: handle.path, revision: rev, step: "publish the snapshot and insert its pointer row" } },
+        `(${(e as Error).message}). ` +
+        (rolledBack
+          ? `The transaction has been rolled back and the staged snapshot discarded, so the revision is unchanged.`
+          : `The staged snapshot has been discarded, but the rollback ALSO failed: this connection may still hold an open transaction ` +
+            `and the store's write lock, so CLOSE IT AND REOPEN rather than reusing it. Nothing was written -- the store on disk is ` +
+            `still at revision ${rev} -- but this connection's own view of the revision cannot be trusted until it is reopened.`),
+      { data: { path: handle.path, revision: rev, rolledBack, step: "publish the snapshot and insert its pointer row" } },
     );
   }
 
@@ -1535,25 +1581,44 @@ function runWriteSequence<T>(
     try {
       commitTransaction(handle.db);
     } catch (e) {
+      // RECORDED, NOT ASSERTED (WR-16). "the transaction has been rolled back"
+      // was stated as a fact directly under a `catch` that swallowed the
+      // rollback's own failure -- so on the one path where the claim is false it
+      // was still printed, and a refusal that reports the CR-06 state as its own
+      // repair sends the caller straight back into reusing a connection that may
+      // still hold the store's write lock. There is no cheap check available:
+      // Node 22's `DatabaseSync` exposes no transaction-state accessor (surface
+      // measured on this host: `open, close, prepare, exec, function, location,
+      // aggregate, createSession, applyChangeset, enableLoadExtension,
+      // loadExtension`), which is a reason not to ASSERT the outcome, and this
+      // local is what replaces the assertion.
+      let rolledBack = true;
       try {
         handle.db.exec("rollback");
       } catch {
-        // deliberately ignored -- see above
+        // deliberately ignored -- see above; only the FACT is kept.
+        rolledBack = false;
       }
       discardSnapshot(staging);
       if (e instanceof ViceError) throw e;
       throw new AnnoStoreError(
         `${handle.path}: the write for revision ${rev + 1} could not be committed (${(e as Error).message}). ` +
-          `Nothing was written and the transaction has been rolled back, so the store is still at revision ${rev}.`,
+          (rolledBack
+            ? `Nothing was written and the transaction has been rolled back, so the store is still at revision ${rev}.`
+            : `Nothing was written, but the rollback ALSO failed: this connection may still hold an open transaction and the store's ` +
+              `write lock, so CLOSE IT AND REOPEN rather than reusing it. The store on disk is still at revision ${rev}, while this ` +
+              `connection may report ${rev + 1} for a write that never landed.`),
         {
           code: (e as { code?: number | string }).code,
+          // `rolledBack` is carried in `data` as well as in the prose so a caller
+          // can branch on the fact instead of substring-matching a message.
           // "committing", NOT "commit", and the spelling is load-bearing:
           // `anno-seam.test.ts`'s single-commit-site control counts `/\bcommit\b/i`
           // over this module's stripped source with STRING LITERALS KEPT, so a
           // `step` reading "commit ..." would be counted as a second commit
           // statement and redden that control. The gerund has no word boundary
           // after `commit`, exactly as `commitTransaction` and `doCommit` do not.
-          data: { path: handle.path, revision: rev, step: "committing the write transaction" },
+          data: { path: handle.path, revision: rev, rolledBack, step: "committing the write transaction" },
         },
       );
     }
