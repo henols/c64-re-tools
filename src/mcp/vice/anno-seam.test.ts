@@ -375,19 +375,85 @@ test("the revision compare-and-swap is structurally intact: begin immediate, an 
   assert.match(kept, /rollback/, "and must roll back rather than leaving the transaction open when it refuses");
 });
 
+/** Every commit STATEMENT in an (already stripped, LITERAL-BODIES-KEPT) source
+ * text. ONE definition, used by the seam assertion below and by both fixture
+ * controls, so the coverage the fixtures prove is the coverage the seam
+ * assertion gets -- never two matchers that can drift apart. */
+function commitStatements(source: string): string[] {
+  return source.match(/\bcommit\b/gi) ?? [];
+}
+
+/** All three spellings SQLite accepts for the SAME statement, as a LOCAL
+ * fixture rather than as a slice of the module: the module happens to contain
+ * one spelling, so a matcher checked only against it proves nothing about the
+ * other two. */
+const THREE_SPELLINGS_FIXTURE = [
+  '  db.exec("commit");',
+  "  db.exec('end');",
+  '  db.exec("END TRANSACTION");',
+].join("\n");
+
+/** Everything that names a commit WITHOUT being one: the module's three
+ * commit-ish identifiers, and a user-facing sentence using the bare word. The
+ * second half is the part that matters -- a matcher that fires on prose makes
+ * an error message's wording load-bearing for a control in another file. */
+const NO_STATEMENT_FIXTURE = [
+  "  commitTransaction(handle.db);",
+  "  applyWriteWithoutCommit(handle, fn);",
+  "  const done = doCommit;",
+  '  step: "the commit could not be completed",',
+].join("\n");
+
 test("the seam contains exactly one commit statement, so the single planted-violation site is unique", () => {
-  // Literal bodies KEPT: the commit statement IS a string literal. Comments are
-  // still stripped, so the header's prose about the commit cannot inflate the
-  // count. `commitTransaction`, `applyWriteWithoutCommit` and `doCommit` are
-  // not matched -- the word boundary requires a non-word character after
-  // `commit`.
+  // Literal bodies KEPT: the commit statement IS a string literal, and
+  // stripping literals would make this assertion vacuous. Comments are still
+  // stripped, so the header's prose about the commit cannot inflate the count.
+  //
+  // WR-15, and this is the defect being closed: the matcher used to count the
+  // WORD `commit`, and SQLite accepts `END` and `END TRANSACTION` as exact
+  // synonyms of `COMMIT`. A second, fully working commit site spelled
+  // `db.exec("end")` was therefore invisible to the one control whose whole job
+  // is keeping the durability proof's planted violation unique -- observed
+  // passing, unchanged, with that site present. The matcher now requires an
+  // `exec()` call whose single argument is a bare statement literal in any of
+  // the three spellings, which is what SQLite executes; `commitTransaction`,
+  // `applyWriteWithoutCommit`, `doCommit` and any user-facing sentence about a
+  // commit cannot satisfy that shape, so no error message's wording is coupled
+  // to this control any more.
   const kept = codeOnly(seamSource(), true);
-  const commitStatements = kept.match(/\bcommit\b/gi) ?? [];
+  const found = commitStatements(kept);
   assert.equal(
-    commitStatements.length,
+    found.length,
     1,
-    `the seam must contain exactly one commit statement, found ${commitStatements.length} -- a second one splits the durability ` +
+    `the seam must contain exactly one commit statement, found ${found.length} -- a second one splits the durability ` +
       `proof's planted violation across two sites and lets half of it survive`,
+  );
+});
+
+test("the commit-statement matcher counts all three of SQLite's spellings, so a synonym cannot hide a second commit site", () => {
+  // Positive control over a LOCAL fixture: the matcher's coverage is asserted
+  // rather than inferred from a module that happens to contain one spelling.
+  // Against the word-based matcher this fixture yielded ONE -- which is exactly
+  // how a working `db.exec("end")` survived the control.
+  const found = commitStatements(THREE_SPELLINGS_FIXTURE);
+  assert.equal(
+    found.length,
+    3,
+    `all three commit spellings must be counted, got ${found.length} of 3 -- an uncounted spelling is a second commit site the ` +
+      `single-site control cannot see`,
+  );
+});
+
+test("the commit-statement matcher counts neither commit-ish identifiers nor user-facing prose about a commit", () => {
+  // Negative control, and the reason the coupling comment in `anno-store.ts`
+  // could be deleted: with prose unmatched, an error message's wording is free
+  // to change without reddening a structural control in a different file.
+  const found = commitStatements(NO_STATEMENT_FIXTURE);
+  assert.equal(
+    found.length,
+    0,
+    `identifiers and prose must not be counted as commit statements, got ${found.length} -- a matcher that fires on wording makes ` +
+      `error prose load-bearing for a control in another file`,
   );
 });
 
