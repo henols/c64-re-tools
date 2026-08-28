@@ -2016,7 +2016,46 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // -- not a currently reachable arm -- and `anno-store.test.ts` says the same
   // thing in both of its controls rather than letting a green test imply a
   // behavioural proof it does not carry.
-  const restored = openStore(storePath);
+  //
+  // AND THE REOPEN IS NOW INSIDE THE SAME GUARANTEE (WR-17), WHICH IS WHERE IT
+  // BELONGED. The sentence above -- "a housekeeping failure never costs the
+  // caller a handle" -- used to hold only for the branch that CANNOT fire. The
+  // sweep call was guarded and is unreachable; the two `openStore` calls were
+  // NOT guarded and are by far the likelier to throw, because each one runs the
+  // `anno_meta` read, the `schema_version` comparison and `pragma
+  // integrity_check` against the image this function has just installed. Round
+  // 4 reproduced exactly that: a bad snapshot made the reopen throw, the
+  // caller's original handle had been closed at step 4, and `revertTo` returned
+  // nothing at all.
+  //
+  // ITS INTERACTION WITH STEP 3b, STATED BECAUSE IT NARROWS THE CLAIM RATHER
+  // THAN CLOSING IT. Step 3b now opens the staged image BEFORE the rename, so
+  // the reopen's most likely failure -- the image is not a store -- cannot reach
+  // this line at all. What is left is a store that became unopenable BETWEEN the
+  // rename and the reopen: another process truncating it, a device error, a
+  // permission change. This handler covers that remainder.
+  //
+  // AND IT MUST REPORT A LANDED REVERT, NEVER A FAILED ONE (prohibition
+  // 28-11 P5). By this line step 5's rename and directory fsync have returned,
+  // so the file at `storePath` IS the reverted image whatever happens next.
+  // Presenting that as a failed revert would convert a committed write into a
+  // caller-visible failure and send the caller looking for a revert that
+  // already happened. A `ViceError` is rethrown UNCHANGED -- it is already
+  // named, already carries the path, and re-wrapping it would bury the reason
+  // one layer deeper; anything else is wrapped so no route out of step 6
+  // reaches the caller as a bare OS error.
+  let restored: AnnoStoreHandle;
+  try {
+    restored = openStore(storePath);
+  } catch (e) {
+    if (e instanceof ViceError) throw e;
+    throw new AnnoStoreError(
+      `the revert of ${storePath} to revision ${revision} LANDED ON DISK, but reopening the store afterwards failed ` +
+        `(${(e as Error).message}). The revert is NOT undone and must not be retried as though it had failed: the file at ${storePath} ` +
+        `IS the restored image, so reopen it with openStore to inspect it.`,
+      { data: { path: storePath, revision, step: "reopen after revert" } },
+    );
+  }
   try {
     reconcileSnapshotRing(restored);
   } catch {
@@ -2025,7 +2064,17 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     } catch {
       // deliberately ignored -- see above
     }
-    return openStore(storePath);
+    try {
+      return openStore(storePath);
+    } catch (e) {
+      if (e instanceof ViceError) throw e;
+      throw new AnnoStoreError(
+        `the revert of ${storePath} to revision ${revision} LANDED ON DISK, but reopening the store after a failed ring reconciliation ` +
+          `failed too (${(e as Error).message}). The revert is NOT undone: the file at ${storePath} IS the restored image, so reopen it ` +
+          `with openStore to inspect it.`,
+        { data: { path: storePath, revision, step: "reopen after revert" } },
+      );
+    }
   }
   return restored;
 }

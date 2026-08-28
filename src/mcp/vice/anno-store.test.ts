@@ -3302,6 +3302,83 @@ test("revertTo step 6, STRUCTURAL BACKSTOP: the sweep call sits inside a handler
   assert.match(handler.slice(0, 400), /return openStore\(storePath\)/, "and must hand back a freshly opened handle rather than the suspect one");
 });
 
+test("WR-17, STRUCTURAL: every openStore AFTER the rename in revertTo is inside a handler, and the reopen failure reports a revert that LANDED ON DISK", () => {
+  // WHY THIS IS STRUCTURAL, stated because this file's own conventions forbid a
+  // structural assertion that does not say why it is one. The failure being
+  // guarded is a REOPEN OF A FILE THIS FUNCTION JUST WROTE: `openStore` runs the
+  // `anno_meta` read, the `schema_version` comparison and `pragma
+  // integrity_check` against the image step 5 renamed into place a statement
+  // earlier. Constructing that failure in-process would need filesystem-level
+  // fault injection between the rename and the reopen -- the same reason the
+  // phase's `integrity_check`-throw arm is a standing human-verification item
+  // rather than a test.
+  //
+  // AND STEP 3b IS WHY IT IS STRUCTURAL RATHER THAN BEHAVIOURAL *NOW*: task 1
+  // removed the reopen's most likely failure by refusing a bad image before the
+  // rename, so the remaining causes are all external to this process.
+  //
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
+  // identified by source text and strict mode would blank the SQL literals that
+  // make the body substantial.
+  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
+  const fnStart = stripped.indexOf("export function revertTo");
+  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
+  const fnEnd = stripped.indexOf("\n}", fnStart);
+  assert.ok(fnEnd > fnStart, "and its body must terminate at a column-zero closing brace");
+  const body = stripped.slice(fnStart, fnEnd);
+
+  // NON-VACUITY FIRST, IN BOTH DIRECTIONS: a failed extraction makes the
+  // "every occurrence is guarded" claim true of an empty set, and so does a body
+  // in which the rename cannot be found.
+  assert.ok(body.length > 400, `the extracted revertTo body must be substantial, got ${body.length} characters`);
+  const rename = body.indexOf("renameSync(staging, storePath)");
+  assert.ok(rename >= 0, "step 5's rename must be findable in the extracted body");
+
+  const afterRename: number[] = [];
+  for (let at = body.indexOf("openStore(", rename); at >= 0; at = body.indexOf("openStore(", at + 1)) {
+    afterRename.push(at);
+  }
+  assert.equal(
+    afterRename.length,
+    2,
+    `revertTo must reopen the store exactly twice after the rename -- once on the ordinary path and once on the sweep handler's recovery ` +
+      `path -- and both must be counted here; found ${afterRename.length} at ${afterRename.join(", ")}`,
+  );
+
+  // AND EACH ONE IS BETWEEN A `try {` AND ITS HANDLER. A `try` that has already
+  // closed above the call guards nothing, which is why the check is "no `} catch`
+  // between the try and the call" rather than "a try exists above it".
+  for (const at of afterRename) {
+    const openedTry = body.lastIndexOf("try {", at);
+    assert.ok(openedTry >= 0, `the openStore at ${at} must have a try opening above it inside revertTo`);
+    assert.equal(
+      body.slice(openedTry, at).indexOf("} catch"),
+      -1,
+      `the try above the openStore at ${at} must still be OPEN where the call is made -- an already-closed handler guards nothing`,
+    );
+    const closingCatch = body.indexOf("} catch", at);
+    assert.ok(
+      closingCatch > at,
+      `and a matching catch must follow the openStore at ${at}, so a bare OS error cannot escape step 6 (catch at ${closingCatch})`,
+    );
+  }
+
+  // THE MESSAGE MUST REPORT A LANDED REVERT, NOT A FAILED ONE (prohibition
+  // 28-11 P5): by this point the rename and the directory fsync have returned,
+  // so telling the caller the revert failed would send them looking for a revert
+  // that already happened.
+  const landed = body.indexOf("LANDED ON DISK");
+  assert.ok(landed > rename, "the reopen failure's message must say the revert LANDED ON DISK, after the rename");
+  const landedCount = body.split("LANDED ON DISK").length - 1;
+  assert.equal(landedCount, 2, `both reopen handlers must say it, found ${landedCount}`);
+  assert.match(
+    body.slice(landed - 200, landed + 600),
+    /\$\{storePath\}/,
+    "and must interpolate the store path, so the caller knows WHICH file is the restored image",
+  );
+  assert.match(body.slice(landed - 200, landed + 600), /\$\{revision\}/, "and the revision the store landed on");
+});
+
 // ---------------------------------------------------------------------------
 // CR-08 -- WHAT PROVES A SNAPSHOT IMAGE IS A STORE.
 //
