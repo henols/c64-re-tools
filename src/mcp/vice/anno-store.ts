@@ -128,7 +128,7 @@
 //      refused BY NAME instead (`STORE-04`).
 import { randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildPaintIndex, type PaintIndex } from "./anno-index.ts";
@@ -414,6 +414,45 @@ export function currentRevision(handle: AnnoStoreHandle): number {
     throw new AnnoStoreCorruptError(`${handle.path}: annotation store has no meta row`, { path: handle.path });
   }
   return row.revision;
+}
+
+/**
+ * The suffix appended to the store FILENAME to name its snapshot ring
+ * directory. Appended to the FILENAME rather than being a fixed directory name
+ * (`<dir>/snapshots`, which is what this was), and the distinction is the whole
+ * of CR-01's fix: two distinct store files in one directory have distinct
+ * basenames by definition of a filesystem, so distinct basenames give distinct
+ * rings BY CONSTRUCTION rather than by an ownership predicate layered over a
+ * shared location.
+ *
+ * THE PREDICATE ROUTE WAS ALREADY TRIED AND COULD NOT SEE THE DEFECT. Plan
+ * 28-07 added a per-revision ownership check over the shared `<dir>/snapshots`
+ * ring; it was structurally blind to CR-01 because revision numbers are not
+ * unique ACROSS stores -- two stores in one directory both write `r1.db`, and
+ * every per-revision predicate says "yes, revision 1 is mine" to both of them.
+ * A location that cannot collide has no such blind spot to test for.
+ */
+const SNAPSHOT_DIR_SUFFIX = ".snapshots";
+
+/**
+ * THE one authority on where a store's snapshot ring lives: a sibling
+ * directory of the store file, named after the store FILE plus
+ * `SNAPSHOT_DIR_SUFFIX`. For a store at `<dir>/proj.annostore` that is
+ * `<dir>/proj.annostore.snapshots`.
+ *
+ * THE RESIDUAL, STATED RATHER THAN CLAIMED CLOSED. Renaming the store FILE
+ * itself (`mv proj.annostore other.annostore`) re-points the ring name, so the
+ * old ring becomes unreachable. It is deliberately NEVER DELETED -- the sweep
+ * only ever reads `snapshotDirFor(handle)`, so it cannot see a ring it does not
+ * name -- and `retainedRevisions()` then honestly reports `[]`. That is an
+ * UNDER-claim, and it is accepted: the alternative is guessing which ring a
+ * renamed store used to own, which is CR-01 again with a new cause and no test
+ * watching. Renaming the containing DIRECTORY is a different case and is not a
+ * residual at all: the ring moves with the directory, so nothing is lost
+ * (pinned by the CR-03 rename test).
+ */
+export function snapshotDirFor(handle: AnnoStoreHandle): string {
+  return join(handle.dir, basename(handle.path) + SNAPSHOT_DIR_SUFFIX);
 }
 
 /** Where the pre-mutation snapshot of `revision` lives: a `snapshots/` sibling

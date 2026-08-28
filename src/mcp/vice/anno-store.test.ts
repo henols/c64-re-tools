@@ -58,6 +58,7 @@ import {
   setComment,
   setDataType,
   setLabel,
+  snapshotDirFor,
   snapshotPathFor,
   stageSnapshot,
   updateProjectEnum,
@@ -1167,6 +1168,89 @@ function orphanRowRevisions(handle: ReturnType<typeof openStore>): number[] {
   }[];
   return rows.filter((row) => !existsSync(row.path)).map((row) => row.revision);
 }
+
+// ---------------------------------------------------------------------------
+// CR-01 -- WHICH STORE OWNS A SNAPSHOT.
+//
+// Reproduced against committed code by the phase-28 verifier: with two stores
+// in ONE directory, both wrote into a single shared `<dir>/snapshots/` ring
+// under the SAME `r<revision>.db` filenames, and `revertTo(game, 1)` restored
+// `loader.annostore`'s whole database over `game.annostore` -- silently, with
+// no error, returning the NEIGHBOUR's rows. The fix is a rename of the
+// LOCATION (`snapshotDirFor` keys the ring on `basename(handle.path)`), not an
+// ownership predicate over the shared location: revision numbers are not
+// unique across stores, so every per-revision predicate answers "mine" to both
+// stores. See `snapshotDirFor`'s doc comment.
+//
+// THE ASSERTION IS ON THE ROW SET, not on "it did not throw". The reproduced
+// defect was a silent WRONG ANSWER, so an absence-of-error assertion is
+// precisely the one that would have passed on the broken code.
+// ---------------------------------------------------------------------------
+
+test("CR-01: two stores in ONE directory keep separate snapshot rings -- reverting game.annostore to its own revision returns ITS rows, never the neighbour's", () => {
+  inTempDir((dir) => {
+    const gamePath = join(dir, "game.annostore");
+    const loaderPath = join(dir, "loader.annostore");
+
+    let game = openStore(gamePath, { workspaceRoot: dir });
+    const loader = openStore(loaderPath, { workspaceRoot: dir });
+    try {
+      // Two writes each, so each store holds revisions 0 and 1 in its ring and
+      // the two rings' FILENAMES collide exactly as they did on the broken
+      // code. The data types are deliberately disjoint -- `code` for the game,
+      // `petscii` for the loader, matching the verifier's own reproduction --
+      // so a restored row set can never be mistaken for the other store's.
+      setDataType(game, { start: 0x0810, endInclusive: 0x081f, dataType: "code" });
+      setDataType(game, { start: 0x0820, endInclusive: 0x082f, dataType: "code" });
+      setDataType(loader, { start: 0x0810, endInclusive: 0x081f, dataType: "petscii" });
+      setDataType(loader, { start: 0x0820, endInclusive: 0x082f, dataType: "petscii" });
+
+      // THE STRUCTURAL CLAIM: the two rings are different directories. This
+      // goes red the instant a per-directory ring is reintroduced, because
+      // both stores' rings would collide again.
+      assert.notEqual(
+        snapshotDirFor(game),
+        snapshotDirFor(loader),
+        "two stores in one directory must have two DIFFERENT snapshot rings -- a shared ring is CR-01 itself",
+      );
+
+      const gameRowsBefore = listRanges(game);
+      const loaderRowsBefore = listRanges(loader);
+      assert.equal(gameRowsBefore.length, 2, "the game store holds its own two rows before the revert");
+      assert.equal(loaderRowsBefore.length, 2, "and the loader store holds its own two");
+
+      // THE BEHAVIOURAL CLAIM, and the one that reproduces the defect: revision
+      // 1 of the GAME store must restore the game's own single row.
+      game = revertTo(game, 1);
+      const restored = listRanges(game);
+
+      assert.deepEqual(
+        restored.map((row) => row.dataType),
+        ["code"],
+        `revertTo(game, 1) must restore the GAME's own pre-mutation state -- one \`code\` row. Got ` +
+          `${JSON.stringify(restored)}. A \`petscii\` row here is the neighbour's database restored over this one, which is CR-01.`,
+      );
+      assert.equal(restored[0].start, 0x0810, "and it is the game's own first range");
+      assert.equal(
+        restored.filter((row) => row.dataType === "petscii").length,
+        0,
+        "no row from loader.annostore may appear in game.annostore's restored state",
+      );
+
+      // AND THE NEIGHBOUR IS UNTOUCHED IN THE OTHER DIRECTION TOO: reverting
+      // one store must not consume, move or overwrite the other's ring.
+      assert.deepEqual(listRanges(loader), loaderRowsBefore, "reverting the game store left the loader store's rows alone");
+      assert.deepEqual(
+        retainedRevisions(loader),
+        [0, 1],
+        "and left the loader's OWN snapshot ring intact -- the game's revert may not consume the neighbour's retained revisions",
+      );
+    } finally {
+      closeStore(game);
+      closeStore(loader);
+    }
+  });
+});
 
 test("a SECOND revert after a prune: the reconciled ring holds no half-state, the published floor is one revertTo can honour, and a refusal is an AnnoStoreError that leaves the caller's handle usable", () => {
   inTempDir((dir) => {
