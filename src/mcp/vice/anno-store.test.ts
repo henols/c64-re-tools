@@ -14,7 +14,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -265,6 +276,83 @@ test("a store file whose schema_version is not this build's is refused, and the 
         assert.match(e.message, new RegExp(`expected ${SCHEMA_VERSION}`), "the refusal must name the version it wanted");
         return true;
       },
+    );
+  });
+});
+
+test("a store written by the previous on-disk shape is REFUSED by name, and its legacy snapshot directory is left untouched", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+
+    // WHAT THE TWO HALVES OF THIS TEST ACTUALLY PROVE, because they are NOT
+    // equally novel and saying so is the point.
+    //
+    // The fixture does NOT run a version-1 build. It opens a store under the
+    // CURRENT DDL and sets `anno_meta.schema_version` back to `1` by hand. The
+    // refusal keys on the declared integer alone, so the assertion holds -- but
+    // the FIRST half is then a deliberate RESTATEMENT of the existing test "a
+    // store file whose schema_version is not this build's is refused, and the
+    // refusal names both versions", which already forges `SCHEMA_VERSION + 98`
+    // and asserts both names. It is here purely for LOCALITY: the legacy-ring
+    // half needs a version-1 declaration sitting NEXT TO a legacy ring in one
+    // fixture. It is NOT a second independent claim about the version gate.
+    //
+    // THE GENUINELY NEW EVIDENCE IS THE SECOND HALF -- that the refusal is
+    // NON-DESTRUCTIVE. Remove the `existsSync` assertions on the legacy
+    // directory and this test still passes on a refusal that deleted or migrated
+    // it, so those assertions are what carry the prohibition "MUST NOT adopt,
+    // migrate, claim or sweep a snapshot ring whose ownership this store cannot
+    // establish".
+    const store = openStore(path, { workspaceRoot: dir });
+    store.db.prepare("update anno_meta set schema_version = ? where id = 1").run(1);
+    closeStore(store);
+
+    // THE LEGACY PER-DIRECTORY RING, spelled as its OWN literal because it is the
+    // OLD layout being asserted to survive -- this is the one deliberate
+    // occurrence of `join(dir, "snapshots")` left anywhere in this file.
+    const legacyRing = join(dir, "snapshots");
+    mkdirSync(legacyRing, { recursive: true });
+    const legacySnapshot = join(legacyRing, "r0.db");
+    writeFileSync(legacySnapshot, "not a real database, and it does not need to be");
+
+    // NON-VACUITY PIN, taken BEFORE `openStore` is called: an assertion that a
+    // directory survives is trivially satisfiable by a directory that was never
+    // there, so the "still exists" claims below are measurements rather than
+    // restatements of an absence.
+    assert.ok(existsSync(legacyRing), "the legacy ring is on disk BEFORE the refusal, so its survival below is a measurement");
+    assert.ok(existsSync(legacySnapshot), "and so is the snapshot inside it");
+
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /schema_version 1/, "the refusal must name the version it found");
+        assert.match(e.message, new RegExp(`expected ${SCHEMA_VERSION}`), "the refusal must name the version it wanted");
+        return true;
+      },
+    );
+
+    assert.ok(
+      existsSync(legacyRing),
+      "the legacy <dir>/snapshots ring must SURVIVE the refusal untouched: its ownership is not establishable -- two stores in one " +
+        "directory may both have written into it -- so it is never adopted, never migrated and never deleted, and the bytes stay " +
+        "recoverable by hand",
+    );
+    assert.ok(existsSync(legacySnapshot), "and so must every snapshot inside it -- a refusal that deleted them would be the loss, not the guard");
+    assert.deepEqual(readdirSync(legacyRing).sort(), ["r0.db"], "with nothing added to it either -- the refusal did not touch the directory at all");
+    // AND NOTHING WAS MIGRATED INTO A NEW STORE-KEYED RING. Asserted over the
+    // DIRECTORY LISTING rather than against one expected ring path, which is
+    // both stronger -- it catches a migration into ANY store-keyed ring, not
+    // just this store's -- and keeps this file's pinned count of bare
+    // `join(dir, "proj.annostore.snapshots")` layout literals at seven, so the
+    // count stays a measurement of the re-pointed sites rather than of the
+    // assertions written around them.
+    assert.deepEqual(
+      readdirSync(dir)
+        .filter((name) => name.endsWith(".snapshots"))
+        .sort(),
+      [],
+      "the refusal MIGRATED nothing into a store-keyed ring -- adopting the legacy ring would attribute a possibly-neighbouring store's history to this one",
     );
   });
 });
@@ -1273,6 +1361,102 @@ test("CR-01: two stores in ONE directory keep separate snapshot rings -- reverti
     } finally {
       closeStore(game);
       closeStore(loader);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-03 -- WHICH REVISION, AND WHERE IT IS FOUND.
+//
+// Reproduced against committed code by the phase-28 verifier: version 1 stored
+// the snapshot's ABSOLUTE path in `anno_snapshot.path` and tested THAT for
+// existence. One `mv` of the containing directory invalidated every persisted
+// path at once, after which `retainedRevisions()` reported `[]` and
+// `oldestRetainedRevision()` reported `-1` -- while five snapshot files sat
+// untouched on disk -- and the very next accepted write's prune deleted all five
+// files and all five pointer rows.
+//
+// The fix is to remove the PRIMITIVE, not to repair the string: with nothing
+// about a snapshot persisted except its revision number, there is no second
+// absolute truth left for a renamed ancestor -- or a bind mount seen from two
+// namespaces, or a symlinked parent, or a container/host path pair -- to
+// disagree with.
+// ---------------------------------------------------------------------------
+
+test("CR-03: renaming the containing directory destroys nothing -- after the move and one accepted write the retained revisions and the snapshot files are the ones that were there before", () => {
+  inTempDir((parent) => {
+    // The store lives one level DOWN, so the directory that gets renamed is the
+    // store's own containing directory and the temp root stays put for cleanup.
+    const beforeDir = join(parent, "project");
+    mkdirSync(beforeDir);
+    const storeName = "proj.annostore";
+
+    let retainedBefore: number[] = [];
+    let oldestBefore = NO_RETAINED_REVISION;
+    let filesBefore: string[] = [];
+
+    const first = openStore(join(beforeDir, storeName), { workspaceRoot: parent });
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        setDataType(first, { start: 0x1000 + i * 0x10, endInclusive: 0x1000 + i * 0x10 + 0x0f, dataType: "byte" });
+      }
+      retainedBefore = retainedRevisions(first);
+      oldestBefore = oldestRetainedRevision(first);
+      // The ring is spelled out HERE rather than asked of `snapshotDirFor()`,
+      // for the reason `ringHalves` states: a control that asks the code under
+      // test where the ring is would follow it anywhere.
+      filesBefore = readdirSync(join(beforeDir, "proj.annostore.snapshots")).sort();
+
+      assert.deepEqual(retainedBefore, [0, 1, 2, 3, 4], "five writes retain five revisions before the move");
+      assert.deepEqual(filesBefore, ["r0.db", "r1.db", "r2.db", "r3.db", "r4.db"], "and five snapshot files are on disk");
+      assert.equal(oldestBefore, 0, "with revision 0 as the published floor");
+    } finally {
+      closeStore(first);
+    }
+
+    // THE MOVE. A plain rename of the containing directory, in the same parent --
+    // the shape of a user renaming a project folder, and the shape that used to
+    // destroy the whole revert history on the next write.
+    const afterDir = join(parent, "project-renamed");
+    renameSync(beforeDir, afterDir);
+
+    let second = openStore(join(afterDir, storeName), { workspaceRoot: parent });
+    try {
+      // ONE ACCEPTED WRITE -- which is what runs the prune, and the prune is what
+      // did the destroying. The claims below are made AFTER it, deliberately.
+      setDataType(second, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+
+      const filesAfter = readdirSync(join(afterDir, "proj.annostore.snapshots")).sort();
+      for (const name of filesBefore) {
+        assert.ok(
+          filesAfter.includes(name),
+          `${name} was on disk before the move and must still be on disk after it and after one accepted write; found ${filesAfter.join(", ")}`,
+        );
+      }
+
+      const retainedAfter = retainedRevisions(second);
+      assert.deepEqual(
+        retainedAfter,
+        [...retainedBefore, 5],
+        `the move destroyed no retained revision: the pre-move list ${retainedBefore.join(", ")} plus the revision the new write added. ` +
+          `Got ${retainedAfter.join(", ") || "(none)"} -- an empty list here is CR-03 itself, and it is the state from which the prune ` +
+          "deleted every file.",
+      );
+      assert.equal(
+        oldestRetainedRevision(second),
+        oldestBefore,
+        "and the published floor is the same one it published before the move, not NO_RETAINED_REVISION",
+      );
+      assert.notEqual(oldestRetainedRevision(second), NO_RETAINED_REVISION, "explicitly: the ring is not reported empty");
+
+      // AND THE FLOOR IS ONE `revertTo` CAN HONOUR, which is what makes the
+      // claim above a capability rather than a bookkeeping figure. `revertTo`
+      // closes the handle it was given and returns a new one, so the reassignment
+      // is what keeps the `finally` below closing exactly one live handle.
+      second = revertTo(second, oldestBefore);
+      assert.deepEqual(listRanges(second), [], "revision 0 is still genuinely reachable across the move");
+    } finally {
+      closeStore(second);
     }
   });
 });
