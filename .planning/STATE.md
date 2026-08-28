@@ -6,14 +6,14 @@ current_phase: 28
 current_phase_name: The Store Core
 status: gaps_found
 stopped_at: Phase 28 re-verified after gap closure -- 9/11 must-haves, 2 gaps remain (snapshot identity; dangling-symlink confinement)
-last_updated: "2026-08-27T22:19:33.966Z"
+last_updated: "2026-08-28T05:46:12.787Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 28 gap-closure run complete (28-07..28-09); re-verification returned gaps_found at 9/11
-state_head: 5bd76e9528e42755d376ee9362c5beddebbb4585
+state_head: 1d63e4969c434db1e3970f99b4a3419e9694ad82
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 14
+  total_plans: 17
   completed_plans: 14
   percent: 17
 ---
@@ -145,10 +145,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — GAPS FOUND (re-verified)
-Plan: 9 of 9 executed; gap closure 28-07..28-09 all landed
-Status: 9/11 must-haves (was 8/11). Gap 2 (prune ordering) CLOSED. Gaps 1 and 3 remain: the named remedies were implemented and independently re-verified, but three NEW destructive ring failures were reproduced (two of them regressions introduced by 28-07) and the confinement bypass survives for DANGLING symlinks. See 28-VERIFICATION.md.
-Last activity: 2026-08-28 — Phase 28 re-verification returned gaps_found
+Phase: 28 (The Store Core) — READY TO EXECUTE
+Plan: 9 of 12 executed; second gap-closure round 28-10..28-12 planned, not yet executed
+Status: 9/11 must-haves. All five ROADMAP success criteria VERIFIED, but the goal's REVERTIBLE clause is false. Two gaps open: the snapshot ring (CR-01 two stores share one ring, CR-02 the sweep deletes a concurrent writer's published snapshot, CR-03 an absolute path turns a directory move into destruction) and the DANGLING-symlink confinement bypass (CR-04). Plans 28-10..28-12 close them as one snapshot-identity design plus the confinement walk; plan-checker passed at 0 blockers after two revisions. See 28-VERIFICATION.md.
+Last activity: 2026-08-28 — Phase 28 second gap-closure round planned (28-10..28-12), verified at 0 blockers
 
 ## Performance Metrics
 
