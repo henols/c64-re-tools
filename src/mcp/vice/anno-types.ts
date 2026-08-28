@@ -766,12 +766,43 @@ const MAX_SYMLINK_HOPS = 40;
  * -- and confinement has always needed the second question while asking the
  * first.
  *
- * `throwIfNoEntry: false` makes the absent case a value rather than an
+ * `throwIfNoEntry: false` makes the ABSENT case a value rather than an
  * exception, so the caller has one branch instead of a `try` around a
- * predicate.
+ * predicate. That option suppresses `ENOENT` AND NOTHING ELSE, which is the
+ * whole of `WR-12`.
+ *
+ * REVERSED 2026-08-28, and the reversal is the record rather than a deletion
+ * (this module's header discipline, 28-07 P3). The premise that was RIGHT and
+ * stays: the walk must stop at a path ENTRY, and only `lstat` can see one --
+ * `existsSync` follows links and cannot. The sentence that became FALSE: that
+ * swapping `existsSync` for `lstatSync` changed only which QUESTION was asked.
+ * It also changed what happens when the question cannot be answered.
+ * `existsSync` swallowed every error and returned `false`; `lstatSync` with
+ * `throwIfNoEntry: false` swallows `ENOENT` only. So three ORDINARY caller
+ * inputs regressed from a named `AnnoStorePathError` to a bare `Error`
+ * escaping the `ViceError` family entirely -- measured on Node 22.22, at the
+ * predicate AND through `openStore`, both:
+ *
+ *   * `ENOTDIR` -- an ancestor that is a regular file (`<ws>/notes.txt/p.annostore`),
+ *     which needs no symlink, no privilege and nothing pre-existing;
+ *   * `EACCES` -- an unreadable ancestor directory;
+ *   * `ELOOP`  -- a symlink cycle in an ANCESTOR position, where the kernel
+ *     refuses at `lstat` before the manual hop counter below ever runs.
+ *
+ * `28-REVIEW.md` WR-12 has the before/after transcript. The `try` restores the
+ * family WITHOUT restoring the old blindness: the absent case is still a value
+ * and still one branch, and everything else is a decision naming both the entry
+ * the walk stopped on and the path being confined.
  */
-function pathEntryExists(p: string): boolean {
-  return lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+function pathEntryExists(p: string, resolved: string): boolean {
+  try {
+    return lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+  } catch (e) {
+    throw new AnnoStorePathError(
+      `cannot stat ${JSON.stringify(p)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+      { path: resolved },
+    );
+  }
 }
 
 /**
@@ -840,7 +871,7 @@ function realpathOfNearestExisting(p: string): string {
 
   for (;;) {
     let reachedFilesystemRoot = false;
-    while (!pathEntryExists(current)) {
+    while (!pathEntryExists(current, resolved)) {
       const parent = dirname(current);
       if (parent === current) {
         reachedFilesystemRoot = true;
