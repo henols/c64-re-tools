@@ -392,25 +392,63 @@ function commitStatements(source: string): string[] {
   return source.match(/\bexec\(\s*(['"`])\s*(?:commit|end(?:\s+transaction)?)\s*\1\s*\)/gi) ?? [];
 }
 
-/** All three spellings SQLite accepts for the SAME statement, as a LOCAL
- * fixture rather than as a slice of the module: the module happens to contain
- * one spelling, so a matcher checked only against it proves nothing about the
- * other two. */
-const THREE_SPELLINGS_FIXTURE = [
+/**
+ * THE PROVENANCE OF EVERY SPELLING BELOW, recorded here rather than
+ * re-established by this file. Each of these six literals, and the
+ * multi-statement one further down, was run against `node:sqlite` on Node 22.22
+ * during the round-5 review and COMMITTED; the round-5 verifier then confirmed
+ * the matcher's counts over them by running the regex itself. These fixture
+ * strings are asserted against the MATCHER and are never executed -- this file
+ * may not name `node:sqlite`, because the single-seam control that lives in this
+ * very file fails the build when a second module does. Do not import a database
+ * here to re-prove what is already established out of band.
+ */
+
+/** The three spellings SQLite accepts for the SAME statement, bare. */
+const BARE_SPELLING_LINES = [
   '  db.exec("commit");',
   "  db.exec('end');",
   '  db.exec("END TRANSACTION");',
-].join("\n");
+];
+
+/** The same three statements carrying a TRAILING SEMICOLON -- the spelling a
+ * developer copying from a SQL console writes first, and the one WR-19 measured
+ * the whole-literal matcher counting as ZERO. `COMMIT ;` carries the space too,
+ * because the literal's interior whitespace is the matcher's business, not the
+ * literal's edges'. */
+const SEMICOLON_SPELLING_LINES = [
+  '  db.exec("commit;");',
+  "  db.exec('end;');",
+  '  db.exec("COMMIT ;");',
+];
+
+/** All SIX spellings SQLite accepts for the same statement -- three bare, three
+ * semicolon-terminated -- as a LOCAL fixture rather than as a slice of the
+ * module: the module happens to contain one spelling, so a matcher checked only
+ * against it proves nothing about the other five. Widened from the three-spelling
+ * fixture 28-18 added, and renamed to say what it now covers. */
+const SIX_SPELLINGS_FIXTURE = [...BARE_SPELLING_LINES, ...SEMICOLON_SPELLING_LINES].join("\n");
+
+/** A SECOND, different evasion, kept as its own named fixture with its own
+ * expected count: `DatabaseSync.exec()` runs MULTIPLE statements -- that is why
+ * `db.exec(DDL)` works at all -- so any literal ending in `; commit` is a fully
+ * working second commit site. Folding this into the six-spelling fixture and
+ * asserting one total would let either evasion regress behind the other. */
+const MULTI_STATEMENT_FIXTURE = '  db.exec("insert into t values (1); commit");';
 
 /** Everything that names a commit WITHOUT being one: the module's three
- * commit-ish identifiers, and a user-facing sentence using the bare word. The
- * second half is the part that matters -- a matcher that fires on prose makes
- * an error message's wording load-bearing for a control in another file. */
+ * commit-ish identifiers, an `exec()` whose argument is a bare IDENTIFIER rather
+ * than a literal (the real `db.exec(DDL)` shape), and two user-facing sentences
+ * using the bare word. The prose half is the part that matters -- a matcher that
+ * fires on prose makes an error message's wording load-bearing for a control in
+ * another file, which is the coupling 28-18 P1 removed. */
 const NO_STATEMENT_FIXTURE = [
   "  commitTransaction(handle.db);",
   "  applyWriteWithoutCommit(handle, fn);",
   "  const done = doCommit;",
+  "  db.exec(DDL);",
   '  step: "the commit could not be completed",',
+  '  detail: "Nothing was written, so the commit never happened and the store is unchanged.",',
 ].join("\n");
 
 test("the seam contains exactly one commit statement, so the single planted-violation site is unique", () => {
@@ -439,30 +477,59 @@ test("the seam contains exactly one commit statement, so the single planted-viol
   );
 });
 
-test("the commit-statement matcher counts all three of SQLite's spellings, so a synonym cannot hide a second commit site", () => {
+test("the commit-statement matcher counts all six of SQLite's spellings, so neither a synonym nor a trailing semicolon can hide a second commit site", () => {
   // Positive control over a LOCAL fixture: the matcher's coverage is asserted
   // rather than inferred from a module that happens to contain one spelling.
-  // Against the word-based matcher this fixture yielded ONE -- which is exactly
-  // how a working `db.exec("end")` survived the control.
-  const found = commitStatements(THREE_SPELLINGS_FIXTURE);
+  // Against the word-based matcher the bare half yielded ONE -- which is exactly
+  // how a working `db.exec("end")` survived the control (WR-15). Against the
+  // WHOLE-LITERAL matcher that replaced it, the semicolon half yielded ZERO --
+  // which is WR-19, measured by the round-5 verifier by running the regex.
+  //
+  // The two halves are asserted SEPARATELY as well as together: a single total
+  // would let the bare half absorb a regression in the semicolon half.
+  assert.equal(
+    commitStatements(BARE_SPELLING_LINES.join("\n")).length,
+    3,
+    "the three bare spellings must still be counted -- 28-18's coverage must not regress",
+  );
+  assert.equal(
+    commitStatements(SEMICOLON_SPELLING_LINES.join("\n")).length,
+    3,
+    "the three semicolon-terminated spellings must be counted -- the whole-literal matcher counted 0 of these (WR-19)",
+  );
+  const found = commitStatements(SIX_SPELLINGS_FIXTURE);
   assert.equal(
     found.length,
-    3,
-    `all three commit spellings must be counted, got ${found.length} of 3 -- an uncounted spelling is a second commit site the ` +
+    6,
+    `all six commit spellings must be counted, got ${found.length} of 6 -- an uncounted spelling is a second commit site the ` +
       `single-site control cannot see`,
   );
 });
 
-test("the commit-statement matcher counts neither commit-ish identifiers nor user-facing prose about a commit", () => {
-  // Negative control, and the reason the coupling comment in `anno-store.ts`
-  // could be deleted: with prose unmatched, an error message's wording is free
-  // to change without reddening a structural control in a different file.
+test("the commit-statement matcher counts a commit sharing an exec() with a preceding statement, which the whole-literal matcher counted as zero", () => {
+  // The second evasion, and a different one: not a trailing semicolon but a
+  // NEIGHBOURING statement. `exec()` runs both, so this literal commits.
+  const found = commitStatements(MULTI_STATEMENT_FIXTURE);
+  assert.equal(
+    found.length,
+    1,
+    `a commit sharing an exec() with a preceding statement must be counted, got ${found.length} of 1 -- with it uncounted, removing ` +
+      `the one matched commit leaves a working commit behind and the durability proof plants nothing`,
+  );
+});
+
+test("the commit-statement matcher counts neither commit-ish identifiers, nor an exec() taking a bare identifier, nor user-facing prose about a commit (28-18 P1)", () => {
+  // THE 28-18 P1 CONTROL. Negative control, and the reason the coupling comment
+  // in `anno-store.ts` could be deleted: with prose unmatched, an error
+  // message's wording is free to change without reddening a structural control
+  // in a different file. WR-19's repair widened the matcher, and this is the
+  // control that proves the widening did not put that coupling back.
   const found = commitStatements(NO_STATEMENT_FIXTURE);
   assert.equal(
     found.length,
     0,
-    `identifiers and prose must not be counted as commit statements, got ${found.length} -- a matcher that fires on wording makes ` +
-      `error prose load-bearing for a control in another file`,
+    `28-18 P1: identifiers, an exec() taking a bare identifier, and prose must not be counted as commit statements, got ` +
+      `${found.length} -- a matcher that fires on wording makes error prose load-bearing for a control in another file`,
   );
 });
 
