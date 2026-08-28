@@ -37,6 +37,7 @@ import {
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
+  AnnoRevisionArgumentError,
   AnnoStoreCorruptError,
   AnnoStoreError,
   AnnoStorePathError,
@@ -1231,6 +1232,145 @@ test("idempotency of revert: reverting to r yields the state at r, and a SECOND 
       store = revertTo(store, 0);
       assert.deepEqual(listRanges(store), [], "revision 0 is still retained and still reverts to an empty store");
       assert.equal(currentRevision(store), 0);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WR-22: `revertTo`'s `revision` argument is VALIDATED AT THE ENTRY, so an
+// argument error stops wearing a corruption message.
+//
+// THE FINDING, REPRODUCED ON THE PRE-TASK TREE (round 5, WR-22). `revision` was
+// typed `number` and reached TWO places with no validator: a bound SQL parameter
+// and a FILENAME. SQLite applies the pointer column's INTEGER affinity to a
+// bound TEXT operand, so `"1"`, `"0001"`, `" 1 "` and `"1.0"` all MATCH revision
+// 1's row -- while `snapshotPathFor` builds `r0001.db`, `r 1 .db`, `r1.0.db`
+// from the raw argument. The two then disagree, and the refusal a caller saw was
+// CR-08's corruption message: "a pointer row claims it, but its snapshot
+// .../r0001.db is not a readable annotation store". Worse, `"1"` produced no
+// refusal at all: it silently reverted the store and returned a handle at
+// revision 1.
+//
+// That is the exact confusion `AnnoStoreCorruptError`'s own doc comment forbids
+// -- "the annotations are gone" and "there are no annotations" must not read the
+// same -- committed by an ARGUMENT error. Hence a dedicated class OUTSIDE the
+// corruption family, and hence the `!(thrown instanceof AnnoStoreCorruptError)`
+// assertion below on every spelling: a caller must be able to tell "you passed
+// the wrong thing" from "your ring is damaged" BY THE CLASS, without
+// substring-matching a message.
+//
+// Phase 29 puts this argument on an MCP tool path whose validator is
+// `validate: (value) => ({ value })`, so a JSON `"1"` arrives verbatim.
+// ---------------------------------------------------------------------------
+
+/** The four spellings SQLite's INTEGER affinity converts, asserted SEPARATELY
+ * rather than as a loop over one representative: each produced a DIFFERENT
+ * pre-task outcome (`"1"` reverted silently; the other three produced three
+ * different corruption-flavoured messages), so one representative would have
+ * proved one of four. */
+const AFFINITY_SPELLINGS = ["1", "0001", " 1 ", "1.0"] as const;
+
+for (const spelling of AFFINITY_SPELLINGS) {
+  test(`WR-22: revertTo(handle, ${JSON.stringify(spelling)}) is refused as an ARGUMENT error, by name, before any read or write -- and is NOT in the corruption family`, () => {
+    inTempDir((dir) => {
+      const path = join(dir, "proj.annostore");
+      const store = openStore(path, { workspaceRoot: dir });
+      try {
+        setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+        setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+        const revisionBefore = currentRevision(store);
+        const rowsBefore = listRanges(store);
+
+        assert.throws(
+          () => revertTo(store, spelling as unknown as number),
+          (e: unknown) => {
+            assert.ok(
+              e instanceof AnnoRevisionArgumentError,
+              `expected AnnoRevisionArgumentError, got ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`,
+            );
+            // THE WHOLE FINDING, ASSERTED RATHER THAN REASONED ABOUT: an
+            // argument error must not be readable as a damaged ring.
+            assert.ok(
+              !(e instanceof AnnoStoreCorruptError),
+              "an argument error must NOT be in the corruption family -- that is the confusion this class exists to remove",
+            );
+            assert.ok(e instanceof AnnoStoreError, "but it must still be in the store's own named family, so one catch takes all of it");
+            assert.ok(
+              e.message.includes(JSON.stringify(spelling)),
+              `the refusal must name the offending value VERBATIM (${JSON.stringify(spelling)}), got: ${e.message}`,
+            );
+            assert.match(e.message, /non-negative integer/, "and say what was expected");
+            assert.equal(e.value, spelling, "and carry the offending value as a field, so a caller need not parse the prose");
+            assert.equal(e.parameter, "revision", "and name the parameter it was supplied for");
+            return true;
+          },
+        );
+
+        // BEFORE ANY READ OR WRITE, and this is the half that distinguishes a
+        // guard at the ENTRY from one bolted on further down: no staging file
+        // was created, because the refusal precedes step 3 entirely.
+        const revertStaging = readdirSync(dir).filter((n) => n.includes(".revert-"));
+        assert.deepEqual(revertStaging, [], `a refused call must leave no .revert- staging file behind, found ${JSON.stringify(revertStaging)}`);
+
+        // And the store is untouched -- the pre-task tree's `"1"` spelling
+        // silently REVERTED here.
+        assert.equal(currentRevision(store), revisionBefore, "a refused revert must not move the revision");
+        assert.deepEqual(listRanges(store), rowsBefore, "nor change a single row");
+      } finally {
+        closeStore(store);
+      }
+    });
+  });
+}
+
+test("WR-22: the numeric shapes that are not revisions -- -1, 1.5 and NaN -- are refused by the same class, before any pointer-row query runs", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+
+      for (const bad of [-1, 1.5, Number.NaN]) {
+        assert.throws(
+          () => revertTo(store, bad),
+          (e: unknown) => {
+            assert.ok(
+              e instanceof AnnoRevisionArgumentError,
+              `${String(bad)}: expected AnnoRevisionArgumentError, got ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`,
+            );
+            assert.ok(!(e instanceof AnnoStoreCorruptError), `${String(bad)}: and NOT a corruption refusal`);
+            return true;
+          },
+        );
+      }
+
+      const revertStaging = readdirSync(dir).filter((n) => n.includes(".revert-"));
+      assert.deepEqual(revertStaging, [], `no refused call may leave a .revert- staging file behind, found ${JSON.stringify(revertStaging)}`);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("WR-22, THE POSITIVE COMPANION: revertTo(handle, 1) on a healthy store still SUCCEEDS and returns a handle at revision 1 -- the refusal was not bought by broadening", () => {
+  // A refusal control with no positive companion cannot distinguish a correct
+  // guard from one that refuses everything, and this phase has already recorded
+  // a refusal bought by broadening. So the accepted case is asserted in the same
+  // block a reader finds the refusals in.
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    let store = openStore(path, { workspaceRoot: dir });
+    try {
+      setDataType(store, { start: 0x1000, endInclusive: 0x100f, dataType: "byte" });
+      setDataType(store, { start: 0x2000, endInclusive: 0x200f, dataType: "code" });
+      assert.equal(currentRevision(store), 2, "the store must genuinely be past revision 1, or reverting to it proves nothing");
+
+      store = revertTo(store, 1);
+      assert.equal(currentRevision(store), 1, "revertTo(handle, 1) must still put the store back at revision 1");
+      assert.equal(listRanges(store).length, 1, "with exactly the one range that existed at revision 1");
     } finally {
       closeStore(store);
     }

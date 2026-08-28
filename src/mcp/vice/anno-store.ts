@@ -144,6 +144,7 @@ import {
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
+  AnnoRevisionArgumentError,
   AnnoSplitRemainderError,
   AnnoStoreCorruptError,
   AnnoStoreError,
@@ -2074,7 +2075,50 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * staging failure stays exactly true; step 3b widens the set of failures it
  * covers rather than qualifying it.
  */
+/**
+ * The one gate on a revision-shaped argument, and it exists because ONE
+ * unvalidated value lands in TWO places that can then disagree (WR-22): a bound
+ * SQL parameter, and a snapshot FILENAME.
+ *
+ * Accepts a non-negative safe integer and nothing else. A numeric STRING is
+ * refused ON PURPOSE rather than coerced: SQLite applies the pointer column's
+ * INTEGER affinity to a bound TEXT operand, so `"0001"` MATCHES revision 1's
+ * row -- while `snapshotPathFor` builds `r0001.db` from the string. Coercing
+ * would hide the caller's mistake; matching-then-failing reports it as a damaged
+ * ring, which is the confusion `AnnoRevisionArgumentError`'s doc comment records
+ * in full.
+ *
+ * DELIBERATELY NOT REUSED FOR `baseRevision`. The round-5 review's WR-22 sketch
+ * suggests it; that is WR-06, which the round-5 verification does not route to
+ * this round, so the declination is recorded here rather than left looking like
+ * an omission -- `runWriteSequence`'s existing `baseRevision` staleness refusal
+ * is this validator's SIBLING, not its client.
+ */
+function assertRevisionArgument(value: unknown, parameter: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    // `JSON.stringify` is the right rendering for every value EXCEPT the three
+    // numbers JSON cannot represent: it turns `NaN` and both infinities into the
+    // string `null`, which would name a value the caller never passed -- the
+    // opposite of the verbatim naming this refusal exists to provide.
+    const shown = typeof value === "number" && !Number.isFinite(value) ? String(value) : JSON.stringify(value);
+    throw new AnnoRevisionArgumentError(
+      `${parameter} ${shown} is not a revision -- expected a non-negative integer. A numeric STRING is refused on ` +
+        `purpose rather than coerced: SQLite's column affinity would match the pointer row while the snapshot FILENAME is built from ` +
+        `the string, so the two would disagree about which revision is being reverted to. Nothing has been read and nothing has been ` +
+        `written.`,
+      { value, parameter },
+    );
+  }
+  return value;
+}
+
 export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
+  // STEP 0, AND IT IS FIRST FOR THE REASON WR-22 RECORDS: this argument reaches
+  // a bound SQL parameter AND a filename, so it is judged before either exists.
+  // Before this line, `revertTo(handle, "1")` silently reverted the store and
+  // `revertTo(handle, "0001")` refused with CR-08's CORRUPTION message.
+  assertRevisionArgument(revision, "revision");
+
   // STEP 1. The pointer row -- the INDEX half of "retained". An EXISTENCE check
   // and nothing more: the row carries only its revision number, and the FILE's
   // location is computed below from the handle rather than read from the row

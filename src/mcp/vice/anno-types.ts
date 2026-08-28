@@ -453,6 +453,52 @@ export class AnnoStoreStaleRevisionError extends AnnoStoreError {
   }
 }
 
+export interface AnnoRevisionArgumentErrorOptions {
+  /** The offending value, EXACTLY as it was supplied -- unconverted, so a
+   * caller can see that what it passed was a string. */
+  value?: unknown;
+  /** The parameter it was supplied for, so one class can serve more than one
+   * revision-shaped argument without the message having to say which. */
+  parameter?: string;
+}
+
+/**
+ * A REVISION-SHAPED ARGUMENT THAT IS NOT A REVISION: a numeric string, a
+ * negative number, a fraction, `NaN`. Thrown before any SQL runs and before any
+ * path is built, so nothing has been read and nothing has been written.
+ *
+ * WHY THIS IS NOT `AnnoStoreCorruptError`, WHICH IS THE WHOLE REASON THE CLASS
+ * EXISTS (WR-22). Until this class existed, `revertTo(handle, "0001")` matched
+ * revision 1's pointer row through SQLite's INTEGER affinity on a bound TEXT
+ * operand, while `snapshotPathFor` built `r0001.db` from the raw string -- so
+ * the two disagreed and the caller was told its snapshot was "not a readable
+ * annotation store". That is a CORRUPTION refusal produced by an ARGUMENT
+ * error, and `AnnoStoreCorruptError`'s own doc comment forbids exactly that
+ * confusion in as many words: "the annotations are gone" and "there are no
+ * annotations" must not read the same. Neither must "you passed the wrong
+ * thing".
+ *
+ * WHY IT IS NOT `AnnoStoreStaleRevisionError` EITHER. That class carries the
+ * TWO revisions that conflicted (28-08 P2's shape: never report a conflict
+ * without both of the numbers). An argument error has no second revision --
+ * nothing moved and nothing disagreed -- so reusing it would force the class to
+ * carry a number the caller never supplied and this code never had.
+ *
+ * A caller therefore tells the three apart BY CLASS, never by substring-matching
+ * a message.
+ */
+export class AnnoRevisionArgumentError extends AnnoStoreError {
+  value?: unknown;
+  parameter?: string;
+
+  constructor(message: string, { value, parameter }: AnnoRevisionArgumentErrorOptions = {}) {
+    super(message);
+    this.name = "AnnoRevisionArgumentError";
+    this.value = value;
+    this.parameter = parameter;
+  }
+}
+
 export interface AnnoTypeErrorOptions {
   dataType?: unknown;
   validTypes?: readonly string[];
