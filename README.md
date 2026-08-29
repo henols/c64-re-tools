@@ -193,47 +193,44 @@ indistinguishable from a hang. Do not leave a hand-run monitor session open
 while the plugin is also driving the same emulator instance. Concrete traps
 that cause this, none of them specific to this project: a stray `nc` session
 against the monitor port, a second Claude Code session pointed at the same
-instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger —
-explicitly including regenerator2000's own `--vice <HOST:PORT>` flag (see
-below). This plugin's own regenerator2000 route can never cause it: the
-launch path refuses `--vice` by construction (its argv is built only from
-fixed per-verb builders that never accept a pass-through flag) and by a scan
-that throws if the flag is ever present, not merely by documentation. If an
-emulator has gone silent, see the `vice-wedge-triage` skill before assuming
-it is wedged.
+instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
+dials in. This plugin's own annotation route can never cause it: the `anno_*`
+tools and the `anno` CLI open a SQLite annotation store and decode bytes out
+of a file on disk, and there is no emulator connection anywhere on that path
+to contend for the port. If an emulator has gone silent, see the
+`vice-wedge-triage` skill before assuming it is wedged.
 
-## Installing regenerator2000
+## The retired static analyser (attribution, and what replaced it)
 
-`acme-build` and `c64-program-recon`'s static disassembly route requires
-[regenerator2000](https://github.com/ricardoquesada/regenerator2000), a Rust
-CLI that decodes a `.prg`/`.d64`/flat-64K image with a real auto-analyser
-instead of a flat linear decode. It is a **required prerequisite**, not an
-optional accelerator: an optional-with-detection design was rejected because
-it would forbid ever removing the fallback it detects around, and this
-project already removed that fallback (`toacme`'s `disasm` verb).
+**There is no longer any external analyser to install.** Until 2026-08-29 this
+document told you to `cargo install` a third-party Rust CLI and called it a
+**required prerequisite** of the plugin, with a rustc floor and a container
+cost. That is no longer true and the instruction is withdrawn: nothing in this
+plugin runs that binary, and a document telling a user to install something the
+tool no longer uses is worse than saying nothing. Its one-project-per-network-
+namespace caveat went with it — that limit belonged to the analyser's own HTTP
+MCP route, which this project never used and now cannot.
 
-| Fact | Value |
-|------|-------|
-| Install | `cargo install regenerator2000` — **no upstream release assets exist**, so this is a Rust-toolchain cost, not a binary download |
-| Toolchain floor | rustc **>= 1.90** (measured; earlier `>= 1.85` and `>= 1.88` readings undercounted it — a `rust:1.88-slim` image fails a real install) |
-| Container cost, single-stage | ~1.26 GB image, ~5m39s build |
-| Container cost, multi-stage | ~251 MB image, ~4m48s build |
-| Verified against | `0.9.20`, published 2026-07-11, checked 2026-08-20 |
-| Licence | `MIT OR Apache-2.0` (dual) — see [`THIRD-PARTY-NOTICES.md`](src/mcp/vice/THIRD-PARTY-NOTICES.md) |
+**What replaced it.** Annotations — labels, comments, typed ranges, scopes and
+enums — live in this project's own SQLite annotation store, reached through the
+`anno_*` MCP tools and the `anno` CLI, with no external process anywhere on the
+path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
+rebuilt over that store and settled by assembling the output with a real ACME
+and diffing the bytes against the input. The skill playbooks name that
+withdrawal at each place a reader would otherwise reach for the old route.
 
-Both container figures are absolute sizes with no baseline to diff them
-against.
-
-**The one-project-per-network-namespace limit is stated, not detected — and it
-is narrower than it first appears.** The hardcoded port belongs to
-regenerator2000's `--mcp-server` HTTP route; two projects cannot run that route
-side by side in one network namespace. This project does not use it: it drives
-`--mcp-server-stdio` instead, which binds no port at all and spawns one
-short-lived child process per call. Through this project's route, two projects
-in one network namespace are not in conflict. The limit was sidestepped, not
-fixed — it still applies in full to anyone running regenerator2000's own HTTP
-MCP server directly, and this project documents that limit rather than
-building detection and reporting for it; separate containers sidestep it too.
+**The attribution stands, and is not what paid for the removal.** The skill
+playbooks in this repository still incorporate prose **adapted** from
+[regenerator2000](https://github.com/ricardoquesada/regenerator2000)'s own
+analysis procedures, dual-licensed `MIT OR Apache-2.0` and taken here under
+MIT, pinned at commit `493f840418f1450a342bb220c2fe3d2585dd0525` (`v0.9.20`,
+2026-07-11). Every adapted playbook carries its own `ATTRIBUTION (ABS-02)`
+header naming that source, and the full inventory — including the upstream MIT
+permission notice reproduced verbatim — is in
+[`THIRD-PARTY-NOTICES.md`](src/mcp/vice/THIRD-PARTY-NOTICES.md). Removing the
+code integration does not retire that obligation, and this section is here so
+the attribution is findable from the README rather than only from a notices
+file.
 
 ## How it locates the project
 

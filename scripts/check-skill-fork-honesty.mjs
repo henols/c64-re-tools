@@ -10,9 +10,21 @@
 //      states the fork requirement (and the stock route, when one exists).
 //   2. README.md: it must name the VICE_BACKEND switch, the two named
 //      fork-only tools, the generated support-table link, the version
-//      gate, and (Phase 10, R2000-03) regenerator2000 as a required
-//      prerequisite -- and it must never re-introduce the ghost
+//      gate, and the ATTRIBUTION for the upstream analysis procedures the
+//      skill playbooks adapt -- and it must never re-introduce the ghost
 //      guardrail-test claim.
+//
+//      THE SIXTH REQUIRED STRING WAS RE-POINTED, NOT DROPPED (2026-08-29,
+//      phase 29 plan 29-09). It used to assert that README named
+//      regenerator2000 as a REQUIRED PREREQUISITE (Phase 10, R2000-03) --
+//      true when the plugin shelled out to that analyser, and false the
+//      moment the integration was cut. Deleting the assertion outright was
+//      the wrong repair: the obligation that survives the cut is CUT-03's,
+//      the attribution for prose the skill playbooks still incorporate under
+//      `MIT OR Apache-2.0`. So the string stays and its REASON moves. What a
+//      reader loses if it goes is no longer an install step; it is the
+//      attribution being findable from the README at all, instead of only
+//      from a notices file nobody opens.
 // Both are documentation-honesty checks over first-party prose read as data,
 // and one CI-blocking step is cheaper to keep green than two.
 //   3. docs/stock-vice-parity.md: a Nyquist-gap addition (GAP-2, DIST-01/
@@ -299,7 +311,7 @@ const REQUIRED_README_SUBSTRINGS = [
   ["3.10", "the reader cannot tell what an `apt install` of VICE gives them relative to the version gate"],
   [
     "regenerator2000",
-    "a reader is not told regenerator2000 is a required prerequisite, so they hit the static-disassembly route with no tool installed and no explanation",
+    "the README stops naming the upstream project whose analysis procedures the shipped skill playbooks adapt, so the CUT-03 attribution is reachable only from a notices file -- see the re-pointing note in this file's header, and note that the README must NOT claim it as an install prerequisite, which it no longer is",
   ],
 ];
 for (const [needle, whatIsLost] of REQUIRED_README_SUBSTRINGS) {

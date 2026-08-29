@@ -387,9 +387,18 @@ const EXEMPTION_CLASSES = [
   {
     id: "attribution-guard-test",
     why:
-      "the guard that enforces the attribution obligation itself. It must name the subject to police prose about " +
-      "the subject; deleting its mentions would delete the enforcement.",
-    paths: { "src/mcp/vice/skill-attribution.test.ts": 12 },
+      "the guards that enforce the attribution obligation itself. They must name the subject to police prose " +
+      "about the subject; deleting their mentions would delete the enforcement. " +
+      "check-skill-fork-honesty.mjs joined this class on 2026-08-29 (plan 29-09) when its sixth required README " +
+      "string was RE-POINTED rather than dropped: the string used to assert that README named the analyser as an " +
+      "install PREREQUISITE -- true while the plugin shelled out to it, false the moment the integration was cut " +
+      "-- and it now asserts the CUT-03 ATTRIBUTION for prose the shipped playbooks still adapt. Its two " +
+      "occurrences are the required-string entry and the header note recording that re-pointing; both are " +
+      "enforcement, not a route.",
+    paths: {
+      "src/mcp/vice/skill-attribution.test.ts": 12,
+      "scripts/check-skill-fork-honesty.mjs": 2,
+    },
   },
   {
     id: "upstream-audit-manifest-provenance",
@@ -461,6 +470,13 @@ const EXEMPTION_CLASSES = [
       "past-tense provenance records, and references to the upstream PROJECT rather than to this repository's " +
       "integration of it, inside modules, tests, scripts and docs that survive the deletion. No plan in this " +
       "phase removes any of these, which is why they are exemptions and not allow-list entries. " +
+      "README.md joined this class on 2026-08-29 (plan 29-09), and its two occurrences are ONE LINE: the " +
+      "attribution paragraph's link to the upstream repository, whose URL and link text each carry the name. " +
+      "Everything else the README said about the subject was INSTALL PROSE -- a `cargo install` line, a rustc " +
+      "floor, container costs and a network-namespace caveat belonging to an HTTP route this project never used " +
+      "-- and every one of those sentences was CORRECTED away, because a document telling a user to install " +
+      "something the tool no longer uses is worse than saying nothing. The attribution is the part that outlives " +
+      "the integration, so it is the part that stayed. " +
       "packer-finding.mjs joined this class on 2026-08-29 (plan 29-09): its remaining mention is a DATED " +
       "past-tense provenance paragraph recording that the retired analyser computed a packer identity and threw " +
       "it away before any machine-readable surface -- established four independent ways at the pin. That is the " +
@@ -469,6 +485,7 @@ const EXEMPTION_CLASSES = [
       "commit, so what is left is a fact and not a route. The shipped twin under installer/skills/ carries the " +
       "same one occurrence by construction.",
     paths: {
+      "README.md": 2,
       "docs/stock-vice-parity.md": 1,
       "src/skills/c64-program-recon/scripts/packer-finding.mjs": 1,
       "installer/skills/c64-program-recon/scripts/packer-finding.mjs": 1,
@@ -618,8 +635,12 @@ const TEMPORARY_ALLOW_LIST = [
   //    obligation NOWHERE ELSE: README.md's mentions are install prose plus
   //    attribution, and the honesty guard's three are the assertion that
   //    README carries the install prose. They move together or not at all.
-  { path: "README.md", count: 8, plan: "29-09" },
-  { path: "scripts/check-skill-fork-honesty.mjs", count: 3, plan: "29-09" },
+  //    BOTH 29-09 ENTRIES ARE NOW DISCHARGED TOO (2026-08-29, task 2), and
+  //    neither by deleting an obligation. README.md fell 8 -> 2 and
+  //    check-skill-fork-honesty.mjs 3 -> 2; both residuals are PERMANENT and
+  //    moved to a permanent exemption -- `surviving-provenance` for README's
+  //    attribution link, `attribution-guard-test` for the guard that now
+  //    asserts it. NOTHING CITES 29-09 ANY LONGER.
 
   // -- plan 29-10: the deletion set, plus the survivors whose mentions exist
   //    only to describe what 29-10 deletes.
