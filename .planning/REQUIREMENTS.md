@@ -114,8 +114,8 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      not. Measured: 10 files under src/skills/, 18 distinct tool names, plus a
      gitignored-but-shipped twin tree. -->
 
-- [ ] **REPOINT-01**: All five absorbed procedures run on the new surface with their heuristics intact — block-classification tables, symbol data-flow patterns, the BASIC V2 token table, the routine procedure and its pitfalls, the full-program orchestration — across the **10 files under `src/skills/`** that reference r2000 and its **18 distinct tool names**, including `scripts/packer-finding.mjs` (executable), `templates/memory-map.template.md` (copied into consuming projects), and two `references/*.md`
-- [ ] **REPOINT-02**: The `installer/skills/` twin tree is re-pointed in the same change. It is **gitignored yet shipped in the published tarball** — `git ls-files installer/skills` returns 0 — so any gate implemented over tracked files is structurally blind to it while users receive it. `scripts/check-npm-packages.mjs` proves the shipped copy matches
+- [x] **REPOINT-01**: All five absorbed procedures run on the new surface with their heuristics intact — block-classification tables, symbol data-flow patterns, the BASIC V2 token table, the routine procedure and its pitfalls, the full-program orchestration — across the **10 files under `src/skills/`** that reference r2000 and its **18 distinct tool names**, including `scripts/packer-finding.mjs` (executable), `templates/memory-map.template.md` (copied into consuming projects), and two `references/*.md`
+- [x] **REPOINT-02**: The `installer/skills/` twin tree is re-pointed in the same change. It is **gitignored yet shipped in the published tarball** — `git ls-files installer/skills` returns 0 — so any gate implemented over tracked files is structurally blind to it while users receive it. `scripts/check-npm-packages.mjs` proves the shipped copy matches
 - [ ] **REPOINT-03**: The `ABS-02` attribution chain survives the code's deletion, because the prose remains adapted from regenerator2000 — 5 blocks in 3 files under `src/skills/` plus their 5 synced twins, 10 instances across two trees, each carrying two naming lines. Separately, `routine-queue-walker/SKILL.md:3`'s YAML `description:` names regenerator2000 and must change **substantively** rather than be exempted, which re-triggers `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions
 - [ ] **REPOINT-04**: `upstream-procedure-manifest.json` is updated in the same commit that changes what it describes — its own third re-sync trigger requires it, and `r2000_undo`'s `omit` disposition is one v0.7.0 supplies a criterion for
 
@@ -134,7 +134,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
   declarations, `audit-gate.mjs`, `check-npm-packages.mjs`,
   `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
 
-- [ ] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
+- [x] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
 - [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
 
 ## Held for v0.8.0
@@ -228,15 +228,15 @@ over them.
 | EXPORT-01 | Phase 30 | Pending |
 | EXPORT-02 | Phase 30 | Pending |
 | EXPORT-03 | Phase 30 | Pending |
-| REPOINT-01 | Phase 31 | Pending |
-| REPOINT-02 | Phase 31 | Pending |
+| REPOINT-01 | Phase 31 | Complete |
+| REPOINT-02 | Phase 31 | Complete |
 | REPOINT-03 | Phase 31 | Pending |
 | REPOINT-04 | Phase 31 | Pending |
 | CUT-01 | Phase 32 | Pending |
 | CUT-02 | Phase 32 | Complete |
 | CUT-03 | Phase 32 | Complete |
 | CUT-04 | Phase 32 | Pending |
-| CUT-05 | Phase 32 | Pending |
+| CUT-05 | Phase 32 | Complete |
 | CUT-06 | Phase 32 | Pending |
 
 **Four STORE rows read `Complete` at the close of the FIFTH gap-closure round (28-19..28-22), and two deliberately do not.** `STORE-02`, `STORE-05` and `STORE-07` are unmoved from the fourth round's close, on the evidence recorded there: 28-15's four named non-vacuity controls each re-run and quoted individually rather than aggregated, `node:sqlite` resolving to exactly one shipped module, and both store modules absent from the five-element host-path consumer set. 28-22's closing gate re-observes every one of those controls individually on the FINAL tree of round 5, after three plans rewrote `anno-store.ts`.

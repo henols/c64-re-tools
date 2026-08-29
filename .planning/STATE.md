@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-08-PLAN.md
-last_updated: "2026-08-29T18:08:36.100Z"
+stopped_at: Completed 29-09-PLAN.md
+last_updated: "2026-08-29T18:44:45.743Z"
 last_activity: 2026-08-29
-last_activity_desc: Plan 29-05 complete -- nine capability modules and the CLI renamed out from under the retired prefix, the registry records each fate, the module floor is a measured raise to 15, and the removal gate is green at every commit
-state_head: 212ad808656bf9d56eeb1c50253d5069b1230279
+last_activity_desc: Plan 29-09 complete -- every absorbed procedure re-pointed onto the anno surface in both trees, six withdrawn CLI verbs given dated withdrawal notices, the r2000 -> anno subcommand renamed across its three halves in one commit, and the 29-09 allow-list discharged 65 -> 0
+state_head: 1003a0fa3a21d8e11a38bb6e50fcdd906f6ea757
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 36
+  completed_plans: 37
   percent: 33
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 9 of 12
-Status: Executing — plans 29-01 through 29-05 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, and the capability rename out from under the retired prefix)
-Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is discharged. Nine capability modules, the CLI and its verb parser, and four unpaired guard tests are on new names, derived entry by entry from `module-classification.ts` rather than by a prefix sweep; the registry gained a `ModuleFate` type and a `discharged` scope, and DIRECTION 6's `disk.length > 0` is replaced by a discharge-closure relation that survives the enumeration emptying. `ANNO_MODULE_FLOOR` is a measured 15 over `/^anno-.*\.ts$/` — strictly above the 14 it replaces — with a four-name positive control that all exist. The removal gate is green at EVERY commit: no entry names a moved path, nothing cites 29-05 any more, and one file (`anno-coverage.ts`) splits 2 permanent + 2 temporary through a new line-scoped `atLines` exemption shape. `audit-integrity.test.ts` LEFT the baseline failing set — the cause was CR-02 registry drift (`docs-uat-abstention.test.ts` unregistered since `19b5bd5`), fixed with no floor change. No file entered the set.
+Plan: 10 of 12
+Status: Executing — plans 29-01 through 29-09 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, the capability rename, the complete 19-verb anno_* surface, the two-verb CLI and census re-point, the verb register, and the procedure re-pointing)
+Last activity: 2026-08-29 — Plan 29-09 complete: ordering constraint 3 is discharged. All five absorbed procedures now execute on the owned surface, in both trees a user can receive them from. Measured at execution and superseding the planning prose: **5** skill files named **17** distinct old-family tool names (ROADMAP Phase 31's "18" is wrong), and **10** files mentioned the retired analyser at all. The re-pointing is a PROCEDURE rewrite, not a name swap — `anno_disassemble` renders and writes nothing, so classification became read-then-record; `anno_save_project` performs no write; every call names its own `store` and every derived read its `image`; `max_results` is REQUIRED with no default on five reads; and the 2026-08-24 adjacent-table limitation is recorded CLOSED because the store never joins two rows of its own accord (STORE-02). Six withdrawn CLI verbs each carry a dated withdrawal notice naming Phase 30 and the real-ACME byte-diff oracle. The `r2000` -> `anno` subcommand moved across all three halves in ONE commit — skill prose, the verb-coverage literal, and the proxy's dispatch token at 5 added / 5 deleted. D-10/CUT-05 is resolved with the skill named as the side that moved, and the fork-honesty assertion re-pointed at the withdrawal notice's FUTURE route name so Phase 30's restoration keeps it true. The 29-09 allow-list went **65 -> 11 -> 0**: five files re-measured at zero and were deleted, four moved to permanent exemptions (a new BLOCK-scoped `skill-attribution-headers` class over the ABS-02 headers, bidirectional like the notices one). The skill-coverage floor is a measured RAISE, 10 -> 18, with its non-vacuity subject re-pointed onto `anno_search` so a disappearance fires that control and `anno-register.ts`'s guard together. Failing-file SET unchanged: 5, all `r2000-session.test.ts`.
 
 ## Performance Metrics
 
@@ -322,6 +322,7 @@ Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is disc
 | Phase 29 P06 | 71 min | 3 tasks | 4 files |
 | Phase 29 P07 | 46 min | 3 tasks | 12 files |
 | Phase 29 P08 | 9 min | 3 tasks | 5 files |
+| Phase 29 P09 | 71 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -707,6 +708,10 @@ Recent decisions affecting current work:
 - [Phase 29]: Register requirement ids are checked for MEMBERSHIP in .planning/REQUIREMENTS.md, not only FAMILY-NN shape — a plausible-looking id nothing declares is the rubber stamp D-08's prohibition names
 - [Phase 29]: anno-register.test.ts's shadowing check uses a deliberately BROADER suffix-equality relation rather than copying anno-derivation.test.ts's exact mapping — a shadowing check must over-approximate, and the exact mapping stays the single place the correspondence is written down
 - [Phase 29]: ANNO_MODULE_FLOOR is written as the literal expression 15 plus 1 and never derived from readdirSync, paired with a pinned-equals-measured equality so a same-wave module-set change fails with the right diagnosis
+- [Phase 29]: The re-pointing is a PROCEDURE rewrite, not a name substitution: anno_disassemble renders and writes nothing (classification is read-then-record), anno_save_project performs no write, every call names its own store and every derived read its image, and max_results is REQUIRED with no default on five reads
+- [Phase 29]: The ABS-02 attribution headers move to a BLOCK-scoped permanent exemption rather than being scrubbed. Plan 29-09's literal criterion of zero subject mentions under installer/skills is unsatisfiable without deleting attributions, which CUT-03 and ROADMAP Phase 31 criterion 4 both forbid
+- [Phase 29]: packer-finding.mjs's entropySource names the CHANNEL (caller-supplied), never a verb: the number is caller-supplied and the code cannot know its producer, so naming a current verb would claim a run that never happened
+- [Phase 29]: check-skill-fork-honesty.mjs's README required-substring is RE-POINTED, not dropped: it asserted a prerequisite claim that died with the integration, and now asserts the CUT-03 attribution that outlives it
 
 ### Pending Todos
 
@@ -1322,8 +1327,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T18:08:35.794Z
-Stopped at: Completed 29-08-PLAN.md
+Last session: 2026-08-29T18:44:45.431Z
+Stopped at: Completed 29-09-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
