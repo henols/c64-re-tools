@@ -292,6 +292,28 @@ Use these entry points:
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
 
+## GSD Execution Isolation (project policy — NOT installer-managed)
+
+`workflow.use_worktrees` is **true** (stock). Run phases with worktree isolation ON. Do not
+disable it project-wide, do not add standing instructions that route around GSD's dispatch,
+cleanup, or synthesis machinery, and do not treat a single bad worktree run as evidence that
+isolation is unusable. Nested `claude -p` sessions are **not** prohibited — the ban's stated
+cause was tested and refuted on 2026-08-29.
+
+Three constraints are real and are **stock GSD behaviour, not local policy** — honour them
+rather than disabling isolation to avoid them:
+
+1. A plan delivering `.planning/STATE.md` or `ROADMAP.md` content gets the stock per-plan
+   carve-out `USE_WORKTREES_FOR_PLAN=false` (worktree executors may not touch those files —
+   `execute-phase.md:707`; the commit strips them — `execute-plan.md:532`). `REQUIREMENTS.md`
+   is unaffected.
+2. `cleanup-wave` refuses any branch whose diff contains a deletion, unconditionally
+   (`worktree-safety.cjs:759-770`). Merge a deletion plan's branch by hand.
+3. The per-plan worktree gate owns the isolation sentinel; do not hand-force
+   `--force-isolation` as a standing ritual.
+
+Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20.
+
 
 
 <!-- GSD:profile-start -->

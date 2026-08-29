@@ -277,3 +277,40 @@ When a required check fails, GSD should:
 3. fix the root cause;
 4. re-run the relevant evidence;
 5. record any remaining limitation honestly.
+
+## 20. GSD Execution Isolation
+
+`workflow.use_worktrees` is **true** — the stock GSD default for a Claude runtime. It was
+restored on 2026-08-29 (commit `001696d`) after an audit found the `false` value had been set
+in `2277885` as a side change, and that the reasons recorded for it were either unverified or
+were stock GSD behaviour misread as a local defect.
+
+**Run phases with worktree isolation on.** Do not disable it project-wide, and do not add
+blanket instructions that route around GSD's dispatch, cleanup, or synthesis machinery. If a
+worktree run misbehaves, diagnose that run — a single bad run is not evidence that isolation is
+unusable.
+
+Three constraints are real, verified against the installed GSD source, and are **stock
+behaviour rather than local policy**. Honour them; do not "fix" them by disabling isolation.
+
+1. **Plans that deliver `.planning/STATE.md` or `.planning/ROADMAP.md` content must use the
+   stock per-plan carve-out.** Worktree executors are forbidden to touch those files
+   (`execute-phase.md:707`) and the commit protocol strips them in parallel mode
+   (`execute-plan.md:532`), so such a plan would report success while delivering nothing. Set
+   `USE_WORKTREES_FOR_PLAN=false` for that plan only, exactly as a submodule-touching plan
+   gets — the per-plan worktree gate re-records the plan-scoped isolation sentinel itself.
+   `REQUIREMENTS.md` is unaffected; it is on the committed allow-list.
+
+2. **`cleanup-wave` refuses any branch whose diff contains a file deletion**, unconditionally
+   (`worktree-safety.cjs:759-770`; upstream records an opt-in as a deferred decision). A
+   deletion plan's branch builds and commits correctly — merge it by hand.
+
+3. **The per-plan gate owns the isolation sentinel.** Do not hand-force `--force-isolation`
+   as a standing ritual; that was an artifact of the project-level opt-out and is now wrong.
+
+**Nested headless sessions are not prohibited.** The prior blanket ban rested on a claim that a
+nested `claude -p` cannot reach the API from a subagent, which was tested on 2026-08-29 and
+refuted: it ran to completion in foreground and backgrounded dispatch, with no sandbox, seccomp,
+or namespace restriction present. The genuine reasons to avoid delegating a live task are that
+the executor already *is* the agent the plan expects, and that the VICE binary monitor serves
+exactly one client, so concurrent drivers corrupt the evidence. Cite those, not a stall.
