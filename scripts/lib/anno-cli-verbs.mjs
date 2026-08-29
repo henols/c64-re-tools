@@ -29,18 +29,34 @@
 // by git so `scripts/package.sh`'s `git archive` includes it.
 
 /**
- * The measured true count of `r2000` CLI verbs as of plan 19-04:
- * `bootstrap`, `coverage`, `export-asm`, `export-lbl`, `gen-enums`,
- * `import-lbl`, `render-memmap`, `verify`. `coverage` is the 8th, added by
- * plan 19-04 as COV-01's delivery path (the instrument in
- * `src/mcp/vice/anno-coverage.ts`, which nothing could run before that
- * verb existed). A future phase that adds a 9th verb to `anno-cli.ts`'s
- * dispatch switch must raise this floor to the new true count when it lands
- * -- never lower it to make a regression pass (the `extractedR2000.size >=
- * 10` floor in `check-skill-tool-coverage.mjs` is the precedent this
- * mirrors).
+ * The measured true count of `r2000` CLI verbs: `coverage` and `render-memmap`.
+ *
+ * THIS IS A REPLACEMENT OVER A NEW SUBJECT, NOT A LOWERING -- and the
+ * distinction is the whole reason this paragraph exists. A bare smaller number
+ * sitting under the old comment would read as exactly the regression that
+ * comment forbids.
+ *
+ * THE PREVIOUS FLOOR WAS 8, and it was correct for a verb set that no longer
+ * exists. Plan 29-07 (D-14, 2026-08-29) removed six verbs -- `bootstrap`,
+ * `export-asm`, `verify`, `gen-enums`, `export-lbl` and `import-lbl` -- because
+ * every one of them was a delivery path into the retired external analyser,
+ * three directly and three through capability modules. They are DELETED, not
+ * disabled, so the population this floor is a floor OVER changed underneath it.
+ * Holding 8 would not have preserved a discipline; it would have asserted a
+ * fact about verbs that are gone.
+ *
+ * THE RAISE-NEVER-LOWER DISCIPLINE RUNS FORWARD FROM 2, unchanged in force and
+ * with a named next event: three of the six -- the enum generator and the two
+ * halves of the VICE-label round trip -- return in **Phase 30** as rebuilds
+ * over the annotation store, alongside the ACME export oracle. Each verb that
+ * lands there raises this floor to the new true count, in the commit that adds
+ * it. Nothing lowers it again without a decision of the same weight as D-14,
+ * recorded the same way. (The `extractedR2000.size >= 10` floor in
+ * `check-skill-tool-coverage.mjs` is the precedent this mirrors, and it is a
+ * DIFFERENT guard over a DIFFERENT subject -- MCP tool names, not CLI verbs --
+ * so the two numbers never move together.)
  */
-export const ANNO_CLI_VERB_FLOOR = 8;
+export const ANNO_CLI_VERB_FLOOR = 2;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

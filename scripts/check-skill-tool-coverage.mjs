@@ -472,6 +472,16 @@ need(
 // one (FLOW-01's own table) -- surfaced in the failure message so a future
 // maintainer sees what closing the finding actually unblocks, not merely
 // which file to edit.
+//
+// ALL THREE KEYS NAME VERBS THE CLI NO LONGER HAS, as of 2026-08-29 (plan
+// 29-07, D-14), and the map is kept rather than emptied ON PURPOSE. Each of
+// the three returns in Phase 30 as a rebuild over the annotation store, and
+// the day the first one lands undocumented is exactly the day this message
+// needs to name its requirement. An empty map would have to be rebuilt from
+// the audit table by whoever notices; a map with three inert keys costs
+// nothing and is right again the moment the verbs are back. Nothing reads it
+// unless a verb is BOTH parsed from the dispatch switch AND missing from every
+// skill file, so an inert key can never fire on its own.
 const VERB_REQUIREMENT = {
   "gen-enums": "R2000-13",
   "export-lbl": "R2000-14",

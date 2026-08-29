@@ -35,24 +35,32 @@ const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
  * adding a verb to the switch without adding it here FAILS -- which is the
  * entire point. Deriving this array from `parseAnnoCliVerbs()` (the very
  * function under test) would turn every assertion below into a tautology that
- * passes no matter what the parser does. `coverage` was added by plan 19-04
- * alongside `ANNO_CLI_VERB_FLOOR`'s rise from 7 to 8; both counts move
- * together, deliberately, because they measure the same fact.
+ * passes no matter what the parser does.
+ *
+ * NARROWED FROM EIGHT TO TWO on 2026-08-29 by plan 29-07 (D-14), together with
+ * `ANNO_CLI_VERB_FLOOR`. Both counts move together, deliberately, because they
+ * measure the same fact. See that constant's own comment for why a smaller
+ * number here is a REPLACEMENT over a new verb set rather than a lowering, and
+ * for the Phase 30 event that raises it again.
  */
-const REAL_VERBS = ["bootstrap", "coverage", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
+const REAL_VERBS = ["coverage", "render-memmap"];
 
 /**
- * The verbs the two SYNTHETIC sources below happen to carry. Deliberately
- * separate from `REAL_VERBS`: those sources are fixtures with their own fixed
- * shapes (the planted-violation one exists to prove an 8th, undocumented case
- * is caught; the commented-out one to prove a commented case is not counted),
- * not reflections of the real dispatch switch. Before plan 19-04 the two lists
- * coincided at seven entries and the comment-hygiene test reused `REAL_VERBS`;
- * adding the real 8th verb separated them, and they must stay separated --
- * editing a fixture to chase the real switch would destroy the property the
- * fixture was written to prove.
+ * The verbs the COMMENT-HYGIENE synthetic source below carries. Deliberately
+ * separate from `REAL_VERBS`, and now separate BY CONSTRUCTION rather than by
+ * coincidence: its two cases are names no dispatch switch in this tree has and
+ * no skill file mentions.
+ *
+ * That is the correction plan 29-07 made when the real set narrowed to two. The
+ * previous separation was accidental -- the two lists happened to differ
+ * because the real switch had eight cases and the fixture seven -- and a
+ * two-verb real set would have collapsed them onto each other, at which point
+ * "editing a fixture to chase the real switch" becomes indistinguishable from
+ * leaving it alone. The comment-hygiene fixture proves ONE property (a case
+ * inside a comment is never parsed as a verb), and that property needs no real
+ * verb name at all.
  */
-const SYNTHETIC_FIXTURE_VERBS = ["bootstrap", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
+const SYNTHETIC_FIXTURE_VERBS = ["alpha-verb", "beta-verb"];
 
 /** Same file-set convention as `check-skill-tool-coverage.mjs`'s own
  * `walkSkills()`: every `.md`/`.mjs` file under `src/skills/`,
@@ -82,56 +90,44 @@ function realSkillTexts(): string[] {
 }
 
 // A synthetic module carrying the SAME `switch (verb) { case "<verb>": ... }`
-// shape `anno-cli.ts` uses, with one extra, real (non-commented) case --
-// the planted violation. `ghost-verb` is a verb name that will never exist
-// in the real skill corpus, so `verbsMissingFromSkills()` reporting it is
-// unambiguous evidence the guard fires on a genuinely new, undocumented
-// verb.
+// shape `anno-cli.ts` uses, with one extra, real (non-commented) case -- the
+// planted violation. `ghost-verb` is a verb name that will never exist in the
+// real skill corpus, so `verbsMissingFromSkills()` reporting it is unambiguous
+// evidence the guard fires on a genuinely new, undocumented verb.
+//
+// THE NEGATIVE CONTROL IS `render-memmap`, and it is load-bearing that this
+// name is BOTH a verb the CLI still has AND one a real skill file really
+// names: `src/skills/c64-program-recon/SKILL.md`, its
+// `templates/memory-map.template.md` and `src/skills/c64-ram-capture/SKILL.md`
+// all carry the literal `r2000 render-memmap`. Plan 29-07 re-pointed this
+// control off `export-asm`, which the same plan removed -- a control naming a
+// verb that no longer exists proves nothing about a guard that only ever fires
+// on verbs that do.
 const PLANTED_VIOLATION_SRC = `
 function dummyDispatch(verb) {
   switch (verb) {
-    case "bootstrap":
-      return 1;
-    case "export-asm":
-      return 2;
-    case "verify":
-      return 3;
-    case "gen-enums":
-      return 4;
-    case "export-lbl":
-      return 5;
-    case "import-lbl":
-      return 6;
     case "render-memmap":
-      return 7;
+      return 1;
+    case "coverage":
+      return 2;
     case "ghost-verb":
-      return 8;
+      return 3;
     default:
       return 0;
   }
 }
 `;
 
-// Same shape, but the 8th case is hidden inside a block comment and a 9th
-// is hidden inside a line comment -- neither must be counted as a verb.
+// Same shape, but one case is hidden inside a block comment and another
+// inside a line comment -- neither must be counted as a verb.
 const COMMENTED_OUT_CASE_SRC = `
 function dummyDispatch(verb) {
   switch (verb) {
-    case "bootstrap":
+    case "alpha-verb":
       return 1;
-    case "export-asm":
+    case "beta-verb":
       return 2;
-    case "verify":
-      return 3;
-    case "gen-enums":
-      return 4;
-    case "export-lbl":
-      return 5;
-    case "import-lbl":
-      return 6;
-    case "render-memmap":
-      return 7;
-    /* case "block-commented-ghost": return 8; */
+    /* case "block-commented-ghost": return 3; */
     // case "line-commented-ghost":
     default:
       return 0;
@@ -139,7 +135,7 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 2 known verbs, never 'default'", () => {
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
@@ -153,14 +149,14 @@ test("positive control: every real verb is named by at least one real skill file
   assert.deepEqual(missing, [], `expected no verb missing from the real skill corpus, got: ${missing.join(", ")}`);
 });
 
-test("planted violation: an 8th, genuinely new case is parsed and reported missing, while a real, documented verb is not", () => {
+test("planted violation: an extra, genuinely new case is parsed and reported missing, while a real, documented verb is not", () => {
   const verbs = parseAnnoCliVerbs(PLANTED_VIOLATION_SRC);
-  assert.equal(verbs.length, 8);
-  assert.ok(verbs.includes("ghost-verb"), "the planted 8th case must be parsed as a verb");
+  assert.equal(verbs.length, 3);
+  assert.ok(verbs.includes("ghost-verb"), "the planted extra case must be parsed as a verb");
 
   const missing = verbsMissingFromSkills(verbs, realSkillTexts());
   assert.ok(missing.includes("ghost-verb"), "the guard must fire on a new, undocumented verb");
-  assert.ok(!missing.includes("export-asm"), "the guard must NOT fire on a verb that is genuinely documented");
+  assert.ok(!missing.includes("render-memmap"), "the guard must NOT fire on a verb that is genuinely documented");
 
   // Demonstration that this test is not vacuous itself: if the predicate
   // were stubbed to always report nothing missing, this assertion is what
@@ -177,7 +173,7 @@ test("comment hygiene: a case hidden in a block comment or a line comment is nev
 });
 
 test("non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(ANNO_CLI_VERB_FLOOR, 8);
+  assert.equal(ANNO_CLI_VERB_FLOOR, 2);
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR);
