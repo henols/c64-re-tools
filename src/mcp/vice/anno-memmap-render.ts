@@ -74,36 +74,23 @@ import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
 import { blockClassAt } from "./block-class.ts";
 
 // ---------------------------------------------------------------------------
-// WHERE THE VERSION-2 DIGEST'S INPUT SHAPES CAME FROM -- the three wire
-// result shapes declared below, measured LIVE against a real
-// regenerator2000-core-0.9.20 `--mcp-server-stdio` child and never
-// transcribed from a document: `r2000_get_blocks` returned
-// `{start_address, end_address, type}`; `r2000_get_symbols` returned
-// `{address, name, kind, type}`; `r2000_get_comments` returned
-// `{address, comment, type}`. This renderer no longer issues those queries
-// -- it reads the store directly -- and the shapes survive here only as the
-// record of what the version-2 digest hashed, which the version bump
-// retires.
+// WHAT THE VERSION-2 DIGEST HASHED -- the provenance of a lineage this
+// renderer no longer reads. Version 2 hashed three wire result shapes
+// measured LIVE against a real regenerator2000-core-0.9.20
+// `--mcp-server-stdio` child, never transcribed from a document:
+// `r2000_get_blocks` returned `{start_address, end_address, type}`,
+// `r2000_get_symbols` returned `{address, name, kind, type}`, and
+// `r2000_get_comments` returned `{address, comment, type}`.
+//
+// THIS PARAGRAPH IS THE RECORD, not a pointer at one. The three `interface`
+// declarations it used to sit above went with the queries, so the spellings
+// are carried here inline rather than left as a comment above a hole. It
+// survives because `RENDERER_VERSION`'s "2" -> "3" bump is a statement about
+// TWO KNOWN input shapes -- version 3 canonicalises this store's own
+// `RangeRow`/`LabelRow`/`CommentRow` -- and that statement is only true
+// while the older one is on the record. Delete this and the bump names one
+// known input shape and one assumed one.
 // ---------------------------------------------------------------------------
-
-interface R2000Block {
-  start_address: number;
-  end_address: number;
-  type: string;
-}
-
-interface R2000Symbol {
-  address: number;
-  name: string;
-  kind: string;
-  type: string;
-}
-
-interface R2000Comment {
-  address: number;
-  comment: string;
-  type: "line" | "side";
-}
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -265,11 +252,19 @@ export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
 // hand edit).
 // ---------------------------------------------------------------------------
 
-/** Bumped whenever this renderer's OUTPUT SHAPE changes, so a re-render
- * under a new renderer version is distinguishable from drift under the same
- * one. Version 2 (this plan, 260821-a86) escapes Markdown table cells via
- * `escapeMarkdownCell()` -- WR-04. */
-export const RENDERER_VERSION = "2";
+/** Bumped whenever this renderer's OUTPUT SHAPE **or its digest's canonical
+ * INPUT** changes, so a re-render under a new renderer version is
+ * distinguishable from drift under the same one.
+ *
+ * Version 2 (260821-a86) escaped Markdown table cells via
+ * `escapeMarkdownCell()` -- WR-04, an output-shape change.
+ *
+ * Version 3 (D-17) is an INPUT change: `computeRenderDigest()` canonicalises
+ * this store's own `RangeRow`/`LabelRow`/`CommentRow` instead of the three
+ * wire shapes recorded above, so the same underlying annotations hash
+ * differently either side of it. Leaving the version at "2" across that
+ * boundary would let two incompatible renderings compare as ordinary drift. */
+export const RENDERER_VERSION = "3";
 
 /**
  * Escapes `text` for safe interpolation into a Markdown table cell or list

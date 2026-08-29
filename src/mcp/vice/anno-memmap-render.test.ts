@@ -275,22 +275,39 @@ test("changing the SIDECAR BYTES alone changes the render digest, even when the 
   });
 });
 
-test("the renderer module carries exactly ONE regenerator2000 mention, and it is the measurement-provenance comment", () => {
-  // Read as BYTES and count in-process. This module carries a literal NUL, so
-  // GNU grep classifies it as binary and reports nothing -- the blindness that
-  // produced three false "zero local imports" measurements before D-17.
+test("the surviving measurement-provenance paragraph STATES the version-2 wire shapes inline, rather than pointing at declarations that no longer exist", () => {
+  // Read as BYTES and search in-process. This module carries a literal NUL, so
+  // GNU grep classifies it as binary and prints "binary file matches" instead
+  // of lines -- the blindness that produced three false "zero local imports"
+  // measurements before D-17. The COUNT and LINE of the one exempted mention
+  // are pinned by the removal gate and by removal-gate.test.ts; what is pinned
+  // HERE is that the paragraph still has a live subject, which is the only
+  // thing that entitles it to a permanent exemption.
   const bytes = readFileSync(join(HERE, "anno-memmap-render.ts"));
   assert.ok(bytes.includes(0x00), "the NUL byte that makes this a grep-blind file must still be here");
-  const lines = bytes.toString("utf8").split("\n");
-  const hits = lines.map((line, i) => ({ line, n: i + 1 })).filter((entry) => entry.line.includes("regenerator2000"));
-  assert.equal(hits.length, 1, `expected exactly one mention, found: ${JSON.stringify(hits)}`);
-  // The surviving mention explains the VERSION-2 digest lineage -- what the
-  // pre-store renderer hashed, and that those shapes were measured rather than
-  // transcribed. A mention over prose with no live subject would be an
-  // exemption kept alive for a statement that had become false.
-  const block = lines.slice(hits[0]!.n - 5, hits[0]!.n + 8).join("\n");
-  assert.match(block, /VERSION-2 DIGEST/);
-  assert.match(block, /r2000_get_blocks/);
+  const source = bytes.toString("utf8");
+
+  const heading = "WHAT THE VERSION-2 DIGEST HASHED";
+  assert.ok(source.includes(heading), "the provenance paragraph must still name the lineage it records");
+
+  // It must CARRY the three shapes, because the three `interface` blocks it
+  // used to sit above are gone -- a comment above a hole is not a record.
+  for (const spelling of [
+    "r2000_get_blocks",
+    "{start_address, end_address, type}",
+    "r2000_get_symbols",
+    "{address, name, kind, type}",
+    "r2000_get_comments",
+    "{address, comment, type}",
+  ]) {
+    assert.ok(source.includes(spelling), `the paragraph must state ${spelling} inline`);
+  }
+  for (const declaration of ["interface R2000Block", "interface R2000Symbol", "interface R2000Comment"]) {
+    assert.ok(!source.includes(declaration), `${declaration} must be gone -- the digest no longer names it`);
+  }
+
+  // And it must explain the bump it exists for.
+  assert.match(source, /RENDERER_VERSION.{0,400}"2" -> "3"/s);
 });
 
 // ---------------------------------------------------------------------------
