@@ -172,11 +172,94 @@ test("derived TOTAL cross-check: every member of the store's frozen block vocabu
   );
 });
 
+/**
+ * THE BY-NAME PIN over the store's frozen twelve, and the one thing the
+ * computed cross-check above deliberately cannot be.
+ *
+ * Plan 29-07's census re-point stopped reading block types out of the retired
+ * analyser's project JSON and started reading them out of this project's own
+ * store, whose `dataType` column carries exactly these twelve spellings. That
+ * re-point rested on ONE assumption research measured but flagged UNVERIFIED
+ * (`29-RESEARCH.md` assumption A3): that the mapping is TOTAL over the twelve
+ * and that each member lands on the class the census expects. This table is
+ * that assumption turned into a committed fact.
+ *
+ * IT IS HAND-WRITTEN ON PURPOSE, and that is not a contradiction of the
+ * rationale-reversal note above. The test below asserts this table's key set
+ * against `DATA_TYPES` for TOTALITY, so it cannot drift from the frozen home
+ * without failing:
+ *
+ *   - a THIRTEENTH data type added to `DATA_TYPES` has no entry here and
+ *     fails, naming itself, instead of silently being censused as `data`;
+ *   - an entry here naming a spelling `DATA_TYPES` no longer carries fails
+ *     too, so a re-spelling cannot be half-applied;
+ *   - a member whose CLASS changes fails on its own row, by name, rather than
+ *     moving a published census figure with nothing red anywhere.
+ *
+ * The computed cross-check above proves the RULE ("code is code, undefined is
+ * undefined, everything else is data"). This proves the RESULT for each of
+ * the twelve, which is what the census actually depends on. Neither replaces
+ * the other.
+ */
+const STORE_BLOCK_CLASS_BY_NAME: Readonly<Record<string, BlockClass>> = Object.freeze({
+  code: "code",
+  byte: "data",
+  word: "data",
+  address: "data",
+  petscii: "data",
+  screencode: "data",
+  lo_hi_address: "data",
+  hi_lo_address: "data",
+  lo_hi_word: "data",
+  hi_lo_word: "data",
+  external_file: "data",
+  undefined: "undefined",
+});
+
+test("by-name pin: each of the store's twelve data types resolves to the class the census expects (29-RESEARCH A3, measured)", () => {
+  // TOTALITY, both directions, against the frozen home rather than against a
+  // count typed here. This is what makes a hand-written table safe: it cannot
+  // be a second, drifting home when its key set is asserted equal to the
+  // first one on every run.
+  assert.deepEqual(
+    Object.keys(STORE_BLOCK_CLASS_BY_NAME).sort(),
+    [...DATA_TYPES].sort(),
+    "the by-name table and anno-types.ts's DATA_TYPES must name exactly the same members -- a data type added " +
+      "to the frozen vocabulary without a row here would be censused as `data` with nothing red",
+  );
+
+  for (const member of DATA_TYPES) {
+    const expected = STORE_BLOCK_CLASS_BY_NAME[member];
+    assert.equal(
+      classOf(member),
+      expected,
+      `the store's ${JSON.stringify(member)} block type must resolve to ${JSON.stringify(expected)} -- the ` +
+        "coverage census reads this column straight out of the store's range rows, so a change here moves a " +
+        "published measurement",
+    );
+  }
+
+  // NON-VACUITY for the table itself: a table that had collapsed to a single
+  // class would satisfy every row above trivially while proving nothing.
+  const distinct = new Set(Object.values(STORE_BLOCK_CLASS_BY_NAME));
+  assert.deepEqual(
+    [...distinct].sort(),
+    ["code", "data", "undefined"],
+    "the twelve must span all three neutral classes -- exactly one member (`code`) is the code class, exactly " +
+      "one (`undefined`) is the undefined class, and the other ten fall through to data. A table that had " +
+      "collapsed to one class would satisfy every row above trivially",
+  );
+});
+
 test("the analyser arm survives the store arm being added -- its four spellings still map as before", () => {
-  // Pinned explicitly so removing the transitional arm later (`CUT-01`) is a
-  // deliberate edit that reddens here, never a silent consequence of some
-  // other change. Every committed coverage fixture is spelled in this
-  // vocabulary.
+  // Pinned explicitly so removing the transitional arm is a deliberate edit
+  // that reddens here, never a silent consequence of some other change.
+  //
+  // ITS TRIGGER HAS ALREADY FIRED (2026-08-29, plan 29-07): the producer of
+  // this capitalised vocabulary is gone. The arm survives anyway because every
+  // committed coverage fixture is still SPELLED in it, so its removal trigger
+  // is now the FIXTURES being re-spelled -- see `block-class.ts`'s own dated
+  // note on the arm, and the Phase 32 guard-fate item that carries it.
   assert.equal(classOf(ANALYSER_CODE), "code");
   assert.equal(classOf(ANALYSER_UNDEFINED), "undefined");
   assert.equal(classOf(ANALYSER_OTHER), "data");

@@ -168,12 +168,30 @@ export const blockClassAt: BlockClassifier = (blocks, address) => {
       // lowercase and live in one frozen home the test cross-checks against:
       if (block.type === "code") return "code";
       if (block.type === "undefined") return "undefined";
-      // TRANSITIONAL -- the external analyser this project rents an
-      // annotation store from, whose Rust `Display` emits the capitalised
-      // spellings, and which every committed coverage fixture is spelled in.
-      // Removable once no capitalised-vocabulary producer remains, which is
-      // `CUT-01`'s subject. Removing it before then reclassifies every
-      // analyser block and every fixture block as data, silently.
+      // TRANSITIONAL -- the capitalised vocabulary, whose PRODUCER (the
+      // external analyser this project used to rent an annotation store from,
+      // whose Rust `Display` emitted these spellings) IS GONE AS OF PHASE 29,
+      // 2026-08-29. The trigger the previous comment named has therefore
+      // already fired, and the arm still stands. That is a decision, recorded
+      // here rather than left to be rediscovered as an inert branch:
+      //
+      //   WHY IT SURVIVES ITS OWN TRIGGER: every committed coverage fixture
+      //   under `fixtures/coverage/**/store.json` is still SPELLED in this
+      //   vocabulary ("Code", "Byte", "Undefined"). Deleting the two arms
+      //   below today reclassifies every fixture block as `data` -- silently,
+      //   because `data` is the total fallthrough and no error is raised
+      //   anywhere. The fixtures are the census's own controls, so that would
+      //   move the numbers the controls exist to pin.
+      //
+      //   THE NEW REMOVAL TRIGGER is therefore the FIXTURES being re-spelled
+      //   into the store's own lowercase vocabulary -- not the producer being
+      //   deleted, which has happened. Re-spell the fixtures (and their
+      //   generator) first, observe the census unchanged, then delete these
+      //   two lines.
+      //
+      //   FATE: carried as a Phase 32 guard-fate item ("every guard pinned to
+      //   the deleted subject has a recorded fate"), so the ledger picks this
+      //   arm up deliberately instead of finding it red or inert in CI.
       if (block.type === "Code") return "code";
       if (block.type === "Undefined") return "undefined";
       return "data";
