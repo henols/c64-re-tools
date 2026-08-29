@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-07-PLAN.md
-last_updated: "2026-08-29T17:50:24.894Z"
+stopped_at: Completed 29-08-PLAN.md
+last_updated: "2026-08-29T18:08:36.100Z"
 last_activity: 2026-08-29
 last_activity_desc: Plan 29-05 complete -- nine capability modules and the CLI renamed out from under the retired prefix, the registry records each fate, the module floor is a measured raise to 15, and the removal gate is green at every commit
-state_head: 9e91694762ce4a175cbc967e7ebd62a2ebcfb848
+state_head: 212ad808656bf9d56eeb1c50253d5069b1230279
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 35
+  completed_plans: 36
   percent: 33
 ---
 
@@ -148,7 +148,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 8 of 12
+Plan: 9 of 12
 Status: Executing — plans 29-01 through 29-05 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, and the capability rename out from under the retired prefix)
 Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is discharged. Nine capability modules, the CLI and its verb parser, and four unpaired guard tests are on new names, derived entry by entry from `module-classification.ts` rather than by a prefix sweep; the registry gained a `ModuleFate` type and a `discharged` scope, and DIRECTION 6's `disk.length > 0` is replaced by a discharge-closure relation that survives the enumeration emptying. `ANNO_MODULE_FLOOR` is a measured 15 over `/^anno-.*\.ts$/` — strictly above the 14 it replaces — with a four-name positive control that all exist. The removal gate is green at EVERY commit: no entry names a moved path, nothing cites 29-05 any more, and one file (`anno-coverage.ts`) splits 2 permanent + 2 temporary through a new line-scoped `atLines` exemption shape. `audit-integrity.test.ts` LEFT the baseline failing set — the cause was CR-02 registry drift (`docs-uat-abstention.test.ts` unregistered since `19b5bd5`), fixed with no floor change. No file entered the set.
 
@@ -321,6 +321,7 @@ Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is disc
 | Phase 29 P05 | 29 min | 3 tasks | 68 files |
 | Phase 29 P06 | 71 min | 3 tasks | 4 files |
 | Phase 29 P07 | 46 min | 3 tasks | 12 files |
+| Phase 29 P08 | 9 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -702,6 +703,10 @@ Recent decisions affecting current work:
 - [Phase 29]: 29-07: the r2000 CLI narrows to two verbs, render-memmap and coverage, and the six removed ones are deleted rather than disabled (D-14) — All six were delivery paths into the retired analyser, three directly and three through capability modules; each would have typechecked, dispatched and failed at the first call.
 - [Phase 29]: 29-07: the coverage verb names its annotation store explicitly with --store instead of deriving it from the project path — The Phase 28 store holds annotations and never bytes, so a derived measure must be told which bytes it is measuring; deriving one caller-supplied path from another is the silent auto-pick D-02 forbids.
 - [Phase 29]: 29-07: the transitional capitalised block-type arm in block-class.ts survives its own removal trigger, and its new trigger is the coverage fixtures being re-spelled — Its producer is gone, but every committed coverage fixture is still spelled in that vocabulary, so removing the arm today would silently reclassify every fixture block as data. Carried as a Phase 32 guard-fate item.
+- [Phase 29]: The register requires BOTH a named consumer AND a cited requirement id, stricter than module-classification.ts's one-or-the-other rule — a public surface commitment is not a module that already exists and can be read
+- [Phase 29]: Register requirement ids are checked for MEMBERSHIP in .planning/REQUIREMENTS.md, not only FAMILY-NN shape — a plausible-looking id nothing declares is the rubber stamp D-08's prohibition names
+- [Phase 29]: anno-register.test.ts's shadowing check uses a deliberately BROADER suffix-equality relation rather than copying anno-derivation.test.ts's exact mapping — a shadowing check must over-approximate, and the exact mapping stays the single place the correspondence is written down
+- [Phase 29]: ANNO_MODULE_FLOOR is written as the literal expression 15 plus 1 and never derived from readdirSync, paired with a pinned-equals-measured equality so a same-wave module-set change fails with the right diagnosis
 
 ### Pending Todos
 
@@ -1317,8 +1322,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T17:50:24.592Z
-Stopped at: Completed 29-07-PLAN.md
+Last session: 2026-08-29T18:08:35.794Z
+Stopped at: Completed 29-08-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

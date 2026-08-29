@@ -92,7 +92,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      have a named consumer; `r2000_delete_project_enum` has zero callers
      anywhere and is the one verb the measured test cuts. -->
 
-- [ ] **MCP-01**: The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every verb it classifies `curated` or `adapt-to-address-input` has a route, every verb it classifies `omit` is absent, and the one verb with zero callers anywhere (`r2000_delete_project_enum`) is not carried. The derivation is checked mechanically, so a future verb added without a consumer fails
+- [x] **MCP-01**: The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every verb it classifies `curated` or `adapt-to-address-input` has a route, every verb it classifies `omit` is absent, and the one verb with zero callers anywhere (`r2000_delete_project_enum`) is not carried. The derivation is checked mechanically, so a future verb added without a consumer fails
 - [ ] **MCP-02**: The family registers proxy-locally through `buildViceTool()` and never reaches `forwardToVice()`, satisfying CLAUDE.md's derived-tool path-translation constraint **by construction** — no interception to forget. Pinned by the existing body-slice assertion that the runner contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`
 - [x] **MCP-03**: Backend-agnosticism is structural, expressed where it actually lives — `stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS` ordered allow-list — and **not** by an entry in `capability-registry.ts`, which holds only the per-backend delta a proxy-local family does not have. Neither manifest nor `docs/tool-support.md` gains an entry
 - [x] **MCP-04**: The surface is shaped for an agent rather than a cursor: addressing is by explicit address, edits are batchable and idempotent, and an ambiguous or unsupported request **refuses by name** — reporting `{available:false, reason}` rather than a plausible-looking zero, per this project's existing convention
@@ -219,7 +219,7 @@ over them.
 | STORE-04 | Phase 28 | Complete |
 | STORE-05 | Phase 28 | Complete |
 | STORE-07 | Phase 28 | Complete |
-| MCP-01 | Phase 29 | Pending |
+| MCP-01 | Phase 29 | Complete |
 | MCP-02 | Phase 29 | Pending |
 | MCP-03 | Phase 29 | Complete |
 | MCP-04 | Phase 29 | Complete |

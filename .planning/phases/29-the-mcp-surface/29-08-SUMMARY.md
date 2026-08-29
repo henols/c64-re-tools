@@ -228,6 +228,10 @@ Per `29-BASELINE.md`, the comparison target is the SET. The VICE broker was conf
 
 **No file entered the failing set.** No regression is attributable to this plan.
 
+### Requirement rows: `MCP-01` moved, `MCP-05` deliberately did not
+
+`requirements.ready-ids` reports `MCP-01` ready and `MCP-05` **blocked**, and only `MCP-01`'s row was moved to `Complete` in `.planning/REQUIREMENTS.md`. That is the shared-ID gate working as designed, not an omission: `MCP-05` is declared by **seven** plans in this phase (`29-01`, `29-02`, `29-05`, `29-07`, `29-08`, `29-09`, `29-11`), and `29-09` and `29-11` have not yet produced a SUMMARY. This plan's `MCP-05` obligation — the `ANNO_MODULE_FLOOR` re-point, raised rather than lowered, with its positive control still naming four filenames that exist — is discharged and covered by `D8` above; the row itself moves when the last declaring plan finishes.
+
 ## User Setup Required
 
 None — no external service configuration required.
