@@ -2014,7 +2014,13 @@ is flagged so a plan does not treat it as fact.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+**All six questions below were resolved before Phase 29's plans were written
+(2026-08-29). This section is kept as the record of what was open and how each was
+closed — it is not live advice, and question 3's recommendation in particular was
+superseded and must not be followed.** Each question carries a `RESOLVED:` line
+naming the decision or plan that closed it.
 
 1. **`anno_apply_enum_usage` and the `SCHEMA_VERSION` bump (F-1).**
    - *What we know:* the store has no enum-usage table; `openStore` hard-refuses a
@@ -2024,6 +2030,12 @@ is flagged so a plan does not treat it as fact.
    - *Recommendation:* a `checkpoint:human-verify` task at the top of the plan.
      Recommend option (a) — add the table and bump to 3 — but let the owner
      confirm the one-way call, exactly as D-07 anticipated.
+   - **RESOLVED: D-15** (`29-CONTEXT.md`, user decision 2026-08-29). The
+     recommendation was taken: the table is added and `SCHEMA_VERSION` bumps 2 → 3
+     with **no migration arm**, accepting that every existing v2 `.annostore`
+     becomes permanently unopenable. Implemented by plan **29-03**, whose
+     `checkpoint:decision` gate carries the one-way call and whose prohibition
+     keeps the mismatch a single-witness refusal.
 
 2. **The scope of D-02's cut, given CD-1.**
    - *What we know:* four of five kept verbs need rebuilds; `export-lbl`/`import-lbl`
@@ -2033,19 +2045,48 @@ is flagged so a plan does not treat it as fact.
      only `render-memmap` + `coverage` now; `gen-enums`/`export-lbl`/`import-lbl`
      ride into Phase 30 with the ACME oracle). **Do not silently absorb four
      rebuilds into a phase scoped as "register a tool family".**
+   - **RESOLVED: D-14** (`29-CONTEXT.md`, user decision 2026-08-29). The sizing was
+     presented and the owner chose the narrowing exactly as recommended:
+     `render-memmap` and `coverage` survive into Phase 29; `gen-enums`,
+     `export-lbl` and `import-lbl` follow the export route into Phase 30. Carried
+     out by plan **29-07**, which also records the temporary withdrawal of
+     `R2000-14` / `R2000-15`'s symbol round trip.
 
 3. **C-3's reading of "raised not lowered".**
    - *Recommendation:* adopt the charitable reading (floor = measured count, then
      raise-only) and **state the reading in the plan**. Let the naming policy be
      chosen on legibility (Policy B: `d64.ts`, not `anno-d64.ts`), following
      SEAM-01's own `acme-gate.ts` precedent.
+   - **RESOLVED — SUPERSEDED. The Policy B half of this recommendation was NOT
+     adopted and must not be followed.** Plan **29-05** adopts **Policy A**: every
+     renamed survivor takes the `anno-` prefix, and D-13's "raised not lowered" is
+     read **literally** rather than charitably. The grounds are recorded in full in
+     29-05's "Decisions and readings adopted by this plan" and are three, two of
+     them locked decisions: (1) **D-05** locks `anno-` as the module prefix and
+     names the disk-derived `readdirSync`-plus-stable-prefix-regex as its reason;
+     (2) **D-13** locks the floor as re-expressed *over the `anno-` prefix*, and
+     under bare names the renamed modules would not be counted by it at all, which
+     is a lowering by construction; (3) `module-classification.test.ts`'s
+     `inEnumerationOnDisk()` is itself a prefix enumeration this ledger did not
+     list, so bare names would leave the registry with no disk-derivable predicate
+     at all. Under Policy A the measured count reaches 15 at 29-05's close, so the
+     literal reading is satisfiable and no charitable reading is needed.
 
 4. **`anno_save_project` (C-2).**
    - *Recommendation:* route it as an honest revision report. Record the choice in
      the D-08 register.
+   - **RESOLVED: adopted as recommended.** Plan **29-06** routes it as an honest
+     revision report that performs no write and says so in its own result body;
+     plan **29-08** records the deviation in the D-08 register, because "a route
+     that reports rather than writes" is exactly what a later reader would mistake
+     for an oversight.
 
 5. **The renamed CLI's name (C-4).**
    - *Recommendation:* `anno-cli.ts` / `anno <verb>`, downstream of D-05.
+   - **RESOLVED: adopted as recommended.** Plan **29-05** renames the module to
+     `anno-cli.ts`; the invocation literal and the proxy's subcommand token move
+     later, in plan **29-09**, in the same commit as the skill files that spell
+     them — changing either half alone reds the FLOW-01 guard from the wrong side.
 
 6. **Whether `docs-r2000-decisions.test.ts` is renamed or deleted (D-12).**
    - *What we know:* D-12 says it and `audit-gate.mjs:136` move together; ROADMAP
@@ -2056,6 +2097,11 @@ is flagged so a plan does not treat it as fact.
    - *Recommendation:* **rename and re-point**, not delete — it keeps
      `DOCS_GUARD_FLOOR = 7` and `audit-integrity.test.ts`'s registry-vs-disk
      cross-check green with no floor change, which is the cheaper and safer move.
+   - **RESOLVED: D-12, rename-and-re-point as recommended.** Plan **29-05** Task 3
+     renames it to `docs-absorbed-decisions.test.ts` and changes
+     `scripts/audit-gate.mjs`'s `EXPECTED_DOCS_GUARD_NAMES` entry **in the same
+     commit**, re-points its `GUARD_FILENAMES` to two guards that still exist after
+     plan 29-10, and keeps `DOCS_GUARD_FLOOR = 7`.
 
 ---
 
