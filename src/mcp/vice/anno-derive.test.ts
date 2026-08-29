@@ -48,6 +48,7 @@ import {
   crossReferencesTo,
   searchAnnotations,
 } from "./anno-derive.ts";
+import { composeAddressDetails } from "./anno-details.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -413,6 +414,9 @@ test("STORE-06 never-cached control: repeated derived queries leave the store by
     for (const query of ["jsr", "lda", "no_such_term_anywhere", "$c000"]) {
       searchAnnotations(fx.handle, fx.image, fx.origin, { query, max_results: 50 });
     }
+    // The composition reads all four sources and must not write either.
+    composeAddressDetails(fx.handle, fx.image, fx.origin, 0x0810);
+    composeAddressDetails(fx.handle, fx.image, fx.origin, 0x9000);
     const after = observe(fx);
     assert.deepEqual(
       after,
@@ -466,8 +470,9 @@ const FS_WRITE_CALLS = [
 const HOST_PATH_SEAMS = ["hostpath.ts", "containerpath.ts", "container-guard.mts"];
 
 /** Every module of this area whose whole subject is DERIVATION. All three
- * assertions below are applied to each of them identically. */
-const DERIVATION_MODULES = ["anno-derive.ts"];
+ * assertions below are applied to each of them identically -- `anno-details.ts`
+ * sits on a read path too, so it is held to exactly the same rule. */
+const DERIVATION_MODULES = ["anno-derive.ts", "anno-details.ts"];
 
 test("STORE-06 never-cached control: the derivation modules' stripped source carries no SQL write verb", () => {
   for (const name of DERIVATION_MODULES) {
@@ -580,4 +585,62 @@ test("STORE-06 never-cached control: the census can actually SEE a planted write
   SQL_WRITE_VERB.lastIndex = 0;
   assert.equal((planted.match(SQL_WRITE_VERB) ?? []).length, 1);
   assert.equal(enclosingDeclaration(planted, planted.search(/insert/i)), "cacheIt");
+});
+
+// ---------------------------------------------------------------------------
+// 5. The address-details composition (task 3)
+// ---------------------------------------------------------------------------
+
+test("STORE-06: composeAddressDetails discloses that it was composed and names all four sources", () => {
+  withFixture((fx) => {
+    const details = composeAddressDetails(fx.handle, fx.image, fx.origin, 0x0810);
+    assert.equal(details.composed_client_side, true);
+    assert.deepEqual(details.composed_from, ["listLabels", "listComments", "resolveAt over paintIndexOf", "crossReferencesTo"]);
+    assert.equal(details.composed_from.length, 4);
+  });
+});
+
+test("STORE-06: composeAddressDetails answers from four store reads", () => {
+  withFixture((fx) => {
+    const details = composeAddressDetails(fx.handle, fx.image, fx.origin, 0x0810);
+    assert.deepEqual(details.labels.map((row) => row.name), ["jsr_target"]);
+    assert.deepEqual(details.comments, [], "an address with no comment is a GENUINE empty list");
+    assert.ok(details.range.available, "$0810 sits inside the first code range");
+    assert.equal(details.range.value.dataType, "code");
+    // $0810 is the target of the branch at $0818 and of split-table entry 0.
+    assert.ok(details.crossReferences.available);
+    assert.deepEqual(details.crossReferences.value.callers, [0x0818, 0x0820]);
+  });
+});
+
+test("STORE-06: an address in a gap between ranges returns no range, by name, and does not throw", () => {
+  withFixture((fx) => {
+    const details = composeAddressDetails(fx.handle, fx.image, fx.origin, 0x9000);
+    assert.equal(details.range.available, false);
+    assert.ok(!details.range.available);
+    assert.ok(
+      details.range.reason.length >= 40,
+      "an unanswerable component says what was asked and why it cannot be answered",
+    );
+    assert.deepEqual(details.labels, []);
+    assert.deepEqual(details.comments, []);
+  });
+});
+
+test("STORE-06: with no image bytes the cross-reference half is unavailable BY NAME, not an empty list", () => {
+  withFixture((fx) => {
+    const details = composeAddressDetails(fx.handle, new Uint8Array(0), fx.origin, 0x0810);
+    assert.ok(!details.crossReferences.available, "no bytes were supplied, so this component is genuinely unanswerable");
+    assert.ok(details.crossReferences.reason.length >= 40);
+    // The three store-only halves still answer.
+    assert.deepEqual(details.labels.map((row) => row.name), ["jsr_target"]);
+    assert.equal(details.range.available, true);
+  });
+});
+
+test("STORE-06: composeAddressDetails validates its address through the ONE parser", () => {
+  withFixture((fx) => {
+    assert.throws(() => composeAddressDetails(fx.handle, fx.image, fx.origin, 0x10000), AnnoAddressError);
+    assert.throws(() => composeAddressDetails(fx.handle, fx.image, fx.origin, -1), AnnoAddressError);
+  });
 });
