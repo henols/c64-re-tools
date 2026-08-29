@@ -205,6 +205,68 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   forward from Phase 31 criterion 2). Note that criterion 4's wording already
   anticipated re-pointing rather than deletion, so it survives D-01 unedited.
 
+### Amendments from research (added at plan time, 2026-08-29)
+
+`29-RESEARCH.md` measured two locked decisions to be false and found one blocking
+gap. All three are resolved here so the planner does not re-litigate them. The
+measurements themselves live in `29-RESEARCH.md` (§ "Contradicts a Locked
+Decision", § F-1, § F-2, § F-3) with per-claim `[VERIFIED: file:line]` citations —
+nothing is restated here as if newly measured.
+
+- **D-14 — D-02's kept-verb set is narrowed to `render-memmap` and `coverage`.**
+  **User decision, 2026-08-29.** D-02 verified `r2000-cli.ts`'s own import list,
+  which is correct one level deep; research measured the second level and found
+  `gen-enums`, `export-lbl`, `import-lbl` and `coverage` all reach
+  `r2000-launch.ts` / `r2000-tools.ts` *through* the capability modules
+  (`29-RESEARCH.md` § F-2, five verbatim import lines plus eight use sites). They
+  are rebuilds, not renames. Offered the three sizings, the user chose the
+  narrowing: **`render-memmap` (zero local imports) and `coverage` survive into
+  Phase 29; `gen-enums`, `export-lbl` and `import-lbl` follow the export route
+  into Phase 30 alongside the ACME oracle** — the same reasoning D-02 already
+  applied to `export-asm`. `coverage` stays because `COV-01`'s census re-point is
+  already in scope as Discretion item 4.
+  — **Consequence the plan must carry:** `R2000-14` / `R2000-15`'s ✓ Validated
+  symbol round trip has no route for the duration of Phase 30. That is a
+  *temporary loss of a validated capability*, and the plan must record it as such
+  where the record will be read — not leave it to be discovered when the
+  requirement is next checked.
+  — **Reversibility:** reversible — the verbs return in Phase 30.
+
+- **D-15 — `anno_enum_usage` is added and `SCHEMA_VERSION` bumps 2 → 3, with no
+  migration arm.** **User decision, 2026-08-29.** `r2000_apply_enum_usage` is
+  disposed `curated` in the Phase 19 manifest, so D-08's mechanical check demands
+  a route, but the Phase 28 store has no table associating an enum with an
+  address and `openStore` hard-refuses a mismatched `schema_version`
+  (`29-RESEARCH.md` § F-1). Offered add-and-bump / add-with-migration /
+  refuse-by-name, the user chose **add the table and bump, accepting that every
+  existing v2 `.annostore` on disk becomes permanently unopenable** — the store
+  shipped five days ago and a migration arm bought now protects stores that may
+  not exist. This supersedes D-07's note that a `SCHEMA_VERSION` bump is a
+  one-way decision to be avoided this milestone: the bump is now taken
+  deliberately, with the cost named.
+  — **Consequence the plan must carry:** the refusal must stay a *single-witness*
+  refusal — no migration arm is added to `openStore`, and the plan must assert
+  that a v2 store still refuses by name rather than being silently upgraded.
+  — **Reversibility:** one-way — existing v2 stores cannot be reopened after this.
+
+- **D-16 — D-03's rename set is 9, not 11: `r2000-test-gate.ts` and
+  `r2000-verify.ts` are deleted, not renamed.** *Agent-resolved, taking the
+  research recommendation* (`29-RESEARCH.md` § CD-2 / § F-3). This is not research
+  overruling `module-classification.ts` — it is research reading the registry as
+  D-03 requires. The registry's own `note` fields say *"Do NOT read this verdict
+  as a claim that the module survives a prefix deletion"* (`r2000-test-gate.ts`)
+  and *"what a later phase inherits is the discipline … NOT the route"*
+  (`r2000-verify.ts`); the verdict field and the note field are one record, and
+  reading only the verdict is the name-based shortcut D-03 exists to prevent, one
+  level up. Corroborated by import measurement: `r2000-test-gate.ts` has zero
+  surviving importers (both live ACME-gated tests already use `acme-gate.ts`) and
+  `r2000-verify.ts`'s only import is the deleted `r2000-launch.ts`.
+  — **Consequence the plan must carry:** `r2000-verify.ts`'s two pinned
+  false-pass transcripts are what the registry names as the thing that must
+  survive. They ride forward as Phase 30 fixtures; the plan must move them, not
+  let them go with the module.
+  — **Reversibility:** costly — same class as D-03.
+
 ### Claude's Discretion
 
 The user answered "You decide" on the cut's scope (resolved as D-02) and took the
