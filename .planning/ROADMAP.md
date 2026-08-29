@@ -376,7 +376,7 @@ that registry holds only the per-backend delta a proxy-local family does not
 have.
 
 - [x] **Phase 27: Shared Seams Extracted** - The modules a prefix-driven deletion would silently take with it stand under their own names, with every surviving consumer proven still served (completed 2026-08-27)
-- [ ] **Phase 28: The Store Core** - Labels, comments, per-range typing over the full 12-member vocabulary, scopes and project enums — durable across a `SIGKILL`, revertible, behind one persistence seam
+- [x] **Phase 28: The Store Core** - Labels, comments, per-range typing over the full 12-member vocabulary, scopes and project enums — durable across a `SIGKILL`, revertible, behind one persistence seam (completed 2026-08-29)
 - [ ] **Phase 29: The MCP Surface** - The store is reachable through a family derived from Phase 19's manifest, registered proxy-locally beside the family it replaces, with every registration-time guard already moved
 - [ ] **Phase 30: ACME Export and the Real-ACME Oracle** - Exported source is correct because a real ACME assembles it and the bytes match, through a verify path built for this purpose and standing before the deletion window opens
 - [ ] **Phase 31: Procedure Re-pointing** - All five absorbed procedures execute on the new surface with their heuristics and their attribution intact, in both trees a user can receive them from
@@ -1008,7 +1008,7 @@ in a milestone archive.
 | 25. The Annotation Store and the Cutover | v0.6.0 | — | Taken forward to v0.7.0 | - |
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
-| 28. The Store Core | v0.7.0 | 23/23 | In Progress | - |
+| 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
 | 29. The MCP Surface | v0.7.0 | — | Not started | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |

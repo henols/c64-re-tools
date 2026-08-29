@@ -2,27 +2,29 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 28
-current_phase_name: The Store Core
-status: verifying
-stopped_at: Round-7 verification COMPLETE at 12/12 (human_needed); 28-UAT.md written with 3 human items; awaiting /gsd-verify-work 28
-last_updated: "2026-08-29T00:57:45.000Z"
+current_phase: 29
+current_phase_name: The MCP Surface
+status: planning
+stopped_at: Phase 28 complete, ready to plan Phase 29
+last_updated: "2026-08-29T08:01:51.839Z"
 last_activity: 2026-08-29
-last_activity_desc: "Phase 28 round-7 VERIFICATION is COMPLETE and the phase goal is ACHIEVED at 12/12 (was 11/12 for three straight rounds). The six-round blocker chain CR-05 -> CR-06/CR-07 -> CR-08 -> CR-09 -> CR-10 is ENDED: round 7s code review minted NO new Critical, the first round in three that did not. CR-10 is closed for what it was filed as -- the SILENCE -- re-driven by the verifier through production entry points on a fresh confined store: all five geometries return a full reinterpretedSplitTables record on the SUCCESSFUL result, full cover returns [], and an identical repeat returns changed:false with []. The pairing loss itself is NOT claimed closed and is not scored as closed -- it is arithmetically unavoidable (a fragment of m entries matches an original pair only when m == n), so REFUSE or DISCLOSE were the only honest answers and 28-23 took DISCLOSE, the option round 6 itself sanctioned. The verifier proved the new class invariant load-bearing itself rather than trusting it: planting entryPairsBefore: [] produced not ok 34 naming eight real couples as lost-and-unreported, and suppressing the whole record reds nine tests, tree restored to an empty diff. TWO NEW WARNINGS, both plan-derived residuals, both dispositioned accept: WR-31 (splitReinterpretation reads the overlapped rows own span, which nothing validates, so a legacy 11-byte lo_hi_address row written by a pre-28-19 build now refuses a PARTIAL repair that b681488 accepted -- but the verifier drove the recovery and the FULL cover still repairs it, the refusal is atomic and in-family, and no criterion or STORE row covers legacy partial repairability) and WR-32 (dropContained drops zero keys on both sides across all twelve SEQUENCE steps, but the invariant compares two sets from DIFFERENT sources at 8/8/8/8/10 pairs, so the hole is that the symmetric form has no green case, not that the symmetry is unproven). GATES: 218/218 phase surface at real exit 0, tsc --noEmit exit 0, regression gate 44 prior-phase files / 878 tests / 848 pass / 7 fail with all 7 attributed and NONE a phase-28 regression (5 are r2000-session plan-18-06 cases with regenerator2000 genuinely absent from PATH; the other 2 were the docs guards reddened by the round-7 review commit and both are now GREEN at 51/51 because the verification report dispositions the five new ids). VERDICT human_needed, NOT gaps_found -- three items need a human: the integrity_check throw arm (fault injection, open since round 4), 28-17s backstop host-crash durability bound (insufficient_spec, abstained), and review of the fourteen judgment-tier prohibition verdicts, two of which the verifier records violated at WR-31s two false-guarantee comments. The verifiers recommendation is on the record: SEAL, no seventh gap-closure round. STORE-03 is recorded SATISFIED with an authorising sentence and may move to Complete -- NOT moved from the orchestrator seat, per prohibition 28-18 P2."
-state_head: afd38b7b58a7bdf1fb3d963f954841339da0f99c
+last_activity_desc: Phase 28 complete, transitioned to Phase 29
+state_head: e362db0b701da90ba5c8f82f69823e39c3d72bef
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 28
   completed_plans: 28
-  percent: 17
+  percent: 33
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-26 at the start of milestone v0.7.0)
+See: .planning/PROJECT.md (updated 2026-08-29 after Phase 28)
+
+**Current focus:** Phase 29 — The MCP Surface
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -145,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 28 (The Store Core) — VERIFIED 12/12 in round 7, AWAITING HUMAN VERIFICATION (3 items in 28-UAT.md); the verifier recommends SEAL, no seventh gap-closure round
-Plan: 23 planned, 23 executed. The SIXTH gap-closure round is ONE plan and it is DONE: 28-23 (CR-10 — the split-table re-interpretation disclosure, all five accepted geometries, the class invariant over entry pairs, and the round-6 record edit). The FIFTH round (28-19..28-22) was executed in full and verified at 11/12; CR-10 was the one failing truth and it is what 28-23 closes. No plan of either round is outstanding. What is outstanding is a VERIFICATION PASS over the tree 28-23 produced.
-Status: round-6 verification scored 11/12 with ONE truth failing — ROADMAP success criterion 3's stated PURPOSE, "a partial overwrite splits and PRESERVES", falsified by CR-10 across five accepted overlap geometries each preserving 0 of 8 recorded 16-bit targets, silently. 28-23 closes it at the ROOT rather than at any of the five geometries: the split layout's partner rule now has exactly ONE definition in the repo (`splitPartnerOffsets` in `anno-types.ts`), consumed by BOTH `resolveSplitTargets()` and a new writer-side consumer `splitEntryAddressPairs()`; `retype()`'s pre-delete gate builds one re-interpretation record per fragmented split row and `setDataType()` returns it as data on a SUCCESSFUL result beside `contradictedComments`, always present and often empty. The answer taken is (b) — DISCLOSE, not refuse — because criterion 3's operative failure word is "silently" and answer (a) would make split tables editable only wholesale. The parity gate (CR-09) is untouched and still runs first; the odd fragment still refuses for free, re-driven on the final tree. The suite that CERTIFIED the defect is rewritten: `anno-overlap.test.ts`'s "LEGAL remainder case" no longer exists by that name, the split case table grew 8 -> 10 with the MIDPOINT and SAME-TYPE-SUBRANGE geometries, and a class-level invariant stated over ENTRY PAIRS rather than rows was observed RED on four separate plantings before it was observed green. Phase surface 218/218 at a real exit 0 (baseline 210, derived expectation 218, no difference to explain); `tsc --noEmit` clean; both docs guards unchanged at 51/51; SCHEMA_VERSION unchanged at 2 with no DDL and no directory-layout change. STORE-01 moved to `Complete` on the round-6 verifier's own authorising sentence; STORE-03 stays `Gaps Found` with its recorded reason corrected from CR-09 to CR-10, because THIS ROUND IS EXECUTED, NOT VERIFIED. Both `behavior_unverified` items (the `integrity_check` throw arm and 28-17's host-crash durability bound) remain OPEN with unchanged reasons and are claimed closed by nothing.
-Last activity: 2026-08-29 — ROUND 7 VERIFIED at 12/12, status human_needed, verifier recommends SEAL. The round-7 code review minted NO new Critical — the first round in three that did not, ending the CR-05 -> CR-06/CR-07 -> CR-08 -> CR-09 -> CR-10 chain. Five new ids (WR-31, WR-32, IN-12, IN-13, IN-14), all plan-derived residuals and all dispositioned `accept`, plus the eight carried round-6 ids (WR-26..WR-30, IN-09..IN-11) re-checked unchanged. Both docs guards GREEN at 51/51 once the report was written — the verification report is itself the disposition source. Regression gate: 44 prior-phase files, 878 tests, 848 pass, 7 fail, ZERO phase-28 regressions (5 environmental r2000-session cases with regenerator2000 absent from PATH; 2 docs guards since greened). 28-UAT.md carries the three human items: the integrity_check throw arm, 28-17s backstop host-crash bound, and review of the fourteen judgment-tier prohibition verdicts. STORE-03 is recorded SATISFIED by the verifier with a quotable authorising sentence and is NOT moved from the orchestrator seat, per prohibition 28-18 P2.
+Phase: 29 — The MCP Surface
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-29 — Phase 28 complete, transitioned to Phase 29
 Last activity: 2026-08-29 — round 6 EXECUTED (28-23, the only plan of the round). CR-10 is closed at the root — the gate now consults the PAIRING rule and not only the parity rule — and the store can no longer change what a split table means without telling its caller what the change cost, in both entry-pair sets. Two of the three tasks were test work, because the control closest to CR-10 CERTIFIED it: `anno-overlap.test.ts:592` pinned the corrupted three-row set by value and named the outcome legal. Every claim was proven RED-BEFORE-GREEN with a planting observed on the real tree and restored to an empty diff — P1 (gate computation removed, 9 not ok), P2 (partner couples interleaved, reddening criterion 1s own worked-arithmetic pin — the ONLY evidence the definition actually moved), the midpoint expectation emptied (3 not ok), a fragmenting steps report content suppressed (names all eight unreported couples by value), and the carve-out widened on the LOST SIDE ONLY (fires on $1102..$1109, differing by exactly ($1101,$1109) and ($1102,$110a)). NOT VERIFIED — this is an executors record, not a verdict.
 Last activity: 2026-08-28 — round 5 plan 28-21 EXECUTED: WR-21 and WR-25 closed, the two findings where the tree carried a claim it did not honour (addScope idempotence — a byte-identical repeat is an ACCEPTED no-op reporting changed:false with the revision still advancing — plus an overlap refusal naming BOTH scopes, the contradicting ADDITIVE paragraph DELETED in the same commit; and workspace confinement as openStore's DEFAULT, refused before any file is created, behind a one-word greppable escape pinned by a POSITIVE count to four module-derived opens; 209/209 at real exit 0, was 198; anno-confinement.test.ts 15/15 twice with the inside-pointing symlink still FOLLOWED; PLANTING A, B and C each observed red on the real tree and restored to an empty diff). Previously — round 5 plan 28-20: WR-22, WR-24 and WR-18 closed in one serialised pass over revertTo, pruneSnapshots and runWriteSequence (198/198 at real exit 0, was 186; CR-08 re-driven as 69632 -> 69632; PLANTING D, E and F each observed red on the real tree and restored to an empty diff). Previously — round 4 EXECUTED IN FULL (28-16..28-18, gaps-only): CR-08 + WR-17, then WR-13 + WR-16 + WR-14, then WR-15 with the round's record and its closing gate (169/169 at real exit 0). Executed, NOT verified — the code-review gate, the regression gate and the phase verifier are next.
 Last activity: 2026-08-28 — round 4 VERIFIED at 11/12: truth 12 (the goal REVERTIBLE clause) is CLOSED — CR-08, WR-13, WR-14, WR-16 and WR-17 all genuinely fixed, re-driven by the verifier through production entry points over THREE input classes (0-byte, foreign-text, half-truncated snapshot) rather than round 4's one, with the refusal shown not to be bought by broadening. ONE NEW BLOCKER, CR-09, raised by the post-execution code review and reproduced independently BOTH at the orchestrator seat and by the verifier, public entry points only: retype()'s split-and-preserve carries row.data_type forward with no assertRangeShape (anno-store.ts:1724, :1727), so typing one byte inside a lo_hi_address table leaves an ODD-span 11-byte lo_hi_address row that setDataType refuses by name (AnnoRangeShapeError) and resolveSplitTargets() (anno-types.ts:1239-1245) cannot decode — the store contradicts itself across its own entry point. It falsifies ROADMAP criterion 3's STATED PURPOSE (silently un-documenting a previously annotated region) rather than any of its three named clauses, all of which stay green: byte totals 16 -> 4+11+1 unchanged, the filter-and-insert planting still reddens, and contradicted comments are still returned as data. anno-overlap.test.ts has ZERO split-table overlap cases (its only lo_hi_address uses are :524/:531, a non-overlapping second range), which is why four green rounds never met it: criterion 1's vocabulary and criterion 3's split-and-preserve have never been exercised together. The verifier judged criterion 1 itself NOT falsified. STORE-01 and STORE-03 reverted out of Complete on that evidence (scoped revert — STORE-02, STORE-05 and STORE-07 are untouched, no finding reaches them); STORE-04 is recorded by the verifier as CLOSED and due to return to Complete in round 5, not promoted from the orchestrator seat. WR-18 and WR-19 confirmed as warnings, each saying a round-4 fix is incomplete in its own terms: rollbackFailed has no production reader (revertTo:2186 discards the result) and the WR-15 matcher counts db.exec("commit;") as zero. GATES: 169/169 anno tests at real exit 0, tsc --noEmit clean, and a regression gate over 42 prior-phase test files at 935 tests / 903 pass / 5 fail / 27 skipped where all 5 failures are r2000-session.test.ts plan-18-06 cases proven independent of this phase (no transitive dep touched; same 5/25 in isolation; R2000SpawnError, regenerator2000 not on PATH). vice-proxy.test.ts excluded from the gate as MANUAL_ONLY. Both docs guards measured GREEN after the verifier wrote per-id verdicts (7/7 and 44/44); the previous report's claim that they were RED for the six round-4 ids was WRONG and is not carried forward. Advisory, unscored: a union-retype DOES collapse two adjacent same-type rows into one, which is round 3's WR-08 and still unpinned. Twelve new review ids (CR-09, WR-18..WR-25, IN-06..IN-08) now carry verifier dispositions.
@@ -159,7 +161,7 @@ Last activity: 2026-08-29 — round 5 EXECUTED IN FULL (28-19..28-22, gaps-only)
 
 **Velocity:**
 
-- Total plans completed: 200
+- Total plans completed: 221
 - Average duration: —
 - Total execution time: —
 
@@ -189,6 +191,7 @@ Last activity: 2026-08-29 — round 5 EXECUTED IN FULL (28-19..28-22, gaps-only)
 | 19 | 20 | - | - |
 | 23 | 6 | - | - |
 | 27 | 5 | - | - |
+| 28 | 23 | - | - |
 
 **Recent Trend:**
 
@@ -876,6 +879,25 @@ forbidden from modifying anything under `src/`.
 
 ### Blockers/Concerns
 
+- **Phase 28 carried items (2026-08-29), none blocking Phase 29.** The phase closed
+  at 12/12 with `gaps_remaining: []`, but three residuals ride forward. (1) The
+  **single-writer property is unenforced**: `retype()` is the only writer of
+  `anno_range` today (three `insertRange` call sites, all inside it; one
+  `delete from anno_range`), and the class-level completeness of criterion 3 rests
+  on that — but nothing declares or enforces it, so a fourth `insertRange` added
+  outside `retype()` would bypass the shape gate silently and 218 green tests would
+  not notice. Recorded as accepted risk `AR-RES-01` in `28-SECURITY.md`; the fix is
+  to pin the call sites structurally in `anno-seam.test.ts`, which already owns that
+  pattern. (2) **WR-31's two comments** (`anno-store.ts:2131-2139` and `:1918-1922`)
+  assert a protection the code does not provide — scoped in their own words to *the
+  remainder*, but a reader will take them as covering *the row*. Human-reviewed at
+  the Phase 28 UAT and accepted; the correction rides the first future edit to
+  `retype()`. (3) **WR-32's control-coverage hole**: `dropContained` removes zero
+  keys on both sides across all twelve `SEQUENCE` steps, so the symmetric form has
+  no green case. The invariant it belongs to is carried by a non-empty by-value
+  comparison and is not vacuous, but the missing geometry is worth closing in
+  Phase 29's test pass. All three accepted on the record, not silently inherited.
+
 - **Phase 27 carried items (2026-08-27), none blocking Phase 28.** Three deferred
   items survive the phase in `27-shared-seams-extracted/deferred-items.md`:
   `D-27-02-A` — `r2000-session.test.ts`'s five plan-18-06 queue tests spawn a real
@@ -1267,8 +1289,10 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-28T23:57:54.601Z
-Stopped at: Completed 28-23-PLAN.md
+Last session: 2026-08-29
+Stopped at: Phase 28 complete (23/23 plans, verification passed, UAT 3/3, threats_open 0), ready to plan Phase 29
+
+Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
   `9d292bb` feat/GREEN — WR-21, `df619ad` feat — WR-25, `0a44886` test — the seam
   pin) plus the SUMMARY commit, ~15 min. It is the THIRD plan of the fifth
