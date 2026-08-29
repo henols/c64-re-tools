@@ -578,9 +578,19 @@ const TEMPORARY_ALLOW_LIST = [
   { path: "src/mcp/vice/anno-coverage.ts", count: 2, plan: "29-10" },
   { path: "src/mcp/vice/anno-enum-gen.ts", count: 4, plan: "29-10" },
   { path: "src/mcp/vice/anno-enum-gen.test.ts", count: 4, plan: "29-10" },
-  // D-17: 29-12 rebuilds the render verb onto the Phase 28 store at wave 6 and
-  // re-pins this count in its own commit; 29-10 discharges the remainder.
-  { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 4, plan: "29-12" },
+  // D-17, DONE AT WAVE 6: plan 29-12 rebuilt the render verb onto the Phase 28
+  // store and re-pinned this count in its own commit, 4 -> 2. The two mentions
+  // it removed both described the child-driven render -- the file header's
+  // framing of the gated half, and the golden test's note on where the
+  // disassembly came from -- and both went when those three tests were
+  // converted to ungated store-backed tests rather than deleted. The two left
+  // belong to the "<subject> availability gate (D-11)" test -- spelled with the
+  // placeholder here on purpose, because this file's own source must never
+  // carry the literal. They are the section comment above that test and the
+  // test's own name. Plan 29-10 discharges those by deleting
+  // that test together with the gate module it calls, which is why the citation
+  // now names 29-10 -- the plan that ENDS the entry.
+  { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 2, plan: "29-10" },
   { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
   // DISCHARGED BY PLAN 29-07, 2026-08-29, and therefore DELETED rather than
   // re-cited. `anno-cli.ts` stood at 13 occurrences and `anno-cli.test.ts` at
