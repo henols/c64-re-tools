@@ -63,6 +63,10 @@ dist/
 # GSD research scratch cache (subagent working files, not artifacts)
 .planning/research/.cache/
 
+# GSD runtime lock: a live phase claim, heartbeated per session (4h TTL).
+# Runtime state like .gsd/, never an artifact.
+/.planning/milestone.lock
+
 # GSD (@opengsd/gsd-core) is a VENDORED install, not project source. It is
 # ~700 files / 12MB, regenerated wholesale by `/gsd-update`, and it is stamped
 # with THIS machine's absolute paths at install time -- 216 of its 697 files
