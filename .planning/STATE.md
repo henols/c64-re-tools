@@ -5,11 +5,11 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: planning
-stopped_at: Phase 28 complete, ready to plan Phase 29
-last_updated: "2026-08-29T08:01:51.839Z"
+stopped_at: Phase 29 context gathered
+last_updated: "2026-08-29T08:30:12.491Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 28 complete, transitioned to Phase 29
-state_head: e362db0b701da90ba5c8f82f69823e39c3d72bef
+state_head: 5f381438c4c18ef36cf496c6d4cd67ecb258737c
 progress:
   total_phases: 6
   completed_phases: 2
@@ -150,7 +150,7 @@ recorded in their own sections.
 Phase: 29 — The MCP Surface
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-08-29 — Phase 28 complete, transitioned to Phase 29
+Last activity: 2026-08-29 — Phase 29 context gathered (r2000 deletion pulled forward)
 
 ## Performance Metrics
 
@@ -1284,8 +1284,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29
-Stopped at: Phase 28 complete (23/23 plans, verification passed, UAT 3/3, threats_open 0), ready to plan Phase 29
+Last session: 2026-08-29T08:30:12.149Z
+Stopped at: Phase 29 context gathered
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
@@ -1782,7 +1782,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: None
+Resume file: .planning/phases/29-the-mcp-surface/29-CONTEXT.md
 
 ## Operator Next Steps
 
