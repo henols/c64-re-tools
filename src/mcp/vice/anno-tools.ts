@@ -398,6 +398,12 @@ function assertLegalLabelArg(name: string, args: unknown, batchIndex?: number): 
 // AGENT: what the verb answers, what it costs, and what it will refuse.
 // ---------------------------------------------------------------------------
 
+/** How deep a nested `anno_batch_execute` may go before the payload is refused
+ * by name rather than walked (T-29-24). Four levels is far past any legitimate
+ * use -- a batch of batches of batches has no procedure behind it -- and is
+ * chosen to be obviously sufficient rather than tuned. */
+export const ANNO_MAX_BATCH_DEPTH = 4;
+
 const STORE_PROPERTY = {
   store: {
     type: "string",
@@ -888,6 +894,47 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store", "image", "address"],
     },
   },
+  {
+    name: "anno_batch_execute",
+    description:
+      "Executes several curated anno_* calls against ONE store, in order, inside one open/close pair. Use it for a " +
+      "multi-edit pass -- marking many regions, renaming many labels -- and not for calls that depend on each other's " +
+      "results. The store (and the image, when the inner calls need one) is named ONCE at the top level and every " +
+      "inner call inherits it; an inner `store` is overridden, never honoured. TWO PHASES, and the difference matters " +
+      "when you read the answer. FIRST, the whole payload is pre-validated before anything is opened: a malformed " +
+      "payload, an EMPTY calls array, a malformed entry, an inner name outside the curated set at any depth, an " +
+      "illegal label name, or an over-cap region range refuses the WHOLE batch by index, and nothing executes. " +
+      "SECOND, execution runs to COMPLETION, pushing a success or error status for every entry and never aborting on " +
+      "the first failure. So `isError:true` means this batch should never have been sent; an error ENTRY inside a " +
+      "successful result means that one call did not work. Nesting deeper than " +
+      String(ANNO_MAX_BATCH_DEPTH) +
+      " levels is refused by name rather than walked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        image: {
+          type: "string",
+          description:
+            "Optional program image, inherited by every inner call that derives an answer from bytes. Required only " +
+            "if the batch contains such a call.",
+        },
+        calls: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "The curated anno_* verb to run. An uncurated name refuses the WHOLE batch." },
+              arguments: { type: "object", description: "That verb's own arguments, minus store (and image), which the batch supplies." },
+            },
+            required: ["name", "arguments"],
+          },
+          description: "The calls to run, in order. Must be a NON-EMPTY array: an empty batch is refused, never run as a zero-length success.",
+        },
+      },
+      required: ["store", "calls"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -1216,6 +1263,110 @@ function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
   assertAddressArg("anno_get_address_details", args, "address", batchIndex);
 }
 
+
+// ---------------------------------------------------------------------------
+// `anno_batch_execute` -- TWO EXPLICITLY SEPARATE PHASES, documented as two.
+//
+// PHASE ONE, PRE-VALIDATION (`assertAnnoBatch`), runs before any store is
+// opened. It refuses the WHOLE batch on: a malformed payload, an empty `calls`
+// array, a malformed entry, an uncurated inner name at ANY depth, or an inner
+// call whose own per-verb validator refuses -- each naming the offending index.
+// Nothing has executed when it fires, so there is no partial write to explain.
+//
+// PHASE TWO, EXECUTION, runs inside ONE `openStore`/`closeStore` pair for the
+// whole batch. It loops to COMPLETION, pushing a per-entry `{status:"success"}`
+// or `{status:"error"}` for every entry, and never aborts on the first failure.
+//
+// THE TWO ARE NOT IN CONFLICT, and this is the reconciliation the plan records:
+// per-item status reporting and whole-batch refusal are two PHASES of one call,
+// not two answers to one question. A refusal in phase one becomes
+// `isError: true` through the runner's own catch and means "this batch should
+// never have been sent". An inner call failing in phase two becomes an error
+// ENTRY inside a successful outer result and means "this call in the batch did
+// not work". The measured upstream note at `r2000-tools.ts:63-75` establishes
+// the second half: the loop always runs to completion and each outcome is
+// pushed with its own status.
+//
+// TWO THINGS THIS VALIDATOR HAS THAT ITS ANALOG DID NOT:
+//
+//   1. AN EXPLICIT DEPTH CAP. The original recursion was unbounded and was safe
+//      only because a child-process spawn cost dominated any nesting an
+//      attacker could send. That cost is gone -- this runs in-process -- so a
+//      deeply nested payload is a stack-exhaustion route (T-29-24). Past the
+//      cap the batch is REFUSED BY NAME, naming the cap, rather than walked.
+//   2. AN EXPLICIT REFUSAL FOR AN EMPTY `calls` ARRAY. A zero-length batch is
+//      an ambiguous request, and executing it as a zero-length SUCCESS is
+//      exactly the plausible-looking zero this surface forbids. A malformed
+//      payload is a refusal; so is an empty one.
+// ---------------------------------------------------------------------------
+
+/**
+ * PHASE ONE. Walks an `anno_batch_execute` payload and refuses the WHOLE batch
+ * if anything, at any depth, is wrong.
+ *
+ * The per-verb argument validators fire through `assertVerbArgs()` -- the SAME
+ * function the outer gate calls -- with the entry's index interpolated into the
+ * message, so an illegal label name or an over-cap region range is refused
+ * identically whether the verb was called directly or smuggled inside a batch.
+ * That is the shared-validator discipline, and it is what makes the outer
+ * allow-list gate mean anything for a nested-argument verb.
+ */
+export function assertAnnoBatch(args: unknown, depth = 0): void {
+  if (depth > ANNO_MAX_BATCH_DEPTH) {
+    throw new AnnoUncuratedToolError(
+      `anno_batch_execute refused: nesting deeper than ${ANNO_MAX_BATCH_DEPTH} levels -- refused BY NAME rather than walked, ` +
+        "because an unbounded walk over an attacker-shaped payload is a stack-exhaustion route (T-29-24). Flatten the batch.",
+      { toolName: "anno_batch_execute" },
+    );
+  }
+  if (!isPlainObject(args) || !Array.isArray(args.calls)) {
+    throw new AnnoUncuratedToolError(
+      'anno_batch_execute refused: "calls" must be an array of {name, arguments} objects -- a malformed batch payload is ' +
+        "treated as a REFUSAL, never as an empty batch that passes through.",
+      { toolName: "anno_batch_execute" },
+    );
+  }
+  const calls = args.calls as unknown[];
+  if (calls.length === 0) {
+    throw new AnnoUncuratedToolError(
+      'anno_batch_execute refused: "calls" is an EMPTY array. A zero-length batch is an ambiguous request, and running it as a ' +
+        "zero-length success would be a plausible-looking zero -- the caller would be told a pass completed when nothing was asked for.",
+      { toolName: "anno_batch_execute" },
+    );
+  }
+  calls.forEach((call, i) => {
+    if (!isPlainObject(call) || typeof call.name !== "string") {
+      throw new AnnoUncuratedToolError(
+        `anno_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name") -- treated as a refusal, never ` +
+          "as an empty batch that passes through.",
+        { toolName: "anno_batch_execute", batchIndex: i },
+      );
+    }
+    if (!CURATED_ANNO_TOOLS.includes(call.name)) {
+      throw new AnnoUncuratedToolError(
+        `anno_batch_execute refused WHOLE: calls[${i}].name "${call.name}" is outside the curated anno_* tool surface -- a batch ` +
+          "is refused whole if any inner name is outside the curated set (D-33).",
+        { toolName: call.name, batchIndex: i },
+      );
+    }
+    if (call.name === "anno_batch_execute") {
+      assertAnnoBatch(call.arguments, depth + 1);
+      return;
+    }
+    assertVerbArgs(call.name, batchArgumentsFor(args, call), i);
+  });
+}
+
+/** An inner call's effective arguments. The batch names the store ONCE, at the
+ * top level, and every inner call inherits it -- an inner call that named its
+ * own store would be a different store for one entry of a batch that reads as
+ * one transaction's worth of work, which is a shape nothing here wants. An
+ * inner `store` is therefore OVERRIDDEN by the batch's own, never merged with
+ * it and never silently honoured. */
+function batchArgumentsFor(batchArgs: Record<string, unknown>, call: Record<string, unknown>): Record<string, unknown> {
+  return { ...argBag(call.arguments), store: batchArgs.store, ...(batchArgs.image !== undefined ? { image: batchArgs.image } : {}) };
+}
+
 /**
  * THE ONE PER-VERB VALIDATOR DISPATCH. Both the outer gate and (once it lands)
  * the batch pre-validator call THIS function, never the individual validators
@@ -1242,6 +1393,7 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_get_cross_references") return assertCrossReferencesArgs(args, batchIndex);
   if (name === "anno_search") return assertSearchArgs(args, batchIndex);
   if (name === "anno_get_address_details") return assertAddressDetailsArgs(args, batchIndex);
+  if (name === "anno_batch_execute") return assertAnnoBatch(args);
   // Every curated verb has an arm above. A curated name reaching here is a bug
   // in THIS file, and saying so by name is cheaper than a validator silently
   // accepting a payload nobody checked.
@@ -1793,6 +1945,44 @@ function dispatchAddressDetails(handle: AnnoStoreHandle, args: unknown): unknown
   return { store: handle.path, image: image.path, ...composeAddressDetails(handle, image.body, image.origin, bag.address as number | string) };
 }
 
+
+/** PHASE TWO. Runs every entry against the ONE already-open handle, to
+ * COMPLETION, pushing a per-entry status and never aborting on the first
+ * failure. Pre-validation has already refused every batch that should not have
+ * been sent, so a failure here is genuinely about one call rather than about
+ * the payload. */
+async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
+  const bag = argBag(args);
+  const calls = bag.calls as Record<string, unknown>[];
+  const results: Record<string, unknown>[] = [];
+  for (const [index, call] of calls.entries()) {
+    const name = call.name as string;
+    const innerArgs = batchArgumentsFor(bag, call);
+    try {
+      const value = name === "anno_batch_execute" ? await dispatchBatchExecute(handle, innerArgs) : await dispatch(name, innerArgs, handle);
+      results.push({ index, name, status: "success", result: value });
+    } catch (err) {
+      // NAMED BY CLASS, exactly as the outer boundary names it, so a per-item
+      // failure is as diagnosable as a whole-call one.
+      const errName = err instanceof Error ? err.name : "Error";
+      const errMessage = err instanceof Error ? err.message : String(err);
+      results.push({ index, name, status: "error", error: `[${errName}] ${errMessage}` });
+    }
+  }
+  const failed = results.filter((entry) => entry.status === "error").length;
+  return {
+    store: handle.path,
+    results,
+    executed: results.length,
+    succeeded: results.length - failed,
+    failed,
+    note:
+      "Every entry ran: this loop does not abort on the first failure, so an error entry here means THAT CALL did not work, " +
+      "not that the batch should not have been sent. A batch that should not have been sent is refused WHOLE before anything " +
+      "is opened, and arrives as isError:true instead of as a per-item status.",
+  };
+}
+
 async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): Promise<unknown> {
   if (name === "anno_get_symbols") return dispatchGetSymbols(handle, args);
   if (name === "anno_set_label_name") return dispatchSetLabelName(handle, args);
@@ -1811,6 +2001,7 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args);
   if (name === "anno_search") return dispatchSearch(handle, args);
   if (name === "anno_get_address_details") return dispatchAddressDetails(handle, args);
+  if (name === "anno_batch_execute") return dispatchBatchExecute(handle, args);
   // Unreachable: `assertAnnoTool()` above has already refused every name
   // outside `CURATED_ANNO_TOOLS`, and every curated name has an arm here. It
   // refuses BY NAME anyway rather than returning a plausible-looking empty

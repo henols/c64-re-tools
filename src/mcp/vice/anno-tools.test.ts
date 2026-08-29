@@ -29,10 +29,12 @@ import { closeStore, listComments, listLabels, openStore, setLabel } from "./ann
 import {
   ANNO_READ_REGION_MAX_BYTES,
   ANNO_READ_REGION_MAX_BYTES_ENV,
+  ANNO_MAX_BATCH_DEPTH,
   ANNO_TOOL_DEFINITIONS,
   AnnoToolArgumentError,
   AnnoUncuratedToolError,
   CURATED_ANNO_TOOLS,
+  assertAnnoBatch,
   assertAnnoTool,
   runAnnoTool,
 } from "./anno-tools.ts";
@@ -914,6 +916,243 @@ test("an image outside the workspace root, or absent, is refused by name -- the 
       const missing = await runAnnoTool("anno_get_binary_info", { store });
       assert.equal(missing.isError, true);
       assert.match(missing.content[0]!.text, /"image" must be a non-empty string/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 29-06 Task 3: the batch verb.
+//
+// The gate cases below are PORTED from `r2000-tools.test.ts`'s own batch suite
+// before that file is deleted, so the D-33 discipline survives the module it
+// was written against. The depth-cap and empty-array cases are NEW -- the
+// original validator had neither, and was safe from unbounded recursion only
+// because a child-process spawn cost dominated any nesting a payload could
+// carry. That cost is gone: this runs in-process.
+// ---------------------------------------------------------------------------
+
+/** Runs `assertAnnoTool("anno_batch_execute", payload)` and returns the thrown
+ * error, failing if nothing was thrown. Asserting on the ERROR rather than on a
+ * boolean keeps every case able to check the offending index in the message. */
+function batchRefusal(payload: unknown): Error {
+  try {
+    assertAnnoTool("anno_batch_execute", payload);
+  } catch (err) {
+    return err as Error;
+  }
+  assert.fail("the batch must have been refused");
+}
+
+test("anno_batch_execute is advertised as the ONE sanctioned nested-argument verb, and the header says no second may join it", () => {
+  const def = definitionNamed("anno_batch_execute");
+  assert.ok(def, "anno_batch_execute must be in ANNO_TOOL_DEFINITIONS");
+  assert.ok((def!.inputSchema.required ?? []).includes("store"));
+  assert.ok((def!.inputSchema.required ?? []).includes("calls"));
+  assert.match(ANNO_TOOLS_SOURCE, /ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS/);
+  assert.match(ANNO_TOOLS_SOURCE, /NO SECOND MAY JOIN IT/);
+  assert.match(ANNO_TOOLS_SOURCE, /smuggling shape/);
+  // The depth cap and the recursive validator are both real, exported names.
+  assert.equal(ANNO_MAX_BATCH_DEPTH, 4);
+  assert.equal(typeof assertAnnoBatch, "function");
+});
+
+test("the six whole-batch refusal shapes, each naming what it refused on", () => {
+  const good = { name: "anno_set_label_name", arguments: { address: "$c000", name: "ok_label" } };
+
+  // 1. A malformed payload -- "calls" is not an array. Payload-level, so there
+  //    is no offending INDEX to name; the message says what it says instead.
+  const notArray = batchRefusal({ store: "p.annostore", calls: "not-an-array" });
+  assert.equal(notArray.name, "AnnoUncuratedToolError");
+  assert.match(notArray.message, /"calls" must be an array/);
+  assert.match(notArray.message, /never as an empty batch that passes through/);
+  assert.match(batchRefusal({ store: "p.annostore" }).message, /"calls" must be an array/);
+  assert.match(batchRefusal(undefined).message, /"calls" must be an array/);
+
+  // 2. An EMPTY calls array -- payload-level too, and NEW here.
+  const empty = batchRefusal({ store: "p.annostore", calls: [] });
+  assert.equal(empty.name, "AnnoUncuratedToolError");
+  assert.match(empty.message, /"calls" is an EMPTY array/);
+  assert.match(empty.message, /plausible-looking zero/);
+
+  // 3. An entry missing a string name -- refuses WHOLE, naming its index.
+  const malformed = batchRefusal({ store: "p.annostore", calls: [good, { arguments: {} }] });
+  assert.equal(malformed.name, "AnnoUncuratedToolError");
+  assert.match(malformed.message, /calls\[1\]/);
+  assert.match(malformed.message, /refused WHOLE/);
+  assert.match(batchRefusal({ store: "p.annostore", calls: [42] }).message, /calls\[0\]/);
+
+  // 4. An uncurated inner name -- refuses WHOLE, naming index AND name.
+  const uncurated = batchRefusal({ store: "p.annostore", calls: [good, { name: "anno_delete_everything", arguments: {} }] });
+  assert.equal(uncurated.name, "AnnoUncuratedToolError");
+  assert.match(uncurated.message, /calls\[1\]/);
+  assert.match(uncurated.message, /anno_delete_everything/);
+  assert.match(uncurated.message, /outside the curated anno_\* tool surface/);
+
+  // 5. An illegal label name inside an inner call -- the SAME validator the
+  //    outer gate calls, refusing WHOLE and naming the index.
+  const illegal = batchRefusal({
+    store: "p.annostore",
+    calls: [good, { name: "anno_set_label_name", arguments: { address: "$c010", name: "not a label" } }],
+  });
+  assert.equal(illegal.name, "AnnoToolArgumentError");
+  assert.match(illegal.message, /calls\[1\]/);
+  assert.match(illegal.message, /not a label/);
+  assert.match(illegal.message, /never sanitized/);
+
+  // 6. An over-cap region range inside an inner call -- likewise.
+  const overCap = batchRefusal({
+    store: "p.annostore",
+    image: "prog.prg",
+    calls: [good, { name: "anno_read_region", arguments: { start_address: 0, end_address: 4096 } }],
+  });
+  assert.equal(overCap.name, "AnnoRegionRangeError");
+  assert.match(overCap.message, /calls\[1\]/);
+  assert.match(overCap.message, /cap of 4096/);
+});
+
+test("the batch validator recurses: an uncurated name one level down still refuses the WHOLE batch", () => {
+  const nested = batchRefusal({
+    store: "p.annostore",
+    calls: [
+      {
+        name: "anno_batch_execute",
+        arguments: { store: "p.annostore", calls: [{ name: "anno_not_a_verb", arguments: {} }] },
+      },
+    ],
+  });
+  assert.equal(nested.name, "AnnoUncuratedToolError");
+  assert.match(nested.message, /calls\[0\]/, "the refusal names the path to the offending inner call");
+  assert.match(nested.message, /anno_not_a_verb/);
+});
+
+test("nesting deeper than the declared cap is refused BY NAME rather than walked (T-29-24)", () => {
+  function nest(depth: number): Record<string, unknown> {
+    if (depth === 0) return { store: "p.annostore", calls: [{ name: "anno_save_project", arguments: {} }] };
+    return { store: "p.annostore", calls: [{ name: "anno_batch_execute", arguments: nest(depth - 1) }] };
+  }
+  // At the cap the payload is still walked and accepted.
+  assert.doesNotThrow(() => assertAnnoTool("anno_batch_execute", nest(ANNO_MAX_BATCH_DEPTH)));
+
+  const tooDeep = batchRefusal(nest(ANNO_MAX_BATCH_DEPTH + 1));
+  assert.equal(tooDeep.name, "AnnoUncuratedToolError");
+  assert.match(tooDeep.message, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`));
+  assert.match(tooDeep.message, /refused BY NAME rather than walked/);
+});
+
+test("NOTHING executes when pre-validation refuses: the revision is unchanged and no partial write is visible", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const seeded = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "first_label" });
+      assert.equal(seeded.isError, false, seeded.content[0]!.text);
+      const revisionBefore = (await body(seeded)).revision as number;
+
+      // A batch whose FIRST call is perfectly good and whose SECOND is
+      // uncurated. A validator that ran per-call as it executed would have
+      // committed the first write before discovering the second.
+      const refused = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
+          { name: "anno_delete_everything", arguments: {} },
+        ],
+      });
+      assert.equal(refused.isError, true);
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+
+      const after = await runAnnoTool("anno_save_project", { store });
+      assert.equal((await body(after)).revision, revisionBefore, "the revision must not have moved -- nothing executed");
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 50 });
+      const symbolsBody = (await body(symbols)) as { symbols: { name: string }[] };
+      assert.deepEqual(symbolsBody.symbols.map((row) => row.name), ["first_label"], "no partial write may be visible");
+    },
+  );
+});
+
+test("execution runs to COMPLETION: a three-call batch whose middle call fails returns three per-item entries, in order", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // The middle call is well-FORMED (so pre-validation passes) but fails at
+      // EXECUTION: the name is already bound to a different address, which the
+      // store refuses rather than rebinding.
+      const bound = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "taken_name" });
+      assert.equal(bound.isError, false, bound.content[0]!.text);
+
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          { name: "anno_set_label_name", arguments: { address: "$c100", name: "before_the_failure" } },
+          { name: "anno_set_label_name", arguments: { address: "$c200", name: "taken_name" } },
+          { name: "anno_set_label_name", arguments: { address: "$c300", name: "after_the_failure" } },
+        ],
+      });
+      assert.equal(result.isError, false, "a call that failed inside the batch is NOT a batch that should not have been sent");
+      const batchBody = (await body(result)) as {
+        results: { index: number; name: string; status: string; error?: string }[];
+        executed: number;
+        succeeded: number;
+        failed: number;
+        note: string;
+      };
+      assert.equal(batchBody.executed, 3, "the loop must have run to completion");
+      assert.deepEqual(batchBody.results.map((entry) => entry.status), ["success", "error", "success"]);
+      assert.deepEqual(batchBody.results.map((entry) => entry.index), [0, 1, 2]);
+      assert.match(batchBody.results[1]!.error!, /\[AnnoLabelError\]/, "a per-item failure is named by CLASS, exactly as the outer boundary names one");
+      assert.equal(batchBody.succeeded, 2);
+      assert.equal(batchBody.failed, 1);
+      assert.match(batchBody.note, /does not abort on the first failure/);
+
+      // The third call really did land, which is what "runs to completion" is
+      // for -- the failure did not cost the calls that came after it.
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 50 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.ok(names.includes("after_the_failure"), "a call after the failing one must still have run");
+    },
+  );
+});
+
+test("a batch names its store ONCE and every inner call inherits it -- an inner store is overridden, never honoured", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const elsewhere = join(dirname(ws), "elsewhere.annostore");
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [{ name: "anno_set_label_name", arguments: { store: elsewhere, address: "$c000", name: "inherited" } }],
+      });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const batchBody = (await body(result)) as { results: { status: string }[] };
+      assert.equal(batchBody.results[0]!.status, "success");
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, ["inherited"], "the write landed in the batch's own store, not the one the inner call named");
+      assert.equal(existsSync(elsewhere), false, "the inner call's store was never even reached");
+    },
+  );
+});
+
+test("a batch of derived reads inherits the image too, and the whole batch shares ONE open/close pair", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        image,
+        calls: [
+          { name: "anno_set_data_type", arguments: { start_address: "$c000", end_address: "$c006", data_type: "code" } },
+          { name: "anno_get_cross_references", arguments: { address: "$c010", max_results: 10 } },
+          { name: "anno_get_binary_info", arguments: {} },
+        ],
+      });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const batchBody = (await body(result)) as { results: { status: string; result?: Record<string, unknown> }[]; failed: number };
+      assert.equal(batchBody.failed, 0);
+      assert.deepEqual((batchBody.results[1]!.result as { callers: number[] }).callers, [0xc000, 0xc003]);
+      assert.equal((batchBody.results[2]!.result as { origin: number }).origin, 0xc000);
+      assert.equal(existsSync(`${store}-journal`), false, "the whole batch shares one open/close pair and leaves nothing behind");
     },
   );
 });
