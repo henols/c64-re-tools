@@ -42,15 +42,19 @@
 //   direction and two in the other. Measured on this tree:
 //
 //     - THREE GLUE modules had prominent unprefixed consumers. The session
-//       lifecycle is still imported by the stdio entry point directly
-//       (`vice-proxy.ts:200`); the CLI is reached from `vice-proxy.ts:309`
-//       plus four files under `scripts/`. `vice-proxy.ts` survives the
-//       substrate swap. Its imports of those three modules do NOT -- and the
-//       tool surface's import is ALREADY GONE, substituted for the owned
-//       store's own surface by plan 29-01: there is no analyser tool
-//       surface left to expose, and in due course no analyser session to
-//       close and no analyser CLI to dispatch to. This record predicted that
-//       and is being read back rather than rewritten.
+//       lifecycle was imported by the stdio entry point directly; the tool
+//       surface was too; the CLI is reached from `vice-proxy.ts:307` plus
+//       four files under `scripts/`. `vice-proxy.ts` survives the substrate
+//       swap. Its imports of those three modules did NOT -- and ALL THREE
+//       ARE NOW GONE, exactly as this paragraph predicted before any of them
+//       went: plan 29-01 substituted the tool surface for the owned store's
+//       own, and plan 29-10 removed the session-close import with the module
+//       it named. THE PREDICTION IS THEREFORE DISCHARGED RATHER THAN
+//       REWRITTEN, which is the only reading that keeps this record worth
+//       anything -- a discriminator that had been quietly edited to match
+//       whatever happened would prove nothing about the judgement it was
+//       used to make. Only the CLI's citation survives, because only the
+//       CLI's module did.
 //     - TWO CAPABILITY modules have no unprefixed consumer at all (the ACME
 //       identifier module and the confidence-grade module). Their basis is
 //       a requirement id, which is the second admissible basis and is not a
@@ -667,7 +671,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 309 },
+        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 307 },
         { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 52 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
       ],
