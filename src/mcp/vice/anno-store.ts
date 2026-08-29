@@ -3030,6 +3030,68 @@ export function listScopes(handle: AnnoStoreHandle): ScopeRow[] {
 }
 
 /**
+ * Removes the scope whose span is EXACTLY `start..endInclusive`, and returns
+ * `changed: false` when no scope has that span.
+ *
+ * WHY THIS EXISTS, and why it is not an omission being corrected quietly.
+ * `28-VERIFICATION.md`'s `WR-28` recorded that `addScope`'s overlap refusal had
+ * no inverse and carried the finding to Phase 29 in as many words, "which puts
+ * `addScope` on an agent-driven surface where a mistyped span is likelier".
+ * `28-REVIEW.md:1788-1814` spells out the consequence: one transposed end --
+ * `addScope($1000, $ffff)` -- makes every future scope from `$1000` upward
+ * permanently unaddable, recoverable only through `revertTo` inside the
+ * 32-revision ring, after which the mistake is permanent for the life of the
+ * project file. Its stated fix is to ship the inverse in the same phase as the
+ * refusal. This is that inverse.
+ *
+ * THE SPAN MUST MATCH EXACTLY -- both ends, as stored. A scope is not trimmed,
+ * split, or partially removed, for the same reason `addScope` does not trim an
+ * overlapping incoming scope: a partial removal would leave a shape the schema
+ * this store mirrors cannot express, and it would do so while reporting
+ * success. A caller that does not know the stored span reads it from
+ * `listScopes()` first.
+ *
+ * REMOVING A SCOPE THAT IS NOT THERE IS AN ACCEPTED NO-OP reporting
+ * `changed: false`, matching `clearEnumUsage`'s direction: an inverse that
+ * refuses when there is nothing to undo makes "undo this" conditional on
+ * knowing whether it was ever done.
+ *
+ * THIS IS THE MODULE'S FOURTH ROW-DELETING STATEMENT. `clearEnumUsage`'s doc
+ * block states the count as three; that sentence was true when it was written
+ * and this one supersedes it. The count is written in prose, deliberately
+ * without spelling the SQL prefix a census greps for, so a census over this
+ * module counts STATEMENTS and not the sentences describing them. The statement
+ * runs inside the write sequence's transaction, so a refusal raised anywhere in
+ * the sequence rolls it back with everything else.
+ */
+export function removeScope(
+  handle: AnnoStoreHandle,
+  args: { start: number | string; endInclusive: number | string; baseRevision?: number },
+): AnnoWriteResult {
+  const start = parseStoreAddress(args.start, { what: "start" });
+  const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
+  // The SAME non-split shape check `addScope` uses, and for the same reason: a
+  // scope is not a table, so the split-table even-count rule must not apply to
+  // it. Passing a different type here would make the inverse refuse spans the
+  // forward verb accepts.
+  assertRangeShape(start, endInclusive, "byte");
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db.prepare("select id from anno_scope where start = ? and end_inclusive = ?").get(start, endInclusive) as
+        | { id: number }
+        | undefined;
+      if (!existing) return false;
+      db.prepare("delete from anno_scope where id = ?").run(existing.id);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/**
  * Validates one project enum's variants mapping and returns it with its KEYS
  * VERBATIM.
  *

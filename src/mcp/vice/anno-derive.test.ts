@@ -545,7 +545,12 @@ function sqlWriteSites(): string[] {
  * Every entry is in `anno-store.ts`, which is the whole claim: the ONE seam owns
  * every write. `applyEnumUsage` and `clearEnumUsage` are the two sites plan
  * 29-03 added with `anno_enum_usage` (its third new function, `listEnumUsage`,
- * is a read and correctly does not appear here).
+ * is a read and correctly does not appear here). `removeScope` is the one site
+ * plan 29-06 added: `addScope`'s inverse, which `28-VERIFICATION.md`'s `WR-28`
+ * carried to Phase 29 in writing because that phase puts `addScope` on an
+ * agent-driven surface where a transposed span is likelier, and `28-REVIEW.md`
+ * required shipped in the same phase as the refusal. It is a WRITE verb on a
+ * WRITE path -- this control caught it, which is the control working.
  */
 const EXPECTED_SQL_WRITE_SITES = [
   "anno-store.ts#DDL",
@@ -557,6 +562,7 @@ const EXPECTED_SQL_WRITE_SITES = [
   "anno-store.ts#openStore",
   "anno-store.ts#pruneSnapshots",
   "anno-store.ts#putXref",
+  "anno-store.ts#removeScope",
   "anno-store.ts#retype",
   "anno-store.ts#runWriteSequence",
   "anno-store.ts#setComment",
