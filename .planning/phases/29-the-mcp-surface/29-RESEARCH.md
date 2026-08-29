@@ -266,6 +266,27 @@ Three things dominate the plan and none of them is optional:
    "kept" verbs require a substantive rebuild in this phase, not a rename.** Only
    `render-memmap` is genuinely free — its module has zero local imports.
 
+   > **[CORRECTED 2026-08-29 — this last sentence is FALSE. See D-17.]** The
+   > "zero local imports" measurement was taken with a plain `grep`, which is
+   > blind to `r2000-memmap-render.ts`: the file carries a literal NUL byte at
+   > offset 12862 (line 291, the `"\0"` separator in the sidecar hash
+   > canonicalisation), so GNU grep classifies it as binary and prints
+   > `binary file matches` in place of the matching lines. Re-measured with
+   > `grep -a`: the module imports `runR2000Tool` from `r2000-tools.ts` at
+   > `:69`, uses it at `:106` inside `queryR2000Json()`, and `renderMemoryMap()`
+   > calls that three times at `:353-355` (`r2000_get_blocks`,
+   > `r2000_get_symbols`, `r2000_get_comments`); `checkRenderedMemoryMap()` at
+   > `:499` reaches the same three calls through `renderMemoryMap()`. So **five
+   > of the five** kept verbs required a rebuild and none was free. The error is
+   > left in place rather than deleted because its *cause* is a standing hazard
+   > for this phase: any claim of the form "module X has no local imports" must
+   > be made with `grep -a` or an AST read. A NUL-safe scan over `git ls-files`
+   > minus `.planning/` confirms this is the **only** grep-blind source file in
+   > the tree — the other six are `fixtures/binmon/*.bin` assets with zero hits —
+   > so no other claim in this document is affected by this cause. The owner's
+   > resolution is D-17: the verb is rebuilt onto the Phase 28 store in this
+   > phase, planned as 29-12.
+
 3. **The registration-time guards are cheap and provable, and I proved the
    headline one.** `docs/tool-support.md` regenerates **byte-identical** (7,874
    bytes, both before and after) under the two-line loop substitution provided the
@@ -566,7 +587,7 @@ Use sites, all inside functions the surviving verbs call:
 
 | Kept verb | Reaches | Real work in this phase |
 |---|---|---|
-| `render-memmap` | nothing local (`r2000-memmap-render.ts` has **zero** local imports) | rename only ✅ |
+| `render-memmap` | ~~nothing local (`r2000-memmap-render.ts` has **zero** local imports)~~ — **CORRECTED, see D-17:** `runR2000Tool` ×3 via `r2000-memmap-render.ts:69,106,353-355`; the original figure was a plain-`grep` miss caused by the file's NUL byte at offset 12862 | ~~rename only ✅~~ **rebuild** over `listRanges`/`listLabels`/`listComments` (plan 29-12) |
 | `gen-enums` | `runR2000Tool` ×5 via `r2000-enum-gen.ts` | rebuild over `createProjectEnum`/`updateProjectEnum` + `anno_search`; blocked on F-1 |
 | `export-lbl` | `runR2000()` spawn via `r2000-symbols.ts` | rebuild over `listLabels()` → `.lbl` writer |
 | `import-lbl` | `runR2000()` + `withR2000Session`/`saveAndVerify` | rebuild over `parseViceLabelFile` (`stock-symbols.ts`) → `setLabel()` |

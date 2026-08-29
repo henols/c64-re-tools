@@ -377,8 +377,17 @@ the planner and researcher rather than put to the user:
   fact about a past run, not a route. ROADMAP Phase 31 requires its fate be
   decided explicitly rather than string-replaced; it rides with the skill
   re-pointing pulled forward into this phase.
-- **`render-memmap`'s independence** — it reads `memmap.json` and writes Markdown
-  with no store call site, so it can be re-pointed independently or not at all.
+- **`render-memmap`'s independence** — ~~it reads `memmap.json` and writes Markdown
+  with no store call site, so it can be re-pointed independently or not at all.~~
+  **CORRECTED 2026-08-29 — the "no store call site" half is FALSE; see D-17
+  above.** Re-measured with `grep -a`, `r2000-memmap-render.ts` imports
+  `runR2000Tool` at `:69`, uses it at `:106`, and `renderMemoryMap()` calls it
+  three times at `:353-355`; both CLI entry points reach it. The original
+  measurement was a plain `grep`, which cannot read that file because of its NUL
+  byte at offset 12862. The error is recorded rather than deleted because its
+  cause — a text-only instrument on a file with a NUL byte — is a standing hazard
+  for this phase. The verb is NOT deferred: under D-17 it is rebuilt onto the
+  Phase 28 store here, planned as 29-12.
   A retarget must not read the `installer/skills/` copy.
 
 ### Reviewed Todos (not folded)
