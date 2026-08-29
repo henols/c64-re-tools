@@ -70,6 +70,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 
 - [x] **SEAM-01**: The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip
 - [x] **SEAM-02**: Every `r2000-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `r2000-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted
+  - ⚠ **WITHDRAWAL RECORDED 2026-08-29 (Phase 29, `D-14`) — the `R2000-14`/`R2000-15` symbol round trip currently has NO ROUTE.** `r2000-symbols.ts` was correctly classified a **capability** by this requirement and survives, renamed to `anno-symbols.ts`, with its whole pre-spawn validation gate intact. What left is the **route**, not the knowledge: the `export-lbl` and `import-lbl` CLI verbs that delivered `R2000-14` and `R2000-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser *through* `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It returns in Phase 30**, rebuilt over the Phase 28 annotation store alongside the ACME export oracle, which is the same route `export-asm` takes for the same reason. Until then, a reader checking whether the symbol round trip works should read this line as: it does not, and the reason is a deliberate sequencing choice rather than a defect. *(Same wording as the dated note in `PROJECT.md`'s shipped-capability list — one statement in two places, not two statements.)*
 - [x] **SEAM-03**: `r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store
 
 ### Store Core
@@ -83,7 +84,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 - [x] **STORE-03**: A narrowest-range-wins lookup over the 64K space is exact at every one of the 65,536 addresses, verified by cross-validating two independent implementations rather than by spot checks — the tie-break, the range ends, and the behaviour when a typed range is partially overwritten all pinned
 - [x] **STORE-04**: The store survives a process restart and an edit can be reverted, proven by **one combined planted-violation test** — mutate → `SIGKILL` with no clean close → fresh process → reopen → read returns the mutation → revert returns the prior value — and removing the commit makes that same test go **red**, observed. One test rather than two, because an in-memory journal passes both separate tests while satisfying neither claim
 - [x] **STORE-05**: The schema carries a version field and a reserved bank field from the first write, and cross-reference rows carry their access kind (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`). All three are free at decode time and unrecoverable afterwards; the bank field is reserved and **not** interpreted, since `PROOF-03` is recorded `could-not-run` and `memmap.json` is flat
-- [ ] **STORE-06**: Cross-references and search over the typed decode are answerable — which addresses reference a given address, and search across labels, comments and instructions — built on the surviving `disasm-*` decoders, with the old route gone rather than kept as a fallback
+- [x] **STORE-06**: Cross-references and search over the typed decode are answerable — which addresses reference a given address, and search across labels, comments and instructions — built on the surviving `disasm-*` decoders, with the old route gone rather than kept as a fallback
 - [x] **STORE-07**: `node:sqlite` is reached through exactly one seam module, so the store's dependence on an API still marked *active development* on the Node 22 line is confined to one file rather than spread across the store
 
 ### MCP Surface
@@ -93,10 +94,10 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      anywhere and is the one verb the measured test cuts. -->
 
 - [x] **MCP-01**: The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every verb it classifies `curated` or `adapt-to-address-input` has a route, every verb it classifies `omit` is absent, and the one verb with zero callers anywhere (`r2000_delete_project_enum`) is not carried. The derivation is checked mechanically, so a future verb added without a consumer fails
-- [ ] **MCP-02**: The family registers proxy-locally through `buildViceTool()` and never reaches `forwardToVice()`, satisfying CLAUDE.md's derived-tool path-translation constraint **by construction** — no interception to forget. Pinned by the existing body-slice assertion that the runner contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`
+- [x] **MCP-02**: The family registers proxy-locally through `buildViceTool()` and never reaches `forwardToVice()`, satisfying CLAUDE.md's derived-tool path-translation constraint **by construction** — no interception to forget. Pinned by the body-slice assertion that the runner contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`. **`D-01` (2026-08-29) superseded this requirement's assumption that the assertion would be an *existing* one still policing a coexisting old family.** The owner chose deletion over unregister-and-quarantine, so the old family is deleted in this same phase and no coexistence happened. The assertion was therefore **re-pointed in place** onto the new family's runner — `BACKEND_SEAM_BYPASS_KEYS`'s second entry renamed rather than added to — in the commit that broke it, and re-proven by a planted violation against the real post-deletion tree. Nothing was deleted to make it pass
 - [x] **MCP-03**: Backend-agnosticism is structural, expressed where it actually lives — `stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS` ordered allow-list — and **not** by an entry in `capability-registry.ts`, which holds only the per-backend delta a proxy-local family does not have. Neither manifest nor `docs/tool-support.md` gains an entry
 - [x] **MCP-04**: The surface is shaped for an agent rather than a cursor: addressing is by explicit address, edits are batchable and idempotent, and an ambiguous or unsupported request **refuses by name** — reporting `{available:false, reason}` rather than a plausible-looking zero, per this project's existing convention
-- [ ] **MCP-05**: Every guard that breaks on **registration rather than deletion** is repointed in the commit that registers the family — `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its two deliberate duplicates, and `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR`. Both families coexist at this point, so nothing is deleted to make them pass
+- [x] **MCP-05**: Every guard that breaks on **registration rather than deletion** is repointed in the commit that registers the family — `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its two deliberate duplicates, and `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR`. **`D-01` (2026-08-29) falsified the clause that closed this requirement** — *"Both families coexist at this point, so nothing is deleted to make them pass"*. Presented with unregister-and-quarantine, the owner chose deletion, so the old family is deleted in this same phase and that coexistence did not happen. The clause is edited rather than left standing beside the outcome that contradicts it, and rather than silently deleted. What replaces it is the ordering that keeps the guards' correctness provable without coexistence: **each guard moved in the commit that broke it** — registration-time guards with the registration (29-01), rename-time guards with the `git mv` (29-05), deletion-time guards with the deletion (29-10) — and each was re-proven by a **planted violation observed red against its new subject and reverted**, so no guard was made to pass by deleting what it asserted over. The sentence listing the guards, above, is unchanged: `D-13` records that its wording already anticipated re-pointing rather than deletion and so survives `D-01` unedited
 
 ### ACME Export
 
@@ -132,7 +133,8 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
   reference it) and **11 files under `scripts/`**, not the 2 CI scripts first
   named — the extras include `scripts/lib/r2000-cli-verbs.mjs` and two `.d.mts`
   declarations, `audit-gate.mjs`, `check-npm-packages.mjs`,
-  `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
+  `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`. Each re-pointed guard's own planted violation is re-run, because a guard that cannot be made to fail has not been re-pointed. Named explicitly: `docs-linerefs` (deletion shifts its cited line numbers), `docs-dangling-refs` (asserts its scanned doc set exists, so `CLAUDE.md` must be edited), `docs-r2000-decisions` (pins D-36; renamed to `docs-absorbed-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry per `D-12`), `hostpath-consumers`, `stock-dispatch`, `vice-proxy`, `capability-registry`, `skill-attribution`, `tool-support-table`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`
+  - **Why this requirement STAYED in Phase 32 when `CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` were pulled forward into Phase 29 — a recorded decision, not an omission.** `CUT-04` is a **retrospective vacuity audit**, and its subject does not exist until the last guard has moved. Phase 29 re-pointed a large guard set — `hostpath-consumers.test.ts`'s module floor, `check-skill-tool-coverage.mjs`'s CLI-verb and skill-coverage floors, `anno-derivation.test.ts`'s manifest-versus-surface non-vacuity relation, the `docs-absorbed-decisions` / `audit-gate.mjs` pair, `check-skill-fork-honesty.mjs`'s re-pointed README assertion, and `spawn-seam.test.ts` re-pointed onto the emulator spawn seam — and proved each non-vacuous **individually, at the commit that moved it**, under that phase's own standing prohibition. What `CUT-04` adds is the **mechanical sweep over the whole set at once, measured after the dust settles**, which is a different check and one that cannot be run before the last guard has moved. Phase 32 is therefore the only place it can be honest, and **Phase 29 is the source of most of the guards it will audit** — this requirement's scope grew rather than shrank. Stated in agreement with the same reason recorded in `ROADMAP.md` § Phase 32's notes.
 
 - [x] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
 - [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
@@ -220,24 +222,41 @@ over them.
 | STORE-05 | Phase 28 | Complete |
 | STORE-07 | Phase 28 | Complete |
 | MCP-01 | Phase 29 | Complete |
-| MCP-02 | Phase 29 | Pending |
+| MCP-02 | Phase 29 | Complete |
 | MCP-03 | Phase 29 | Complete |
 | MCP-04 | Phase 29 | Complete |
-| MCP-05 | Phase 29 | Pending |
-| STORE-06 | Phase 29 | Pending |
+| MCP-05 | Phase 29 | Complete |
+| STORE-06 | Phase 29 | Complete |
 | EXPORT-01 | Phase 30 | Pending |
 | EXPORT-02 | Phase 30 | Pending |
 | EXPORT-03 | Phase 30 | Pending |
-| REPOINT-01 | Phase 31 | Complete |
-| REPOINT-02 | Phase 31 | Complete |
+| REPOINT-01 | Phase 29 | Complete |
+| REPOINT-02 | Phase 29 | Complete |
 | REPOINT-03 | Phase 31 | Pending |
 | REPOINT-04 | Phase 31 | Pending |
-| CUT-01 | Phase 32 | Pending |
-| CUT-02 | Phase 32 | Complete |
-| CUT-03 | Phase 32 | Complete |
+| CUT-01 | Phase 29 | Partial |
+| CUT-02 | Phase 29 | Complete |
+| CUT-03 | Phase 29 | Complete |
 | CUT-04 | Phase 32 | Pending |
-| CUT-05 | Phase 32 | Complete |
+| CUT-05 | Phase 29 | Complete |
 | CUT-06 | Phase 32 | Pending |
+
+**SIX ROWS MOVED TO PHASE 29 ON 2026-08-30, by `D-01` — MOVED, NOT DUPLICATED.** `D-01` put the deletion inside Phase 29 rather than Phase 32, and the re-pointing that had to precede it came with it. `REPOINT-01`, `REPOINT-02`, `CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` therefore now map to **Phase 29**; Phases 31 and 32 no longer name them on their own `**Requirements**:` lines, so every requirement still maps to **exactly one** phase and this table remains what it says it is — the index over the roadmap's per-phase lines, not a second opinion about them. Phases 30 to 32 were **narrowed, not renumbered**: phase numbers are cited from tracked, guarded files, so a renumber rewrites every row while a narrow rewrites only the rows whose phase actually moved.
+
+**`CUT-04` and `CUT-06` STAY mapped to Phase 32, and `CUT-04`'s retention is the one that needs a reason rather than an omission.** `CUT-04` is a **retrospective vacuity audit** over the whole re-pointed guard set, and its subject does not exist until the last guard has moved — which is Phase 29's close. Phase 29 proved each re-pointed guard non-vacuous *individually*, at the commit that moved it; what `CUT-04` adds is the mechanical sweep over the set **at once, after the dust settles**, and that cannot be run early. Phase 32 is the only place it can be honest, and Phase 29 is the source of most of the guards it will audit — so its scope grew rather than shrank. The full reason is recorded beside `CUT-04` itself above and in `ROADMAP.md` § Phase 32's notes, in agreement.
+
+**`CUT-01` is `Partial`, not `Complete`, and the reason is its own evidence.** The integration's route, glue and external dependency are gone: **zero** files under `src/mcp/vice/` carry the retired prefix, the removal gate is green tree-wide with no allow-list entry for any deleted file, and 29-10 removed 14 files and 8,221 lines driven entry by entry from `module-classification.ts`. But this requirement is worded as a **sizing** claim — a net ~12.4k lines of a 25,759-line surface gone with ~12.9k surviving under new names — and no plan has re-measured that figure against the delivered tree. `29-10-SUMMARY.md` says so in its own words: *"`CUT-01` is NOT marked complete … sizes a net ~12.4k-line removal; this plan delivered 8,221 lines of it."* Marking it `Complete` would claim a measurement nobody took, which is the failure the audit gate exists against. A verification pass that re-measures the two figures is what moves this row.
+
+**This phase's six requirement statuses, each with the summary that evidences it.** No status claims more than its evidence, and none is a self-assessment of the plan that wrote this line:
+
+| Requirement | Status | Evidencing summaries |
+|---|---|---|
+| `MCP-01` | Complete | `29-03-SUMMARY.md`, `29-06-SUMMARY.md`, `29-08-SUMMARY.md` (the derivation made mechanical, in both directions, plus the committed verb register) |
+| `MCP-02` | Complete | `29-01-SUMMARY.md` (registration through `buildViceTool()`), `29-10-SUMMARY.md` (the family never reaches `forwardToVice()`; `CLAUDE.md`'s constraint restated with re-measured citations) |
+| `MCP-03` | Complete | `29-01-SUMMARY.md` (`BACKEND_SEAM_BYPASS_KEYS` renamed in place; neither manifest gains an entry; `docs/tool-support.md` byte-identical) |
+| `MCP-04` | Complete | `29-03-SUMMARY.md`, `29-06-SUMMARY.md` (explicit addressing, idempotent edits, the depth-capped batch, refusal by name) |
+| `MCP-05` | Complete | `29-01`, `29-02`, `29-05`, `29-07`, `29-08`, `29-09` (every guard moved in the commit that broke it, each re-proven by a planted violation observed red and reverted) |
+| `STORE-06` | Complete | `29-04-SUMMARY.md` (derived cross-references and search, never cached on disk), `29-07-SUMMARY.md` |
 
 **Four STORE rows read `Complete` at the close of the FIFTH gap-closure round (28-19..28-22), and two deliberately do not.** `STORE-02`, `STORE-05` and `STORE-07` are unmoved from the fourth round's close, on the evidence recorded there: 28-15's four named non-vacuity controls each re-run and quoted individually rather than aggregated, `node:sqlite` resolving to exactly one shipped module, and both store modules absent from the five-element host-path consumer set. 28-22's closing gate re-observes every one of those controls individually on the FINAL tree of round 5, after three plans rewrote `anno-store.ts`.
 
@@ -283,4 +302,4 @@ Neither set is in this milestone's denominator.
 
 ---
 *Requirements defined: 2026-08-26*
-*Last updated: 2026-08-26 — traceability populated at roadmap creation (Phases 27-32, 28/28 mapped)*
+*Last updated: 2026-08-30 — plan 29-11: `D-01`'s falsified clauses edited in `MCP-02` and `MCP-05`, the `R2000-14`/`R2000-15` withdrawal recorded beside `SEAM-02`, and six rows moved to Phase 29 as Phases 30-32 were narrowed (Phases 27-32, 28/28 mapped, exactly one phase each)*
