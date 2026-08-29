@@ -1,6 +1,6 @@
 ---
 phase: 28-the-store-core
-reviewed: 2026-08-29T00:00:00Z
+reviewed: 2026-08-29T00:28:33Z
 depth: standard
 files_reviewed: 15
 files_reviewed_list:
@@ -21,9 +21,9 @@ files_reviewed_list:
   - src/mcp/vice/r2000-coverage.test.ts
 findings:
   critical: 3
-  warning: 26
-  info: 11
-  total: 40
+  warning: 28
+  info: 14
+  total: 45
 status: issues_found
 ---
 
@@ -2001,11 +2001,435 @@ enforcement and can be stepped around by an equivalent spelling.
 give the count its own local fixture carrying all three spellings, in the style
 `commitStatements`'s fixtures already establish in the same file.
 
+## Round 7 Findings (post 28-23)
+
+**Reviewed:** 2026-08-29T00:28:33Z
+**Depth:** standard
+**Files Reviewed:** 15 (the identical set; the diff under review is
+`0df4ab3^..HEAD`, which touched **four** of them: `anno-types.ts`,
+`anno-store.ts`, `anno-types.test.ts`, `anno-overlap.test.ts`. The other six --
+`package.json`, `r2000-coverage.test.ts`, `anno-index.ts`, `block-class.ts`,
+`anno-store.test.ts`, `anno-durability-mutator.mjs` -- are byte-identical to the
+tree round 6 reviewed: `git diff --stat 0df4ab3^..HEAD` over those six paths is
+empty. `anno-store.ts` is still in `package.json:73`'s `files[]`, so WR-10 is
+carried unchanged.)
+
+**Measured state, re-measured here rather than taken from the handoff:** the
+eight `anno-*` / `block-class` test files are **218 pass / 0 fail / 0 skipped**
+(`node --test`, 13.5 s, **real exit 0**), and `./node_modules/.bin/tsc --noEmit`
+exits 0. Both numbers reproduce 28-23-SUMMARY.md exactly.
+
+### Round-7 verdict on 28-23's single id
+
+| Round-6 id | Round-7 verdict | Evidence re-measured here |
+|---|---|---|
+| CR-10 | **Closed for its reported cause -- the SILENCE -- and only for that.** Re-driven through production entry points on a fresh store: `setDataType($1000..$100f, lo_hi_address)` then `setDataType($1004..$1007, byte)` still returns `changed: true` and still leaves the same three rows, but now also returns `reinterpretedSplitTables.length === 1` carrying `entryCountBefore: 8`, the eight `entryPairsBefore` couples, both survivors with their own couples, `preservedEntryPairs: []`, and a `summary` that names the row, both spans and the count. Every one of the round-6 verifier's five geometries is re-driven in `anno-overlap.test.ts` at its own caller ranges and asserted **by value**. The pairing loss itself is unchanged and was never claimed closed: answer (b) was the verifier's own sanctioned option, and `revertTo` remains the recovery path inside the 32-revision ring. Two residuals at the new sites are filed below as **WR-31** and **WR-32**, and three notes as **IN-12**, **IN-13**, **IN-14** -- new ids, never re-openings. |
+
+**Three things 28-23 claimed that I checked and could not falsify**, recorded as
+verified negatives so a later round does not re-spend the time:
+
+* **The `resolveSplitTargets()` extraction is behaviour-preserving.** Driven as a
+  DIFFERENTIAL, not read: the pre-28-23 `resolveSplitTargets` (a `git worktree`
+  at `b681488`) and the current one were run side by side over **80** cases --
+  eight byte images (empty, 1, 2, 3, 8 bytes, a `Uint8Array`, out-of-byte-range
+  and non-integer values) x ten `dataType` arguments (the four layouts, `byte`,
+  `""`, `null`, `undefined`, `7`, `{}`) -- comparing the returned object, the
+  thrown constructor NAME, the message, and `start` / `endInclusive` /
+  `dataType` / `validTypes`. **0 differences.** The `entryCount: n` ->
+  `entryCount: targets.length` change and the moved odd-count refusal are not
+  observable.
+* **Every `setDataType` return path populates `reinterpretedSplitTables`.**
+  `retype()` has exactly two `return` statements and one call site
+  (`anno-store.ts:2315`); both returns carry the field, and it is threaded
+  through `applyWrite`'s result unconditionally at `:2318-2325`. Refusals throw,
+  so no refusal path carries it. The "always present, never absent" contract is
+  also PINNED behaviourally at the two paths most likely to omit it:
+  `anno-overlap.test.ts:335` asserts `deepEqual(r.result?.reinterpretedSplitTables, [])`
+  for every NON-SPLIT case, and `:807` asserts `deepEqual(again.reinterpretedSplitTables, [])`
+  on the `changed: false` identical repeat -- `deepEqual(undefined, [])` fails, so
+  both are genuine presence pins. I raised this as a suspected control gap and
+  withdrew it on the evidence.
+* **The gate really does run entirely before the first `delete`.** `retype()`
+  has two separate `for (const row of overlapping)` loops: the gate at
+  `:2141-2152` (both `remainderRefusal` calls and then `splitReinterpretation`)
+  and the mutation at `:2154-2162`. Verified behaviourally as well: every refused
+  drive leaves `listRanges()` deep-equal (ids included) and `currentRevision()`
+  unmoved.
+
+**No new structural or security exposure.** `SCHEMA_VERSION` is still `2`
+(`anno-types.ts:154`) and the round's diff contains no `create table` /
+`create index` / `alter table` / `SCHEMA_VERSION` assignment -- the single match
+is a COMMENT in DECISION 1 explaining why a column was rejected. No directory
+layout change. No new SQL of any kind: the round added zero statements, and
+`retype()`'s two `prepare()` calls are the pre-existing bound ones. No new
+imports from `node:fs` / `node:path`, so `anno-store.ts` and `anno-types.ts` stay
+out of `hostpath-consumers.test.ts`'s closed five-member set. No `eval`, no
+dynamic `Function`, no `console.log`, no `debugger`, no TODO/FIXME, no secrets:
+grep over all four changed files returns nothing but one `/tmp/annosym-XXXX/`
+path inside a doc comment.
+
+### Carried forward from round 6 -- the eight ids 28-23 was deliberately not scoped to
+
+Plan 28-23 was scoped to CR-10 alone. Each of the eight is **re-checked against
+the current tree** here, with the line it now sits on, so it cannot be lost
+between rounds by being ABSENT rather than by being closed. None is re-filed.
+
+| Id | Status on the 28-23 tree | Re-checked how |
+|---|---|---|
+| WR-26 | **STILL OPEN, unchanged.** | `grep -n 'transactionStateUnknown' anno-store.ts` -> `:330` (the field), `:469` (initialised `false`), `:1506` (the gate reads it), `:1787` (the ONLY setter, `if (pruneSnapshots(handle)) …`). The three sites that compute `let rolledBack = true` and never set it are still `:1123`, `:1606` and `:1722`; the mutation-refusal handler at `:1655-1665` still swallows its rollback failure with no local at all. One setter, four observers. |
+| WR-27 | **STILL OPEN, unchanged.** | `commitStatements()` (`anno-seam.test.ts:405-414`) still iterates `source.matchAll(/\bexec\(\s*(['"`])([\s\S]*?)\1\s*\)/g)`. `prepare("commit").run()` -- the idiom `anno-store.ts` uses for every other statement -- is still counted 0. |
+| WR-28 | **STILL OPEN, unchanged.** | `grep -n 'delete from anno_' anno-store.ts` returns exactly two hits, `:1255` (`anno_snapshot`) and `:2155` (`anno_range`); the only scope verbs are `addScope` (`:2942`) and `listScopes` (`:2993`). `addScope`'s overlap refusal still has no inverse. |
+| WR-29 | **STILL OPEN, unchanged.** | `assertRevisionArgument` is `:2410` and its own doc block still sits between `revertTo`'s contract comment and the code; `export function revertTo` is `:2428`, preceded by `assertRevisionArgument`'s closing `}` at `:2426` and a blank line. `revertTo` still has no attached doc comment. |
+| WR-30 | **STILL OPEN, unchanged.** | `export function pruneSnapshots(handle: AnnoStoreHandle): boolean` is `:1196`; the doc block above it ends at `:1195` on the `busy_timeout` sentence and still says nothing about what the boolean means. Its only translator is still `:1787`. |
+| IN-09 | **STILL OPEN, unchanged.** | `anno-types.ts:645` is still `super(message, { start: options.start, endInclusive: options.endInclusive })`, and `remainderRefusal` still binds those to the REMAINDER (`anno-store.ts:1888-1889`). |
+| IN-10 | **STILL OPEN, unchanged.** | `remainderRefusal`'s per-row "nearest legal boundary" advice is still computed inside the single-row call (`anno-store.ts:1874-1882`), while the gate still loops over every overlapping row and throws on the first refusal. |
+| IN-11 | **STILL OPEN, unchanged.** | `const ESCAPE_AT_A_CALL_SITE = "unconfinedModuleDerivedPath: true";` is still `anno-seam.test.ts:639`, still counted by `seamCode.split(ESCAPE_AT_A_CALL_SITE).length - 1` at `:661`. |
+
+### What this round attacked, and what it found
+
+Round 6 attacked the semantics the parity gate does not check. This round
+attacked **the code 28-23 wrote to answer it**: the newly extracted
+`splitPartnerOffsets()`, the new public `splitEntryAddressPairs()`, the
+reinterpretation gate's ordering and failure modes, the new always-present result
+field, the rewritten DECISION 1 comment, and the two test files whose case table
+and invariant grew. Five findings, none of them a BLOCKER, all reproduced or
+measured rather than argued:
+
+* **WR-31** -- the new gate calls `splitEntryAddressPairs()` on the OVERLAPPED
+  ROW'S OWN SPAN, which the parity checks above it never validate. Against a
+  store an EARLIER PUBLISHED BUILD wrote (the 11-byte `lo_hi_address` row CR-09
+  documented), an ordinary `setDataType` that the immediately preceding build
+  ACCEPTED now throws a bare `AnnoRangeShapeError` naming a span the caller never
+  mentioned -- and the gate's own comment says this cannot happen. Driven across
+  three builds via `git worktree`.
+* **WR-32** -- `dropContained()`, the symmetric carve-out 28-23 calls
+  load-bearing and defends in a 20-line comment, **never drops a single key** in
+  the committed suite. Measured: 0 drops on the lost side and 0 on the reported
+  side across all twelve `SEQUENCE` steps. The geometry that would exercise it is
+  reachable and accepted, and is in neither `SEQUENCE` nor `SPLIT_CASES`.
+* **IN-12** -- `preservedEntryPairs` is provably empty for every reachable input,
+  and no control in the suite can tell the computed field from a hardcoded `[]`.
+* **IN-13** -- `splitReinterpretation()` narrows with the PREFIX predicate
+  `isSplitDataType` and then calls a function that re-validates with EXACT
+  membership; the two disagree, observably.
+* **IN-14** -- the partner rule the round reduced to one definition is restated in
+  prose inside a user-facing string in `anno-store.ts`, outside the `n + i` grep
+  that was scoped to `anno-types.ts`.
+
+Nothing new was found in `anno-index.ts`, `block-class.ts`, `package.json`,
+`anno-store.test.ts`, `anno-durability-mutator.mjs` or `r2000-coverage.test.ts`;
+all six are unchanged since round 6 and their open items (IN-03, IN-08, WR-10)
+are carried forward. `r2000-coverage.test.ts` was read and is still unchanged
+since 28-03; per the phase note it is reviewed but not extended or re-verified,
+and nothing was found in it.
+
+**Note for the orchestrator:** the five new ids below will red
+`docs-review-disposition.test.ts` (AUDIT-01) until each is named in a recognised
+disposition source. That is the guard working, not a defect in it.
+
+### WR-31: the new reinterpretation gate validates the OVERLAPPED ROW'S span, which nothing above it checks -- so a split row an earlier build wrote turns an ordinary retype into a refusal about a range the caller never named
+
+**File:** `src/mcp/vice/anno-store.ts:1938-1943` (`splitReinterpretation`'s
+`splitEntryAddressPairs(row.start, row.end_inclusive, layout)` call), with the
+gate at `:2141-2152`, its ordering comment at `:2131-2139`,
+`splitReinterpretation`'s own doc claim at `:1918-1922`, and
+`src/mcp/vice/anno-types.ts:1476-1483`
+**Severity:** WARNING
+*(new in round 7; a residual at CR-10's fix site, not a re-opening of CR-10)*
+
+**Issue:**
+`splitReinterpretation()` computes `entryPairsBefore` by asking
+`splitEntryAddressPairs()` about **the overlapped row's own span**:
+
+```ts
+// anno-store.ts:1943
+const before = splitEntryAddressPairs(row.start, row.end_inclusive, layout);
+```
+
+and `splitEntryAddressPairs()` calls `assertRangeShape(start, endInclusive, layout)`,
+which **throws** on an odd span. Nothing before that point validates the row's
+own span: `remainderRefusal()` asks about the head and the tail, never about the
+row. Both of the module's comments state the opposite:
+
+```
+// the gate, :2133-2136
+// ORDER WITHIN THE LOOP IS LOAD-BEARING TWICE OVER: the two refusal checks run
+// before the reinterpretation for the SAME row, so a row whose remainder fails
+// parity never reaches a computation that would refuse it a second time with a
+// worse message;
+
+// splitReinterpretation, :1919-1921
+// After, because a remainder that fails the parity gate is not a remainder this
+// store will ever write and `splitEntryAddressPairs()` would refuse it;
+```
+
+Both sentences are about the REMAINDER. Neither covers the ROW, and the ordering
+they describe does not protect the call that was actually added. This is the
+third instance in this phase of a comment stating a guarantee the code below it
+does not provide (28-07 P3, 28-21 P1).
+
+**The input is not hypothetical, and it was not hand-built.** `anno-store.ts` is
+in `package.json`'s `files[]` and every merge to `main` auto-publishes, so every
+intermediate state of this module has shipped -- including the pre-28-19 one
+CR-09 was raised against, whose ONLY reported symptom was that it persisted
+exactly this row. Driven across three builds through production entry points
+only, with `git worktree`:
+
+```
+# (1) the pre-28-19 build (worktree at e3adb18) writes the store, production API only
+setDataType($1000..$100f, lo_hi_address); setDataType($1004..$1004, byte)
+  rows: [2, 4096, 4099, lo_hi_address] [3, 4101, 4111, lo_hi_address] [4, 4100, 4100, byte]
+                                        ^^^^^^^^^^^^^^ 11 bytes -- CR-09's row, on disk
+
+# (2) the build IMMEDIATELY BEFORE 28-23 (worktree at b681488) opens that store
+setDataType($1009..$1009, byte)          ->  ACCEPTED, changed: true
+  rows: [2,4096,4099,lo_hi_address] [4,4100,4100,byte]
+        [5,4101,4104,lo_hi_address] [6,4106,4111,lo_hi_address] [7,4105,4105,byte]
+                                        both remainders EVEN -- the illegal row is REPAIRED
+
+# (3) HEAD (28-23) opens the same store, same call
+setDataType($1009..$1009, byte)          ->  THROWS
+  AnnoRangeShapeError: a lo_hi_address table needs an even byte count, but
+  4101..4111 is 11 byte(s) -- the low half and the high half must be the same length
+  rows after: unchanged     revision: 2 -> 2
+```
+
+Three separate problems, in the order a caller meets them:
+
+1. **A behavioural regression the round did not intend.** The write was accepted
+   by the build 28-23 replaced, and its acceptance was the only *partial* route
+   that repaired the legacy row. A full cover still works
+   (`setDataType($1005..$100f, byte)` was re-driven and accepted), so the state
+   is recoverable -- which is why this is a WARNING and not a BLOCKER -- but the
+   caller is given no hint that a full cover is the way out.
+2. **The refusal names a range the caller never mentioned.** The caller asked
+   about `$1009..$1009`; the message is about `4101..4111`. It is not
+   `AnnoSplitRemainderError`, it carries no `rowId`, no `side`, no
+   "the whole retype is refused, so nothing was written" sentence, and its
+   inherited `start`/`endInclusive` are the ROW's -- the same confusion IN-09
+   reports at the sibling site, arriving here through a different class.
+   `remainderRefusal()` exists precisely to translate an `AnnoRangeShapeError`
+   into a message that names the caller's boundary and the remedy; this call site
+   bypasses it.
+3. **The same call site refuses on the row's `data_type` too** -- see IN-13.
+
+The refusal IS in-family (`AnnoRangeShapeError extends ViceError`), the write is
+atomic (rows deep-equal, revision unmoved), and no data is lost. That is what
+holds this to a WARNING.
+
+**Fix:** ask the row the same question the remainders are asked, through the same
+translator, so a legacy row produces the module's own refusal instead of a raw
+shape error -- or, better, treat a row the store could never have written today
+as un-analysable rather than as a reason to refuse the caller's write:
+
+```ts
+// In splitReinterpretation, BEFORE the first splitEntryAddressPairs call:
+//
+// THE ROW'S OWN SPAN IS NOT GUARANTEED LEGAL. `remainderRefusal()` above asks
+// about the HEAD and the TAIL, never about the row, and an odd split row is
+// exactly what builds before 28-19 persisted (CR-09) -- a shape that is still on
+// disk in any store those builds wrote. Analysing it would throw an
+// AnnoRangeShapeError naming a span the caller never mentioned, and would refuse
+// a write the previous build accepted (and which REPAIRS the row).
+if ((row.end_inclusive - row.start + 1) % 2 !== 0) return null;   // nothing this record can describe
+```
+
+Whichever answer is taken, the two comments quoted above must be corrected in
+the same commit -- they currently assert the protection this finding shows is
+absent -- and `anno-overlap.test.ts` should gain the case, seeded the way the
+CR-09 body already shows: an odd split row constructed through `applyWrite` (the
+file already does exactly that for the `bank` control at `:821-831`), then a
+production `setDataType` over it, asserting the chosen outcome by value.
+
+### WR-32: `dropContained()` -- the symmetric carve-out 28-23 calls load-bearing -- never drops a key in the committed suite, and the geometry that would exercise it is reachable and absent from both tables
+
+**File:** `src/mcp/vice/anno-overlap.test.ts:1723-1755` (`dropContained` and its
+doc), used at `:1872-1873`; with `SEQUENCE` at `:1789-1791` and `SPLIT_CASES` at
+`:946-1118`
+**Severity:** WARNING
+*(new in round 7)*
+
+**Issue:**
+28-23's SUMMARY lists "Symmetric carve-out: a set comparison's exclusion filter
+applied identically to both operands" as one of four patterns the round
+established, gives it a 20-line doc comment, and spends planting T3-B proving
+that a one-sided version reds. In the committed suite the function is **inert**.
+
+Measured by replaying the file's own `SEQUENCE` verbatim against the production
+entry points and counting what `dropContained` removes at each step:
+
+```
+step  0  records 1  vanished 8   reported 8   carve-out drops: lost 0  reported 0
+step  1  records 0  vanished 0   reported 0   carve-out drops: lost 0  reported 0
+step  2  REFUSED
+step  3  records 1  vanished 8   reported 8   carve-out drops: lost 0  reported 0
+step  4  REFUSED
+step  5  records 1  vanished 8   reported 8   carve-out drops: lost 0  reported 0
+step  6  REFUSED
+step  7  records 1  vanished 8   reported 8   carve-out drops: lost 0  reported 0
+step  8  records 0  vanished 0   reported 0   carve-out drops: lost 0  reported 0
+step  9  records 0  vanished 0   reported 0   carve-out drops: lost 0  reported 0
+step 10  records 0  vanished 0   reported 0   carve-out drops: lost 0  reported 0
+step 11  records 2  vanished 10  reported 10  carve-out drops: lost 0  reported 0
+TOTAL carve-out drops across the whole SEQUENCE:  lost 0   reported 0
+```
+
+So in every executed assertion the invariant reduces to
+`vanished === reportedLost`, and `dropContained` is applied to two sets it does
+not change. **A `dropContained` written with the comparison inverted, or one that
+dropped nothing at all, is green.** The doc comment states the premise honestly
+("No step in today's `SEQUENCE` covers more than 8 contiguous bytes of a split
+row") but does not draw the consequence, and the same premise holds of
+`SPLIT_CASES`: no entry there both leaves a surviving fragment AND wholly
+contains an entry pair.
+
+**Such a geometry is reachable and is accepted today** -- driven through
+production entry points only, on a fresh store:
+
+```
+setDataType($1000..$100f, lo_hi_address)
+setDataType($1000..$1009, byte)   ->  changed: true, ONE record
+  entryPairsBefore: ($1000,$1008) ($1001,$1009) ($1002,$100a) … ($1007,$100f)
+  survivor:         $100a..$100f, 3 entries        preserved: 0
+  rows now:         [2, $100a..$100f, lo_hi_address] [3, $1000..$1009, byte]
+  pairs WHOLLY CONTAINED in the caller's range:  ($1000,$1008)  ($1001,$1009)
+```
+
+Two pairs are carved out on both sides, a fragment survives, and the invariant is
+exercised for real. Any caller range covering 9 or more contiguous bytes of a
+16-byte split row produces one, which is ordinary annotation work -- the same
+argument DECISION 1 makes for accepting the fragmentation in the first place.
+
+This is the same defect class as WR-20, WR-15 and IN-11, and this file's own
+standard for it is explicit: a control's coverage must be proven by a case, not
+by a comment. The round proved the symmetry with a PLANTING that was reverted;
+nothing in the tree proves it now.
+
+**Fix:** add the geometry to both tables, so the carve-out has a green case as
+well as a red one:
+
+```ts
+// in SEQUENCE, after the existing $1004..$1007 pair
+{ start: 0x1000, endInclusive: 0x1009, dataType: "byte", expect: "accepted", expectReinterpretedRows: 1,
+  note: "lo_hi_address, no head, tail 6 -- even, so accepted; and the ONLY step whose caller range WHOLLY CONTAINS entry pairs " +
+        "(($1000,$1008) and ($1001,$1009)), so it is the one step that exercises dropContained on both sides" },
+```
+
+and a matching `SPLIT_CASES` entry (`n: 4`, `c: 0x1000`, `d: 0x1009`) with its
+`reinterpreted` couples hand-derived in the table's existing style. Re-derive
+`finalRows`, `accepted`, `reinterpretingSteps` and `totalReportedLostPairs` with
+it. A cheaper alternative that does not touch the sequence: give `dropContained`
+its own local fixture control -- three keys, one contained, one straddling, one
+outside -- in the style `commitStatements`'s fixtures already establish in
+`anno-seam.test.ts`.
+
+### IN-12: `preservedEntryPairs` can only ever be empty, and no control can tell the computed field from a hardcoded `[]`
+
+**File:** `src/mcp/vice/anno-store.ts:1968-1971`, with
+`src/mcp/vice/anno-types.ts:410-420` and the assertions at
+`anno-overlap.test.ts:1185-1190`, `:1373`, `:1908`
+**Severity:** WARNING (informational tier)
+*(new in round 7)*
+**Issue:** 28-23's key decisions record: *"`preservedEntryPairs` is COMPUTED by
+comparing the before and after sets, never hardcoded to empty."* The computation
+is real. But the module's own DECISION 1 arithmetic proves the field's value is a
+constant: a survivor of `m` entries pairs its byte `j` with its byte `m + j`,
+which matches an original `(i, n + i)` only when `m == n`, and a survivor with
+`m == n` is not a fragment. A head survivor starts at the row's own start and has
+`m < n`; a tail survivor starts strictly later, so both coordinates shift. **No
+reachable input yields a non-empty `preservedEntryPairs`** -- which is why every
+assertion in the suite expects `[]`, why `SPLIT_CASES` asserts
+`preservedCount === 0` as a table-wide invariant, and why the always-`0 of N`
+sentence is baked into `summary`. So the decision the round recorded is not
+falsifiable by anything in the tree: replacing the two lines with
+`const preservedEntryPairs: readonly (readonly [number, number])[] = [];` keeps
+the suite green. The shape is also the one this module's own doc mocks, quoted in
+WR-18's body: *"a field that can only ever answer one value is a claim the next
+reader has to falsify by experiment."* Not a defect -- the future-proofing
+argument is sound and is recorded -- but the claim and its evidence should not be
+confused.
+**Fix:** state the constancy where the field is declared rather than leaving it
+implied ("empty for every input reachable TODAY, by the arithmetic above; computed
+rather than asserted so a future layout with a different pairing stays correct"),
+and, if the computation is to be defended by a control, unit-test
+`splitReinterpretation`'s intersection against a hand-built survivor set that
+DOES overlap `entryPairsBefore` -- the only way to show the `Set` arithmetic and
+`entryPairKey()` are right in the direction they are never exercised in.
+
+### IN-13: `splitReinterpretation` narrows split membership with a PREFIX test and then calls a function that re-validates with EXACT membership
+
+**File:** `src/mcp/vice/anno-store.ts:1932-1943`, with
+`src/mcp/vice/anno-types.ts:211-213` (`isSplitDataType`) and `:1466-1474`
+(`assertSplitLayout`)
+**Severity:** WARNING (informational tier)
+*(new in round 7)*
+**Issue:** the gate decides a row is a split table with
+`if (!isSplitDataType(dataType)) return null;`, which is
+`SPLIT_PREFIXES.some((prefix) => value.startsWith(prefix))` -- a prefix test. It
+then calls `splitEntryAddressPairs()`, whose first act is `assertSplitLayout()`,
+an EXACT membership test against the frozen four. The two disagree on any
+`data_type` beginning `lo_hi_` or `hi_lo_` that is not one of the four names, and
+`anno_range.data_type` has **no CHECK constraint** (`anno-store.ts:246`), so the
+column can hold such a value from a foreign writer or a future/older vocabulary.
+Observed, with the row inserted by a raw `node:sqlite` connection and the retype
+driven through `setDataType`:
+```
+row: [2, 12288, 12303, "lo_hi_pointer"]
+setDataType($3004..$3007, "byte")
+  -> AnnoTypeError: "lo_hi_pointer" is not a split-table layout -- expected one of:
+     lo_hi_address, hi_lo_address, lo_hi_word, hi_lo_word
+```
+A refusal about a type the caller never named, from a write that touches only
+four bytes. Same root as WR-31 -- the gate trusts the on-disk row -- but a
+different predicate and a different error class, and it needs a hand-built or
+foreign store, so it is filed at the informational tier rather than with WR-31.
+The redundant `const layout = dataType as SplitDataType` at `:1937` is a symptom:
+TypeScript has already narrowed `dataType` by that line, and the cast exists
+because the two predicates are not the same predicate.
+**Fix:** narrow with the same predicate the consumer enforces --
+`if (!(SPLIT_DATA_TYPES as readonly string[]).includes(dataType)) return null;` --
+which makes the cast unnecessary and makes an unrecognised type a row this record
+declines to describe rather than a refusal of the caller's write.
+
+### IN-14: the partner rule the round reduced to ONE definition is restated in prose inside a user-facing string, outside the grep that proved the reduction
+
+**File:** `src/mcp/vice/anno-store.ts:1979` (the `summary` literal), with
+`src/mcp/vice/anno-types.ts:1441` (the definition) and the SUMMARY's own
+`n + i` grep
+**Severity:** WARNING (informational tier)
+*(new in round 7)*
+**Issue:** 28-23's headline deliverable is *"the split layout's partner rule has
+exactly ONE definition in the repo"*, evidenced by
+`grep -n 'n + i' src/mcp/vice/anno-types.ts` returning one line. The grep is
+scoped to **one file**. Run across the module, the rule appears in four places:
+```
+anno-types.ts:1441      offsets.push([i, n + i] as const);              <- THE definition
+anno-store.ts:1979      `A split table pairs byte i with byte n + i, …` <- a PROSE copy, shipped to the caller
+anno-overlap.test.ts:1718  pairs.add(pairKey(row.start + i, row.start + n + i));  <- the independent oracle
+anno-types.test.ts:171     targets.push(bytes[i] | (bytes[n + i] << 8));          <- the worked-arithmetic pin
+```
+The two test copies are deliberate and documented -- an independent oracle must
+not import its subject, and both are asserted against. The `anno-store.ts` copy
+is neither: it is a sentence inside the `summary` the store hands a caller, it is
+asserted by no control (the SUMMARY records `summary` verbatim, but no test
+compares it against the layout), and if the pairing ever changes it becomes a
+false statement delivered in the store's own voice. That is the exact class this
+module treats as a real finding (WR-23: "the recorded rationale for the asymmetry
+is false"), one step earlier.
+**Fix:** either derive the sentence from the record it accompanies -- e.g.
+`` `entry i of ${before.entryCount} pairs its own byte i with its own byte ${before.entryCount} + i` `` --
+so it cannot describe a rule the data contradicts, or widen the round's own grep
+to the module (`grep -rn 'n + i' src/mcp/vice --include=*.ts`) and pin the four
+hits with their reasons, in the style `anno-seam.test.ts` already uses for the
+`unconfinedModuleDerivedPath` sites.
+
+
 ---
 
 _Reviewed: 2026-08-29_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Round: 7 (ADDITIVE to rounds 1-6, every byte of which is preserved above. Round 7 reviews the sixth gap-closure round, plan 28-23 (`0df4ab3`, `e606894`, `871de8b`). It records CR-10 as closed for its reported cause -- the SILENCE -- on a re-drive through production entry points, re-checks all EIGHT round-6 ids that 28-23 was deliberately not scoped to (WR-26, WR-27, WR-28, WR-29, WR-30, IN-09, IN-10, IN-11) and finds every one of them unchanged and still open, and opens WR-31, WR-32, IN-12, IN-13 and IN-14 at the sites 28-23 created. No new BLOCKER. Three of 28-23's claims were attacked and could not be falsified: the `resolveSplitTargets()` extraction is behaviour-preserving over an 80-case differential against the previous build, every `setDataType` return path populates `reinterpretedSplitTables` and its presence is genuinely pinned, and the gate runs entirely before the first `delete`. Both carried-forward human-verification items remain open and are claimed by nothing here.)_
 _Round: 6 (ADDITIVE to round 5, which is preserved verbatim below the title. Round 6 re-verifies all nine round-5 ids that were dispositioned `fix`, re-checks the four dispositioned `accept`, and opens CR-10, WR-26, WR-27, WR-28, WR-29, WR-30, IN-09, IN-10 and IN-11. Two of the round-5 fixes -- CR-09's parity gate and WR-18's poisoned-handle flag -- reproduce as claimed and leave residuals filed as new ids, never as re-openings. Both carried-forward human-verification items remain open and are unchanged.)_
 
 _Round: 5 (supersedes the round-4 review of the same file set; CR-08, WR-13, WR-14, WR-16 and WR-17 are dispositioned CLOSED with evidence, WR-15 CLOSED for its synonym half with the residual filed as WR-19, WR-16's residual filed as WR-18, and every other round-3/round-4 id is carried forward explicitly. Both prior disposition tables are preserved verbatim.)_
