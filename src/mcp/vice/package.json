@@ -75,6 +75,7 @@
     "anno-index.ts",
     "anno-store.ts",
     "anno-tools.ts",
+    "anno-derive.ts",
     "resources",
     "tools-manifest.json",
     "tools-manifest.stock.json",
