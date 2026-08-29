@@ -17,6 +17,15 @@
 // generator uses, using the test's own code -- never by importing the
 // generator's discoverSyntheticToolNames() -- so a bug shared between
 // generator and test cannot pass silently.
+//
+// THE ONE EXCEPTION, AND WHY IT IS NOT A HOLE (plan 29-01). The negative and
+// positive controls at the END of this file DO import
+// discoverSyntheticToolNames, because their subject is that function's own
+// WR-08 bounding behaviour -- "an unresolvable identifier throws by name, and
+// the generator can never emit a DIFFERENT table" -- which cannot be observed
+// through a re-implementation. Those tests never touch
+// independentlyDiscoverSyntheticNames() and never feed the equality test, so
+// the independence above holds exactly as before.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -24,7 +33,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { generateToolSupportTable } from "../../../scripts/generate-tool-support-table.mjs";
+// `discoverSyntheticToolNames` is imported ONLY for the negative-control and
+// identity tests at the end of this file, which are about the GENERATOR'S OWN
+// bounding behaviour and therefore have to call the real thing. It is never
+// reached from `independentlyDiscoverSyntheticNames()` or from the
+// derived-union equality test, so the independence property this file's header
+// declares is untouched: the equality test still computes its expected row set
+// with its own code, and a bug shared between generator and test still cannot
+// pass silently there.
+import { discoverSyntheticToolNames, generateToolSupportTable } from "../../../scripts/generate-tool-support-table.mjs";
 import { DENY_LIST } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -285,4 +302,90 @@ test("derived-union equality: the generated document's row set equals an indepen
   );
   assert.deepEqual(actualSorted, expectedSorted, "row name set does not equal the independently-computed union");
   assert.equal(actualRowNames.length, expectedUnion.size, "row count does not equal the independently-computed union size");
+});
+
+// ---------------------------------------------------------------------------
+// MCP-03's recorded negative control (plan 29-01 Task 2).
+//
+// The claim MCP-03 makes is that substituting the anno_* family into the
+// registration loop adds NO entry to either manifest and NO row to
+// docs/tool-support.md. The byte-identity test above is the positive half of
+// that claim, and on its own it is weak evidence: a table that regenerates
+// identically because a witness was left pointing at a name that no longer
+// exists would look exactly the same. WR-08's bounding property is what makes
+// the positive half trustworthy -- the generator cannot emit a DIFFERENT
+// table, only throw -- and this is the test that pins it.
+//
+// A synthetic proxy source is used rather than a mutated copy of the real one
+// because the property under test is about the generator's reaction to an
+// UNRESOLVABLE identifier, and a synthetic source states that situation in
+// twelve readable lines instead of hiding it inside three thousand.
+// ---------------------------------------------------------------------------
+
+/** A minimal proxy source in the real file's shape: the manifest loop, one
+ * genuine single-const synthetic tool, and a second loop registration whose
+ * array name is supplied by the caller. */
+function syntheticProxySource(annoArrayName) {
+  return [
+    'const DIAGNOSE_TOOL: ToolDefinition = {',
+    '  name: "vice_diagnose",',
+    '  description: "d",',
+    '};',
+    '',
+    'for (const def of manifestTools) {',
+    '  tools[def.name] = buildBackendAwareTool(def, (args) => forwardToVice(def.name, args));',
+    '}',
+    'tools[DIAGNOSE_TOOL.name] = buildBackendAwareTool(DIAGNOSE_TOOL, (args) => handleDiagnose(args));',
+    `for (const annoDef of ${annoArrayName}) {`,
+    '  tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));',
+    '}',
+    '',
+  ].join("\n");
+}
+
+test("negative control (MCP-03/WR-08): a loop-variable regex left un-re-pointed makes discoverSyntheticToolNames THROW by name -- it never emits a different table", () => {
+  // The regex matches `ANNO_TOOL_DEFINITIONS`. Point the loop at anything else
+  // and `annoDef` stops resolving as a loop variable, so the generator tries to
+  // resolve it as a single-const synthetic tool, fails, and throws.
+  const unmatched = syntheticProxySource("R2000_TOOL_DEFINITIONS");
+  assert.throws(
+    () => discoverSyntheticToolNames(unmatched),
+    (err) => {
+      assert.match(err.message, /could not resolve synthetic tool registration identifier/);
+      assert.match(err.message, /"annoDef"/, "the throw must NAME the unresolved identifier -- a generic failure would not say which witness was missed");
+      assert.match(err.message, /fix the discovery regex explicitly rather than silently dropping the identifier/);
+      return true;
+    },
+    "an unresolvable loop-variable identifier must throw, never be silently dropped from the row set",
+  );
+});
+
+test("positive control (MCP-03): with the regex pointing at ANNO_TOOL_DEFINITIONS, the SAME synthetic source resolves cleanly and the anno loop contributes no row", () => {
+  const matched = syntheticProxySource("ANNO_TOOL_DEFINITIONS");
+  // Same source, one identifier changed: the only difference between throwing
+  // and resolving is whether the witness was re-pointed. That is what makes
+  // the negative control above a control rather than an assertion about a
+  // malformed input.
+  assert.deepEqual(discoverSyntheticToolNames(matched), ["vice_diagnose"]);
+});
+
+test("MCP-03 over the REAL proxy source: the synthetic set is still exactly the three proxy-local tools, and the anno_* family contributes none of them", () => {
+  const proxySource = readFileSync(PROXY_SOURCE_PATH, "utf8");
+  assert.match(proxySource, /for \(const annoDef of ANNO_TOOL_DEFINITIONS\)/, "non-vacuity: the anno loop must actually be present for its exclusion to mean anything");
+  const names = discoverSyntheticToolNames(proxySource);
+  assert.deepEqual([...names].sort(), ["vice_diagnose", "vice_recycle", "vice_result_continue"]);
+  for (const name of names) {
+    assert.ok(!name.startsWith("anno_"), `${name} is an anno_* name resolved as a synthetic proxy tool -- the family must be excluded structurally, by its loop variable`);
+  }
+});
+
+test("MCP-03: the regenerated table matches the committed docs/tool-support.md in BYTE LENGTH as well as content", () => {
+  const generated = generateToolSupportTable();
+  const committed = readFileSync(DOC_PATH, "utf8");
+  assert.equal(
+    Buffer.byteLength(generated, "utf8"),
+    Buffer.byteLength(committed, "utf8"),
+    "byte length diverged -- the loop substitution was not identifier-only and must be investigated, never accepted by regenerating the committed file",
+  );
+  assert.equal(generated, committed);
 });
