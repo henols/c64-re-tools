@@ -351,6 +351,21 @@ six-step Architecture Change Procedure above for that reversal.
    is satisfied by those guards being landed and proven non-vacuous by
    planted violation, not by this document asserting they exist.
 
+   *Addendum, 2026-08-29 (phase 29, plan 29-05). The two sentences above are
+   the Phase 18 record and are left as written. What they point AT has moved,
+   and a pointer that no longer resolves is what this addendum exists to stop:
+   `src/mcp/vice/r2000-spawn-seam.test.ts` is now `spawn-seam.test.ts` — a
+   rename only, because the discipline it guards (no shipped module spawns a
+   child that touches VICE) outlives the substrate it was written against.
+   `src/mcp/vice/r2000-session.test.ts` is deleted with the session primitive
+   in plan 29-10 and is NOT renamed; the surviving guard that carries the
+   save-discipline half of step 5 forward is `anno-durability.test.ts`, the
+   owned annotation store's crash-durability gate, which proves by planted
+   violation that a mutation is on disk when the mutating call resolves. Those
+   two names — `spawn-seam.test.ts` and `anno-durability.test.ts` — are what
+   `docs-absorbed-decisions.test.ts`'s `GUARD_FILENAMES` checks this section
+   for by containment.*
+
 6. **Only then implement.** Plan 18-03 is the first implementing plan of this
    reversal — it lands `r2000-session.ts`, the long-lived session primitive,
    and the D18-09 save-discipline gate before anything else in this phase

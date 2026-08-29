@@ -8,7 +8,7 @@
 // WHY THIS FILE EXISTS (SEAM-02): `shippedTsModules()` existed as FOUR hand
 // copies with identical FILTER logic -- in `docs-dangling-refs.test.ts` (the
 // canonical body, and where the existence-assertion lesson was first
-// recorded), `r2000-spawn-seam.test.ts`, `stock-dispatch.test.ts` and
+// recorded), `spawn-seam.test.ts`, `stock-dispatch.test.ts` and
 // `comment-phase-pointers.test.ts`. Not byte-identical, and the difference is
 // the point (IN-05): all four checked disk presence with
 // `assert.ok(existsSync(...), ...)`, a SOFT assertion borrowed from whichever
@@ -307,7 +307,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
     // (`.replace(/[`*_]/g, "")`) truncated a 2329-line module to 1107 lines
     // of visible code, and `incident-record.ts:107` (`/'/g`) truncated 443
     // lines to 89, hiding seven real exported functions from
-    // `r2000-spawn-seam.test.ts`'s R2000-01 scan.
+    // `spawn-seam.test.ts`'s R2000-01 scan.
     if (c === "/" && regexAllowed) {
       let j = i + 1;
       let inClass = false;

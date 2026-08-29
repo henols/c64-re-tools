@@ -24,7 +24,7 @@
 //     remains the sole spawn seam in this repo for regenerator2000's
 //     `--mcp-server-stdio` verb -- this module calls INTO it
 //     (`openR2000Session()`), dynamically, and never spawns on its own.
-//     r2000-spawn-seam.test.ts's frozen two-entry EXPECTED_R2000_SPAWN_SITES
+//     spawn-seam.test.ts's frozen two-entry EXPECTED_R2000_SPAWN_SITES
 //     set is what enforces this: this module contributes zero discovered
 //     spawn sites, checked mechanically, not merely asserted here.
 //   - Never own save timing (D18-08). Whether and when a mutating call's

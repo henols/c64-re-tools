@@ -333,7 +333,7 @@ const EXEMPTION_CLASSES = [
     why:
       "manifest-provenance constants naming an UPSTREAM PROJECT that is not deleted, rather than an integration " +
       "that is. PERMANENT, and re-pointed to anno-derivation.test.ts by plan 29-05 (see the staleness contract).",
-    paths: { "src/mcp/vice/r2000-upstream-audit.test.ts": 3 },
+    paths: { "src/mcp/vice/anno-derivation.test.ts": 3 },
   },
   {
     id: "memmap-measurement-provenance",
@@ -371,6 +371,25 @@ const EXEMPTION_CLASSES = [
     atLines: {
       "src/mcp/vice/anno-coverage.ts": [9, 1752],
       "src/mcp/vice/anno-coverage.test.ts": [1549],
+    },
+  },
+  {
+    id: "renamed-guard-disciplines",
+    why:
+      "the three unpaired guard tests plan 29-05 renamed out from under the retired prefix, whose mentions are " +
+      "each the guard's own description of what it enforces. The spawn-seam guard's 39 are its statement of the " +
+      "discipline itself -- no shipped module spawns a child that touches VICE, and every discovered spawn site " +
+      "is guarded before it spawns -- which outlives the substrate it was measured against and is unsayable " +
+      "without naming what was measured. The answer-key guard's 2 are a founding incident: it reads " +
+      ".planning/phases/11-*/evidence/ with no existence guard and is the second leg of the do-not-archive-phase-" +
+      "directories decision, so deleting it would silently discharge that constraint (D-11). The docs-decisions " +
+      "guard's 2 are an ISSUE-TRACKER CITATION -- upstream issue #42, D-36's named reversal trigger -- not a " +
+      "route. All three are re-pointed onto their new paths with their exact counts carried across unchanged; " +
+      "none is converted into a temporary entry a later plan would have to discharge by deleting history.",
+    paths: {
+      "src/mcp/vice/spawn-seam.test.ts": 39,
+      "src/mcp/vice/absorbed-answer-key.test.ts": 2,
+      "src/mcp/vice/docs-absorbed-decisions.test.ts": 2,
     },
   },
   {
@@ -462,15 +481,18 @@ const TEMPORARY_ALLOW_LIST = [
   { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
   { path: "src/mcp/vice/anno-cli.ts", count: 13, plan: "29-07" },
   { path: "src/mcp/vice/anno-cli.test.ts", count: 14, plan: "29-07" },
-  // The four unpaired guard tests still stand at their pre-rename paths: they
-  // move in 29-05's OWN third task, which is also where all four leave this
-  // block for a permanent exemption (each records a discipline, a provenance
-  // constant or a founding incident that stays true after the deletion).
-  // r2000-upstream-audit.test.ts is absent because it is already permanently
-  // exempt as `upstream-audit-manifest-provenance`.
-  { path: "src/mcp/vice/r2000-spawn-seam.test.ts", count: 39, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-answer-key.test.ts", count: 2, plan: "29-05" },
-  { path: "src/mcp/vice/docs-r2000-decisions.test.ts", count: 2, plan: "29-05" },
+  // The four unpaired guard tests LEFT this block in 29-05's own third task,
+  // for the permanent exemption `renamed-guard-disciplines` -- each records a
+  // discipline, a provenance constant or a founding incident that stays true
+  // after the deletion, so converting them into temporary entries would have
+  // obliged a later plan to discharge them by deleting history.
+  // anno-derivation.test.ts was already permanently exempt as
+  // `upstream-audit-manifest-provenance`; only its path moved.
+  //
+  // NOTHING CITES 29-05 ANY LONGER. That is the shape of a plan that finished
+  // its own allow-list work rather than deferring it: an entry naming a plan
+  // that has already run is unreachable, and unreachable is what makes
+  // 29-11's emptiness assertion unreachable too.
 
   // -- plan 29-09: the skill playbooks and the installation prose. Each
   //    src/skills/ entry has a shipped mirror under installer/skills/, which

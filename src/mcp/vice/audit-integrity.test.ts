@@ -68,7 +68,13 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   "docs-review-disposition.test.ts",
   "docs-fork-decision.test.ts",
   "docs-core-value-decision.test.ts",
-  "docs-r2000-decisions.test.ts",
+  "docs-absorbed-decisions.test.ts",
+  // Added by phase 29 plan 29-05, in the same commit as the audit-gate.mjs
+  // registry entry it mirrors. This is the drift CR-02's own detector below
+  // was reporting: the guard landed on disk in commit 19b5bd5 and was never
+  // registered, so BOTH docs-guard assertions in this file were red on a
+  // correct tree. Registering it clears them with no floor change.
+  "docs-uat-abstention.test.ts",
 ];
 
 interface GateJsonResult {

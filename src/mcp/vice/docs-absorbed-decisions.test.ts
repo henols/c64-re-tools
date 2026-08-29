@@ -1,4 +1,4 @@
-// docs-r2000-decisions.test.ts
+// docs-absorbed-decisions.test.ts
 //
 // WHY THIS EXISTS: D18-30. `r2000_get_address_details` was excluded from the
 // curated r2000_* surface by D-32 (Phase 11, v0.3.0) and carried, unexamined,
@@ -44,8 +44,19 @@ const REVERSAL_PHRASES: readonly string[] = ["reverses if", "would reverse", "re
 /** Named, non-empty set of guard filenames the Architecture Change Record's
  * step 5 must name. Its own length is asserted non-zero in test 1, so an
  * emptied set cannot make test 2's filename check vacuously pass by finding
- * nothing to check. */
-const GUARD_FILENAMES: readonly string[] = ["r2000-session.test.ts", "r2000-spawn-seam.test.ts"];
+ * nothing to check.
+ *
+ * RE-POINTED BY PHASE 29 PLAN 29-05, and both halves of the move matter.
+ * `r2000-spawn-seam.test.ts` is `spawn-seam.test.ts` now -- a rename, the
+ * same guard. `r2000-session.test.ts` is NOT renamed: plan 29-10 deletes it
+ * with the session primitive it gates, so naming it here would be a scheduled
+ * red rather than a check. It is replaced by `anno-durability.test.ts`, the
+ * owned store's crash-durability gate, which is the surviving guard carrying
+ * the save-discipline half of what step 5 records -- a mutation must be on
+ * disk when the call resolves, proven by planted violation. Both names are
+ * added to ARCHITECTURE.md's step 5 in the same commit as this change, since
+ * this array is checked BY CONTAINMENT against that section's text. */
+const GUARD_FILENAMES: readonly string[] = ["spawn-seam.test.ts", "anno-durability.test.ts"];
 
 /** Isolates a Markdown section body: everything after the line starting with
  * `headingPrefix`, up to (not including) the next heading line of any level

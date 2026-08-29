@@ -1,4 +1,4 @@
-// r2000-answer-key.test.ts -- keeps criterion 1's (D-26) sealed answer key
+// absorbed-answer-key.test.ts -- keeps criterion 1's (D-26) sealed answer key
 // honest. Two independent failure classes it exists to catch:
 //
 //   1. T-11-SEAL-DRIFT: ANSWER.sha256 silently stops matching ANSWER.md's own
@@ -237,7 +237,7 @@ const FIXTURE_DIR = join(EVIDENCE_DIR, "fixture");
 const FIXTURE_SOURCE = join(FIXTURE_DIR, "recon-subject.a");
 const FIXTURE_PRG = join(FIXTURE_DIR, "recon-subject.prg");
 
-const ACME_SKIP_REASON = acmeSkipReasonFor("r2000-answer-key.test.ts");
+const ACME_SKIP_REASON = acmeSkipReasonFor("absorbed-answer-key.test.ts");
 
 test("ACME availability gate (D-08), reused for criterion 1's fixture reproducibility", () => {
   assertAcmeRequiredIfEnvSet(assert);

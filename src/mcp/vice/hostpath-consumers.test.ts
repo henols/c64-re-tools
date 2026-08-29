@@ -212,16 +212,23 @@ function annoProductionModules(): string[] {
   return topLevelProductionModules().filter((name) => /^anno-.*\.ts$/.test(name));
 }
 
-// MEASURED, NOT COPIED: the count of `anno-*.ts` production modules on disk
-// at this commit. This floor must be RAISED, never lowered -- an empty or
-// broken glob (a typo'd filter regex, or a directory walk that silently
-// resolves to the wrong path) must fail THIS test rather than let the
-// absence assertion below pass trivially, which is the exact defect INT-01
-// found in the ten-name hard-coded array this whole derivation replaces.
+// MEASURED, NOT COPIED: 15 `anno-*.ts` production modules on disk at this
+// commit -- counted with `ls | grep -E '^anno-.*\.ts$' | grep -v '\.test\.'`
+// after plan 29-05's three renames landed, not carried over from any planning
+// document. This floor must be RAISED, never lowered: an empty or broken glob
+// (a typo'd filter regex, or a directory walk that silently resolves to the
+// wrong path) must fail THIS test rather than let the absence assertion below
+// pass trivially, which is the exact defect INT-01 found in the ten-name
+// hard-coded array this whole derivation replaces.
 //
-// It replaces `R2000_MODULE_FLOOR = 14` over the old prefix, and D-13 reads
-// "raised, not lowered" LITERALLY: the value here is never below 14.
-const ANNO_MODULE_FLOOR = 14;
+// It REPLACES `R2000_MODULE_FLOOR = 14` over the retired prefix, and D-13's
+// "raised, not lowered" is read LITERALLY rather than charitably: 15 is
+// strictly greater than the 14 it replaces, so the re-expression is a raise
+// on its own terms and needs no interpretation. That is only satisfiable
+// because the survivors took the `anno-` prefix (D-05) -- under bare names
+// this derivation would not count them at all, which is a lowering by
+// construction however it were worded.
+const ANNO_MODULE_FLOOR = 15;
 
 test("the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();

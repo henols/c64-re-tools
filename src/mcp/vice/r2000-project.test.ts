@@ -108,7 +108,7 @@ test("synthesizeProject: empty payload throws", () => {
 // ---------------------------------------------------------------------------
 // ensureProjectSettings() -- unit half, always runs, no external binary.
 //
-// Mirrors r2000-spawn-seam.test.ts's planted-violation shape: reintroduce
+// Mirrors spawn-seam.test.ts's planted-violation shape: reintroduce
 // the known-bad state, watch the guard catch it, restore. Every case in
 // r2000-project.ts's Task 1 <behavior> list gets its own named test below,
 // plus a committed non-vacuity pair proving the forcing assertion actually

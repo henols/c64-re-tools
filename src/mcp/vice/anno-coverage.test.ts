@@ -10,7 +10,7 @@
 // is the non-vacuity control and it is asserted explicitly.
 //
 // Three named guard classes for the sealed reproducibility evidence, mirroring
-// `r2000-answer-key.test.ts`'s own vocabulary:
+// `absorbed-answer-key.test.ts`'s own vocabulary:
 //
 //   1. T-19-SEAL-DRIFT: ANSWER.sha256 silently stops matching ANSWER.md's own
 //      canonical line (someone edits one file and forgets the other).
@@ -4191,7 +4191,7 @@ test("the declared shape count equals the number of true-returning sites in hasD
   // suite fully green -- the root cause displaced one level up rather than
   // removed. Same source-text idiom as the read-only-by-construction assertion
   // in section 11 over this same module, and the same enumerated-site
-  // discipline as `r2000-spawn-seam.test.ts`'s spawn-site set: derive the real
+  // discipline as `spawn-seam.test.ts`'s spawn-site set: derive the real
   // number from the source, then assert set/count equality against the frozen
   // declaration.
   const body = functionBodyFromSource(coverageSource(), COVERAGE_SIGNATURE);

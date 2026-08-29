@@ -60,8 +60,8 @@
 // module registers with the runner, as an import side effect, silently
 // duplicating that whole file's execution inside the importing file.
 // Importing a neutral, non-test helper module is a DIFFERENT thing and is
-// permitted; the precedent is already in the tree at r2000-spawn-seam
-// .test.ts:53, which imports a non-test gate module exactly that way. That
+// permitted; the precedent is already in the tree at spawn-seam.test.ts:53,
+// which imports a non-test gate module exactly that way. That
 // is why this file's module enumerator is now an import rather than the
 // fourth hand copy of the same body.
 import { test } from "node:test";

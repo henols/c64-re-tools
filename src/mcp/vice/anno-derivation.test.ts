@@ -1,4 +1,18 @@
-// r2000-upstream-audit.test.ts -- the mechanical half of ABS-01 and ABS-04.
+// anno-derivation.test.ts -- the mechanical half of ABS-01 and ABS-04.
+//
+// RENAMED from `r2000-upstream-audit.test.ts` by phase 29 plan 29-05. Renamed
+// ONLY -- plan 29-08 adds this file's surface-derivation half.
+//
+// `R2000_UPSTREAM_CLONE` and `VICE_REQUIRE_R2000_UPSTREAM` are DELIBERATELY
+// LEFT BYTE-IDENTICAL, and the reason is the same one that keeps `ACME_BIN`
+// and `VICE_REQUIRE_ACME` byte-identical: an environment variable is a name
+// CI binds by, so renaming one silently turns a hard-gated check into a
+// skipped one in whatever binds the old spelling. The subject-matter reason
+// is one level up and is the whole distinction this phase turns on -- both
+// names name an UPSTREAM PROJECT, which is not being deleted, rather than
+// this repository's integration of it, which is. The manifest-provenance
+// constants below are permanently exempt from the removal gate for exactly
+// that reason, under the class `upstream-audit-manifest-provenance`.
 //
 // WHY THIS EXISTS: `upstream-procedure-manifest.json` is the dated snapshot
 // record for five third-party procedures absorbed into `src/skills/` at one

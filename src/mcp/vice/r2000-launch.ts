@@ -33,7 +33,7 @@
 // long-lived MCP-over-stdio child session cannot be a blocking call, which
 // `runR2000()` deliberately is. Both sites are safe for the same reason:
 // EVERY spawn call site in this repo calls `assertNoViceFlag(argv)` before
-// spawning, and that is no longer a prose promise -- `r2000-spawn-seam.test.ts`
+// spawning, and that is no longer a prose promise -- `spawn-seam.test.ts`
 // derives the full production-module set, finds every regenerator2000
 // spawn call site in it, and FAILS if any of them spawns without guarding
 // first, or if a third, unguarded site ever appears. `R2000-01`'s

@@ -71,6 +71,16 @@ const ROOT = repoRoot({ from: HERE });
  */
 function inEnumerationOnDisk(dir: string = HERE): string[] {
   return readdirSync(dir)
+    // STILL the retired prefix, and that is the re-pointing rather than an
+    // oversight (plan 29-05). The enumeration's subject is WHAT REMAINS IN
+    // SCOPE -- the modules still awaiting a fate -- not the family as it was
+    // named. Nine capabilities and the CLI moved out from under this prefix
+    // and their entries became `discharged`; widening this filter to follow
+    // them would re-import survivors into a scope whose whole purpose is to
+    // empty, and would make DIRECTION 6's completeness half report a growing
+    // set while the real one shrank. When this enumeration legitimately
+    // reaches zero, the non-vacuity that used to rest on `disk.length > 0`
+    // rests on the discharge-closure relation instead.
     .filter((name) => name.startsWith("r2000-"))
     .filter((name) => /\.(ts|json)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
@@ -80,6 +90,55 @@ function inEnumerationOnDisk(dir: string = HERE): string[] {
 /** The entries the disk-completeness relation applies to. */
 function inEnumerationEntries(entries: readonly ModuleClassificationEntry[]): ModuleClassificationEntry[] {
   return entries.filter((entry) => entry.scope === "in-enumeration");
+}
+
+/** The entries whose fate has been carried out. */
+function dischargedEntries(entries: readonly ModuleClassificationEntry[]): ModuleClassificationEntry[] {
+  return entries.filter((entry) => entry.scope === "discharged");
+}
+
+/** THE DISCHARGE-CLOSURE RELATION (plan 29-05). Everything wrong with the
+ * discharged half of the registry, as a list of named offences:
+ *
+ *   - a discharged entry with no `fate` at all -- the scope says something
+ *     happened and the record does not say what;
+ *   - a `renamed` fate whose `to` is not on disk -- which is precisely how a
+ *     rename gets RECORDED without HAPPENING, and is the failure this
+ *     relation exists to make loud;
+ *   - a `renamed` fate whose `from` equals its `to` -- a move that moved
+ *     nothing, recorded as though it had;
+ *   - a `deleted` fate whose module IS still on disk -- a deletion recorded
+ *     against a file that survived it.
+ *
+ * Extracted into ONE named predicate that the real scan and the planted
+ * violation both call, like every other direction in this file. `here` is
+ * injectable so the planted violation drives this same code path. */
+function dischargeClosureProblems(entry: ModuleClassificationEntry, here: string = HERE): string[] {
+  const problems: string[] = [];
+  const fate = entry.fate;
+  if (fate === undefined) {
+    problems.push(`${entry.module}: scope is "discharged" but the entry records no fate -- what happened to it is unstated`);
+    return problems;
+  }
+  if (fate.kind === "renamed") {
+    if (fate.from === fate.to) {
+      problems.push(`${entry.module}: fate is a rename from ${fate.from} to itself -- a move that moved nothing`);
+    }
+    if (!existsSync(join(here, fate.to))) {
+      problems.push(
+        `${entry.module}: fate names a rename to ${fate.to}, which is NOT on disk -- a fate naming a path that ` +
+          "is not there is how a rename gets recorded without happening",
+      );
+    }
+    return problems;
+  }
+  if (existsSync(join(here, entry.module))) {
+    problems.push(
+      `${entry.module}: fate says it was deleted on ${fate.on}, but the file is still on disk -- a deletion ` +
+        "recorded against a file that survived it",
+    );
+  }
+  return problems;
 }
 
 /** DIRECTION 1. Every in-scope path on disk that has no registry entry.
@@ -306,7 +365,99 @@ test("DIRECTION 6 (non-vacuity): the on-disk in-scope count is at least the numb
       "in-enumeration entries -- a glob returning fewer paths than there are entries means the enumeration is " +
       "broken or narrowed, and every completeness assertion below would pass vacuously",
   );
-  assert.ok(disk.length > 0, "the in-scope enumeration is empty -- the filter or the directory resolution is broken");
+  // WHAT USED TO BE HERE, AND WHY IT IS GONE (plan 29-05, planner-found guard
+  // N-10). This line read `assert.ok(disk.length > 0, "the in-scope
+  // enumeration is empty -- the filter or the directory resolution is
+  // broken")`. That is a correct guard against a broken glob and a WRONG one
+  // against a scope that is legitimately emptying: this phase takes the
+  // enumeration to zero ON PURPOSE, so the assertion would have gone red on a
+  // correct tree at the deletion, two waves from here, and the cheapest fix
+  // under that pressure is to delete it -- taking the broken-glob protection
+  // with it. Its fate is decided HERE instead, before the pressure exists.
+  //
+  // The broken-glob half is NOT lost: `disk.length >= entries.length` above
+  // still catches a filter that narrowed or a directory that resolved wrong,
+  // because a glob returning fewer paths than there are in-enumeration
+  // entries fails it. What replaces the `> 0` half is the DISCHARGE-CLOSURE
+  // relation below -- non-vacuity that stays checkable precisely BECAUSE the
+  // enumeration empties, since every path that leaves it must leave a fate
+  // behind that resolves.
+});
+
+test("DISCHARGE CLOSURE (plan 29-05): every discharged entry's fate resolves against disk -- a rename to a file that is there, or a deletion of a file that is not", () => {
+  const discharged = dischargedEntries(MODULE_CLASSIFICATION);
+  // Non-vacuity, so the relation cannot pass over an empty set the way the
+  // assertion it replaces could once the enumeration emptied.
+  assert.ok(
+    discharged.length > 0,
+    "no entry carries the discharged scope -- this relation would then pass over an empty set, which is exactly " +
+      "the vacuous-guard shape it was introduced to avoid becoming",
+  );
+  const problems = discharged.flatMap((entry) => dischargeClosureProblems(entry));
+  assert.deepEqual(
+    problems,
+    [],
+    `discharge-closure problems:\n  ${problems.join("\n  ")}\n\nA fate naming a path that is not there is how a ` +
+      "rename gets RECORDED without HAPPENING -- the record would then say the capability survived while the tree " +
+      "said it did not, which is the exact failure this registry exists to prevent, one level up.",
+  );
+});
+
+test("planted violation (discharge closure): a fate naming a nonexistent file, a self-rename, a missing fate and a survived deletion are all reported by the same predicate the real scan calls", () => {
+  const base: ModuleClassificationEntry = {
+    module: "r2000-synthetic-discharged.ts",
+    scope: "discharged",
+    verdict: "capability",
+    basis: {
+      consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }],
+      requirements: ["SEAM-02"],
+      rationale: "a synthetic discharged entry, used only to drive the closure predicate",
+    },
+    extractables: [],
+  };
+
+  const renamedToNothing: ModuleClassificationEntry = {
+    ...base,
+    fate: { kind: "renamed", from: "r2000-synthetic-discharged.ts", to: "anno-this-file-does-not-exist.ts", on: "2026-08-29", why: "x" },
+  };
+  assert.ok(
+    dischargeClosureProblems(renamedToNothing).some((problem) => problem.includes("is NOT on disk")),
+    "a rename recorded to a file that is not there must be reported -- otherwise the relation cannot catch a " +
+      "rename that was written down and never carried out",
+  );
+
+  const selfRename: ModuleClassificationEntry = {
+    ...base,
+    module: "module-classification.ts",
+    fate: { kind: "renamed", from: "module-classification.ts", to: "module-classification.ts", on: "2026-08-29", why: "x" },
+  };
+  assert.ok(
+    dischargeClosureProblems(selfRename).some((problem) => problem.includes("moved nothing")),
+    "a fate whose from and to are the same name must be reported -- it records a move that did not happen",
+  );
+
+  const noFate: ModuleClassificationEntry = { ...base };
+  assert.ok(
+    dischargeClosureProblems(noFate).some((problem) => problem.includes("records no fate")),
+    "a discharged entry with no fate must be reported -- the scope claims something happened and nothing says what",
+  );
+
+  const survivedDeletion: ModuleClassificationEntry = {
+    ...base,
+    module: "module-classification.ts",
+    fate: { kind: "deleted", on: "2026-08-29", why: "x" },
+  };
+  assert.ok(
+    dischargeClosureProblems(survivedDeletion).some((problem) => problem.includes("still on disk")),
+    "a deletion recorded against a file that is still there must be reported",
+  );
+
+  // The non-vacuity half: a REAL discharged entry from the registry is
+  // reported by none of them, so the predicate is not simply rejecting
+  // everything.
+  const real = dischargedEntries(MODULE_CLASSIFICATION)[0];
+  assert.ok(real !== undefined, "expected the registry to carry at least one real discharged entry");
+  assert.deepEqual(dischargeClosureProblems(real), [], `a correct discharged entry (${real.module}) must not be reported`);
 });
 
 // --- DIRECTION 1 and 2: the two completeness directions.
@@ -376,21 +527,26 @@ test("DIRECTION 7 (adjacency): no two entries name the same module", () => {
   assert.ok(duplicates.length === 0, `modules named by more than one entry: ${duplicates.join(", ")}`);
 });
 
-test("DIRECTION 7 (adjacency): out-of-enumeration entries are excluded from the completeness loop rather than colliding with it", () => {
+test("DIRECTION 7 (adjacency): out-of-enumeration AND discharged entries are excluded from the completeness loop rather than colliding with it", () => {
   const outOfScope = MODULE_CLASSIFICATION.filter((entry) => entry.scope === "out-of-enumeration");
   assert.ok(outOfScope.length > 0, "the registry must carry the deliberately-excluded files as data, not drop them");
+  const discharged = dischargedEntries(MODULE_CLASSIFICATION);
+  assert.ok(discharged.length > 0, "the registry must carry carried-out fates as data, not drop them");
   const disk = inEnumerationOnDisk();
-  for (const entry of outOfScope) {
+  for (const entry of [...outOfScope, ...discharged]) {
     assert.ok(
       !disk.includes(entry.module),
-      `${entry.module} is marked out-of-enumeration but the enumeration found it -- the marker and the filter disagree`,
+      `${entry.module} is marked ${entry.scope} but the enumeration found it -- the marker and the filter disagree`,
     );
   }
-  // The proof that the marker does the excluding: removing every
-  // out-of-enumeration entry changes neither completeness direction.
-  const withoutOutOfScope = MODULE_CLASSIFICATION.filter((entry) => entry.scope === "in-enumeration");
-  assert.deepEqual(unclassifiedModules(withoutOutOfScope, disk), unclassifiedModules(MODULE_CLASSIFICATION, disk));
-  assert.deepEqual(orphanedEntries(withoutOutOfScope, disk), orphanedEntries(MODULE_CLASSIFICATION, disk));
+  // The proof that the marker does the excluding: removing every entry the
+  // completeness loop is not meant to see changes neither direction. Extended
+  // by plan 29-05 to cover "discharged" the same way, so the third scope value
+  // is excluded BY ITS MARKER rather than by a special case inside the loop --
+  // which is the property that made the second value trustworthy.
+  const inScopeOnly = MODULE_CLASSIFICATION.filter((entry) => entry.scope === "in-enumeration");
+  assert.deepEqual(unclassifiedModules(inScopeOnly, disk), unclassifiedModules(MODULE_CLASSIFICATION, disk));
+  assert.deepEqual(orphanedEntries(inScopeOnly, disk), orphanedEntries(MODULE_CLASSIFICATION, disk));
 });
 
 // --- DIRECTION 9: advisory line citations.

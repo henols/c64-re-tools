@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-spawn-seam.test.ts -- turns R2000-01's spawn-seam invariant into a
+// spawn-seam.test.ts -- turns R2000-01's spawn-seam invariant into a
 // checked property (INT-02, D-11.1-05): every regenerator2000 spawn call
 // site in this repo must call `assertNoViceFlag(argv)` before spawning,
 // and the set of sites that exist is pinned so a future third site cannot
@@ -429,7 +429,7 @@ test("planted violation: duplicating r2000-mcp-client.ts's spawn statement into 
 // -- the fixed builder's argv before any child existed, and that a second -
 // -- call reached the SAME held child. -------------------------------------
 
-const LIVE_SKIP_REASON = skipReasonFor("r2000-spawn-seam.test.ts");
+const LIVE_SKIP_REASON = skipReasonFor("spawn-seam.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
   assertR2000RequiredIfEnvSet(assert);
@@ -492,7 +492,7 @@ test(
         note:
           "D18-02 proof, captured live: assertNoViceFlag(argv) ran against buildMcpServerStdioArgs()'s " +
           "output before any child existed for this project path, and a second r2000_get_binary_info call " +
-          "reached the same held child (same pid) as the first -- driven by r2000-spawn-seam.test.ts " +
+          "reached the same held child (same pid) as the first -- driven by spawn-seam.test.ts " +
           "against a real regenerator2000 binary.",
       };
       mkdirSync(EVIDENCE_DIR, { recursive: true });

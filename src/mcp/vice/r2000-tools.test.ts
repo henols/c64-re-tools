@@ -194,7 +194,7 @@ test("SURF-02 (D18-27/D18-28): r2000_get_address_details never appears as a lite
   // Comment-strip only (never string-strip): the literal we are looking FOR
   // is itself a string, so blanking string content would make it
   // unobservable. codeOnly()-style full stripping is the right tool when a
-  // check must ignore ALL string content (r2000-spawn-seam.test.ts's own
+  // check must ignore ALL string content (spawn-seam.test.ts's own
   // spawn-site scan); here the opposite is true -- we must inspect exactly
   // the literal call() receives, and comment-stripping alone is sufficient
   // to keep a doc-comment mention of "call(...)" from producing a false

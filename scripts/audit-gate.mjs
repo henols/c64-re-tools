@@ -103,9 +103,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * `docs-core-value-decision.test.ts` (17-02) had ever been added to either
  * constant, despite this array's own comment instructing exactly that. Raised
  * from 6 to 7 (Phase 18 plan 18-01) alongside `EXPECTED_DOCS_GUARD_NAMES`
- * below, when `docs-r2000-decisions.test.ts` was added -- in the SAME commit
- * this time, per CR-02's own instruction and the registry-drift detector it
- * added to `audit-integrity.test.ts`. */
+ * below, when `docs-r2000-decisions.test.ts` (renamed to
+ * `docs-absorbed-decisions.test.ts` by phase 29 plan 29-05) was added -- in the
+ * SAME commit this time, per CR-02's own instruction and the registry-drift
+ * detector it added to `audit-integrity.test.ts`. The floor did NOT move for
+ * that 29-05 rename, and must not: a rename is not a retirement, and this
+ * number is what makes a silently-shrinking glob a structural failure. */
 export const DOCS_GUARD_FLOOR = 7;
 
 /** The current docs-*.test.ts guard basenames, frozen. Used only as an
@@ -133,7 +136,19 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   "docs-review-disposition.test.ts",
   "docs-fork-decision.test.ts",
   "docs-core-value-decision.test.ts",
-  "docs-r2000-decisions.test.ts",
+  // Renamed from docs-r2000-decisions.test.ts by phase 29 plan 29-05, in the
+  // SAME commit as the rename -- D-12's own reason for pairing them, and the
+  // exact half CR-02 found frozen through two additions and a deletion.
+  "docs-absorbed-decisions.test.ts",
+  // REGISTERED BY PLAN 29-05, and it is a drift fix rather than a rename:
+  // docs-uat-abstention.test.ts landed on disk in commit 19b5bd5 (2026-08-29)
+  // and was never added here, so `audit-integrity.test.ts`'s two docs-guard
+  // assertions -- the disk-derived deepEqual and CR-02's own registry-drift
+  // detector -- were BOTH red on a correct tree, which is precisely the
+  // condition CR-02 exists to surface and the response its comment above
+  // prescribes. Registering it clears both with NO floor change: the floor is
+  // `>= 7` and there are now 8 guards on disk.
+  "docs-uat-abstention.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from

@@ -80,7 +80,7 @@
 //     the same judgement. They cannot go unaccounted for either way: a
 //     committed drift guard already asserts that every `*.test.*` file on
 //     disk lands in exactly one of the automated or manual-only sets.
-//   - `docs-r2000-decisions.test.ts`. A reader will expect it here. The
+//   - `docs-absorbed-decisions.test.ts`. A reader will expect it here. The
 //     declared enumeration does not reach it, because its filename begins
 //     `docs-` rather than `r2000-`. Named explicitly rather than left for a
 //     reader to notice and wonder about.

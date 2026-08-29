@@ -20,7 +20,7 @@
 // CALIBRATION (a measurement, not a claim): across every `*.ts`/`*.mts` file
 // in this module directory, exactly THREE comment lines contain both a chain
 // arrow (`->`) and the phrase naming the repository root ("repo root"). ONE
-// of them, `r2000-answer-key.test.ts:34`, is legitimate -- it routes
+// of them, `absorbed-answer-key.test.ts:34`, is legitimate -- it routes
 // `src/mcp/vice -> repo root -> ...` with no pre-move segment at all -- and
 // is this guard's in-tree negative control. The other TWO are the
 // violations this file exists to catch and this plan fixes.
@@ -51,7 +51,7 @@
 // its exports also re-runs every top-level test that module registers with
 // the runner, duplicating that whole file's execution inside the importing
 // file. Importing a neutral, non-test helper module is a DIFFERENT thing and
-// is permitted -- `r2000-spawn-seam.test.ts:53` is the in-tree precedent,
+// is permitted -- `spawn-seam.test.ts:53` is the in-tree precedent,
 // and the shared module enumerator in `shipped-modules.ts` is now consumed
 // that way by four guards.
 //
@@ -371,23 +371,23 @@ test("non-vacuity: the extractor found at least three chain-shaped comment lines
   );
 });
 
-test("in-tree negative control: r2000-answer-key.test.ts's legitimate chain line is seen but never flagged", () => {
+test("in-tree negative control: absorbed-answer-key.test.ts's legitimate chain line is seen but never flagged", () => {
   const chainLines = repoRootChainLinesInCorpus();
-  const controlLine = chainLines.find((h) => h.file === "r2000-answer-key.test.ts");
+  const controlLine = chainLines.find((h) => h.file === "absorbed-answer-key.test.ts");
   assert.ok(
     controlLine,
-    "expected r2000-answer-key.test.ts to contain a chain-shaped comment line (arrow + repo-root phrase) -- " +
+    "expected absorbed-answer-key.test.ts to contain a chain-shaped comment line (arrow + repo-root phrase) -- " +
       "if this assertion itself fails, the extractor stopped matching on the real in-tree negative control",
   );
   assert.equal(
     controlLine!.line,
     34,
-    `expected the legitimate chain line at r2000-answer-key.test.ts:34, found at line ${controlLine!.line}`,
+    `expected the legitimate chain line at absorbed-answer-key.test.ts:34, found at line ${controlLine!.line}`,
   );
   const violations = hopChainViolationsInCorpus();
   assert.ok(
-    !violations.some((v) => v.file === "r2000-answer-key.test.ts"),
-    "r2000-answer-key.test.ts's legitimate chain line (routes through the repo root with no pre-move " +
+    !violations.some((v) => v.file === "absorbed-answer-key.test.ts"),
+    "absorbed-answer-key.test.ts's legitimate chain line (routes through the repo root with no pre-move " +
       "segment) must never be flagged as a violation",
   );
 });

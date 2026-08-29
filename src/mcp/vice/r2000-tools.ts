@@ -184,7 +184,7 @@ const PROJECT_PROPERTY = {
 // `raw_data.len() as u16` wraps 65536 to 0 (filed upstream as
 // https://github.com/ricardoquesada/regenerator2000/issues/42). D-36
 // (dated, recorded in .planning/PROJECT.md's Key Decisions table, pinned by
-// docs-r2000-decisions.test.ts) supersedes that exclusion: the tool is now
+// docs-absorbed-decisions.test.ts) supersedes that exclusion: the tool is now
 // CURATED as a client-side composition (see composeAddressDetails() below)
 // of the four already-curated reads its answer is built from
 // (r2000_get_symbols, r2000_get_comments, r2000_get_blocks,
