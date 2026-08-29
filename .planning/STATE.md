@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-04-PLAN.md
-last_updated: "2026-08-29T16:09:16.719Z"
+stopped_at: Completed 29-05-PLAN.md
+last_updated: "2026-08-29T16:45:39.062Z"
 last_activity: 2026-08-29
-last_activity_desc: Plan 29-04 complete -- STORE-06 derives cross-references and search from the bytes, and the never-cache rule is enforced by a two-halved control
-state_head: c60622c1d47b642128cd09c8a8a64c2e4518c1fe
+last_activity_desc: Plan 29-05 complete -- nine capability modules and the CLI renamed out from under the retired prefix, the registry records each fate, the module floor is a measured raise to 15, and the removal gate is green at every commit
+state_head: a7be8902c2542a0ee0740f1b0dbd1d55f29719cd
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 32
+  completed_plans: 33
   percent: 33
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 5 of 12
-Status: Executing — plans 29-01 through 29-04 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, then the derived cross-references, search and address-details composition)
-Last activity: 2026-08-29 — Plan 29-04 complete: `STORE-06` answers from the bytes. `crossReferencesTo()` unions the decoded `code` ranges, the typed split ADDRESS tables and `listXrefs()`'s stored non-derivable rows into one ascending, de-duplicated list; `searchAnnotations()` runs byte-exact and case-sensitive over three independently disableable corpora with `max_results` required and the true total returned; `composeAddressDetails()` replaces four MCP round trips with four store reads, resolving the containing range through `resolveAt` and disclosing what it was composed from. The never-cache rule is now ENFORCED rather than stated: six behavioural observations plus a directory-wide SQL-write-site census against a named fifteen-entry set, with a planted `insert` observed reddening three assertions. The failing-FILE set is unchanged against `29-BASELINE.md`.
+Plan: 6 of 12
+Status: Executing — plans 29-01 through 29-05 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, and the capability rename out from under the retired prefix)
+Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is discharged. Nine capability modules, the CLI and its verb parser, and four unpaired guard tests are on new names, derived entry by entry from `module-classification.ts` rather than by a prefix sweep; the registry gained a `ModuleFate` type and a `discharged` scope, and DIRECTION 6's `disk.length > 0` is replaced by a discharge-closure relation that survives the enumeration emptying. `ANNO_MODULE_FLOOR` is a measured 15 over `/^anno-.*\.ts$/` — strictly above the 14 it replaces — with a four-name positive control that all exist. The removal gate is green at EVERY commit: no entry names a moved path, nothing cites 29-05 any more, and one file (`anno-coverage.ts`) splits 2 permanent + 2 temporary through a new line-scoped `atLines` exemption shape. `audit-integrity.test.ts` LEFT the baseline failing set — the cause was CR-02 registry drift (`docs-uat-abstention.test.ts` unregistered since `19b5bd5`), fixed with no floor change. No file entered the set.
 
 ## Performance Metrics
 
@@ -318,6 +318,7 @@ Last activity: 2026-08-29 — Plan 29-04 complete: `STORE-06` answers from the b
 | Phase 29 P02 | 41 min | 3 tasks | 9 files |
 | Phase 29 P03 | 17 min | 3 tasks | 5 files |
 | Phase 29 P04 | 25 min | 3 tasks | 5 files |
+| Phase 29 P05 | 29 min | 3 tasks | 68 files |
 
 ## Accumulated Context
 
@@ -688,6 +689,10 @@ Recent decisions affecting current work:
 - [Phase 29]: An enum usage is associated by anno_enum.id, never by name, and the schema_version refusal is enforced as a SINGLE witness structurally — A name-keyed usage would be silently re-pointed by an updateProjectEnum rename. The single-witness test asserts exactly one comparison site inside openStore, no second anno_meta.schema_version write, and no migration entry point; both plantings were observed RED. Its failure message states that a second comparison site is how a migration arm arrives without a decision.
 - [Phase 29]: Search matching is byte-exact and CASE SENSITIVE, matching setLabel's own exact-byte-equality identity rule -- a case-folding search would report a hit on a label the store considers a different name
 - [Phase 29]: The never-cache rule is enforced by a two-halved control: six behavioural observations of the store file, plus a directory-wide SQL-write-site census against a named fifteen-entry set of file-and-declaration pairs
+- [Phase 29]: Plan 29-05: the rename set is derived entry by entry from module-classification.ts (nine, not eleven) -- the two contested entries are excluded on the authority of their own note fields, never their names — D-03/D-16. Reading only the verdict field is the name-based shortcut D-03 exists to prevent, one level up.
+- [Phase 29]: Plan 29-05: a discharged registry entry keys on the NEW filename and its fate records both from and to; the scope means the module no longer answers to the ENUMERATION, not that it no longer exists — Keeps classificationFor() answering for survivors, and makes the deletion arm of the discharge-closure relation symmetric.
+- [Phase 29]: Plan 29-05: the removal gate gained a line-scoped atLines exemption shape, because a bucket is a property of a MENTION and the wave-1 gate refused a file present in both blocks — anno-coverage.ts splits 2 permanent + 2 temporary. atLines narrows rather than widens: an occurrence at any other line falls through to the allow-list or to the reintroduction error.
+- [Phase 29]: Plan 29-05: docs-uat-abstention.test.ts registered in EXPECTED_DOCS_GUARD_NAMES -- it was the cause of both pre-existing audit-integrity.test.ts failures, and it clears with no DOCS_GUARD_FLOOR change — CR-02 registry drift: the guard landed on disk in 19b5bd5 and was never registered, so the audit gate could not have noticed its deletion.
 
 ### Pending Todos
 
@@ -1303,8 +1308,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T16:09:16.332Z
-Stopped at: Completed 29-04-PLAN.md
+Last session: 2026-08-29T16:45:38.761Z
+Stopped at: Completed 29-05-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
