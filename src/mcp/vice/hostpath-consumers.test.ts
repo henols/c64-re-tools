@@ -228,7 +228,21 @@ function annoProductionModules(): string[] {
 // because the survivors took the `anno-` prefix (D-05) -- under bare names
 // this derivation would not count them at all, which is a lowering by
 // construction however it were worded.
-const ANNO_MODULE_FLOOR = 15;
+// RAISED FROM 15 TO 16 BY PLAN 29-08 (MCP-05), which lands exactly one new
+// `anno-*.ts` production module: `anno-register.ts`, the committed record of
+// why a surface verb the Phase 19 manifest does not classify exists. The raise
+// is expressed as a RELATION -- the value plan 29-05 measured, plus the modules
+// this plan adds -- rather than as a fresh measurement, so the arithmetic is
+// readable rather than asserted.
+//
+// THE FLOOR MUST NEVER BE DERIVED FROM DISK, and this is the one number in this
+// directory where that matters most. A floor computed from `readdirSync` at test
+// time can never fail -- `disk.length >= disk.length` is a guard re-pointed to a
+// subject that cannot fail -- and it would silently discard the entire
+// non-vacuity this floor exists to provide. Keep it a hand-pinned integer
+// literal. `raised, never lowered` (D-13) is read literally: 16 is strictly
+// greater than the 15 it replaces.
+const ANNO_MODULE_FLOOR = 15 + 1;
 
 test("the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
@@ -236,6 +250,37 @@ test("the annotation module family (D-08/R2000-02) is derived from disk with a n
     modules.length >= ANNO_MODULE_FLOOR,
     `expected >= ${ANNO_MODULE_FLOOR} anno-*.ts production modules on disk, found ${modules.length} -- ` +
       "an empty or broken glob must fail loudly here rather than let the absence assertion below pass trivially",
+  );
+});
+
+// THE PINNED-EQUALS-MEASURED RELATION (plan 29-08). The floor above is a
+// one-sided guard by design: it catches a glob that broke or narrowed, and it
+// deliberately does NOT catch the module set growing underneath it. This
+// assertion catches that, and its whole purpose is DIAGNOSIS RATHER THAN
+// PROHIBITION.
+//
+// What it removes is a temporal coupling. Plan 29-07 runs in the same wave as
+// 29-08 and does not touch this file; measured at plan time it adds no
+// `anno-*.ts` production module and deletes none (it creates `block-class.ts`,
+// which does not carry the prefix, and edits `anno-cli.ts` in place), so the
+// count 29-08 measures in its own tree is the count after the wave merges. If
+// that ever stops being true, this fails HERE, saying the module set moved --
+// rather than surfacing two waves later as an intermittent off-by-one attributed
+// to whichever plan happened to run last.
+//
+// WHEN THIS FAILS, RE-DERIVE THE FLOOR DELIBERATELY. Do not nudge the literal
+// until the numbers agree: the number is a claim about which modules a plan
+// intended to land, and adjusting it to fit unknown files converts a
+// deliberate record into a rubber stamp.
+test("MCP-05: the hand-pinned annotation module floor equals the measured count -- a same-wave change to the module set fails HERE with the right diagnosis", () => {
+  const modules = annoProductionModules();
+  assert.equal(
+    modules.length,
+    ANNO_MODULE_FLOOR,
+    `ANNO_MODULE_FLOOR is pinned at ${ANNO_MODULE_FLOOR} but ${modules.length} anno-*.ts production modules are on ` +
+      `disk (${modules.join(", ")}) -- the module set moved underneath the plan that pinned this number. Re-derive ` +
+      "the floor deliberately, naming the plan that added or removed the module; do NOT adjust the literal to fit, " +
+      "and never compute it from disk, which would make it unfailable.",
   );
 });
 
