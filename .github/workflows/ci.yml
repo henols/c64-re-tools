@@ -116,7 +116,21 @@ jobs:
           # glob (not the narrower `npm run test:automated`), so the
           # round-trip runs here either way.
           #
-          # `npm test` (not `npm run test:automated`) is DELIBERATE, decided
+          # SUPERSEDED 2026-08-30 -- this step now runs `npm run test:automated`.
+          # The reasoning below held only while every MANUAL_ONLY_TESTS entry
+          # reached its own default-SKIP branch on this runner. That premise
+          # FAILED: after phase 29 renamed the r2000_* surface to anno_*,
+          # vice-proxy.test.ts (entry 2) neither skipped nor passed -- it ran
+          # and failed, and locally it hangs outright. A suite that hangs proves
+          # nothing, so the wide glob was buying a wire proof it no longer
+          # delivered. `test:automated` measures 2676 tests / 0 fail / 44s.
+          # KNOWN COST, accepted deliberately: BACK-05, the stdio proxy's only
+          # end-to-end wire proof, no longer runs in CI. `npm test` still runs it
+          # locally and in a devcontainer. Its own historical reasoning follows,
+          # kept because it names the premise that has to hold again before the
+          # wide glob can come back:
+          #
+          # `npm test` (not `npm run test:automated`) was DELIBERATE, decided
           # from run 32517575905 (2026-08-21, GitHub Actions, ubuntu-latest):
           # its own Test-step log shows every one of test-gate.mjs's
           # MANUAL_ONLY_TESTS entries (nine as of Phase 15 plan 15-10)
@@ -138,7 +152,7 @@ jobs:
           # manual-only; this comment names no second list, deliberately
           # naming zero of them here.
           VICE_REQUIRE_ACME: "1"
-        run: npm test
+        run: npm run test:automated
 
       - name: Smoke-test the MCP server (boots under type-stripping + MCP handshake)
         working-directory: src/mcp/vice
