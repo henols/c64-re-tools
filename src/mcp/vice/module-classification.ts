@@ -112,7 +112,7 @@
 //     string-to-number parser with a range refusal, but its subject is the
 //     analyser's own spawn timeout env var and it has no consumer outside
 //     the family.
-//   - `checkAcceptedOptions` (`anno-cli.ts:330`) is a generic argv option
+//   - `checkAcceptedOptions` (`anno-cli.ts:169`) is a generic argv option
 //     checker, used only by the CLI it lives in and its own test.
 //   - `resolveStorePath` (`r2000-tools.ts:972`) and
 //     `composeAddressDetails` (`r2000-tools.ts:1121`) both exist to work
@@ -367,7 +367,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 79 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 68 },
         { path: "src/mcp/vice/anno-coverage.test.ts", symbol: "buildCoverageReport" },
         { path: "src/mcp/vice/anno-coverage-grammar.test.ts", symbol: "coverageFindings" },
       ],
@@ -402,7 +402,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "listEntries", line: 62 },
         { path: "src/mcp/vice/anno-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
       ],
       requirements: ["SEAM-02"],
@@ -433,7 +432,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "generateEnums", line: 64 },
         { path: "src/mcp/vice/anno-enum-gen.test.ts", symbol: "generateEnums" },
       ],
       requirements: ["R2000-13"],
@@ -459,7 +457,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 66 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 63 },
         { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "renderMemoryMap" },
       ],
       requirements: ["SEAM-02"],
@@ -550,7 +548,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "exportLabels", line: 65 },
         { path: "src/mcp/vice/r2000-symbol-roundtrip.test.ts", symbol: "importLabels", line: 46 },
       ],
       requirements: ["R2000-14", "R2000-15"],
@@ -604,7 +601,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "verifyProject", line: 63 },
         { path: "src/mcp/vice/r2000-verify.test.ts", symbol: "acmeVerdict", line: 37 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
@@ -624,9 +620,10 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "EXPORT-01's preamble states verbatim that the existing verify seam invokes the external analyser " +
       "and parses ITS transcript, and that only the discipline survives. So what a later phase " +
       "inherits is the discipline and its two pinned false-pass transcripts, NOT the route. Act on the " +
-      "discipline; do not read this verdict as a claim that the route survives. The CLI records the " +
-      "same fact twice, at anno-cli.ts:91 and :631, and both citations had drifted by eight lines " +
-      "from the planning documents by the time this entry was written.",
+      "discipline; do not read this verdict as a claim that the route survives. The CLI used to record " +
+      "the same fact twice, in its header and again in cmdVerify(); plan 29-07 removed the verify " +
+      "verb outright (D-14), so those two citations are gone rather than drifted, and this note is " +
+      "now the only place the fact lives until Phase 30 rebuilds the route.",
   },
 
   // --- glue: the rented analyser is the whole subject ---
@@ -658,10 +655,19 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
         "discriminator warns about: the stdio entry point and four files under scripts/ survive, while " +
         "their reason for reaching this module does not.",
     },
-    extractables: [],
     note:
+      "CONSUMER-CITATION UPDATE, 2026-08-29 (plan 29-07, D-14). This module dropped from SIX other " +
+      "entries' consumer lists in one commit -- anno-d64.ts (listEntries), anno-enum-gen.ts " +
+      "(generateEnums), anno-symbols.ts (exportLabels), r2000-verify.ts (verifyProject), " +
+      "r2000-launch.ts (buildExportAsmArgs) and r2000-project.ts (synthesizeProject) -- because the " +
+      "six verbs that reached them were removed. Those consumer rows were DELETED rather than " +
+      "stripped of their line numbers: a citation whose line is dropped stops being checked by " +
+      "Direction 9 while still asserting a consumer relationship that no longer exists, which is a " +
+      "false record that reads as a maintained one. The two citations that survive (renderMemoryMap " +
+      "and buildCoverageReport) were re-pointed to their new lines in the same commit. " +
       "Surveyed for extractables: checkAcceptedOptions is a generic argv option checker, but it has no " +
       "consumer outside this module and its own test, so it is not one.",
+    extractables: [],
   },
   {
     module: "r2000-launch.ts",
@@ -672,7 +678,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
         { path: "src/mcp/vice/r2000-verify.ts", symbol: "buildVerifyArgs", line: 46 },
         { path: "src/mcp/vice/anno-symbols.ts", symbol: "runR2000", line: 72 },
         { path: "src/mcp/vice/r2000-mcp-client.ts", symbol: "buildMcpServerStdioArgs", line: 84 },
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildExportAsmArgs", line: 55 },
       ],
       requirements: [],
       rationale:
@@ -710,7 +715,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "synthesizeProject", line: 56 },
         { path: "src/mcp/vice/r2000-session.ts", symbol: "ensureProjectSettings", line: 94 },
         { path: "src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs", symbol: "synthesizeProject", line: 63 },
       ],

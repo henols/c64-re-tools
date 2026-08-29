@@ -1,184 +1,93 @@
 #!/usr/bin/env node
-// anno-cli.ts -- the thin CLI ergonomics layer over the guarded regenerator2000
-// seam (D-06). Reached as `vice-mcp r2000 <verb>` because that bin is the only
+// anno-cli.ts -- the thin CLI ergonomics layer over the annotation store
+// (D-06). Reached as `vice-mcp r2000 <verb>` because that bin is the only
 // surface that resolves identically across the Claude Code plugin route and
 // both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`
 // always launches this server via `npx` in BOTH npm-installer modes, and
 // neither route places `src/mcp/vice/*.ts` as plain files inside a
 // consuming project for some other filesystem-path-resolving design to find.
 //
+// ---------------------------------------------------------------------------
+// TWO VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29).
+// ---------------------------------------------------------------------------
+// This file used to carry eight. Six were removed in one commit because they
+// were delivery paths for the retired external analyser this project used to
+// rent an annotation store from: three drove its child process directly and
+// three reached it through capability modules that did. Removing the analyser
+// without removing them would have left six verbs that typecheck, dispatch,
+// and then fail at the first call.
+//
+// What went, and where it went:
+//   - `bootstrap`, `export-asm`, `verify` -- the analyser's own routes. The
+//     export/reassembly route returns with the ACME oracle, rebuilt over the
+//     store rather than resurrected.
+//   - `gen-enums`, `export-lbl`, `import-lbl` -- the enum generator and the
+//     VICE-label round trip. Same fate, same route: they come back as
+//     rebuilds over the store, not as restored code. Until then the symbol
+//     round trip has NO route at all, which is recorded as a withdrawal in
+//     `.planning/PROJECT.md`'s shipped-capability list rather than left for a
+//     reader to discover by running it.
+//
 // WHAT NOT TO DO, named concretely:
-//   - Never accept a caller-supplied passthrough of extra flags to
-//     regenerator2000 (D-07). Every child-process argv is built only by
-//     `r2000-launch.ts`'s fixed builders (`buildExportAsmArgs()`,
-//     `buildVerifyArgs()`) -- this file adds exactly two options of its own
-//     (`--entry`, `--out`), neither of which reaches the child process argv.
-//   - Never auto-pick a `.d64` entry when the caller does not name one (D-02).
-//     A silent auto-pick would happily analyse a cracktro or loader stub's
+//   - Never auto-pick an input when the caller does not name one (D-02). A
+//     silent auto-pick would happily analyse a cracktro or loader stub's
 //     bytes instead of the actual game -- precisely the failure
-//     `c64-provenance-diff` exists to prevent elsewhere in this project. Zero
-//     `--entry` means: print the directory listing, tell the user to re-run
-//     with `--entry NAME`, and exit 2. Never guess.
-//   - Never dispatch a flat `.raw`/`.bin` capture by its BYTE LENGTH alone
-//     (WR-07). The incident: a 4096-byte `capture.raw` fell through to the
-//     `bytes.length === 65536` branch's `else`, which is `parsePrg()` --
-//     whose first two bytes become the load address -- so a truncated
-//     capture silently "bootstrapped" with origin `$62c5` (its own first two
-//     payload bytes read backwards) and exit 0, with every downstream
-//     address wrong and no diagnostic. That is exactly the "silently guess"
-//     behaviour D-02 exists to forbid, just for a different input shape.
-//     `.raw`/`.bin` inputs are now dispatched by EXTENSION, before the
-//     length check, so `flatImageOrigin()`'s own named refusal (any length
-//     other than exactly 65536) is always reachable for those two
-//     extensions.
-
+//     `c64-provenance-diff` exists to prevent elsewhere in this project.
+//     Both surviving verbs take an EXISTING project and refuse rather than
+//     guess: `render-memmap` demands its provenance sidecar by name, and
+//     `coverage` demands its annotation store by name. Neither derives the
+//     other's path from the one it was given.
+//   - Never grow a second path validator. Every caller-supplied path below
+//     goes through `storePathWithinWorkspace()` -- the ONE confinement seam,
+//     the same one `anno-tools.ts` puts its store and image arguments
+//     through. A second answer to "is this path inside the workspace" is a
+//     confinement escape waiting to be written.
 //
 // `runR2000Cli()` returns an exit code and never terminates the process
 // itself, so it is testable in-process as well as from the bin (the bin,
 // `vice-proxy.ts`, is the only place that ends the process with this
 // function's return value). All output goes to stdout/stderr via
 // `console.log`/`console.error` -- never a thrown stack trace for an
-// expected, user-facing failure (missing file, unknown `.d64` entry, `.vsf`
-// input): each of those produces a single actionable line instead.
+// expected, user-facing failure (missing file, unreadable store, refused
+// overwrite): each of those produces a single actionable line instead.
 //
 // Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this
-// CLI handles is already container-side: regenerator2000 runs on the MCP
-// proxy's side of the boundary (D-R4), and translating any of these
+// CLI handles is already container-side, and translating any of these
 // arguments would be the mirror image of the DERIV-07 screenshot-path trap,
 // where a client-side-derived path was wrongly translated a second time.
 // This absence is asserted structurally by `hostpath-consumers.test.ts`
 // (D-08), not merely stated here.
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, extname, join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
-import { buildExportAsmArgs, runR2000, R2000ViceFlagError } from "./r2000-launch.ts";
-import { synthesizeProject } from "./r2000-project.ts";
-// Pure C64 image byte-layout knowledge -- the `.prg` load-address split and
-// the flat-64K origin -- lives in its own module, independent of the project
-// builder above. The dispatch ORDER below (extension before length) is this
-// file's own discipline and is unaffected by where the two functions live.
-import { parsePrg, flatImageOrigin } from "./prg-image.ts";
-import { listEntries, extractEntry, assertPlainImage } from "./anno-d64.ts";
-import { verifyProject } from "./r2000-verify.ts";
-import { generateEnums } from "./anno-enum-gen.ts";
-import { exportLabels, importLabels } from "./anno-symbols.ts";
 import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
-// The coverage instrument (COV-01/COV-02) plus the ONE authoritative
-// project-path validator and the ONE session-backed tool runner. `coverage`
-// adds NO child-process site of its own: every store read below goes through
-// `runR2000Tool()`, which routes into `r2000-session.ts`'s single held
-// regenerator2000 child for this project path (Rule A21) -- exactly the same
-// route `anno-memmap-render.ts` already uses, and the reason
-// the frozen two-entry child-process-site registry (the `r2000-*-seam` guard
-// suite) is untouched by this verb (T-19-25). That registry's own guard scans
-// this file, so the two verbs of the child-launch family are deliberately not
-// written out here in prose either -- an acceptance check greps this source
-// for them and a mention would trip it, exactly as `anno-coverage.ts`'s
-// header records for the path-translation module names.
+// The coverage instrument (COV-01/COV-02). It declares its own input shapes
+// and never reads a store, a file or a tool on its own behalf -- a caller
+// fetches and hands the data in, which is exactly what makes the store
+// re-point below a CALLER-side change and nothing more.
 import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
 import type { CoverageReport, R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
-import { runR2000Tool, resolveStorePath } from "./r2000-tools.ts";
-
+import { openStore, closeStore, listLabels, listComments, listRanges } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
+// The derived half of STORE-06: cross-references are DERIVED from the bytes
+// plus the store's typed ranges plus the few rows that cannot be recovered
+// from bytes at all. There is exactly one definition of that union and this
+// file calls it rather than restating it.
+import { crossReferencesTo } from "./anno-derive.ts";
+import { storePathWithinWorkspace } from "./anno-types.ts";
+import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
+import { decodeRawData } from "./prg-image.ts";
+import { repoRoot } from "./repo-root.ts";
 const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 <verb>";
 
-// `verify` is the criterion-4 (R2000-06) proof route: it runs
-// regenerator2000's own `--verify` and reports the verdict `r2000-verify.ts`'s
-// `acmeVerdict()` derives from the PARSED ACME result line -- never from the
-// child process's exit code (D-10). A skipped ACME reads as a failure here,
-// not as an absence, even on a transcript whose own exit code and summary
-// line both say "passed" -- see r2000-verify.ts's header comment and
-// r2000-verify.test.ts's pinned trap transcript for the live incident this
-// guards against. A future maintainer reading only this file must not
-// reintroduce a `result.status === 0` shortcut anywhere in `cmdVerify()`.
-//
-// FLOW-02 (D-11.1-01): the `.vsf` paragraph below used to end by naming a
-// specific numbered phase as the eventual owner of closing that gap. That
-// phase shipped and never touched `.vsf` bootstrap, so the sentence told a
-// user to wait on a remediation that would never arrive. A phase number is
-// a planning artifact -- it has no place in a shipped diagnostic. Corrected
-// to name the backlog file instead; see the matching fix in
-// `bootstrapProject()` below and `docs-dangling-refs.test.ts`'s guard
-// against this defect class recurring anywhere in this file's string
-// literals.
 const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
 verbs:
-  bootstrap <input> [--entry NAME] [--out PROJECT] [--force]
-      Accepts a .prg, a .d64 (pick an entry with --entry), or a flat 64K
-      .raw/.bin capture. Writes a .regen2000proj to --out (default: the
-      input path with its extension replaced by .regen2000proj). Refuses to
-      overwrite an existing file at that path unless --force is given. A
-      .regen2000proj input is refused outright -- bootstrap never re-reads
-      one; use export-asm or verify on it directly.
-
-  export-asm <input-or-project> [--entry NAME] [--out FILE] [--force]
-      If given a .regen2000proj it is used directly; otherwise this bootstraps
-      the input to a temporary project first, so a bare .prg becomes ACME
-      source in one command with no human interaction (--entry is forwarded
-      to that bootstrap step, and is required the same way it is for
-      bootstrap itself when the input is a .d64 -- IN-06/D-11.1-04: this line
-      used to omit --entry even though the verb already accepted and used
-      it, which is corrected here alongside closing the sibling defect of
-      accepting-but-silently-dropping an option). Writes ACME source to
-      --out (default: the input stem plus .a). Refuses to overwrite an
-      existing file at that path unless --force is given.
-
-  verify <input-or-project> [--entry NAME]
-      The criterion-4 (R2000-06) reassembly proof: exports and reassembles
-      through regenerator2000's own --verify, and prints each assembler's
-      parsed result line. Exits 0 only when ACME's own line reports success --
-      a skipped ACME is a failure here, never a pass, regardless of the child
-      process's own exit code or its "All roundtrip verifications passed."
-      summary line (D-10). Accepts a .regen2000proj directly, or bootstraps a
-      bare .prg/.d64/flat-64K input to a temporary project first, exactly
-      like export-asm.
-
-  gen-enums <project> [--max-results N]
-      Generates program-specific enums from the register writes an existing
-      .regen2000proj's disassembly already contains (D-20/D-22/D-23,
-      R2000-13) -- one variant per DISTINCT value actually written, named
-      from the curated bit-name table (anno-regbits.json), applied at every
-      matching immediate-load address, and saved. Prints total/paired/
-      unpaired register-store counts and, per created/updated enum, its name
-      and variant count. Requires an EXISTING .regen2000proj (this verb does
-      not bootstrap from a raw input -- run bootstrap first). --max-results
-      overrides the 10000-row ceiling on each of the two search passes this
-      verb runs internally; exits non-zero, printing the reason, when either
-      pass returns exactly its own ceiling (coverage may be incomplete) or
-      when generateEnums() itself refuses (an illegal generated identifier,
-      or an enum install that failed outright).
-
-  export-lbl <project> [--out FILE]
-      Exports the project's user-defined labels to a VICE label file
-      (R2000-14): "al C:xxxx .Name" lines that stock-symbols.ts's existing
-      parser accepts. The written file is read back and validated through
-      that same parser before this verb reports success -- a regenerator2000
-      exit code has lied before (r2000-verify.ts's D-10 founding incident),
-      so the exit code alone is never trusted. Defaults --out to the project
-      path's stem plus .lbl. Prints the written path and the symbol count
-      parsed back from the file. Requires an EXISTING .regen2000proj (this
-      verb does not bootstrap from a raw input).
-
-  import-lbl <project> <lbl>
-      Imports a VICE label file into the project (R2000-15, the D-28 path):
-      --import_lbl paired with --mcp-server-stdio plus an explicit
-      r2000_save_project -- the only combination that actually persists the
-      import (--import_lbl alone under --headless silently discards it,
-      main.rs:800-806). Prints the names imported, then an explicit line
-      naming the fact that the import was persisted by an explicit save
-      (proven by re-reading the project from disk in a fresh process, never
-      trusted from the child's own success text alone). Exits non-zero,
-      printing the reason, when the result is not disk-verified, or when the
-      given .lbl fails stock-symbols.ts's own size/line/symbol ceilings.
-      Requires an EXISTING .regen2000proj (this verb does not bootstrap from
-      a raw input).
-
   render-memmap <project> --provenance FILE [--out FILE] [--check]
       Generates the Markdown memory map from the project's store plus a
       validated provenance sidecar (D-24: the store is canonical, this
@@ -191,129 +100,59 @@ verbs:
       hand edit OR a store-side change since the file was last rendered),
       or prints "missing" and exits non-zero when --out does not exist yet.
       --check is how a hand edit to the generated file is caught. Requires
-      an EXISTING .regen2000proj and an EXISTING --provenance sidecar (this
-      verb does not bootstrap from a raw input).
+      an EXISTING project and an EXISTING --provenance sidecar (this verb
+      does not create either).
 
-  coverage <project> [--out FILE] [--force] [--sample N]
-      Measures how far an EXISTING .regen2000proj has actually been
-      reverse-engineered (COV-01/COV-02), through anno-coverage.ts. Reads
-      the store's symbols, comments, blocks and per-label cross-references
-      over the one held session, and the project's own payload bytes, then
-      prints three separately named measures -- the structural byte census,
-      the two label figures, and the sampled reproducibility result -- plus
-      the comment-vacuity measure, the indirect-dispatch scan and the
-      divergence sub-report, each under its own heading with its own
-      numbers. Writes the JSON report to --out when given, refusing to
-      overwrite an existing file there unless --force is passed; --sample
-      overrides the reproducibility sample size. Exits non-zero ONLY for a
-      caller error or a store it could not read -- a low measurement is a
-      RESULT, never a failure, so a bad report still exits 0.
+  coverage <project> --store FILE [--out FILE] [--force] [--sample N]
+      Measures how far a program has actually been reverse-engineered
+      (COV-01/COV-02), through anno-coverage.ts. <project> supplies the
+      PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
+      holding the labels, comments and typed ranges. Those are two separate
+      files on purpose: the store holds annotations and never bytes, so a
+      derived measure has to be told which bytes it is measuring and this
+      verb refuses to guess one from the other. Prints three separately
+      named measures -- the structural byte census, the two label figures,
+      and the sampled reproducibility result -- plus the comment-vacuity
+      measure, the indirect-dispatch scan and the divergence sub-report,
+      each under its own heading with its own numbers. Writes the JSON
+      report to --out when given, refusing to overwrite an existing file
+      there unless --force is passed; --sample overrides the
+      reproducibility sample size. Exits non-zero ONLY for a caller error
+      or a store it could not read -- a low measurement is a RESULT, never
+      a failure, so a bad report still exits 0.
       This verb deliberately reports separate numbers and never a single
       combined figure: one aggregate is precisely what makes a coverage
       claim unfalsifiable, because any one weak measure can be hidden by
-      averaging it against a strong one. Requires an EXISTING
-      .regen2000proj (this verb does not bootstrap from a raw input).
+      averaging it against a strong one.
 
-.d64 input with no --entry named prints the directory listing and exits 2 --
-this CLI never guesses which entry to use (D-02).
-
-.vsf input is not supported by any verb -- regenerator2000's auto-detected
-machine-type field is correct only by coincidence for C64 snapshots, and no
-R2000-* requirement covers .vsf as a bootstrap input (D-34). The idea is
-recorded as backlog at
-.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to
-.prg, .d64 or a flat 64K capture.
+Both verbs require inputs that already exist. Neither creates a project, a
+store or a sidecar, and neither derives one path from another -- this CLI
+never guesses (D-02).
 `;
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-interface ParsedArgs {
-  positional: string[];
-  entry?: string;
-  out?: string;
-  force?: boolean;
-  entryMissingValue?: boolean;
-  outMissingValue?: boolean;
-}
-
-/** Fixed, closed option set -- exactly `--entry`, `--out` and `--force`. No
- * rest field, no passthrough: an unrecognised flag is treated as a
- * positional token (and will surface as "input file not found" rather than
- * silently reaching regenerator2000, since nothing here ever forwards raw
- * argv to the child process).
- *
- * WR-08: a value that is absent or itself `--`-shaped is a refusal
- * (`entryMissingValue`/`outMissingValue`), never silently taken as the
- * option's value -- the same posture `parseExportLblArgs()` below already
- * has for `--out`. Before this fix, `entry = rest[++i]` and `out =
- * rest[++i]` took the NEXT token unconditionally, so `bootstrap x.prg --out
- * --entry FOO` parsed as `{ out: "--entry", entry: undefined }` and
- * `bootstrapProject()` went on to `writeFileSync()` a project literally
- * named `--entry` -- a dash-prefixed filename that is a shell-glob hazard
- * for whatever later reads that directory. Callers check the two
- * `*MissingValue` flags and refuse with a one-line message naming the
- * option that was actually short a value (WR-09's lesson: `--out --entry
- * FOO` must say `--out` is missing a value, never that `--entry` is a bad
- * path) -- never throw, so `bootstrapProject()`'s never-throw contract
- * holds for every caller of this parser too. */
-function parseArgs(rest: string[]): ParsedArgs {
-  const positional: string[] = [];
-  let entry: string | undefined;
-  let out: string | undefined;
-  let force = false;
-  let entryMissingValue = false;
-  let outMissingValue = false;
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i]!;
-    if (a === "--entry") {
-      const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
-        entryMissingValue = true;
-      } else {
-        entry = value;
-        i++;
-      }
-    } else if (a === "--out") {
-      const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
-        outMissingValue = true;
-      } else {
-        out = value;
-        i++;
-      }
-    } else if (a === "--force") {
-      force = true;
-    } else {
-      positional.push(a);
-    }
-  }
-  return { positional, entry, out, force, entryMissingValue, outMissingValue };
-}
-
 /**
  * IN-06 (D-11.1-04): the ONE declared verb-to-accepted-options fact in this
  * file. Every option every verb's own code actually reads is listed here --
- * ground truth, not merely what USAGE happens to say (see the export-asm
- * comment above: USAGE previously under-documented a real, working
- * `--entry` forward, which this map's own test caught and which USAGE was
- * corrected to match). `verify`'s entry is the fix for IN-06 itself:
- * `parseArgs()` parses `--out` for every verb because it is a single shared
- * parser, but `cmdVerify()` never reads the resulting `out` field -- so a
- * caller who passed `--out` to `verify` got no error and no effect. Listing
- * only `--entry` here means `checkAcceptedOptions()` below refuses `--out`
- * (and `--force`) before `cmdVerify()` ever runs.
+ * ground truth, not merely what USAGE happens to say.
+ *
+ * The defect this map exists against, kept on the record because the shape
+ * outlives the verb it was found on: a verb accepted a flag its own code
+ * never read, so a caller who passed it got no error and no effect. Listing
+ * only the options a verb ACTUALLY reads means `checkAcceptedOptions()` below
+ * refuses the rest before the verb ever runs.
+ *
+ * `coverage`'s `--store` is REQUIRED rather than optional, and it is declared
+ * here for the same reason as every other entry: the verb reads it. It is not
+ * defaulted from `<project>` -- see this file's header on never deriving one
+ * caller-supplied path from another.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  bootstrap: ["--entry", "--out", "--force"],
-  "export-asm": ["--entry", "--out", "--force"],
-  verify: ["--entry"],
-  "gen-enums": ["--max-results"],
-  "export-lbl": ["--out"],
-  "import-lbl": [],
   "render-memmap": ["--provenance", "--out", "--check"],
-  coverage: ["--out", "--force", "--sample"],
+  coverage: ["--store", "--out", "--force", "--sample"],
 });
 
 /**
@@ -341,9 +180,9 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 
 /**
  * Refuses to overwrite an existing file at `outPath` unless the caller
- * passed `--force`. Shared by every verb that writes an output file
- * (`bootstrap`, `export-asm`) so overwrite safety stays uniform rather than
- * one verb accreting a check the others lack (CR-01/CR-02).
+ * passed `--force`. Shared by every verb that writes an output file, so
+ * overwrite safety stays uniform rather than one verb accreting a check the
+ * others lack (CR-01/CR-02).
  */
 function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel: string, extraHint = ""): boolean {
   if (force || !existsSync(outPath)) return true;
@@ -352,583 +191,6 @@ function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel:
       `pass --force to overwrite it deliberately.`,
   );
   return false;
-}
-
-interface BootstrapOutcome {
-  code: number;
-  path?: string;
-}
-
-/**
- * Shared bootstrap logic used both by the `bootstrap` verb directly and by
- * `export-asm` when handed a bare input rather than an existing
- * `.regen2000proj`. Never throws for an expected, user-facing failure --
- * every branch below returns a `{ code }` result with a one-line message
- * already printed to stderr/stdout, so callers never see a stack trace for a
- * missing file, an unknown `.d64` entry, or a `.vsf` input.
- */
-function bootstrapProject(
-  input: string,
-  opts: { entry?: string; outPath?: string; force?: boolean },
-): BootstrapOutcome {
-  if (!existsSync(input)) {
-    console.error(`bootstrap: input file not found: ${input}`);
-    return { code: 1 };
-  }
-
-  const ext = extname(input).toLowerCase();
-  if (ext === ".regen2000proj") {
-    // CR-02: without this branch, a .regen2000proj input fell through to
-    // parsePrg(), which happily "parsed" the JSON text as a .prg (its first
-    // two bytes read as a bogus little-endian load address), and the
-    // derived out-path was then byte-identical to the input path --
-    // clobbering the project with garbage synthesised from its own text.
-    // Decision (see commit message): refuse rather than silently pass it
-    // through unchanged -- bootstrap's whole job is synthesising a project
-    // from RAW input, and a caller who names an existing .regen2000proj as
-    // bootstrap's input almost certainly meant export-asm or verify, which
-    // already accept a .regen2000proj directly and do the right thing.
-    console.error(
-      `bootstrap: ${input} is already a .regen2000proj -- bootstrap synthesises project files from raw ` +
-        "input (a .prg, a .d64 entry, or a flat 64K capture), it never re-reads one. Use export-asm or " +
-        "verify on it directly.",
-    );
-    return { code: 1 };
-  }
-  if (ext === ".vsf") {
-    // FLOW-02 (D-11.1-01): this refusal used to end by naming a specific
-    // numbered phase as the eventual owner of closing that gap. That phase
-    // shipped and never touched `.vsf` bootstrap -- the sentence pointed a
-    // user at a remediation path that would never exist. Name the backlog
-    // file instead; the WHY (the machine-type coincidence) stays, since
-    // that is the reason a user actually needs.
-    console.error(
-      "bootstrap: .vsf input is not supported -- regenerator2000's auto-detected machine-type field only " +
-        'reads correctly by coincidence ("C64SC" falls through to its own default, matching none of its ' +
-        "literal System arms). Filed as backlog, not covered by any R2000-* requirement (D-34): see " +
-        ".planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md. Convert to .prg, .d64 or a flat " +
-        "64K capture instead.",
-    );
-    return { code: 1 };
-  }
-
-  let bytes: Uint8Array;
-  try {
-    bytes = readFileSync(input);
-  } catch (err) {
-    console.error(`bootstrap: could not read ${input}: ${errMsg(err)}`);
-    return { code: 1 };
-  }
-
-  let origin: number;
-  let body: Uint8Array;
-
-  if (ext === ".d64") {
-    try {
-      assertPlainImage(bytes);
-    } catch (err) {
-      console.error(`bootstrap: ${errMsg(err)}`);
-      return { code: 1 };
-    }
-
-    if (!opts.entry) {
-      // D-02's fail-loud contract, implemented here and nowhere else: never
-      // pick an entry. A silent auto-pick would happily analyse a cracktro
-      // or loader stub instead of the game.
-      let entries;
-      try {
-        entries = listEntries(bytes);
-      } catch (err) {
-        console.error(`bootstrap: ${errMsg(err)}`);
-        return { code: 1 };
-      }
-      console.log(`bootstrap: ${input} is a .d64 image with no --entry given -- directory listing:`);
-      if (entries.length === 0) {
-        console.log("  (no entries)");
-      } else {
-        for (const e of entries) {
-          console.log(`  ${e.name}\t${e.type}\t${e.sizeBlocks} block(s)`);
-        }
-      }
-      console.log("Re-run with --entry NAME to choose one. This CLI never guesses (D-02).");
-      return { code: 2 };
-    }
-
-    let extracted: Uint8Array;
-    try {
-      extracted = extractEntry(bytes, opts.entry);
-    } catch (err) {
-      console.error(`bootstrap: ${errMsg(err)}`);
-      return { code: 1 };
-    }
-    try {
-      ({ origin, body } = parsePrg(extracted));
-    } catch {
-      // WR-09 (D-11.1-04): parsePrg() throws only when its input is under 3
-      // bytes (a .prg needs a 2-byte load address plus at least 1 payload
-      // byte). Every sibling branch below already wraps its own parsePrg()
-      // call -- this was the one gap, and its unwrapped throw escaped to
-      // runR2000Cli()'s last-resort net, surfacing as `r2000: parsePrg:
-      // input is N byte(s)` -- a message naming an internal function to a
-      // user who only ever supplied a disk image. Reworded entirely in the
-      // caller's own vocabulary (the entry name, never `parsePrg`) so the
-      // never-throw contract holds on this branch too.
-      console.error(
-        `bootstrap: entry "${opts.entry}" holds ${extracted.length} byte(s) -- not a loadable program ` +
-          "(a .prg needs at least 3 bytes: a 2-byte load address plus at least 1 payload byte). Choose a " +
-          "different --entry, or use a different input.",
-      );
-      return { code: 1 };
-    }
-  } else if (ext === ".raw" || ext === ".bin") {
-    // WR-07: dispatch by extension, not by byte length, so a truncated or
-    // oversized flat capture hits flatImageOrigin()'s own named refusal
-    // instead of falling through to parsePrg() and being silently
-    // reinterpreted as a .prg (see the header comment above).
-    try {
-      origin = flatImageOrigin(bytes);
-    } catch (err) {
-      console.error(`bootstrap: ${errMsg(err)}`);
-      return { code: 1 };
-    }
-    body = bytes;
-  } else if (bytes.length === 65536) {
-    // Extension-less flat capture (no `.raw`/`.bin` suffix): the only
-    // remaining route by which a 65536-byte flat image reaches
-    // flatImageOrigin() is this length check, kept for that case alone.
-    origin = flatImageOrigin(bytes);
-    body = bytes;
-  } else {
-    try {
-      ({ origin, body } = parsePrg(bytes));
-    } catch (err) {
-      console.error(`bootstrap: ${errMsg(err)}`);
-      return { code: 1 };
-    }
-  }
-
-  const outPath = opts.outPath ?? input.replace(/\.[^./\\]+$/, "") + ".regen2000proj";
-  if (!refuseOverwrite(outPath, opts.force, "bootstrap")) {
-    return { code: 1 };
-  }
-  let projectJson: string;
-  try {
-    projectJson = synthesizeProject(body, { origin });
-  } catch (err) {
-    console.error(`bootstrap: ${errMsg(err)}`);
-    return { code: 1 };
-  }
-  try {
-    writeFileSync(outPath, projectJson);
-  } catch (err) {
-    // WR-09 (D-11.1-04): an ENOENT (missing parent directory), EACCES or
-    // ENOSPC here is an ordinary, expected failure -- refuseOverwrite()
-    // above only handles the exists-case; this is the everything-else case,
-    // and it must not throw past this function's own never-throw contract.
-    console.error(`bootstrap: could not write ${outPath}: ${errMsg(err)}`);
-    return { code: 1 };
-  }
-  console.log(`bootstrap: wrote ${outPath} (origin $${origin.toString(16).padStart(4, "0")})`);
-  return { code: 0, path: outPath };
-}
-
-function cmdBootstrap(rest: string[]): number {
-  const { positional, entry, out, force, entryMissingValue, outMissingValue } = parseArgs(rest);
-  // WR-08: refused before any file is touched -- a flag-shaped or missing
-  // value for either option must never reach bootstrapProject() as if it
-  // were a real value.
-  if (entryMissingValue) {
-    console.error("bootstrap: --entry requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  if (outMissingValue) {
-    console.error("bootstrap: --out requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  const input = positional[0];
-  if (!input) {
-    console.error("bootstrap: usage: bootstrap <input> [--entry NAME] [--out PROJECT] [--force]");
-    return 1;
-  }
-  return bootstrapProject(input, { entry, outPath: out, force }).code;
-}
-
-function cmdExportAsm(rest: string[]): number {
-  const { positional, entry, out, force, entryMissingValue, outMissingValue } = parseArgs(rest);
-  // WR-08, same posture as cmdBootstrap() above: refuse before any temp
-  // directory or file is created.
-  if (entryMissingValue) {
-    console.error("export-asm: --entry requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  if (outMissingValue) {
-    console.error("export-asm: --out requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  const input = positional[0];
-  if (!input) {
-    console.error("export-asm: usage: export-asm <input-or-project> [--out FILE] [--force]");
-    return 1;
-  }
-  if (!existsSync(input)) {
-    console.error(`export-asm: input file not found: ${input}`);
-    return 1;
-  }
-
-  const ext = extname(input).toLowerCase();
-  let projectPath: string;
-  let tmpDir: string | undefined;
-
-  try {
-    if (ext === ".regen2000proj") {
-      projectPath = input;
-    } else {
-      // Bootstrap to a temp project first, so a bare .prg (or .d64/.raw)
-      // becomes ACME source in one command with no human interaction.
-      tmpDir = mkdtempSync(join(tmpdir(), "r2000-cli-"));
-      const tmpProjectPath = join(tmpDir, "bootstrap.regen2000proj");
-      const outcome = bootstrapProject(input, { entry, outPath: tmpProjectPath });
-      if (outcome.code !== 0) return outcome.code;
-      projectPath = outcome.path!;
-    }
-
-    const outPath = out ?? input.replace(/\.[^./\\]+$/, "") + ".a";
-    if (
-      !refuseOverwrite(
-        outPath,
-        force,
-        "export-asm",
-        " with generated source -- acme-build's own convention pairs <stem>.a with <stem>.prg, so " +
-          "the default target is very often hand-written source",
-      )
-    ) {
-      return 1;
-    }
-    const argv = buildExportAsmArgs({ projectPath, outPath });
-    const result = runR2000(argv);
-    if (result.status !== 0) {
-      console.error(`export-asm: regenerator2000 exited ${result.status}`);
-      if (result.stderr) console.error(result.stderr);
-      return result.status ?? 1;
-    }
-    console.log(`export-asm: wrote ${outPath}`);
-    return 0;
-  } finally {
-    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
-  }
-}
-
-/**
- * `verify <input-or-project>` -- the criterion-4 (R2000-06) reassembly
- * proof. Accepts a `.regen2000proj` directly, or bootstraps a bare input to
- * a temporary project first, exactly like `cmdExportAsm()` above. Prints
- * every parsed assembler result line, then the verdict's own reason. The
- * exit code comes from `verifyProject()`'s `ok` field -- which
- * `r2000-verify.ts`'s `acmeVerdict()` derives ONLY from the parsed ACME
- * result line, never from regenerator2000's own process exit code (D-10).
- * A skipped ACME therefore prints and exits as a failure here, reading as
- * exactly that -- never as a silent absence -- even though the underlying
- * `--verify` process may itself have exited 0 with a summary line claiming
- * success (r2000-verify.test.ts's pinned trap transcript is the live
- * incident this guards against).
- */
-function cmdVerify(rest: string[]): number {
-  const { positional, entry, entryMissingValue } = parseArgs(rest);
-  // WR-08: `--out` is not in verify's own accepted set (VERB_OPTIONS above),
-  // so `checkAcceptedOptions()` already refuses it before this function ever
-  // runs -- only `--entry`'s missing-value case is reachable here.
-  if (entryMissingValue) {
-    console.error("verify: --entry requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  const input = positional[0];
-  if (!input) {
-    console.error("verify: usage: verify <input-or-project> [--entry NAME]");
-    return 1;
-  }
-  if (!existsSync(input)) {
-    console.error(`verify: input file not found: ${input}`);
-    return 1;
-  }
-
-  const ext = extname(input).toLowerCase();
-  let projectPath: string;
-  let tmpDir: string | undefined;
-
-  try {
-    if (ext === ".regen2000proj") {
-      projectPath = input;
-    } else {
-      // Bootstrap to a temp project first, so a bare .prg (or .d64/.raw)
-      // can be verified in one command with no human interaction.
-      tmpDir = mkdtempSync(join(tmpdir(), "r2000-cli-"));
-      const tmpProjectPath = join(tmpDir, "bootstrap.regen2000proj");
-      const outcome = bootstrapProject(input, { entry, outPath: tmpProjectPath });
-      if (outcome.code !== 0) return outcome.code;
-      projectPath = outcome.path!;
-    }
-
-    const result = verifyProject(projectPath);
-    for (const line of result.lines) {
-      const glyph = line.outcome === "ok" ? "✓" : "✗";
-      console.log(`  ${glyph} ${line.assembler} — ${line.detail}`);
-    }
-
-    if (!result.ok) {
-      // Print the reason verbatim -- especially a "skipped" reason, which
-      // must read as a failure and not as an absence (D-10).
-      console.error(`verify: ${result.reason}`);
-      return 1;
-    }
-    console.log(`verify: ${result.reason}`);
-    return 0;
-  } finally {
-    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
-  }
-}
-
-interface GenEnumsParsedArgs {
-  positional: string[];
-  maxResults?: number;
-  maxResultsRaw?: string;
-  unknownOption?: string;
-}
-
-/** Fixed, closed option set for gen-enums -- exactly `--max-results`. Per
- * WR-08's posture (do not silently accept a flag a verb does not
- * implement), any OTHER `--flag`-shaped token is recorded as `unknownOption`
- * and refused by the caller, rather than silently treated as a positional
- * argument the way the other verbs' `parseArgs()` does. */
-function parseGenEnumsArgs(rest: string[]): GenEnumsParsedArgs {
-  const positional: string[] = [];
-  let maxResults: number | undefined;
-  let maxResultsRaw: string | undefined;
-  let unknownOption: string | undefined;
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i]!;
-    if (a === "--max-results") {
-      maxResultsRaw = rest[++i];
-      maxResults = maxResultsRaw !== undefined ? Number.parseInt(maxResultsRaw, 10) : Number.NaN;
-    } else if (a.startsWith("--")) {
-      unknownOption ??= a;
-    } else {
-      positional.push(a);
-    }
-  }
-  return { positional, maxResults, maxResultsRaw, unknownOption };
-}
-
-/**
- * `gen-enums <project> [--max-results N]` -- D-20/D-22/D-23's whole pass,
- * driven through `generateEnums()` (`anno-enum-gen.ts`, Task 2). Prints the
- * coverage report's own summary lines (total/paired/unpaired counts, one
- * line per created/updated enum) and returns non-zero when: an unknown
- * option was given (WR-08); no project path was given; the project file
- * does not exist; `--max-results` did not parse as a positive integer;
- * either search pass returned exactly its own ceiling (a possible-
- * truncation signal, D-23's "no silent caps" applied at the CLI's own exit
- * code); or `generateEnums()` itself threw (an illegal generated
- * identifier, or an enum install/apply call that failed outright).
- */
-async function cmdGenEnums(rest: string[]): Promise<number> {
-  const { positional, maxResults, maxResultsRaw, unknownOption } = parseGenEnumsArgs(rest);
-  if (unknownOption) {
-    console.error(`gen-enums: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-
-  const project = positional[0];
-  if (!project) {
-    console.error("gen-enums: usage: gen-enums <project> [--max-results N]");
-    return 1;
-  }
-  if (!existsSync(project)) {
-    console.error(`gen-enums: input file not found: ${project}`);
-    return 1;
-  }
-  if (maxResults !== undefined && (!Number.isInteger(maxResults) || maxResults <= 0)) {
-    console.error(`gen-enums: --max-results must be a positive integer, got "${maxResultsRaw}"`);
-    return 1;
-  }
-
-  let report: Awaited<ReturnType<typeof generateEnums>>;
-  try {
-    report = maxResults !== undefined ? await generateEnums({ projectPath: project, maxResults }) : await generateEnums({ projectPath: project });
-  } catch (err) {
-    console.error(`gen-enums: ${errMsg(err)}`);
-    return 1;
-  }
-
-  for (const line of report.summaryLines) {
-    console.log(`  ${line}`);
-  }
-
-  if (report.pass1Truncated || report.pass2Truncated) {
-    console.error(
-      "gen-enums: a search pass returned exactly its own max_results ceiling -- coverage may be incomplete; " +
-        "re-run with a higher --max-results",
-    );
-    return 1;
-  }
-
-  console.log(`gen-enums: ${report.enums.length} enum(s) created/updated`);
-  return 0;
-}
-
-interface ExportLblParsedArgs {
-  positional: string[];
-  out?: string;
-  outMissingValue?: boolean;
-  unknownOption?: string;
-}
-
-/** Fixed, closed option set for export-lbl -- exactly `--out`. Per WR-08's
- * posture (do not silently accept a flag a verb does not implement, or a
- * flag missing its value), any OTHER `--flag`-shaped token is refused as
- * `unknownOption`, and `--out` with no value (or a flag-shaped "value") is
- * refused as `outMissingValue`, rather than silently treated the way
- * bootstrap/export-asm's own looser `parseArgs()` does. */
-function parseExportLblArgs(rest: string[]): ExportLblParsedArgs {
-  const positional: string[] = [];
-  let out: string | undefined;
-  let outMissingValue = false;
-  let unknownOption: string | undefined;
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i]!;
-    if (a === "--out") {
-      const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
-        outMissingValue = true;
-      } else {
-        out = value;
-        i++;
-      }
-    } else if (a.startsWith("--")) {
-      unknownOption ??= a;
-    } else {
-      positional.push(a);
-    }
-  }
-  return { positional, out, outMissingValue, unknownOption };
-}
-
-interface ImportLblParsedArgs {
-  positional: string[];
-  unknownOption?: string;
-}
-
-/** import-lbl takes no options at all besides its two positional arguments
- * -- any `--flag`-shaped token is refused as `unknownOption` (WR-08
- * posture), never silently treated as a positional. */
-function parseImportLblArgs(rest: string[]): ImportLblParsedArgs {
-  const positional: string[] = [];
-  let unknownOption: string | undefined;
-  for (const a of rest) {
-    if (a.startsWith("--")) unknownOption ??= a;
-    else positional.push(a);
-  }
-  return { positional, unknownOption };
-}
-
-/**
- * `export-lbl <project> [--out FILE]` -- the R2000-14 export leg, via
- * `anno-symbols.ts`'s `exportLabels()`. Prints the written path and the
- * symbol count parsed back from the file (never the raw regenerator2000
- * exit code alone -- `exportLabels()` itself already re-reads and validates
- * the file through stock-symbols.ts's parser before returning).
- */
-async function cmdExportLbl(rest: string[]): Promise<number> {
-  const { positional, out, outMissingValue, unknownOption } = parseExportLblArgs(rest);
-  if (unknownOption) {
-    console.error(`export-lbl: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-  if (outMissingValue) {
-    console.error("export-lbl: --out requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-
-  const project = positional[0];
-  if (!project) {
-    console.error("export-lbl: usage: export-lbl <project> [--out FILE]");
-    return 1;
-  }
-  if (!existsSync(project)) {
-    console.error(`export-lbl: project file not found: ${project}`);
-    return 1;
-  }
-
-  const outPath = out ?? project.replace(/\.[^./\\]+$/, "") + ".lbl";
-  let result: Awaited<ReturnType<typeof exportLabels>>;
-  try {
-    result = await exportLabels({ projectPath: project, outPath });
-  } catch (err) {
-    console.error(`export-lbl: ${errMsg(err)}`);
-    return 1;
-  }
-
-  console.log(`export-lbl: wrote ${outPath} (${result.symbolCount} symbol(s))`);
-  return 0;
-}
-
-/**
- * `import-lbl <project> <lbl>` -- the R2000-15/D-28 import leg, via
- * `anno-symbols.ts`'s `importLabels()`. Prints the names imported, then an
- * explicit line naming that persistence was proven by an independent disk
- * re-read (never left implicit, so the transcript itself shows the D-28
- * trap was avoided). Exits non-zero -- naming the reason, which includes
- * stock-symbols.ts's own ceiling messages verbatim when the given `.lbl`
- * fails them -- whenever the result is not disk-verified.
- */
-async function cmdImportLbl(rest: string[]): Promise<number> {
-  const { positional, unknownOption } = parseImportLblArgs(rest);
-  if (unknownOption) {
-    console.error(`import-lbl: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-
-  const [project, lbl] = positional;
-  if (!project || !lbl) {
-    console.error("import-lbl: usage: import-lbl <project> <lbl>");
-    return 1;
-  }
-  if (!existsSync(project)) {
-    console.error(`import-lbl: project file not found: ${project}`);
-    return 1;
-  }
-  if (!existsSync(lbl)) {
-    console.error(`import-lbl: label file not found: ${lbl}`);
-    return 1;
-  }
-
-  let result: Awaited<ReturnType<typeof importLabels>>;
-  try {
-    result = await importLabels({ projectPath: project, lblPath: lbl });
-  } catch (err) {
-    console.error(`import-lbl: ${errMsg(err)}`);
-    return 1;
-  }
-
-  console.log(`import-lbl: imported ${result.importedNames.length} name(s): ${result.importedNames.join(", ")}`);
-  if (!result.diskVerified) {
-    console.error(`import-lbl: ${result.reason}`);
-    return 1;
-  }
-  console.log(
-    "import-lbl: persisted by an explicit r2000_save_project call over the same --mcp-server-stdio session " +
-      "(D-28) -- verified by re-reading the project from disk in a fresh process, not merely trusted from the " +
-      "child's own success text.",
-  );
-  return 0;
 }
 
 interface RenderMemmapParsedArgs {
@@ -1085,6 +347,8 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
 
 interface CoverageParsedArgs {
   positional: string[];
+  store?: string;
+  storeMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
   force?: boolean;
@@ -1094,13 +358,16 @@ interface CoverageParsedArgs {
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for coverage -- exactly `--out`, `--force` and
- * `--sample`. Same WR-08 posture as `parseRenderMemmapArgs()` above: an
- * unimplemented flag is refused as `unknownOption`, and `--out`/`--sample`
- * with a missing or flag-shaped value are refused through their own
- * `*MissingValue` fields rather than silently swallowing the next token. */
+/** Fixed, closed option set for coverage -- exactly `--store`, `--out`,
+ * `--force` and `--sample`. Same WR-08 posture as `parseRenderMemmapArgs()`
+ * above: an unimplemented flag is refused as `unknownOption`, and
+ * `--store`/`--out`/`--sample` with a missing or flag-shaped value are refused
+ * through their own `*MissingValue` fields rather than silently swallowing the
+ * next token. */
 function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
   const positional: string[] = [];
+  let store: string | undefined;
+  let storeMissingValue = false;
   let out: string | undefined;
   let outMissingValue = false;
   let force = false;
@@ -1110,7 +377,15 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--out") {
+    if (a === "--store") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        storeMissingValue = true;
+      } else {
+        store = value;
+        i++;
+      }
+    } else if (a === "--out") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("--")) {
         outMissingValue = true;
@@ -1135,30 +410,125 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
+  return { positional, store, storeMissingValue, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
+}
+
+// ---------------------------------------------------------------------------
+// THE STORE-TO-CENSUS ADAPTER (Discretion 4).
+//
+// `anno-coverage.ts` declares four input shapes and fetches NONE of them: a
+// caller hands the data in. So moving the census from the retired analyser's
+// project JSON onto this project's own annotation store is a CALLER-side
+// change and nothing else -- the four functions below, and no edit to the
+// instrument.
+//
+// THE COLUMN MAPPING, stated once, here, because a vocabulary mismatch at this
+// boundary changes coverage verdicts SILENTLY (T-29-29):
+//
+//   LabelRow   -> R2000Symbol        address, name, kind. `kind` needs no
+//                                    translation: the store's LABEL_KINDS are
+//                                    the same four tokens the census filters
+//                                    on ("User"/"Auto"/"System"/"Platform").
+//                                    `id` and `bank` are store-only and are
+//                                    dropped. The census never reads a
+//                                    symbol's `type`, so its absence from the
+//                                    store costs nothing.
+//   CommentRow -> R2000Comment       address, commentType -> type, text ->
+//                                    comment. COMMENT_TYPES is "line"/"side",
+//                                    which is exactly the census's own pair.
+//   RangeRow   -> BlockEntry         start -> start_address, endInclusive ->
+//                                    end_address (both INCLUSIVE on both
+//                                    sides), dataType -> type. That last
+//                                    column is the one the census must NOT
+//                                    interpret itself: it goes through
+//                                    `block-class.ts`, the one boundary
+//                                    allowed to read a store block spelling,
+//                                    and `block-class.test.ts` pins the class
+//                                    each of the frozen twelve resolves to BY
+//                                    NAME so this mapping cannot drift
+//                                    quietly.
+//   derived    -> R2000CrossReference the union `crossReferencesTo()` computes
+//                                    from the bytes, the typed split tables
+//                                    and the stored rows.
+// ---------------------------------------------------------------------------
+
+/** `LabelRow[]` as the census's symbol shape. */
+export function symbolsFromStore(rows: readonly LabelRow[]): R2000Symbol[] {
+  return rows.map((row) => ({ address: row.address, name: row.name, kind: row.kind }));
+}
+
+/** `CommentRow[]` as the census's comment shape. */
+export function commentsFromStore(rows: readonly CommentRow[]): R2000Comment[] {
+  return rows.map((row) => ({ address: row.address, type: row.commentType, comment: row.text }));
+}
+
+/** `RangeRow[]` as the census's block shape. The `dataType` column is copied
+ * VERBATIM and never compared here -- `block-class.ts` is the only place in
+ * this tree allowed to interpret it. */
+export function blocksFromStore(rows: readonly RangeRow[]): BlockEntry[] {
+  return rows.map((row) => ({ start_address: row.start, end_address: row.endInclusive, type: row.dataType }));
 }
 
 /**
- * Hard ceiling on how many per-label `r2000_get_cross_references` lookups one
- * coverage run performs. `r2000_get_cross_references` answers ONE address per
- * call, so an unbounded loop over a fully auto-labelled 64K image would issue
- * thousands of round trips through the held session. The bound is explicit and
- * its effect is PRINTED whenever it bites (COV-02: a measure computed over
- * less than the whole population must say so, never quietly report a smaller
- * number as if it were the whole answer).
+ * The census's fourth input, derived in ONE pass over the store and the image
+ * rather than fetched one address at a time.
+ *
+ * WHAT THIS REPLACED, and why the replacement has no ceiling. The previous
+ * implementation issued one transport round trip PER LABEL through a held
+ * child process, and bounded that at a hard ceiling of 512 lookups, printing a
+ * note when the ceiling bit. Over an in-process derivation that ceiling would
+ * be strictly worse than the bound it used to express: it would truncate a
+ * COMPLETE answer and call the remainder a floor. So it is gone, and this
+ * function answers over the WHOLE population -- every non-System, non-Platform
+ * label the store holds.
+ *
+ * `System`/`Platform` labels are excluded because every label figure already
+ * excludes them, so deriving their callers would buy the census nothing.
  */
-const MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS = 512;
+export function crossReferencesFromStore(
+  handle: AnnoStoreHandle,
+  image: Uint8Array,
+  origin: number,
+  symbols: readonly R2000Symbol[],
+): R2000CrossReference[] {
+  const targets = [
+    ...new Set(
+      (Array.isArray(symbols) ? symbols : [])
+        .filter((s) => s && String(s.kind ?? "") !== "System" && String(s.kind ?? "") !== "Platform")
+        .map((s) => s.address),
+    ),
+  ].sort((a, b) => a - b);
+  return targets.map((address) => ({ address, callers: crossReferencesTo(handle, image, origin, address).callers }));
+}
 
-/** One curated read through the session runner, with its JSON answer parsed.
- * Mirrors `anno-memmap-render.ts`'s own `queryR2000Json()` rather than
- * introducing a second convention -- and, like it, adds no child-launch site
- * of its own: the child process is owned by `r2000-session.ts` alone. */
-async function queryR2000Json<T>(name: string, args: Record<string, unknown>): Promise<T> {
-  const result = await runR2000Tool(name, args);
-  if (result.isError) {
-    throw new Error(`${name} failed: ${result.content[0]?.text ?? "(no message)"}`);
+/**
+ * The payload bytes and the load origin, read from the SAME project file the
+ * census reads them from.
+ *
+ * Deliberately not a second byte source: `buildCoverageReport()` decodes this
+ * file itself, and handing `crossReferencesTo()` bytes from somewhere else
+ * would let the two halves of one report disagree about which program they
+ * describe. Returns `null` -- never a throw and never a guess -- when the file
+ * is unreadable or carries no decodable payload; the census reports that same
+ * condition itself, in its own words, and the verb exits non-zero on it.
+ */
+function projectImage(projectPath: string): { origin: number; bytes: Uint8Array } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(projectPath, "utf8"));
+  } catch {
+    return null;
   }
-  return JSON.parse(result.content[0]!.text) as T;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const project = parsed as Record<string, unknown>;
+  const origin = typeof project.origin === "number" && Number.isSafeInteger(project.origin) ? project.origin : 0;
+  if (typeof project.raw_data_base64 !== "string") return null;
+  try {
+    const bytes = new Uint8Array(decodeRawData(project.raw_data_base64));
+    return bytes.length === 0 ? null : { origin, bytes };
+  } catch {
+    return null;
+  }
 }
 
 function hexAddr(address: number): string {
@@ -1175,11 +545,6 @@ function addressList(addresses: readonly number[], cap = 12): string {
   return addresses.length > cap ? `${shown}, ... (${addresses.length} in all)` : shown;
 }
 
-interface CrossReferenceBound {
-  requested: number;
-  performed: number;
-}
-
 /**
  * Renders the report as separately-headed sections.
  *
@@ -1193,7 +558,7 @@ interface CrossReferenceBound {
  * addresses); they are not commensurable and combining them would produce a
  * number that means nothing while reading like a verdict.
  */
-function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound): void {
+function printCoverageReport(report: CoverageReport): void {
   const s = report.structural;
   const classSum = s.reachedAsInstruction + s.tableEntry + s.referencedAsData + s.unreached;
 
@@ -1287,15 +652,6 @@ function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound)
   console.log(`    ${div.note}`);
   console.log("");
 
-  if (bound.performed < bound.requested) {
-    console.log(
-      `  NOTE -- cross-reference lookups were bounded at ${bound.performed} of ${bound.requested} non-System label(s) ` +
-        `(ceiling ${MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS}). The multi-caller rule saw only the lowest ${bound.performed} ` +
-        "addresses, so its count is a floor, not the whole population.",
-    );
-    console.log("");
-  }
-
   const verdict = coverageFindings(report);
   console.log("  per-measure findings (one named measure each -- this list is not a rating and carries no number)");
   if (verdict.clean) {
@@ -1311,19 +667,28 @@ function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound)
 }
 
 /**
- * `coverage <project> [--out FILE] [--force] [--sample N]` -- COV-01's
- * delivery path: the instrument from `anno-coverage.ts`, run against a real
- * project through the existing session seam.
+ * `coverage <project> --store FILE [--out FILE] [--force] [--sample N]` --
+ * COV-01's delivery path: the instrument from `anno-coverage.ts`, run against
+ * a real program and a real annotation store.
+ *
+ * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<project>` carries the payload
+ * bytes and the load origin; `--store` names the annotation store holding the
+ * labels, comments and typed ranges. The store holds annotations and never
+ * bytes, so a derived measure has to be told which bytes it is measuring, and
+ * guessing one path from the other is exactly the auto-pick D-02 forbids.
  *
  * Two properties this function must keep:
- *   - NO NEW CHILD-LAUNCH SITE (T-19-25). Every store read goes through
- *     `runR2000Tool()` and therefore through `r2000-session.ts`'s single held
- *     child for this project path. This file must never gain a direct
- *     child-process launch call of any kind for the coverage route.
- *   - NO SECOND PATH VALIDATOR (T-19-22). The project argument is validated
- *     only by `resolveStorePath()`, the one authoritative resolver, which
- *     already enforces the `.regen2000proj` extension and workspace
- *     containment including through symlinks.
+ *   - NO SECOND PATH VALIDATOR (T-19-22 / T-29-28). Both caller-supplied paths
+ *     are confined by `storePathWithinWorkspace()` against `repoRoot()` -- the
+ *     one seam, the same one `anno-tools.ts` puts its own store and image
+ *     arguments through. `openStore()` is then handed the same workspace root,
+ *     so its own confinement agrees by construction rather than by a second
+ *     rule.
+ *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
+ *     `finally`. `mustExist` is what makes "the annotations are gone" and
+ *     "there are no annotations" refuse differently instead of reading the
+ *     same: without it this verb would CREATE an empty store at the named path
+ *     and report a measurement of nothing.
  *
  * The exit code is 0 for any report it managed to build, however poor the
  * numbers are -- a bad score is a result, not a failure. Non-zero is reserved
@@ -1331,10 +696,16 @@ function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound)
  * it could not read or a payload it could not decode.
  */
 async function cmdCoverage(rest: string[]): Promise<number> {
-  const { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption } = parseCoverageArgs(rest);
+  const { positional, store, storeMissingValue, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption } =
+    parseCoverageArgs(rest);
 
   if (unknownOption) {
     console.error(`coverage: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (storeMissingValue) {
+    console.error("coverage: --store requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1351,7 +722,15 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   const project = positional[0];
   if (!project) {
-    console.error("coverage: usage: coverage <project> [--out FILE] [--force] [--sample N]");
+    console.error("coverage: usage: coverage <project> --store FILE [--out FILE] [--force] [--sample N]");
+    return 1;
+  }
+  if (!store) {
+    console.error(
+      "coverage: --store FILE is required -- the annotation store holds the labels, comments and typed ranges, " +
+        "and this verb will not derive its path from <project>.\n",
+    );
+    console.log(USAGE);
     return 1;
   }
   if (sample !== undefined && (!Number.isInteger(sample) || sample <= 0)) {
@@ -1359,16 +738,28 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // T-19-22: the ONE authoritative validator, never a second hand-rolled one.
+  // T-19-22 / T-29-28: the ONE confinement seam, for BOTH caller-supplied
+  // paths. Never a second hand-rolled one, and never a different rule for the
+  // store than for the program it annotates.
+  const workspaceRoot = repoRoot();
   let projectPath: string;
+  let storePath: string;
   try {
-    projectPath = resolveStorePath(project);
+    projectPath = storePathWithinWorkspace(project, workspaceRoot);
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
   } catch (err) {
     console.error(`coverage: ${errMsg(err)}`);
     return 1;
   }
   if (!existsSync(projectPath)) {
     console.error(`coverage: project file not found: ${projectPath}`);
+    return 1;
+  }
+  if (!existsSync(storePath)) {
+    console.error(
+      `coverage: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
+        'gone" and "there are no annotations" must not read the same.',
+    );
     return 1;
   }
 
@@ -1379,33 +770,30 @@ async function cmdCoverage(rest: string[]): Promise<number> {
   let symbols: R2000Symbol[];
   let comments: R2000Comment[];
   let blocks: BlockEntry[];
-  const crossReferences: R2000CrossReference[] = [];
-  let bound: CrossReferenceBound;
+  let crossReferences: R2000CrossReference[];
+  let handle: AnnoStoreHandle;
   try {
-    symbols = await queryR2000Json<R2000Symbol[]>("r2000_get_symbols", { project: projectPath });
-    comments = await queryR2000Json<R2000Comment[]>("r2000_get_comments", { project: projectPath });
-    blocks = await queryR2000Json<BlockEntry[]>("r2000_get_blocks", { project: projectPath });
-
-    // Cross-references are per-address, so only the labels the multi-caller
-    // rule can actually act on are looked up: System labels are excluded from
-    // every label figure already, so paying a round trip for each would buy
-    // nothing.
-    const lookupAddresses = [
-      ...new Set(
-        (Array.isArray(symbols) ? symbols : [])
-          .filter((s) => s && String(s.kind ?? "") !== "System" && String(s.kind ?? "") !== "Platform")
-          .map((s) => s.address),
-      ),
-    ].sort((a, b) => a - b);
-    const performed = lookupAddresses.slice(0, MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS);
-    for (const address of performed) {
-      const callers = await queryR2000Json<number[]>("r2000_get_cross_references", { project: projectPath, address });
-      crossReferences.push({ address, callers: Array.isArray(callers) ? callers : [] });
-    }
-    bound = { requested: lookupAddresses.length, performed: performed.length };
+    handle = openStore(storePath, { workspaceRoot, mustExist: true });
   } catch (err) {
     console.error(`coverage: ${errMsg(err)}`);
     return 1;
+  }
+  try {
+    symbols = symbolsFromStore(listLabels(handle));
+    comments = commentsFromStore(listComments(handle));
+    blocks = blocksFromStore(listRanges(handle));
+    // The bytes come from the SAME file the census decodes, so the derived
+    // half and the censused half can never describe different programs. A
+    // payload that will not decode yields no cross-references at all rather
+    // than a partial answer -- the census reports that condition itself and
+    // this verb exits non-zero on it below.
+    const image = projectImage(projectPath);
+    crossReferences = image === null ? [] : crossReferencesFromStore(handle, image.bytes, image.origin, symbols);
+  } catch (err) {
+    console.error(`coverage: ${errMsg(err)}`);
+    return 1;
+  } finally {
+    closeStore(handle);
   }
 
   let report: CoverageReport;
@@ -1423,7 +811,7 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  printCoverageReport(report, bound);
+  printCoverageReport(report);
 
   if (out) {
     try {
@@ -1475,36 +863,20 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
 
   try {
     switch (verb) {
-      case "bootstrap":
-        return cmdBootstrap(rest);
-      case "export-asm":
-        return cmdExportAsm(rest);
-      case "verify":
-        return cmdVerify(rest);
-      case "gen-enums":
-        return await cmdGenEnums(rest);
-      case "export-lbl":
-        return await cmdExportLbl(rest);
-      case "import-lbl":
-        return await cmdImportLbl(rest);
       case "render-memmap":
         return await cmdRenderMemmap(rest);
       case "coverage":
         return await cmdCoverage(rest);
       default:
-        console.error(`r2000: unknown verb "${verb}"\n`);
+        console.error(`r2000: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
         console.log(USAGE);
         return 1;
     }
   } catch (err) {
-    // An R2000ViceFlagError from the seam (or any other unexpected throw)
-    // must be re-thrown or reported verbatim, never swallowed -- the loud
-    // failure is the point (D-07). This is a last-resort net: every expected
-    // failure path above already returns its own code with its own message.
-    if (err instanceof R2000ViceFlagError) {
-      console.error(err.message);
-      return 1;
-    }
+    // A last-resort net: every expected failure path above already returns its
+    // own code with its own message, so anything arriving here is unexpected
+    // and is reported verbatim rather than swallowed. The loud failure is the
+    // point (D-07).
     console.error(`r2000: ${errMsg(err)}`);
     return 1;
   }

@@ -1,37 +1,63 @@
-// Coverage for anno-cli.ts: proves the argv-subcommand mechanism end to end
-// (the exact thing RESEARCH.md flagged as unverified for Assumption A2),
-// exercises both verbs in-process, and proves the .d64 refusal (D-02) writes
-// nothing. Bin-level tests spawn the real vice-proxy.ts bin exactly as a
-// consumer would (smoke.mjs's own harness shape, including
-// VICE_SKIP_RESOURCE_INSTALL=1 and MASTRA_TELEMETRY_DISABLED=1 in the child
-// env); in-process tests call runR2000Cli() directly against a temp working
-// directory. The gated test (test 8) needs a real regenerator2000 and follows
-// disasm-roundtrip.test.ts's SKIP_REASON / { skip } convention, renamed
-// R2000_BIN/VICE_REQUIRE_R2000 per D-11 -- never a hand-rolled early return.
+// anno-cli.test.ts -- coverage for the TWO-VERB CLI (D-14, 2026-08-29).
+//
+// This file used to test eight verbs. Six of them were delivery paths for the
+// retired external analyser this project rented an annotation store from, and
+// they went in one commit together with their tests. What is left is exactly
+// what the CLI still has: `render-memmap` and `coverage`.
+//
+// FOUR THINGS THIS FILE PROVES, and why each earns its place:
+//
+//   1. THE ARGV SUBCOMMAND MECHANISM, end to end, at the bin. Spawns the real
+//      `vice-proxy.ts` exactly as a consumer would (`smoke.mjs`'s harness
+//      shape, including VICE_SKIP_RESOURCE_INSTALL=1 and
+//      MASTRA_TELEMETRY_DISABLED=1 in the child env), and asserts no line of
+//      stdout is a JSON-RPC frame -- the proof the subcommand short-circuits
+//      before the MCP server ever starts.
+//   2. THE NARROWING IS REAL. Each of the six removed verbs is rejected, and
+//      the rejection names the two that exist. A verb removed from the
+//      dispatch switch but left in USAGE, or vice versa, fails here.
+//   3. THE OPTION CONTRACT (IN-06). `VERB_OPTIONS` and USAGE agree per verb,
+//      every documented option is accepted, and every undocumented one is
+//      refused with the verb's own name on the front.
+//   4. THE CENSUS RE-POINT IS EQUIVALENT, not merely compiling. A store
+//      populated to match a committed coverage fixture produces the verdict
+//      that fixture records. That is the assertion T-29-29 exists for: a
+//      vocabulary mismatch between the store's columns and the census's input
+//      shapes would move a measurement with nothing red anywhere.
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { runR2000Cli, VERB_OPTIONS } from "./anno-cli.ts";
-import { tsToOffset } from "./anno-d64.ts";
-import { synthesizeProject } from "./r2000-project.ts";
 import {
-  R2000_AVAILABLE,
-  skipReasonFor,
-  assertR2000RequiredIfEnvSet,
-} from "./r2000-test-gate.ts";
-import { ACME_AVAILABLE, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+  runR2000Cli,
+  VERB_OPTIONS,
+  symbolsFromStore,
+  commentsFromStore,
+  blocksFromStore,
+  crossReferencesFromStore,
+} from "./anno-cli.ts";
+import { openStore, closeStore, setLabel, setComment, setDataType, putXref, listLabels, listComments, listRanges } from "./anno-store.ts";
+import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
+import type { R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
+import type { BlockEntry } from "./block-class.ts";
+import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** The six verbs D-14 removed. Hand-listed on purpose: deriving it from
+ * `VERB_OPTIONS` would assert that a removed verb is removed, which is a
+ * tautology. This list is what makes "the narrowing happened" falsifiable. */
+const REMOVED_VERBS = ["bootstrap", "export-asm", "verify", "gen-enums", "export-lbl", "import-lbl"];
+
+/** The two that survive. Same reasoning, opposite polarity. */
+const SURVIVING_VERBS = ["render-memmap", "coverage"];
+
 // ---------------------------------------------------------------------------
-// Console capture -- runR2000Cli() speaks only via console.log/console.error,
-// never returns text, so in-process tests intercept both temporarily rather
-// than spawning a child process for every case.
+// Harness
 // ---------------------------------------------------------------------------
 
 async function withCapturedConsole<T>(
@@ -57,65 +83,26 @@ async function withCapturedConsole<T>(
 }
 
 function withTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "r2000-cli-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "anno-cli-test-"));
+  return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/** A temp directory INSIDE the workspace root.
+ *
+ * `coverage` confines both of its caller-supplied paths with
+ * `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path
+ * is refused BY DESIGN -- that refusal is the mitigation for T-29-28, not an
+ * inconvenience to route around. Any test that drives the coverage verb for
+ * real must therefore work inside the tree, exactly as the store's own tests
+ * do. */
+function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(HERE, ".anno-cli-test-"));
   return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
 // ---------------------------------------------------------------------------
-// A minimal, self-contained .d64 fixture -- one directory sector at 18/1 with
-// a single "GAME" entry, its payload written across a single sector. Rebuilt
-// here (not exported from anno-d64.test.ts, per that file's scope) using the
-// same DOS end-of-chain convention: the last sector's next-track byte is 0
-// and its next-sector byte holds the zero-based offset of the last used byte.
-// ---------------------------------------------------------------------------
-
-function blankImage(): Buffer {
-  return Buffer.alloc(174848, 0);
-}
-
-function writeDirEntry(
-  buf: Buffer,
-  dirTrack: number,
-  dirSector: number,
-  index: number,
-  opts: { typeByte: number; firstTrack: number; firstSector: number; name: string; blocks: number },
-): void {
-  const off = tsToOffset(dirTrack, dirSector) + index * 32;
-  buf[off + 2] = opts.typeByte;
-  buf[off + 3] = opts.firstTrack;
-  buf[off + 4] = opts.firstSector;
-  const nameBuf = Buffer.alloc(16, 0xa0);
-  Buffer.from(opts.name, "latin1").copy(nameBuf);
-  nameBuf.copy(buf, off + 5);
-  buf[off + 30] = opts.blocks & 0xff;
-  buf[off + 31] = (opts.blocks >> 8) & 0xff;
-}
-
-function writeSingleSectorEntry(buf: Buffer, track: number, sector: number, payload: Uint8Array): void {
-  const off = tsToOffset(track, sector);
-  buf[off] = 0; // end of chain
-  buf[off + 1] = payload.length + 1; // last-used-byte offset (see anno-d64.ts's own convention)
-  Buffer.from(payload).copy(buf, off + 2);
-}
-
-/** A tiny .prg-shaped payload: little-endian $0801 load address, `lax`
- * zeropage ($A7 $02, an illegal opcode) then `rts` ($60) -- reused for every
- * fixture below so the forced `use_illegal_opcodes` setting (D-05) is
- * actually exercised, not merely written, exactly like r2000-project.test.ts's
- * own gated integration test. */
-const PRG_WITH_ILLEGAL_OPCODE = Uint8Array.from([0x01, 0x08, 0xa7, 0x02, 0x60]);
-
-function oneEntryImage(): Buffer {
-  const buf = blankImage();
-  writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 5, firstSector: 0, name: "GAME", blocks: 1 });
-  writeSingleSectorEntry(buf, 5, 0, PRG_WITH_ILLEGAL_OPCODE);
-  return buf;
-}
-
-// ---------------------------------------------------------------------------
-// Bin-level tests (no regenerator2000 needed, so these always run) -- the
-// end-to-end proof RESEARCH.md flagged as missing for Assumption A2: the
-// subcommand short-circuits before the MCP server ever starts.
+// Bin-level tests -- the end-to-end proof that the subcommand short-circuits
+// before the MCP server starts.
 // ---------------------------------------------------------------------------
 
 const VICE_PROXY = join(HERE, "vice-proxy.ts");
@@ -150,8 +137,7 @@ test("bin: `vice-mcp r2000 --help` exits 0, prints both invocation forms, and em
   // The load-bearing assertion: no line of stdout parses as a JSON object
   // carrying a `jsonrpc` key -- proof the subcommand short-circuits before
   // the MCP server (and its stdio JSON-RPC wire protocol) ever starts.
-  const lines = helpResult.stdout.split("\n");
-  for (const line of lines) {
+  for (const line of helpResult.stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     let parsed: unknown;
@@ -175,15 +161,10 @@ test("bin: `vice-mcp r2000 no-such-verb` exits non-zero and prints a usage block
   assert.match(combined, /usage \(npm install\)/);
 });
 
-test("bin: `vice-mcp r2000 --help` lists all three verbs: bootstrap, export-asm, verify", () => {
-  assert.match(helpResult.stdout, /\bbootstrap\b/);
-  assert.match(helpResult.stdout, /\bexport-asm\b/);
-  assert.match(helpResult.stdout, /\bverify\b/);
-});
-
-test("bin: `vice-mcp r2000 --help` lists both symbol round-trip verbs: export-lbl, import-lbl (11-08)", () => {
-  assert.match(helpResult.stdout, /\bexport-lbl\b/);
-  assert.match(helpResult.stdout, /\bimport-lbl\b/);
+test("bin: `vice-mcp r2000 --help` lists exactly the two surviving verbs", () => {
+  for (const verb of SURVIVING_VERBS) {
+    assert.match(helpResult.stdout, new RegExp(`\\b${verb}\\b`), `USAGE must document the surviving verb ${verb}`);
+  }
 });
 
 test("bin: both invocations terminate on their own within the timeout, not via spawnSync's timeout kill", () => {
@@ -200,634 +181,45 @@ test("bin: both invocations terminate on their own within the timeout, not via s
 });
 
 // ---------------------------------------------------------------------------
-// In-process verb tests, calling runR2000Cli() directly against a temp
-// working directory.
+// The narrowing itself (D-14). Six verbs are GONE, not disabled.
 // ---------------------------------------------------------------------------
 
-test("in-process: bootstrap on a .d64 with no --entry lists every entry name and writes nothing (D-02)", async () => {
-  await withTempDir(async (dir) => {
-    const d64Path = join(dir, "game.d64");
-    writeFileSync(d64Path, oneEntryImage());
-    const outPath = join(dir, "game.regen2000proj");
-
-    const { result: code, stdout } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", d64Path, "--out", outPath]),
-    );
-
-    assert.equal(code, 2);
-    assert.match(stdout, /GAME/);
-    assert.equal(existsSync(outPath), false, "no project file must be written when no --entry is given");
-  });
-});
-
-test(
-  "in-process: bootstrap on a .d64 with --entry naming a missing file fails, naming the requested and available entries, and writes nothing",
-  async () => {
-    await withTempDir(async (dir) => {
-      const d64Path = join(dir, "game.d64");
-      writeFileSync(d64Path, oneEntryImage());
-      const outPath = join(dir, "game.regen2000proj");
-
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["bootstrap", d64Path, "--entry", "NOPE", "--out", outPath]),
-      );
-
-      assert.notEqual(code, 0);
-      assert.match(stderr, /NOPE/);
-      assert.match(stderr, /GAME/);
-      assert.equal(existsSync(outPath), false, "no project file must be written for an unknown --entry");
-    });
-  },
-);
-
-test("in-process: a .vsf input is refused with a message naming the backlog file, not a phase (D-03, FLOW-02)", async () => {
-  await withTempDir(async (dir) => {
-    const vsfPath = join(dir, "snapshot.vsf");
-    writeFileSync(vsfPath, Buffer.from("VICE Snapshot File\x1a", "latin1"));
-    const outPath = join(dir, "snapshot.regen2000proj");
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", vsfPath, "--out", outPath]),
-    );
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /2026-08-20-vsf-as-a-bootstrap-input/);
-    assert.doesNotMatch(stderr, /Phase\s+\d/);
-    assert.equal(existsSync(outPath), false, "no project file must be written for a refused .vsf input");
-  });
-});
-
-test("in-process: bootstrap refuses a .regen2000proj input rather than reparsing it as a .prg (CR-02)", async () => {
-  await withTempDir(async (dir) => {
-    const projPath = join(dir, "game.regen2000proj");
-    const originalContents = JSON.stringify({ some: "project", marker: "ORIGINAL-NOT-REPARSED" });
-    writeFileSync(projPath, originalContents);
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", projPath]),
-    );
-
-    assert.notEqual(code, 0, "bootstrap must refuse a .regen2000proj input, not reparse it as a .prg");
-    assert.match(stderr, /already a \.regen2000proj/);
-    assert.equal(
-      readFileSync(projPath, "utf8"),
-      originalContents,
-      "bootstrap must not have overwritten the .regen2000proj input with a reparsed garbage project",
-    );
-  });
-});
-
-test(
-  "in-process: bootstrap refuses to clobber an existing default-named output file distinct from its input (overwrite guard)",
-  async () => {
-    await withTempDir(async (dir) => {
-      const prgPath = join(dir, "game.prg");
-      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-      const existingProj = join(dir, "game.regen2000proj");
-      const PRE_EXISTING = "PRE-EXISTING PROJECT CONTENT, NOT SYNTHESISED JSON";
-      writeFileSync(existingProj, PRE_EXISTING);
-
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["bootstrap", prgPath]),
-      );
-
-      assert.notEqual(code, 0);
-      assert.match(stderr, /refusing to overwrite/);
-      assert.equal(readFileSync(existingProj, "utf8"), PRE_EXISTING);
-    });
-  },
-);
-
-test("in-process: bootstrap --force overwrites an existing default-named output file deliberately", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-    const existingProj = join(dir, "game.regen2000proj");
-    writeFileSync(existingProj, "STALE CONTENT");
-
-    const { result: code } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", prgPath, "--force"]),
-    );
-
-    assert.equal(code, 0);
-    const written = JSON.parse(readFileSync(existingProj, "utf8")) as { settings: { use_illegal_opcodes: unknown } };
-    assert.equal(written.settings.use_illegal_opcodes, true);
-  });
-});
-
-test("in-process: export-asm refuses to clobber an existing default-named output file (CR-01)", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-    const existingA = join(dir, "game.a");
-    const HAND_WRITTEN = "; MY PRECIOUS HAND-WRITTEN SOURCE\n";
-    writeFileSync(existingA, HAND_WRITTEN);
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", prgPath]),
-    );
-
-    assert.notEqual(code, 0, "export-asm must refuse rather than silently clobber game.a");
-    assert.match(stderr, /refusing to overwrite/);
-    assert.equal(
-      readFileSync(existingA, "utf8"),
-      HAND_WRITTEN,
-      "export-asm must not have touched the pre-existing hand-written source",
-    );
-  });
-});
-
-test("in-process: export-asm --force overwrites an existing default-named output file deliberately (CR-01)", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-    const existingA = join(dir, "game.a");
-    writeFileSync(existingA, "; stale source, --force says overwrite me\n");
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", prgPath, "--force"]),
-    );
-
-    // Without a real regenerator2000 this may still fail later (spawn
-    // ENOENT / non-zero exit), but it must get PAST the overwrite guard --
-    // i.e. it must never print the CR-01 refusal message.
-    assert.doesNotMatch(stderr, /refusing to overwrite/);
-    void code;
-  });
-});
-
-test("in-process: bootstrap on a bare .prg writes a .regen2000proj with the forced settings (D-05)", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-    const outPath = join(dir, "game.regen2000proj");
-
-    const { result: code } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", prgPath, "--out", outPath]),
-    );
-
-    assert.equal(code, 0);
-    assert.ok(existsSync(outPath), `expected ${outPath} to exist`);
-    const project = JSON.parse(readFileSync(outPath, "utf8")) as {
-      settings: { use_illegal_opcodes: unknown; system: unknown };
-    };
-    assert.equal(project.settings.use_illegal_opcodes, true);
-    assert.equal(typeof project.settings.system, "string");
-    assert.ok((project.settings.system as string).length > 0, "settings.system must be an explicit non-empty string");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// WR-07: a flat capture must be dispatched by EXTENSION, not by byte length,
-// so a truncated/oversized `.raw`/`.bin` hits flatImageOrigin()'s own named
-// refusal instead of silently falling through to parsePrg() (see
-// anno-cli.ts's header comment for the reproduced incident this pins).
-// ---------------------------------------------------------------------------
-
-test("in-process: bootstrap on a 4096-byte .raw capture fails, naming both the actual length and the required length (WR-07)", async () => {
-  await withTempDir(async (dir) => {
-    const rawPath = join(dir, "capture.raw");
-    // First two bytes deliberately shaped like a plausible-looking load
-    // address so a silent parsePrg() fallback would "succeed" with a wrong
-    // origin instead of erroring -- this is what WR-07's live incident
-    // looked like (origin $62c5 read from the capture's own first two
-    // bytes).
-    const truncated = Buffer.alloc(4096, 0);
-    truncated[0] = 0xc5;
-    truncated[1] = 0x62;
-    writeFileSync(rawPath, truncated);
-    const outPath = join(dir, "capture.regen2000proj");
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", rawPath, "--out", outPath]),
-    );
-
-    assert.notEqual(code, 0, "a wrong-size .raw capture must not bootstrap successfully");
-    assert.match(stderr, /4096/, "stderr must name the actual length");
-    assert.match(stderr, /65536/, "stderr must name the required length");
-    assert.ok(!existsSync(outPath), "no project file must be written for a refused capture");
-  });
-});
-
-test("in-process: bootstrap on a genuine 65536-byte .raw capture still bootstraps successfully (WR-07)", async () => {
-  await withTempDir(async (dir) => {
-    const rawPath = join(dir, "capture.raw");
-    const full = Buffer.alloc(65536, 0);
-    full[0x0801] = 0x60; // rts, so the body is non-trivially non-zero at a plausible spot
-    writeFileSync(rawPath, full);
-    const outPath = join(dir, "capture.regen2000proj");
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", rawPath, "--out", outPath]),
-    );
-
-    assert.equal(code, 0, `expected success, stderr: ${stderr}`);
-    assert.ok(existsSync(outPath), `expected ${outPath} to exist`);
-  });
-});
-
-test("in-process: bootstrap on a .prg whose length happens to be 4096 still bootstraps as a .prg (WR-07 regression guard)", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    const body = Buffer.alloc(4096, 0);
-    body[0] = 0x01; // load address low byte
-    body[1] = 0x08; // load address high byte ($0801)
-    writeFileSync(prgPath, body);
-    const outPath = join(dir, "game.regen2000proj");
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", prgPath, "--out", outPath]),
-    );
-
-    assert.equal(code, 0, `expected a .prg of any length to bootstrap normally, stderr: ${stderr}`);
-    assert.ok(existsSync(outPath), `expected ${outPath} to exist`);
-    const project = JSON.parse(readFileSync(outPath, "utf8")) as { origin?: number };
-    assert.equal(project.origin, 0x0801);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Gated test -- needs a real regenerator2000. Uses the shared
-// r2000-test-gate.ts seam (R2000_AVAILABLE/skipReasonFor/
-// assertR2000RequiredIfEnvSet, imported above) instead of a local copy --
-// see 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md.
-// ---------------------------------------------------------------------------
-
-/** Computed exactly once, by the shared seam. Passed through node:test's own
- * `{ skip }` option -- never a hand-rolled early return, which would report a
- * false PASS rather than a SKIP. */
-const SKIP_REASON: string | false = skipReasonFor("anno-cli.test.ts");
-
-test("regenerator2000 availability gate (D-11)", () => {
-  assertR2000RequiredIfEnvSet(assert);
-});
-
-test(
-  "gated: export-asm on a bare .prg produces ACME source in one command, no human interaction (D-01/D-09)",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      const prgPath = join(dir, "game.prg");
-      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-      const outPath = join(dir, "game.a");
-
-      const { result: code } = await withCapturedConsole(() =>
-        runR2000Cli(["export-asm", prgPath, "--out", outPath]),
-      );
-
-      assert.equal(code, 0);
-      assert.ok(existsSync(outPath), `expected exported .a file at ${outPath}`);
-      const exported = readFileSync(outPath, "utf8");
-      assert.ok(exported.length > 0, "exported .a file is empty");
+test("each of the six removed verbs is rejected, and the rejection names the two verbs that exist", async () => {
+  for (const verb of REMOVED_VERBS) {
+    const { result: code, stdout, stderr } = await withCapturedConsole(() => runR2000Cli([verb, "some.project"]));
+    assert.notEqual(code, 0, `the removed verb "${verb}" must be rejected, not dispatched`);
+    assert.match(stderr, new RegExp(`unknown verb "${verb}"`), `the refusal must name the verb the caller typed`);
+    for (const survivor of SURVIVING_VERBS) {
       assert.match(
-        exported,
-        /\blax\b/i,
-        "exported ACME source should contain the illegal-opcode mnemonic 'lax', proving " +
-          "use_illegal_opcodes: true was actually honoured",
+        `${stderr}\n${stdout}`,
+        new RegExp(`\\b${survivor}\\b`),
+        `the refusal for "${verb}" must point the caller at the surviving verb ${survivor}`,
       );
-    });
-  },
-);
-
-test(
-  "gated: verify on a bare .prg returns 0 and prints an ACME line containing byte-identical (D-10, criterion 4)",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      const prgPath = join(dir, "game.prg");
-      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-      const { result: code, stdout } = await withCapturedConsole(() =>
-        runR2000Cli(["verify", prgPath]),
-      );
-
-      assert.equal(code, 0, `expected exit 0, stdout: ${stdout}`);
-      assert.match(stdout, /ACME/);
-      assert.match(stdout, /byte-identical/i);
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// gen-enums verb tests (Task 3, 11-06) -- unknown option refused, missing
-// project path refused with usage, and the coverage report present on
-// stdout are always-run (no live binary needed); criterion 3's own
-// acceptance test needs BOTH a real regenerator2000 (D-11) AND real ACME
-// (disasm-roundtrip.test.ts's own VICE_REQUIRE_ACME convention), since it
-// reads regenerator2000's --export_asm output through real ACME.
-// ---------------------------------------------------------------------------
-
-test("gen-enums: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums", "some.regen2000proj", "--not-a-real-flag"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /unknown option/i);
+    }
+  }
 });
 
-test("gen-enums: a missing project path is refused with usage text, not a stack trace", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /usage: gen-enums/i);
+test("USAGE names neither the removed verbs nor their options", () => {
+  const usage = helpResult.stdout;
+  for (const verb of REMOVED_VERBS) {
+    assert.doesNotMatch(usage, new RegExp(`^ {2}${verb}\\b`, "m"), `USAGE still documents the removed verb ${verb}`);
+  }
+  for (const gone of ["--entry", "--max-results"]) {
+    assert.doesNotMatch(usage, new RegExp(gone.replace(/-/g, "\\-")), `USAGE still documents ${gone}, which no surviving verb reads`);
+  }
 });
 
-test("gen-enums: a nonexistent project file is refused, not silently accepted", async () => {
-  await withTempDir(async (dir) => {
-    const missing = join(dir, "does-not-exist.regen2000proj");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["gen-enums", missing]));
-    assert.notEqual(code, 0);
-    assert.match(stderr, /not found/i);
-  });
+test("VERB_OPTIONS carries exactly the two surviving verbs", () => {
+  assert.deepEqual(Object.keys(VERB_OPTIONS).sort(), [...SURVIVING_VERBS].sort());
 });
 
 // ---------------------------------------------------------------------------
-// export-lbl / import-lbl verb tests (Task 3, 11-08) -- unknown option and
-// missing-value refusals, and a missing project/label file, are always-run
-// (no live binary needed); the happy-path round trip against a bootstrapped
-// project needs a real regenerator2000 (D-11) AND runR2000Tool()'s own
-// workspace-containment requirement (T-11-PATH-ESCAPE), so it uses
-// withWorkspaceTempDir() (defined below) rather than withTempDir()'s system
-// tmpdir.
-// ---------------------------------------------------------------------------
-
-test("export-lbl: a missing project is refused, not silently accepted", async () => {
-  await withTempDir(async (dir) => {
-    const missing = join(dir, "does-not-exist.regen2000proj");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-lbl", missing]));
-    assert.notEqual(code, 0);
-    assert.match(stderr, /not found/i);
-  });
-});
-
-test("export-lbl: --out with no value is refused", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-lbl", "some.regen2000proj", "--out"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /--out requires a value/i);
-});
-
-test("export-lbl: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["export-lbl", "some.regen2000proj", "--out", "--force"]),
-  );
-  // Refused either way -- whether reported as "--out requires a value" or as
-  // an unrecognised second flag ("--force" is reprocessed on its own once
-  // it is not consumed as --out's value) -- the load-bearing property is
-  // that "--force" is never silently accepted AS --out's value.
-  assert.notEqual(code, 0);
-  assert.match(stderr, /--out requires a value|unknown option/i);
-});
-
-test("export-lbl: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["export-lbl", "some.regen2000proj", "--not-a-real-flag"]),
-  );
-  assert.notEqual(code, 0);
-  assert.match(stderr, /unknown option/i);
-});
-
-test("import-lbl: usage is printed and exit is non-zero when arguments are missing", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", "only-one.regen2000proj"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /usage: import-lbl/i);
-});
-
-test("import-lbl: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["import-lbl", "some.regen2000proj", "some.lbl", "--not-a-real-flag"]),
-  );
-  assert.notEqual(code, 0);
-  assert.match(stderr, /unknown option/i);
-});
-
-test("import-lbl: a missing project file is refused", async () => {
-  await withTempDir(async (dir) => {
-    const missingProject = join(dir, "does-not-exist.regen2000proj");
-    const lblPath = join(dir, "some.lbl");
-    writeFileSync(lblPath, "al C:0801 .main\n");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", missingProject, lblPath]));
-    assert.notEqual(code, 0);
-    assert.match(stderr, /project file not found/i);
-  });
-});
-
-test("import-lbl: a missing label file is refused", async () => {
-  await withTempDir(async (dir) => {
-    const projectPath = join(dir, "game.regen2000proj");
-    writeFileSync(projectPath, "{}");
-    const missingLbl = join(dir, "does-not-exist.lbl");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", projectPath, missingLbl]));
-    assert.notEqual(code, 0);
-    assert.match(stderr, /label file not found/i);
-  });
-});
-
-// import-lbl's ceiling refusal needs no live regenerator2000 at all --
-// anno-symbols.ts's importLabels() checks the caller-supplied .lbl's own
-// ceilings BEFORE ever spawning a child (T-11-LBL-SIZE), so the project file
-// content is never even read.
-test("import-lbl: a .lbl exceeding the line-count ceiling is refused with stock-symbols.ts's own ceiling message", async () => {
-  await withTempDir(async (dir) => {
-    const projectPath = join(dir, "game.regen2000proj");
-    writeFileSync(projectPath, "{}"); // never read -- the ceiling check runs first
-    const lblPath = join(dir, "huge.lbl");
-    writeFileSync(lblPath, Array.from({ length: 50001 }, () => "; filler").join("\n"));
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["import-lbl", projectPath, lblPath]));
-    assert.notEqual(code, 0);
-    assert.match(stderr, /50000-line ceiling/);
-  });
-});
-
-test(
-  "gated: export-lbl writes a .lbl with the symbol count parsed back, and import-lbl reports names imported plus a disk-verified persistence confirmation (R2000-14/R2000-15)",
-  { skip: SKIP_REASON },
-  async () => {
-    await withWorkspaceTempDir(async (dir) => {
-      const prgPath = join(dir, "game.prg");
-      writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-      const projectPath = join(dir, "game.regen2000proj");
-      const { result: bootCode } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out", projectPath]));
-      assert.equal(bootCode, 0);
-
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      const setResult = await runR2000Tool("r2000_set_label_name", { project: projectPath, address: 0x0801, name: "entry" });
-      assert.equal(setResult.isError, false, JSON.stringify(setResult));
-
-      const lblOut = join(dir, "game.lbl");
-      const { result: exportCode, stdout: exportStdout } = await withCapturedConsole(() =>
-        runR2000Cli(["export-lbl", projectPath, "--out", lblOut]),
-      );
-      assert.equal(exportCode, 0, exportStdout);
-      assert.ok(existsSync(lblOut));
-      assert.match(exportStdout, /wrote .*game\.lbl.*\(1 symbol\(s\)\)/);
-
-      const importText = readFileSync(lblOut, "utf8") + "\nal C:0802 .discovered\n";
-      const importPath = join(dir, "discovered.lbl");
-      writeFileSync(importPath, importText);
-
-      const { result: importCode, stdout: importStdout } = await withCapturedConsole(() =>
-        runR2000Cli(["import-lbl", projectPath, importPath]),
-      );
-      assert.equal(importCode, 0, importStdout);
-      assert.match(importStdout, /entry/);
-      assert.match(importStdout, /discovered/);
-      assert.match(importStdout, /persisted by an explicit/i);
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// ACME gate, using the shared acme-gate.ts seam (ACME_BIN/
-// ACME_AVAILABLE/acmeSkipReasonFor/assertAcmeRequiredIfEnvSet -- the last
-// two of those four are what this file imports) instead of a local copy of
-// disasm-roundtrip.test.ts's original convention. The seam now stands under
-// its own name, outside the regenerator2000 filename prefix (SEAM-01);
-// prehistory of the consolidation itself:
-// 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md. The
-// seam's probeAcme() passes a 10s spawnSync timeout; this file's own local
-// copy previously passed none -- converged on the seam's bounded probe.
-// ---------------------------------------------------------------------------
-
-const CRITERION3_SKIP_REASON: string | false =
-  R2000_AVAILABLE && ACME_AVAILABLE
-    ? false
-    : `criterion 3's acceptance test needs BOTH a real regenerator2000 (R2000_AVAILABLE=${R2000_AVAILABLE}) and real ` +
-      `ACME (ACME_AVAILABLE=${ACME_AVAILABLE}) -- see this file's own D-11/D-08 gates above for how to install either.`;
-
-test("ACME availability gate (D-08), reused for criterion 3", () => {
-  assertAcmeRequiredIfEnvSet(assert);
-});
-
-/** Unlike withTempDir() (system tmpdir, fine for the CLI's own bootstrap/
- * export-asm/verify verbs, which never resolve a path against repoRoot()),
- * this test also drives runR2000Tool()/generateEnums() directly, and
- * r2000-tools.ts's resolveStorePath() (T-11-PATH-ESCAPE) requires every
- * .regen2000proj path to resolve INSIDE the workspace root -- a system
- * tmpdir path is refused by design. Mirrors anno-enum-gen.test.ts's own
- * workspace-local temp-dir convention. */
-function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(HERE, ".r2000-cli-test-criterion3-"));
-  return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
-}
-
-test(
-  "gated (D-11+D-08): criterion 3 -- lda #$1b / sta $d011 / rts renders as lda #D011_YSCROLL3_ROW25_SCREENON_TEXT in the ACME export, and the export reassembles under real ACME",
-  { skip: CRITERION3_SKIP_REASON },
-  async (t) => {
-    await withWorkspaceTempDir(async (dir) => {
-      const projectPath = join(dir, "criterion3.regen2000proj");
-      // Exactly the criterion's own quoted example: lda #$1b / sta $d011 / rts,
-      // synthesized directly (D-05: use_illegal_opcodes forced true, though
-      // this particular fixture uses no illegal opcode -- forced regardless,
-      // per synthesizeProject()'s own unconditional contract) at origin $0810.
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
-
-      // gen-enums operates over the MCP surface (r2000-tools.ts), which --
-      // unlike the --headless CLI verbs below -- does NOT auto-disassemble a
-      // freshly bootstrapped project on load (measured live this session: a
-      // search against a freshly synthesized project with no prior
-      // r2000_disassemble call returns zero rows). A real c64-program-recon
-      // session would already have called this as part of its own analysis
-      // pass; this test performs that one setup step explicitly rather than
-      // asserting gen-enums itself must auto-disassemble (out of this
-      // task's own scope).
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-      assert.equal(disasmResult.isError, false, `setup: r2000_disassemble failed: ${JSON.stringify(disasmResult)}`);
-
-      // 1. run gen-enums against it.
-      const { result: genCode, stdout: genStdout } = await withCapturedConsole(() => runR2000Cli(["gen-enums", projectPath]));
-      assert.equal(genCode, 0, `gen-enums failed, stdout: ${genStdout}`);
-      assert.match(genStdout, /total register stores seen: 1/);
-      assert.match(genStdout, /paired \(adjacent lda #imm found\): 1/);
-      assert.match(genStdout, /unpaired \(no adjacent immediate load\): 0/);
-
-      // Recorded evidence for RESEARCH.md's dot-vs-underscore finding
-      // (Assumption A2, version-scoped, re-verified here rather than
-      // trusted as permanent): query the LIVE view for the same address.
-      const liveSearch = await runR2000Tool("r2000_search_disassembly", {
-        project: projectPath,
-        query: "^lda$",
-        use_regex: true,
-        max_results: 10,
-        search_labels: false,
-        search_comments: false,
-        search_instructions: true,
-      });
-      const liveRows = JSON.parse(liveSearch.content.map((c) => c.text).join("")) as { operand: string }[];
-      const liveOperand = liveRows.find((r) => r.operand.includes("D011"))?.operand ?? "(not found)";
-      t.diagnostic(`live search_disassembly operand for the applied enum: "${liveOperand}"`);
-
-      // 2. run export-asm.
-      const outPath = join(dir, "criterion3.a");
-      const { result: exportCode, stdout: exportStdout } = await withCapturedConsole(() =>
-        runR2000Cli(["export-asm", projectPath, "--out", outPath]),
-      );
-      assert.equal(exportCode, 0, `export-asm failed, stdout: ${exportStdout}`);
-      const exported = readFileSync(outPath, "utf8");
-
-      // 3. assert the exported file contains the literal criterion-3 lines.
-      assert.match(
-        exported,
-        /lda #D011_YSCROLL3_ROW25_SCREENON_TEXT/,
-        `expected the literal enum reference in the ACME export:\n${exported}`,
-      );
-      assert.match(exported, /sta \$d011/i, "expected a sta $d011 line in the ACME export");
-      assert.match(
-        exported,
-        /D011_YSCROLL3_ROW25_SCREENON_TEXT\s*=\s*\$1b/i,
-        `expected the enum's own definition line in the ACME export:\n${exported}`,
-      );
-
-      // 4. assert the export does NOT contain a bare-hex fallback -- a
-      // fallback to "lda #$1b" would mean the usage did not bind.
-      assert.doesNotMatch(exported, /lda #\$1b\b/i, "the export must not fall back to bare hex -- the enum usage must have bound");
-
-      // Recorded evidence: which separator each surface produced, at
-      // execution time (this session).
-      const exportedLdaLine = exported.split("\n").find((l) => /lda #D011/i.test(l)) ?? "(not found)";
-      t.diagnostic(`ACME export operand: "${exportedLdaLine.trim()}"`);
-      const exportUsesUnderscore = /D011_YSCROLL/.test(exportedLdaLine);
-      const liveUsesDot = /D011\.YSCROLL/.test(liveOperand);
-      const liveUsesUnderscore = /D011_YSCROLL/.test(liveOperand);
-      t.diagnostic(
-        `separator comparison: export=${exportUsesUnderscore ? "underscore" : "other"}, ` +
-          `live=${liveUsesDot ? "dot" : liveUsesUnderscore ? "underscore" : "other"} -- ` +
-          (liveUsesDot
-            ? "RESEARCH.md's dot-vs-underscore finding still holds on this regenerator2000 version"
-            : liveUsesUnderscore
-              ? "the two surfaces now AGREE on this regenerator2000 version -- RESEARCH.md's finding is version-scoped (Assumption A2), not permanent"
-              : "unexpected separator on the live view -- re-check manually"),
-      );
-      assert.ok(exportUsesUnderscore, "the ACME export itself must use the underscore form the criterion quotes, regardless of the live view's own rendering");
-
-      // 5. run verify and assert acmeVerdict() reports ok:true -- the
-      // generated source actually reassembles under real ACME
-      // (ENGINEERING_RULES.md Sec 7's real-external-oracle level).
-      const { result: verifyCode, stdout: verifyStdout } = await withCapturedConsole(() => runR2000Cli(["verify", projectPath]));
-      assert.equal(verifyCode, 0, `verify failed, stdout: ${verifyStdout}`);
-      assert.match(verifyStdout, /ACME/);
-      assert.match(verifyStdout, /byte-identical/i);
-
-      // 6. explicit acceptance-surface assertion: this check read the ACME
-      // EXPORT (assertions 3/4/5 above), never r2000_search_disassembly's
-      // own rendering (only inspected for the recorded-evidence diagnostic
-      // above, never asserted against as the pass/fail criterion).
-      assert.ok(true, "criterion 3 verified against --export_asm/--verify output, not against the live query view");
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// render-memmap verb tests (Task 3, 11-10) -- unknown option, missing
-// --provenance, and a missing project file are always-run (no live binary
-// needed); the happy path plus --check drift detection needs a real
-// regenerator2000 (D-11), via the same withWorkspaceTempDir() convention
-// export-lbl/import-lbl's own gated test uses above (resolveStorePath()
-// requires the project path to resolve inside the workspace root).
+// render-memmap: argument-level refusals. The verb's own rendering behaviour
+// is proven in `anno-memmap-render.test.ts`; what is proven here is that the
+// CLI never guesses on the caller's behalf.
 // ---------------------------------------------------------------------------
 
 test("render-memmap: --help lists the verb, states the output is generated, and states --check catches a hand edit", () => {
-  const helpResult = spawnCli(["r2000", "--help"]);
   assert.match(helpResult.stdout, /\brender-memmap\b/);
   assert.match(helpResult.stdout, /GENERATED|generated/);
   assert.match(helpResult.stdout, /--check.*hand edit/is);
@@ -868,113 +260,423 @@ test("render-memmap: a nonexistent --provenance file is refused", async () => {
 
 test("render-memmap: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance", "x.json", "--not-a-real-flag"]),
+    runR2000Cli(["render-memmap", "some.project", "--provenance", "x.json", "--not-a-real-flag"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /unknown option/i);
 });
 
 test("render-memmap: --provenance with no value is refused", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance"]),
-  );
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", "some.project", "--provenance"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /--provenance requires a value/i);
 });
 
 test("render-memmap: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["render-memmap", "some.regen2000proj", "--provenance", "x.json", "--out", "--check"]),
+    runR2000Cli(["render-memmap", "some.project", "--provenance", "x.json", "--out", "--check"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--out requires a value/i);
 });
 
-test(
-  "gated: render-memmap writes a file with row/[unknown] counts and a digest, and --check exits 0 in sync then non-zero naming the differing line after a hand edit (11-10)",
-  { skip: SKIP_REASON },
-  async () => {
-    await withWorkspaceTempDir(async (dir) => {
-      const projectPath = join(dir, "memmap.regen2000proj");
-      // lda #$1b ; sta $d011 -- same tiny, fully hand-predictable program
-      // anno-memmap-render.test.ts's own golden test uses.
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
+// ---------------------------------------------------------------------------
+// coverage: argument-level refusals, including the TWO-PATH contract.
+// ---------------------------------------------------------------------------
 
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      const { formatConfidenceComment } = await import("./anno-confidence.ts");
+test("coverage: a missing project positional is refused with the two-path usage line", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /usage: coverage <project> --store FILE/);
+});
 
-      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-      assert.equal(disasmResult.isError, false, JSON.stringify(disasmResult));
-      const labelResult = await runR2000Tool("r2000_set_label_name", { project: projectPath, address: 0x0810, name: "init_screen" });
-      assert.equal(labelResult.isError, false, JSON.stringify(labelResult));
-      const commentResult = await runR2000Tool("r2000_set_comment", {
-        project: projectPath,
-        address: 0x0810,
-        comment: formatConfidenceComment("confirmed-code", "observed executing at boot"),
-        type: "line",
-      });
-      assert.equal(commentResult.isError, false, JSON.stringify(commentResult));
+test("coverage: --store is REQUIRED and is never derived from <project> (D-02: this CLI does not guess)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage", "some.project"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--store FILE is required/);
+  assert.match(stderr, /will not derive its path from <project>/);
+});
 
-      const provenancePath = join(dir, "capture.provenance.json");
-      writeFileSync(
-        provenancePath,
-        JSON.stringify({
-          capturePath: "/tmp/capture.raw",
-          captureSha256: "a".repeat(64),
-          port01: "$35",
-          dd00: "$06",
-          vicBank: "0 ($0000-$3FFF)",
-          screenRam: "$0400",
-          charsetOrBitmap: "$1000 (ROM shadow)",
-          mode: "text, multicolor off",
-          videoStandard: "PAL",
-          liveVectorPair: "$0314/$0315",
-          vectorHandler: "$EA31",
-        }),
-      );
+test("coverage: --store with no value is refused, not silently given the next token", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage", "some.project", "--store"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--store requires a value/i);
+});
 
-      const outPath = join(dir, "memory-map.md");
-      const { result: renderCode, stdout: renderStdout } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
-      );
-      assert.equal(renderCode, 0, renderStdout);
-      assert.ok(existsSync(outPath));
-      assert.match(renderStdout, /1 row\(s\)/);
-      assert.match(renderStdout, /0 \[unknown\]/);
-      assert.match(renderStdout, /digest [0-9a-f]{64}/);
+test("coverage: --store followed by a flag-shaped token is refused (WR-08 posture)", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["coverage", "some.project", "--store", "--force"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--store requires a value/i);
+});
 
-      const { result: checkCode1, stdout: checkStdout1 } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath, "--check"]),
-      );
-      assert.equal(checkCode1, 0, checkStdout1);
-      assert.match(checkStdout1, /in sync/i);
+test("coverage: an unknown option is refused with a non-zero exit code", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["coverage", "some.project", "--store", "s.store", "--not-a-real-flag"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown option/i);
+});
 
-      const original = readFileSync(outPath, "utf8");
-      writeFileSync(outPath, original.replace("init_screen", "init_screeX"));
-      const { result: checkCode2, stderr: checkStderr2 } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath, "--check"]),
-      );
-      assert.notEqual(checkCode2, 0);
-      assert.match(checkStderr2, /drifted at line/i);
-      assert.match(checkStderr2, /init_screeX/);
+test("coverage: --sample must be a positive integer", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runR2000Cli(["coverage", "some.project", "--store", "s.store", "--sample", "0"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--sample must be a positive integer/);
+});
 
-      const missingOut = join(dir, "does-not-exist-yet.md");
-      const { result: checkCode3, stderr: checkStderr3 } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", missingOut, "--check"]),
-      );
-      assert.notEqual(checkCode3, 0);
-      assert.match(checkStderr3, /missing/i);
-    });
-  },
-);
+test("coverage: a path outside the workspace root is refused by the ONE confinement seam (T-29-28)", async () => {
+  await withTempDir(async (dir) => {
+    const outside = join(dir, "elsewhere.project");
+    writeFileSync(outside, "{}");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", outside, "--store", join(dir, "elsewhere.store")]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /outside the workspace root/i);
+  });
+});
+
+test("coverage: an absent store is refused BY NAME rather than created (gone and empty must not read the same)", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const projectPath = join(dir, "game.project");
+    writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
+    const storePath = join(dir, "annotations.store");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", projectPath, "--store", storePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /annotation store not found/i);
+    assert.match(stderr, /refusing to CREATE one/);
+    assert.equal(existsSync(storePath), false, "a refused run must not leave a store behind at the named path");
+  });
+});
+
+test("coverage: an absent project file is refused before the store is opened", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "annotations.store");
+    closeStore(openStore(storePath, { workspaceRoot: repoRoot() }));
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", join(dir, "nope.project"), "--store", storePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /project file not found/i);
+  });
+});
 
 // ---------------------------------------------------------------------------
-// WR-09 (D-11.1-04) -- restoring bootstrapProject()'s and cmdRenderMemmap()'s
-// never-throw contract on the two branches that broke it (the unwrapped
-// `.d64` `parsePrg()` call, and the two unguarded `writeFileSync()` calls),
-// plus a structural guard pinning it so a THIRD unguarded write cannot be
-// added silently.
+// THE CENSUS RE-POINT, PROVEN EQUIVALENT (T-29-29).
+//
+// The committed coverage fixtures each carry two files: a project file with
+// the payload bytes, and a `store.json` recording the four census input shapes
+// PLUS the verdict that fixture exists to pin. Before this phase the CLI read
+// those four shapes out of the retired analyser's project JSON. It now reads
+// them out of this project's own annotation store.
+//
+// The proof that the re-point did not move a measurement is therefore not
+// "it compiles" and not "the columns look right": it is populating a REAL
+// store from a fixture's own recorded facts, reading it back through the four
+// adapter functions, and asserting the census reaches the verdict the fixture
+// records. A vocabulary mismatch at any of the four shapes -- most easily the
+// block-type column, whose two vocabularies `block-class.ts` alone reconciles
+// -- changes that verdict.
+// ---------------------------------------------------------------------------
+
+interface FixtureStore {
+  control: string;
+  expect_clean: boolean;
+  expect_measure: string | null;
+  symbols: R2000Symbol[];
+  comments: R2000Comment[];
+  blocks: BlockEntry[];
+  cross_references: R2000CrossReference[];
+}
+
+const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
+
+function fixtureDirs(): string[] {
+  return readdirSync(FIXTURE_ROOT, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/** The fixtures are spelled in the CAPITALISED vocabulary the retired analyser
+ * emitted; the store's own `dataType` column is lowercase. The translation is
+ * written out here, in the test, rather than reached for in production code:
+ * `block-class.ts` is the only module allowed to reconcile the two
+ * vocabularies at runtime, and this is a fixture-loading concern. Everything
+ * outside the two spellings the fixtures actually use is refused loudly rather
+ * than defaulted, so a fixture gaining a third block type fails here instead
+ * of being silently typed as bytes. */
+const FIXTURE_BLOCK_TYPE_TO_STORE_DATA_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  Code: "code",
+  Byte: "byte",
+  Undefined: "undefined",
+});
+
+/** Populates a real store with a fixture's own recorded facts. The cross
+ * references go in as stored rows, which is the one of `crossReferencesTo()`'s
+ * three sources that carries a caller nothing can recover from the bytes --
+ * exactly what a fixture's recorded `cross_references` list is. */
+function populateStoreFromFixture(storePath: string, fixture: FixtureStore): void {
+  const handle = openStore(storePath, { workspaceRoot: repoRoot() });
+  try {
+    for (const block of fixture.blocks) {
+      const dataType = FIXTURE_BLOCK_TYPE_TO_STORE_DATA_TYPE[block.type];
+      assert.ok(dataType, `fixture block type ${JSON.stringify(block.type)} has no store spelling in this test's table`);
+      setDataType(handle, { start: block.start_address, endInclusive: block.end_address, dataType });
+    }
+    for (const symbol of fixture.symbols) {
+      setLabel(handle, { address: symbol.address, name: symbol.name, kind: symbol.kind });
+    }
+    for (const comment of fixture.comments) {
+      setComment(handle, { address: comment.address, commentType: comment.type, text: comment.comment });
+    }
+    for (const xref of fixture.cross_references) {
+      for (const caller of xref.callers) {
+        putXref(handle, { fromAddress: caller, toAddress: xref.address, accessKind: "COMPUTED_JUMP" });
+      }
+    }
+  } finally {
+    closeStore(handle);
+  }
+}
+
+for (const dir of fixtureDirs()) {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_ROOT, dir, "store.json"), "utf8")) as FixtureStore;
+  const verdictWord = fixture.expect_clean ? "CLEAN" : "non-clean";
+  test(`census re-point equivalence: control ${fixture.control} (${dir}) still produces a ${verdictWord} result when its facts come from a real store`, async () => {
+    await withWorkspaceTempDir(async (dir2) => {
+      const projectPath = join(dir2, "project.regen2000proj");
+      copyFileSync(join(FIXTURE_ROOT, dir, "project.regen2000proj"), projectPath);
+      const storePath = join(dir2, "annotations.store");
+      populateStoreFromFixture(storePath, fixture);
+
+      const handle = openStore(storePath, { workspaceRoot: repoRoot(), mustExist: true });
+      let report;
+      try {
+        const symbols = symbolsFromStore(listLabels(handle));
+        const comments = commentsFromStore(listComments(handle));
+        const blocks = blocksFromStore(listRanges(handle));
+        // The store round trip must not lose a row: a silently empty read
+        // would make every verdict below trivially reproducible.
+        assert.equal(symbols.length, fixture.symbols.length, `${dir}: label rows did not survive the store round trip`);
+        assert.equal(comments.length, fixture.comments.length, `${dir}: comment rows did not survive the store round trip`);
+        assert.equal(blocks.length, fixture.blocks.length, `${dir}: range rows did not survive the store round trip`);
+
+        const project = JSON.parse(readFileSync(projectPath, "utf8")) as { origin: number; raw_data_base64: string };
+        const bytes = Uint8Array.from(Buffer.from(project.raw_data_base64, "base64"));
+        const crossReferences = crossReferencesFromStore(handle, bytes, project.origin, symbols);
+        report = buildCoverageReport({ projectPath, symbols, comments, blocks, crossReferences });
+      } finally {
+        closeStore(handle);
+      }
+
+      const findings = coverageFindings(report);
+      assert.equal(
+        findings.clean,
+        fixture.expect_clean,
+        `${dir} expected clean=${fixture.expect_clean} but got clean=${findings.clean}. Findings: ${JSON.stringify(findings.findings, null, 2)}`,
+      );
+      if (fixture.expect_measure) {
+        assert.ok(
+          findings.findings.some((f) => f.measure === fixture.expect_measure),
+          `${dir} was caught, but not by ${fixture.expect_measure}. Findings: ${JSON.stringify(findings.findings, null, 2)}`,
+        );
+      }
+    });
+  });
+}
+
+test("non-vacuity: the equivalence set above is the whole committed control set, and it contains BOTH a clean and a non-clean control", () => {
+  const dirs = fixtureDirs();
+  assert.ok(dirs.length >= 12, `expected at least 12 committed control fixtures, found ${dirs.length}: ${dirs.join(", ")}`);
+  const verdicts = dirs.map((d) => (JSON.parse(readFileSync(join(FIXTURE_ROOT, d, "store.json"), "utf8")) as FixtureStore).expect_clean);
+  assert.ok(verdicts.includes(true), "no CLEAN control -- the equivalence proof would then be a machine that only fails");
+  assert.ok(verdicts.includes(false), "no non-clean control -- the equivalence proof would then be a machine that only passes");
+});
+
+test("coverage end to end: the verb runs against a real store and prints all three named measures, exiting 0", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const fixture = JSON.parse(readFileSync(join(FIXTURE_ROOT, "nc5-well-documented", "store.json"), "utf8")) as FixtureStore;
+    const projectPath = join(dir, "project.regen2000proj");
+    copyFileSync(join(FIXTURE_ROOT, "nc5-well-documented", "project.regen2000proj"), projectPath);
+    const storePath = join(dir, "annotations.store");
+    populateStoreFromFixture(storePath, fixture);
+
+    const outPath = join(dir, "report.json");
+    const { result: code, stdout } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+    );
+    assert.equal(code, 0, stdout);
+    assert.match(stdout, /MEASURE 1 of 3 -- structural byte census/);
+    assert.match(stdout, /MEASURE 2 of 3 -- label figures/);
+    assert.match(stdout, /MEASURE 3 of 3 -- sampled reproducibility/);
+    assert.match(stdout, /comment vacuity/);
+    assert.match(stdout, /divergence sub-report/);
+    // COV-01's own rule, asserted at the point of display: no aggregate.
+    assert.doesNotMatch(stdout, /overall score|combined score|total coverage/i);
+    assert.ok(existsSync(outPath), "the JSON report must be written when --out is given");
+
+    // The cross-reference answer is now COMPLETE. The bounded-lookup note the
+    // round-trip ceiling used to print is gone, and its absence is asserted so
+    // a truncation cannot creep back in silently.
+    assert.doesNotMatch(stdout, /cross-reference lookups were bounded/);
+  });
+});
+
+test("coverage: --out refuses to clobber an existing file unless --force is given", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const fixture = JSON.parse(readFileSync(join(FIXTURE_ROOT, "nc5-well-documented", "store.json"), "utf8")) as FixtureStore;
+    const projectPath = join(dir, "project.regen2000proj");
+    copyFileSync(join(FIXTURE_ROOT, "nc5-well-documented", "project.regen2000proj"), projectPath);
+    const storePath = join(dir, "annotations.store");
+    populateStoreFromFixture(storePath, fixture);
+
+    const outPath = join(dir, "report.json");
+    writeFileSync(outPath, "PRE-EXISTING");
+    const { result: refused, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+    );
+    assert.notEqual(refused, 0);
+    assert.match(stderr, /refusing to overwrite/i);
+    assert.equal(readFileSync(outPath, "utf8"), "PRE-EXISTING");
+
+    const { result: forced } = await withCapturedConsole(() =>
+      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath, "--force"]),
+    );
+    assert.equal(forced, 0);
+    assert.notEqual(readFileSync(outPath, "utf8"), "PRE-EXISTING");
+  });
+});
+
+test("the four adapters map the store's own columns onto the census's shapes, with no field invented and none dropped", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "annotations.store");
+    const handle = openStore(storePath, { workspaceRoot: repoRoot() });
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x081f, dataType: "code" });
+      setDataType(handle, { start: 0x0820, endInclusive: 0x082f, dataType: "byte" });
+      setLabel(handle, { address: 0x0810, name: "entry_point", kind: "User" });
+      setComment(handle, { address: 0x0810, commentType: "line", text: "[confirmed-code] entry" });
+
+      assert.deepEqual(symbolsFromStore(listLabels(handle)), [{ address: 0x0810, name: "entry_point", kind: "User" }]);
+      assert.deepEqual(commentsFromStore(listComments(handle)), [
+        { address: 0x0810, type: "line", comment: "[confirmed-code] entry" },
+      ]);
+      assert.deepEqual(blocksFromStore(listRanges(handle)), [
+        { start_address: 0x0810, end_address: 0x081f, type: "code" },
+        { start_address: 0x0820, end_address: 0x082f, type: "byte" },
+      ]);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("the cross-reference adapter answers over the WHOLE population, with no ceiling and no truncation note", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "annotations.store");
+    const handle = openStore(storePath, { workspaceRoot: repoRoot() });
+    try {
+      // Far more labels than the 512-lookup ceiling the retired round-trip
+      // loop carried. The point of the assertion is the COUNT: a surviving cap
+      // would silently answer for the lowest 512 addresses only.
+      const symbols: R2000Symbol[] = [];
+      for (let i = 0; i < 600; i++) {
+        const address = 0x1000 + i;
+        setLabel(handle, { address, name: `lbl_${i}`, kind: "User" });
+        symbols.push({ address, name: `lbl_${i}`, kind: "User" });
+      }
+      setLabel(handle, { address: 0xc000, name: "sys_label", kind: "System" });
+      symbols.push({ address: 0xc000, name: "sys_label", kind: "System" });
+
+      const derived = crossReferencesFromStore(handle, new Uint8Array(64), 0x0810, symbols);
+      assert.equal(derived.length, 600, "every non-System label must get an answer -- 600 is deliberately above the retired 512 ceiling");
+      assert.ok(
+        !derived.some((x) => x.address === 0xc000),
+        "System labels are excluded from every label figure already, so deriving their callers would buy the census nothing",
+      );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IN-06 -- a verb refuses an option it does not implement instead of silently
+// dropping it. `VERB_OPTIONS` (one frozen map in `anno-cli.ts`) plus
+// `checkAcceptedOptions()`'s single pre-dispatch call site refuse any
+// `--flag`-shaped token a verb does not accept, for both verbs uniformly.
+// ---------------------------------------------------------------------------
+
+// The verb count here is a count site that MOVES with the dispatch switch,
+// alongside `ANNO_CLI_VERB_FLOOR` and `anno-verb-coverage.test.ts`'s own verb
+// list. Kept as a hand-maintained literal on purpose: deriving it from
+// `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
+test("the verb-options map agrees with USAGE's own per-verb option lists, for both verbs (IN-06)", () => {
+  const usage = helpResult.stdout;
+  const verbs = Object.keys(VERB_OPTIONS);
+  assert.equal(verbs.length, 2, `expected exactly 2 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+
+  for (const verb of verbs) {
+    const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
+    assert.ok(lineMatch, `expected a USAGE line for verb "${verb}"`);
+    const documented = new Set(lineMatch![0].match(/--[a-zA-Z-]+/g) ?? []);
+    const mapped = new Set(VERB_OPTIONS[verb]);
+    assert.deepEqual(
+      documented,
+      mapped,
+      `verb "${verb}": USAGE documents ${JSON.stringify([...documented])} but VERB_OPTIONS accepts ${JSON.stringify([...mapped])}`,
+    );
+  }
+});
+
+test("every verb's own documented options are still accepted, one assertion per verb (IN-06 regression guard)", async () => {
+  // Built directly from VERB_OPTIONS (the map's own ground truth) rather than
+  // hand-typed per verb, so this test cannot silently drift from the map it is
+  // proving.
+  const placeholderValue: Record<string, string> = {
+    "--out": "some-out-path",
+    "--force": "",
+    "--provenance": "some-provenance.json",
+    "--check": "",
+    "--sample": "4",
+    "--store": "some.store",
+  };
+  for (const [verb, options] of Object.entries(VERB_OPTIONS)) {
+    const argv: string[] = [verb, "some.project"];
+    for (const opt of options) {
+      argv.push(opt);
+      const value = placeholderValue[opt];
+      if (value) argv.push(value);
+    }
+    const { stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    assert.doesNotMatch(
+      stderr,
+      /is not accepted by this verb/,
+      `verb "${verb}" with its own documented options ${JSON.stringify(options)} must not be refused by checkAcceptedOptions(); argv=${JSON.stringify(argv)}, stderr=${stderr}`,
+    );
+  }
+});
+
+test("an unaccepted option is refused for every verb it does not belong to (IN-06 generalisation)", async () => {
+  for (const verb of Object.keys(VERB_OPTIONS)) {
+    const argv = [verb, "some.project", "--totally-not-a-real-flag"];
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    assert.notEqual(code, 0, `verb "${verb}" must refuse an unaccepted flag`);
+    assert.match(stderr, new RegExp(`^${verb}:`), `verb "${verb}"'s refusal must be prefixed with its own name`);
+    assert.match(stderr, /--totally-not-a-real-flag/);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// WR-09 (D-11.1-04) -- the never-throw contract on the verbs' file writes,
+// plus a structural guard pinning it so an unguarded write cannot be added
+// silently.
 //
 // The structural guard reads anno-cli.ts's own source, strips comments and
 // string/template-literal bodies (so neither can produce a false brace/paren
@@ -994,6 +696,13 @@ test(
 // violation (a bare call at function top level, which the scan must reach
 // module scope for and report unguarded) alongside a wrapped control (which
 // it must stop climbing at on the very first brace and report guarded).
+//
+// THE TWO NAMED POSITIVE-CONTROL SITES MOVED WITH THE NARROWING. Before D-14
+// they were the project-file write and the Markdown write; the project-file
+// write went with its verb, and the surviving pair is `cmdRenderMemmap()`'s
+// Markdown write and `cmdCoverage()`'s JSON-report write. The FLOOR OF TWO is
+// unchanged, and that is not a coincidence to be tidied away: it is the
+// measured count of write sites this file still has.
 // ---------------------------------------------------------------------------
 
 const R2000_CLI_SOURCE_PATH = join(HERE, "anno-cli.ts");
@@ -1187,24 +896,24 @@ test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try bl
   const { stripped, indices } = findWriteFileSyncCalls(source);
 
   // Non-vacuity floor -- a scanner that silently found zero call sites would
-  // trivially "pass" a guard that asserts nothing. Two named sites are
-  // known to exist right now (bootstrapProject()'s project-file write and
-  // cmdRenderMemmap()'s Markdown write); the floor is exactly that measured
-  // count, so a THIRD write added later raises it rather than silently
-  // slipping through unguarded.
+  // trivially "pass" a guard that asserts nothing. Two named sites are known
+  // to exist right now (cmdRenderMemmap()'s Markdown write and cmdCoverage()'s
+  // JSON-report write); the floor is exactly that measured count, so a THIRD
+  // write added later raises it rather than silently slipping through
+  // unguarded.
   assert.ok(indices.length >= 2, `expected at least 2 writeFileSync( call sites, found ${indices.length}`);
 
-  // Positive control: the scanner must actually be looking at the real
-  // content at each site, not merely returning a fixed answer. Assert each
-  // known call site's own arguments are visible in the matched text.
+  // Positive control: the scanner must actually be looking at the real content
+  // at each site, not merely returning a fixed answer. Assert each known call
+  // site's own arguments are visible in the matched text.
   const contexts = indices.map((idx) => source.slice(idx, idx + 60));
-  assert.ok(
-    contexts.some((c) => c.includes("outPath, projectJson")),
-    `expected to see bootstrapProject()'s own write site among: ${JSON.stringify(contexts)}`,
-  );
   assert.ok(
     contexts.some((c) => c.includes("outPath, rendered.markdown")),
     `expected to see cmdRenderMemmap()'s own write site among: ${JSON.stringify(contexts)}`,
+  );
+  assert.ok(
+    contexts.some((c) => c.includes("out, JSON.stringify(report")),
+    `expected to see cmdCoverage()'s own write site among: ${JSON.stringify(contexts)}`,
   );
 
   for (const idx of indices) {
@@ -1243,409 +952,18 @@ function foo() {
   );
 });
 
-test("in-process (WR-09): a .d64 entry whose payload parsePrg() rejects fails with a bootstrap:-prefixed, entry-naming message that never mentions parsePrg", async () => {
+test("in-process (WR-09): render-memmap with --out inside a non-existent directory fails with a one-line message naming the path, never a stack trace", async () => {
   await withTempDir(async (dir) => {
-    const d64Path = join(dir, "game.d64");
-    const buf = blankImage();
-    writeDirEntry(buf, 18, 1, 0, { typeByte: 0x82, firstTrack: 5, firstSector: 0, name: "EMPTY", blocks: 1 });
-    // Final sector's last-used-byte offset = 2 -- WR-05's assertPlainImage()/
-    // extractEntry() bounds check (usedByte >= 2) is the floor this repo
-    // already enforces, so the smallest reachable extracted payload is 1
-    // byte (usedByte - 1), one byte short of parsePrg()'s own 3-byte
-    // minimum (a 2-byte load address plus at least 1 payload byte). This is
-    // the current live reproduction of the review's finding -- the
-    // original review's exact "0 byte(s)" repro predates WR-05's bounds
-    // check (added by plan 11-02) and is no longer reachable at all, since
-    // extractEntry() itself now refuses any usedByte below 2 as corrupt
-    // before parsePrg() is ever called.
-    const off = tsToOffset(5, 0);
-    buf[off] = 0; // end of chain
-    buf[off + 1] = 2; // last-used-byte offset = 2 -> 1 payload byte
-    writeFileSync(d64Path, buf);
-    const outPath = join(dir, "game.regen2000proj");
-
+    const projectPath = join(dir, "game.regen2000proj");
+    writeFileSync(projectPath, "{}");
+    const provenancePath = join(dir, "sidecar.json");
+    writeFileSync(provenancePath, "{}");
+    const outPath = join(dir, "no-such-dir", "memory-map.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", d64Path, "--entry", "EMPTY", "--out", outPath]),
+      runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
     );
-
     assert.notEqual(code, 0);
-    assert.match(stderr, /^bootstrap:/);
-    assert.match(stderr, /EMPTY/);
-    assert.doesNotMatch(stderr, /parsePrg/);
+    assert.match(stderr, /^render-memmap:/);
     assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
-    assert.equal(existsSync(outPath), false, "no project file must be written for a rejected .d64 entry");
-  });
-});
-
-test("in-process (WR-09): bootstrap with --out inside a non-existent directory fails with a bootstrap:-prefixed message naming the path, never a stack trace", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-    const outPath = join(dir, "no-such-subdir", "game.regen2000proj");
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out", outPath]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^bootstrap:/);
-    assert.match(stderr, new RegExp(outPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
-  });
-});
-
-test(
-  "gated (WR-09): render-memmap with --out inside a non-existent directory fails with a render-memmap:-prefixed message naming the path, never a stack trace",
-  { skip: SKIP_REASON },
-  async () => {
-    await withWorkspaceTempDir(async (dir) => {
-      const projectPath = join(dir, "wr09.regen2000proj");
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
-
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-      assert.equal(disasmResult.isError, false, JSON.stringify(disasmResult));
-
-      const provenancePath = join(dir, "prov.json");
-      writeFileSync(
-        provenancePath,
-        JSON.stringify({
-          capturePath: "/tmp/capture.raw",
-          captureSha256: "a".repeat(64),
-          port01: "$35",
-          dd00: "$06",
-          vicBank: "0 ($0000-$3FFF)",
-          screenRam: "$0400",
-          charsetOrBitmap: "$1000 (ROM shadow)",
-          mode: "text, multicolor off",
-          videoStandard: "PAL",
-          liveVectorPair: "$0314/$0315",
-          vectorHandler: "$EA31",
-        }),
-      );
-
-      const outPath = join(dir, "no-such-subdir", "memory-map.md");
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
-      );
-
-      assert.notEqual(code, 0);
-      assert.match(stderr, /^render-memmap:/);
-      assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// IN-06 -- a verb refuses an option it does not implement instead of
-// silently dropping it. `verify` accepted (and discarded) `--out` because
-// `parseArgs()` is a single shared parser returning `out` for every verb,
-// while `cmdVerify()` never reads the field back out. `VERB_OPTIONS` (one
-// frozen map, `anno-cli.ts`) plus `checkAcceptedOptions()`'s single
-// pre-dispatch call site now refuses any `--flag`-shaped token a verb does
-// not accept, for all seven verbs uniformly.
-// ---------------------------------------------------------------------------
-
-test("verify: --out is refused, naming the flag and the accepted option set (IN-06)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["verify", "some.regen2000proj", "--out", "x"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /^verify:/);
-  assert.match(stderr, /--out/);
-  assert.match(stderr, /--entry/, "the refusal must list the accepted option set");
-  assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
-});
-
-test("verify: --force is refused the same way --out is (both were silently parsed and discarded before IN-06)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["verify", "some.regen2000proj", "--force"]),
-  );
-  assert.notEqual(code, 0);
-  assert.match(stderr, /^verify:/);
-  assert.match(stderr, /--force/);
-});
-
-test("verify: --entry is still accepted and reaches the .d64 entry lookup, not refused as an unknown option (IN-06 regression guard)", async () => {
-  await withTempDir(async (dir) => {
-    const d64Path = join(dir, "game.d64");
-    writeFileSync(d64Path, oneEntryImage());
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["verify", d64Path, "--entry", "NOPE"]),
-    );
-
-    assert.notEqual(code, 0);
-    // Must fail with extractEntry()'s own "unknown entry" shape (naming the
-    // requested and available entries), never the options checker's
-    // refusal -- proving --entry was accepted and actually used.
-    assert.doesNotMatch(stderr, /is not accepted by this verb/);
-    assert.match(stderr, /NOPE/);
-    assert.match(stderr, /GAME/);
-  });
-});
-
-// The verb count here is a FOURTH count site the eighth verb moves, alongside
-// `ANNO_CLI_VERB_FLOOR`, `anno-verb-coverage.test.ts`'s `REAL_VERBS` and the
-// dispatch switch itself. Raised from 7 to 8 by plan 19-04 when `coverage`
-// landed. Kept as a hand-maintained literal on purpose: deriving it from
-// `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
-test("the verb-options map agrees with USAGE's own per-verb option lists, for all eight verbs (IN-06)", () => {
-  const usage = helpResult.stdout;
-  const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 8, `expected exactly 8 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
-
-  for (const verb of verbs) {
-    const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
-    assert.ok(lineMatch, `expected a USAGE line for verb "${verb}"`);
-    const documented = new Set(lineMatch![0].match(/--[a-zA-Z-]+/g) ?? []);
-    const mapped = new Set(VERB_OPTIONS[verb]);
-    assert.deepEqual(
-      documented,
-      mapped,
-      `verb "${verb}": USAGE documents ${JSON.stringify([...documented])} but VERB_OPTIONS accepts ${JSON.stringify([...mapped])}`,
-    );
-  }
-});
-
-test("every verb's own documented options are still accepted, one assertion per verb (IN-06 regression guard)", async () => {
-  // Built directly from VERB_OPTIONS (the map's own ground truth) rather
-  // than hand-typed per verb, so this test cannot silently drift from the
-  // map it is proving.
-  const placeholderValue: Record<string, string> = {
-    "--entry": "SOME-ENTRY",
-    "--out": "some-out-path",
-    "--force": "",
-    "--max-results": "10",
-    "--provenance": "some-provenance.json",
-    "--check": "",
-    "--sample": "4",
-  };
-  for (const [verb, options] of Object.entries(VERB_OPTIONS)) {
-    const argv: string[] = [verb, "some.regen2000proj"];
-    if (verb === "import-lbl") argv.push("some.lbl");
-    for (const opt of options) {
-      argv.push(opt);
-      const value = placeholderValue[opt];
-      if (value) argv.push(value);
-    }
-    const { stderr } = await withCapturedConsole(() => runR2000Cli(argv));
-    assert.doesNotMatch(
-      stderr,
-      /is not accepted by this verb/,
-      `verb "${verb}" with its own documented options ${JSON.stringify(options)} must not be refused by checkAcceptedOptions(); argv=${JSON.stringify(argv)}, stderr=${stderr}`,
-    );
-  }
-});
-
-test("an unaccepted option is refused for every verb it does not belong to, not merely for verify (IN-06 generalisation)", async () => {
-  for (const verb of Object.keys(VERB_OPTIONS)) {
-    const argv = [verb, "some.regen2000proj", "--totally-not-a-real-flag"];
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
-    assert.notEqual(code, 0, `verb "${verb}" must refuse an unaccepted flag`);
-    assert.match(stderr, new RegExp(`^${verb}:`), `verb "${verb}"'s refusal must be prefixed with its own name`);
-    assert.match(stderr, /--totally-not-a-real-flag/);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// WR-08 -- `parseArgs()`'s `--entry`/`--out` used to take the NEXT token
-// unconditionally (`entry = rest[++i]`), so a missing or flag-shaped value
-// was silently accepted as the value itself. `bootstrap`, `export-asm` and
-// `verify` all route through the shared `parseArgs()` (`cmdVerify()` only
-// ever reads its `entry` field back out -- `--out` is not in verify's own
-// accepted set at all, so `checkAcceptedOptions()` above already refuses it
-// before `cmdVerify()` runs; the "verify: --out is refused" test above pins
-// that path, so it is not repeated here). Every case below is a `{missing
-// value, flag-shaped value}` x `{--entry, --out}` cell for the two verbs
-// that actually read `--out` back out, plus the two `--entry` cells for
-// verify. The review's own literal reproduction (`--out --entry FOO`) is
-// pinned by name for both bootstrap and export-asm, each asserting the
-// actual harm -- no file literally named `--entry` is ever created --
-// rather than only the parsed shape.
-//
-// Non-vacuity (recorded verbatim in the SUMMARY): every test in this section
-// was confirmed to FAIL against a scratch revert of `parseArgs()` to the
-// pre-fix `entry = rest[++i]` / `out = rest[++i]` form, then confirmed to
-// PASS again once the fix was restored, with `git diff` showing byte-
-// identity against the committed fix afterwards.
-// ---------------------------------------------------------------------------
-
-test("bootstrap: the review's literal reproduction (--out --entry FOO) refuses naming --out, and creates no file named --entry", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    // The real hazard's location is `process.cwd()`, not the input's own
-    // directory: the pre-fix parser hands `bootstrapProject()` the bare
-    // string "--entry" as `outPath` (no directory component at all, since
-    // it came from `rest[++i]` unconditionally), and `writeFileSync()`
-    // resolves a directory-less relative path against the CURRENT WORKING
-    // DIRECTORY of the CLI process -- confirmed live while proving this
-    // suite's non-vacuity (see the SUMMARY's transcript): running the
-    // reverted parser wrote a real "--entry" file into this repo's own
-    // `src/mcp/vice/` directory, not into any temp dir. Guard against
-    // exactly that landing spot, and clean it up defensively in case a
-    // regression ever reintroduces the write.
-    const cwdHazardPath = join(process.cwd(), "--entry");
-    try {
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["bootstrap", prgPath, "--out", "--entry", "FOO"]),
-      );
-
-      assert.notEqual(code, 0);
-      assert.match(stderr, /^bootstrap:/);
-      assert.match(stderr, /--out/, "the refusal must name --out, not --entry (WR-09's lesson)");
-      assert.match(stderr, /requires a value/);
-      assert.equal(existsSync(cwdHazardPath), false, "no file literally named --entry must be created in the CLI's cwd");
-      assert.equal(existsSync(join(dir, "game.regen2000proj")), false, "bootstrap must not have written its default output either");
-    } finally {
-      if (existsSync(cwdHazardPath)) rmSync(cwdHazardPath);
-    }
-  });
-});
-
-test("bootstrap: --entry with no following token is refused, not treated as a value of undefined", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--entry"]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^bootstrap:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("bootstrap: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["bootstrap", prgPath, "--entry", "--force"]),
-    );
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^bootstrap:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("bootstrap: --out with no following token is refused, not treated as a value of undefined", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["bootstrap", prgPath, "--out"]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^bootstrap:/);
-    assert.match(stderr, /--out/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("export-asm: the review's finding, one verb over (--out --entry FOO) refuses naming --out, and creates no file named --entry", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    // Same cwd-relative hazard location as bootstrap's own case above --
-    // see that test's comment for why `process.cwd()` is the real landing
-    // spot, not the input file's directory.
-    const cwdHazardPath = join(process.cwd(), "--entry");
-    try {
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["export-asm", prgPath, "--out", "--entry", "FOO"]),
-      );
-
-      assert.notEqual(code, 0);
-      assert.match(stderr, /^export-asm:/);
-      assert.match(stderr, /--out/);
-      assert.match(stderr, /requires a value/);
-      assert.equal(existsSync(cwdHazardPath), false, "no file literally named --entry must be created in the CLI's cwd");
-      assert.equal(existsSync(join(dir, "game.a")), false, "export-asm must not have written its default output either");
-    } finally {
-      if (existsSync(cwdHazardPath)) rmSync(cwdHazardPath);
-    }
-  });
-});
-
-test("export-asm: --entry with no following token is refused", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-asm", prgPath, "--entry"]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^export-asm:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("export-asm: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", prgPath, "--entry", "--force"]),
-    );
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^export-asm:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("export-asm: --out with no following token is refused", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["export-asm", prgPath, "--out"]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^export-asm:/);
-    assert.match(stderr, /--out/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("verify: --entry with no following token is refused", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["verify", prgPath, "--entry"]));
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^verify:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
-  });
-});
-
-test("verify: --entry followed by a flag-shaped token is refused, not taken as the entry name", async () => {
-  await withTempDir(async (dir) => {
-    const prgPath = join(dir, "game.prg");
-    writeFileSync(prgPath, PRG_WITH_ILLEGAL_OPCODE);
-
-    // The only flag-shaped token guaranteed not to trip
-    // checkAcceptedOptions() ahead of parseArgs() is one already in verify's
-    // own accepted set -- --entry itself, used here as a (nonsensical)
-    // value for the first --entry.
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["verify", prgPath, "--entry", "--entry"]),
-    );
-
-    assert.notEqual(code, 0);
-    assert.match(stderr, /^verify:/);
-    assert.match(stderr, /--entry/);
-    assert.match(stderr, /requires a value/);
   });
 });

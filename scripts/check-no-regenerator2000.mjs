@@ -479,8 +479,16 @@ const TEMPORARY_ALLOW_LIST = [
   // re-pins this count in its own commit; 29-10 discharges the remainder.
   { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 4, plan: "29-12" },
   { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
-  { path: "src/mcp/vice/anno-cli.ts", count: 13, plan: "29-07" },
-  { path: "src/mcp/vice/anno-cli.test.ts", count: 14, plan: "29-07" },
+  // DISCHARGED BY PLAN 29-07, 2026-08-29, and therefore DELETED rather than
+  // re-cited. `anno-cli.ts` stood at 13 occurrences and `anno-cli.test.ts` at
+  // 14; almost every one of the 27 described one of the six verbs D-14
+  // removed, or a test of one. With the verbs gone and the file header and
+  // USAGE rewritten to the two-verb surface, BOTH files re-measure at exactly
+  // ZERO -- so neither has a subject left to exempt, and an entry pinning a
+  // count of zero would be an exemption with room in it, which this file's own
+  // header forbids. The fallback this plan carried (lower the count and
+  // re-cite to 29-10, the next plan owning both this gate and that pair) was
+  // therefore not needed.
   // The four unpaired guard tests LEFT this block in 29-05's own third task,
   // for the permanent exemption `renamed-guard-disciplines` -- each records a
   // discipline, a provenance constant or a founding incident that stays true

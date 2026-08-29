@@ -388,9 +388,17 @@ test("positive control: the scanner captures the literals this guard exists to p
     literals.some((l) => /usage \(npm install\)/.test(l)),
     "the scanner did not capture anno-cli.ts's USAGE template literal -- exactly the blindness a regex-alternation extractor was measured to have",
   );
+  // RE-POINTED 2026-08-29 (plan 29-07, D-14). This control used to name the
+  // `.vsf` bootstrap refusal -- a `+`-concatenated plain string literal, whose
+  // capture proves the scanner sees more than template literals. That refusal
+  // belonged to the `bootstrap` verb, which was removed with five others when
+  // the CLI narrowed to two verbs, so the control was moved to a
+  // `+`-concatenated refusal the surviving surface still has rather than
+  // dropped. The PROPERTY under test is unchanged: a multi-part concatenated
+  // literal must be visible to the scanner, not only the USAGE template above.
   assert.ok(
-    literals.some((l) => /\.vsf input is not supported/.test(l)),
-    "the scanner did not capture the .vsf bootstrap refusal literal",
+    literals.some((l) => /refusing to overwrite the existing file/.test(l)),
+    "the scanner did not capture anno-cli.ts's concatenated overwrite-refusal literal -- the control for multi-part string concatenation",
   );
 });
 

@@ -1716,8 +1716,11 @@ function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
 // every derived read names its own image and this function is the ONE place
 // that turns that name into bytes plus an origin.
 //
-// DISPATCH IS BY EXTENSION FIRST, NEVER BY BYTE LENGTH, and the branch order
-// below is copied from `anno-cli.ts:483-506` rather than re-derived. The
+// DISPATCH IS BY EXTENSION FIRST, NEVER BY BYTE LENGTH. The branch order below
+// was copied from the CLI's own bootstrap dispatch rather than re-derived; that
+// verb was removed on 2026-08-29 when the CLI narrowed to two (D-14), so THIS
+// is now the only implementation of the order and the citation that named the
+// CLI's line range is deliberately gone rather than left dangling. The
 // incident it encodes (WR-07): a 4096-byte flat `.raw` capture fell through to
 // the `.prg` parser, whose first two bytes become the load address, so a
 // truncated capture silently "bootstrapped" with an origin read backwards out

@@ -137,6 +137,7 @@ probed, the same way FORK-01's Key Decisions row states its own trigger is.
 - ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`R2000-11`; the 17 curated `r2000_*` tools)
 - ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`R2000-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
 - ✓ Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`R2000-14`, `R2000-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
+  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `export-lbl` and `import-lbl` CLI verbs that delivered `R2000-14` and `R2000-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser through `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It returns in Phase 30**, rebuilt over the Phase 28 annotation store alongside the ACME export oracle, which is the same route `export-asm` takes for the same reason. Until then, a reader checking whether the symbol round trip works should read this line as: it does not, and the reason is a deliberate sequencing choice rather than a defect.
 - ✓ regenerator2000 is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented — v0.3.0 Phase 10 (`R2000-01`; two independent guarantees — unreachable by fixed per-verb argv builders *and* denied by a scan throwing `R2000ViceFlagError`, both pinned by tests proven to fail under live reintroduction)
 - ✓ It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — v0.3.0 Phase 10 (`R2000-02`; the `r2000_*` family registers proxy-locally via `buildViceTool()` and never reaches `forwardToVice()`, asserted structurally by `hostpath-consumers.test.ts` over a `readdirSync`-derived module set. **Scope honesty:** the two-projects-at-once half is a *stated* upstream limit, not a detected one, and the devcontainer half is documented rather than exercised — no devcontainer exists in this repo)
 - ✓ It is a declared prerequisite named in the install documentation alongside VICE, with its licence notice in `THIRD-PARTY-NOTICES.md` — v0.3.0 Phase 10 (`R2000-03`; the notice records the **true dual `MIT OR Apache-2.0`** licence. The requirement as written said "Apache-2.0", which the Phase 9 probe falsified; every Apache-2.0-only mention in the living documents was corrected)
@@ -757,9 +758,16 @@ not a documentation-only edit.
   grep gate lands.
 - **Prefix-driven deletion would silently un-ship six more survivors than
   `CUT-02` names**: `r2000-test-gate`, `-acme-ident`, `-confidence`,
-  `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol
-  round trip), `-verify` and `-memmap-render` (behind a live Key Decision). The
+  `-symbols`, `-verify` and `-memmap-render` (behind a live Key Decision). The
   delete criterion is capability, not the name prefix.
+  - **Updated 2026-08-29 (Phase 29):** the symbols module survives under its
+    renamed path **`anno-symbols.ts`** (plan 29-05's rename). What left in plan
+    29-07 is its **ROUTE, not its knowledge** — the two CLI verbs that reached
+    it are gone, so the module's `exportLabels`/`importLabels` remain on disk
+    with no caller until Phase 30 rebuilds the route over the store. The
+    `R2000-14`/`R2000-15` capability line above carries the matching dated
+    withdrawal. This paragraph's own claim still holds and is the reason the
+    module was not deleted with its verbs.
 
 **Reuse rather than rebuild:** `disasm-opcodes.ts` / `disasm-decoder.ts` /
 `disasm-renderer.ts` already decode 6502 including illegal opcodes
