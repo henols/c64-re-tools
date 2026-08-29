@@ -170,6 +170,31 @@ test("the disassembler modules (not yet reachable from stock-dispatch.ts in this
   }
 });
 
+// MCP-02, BY CONSTRUCTION RATHER THAN BY INTERCEPTION (plan 29-01).
+//
+// CLAUDE.md requires derived tools to be intercepted BEFORE forwardToVice(),
+// because rewriteArguments() runs inside it and would hand a host-translated
+// path to a runner acting proxy-locally. The anno_* family needs no such
+// interception: its runner is registered through buildViceTool() directly and
+// can never reach forwardToVice(), call() or ensureViceSession(), so there is
+// no interception to forget. What makes that argument SOUND rather than merely
+// stated is the five-member EXPECTED_IMPORTERS deepEqual above -- if an anno-*
+// module ever imported hostpath.ts, the store path would be translated across
+// the container boundary and would open (or refuse) a file on the wrong side
+// of it.
+//
+// The NAMED-ABSENCE form is deliberate and is the whole point of listing files
+// that do not exist yet: the five-member set alone goes red only AFTER the
+// import lands, and says only "the set changed". This says WHICH module, and
+// says it for a module a later plan in this phase has not written yet -- so
+// the constraint is asserted before there is anything to violate it.
+test("every module this phase adds is absent from the hostpath.ts consumer set (MCP-02), named before it exists", () => {
+  const importers = hostpathImporters();
+  for (const name of ["anno-tools.ts", "anno-derive.ts", "anno-details.ts", "anno-register.ts", "anno-cli.ts"]) {
+    assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
+  }
+});
+
 /** The r2000 production module family, derived from disk rather than typed
  * (INT-01/D-11.1-03): every `r2000-*.ts` file `topLevelProductionModules()`
  * already excludes `*.test.*` from. This is the SAME `readdirSync`-based
