@@ -449,17 +449,28 @@ const EXEMPTION_CLASSES = [
     id: "renamed-guard-disciplines",
     why:
       "the three unpaired guard tests plan 29-05 renamed out from under the retired prefix, whose mentions are " +
-      "each the guard's own description of what it enforces. The spawn-seam guard's 39 are its statement of the " +
-      "discipline itself -- no shipped module spawns a child that touches VICE, and every discovered spawn site " +
-      "is guarded before it spawns -- which outlives the substrate it was measured against and is unsayable " +
-      "without naming what was measured. The answer-key guard's 2 are a founding incident: it reads " +
+      "each the guard's own description of what it enforces. " +
+      "THE SPAWN-SEAM GUARD'S COUNT WAS RE-MEASURED 39 -> 1 ON 2026-08-30 (plan 29-10), and the reason is the " +
+      "opposite of a weakening. Its 39 were its statement of a discipline expressed in terms of a SUBJECT THAT " +
+      "NO LONGER EXISTS -- it enumerated the retired analyser's own spawn sites, named its binary constant, and " +
+      "quoted its module names in planted-source literals. Plan 29-10 deleted both of the sites it was measured " +
+      "against, so the guard was RE-POINTED onto the emulator spawn seam: the same discovery machinery, the " +
+      "same comment-and-literal traps, the same pinned-site-set-in-both-directions shape, now asserting that " +
+      "every shipped module spawning the emulator does it in the argv-array form with no shell command string. " +
+      "The re-point was proven, not asserted -- a plant was added to the real backend-detect.mts, observed red " +
+      "by name, and reverted. The ONE surviving occurrence is the founding incident the file exists to record: " +
+      "that a module's header once CLAIMED to be the only spawn site and was wrong, which is the whole reason a " +
+      "prose promise about where spawns live was replaced with a discovery pass. That sentence stays true in " +
+      "the past tense and is unsayable without naming what was measured, so it remains PERMANENT rather than " +
+      "becoming a temporary entry a later plan would have to discharge by deleting history. " +
+      "The answer-key guard's 2 are a founding incident: it reads " +
       ".planning/phases/11-*/evidence/ with no existence guard and is the second leg of the do-not-archive-phase-" +
       "directories decision, so deleting it would silently discharge that constraint (D-11). The docs-decisions " +
       "guard's 2 are an ISSUE-TRACKER CITATION -- upstream issue #42, D-36's named reversal trigger -- not a " +
       "route. All three are re-pointed onto their new paths with their exact counts carried across unchanged; " +
       "none is converted into a temporary entry a later plan would have to discharge by deleting history.",
     paths: {
-      "src/mcp/vice/spawn-seam.test.ts": 39,
+      "src/mcp/vice/spawn-seam.test.ts": 1,
       "src/mcp/vice/absorbed-answer-key.test.ts": 2,
       "src/mcp/vice/docs-absorbed-decisions.test.ts": 2,
     },
@@ -575,23 +586,44 @@ const TEMPORARY_ALLOW_LIST = [
   //    carries BOTH this gate AND the named file in its own `files_modified`
   //    -- the reachability rule. An entry citing a plan that cannot touch its
   //    file is an orphan that makes 29-11's emptiness assertion unreachable.
-  { path: "src/mcp/vice/anno-coverage.ts", count: 2, plan: "29-10" },
-  { path: "src/mcp/vice/anno-enum-gen.ts", count: 4, plan: "29-10" },
-  { path: "src/mcp/vice/anno-enum-gen.test.ts", count: 4, plan: "29-10" },
-  // D-17, DONE AT WAVE 6: plan 29-12 rebuilt the render verb onto the Phase 28
-  // store and re-pinned this count in its own commit, 4 -> 2. The two mentions
-  // it removed both described the child-driven render -- the file header's
-  // framing of the gated half, and the golden test's note on where the
-  // disassembly came from -- and both went when those three tests were
-  // converted to ungated store-backed tests rather than deleted. The two left
-  // belong to the "<subject> availability gate (D-11)" test -- spelled with the
-  // placeholder here on purpose, because this file's own source must never
-  // carry the literal. They are the section comment above that test and the
-  // test's own name. Plan 29-10 discharges those by deleting
-  // that test together with the gate module it calls, which is why the citation
-  // now names 29-10 -- the plan that ENDS the entry.
-  { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 2, plan: "29-10" },
-  { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
+  // -- ALL FIVE 29-10 SURVIVOR ENTRIES THAT STOOD HERE ARE DISCHARGED
+  //    (2026-08-30, plan 29-10 task 2), and every one re-measured at exactly
+  //    ZERO, so all five are DELETED rather than re-pinned -- an entry pinning
+  //    a count of zero is an exemption with room in it, which this file's own
+  //    header forbids. What each one described, and where it went:
+  //
+  //      - anno-coverage.ts (was 2). THE SPLIT FILE. Its two temporary
+  //        mentions described a LIVE route: a doc comment saying label names
+  //        arrive from the retired analyser's project file, and DIVERGENCE_NOTE
+  //        -- a RUNTIME, USER-FACING string, not comment prose. Both were
+  //        REWRITTEN, not deleted: the first now names the annotation store,
+  //        the second states the same over-merge bias without naming a
+  //        producer that is gone or a tool surface that no longer exists. Both
+  //        edits were line-count-NEUTRAL on purpose, because this file's other
+  //        two mentions are covered by a LINE-SCOPED permanent exemption
+  //        (`census-design-and-incident-records`, at :9 and :1752) that a shift
+  //        would have silently invalidated. Verified after the edit: exactly
+  //        two occurrences remain, still at :9 and :1752. That permanent
+  //        exemption is UNTOUCHED and must stay -- lowering it to zero because
+  //        a temporary entry on the same file was discharged is exactly the
+  //        widening this phase's standing prohibition forbids, one file at a
+  //        time.
+  //      - anno-enum-gen.ts (was 4) and anno-enum-gen.test.ts (was 4). All
+  //        eight described the analyser child the enum route drove. The route
+  //        is deleted and the HEURISTICS were extracted out of it as live code
+  //        rather than deleted with it, so what is left names no producer.
+  //      - anno-memmap-render.test.ts (was 2). Both belonged to the
+  //        "<subject> availability gate (D-11)" test -- spelled with the
+  //        placeholder here on purpose, because this file's own source must
+  //        never carry the literal. That test was UNGATED and ran on every
+  //        suite invocation; plan 29-10 deleted it under D-01 together with the
+  //        gate module it called. Its three gated render tests were NOT
+  //        deleted -- plan 29-12 had already converted them at wave 6 to
+  //        ungated store-backed tests (D-17), which is why this entry fell to
+  //        4 -> 2 there and 2 -> 0 here.
+  //      - anno-symbols.ts (was 7). Every one described the export or import
+  //        leg's own child invocation. The routes went; the pre-spawn
+  //        validation gate stayed, and it names no producer.
   // DISCHARGED BY PLAN 29-07, 2026-08-29, and therefore DELETED rather than
   // re-cited. `anno-cli.ts` stood at 13 occurrences and `anno-cli.test.ts` at
   // 14; almost every one of the 27 described one of the six verbs D-14
@@ -652,24 +684,54 @@ const TEMPORARY_ALLOW_LIST = [
   //    attribution link, `attribution-guard-test` for the guard that now
   //    asserts it. NOTHING CITES 29-09 ANY LONGER.
 
-  // -- plan 29-10: the deletion set, plus the survivors whose mentions exist
-  //    only to describe what 29-10 deletes.
-  { path: "src/mcp/vice/r2000-launch.ts", count: 20, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-launch.test.ts", count: 3, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-mcp-client.ts", count: 19, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-mcp-client.test.ts", count: 7, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-project.ts", count: 9, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-project.test.ts", count: 12, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-session.ts", count: 8, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-session.test.ts", count: 5, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-tools.ts", count: 19, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-tools.test.ts", count: 10, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-test-gate.ts", count: 16, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-verify.ts", count: 5, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-verify.test.ts", count: 4, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-symbol-roundtrip.test.ts", count: 7, plan: "29-10" },
-  { path: "src/mcp/vice/vice-proxy.ts", count: 4, plan: "29-10" },
+  // -- plan 29-10: THE DELETION SET IS DISCHARGED (2026-08-30).
+  //
+  //    The fourteen entries that stood here named the fourteen files plan
+  //    29-10 deleted -- 134 occurrences between them, every one of which went
+  //    with its file. Their entries are DELETED rather than re-pinned, and
+  //    this gate proved it: with the files gone and the entries still present
+  //    it reported all fourteen twice over, once for "allow-listed but NOT on
+  //    disk" and once for "pinned at N, got 0". That is the staleness contract
+  //    in this file's header working exactly as written, not a nuisance --
+  //    an entry left behind after its file is gone FAILS rather than sitting
+  //    inert.
+  //
+  //    vice-proxy.ts (was 4) is discharged too, and also re-measured at zero.
+  //    Two of its four described the deleted session-close import and the
+  //    comment block above its call site, and went with them. The other two
+  //    were STALE rather than live -- the drain barrier's "reachable trigger"
+  //    named a CLI verb plan 29-07 had already withdrawn, and the test hatch's
+  //    provenance named the producer it was measured against -- and were
+  //    CORRECTED to say what is still true rather than deleted, because the
+  //    drain barrier and the hatch both outlive the routes they were measured
+  //    against.
+  //
+  //    ONE ENTRY SURVIVES THIS PLAN, AND IT IS AN ORPHAN. See the block below.
   { path: "src/mcp/vice/vice-proxy.test.ts", count: 1, plan: "29-10" },
+  // ^^ NOT DISCHARGED BY 29-10, AND DELIBERATELY SO -- read this before
+  //    "finishing the job" by editing that file.
+  //
+  //    The orchestrator running plan 29-10 issued an explicit, in-flight scope
+  //    instruction: vice-proxy.test.ts is OUT OF SCOPE for this plan, in both
+  //    directions -- do not update its expectations, and do not silence it with
+  //    a skip either. It carries three pre-existing failures that assert on
+  //    tool names phase 29 renamed, and the decision about what to do with
+  //    them was explicitly reserved rather than delegated to a deletion plan.
+  //
+  //    Its one remaining occurrence is a past-tense measurement note about a
+  //    flat capture's diagnostic size. The count is UNCHANGED at 1, so this
+  //    entry does not fail the pin check and this gate is GREEN with it in
+  //    place -- the reason it is still here is 29-11's emptiness assertion,
+  //    which this entry will fail until it is resolved.
+  //
+  //    IT STAYS A TEMPORARY ENTRY. Promoting it to a permanent exemption to
+  //    make 29-11 pass would be the widening this file's own header forbids:
+  //    the mention is not permanent, nobody has decided it should survive, and
+  //    an exemption granted to dodge an assertion is precisely the shape this
+  //    gate exists to refuse. The citation still names 29-10 because that is
+  //    the plan that would otherwise have ended it; 29-11 owns the emptiness
+  //    assertion and is the right place to settle it, once the vice-proxy.test
+  //    question the orchestrator reserved has been answered.
   // CLAUDE.md's single mention was the `routine-queue-walker` row of the
   // project-skills table -- a VERBATIM MIRROR of that skill's own frontmatter
   // `description:`, byte-for-byte, asserted by
