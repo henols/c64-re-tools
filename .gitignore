@@ -78,6 +78,8 @@ dist/
 # after `/gsd-update`. Nothing in the repo may branch on whether this tree
 # exists; guards assert over tracked `.planning/` and `CLAUDE.md` only.
 /.claude/gsd-core/
+/.claude/gsd-local-patches/
+/.claude/gsd-pristine/
 /.claude/agents/
 /.claude/commands/
 /.claude/hooks/

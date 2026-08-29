@@ -314,8 +314,9 @@ rather than disabling isolation to avoid them:
 
 GSD itself is a **vendored, gitignored install** — `/gsd-update` may be run freely and the
 repo never changes as a result. Nothing here may branch on whether it is installed (CI and
-fresh clones have none). Local customisations to it are reapplied by
-`node scripts/gsd-reapply-local.mjs`, wired as a SessionStart hook.
+fresh clones have none). It carries **zero local customisations** and must keep carrying zero — never edit a file
+under the vendored tree. `.claude/gsd-local-patches/` should always be empty; if it
+appears, something edited the install.
 
 Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20 and § 20.1.
 

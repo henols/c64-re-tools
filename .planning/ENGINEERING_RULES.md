@@ -332,12 +332,23 @@ exactly one client, so concurrent drivers corrupt the evidence. Cite those, not 
    test that skips when `gsd-core` is missing — such a test reports on the vendored tree rather
    than guarding this one.
 
-3. **Local customisations to the install are not preserved by git.** They are reapplied
-   idempotently by `node scripts/gsd-reapply-local.mjs`, wired as a SessionStart hook in
-   `.claude/settings.json` so a `/gsd-update` revert self-heals at the start of the next
-   session instead of failing mid-phase. Two are currently carried: the executor's
-   `mcp__vice__*` tool grant plus `effort: high`, and the UAT abstention carve-out. Add any
-   new customisation to that script or it will be silently lost.
+3. **The install carries ZERO local customisations, and must keep carrying zero.** Do not edit
+   any file under the vendored tree — not the workflows, not the agent frontmatter, not the
+   hooks. Verified 2026-08-29: the install is byte-identical to stock 1.11.0 (`0 modified`
+   against `gsd-file-manifest.json`). Two edits previously existed and were both dropped:
+   the executor's `mcp__vice__*` tool grant, and the UAT abstention carve-out in
+   `verify-work.md`.
+
+   GSD detects edits on reinstall, stashes them under `.claude/gsd-local-patches/`, and offers
+   `/gsd-update --reapply`. That directory is gitignored and should stay EMPTY. If it appears,
+   something edited the vendored tree — delete it rather than reapplying, and solve the need a
+   supported way instead:
+   - behaviour a plan needs → a project-owned specialist agent plus `agent_hint:` in the plan's
+     frontmatter (stock per-plan executor routing, `#1689`);
+   - reasoning effort → `effort.agent_overrides.<agent-id>` in `.planning/config.json`
+     (effort is installer-stamped per agent; it is not a hand edit);
+   - a guarantee about an outcome → a `docs-*.test.ts` guard over tracked `.planning/`, which
+     is durable and needs no cooperation from the vendored tree at all.
 
 For the same reason, **do not cite line numbers inside the vendored tree** in tracked prose.
 Those numbers drift on every update and nothing can check them. Name the file and the semantic
