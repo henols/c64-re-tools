@@ -88,8 +88,8 @@ const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
 verbs:
-  render-memmap <project> --provenance FILE [--out FILE] [--check]
-      Generates the Markdown memory map from the project's store plus a
+  render-memmap <store> --provenance FILE [--out FILE] [--check]
+      Generates the Markdown memory map from an annotation store plus a
       validated provenance sidecar (D-24: the store is canonical, this
       output is a GENERATED VIEW -- never hand-edit it). Without --check,
       writes --out (default: memory-map.md beside the project) and prints
@@ -100,8 +100,8 @@ verbs:
       hand edit OR a store-side change since the file was last rendered),
       or prints "missing" and exits non-zero when --out does not exist yet.
       --check is how a hand edit to the generated file is caught. Requires
-      an EXISTING project and an EXISTING --provenance sidecar (this verb
-      does not create either).
+      an EXISTING annotation store and an EXISTING --provenance sidecar
+      (this verb creates neither).
 
   coverage <project> --store FILE [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
@@ -247,10 +247,16 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 }
 
 /**
- * `render-memmap <project> --provenance FILE [--out FILE] [--check]` --
+ * `render-memmap <store> --provenance FILE [--out FILE] [--check]` --
  * D-24's generated-view verb, via `anno-memmap-render.ts`'s
  * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
  * `--check` is given -- that mode only reads and reports.
+ *
+ * The positional argument is the ANNOTATION STORE this map is rendered from
+ * -- the same substrate `coverage` reads -- and it goes through the SAME one
+ * confinement seam, `storePathWithinWorkspace()` against `repoRoot()`
+ * (T-29-51). Never a second hand-rolled rule, and never a suffix check
+ * standing in for a location check.
  */
 async function cmdRenderMemmap(rest: string[]): Promise<number> {
   const {
@@ -279,13 +285,29 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  const project = positional[0];
-  if (!project) {
-    console.error("render-memmap: usage: render-memmap <project> --provenance FILE [--out FILE] [--check]");
+  const store = positional[0];
+  if (!store) {
+    console.error("render-memmap: usage: render-memmap <store> --provenance FILE [--out FILE] [--check]");
     return 1;
   }
-  if (!existsSync(project)) {
-    console.error(`render-memmap: project file not found: ${project}`);
+
+  // T-29-51 / T-19-22: the ONE confinement seam, the same one `coverage` puts
+  // both of its caller-supplied paths through. `openStore()` downstream is
+  // handed this same workspace root, so its own confinement agrees by
+  // construction rather than by a second rule.
+  const workspaceRoot = repoRoot();
+  let storePath: string;
+  try {
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
+  } catch (err) {
+    console.error(`render-memmap: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(storePath)) {
+    console.error(
+      `render-memmap: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
+        'gone" and "there are no annotations" must not read the same.',
+    );
     return 1;
   }
   if (!provenance) {
@@ -298,12 +320,12 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  const outPath = out ?? join(dirname(project), "memory-map.md");
+  const outPath = out ?? join(dirname(storePath), "memory-map.md");
 
   if (check) {
     let result: Awaited<ReturnType<typeof checkRenderedMemoryMap>>;
     try {
-      result = await checkRenderedMemoryMap({ projectPath: project, provenancePath: provenance, renderedPath: outPath });
+      result = await checkRenderedMemoryMap({ storePath, provenancePath: provenance, renderedPath: outPath, workspaceRoot });
     } catch (err) {
       console.error(`render-memmap: ${errMsg(err)}`);
       return 1;
@@ -324,7 +346,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
 
   let rendered: Awaited<ReturnType<typeof renderMemoryMap>>;
   try {
-    rendered = await renderMemoryMap({ projectPath: project, provenancePath: provenance });
+    rendered = await renderMemoryMap({ storePath, provenancePath: provenance, workspaceRoot });
   } catch (err) {
     console.error(`render-memmap: ${errMsg(err)}`);
     return 1;

@@ -56,6 +56,23 @@ const REMOVED_VERBS = ["bootstrap", "export-asm", "verify", "gen-enums", "export
 /** The two that survive. Same reasoning, opposite polarity. */
 const SURVIVING_VERBS = ["render-memmap", "coverage"];
 
+/** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
+ * missing or placeholder key by name, so any test that renders for real needs
+ * every required field present. */
+const RENDER_SIDECAR = {
+  capturePath: "/tmp/capture.raw",
+  captureSha256: "a".repeat(64),
+  port01: "$35",
+  dd00: "$06",
+  vicBank: "0 ($0000-$3FFF)",
+  screenRam: "$0400",
+  charsetOrBitmap: "$1000 (ROM shadow)",
+  mode: "text, multicolor off",
+  videoStandard: "PAL",
+  liveVectorPair: "$0314/$0315",
+  vectorHandler: "$EA31",
+};
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -217,6 +234,13 @@ test("VERB_OPTIONS carries exactly the two surviving verbs", () => {
 // render-memmap: argument-level refusals. The verb's own rendering behaviour
 // is proven in `anno-memmap-render.test.ts`; what is proven here is that the
 // CLI never guesses on the caller's behalf.
+//
+// The positional argument is an ANNOTATION STORE (D-17) and it goes through
+// `storePathWithinWorkspace()`, exactly as `coverage`'s two paths do -- so
+// every test that gets far enough to have its path confined works INSIDE the
+// tree via `withWorkspaceTempDir()`. A system tmpdir path is refused by
+// design, and routing around that refusal would test a confinement that is
+// not the shipped one.
 // ---------------------------------------------------------------------------
 
 test("render-memmap: --help lists the verb, states the output is generated, and states --check catches a hand edit", () => {
@@ -225,33 +249,47 @@ test("render-memmap: --help lists the verb, states the output is generated, and 
   assert.match(helpResult.stdout, /--check.*hand edit/is);
 });
 
-test("render-memmap: a missing project is refused, not silently accepted", async () => {
-  await withTempDir(async (dir) => {
-    const missing = join(dir, "does-not-exist.regen2000proj");
+test("render-memmap: a missing annotation store is refused rather than CREATED", async () => {
+  await withWorkspaceTempDir(async (dir) => {
+    const missing = join(dir, "does-not-exist.annostore");
     const { result: code, stderr } = await withCapturedConsole(() =>
       runR2000Cli(["render-memmap", missing, "--provenance", join(dir, "sidecar.json")]),
     );
     assert.notEqual(code, 0);
-    assert.match(stderr, /project file not found/i);
+    assert.match(stderr, /annotation store not found/i);
+    assert.match(stderr, /refusing to CREATE one/i);
+    assert.equal(existsSync(missing), false, "the refusal must not have created the store it refused to find");
+  });
+});
+
+test("render-memmap: a store path outside the workspace root is refused by the ONE confinement seam", async () => {
+  await withTempDir(async (dir) => {
+    const outside = join(dir, "escaped.annostore");
+    writeFileSync(outside, "");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", outside, "--provenance", join(dir, "sidecar.json")]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /outside the workspace root/i);
   });
 });
 
 test("render-memmap: a missing --provenance is refused", async () => {
-  await withTempDir(async (dir) => {
-    const projectPath = join(dir, "game.regen2000proj");
-    writeFileSync(projectPath, "{}");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", projectPath]));
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "game.annostore");
+    writeFileSync(storePath, "");
+    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", storePath]));
     assert.notEqual(code, 0);
     assert.match(stderr, /--provenance.*required/i);
   });
 });
 
 test("render-memmap: a nonexistent --provenance file is refused", async () => {
-  await withTempDir(async (dir) => {
-    const projectPath = join(dir, "game.regen2000proj");
-    writeFileSync(projectPath, "{}");
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "game.annostore");
+    writeFileSync(storePath, "");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", projectPath, "--provenance", join(dir, "does-not-exist.json")]),
+      runR2000Cli(["render-memmap", storePath, "--provenance", join(dir, "does-not-exist.json")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /provenance sidecar not found/i);
@@ -953,17 +991,27 @@ function foo() {
 });
 
 test("in-process (WR-09): render-memmap with --out inside a non-existent directory fails with a one-line message naming the path, never a stack trace", async () => {
-  await withTempDir(async (dir) => {
-    const projectPath = join(dir, "game.regen2000proj");
-    writeFileSync(projectPath, "{}");
+  await withWorkspaceTempDir(async (dir) => {
+    // A REAL store and a VALID sidecar, so the render succeeds and the only
+    // thing left to fail is the write itself -- which is the failure this
+    // guard exists to observe. A junk file here would fail earlier, in
+    // openStore(), and the guard would silently stop testing WR-09.
+    const storePath = join(dir, "game.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+    } finally {
+      closeStore(handle);
+    }
     const provenancePath = join(dir, "sidecar.json");
-    writeFileSync(provenancePath, "{}");
+    writeFileSync(provenancePath, JSON.stringify(RENDER_SIDECAR, null, 2));
     const outPath = join(dir, "no-such-dir", "memory-map.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", projectPath, "--provenance", provenancePath, "--out", outPath]),
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /^render-memmap:/);
+    assert.match(stderr, /could not write/i, "the failure must be the WRITE, not something earlier on the path");
     assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
   });
 });

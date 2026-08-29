@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // anno-memmap-render.ts -- the ONE authoritative place in this repo that
-// renders the human-readable Markdown memory map from the r2000 annotation
-// store (D-24) plus a validated run-scoped provenance sidecar (D-27's
-// reconciliation, recorded in 11-10-PLAN.md's objective).
+// renders the human-readable Markdown memory map from this project's own
+// annotation store (D-24) plus a validated run-scoped provenance sidecar
+// (D-27's reconciliation, recorded in 11-10-PLAN.md's objective).
 //
 // WHY THIS MODULE EXISTS (D-24): the store is canonical; the Markdown memory
 // map becomes a rendered VIEW. Criterion 1 says findings must be queryable
 // "instead of re-deriving from Markdown prose" -- that is only true by
 // construction if the prose is GENERATED from the queryable thing. Nothing
 // downstream of this module may hand-author an address row: every row in
-// the Range/Contents/Confidence/Evidence table comes from
-// `r2000_get_blocks`/`r2000_get_symbols`/`r2000_get_comments`, never from a
+// the Range/Contents/Confidence/Evidence table comes from the store's own
+// `listRanges()`/`listLabels()`/`listComments()` readers, never from a
 // human editing the output file directly.
 //
 // THE D-24/D-27 RECONCILIATION THIS FILE IMPLEMENTS: run-scoped facts (the
@@ -66,21 +66,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
-import { runR2000Tool } from "./r2000-tools.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import type { ConfidenceGrade } from "./anno-confidence.ts";
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+import { openStore, closeStore, listRanges, listLabels, listComments } from "./anno-store.ts";
+import { COMMENT_TYPES } from "./anno-types.ts";
+import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
+import { blockClassAt } from "./block-class.ts";
 
 // ---------------------------------------------------------------------------
-// The r2000 query result shapes this renderer consumes, measured live
-// against a real regenerator2000-core-0.9.20 `--mcp-server-stdio` child
-// (never transcribed from a document): `r2000_get_blocks` returns
-// `{start_address, end_address, type}`; `r2000_get_symbols` returns
-// `{address, name, kind, type}`; `r2000_get_comments` returns
-// `{address, comment, type}`.
+// WHERE THE VERSION-2 DIGEST'S INPUT SHAPES CAME FROM -- the three wire
+// result shapes declared below, measured LIVE against a real
+// regenerator2000-core-0.9.20 `--mcp-server-stdio` child and never
+// transcribed from a document: `r2000_get_blocks` returned
+// `{start_address, end_address, type}`; `r2000_get_symbols` returned
+// `{address, name, kind, type}`; `r2000_get_comments` returned
+// `{address, comment, type}`. This renderer no longer issues those queries
+// -- it reads the store directly -- and the shapes survive here only as the
+// record of what the version-2 digest hashed, which the version bump
+// retires.
 // ---------------------------------------------------------------------------
 
 interface R2000Block {
@@ -102,13 +105,16 @@ interface R2000Comment {
   type: "line" | "side";
 }
 
-async function queryR2000Json<T>(name: string, args: Record<string, unknown>): Promise<T> {
-  const result = await runR2000Tool(name, args);
-  if (result.isError) {
-    throw new Error(`${name} failed: ${result.content[0]?.text ?? "(no message)"}`);
-  }
-  return JSON.parse(result.content[0]!.text) as T;
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
+
+/** The store's own spelling for a comment placed on its own line before the
+ * instruction, read out of `COMMENT_TYPES` -- the ONE home of that
+ * vocabulary -- rather than re-typed as a literal here. The pre-store
+ * renderer passed `type: "line"` to its comment query; this is that filter,
+ * moved to the read boundary. */
+const [LINE_COMMENT] = COMMENT_TYPES;
 
 // ---------------------------------------------------------------------------
 // The provenance sidecar schema.
@@ -250,8 +256,8 @@ export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
 // ---------------------------------------------------------------------------
 // The render digest -- documented exactly, because a digest whose inputs are
 // unclear is a digest nobody trusts. It covers, in order: a canonical JSON
-// serialisation of the SORTED `r2000_get_blocks`/`r2000_get_symbols`/
-// `r2000_get_comments` results (so a store-side change, e.g. a comment's
+// serialisation of the SORTED `listRanges()`/`listLabels()`/
+// `listComments()` store rows (so a store-side change, e.g. a comment's
 // confidence grade, changes the digest even with the rendered file
 // untouched), the raw provenance sidecar BYTES (not the parsed object, so
 // even whitespace-only sidecar edits are covered), and this renderer's own
@@ -283,9 +289,9 @@ export function escapeMarkdownCell(text: string): string {
 }
 
 function computeRenderDigest(
-  blocks: readonly R2000Block[],
-  symbols: readonly R2000Symbol[],
-  comments: readonly R2000Comment[],
+  blocks: readonly RangeRow[],
+  symbols: readonly LabelRow[],
+  comments: readonly CommentRow[],
   sidecarBytes: string,
 ): string {
   const canonical = JSON.stringify({ blocks, symbols, comments }) + " " + sidecarBytes + " " + RENDERER_VERSION;
@@ -307,8 +313,17 @@ interface GradedComment {
 // ---------------------------------------------------------------------------
 
 export interface RenderMemoryMapOptions {
-  projectPath: string;
+  /** The annotation store to render. The CALLER confines it through
+   *  `storePathWithinWorkspace()` and `openStore()` below confines it again
+   *  against the same `workspaceRoot`, so both answers agree by construction
+   *  rather than by a second rule (T-29-51). */
+  storePath: string;
   provenancePath: string;
+  /** The workspace root both confinement checks are taken against. REQUIRED
+   *  rather than defaulted: `openStore()`'s default behaviour is to CREATE
+   *  the file, so an unconfined store path is a store file created wherever
+   *  the caller's argument pointed. */
+  workspaceRoot: string;
 }
 
 export interface RenderMemoryMapResult {
@@ -321,11 +336,14 @@ export interface RenderMemoryMapResult {
 }
 
 /**
- * Renders the memory map from the r2000 store plus a validated provenance
- * sidecar. Queries `r2000_get_blocks`/`r2000_get_symbols`/`r2000_get_comments`
- * through `r2000-tools.ts`'s curated, allow-listed `runR2000Tool()` -- never
- * `r2000-mcp-client.ts` directly (mirrors every other consumer's discipline
- * in this repo).
+ * Renders the memory map from an annotation store plus a validated
+ * provenance sidecar. Reads the store DIRECTLY -- `listRanges()`,
+ * `listLabels()` and `listComments()` on ONE handle, opened once per render
+ * and closed in a `finally` -- with no child process anywhere on this path.
+ *
+ * The store's block-kind spelling is interpreted in exactly one place,
+ * `block-class.ts`'s `blockClassAt()`; nothing below compares a
+ * `dataType` string itself.
  *
  * A malformed confidence prefix inside a store comment (a typo that survived
  * whatever wrote it) THROWS through `parseConfidencePrefix()` -- this
@@ -333,7 +351,7 @@ export interface RenderMemoryMapResult {
  * must be fixed in the store, not hidden in the rendered view.
  */
 export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<RenderMemoryMapResult> {
-  const { projectPath, provenancePath } = opts;
+  const { storePath, provenancePath, workspaceRoot } = opts;
 
   let sidecarBytes: string;
   try {
@@ -350,19 +368,38 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   }
   const provenance = parseProvenanceHeader(sidecarJson);
 
-  const blocks = await queryR2000Json<R2000Block[]>("r2000_get_blocks", { project: projectPath });
-  const symbols = await queryR2000Json<R2000Symbol[]>("r2000_get_symbols", { project: projectPath });
-  const comments = await queryR2000Json<R2000Comment[]>("r2000_get_comments", {
-    project: projectPath,
-    type: "line",
-  });
+  // ONE handle for the whole render, closed in a `finally`. `mustExist` is
+  // what makes "the annotations are gone" and "there are no annotations"
+  // refuse differently (T-29-52): without it a mistyped path would CREATE an
+  // empty store and render as an empty memory map indistinguishable from a
+  // real one.
+  const handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  let ranges: RangeRow[];
+  let labels: LabelRow[];
+  let lineComments: CommentRow[];
+  try {
+    ranges = listRanges(handle);
+    labels = listLabels(handle);
+    lineComments = listComments(handle).filter((c) => c.commentType === LINE_COMMENT);
+  } finally {
+    closeStore(handle);
+  }
 
-  const sortedBlocks = [...blocks].sort((a, b) => a.start_address - b.start_address);
-  const sortedSymbols = [...symbols].sort((a, b) => a.address - b.address);
-  const sortedComments = [...comments].sort((a, b) => a.address - b.address);
+  const sortedBlocks = [...ranges].sort((a, b) => a.start - b.start);
+  const sortedSymbols = [...labels].sort((a, b) => a.address - b.address);
+  const sortedComments = [...lineComments].sort((a, b) => a.address - b.address);
+
+  // The block listing in `block-class.ts`'s own entry shape. The `dataType`
+  // column is copied VERBATIM and never compared here -- that module is the
+  // one place in this tree allowed to interpret it.
+  const blockEntries = sortedBlocks.map((row) => ({
+    start_address: row.start,
+    end_address: row.endInclusive,
+    type: row.dataType as string,
+  }));
 
   const gradedComments: GradedComment[] = sortedComments.map((c) => {
-    const parsed = parseConfidencePrefix(c.comment);
+    const parsed = parseConfidencePrefix(c.text);
     return { address: c.address, grade: parsed.grade, evidence: parsed.rest };
   });
 
@@ -375,12 +412,12 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   const lines: string[] = [];
 
   lines.push("<!--");
-  lines.push("  GENERATED by `vice-mcp r2000 render-memmap` -- do not hand-edit; re-run the generator.");
-  lines.push(`  store: ${projectPath}`);
+  lines.push("  GENERATED by `vice-mcp anno render-memmap` -- do not hand-edit; re-run the generator.");
+  lines.push(`  store: ${storePath}`);
   lines.push(`  sidecar: ${provenancePath}`);
   lines.push(`  render_digest: ${renderDigest}`);
   lines.push(
-    "  The digest covers the sorted r2000_get_blocks/r2000_get_symbols/r2000_get_comments results, the",
+    "  The digest covers the sorted listRanges/listLabels/listComments results, the",
   );
   lines.push(
     "  raw provenance sidecar bytes, and this renderer's version constant -- so either a hand edit or a",
@@ -403,12 +440,12 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   lines.push("");
   lines.push("| Range | Contents | Confidence | Evidence |");
   lines.push("|---|---|---|---|");
-  for (const block of sortedBlocks) {
-    const match = findGradeInRange(block.start_address, block.end_address);
-    const range = `\`${hex4(block.start_address)}-${hex4(block.end_address)}\``;
+  for (const row of sortedBlocks) {
+    const match = findGradeInRange(row.start, row.endInclusive);
+    const range = `\`${hex4(row.start)}-${hex4(row.endInclusive)}\``;
     const grade = match?.grade ? match.grade.phrase.toUpperCase() : "";
     const evidence = match ? escapeMarkdownCell(match.evidence) : "";
-    lines.push(`| ${range} | ${block.type} | ${grade} | ${evidence} |`);
+    lines.push(`| ${range} | ${row.dataType} | ${grade} | ${evidence} |`);
   }
   lines.push("");
   lines.push("Confidence vocabulary — the project's HIGH / MEDIUM / LOW scale, applied to classification:");
@@ -443,10 +480,8 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   lines.push("");
   lines.push("| Address | Provisional name | Confirmed by | Confidence |");
   lines.push("|---|---|---|---|");
-  const codeBlocks = sortedBlocks.filter((b) => b.type === "Code");
   for (const sym of sortedSymbols) {
-    const inCode = codeBlocks.some((b) => sym.address >= b.start_address && sym.address <= b.end_address);
-    if (!inCode) continue;
+    if (blockClassAt(blockEntries, sym.address) !== "code") continue;
     const match = gradedComments.find((c) => c.address === sym.address);
     const grade = match?.grade ? match.grade.phrase.toUpperCase() : "";
     const confirmedBy = match ? escapeMarkdownCell(match.evidence) : "";
@@ -474,9 +509,12 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
 // ---------------------------------------------------------------------------
 
 export interface CheckRenderedMemoryMapOptions {
-  projectPath: string;
+  /** See `RenderMemoryMapOptions.storePath`. */
+  storePath: string;
   provenancePath: string;
   renderedPath: string;
+  /** See `RenderMemoryMapOptions.workspaceRoot`. */
+  workspaceRoot: string;
 }
 
 export type CheckRenderedMemoryMapResult =
@@ -499,14 +537,14 @@ export type CheckRenderedMemoryMapResult =
 export async function checkRenderedMemoryMap(
   opts: CheckRenderedMemoryMapOptions,
 ): Promise<CheckRenderedMemoryMapResult> {
-  const { projectPath, provenancePath, renderedPath } = opts;
+  const { storePath, provenancePath, renderedPath, workspaceRoot } = opts;
 
   if (!existsSync(renderedPath)) {
     return { status: "missing", path: renderedPath };
   }
 
   const onDisk = readFileSync(renderedPath, "utf8");
-  const { markdown } = await renderMemoryMap({ projectPath, provenancePath });
+  const { markdown } = await renderMemoryMap({ storePath, provenancePath, workspaceRoot });
 
   if (onDisk === markdown) {
     return { status: "in-sync" };
