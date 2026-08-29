@@ -41,14 +41,16 @@
 //   discriminator, and reading it that way gets three entries wrong in one
 //   direction and two in the other. Measured on this tree:
 //
-//     - THREE GLUE modules have prominent unprefixed consumers. The tool
-//       surface and the session lifecycle are imported by the stdio entry
-//       point directly (`vice-proxy.ts:194` and `:200`); the CLI is reached
-//       from `vice-proxy.ts:309` plus four files under `scripts/`.
-//       `vice-proxy.ts` survives the substrate swap. Its imports of those
-//       three modules do NOT -- there is no analyser tool surface to
-//       expose, no analyser session to close, and no analyser CLI to
-//       dispatch to.
+//     - THREE GLUE modules had prominent unprefixed consumers. The session
+//       lifecycle is still imported by the stdio entry point directly
+//       (`vice-proxy.ts:200`); the CLI is reached from `vice-proxy.ts:309`
+//       plus four files under `scripts/`. `vice-proxy.ts` survives the
+//       substrate swap. Its imports of those three modules do NOT -- and the
+//       tool surface's import is ALREADY GONE, substituted for the owned
+//       store's own surface by plan 29-01: there is no analyser tool
+//       surface left to expose, and in due course no analyser session to
+//       close and no analyser CLI to dispatch to. This record predicted that
+//       and is being read back rather than rewritten.
 //     - TWO CAPABILITY modules have no unprefixed consumer at all (the ACME
 //       identifier module and the confidence-grade module). Their basis is
 //       a requirement id, which is the second admissible basis and is not a
@@ -638,18 +640,19 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "R2000_TOOL_DEFINITIONS", line: 194 },
-        { path: "src/mcp/vice/stock-dispatch.test.ts", symbol: "CURATED_R2000_TOOLS", line: 45 },
         { path: "scripts/check-skill-tool-coverage.mjs", symbol: "CURATED_R2000_TOOLS", line: 49 },
       ],
       requirements: [],
       rationale:
         "The curated tool surface over the external analyser's own verbs: the definitions, the curation " +
         "gate, the store-path resolver and the client-side compositions that work around specific " +
-        "behaviours of that analyser. THREE of its consumers are outside the family -- the stdio entry " +
+        "behaviours of that analyser. THREE of its consumers were outside the family -- the stdio entry " +
         "point, a structural guard and a CI script -- and that is precisely the trap the discriminator " +
-        "warns about: all three survive, none of their imports does, and MCP-01 replaces this surface " +
-        "with one derived from the procedure manifest.",
+        "warns about: all three survive, none of their imports does. TWO of those three imports are " +
+        "already gone as of plan 29-01, which substituted the owned store's own anno_* surface into the " +
+        "registration loop and re-pointed the structural guard onto it; the CI script's import is the " +
+        "one still standing, and it is cited above so this verdict keeps a live basis rather than an " +
+        "empty one. MCP-01 replaces this surface with one derived from the procedure manifest.",
     },
     extractables: [],
     note:

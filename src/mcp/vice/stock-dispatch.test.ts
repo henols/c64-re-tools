@@ -42,7 +42,7 @@ import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetSymbolStoreForTest } from "./stock-symbols.ts";
-import { CURATED_R2000_TOOLS } from "./r2000-tools.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import {
   resetCheckpointStateForTest,
   handleCheckpointSetCondition,
@@ -1497,16 +1497,21 @@ function proxyToolRegistrations(): Array<[string, string]> {
 const SYNTHETIC_TOOL_KEYS = ["RESULT_CONTINUE_TOOL.name", "RECYCLE_TOOL.name", "DIAGNOSE_TOOL.name"];
 
 /** The two registration keys permitted to bypass buildBackendAwareTool()
- * entirely (plan 11-05 Task 2): RESULT_CONTINUE_TOOL.name (a continuation
- * store, no transport of any kind) and r2000Def.name (the r2000_* family's
- * own loop registration -- a spawned child process, never VICE, so there is
- * no fork/stock distinction to make). Both are "no transport at all" in the
- * sense that matters here: neither can ever reach forwardToVice()/call(). */
-const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "r2000Def.name"];
+ * entirely (plan 29-01): RESULT_CONTINUE_TOOL.name (a continuation store, no
+ * transport of any kind) and annoDef.name (the anno_* family's own loop
+ * registration -- a proxy-local SQLite annotation store, never VICE, so there
+ * is no fork/stock distinction to make). Both are "no transport at all" in the
+ * sense that matters here: neither can ever reach forwardToVice()/call().
+ *
+ * ORDER IS LOAD-BEARING. The deepEqual below is order-sensitive, and the anno
+ * entry keeps position 2 -- swapping the two source-order registrations must
+ * fail this test, not be normalised away by a set comparison. A THIRD entry
+ * collides here rather than being absorbed into a superset. */
+const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"];
 
 test("structure/proxy (CR-07): every registered tool whose runner can touch a transport goes through buildBackendAwareTool", () => {
   const registrations = proxyToolRegistrations();
-  assert.ok(registrations.length >= 5, `expected the manifest-loop registration, three synthetic ones and the r2000 loop registration, found ${registrations.length}`);
+  assert.ok(registrations.length >= 5, `expected the manifest-loop registration, three synthetic ones and the anno loop registration, found ${registrations.length}`);
   for (const [key, rhs] of registrations) {
     if (BACKEND_SEAM_BYPASS_KEYS.includes(key)) continue; // the two asserted exceptions, covered below
     assert.match(
@@ -1517,7 +1522,7 @@ test("structure/proxy (CR-07): every registered tool whose runner can touch a tr
   }
 });
 
-test("structure/proxy (CR-07): the synthetic tools are all registered, and the only registrations bypassing the backend-aware seam are vice_result_continue and the r2000_* family", () => {
+test("structure/proxy (CR-07): the synthetic tools are all registered, and the only registrations bypassing the backend-aware seam are vice_result_continue and the anno_* family", () => {
   const registrations = proxyToolRegistrations();
   const keys = registrations.map(([key]) => key);
   for (const synthetic of SYNTHETIC_TOOL_KEYS) {
@@ -1527,7 +1532,7 @@ test("structure/proxy (CR-07): the synthetic tools are all registered, and the o
   assert.deepEqual(
     bypassing,
     BACKEND_SEAM_BYPASS_KEYS,
-    "exactly two registrations may bypass the backend-aware seam: a continuation store and a spawned child process are both \"no transport at all\"",
+    "exactly two registrations may bypass the backend-aware seam: a continuation store and a proxy-local annotation store are both \"no transport at all\"",
   );
 });
 
@@ -1545,31 +1550,31 @@ test("structure/proxy (CR-07): vice_result_continue's runner is handleResultCont
   }
 });
 
-const R2000_TOOLS_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "r2000-tools.ts"), "utf8");
+const ANNO_TOOLS_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "anno-tools.ts"), "utf8");
 
-test("structure/proxy (plan 11-05): the r2000_* loop registration's runner is runR2000Tool, whose body touches no VICE transport at all", () => {
+test("structure/proxy (plan 29-01): the anno_* loop registration's runner is runAnnoTool, whose body touches no VICE transport at all", () => {
   const registrations = proxyToolRegistrations();
-  const entry = registrations.find(([key]) => key === "r2000Def.name");
-  assert.ok(entry, "the r2000_* family's loop registration must still exist");
-  assert.match(entry![1], /runR2000Tool\(/, "its runner must be runR2000Tool, the curated r2000_* surface's own dispatcher");
+  const entry = registrations.find(([key]) => key === "annoDef.name");
+  assert.ok(entry, "the anno_* family's loop registration must still exist");
+  assert.match(entry![1], /runAnnoTool\(/, "its runner must be runAnnoTool, the curated anno_* surface's own dispatcher");
 
-  const start = R2000_TOOLS_SOURCE.indexOf("export async function runR2000Tool(");
-  assert.ok(start > 0, "runR2000Tool() must still exist in r2000-tools.ts");
-  const body = R2000_TOOLS_SOURCE.slice(start, R2000_TOOLS_SOURCE.indexOf("\n}", start));
+  const start = ANNO_TOOLS_SOURCE.indexOf("export async function runAnnoTool(");
+  assert.ok(start > 0, "runAnnoTool() must still exist in anno-tools.ts");
+  const body = ANNO_TOOLS_SOURCE.slice(start, ANNO_TOOLS_SOURCE.indexOf("\n}", start));
   for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!body.includes(forbidden), `runR2000Tool() must not reach ${forbidden} -- that is what makes the r2000_* family's backend-independence sound`);
+    assert.ok(!body.includes(forbidden), `runAnnoTool() must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound: the runner reaches a proxy-local SQLite store and never the host-path seam`);
   }
 });
 
-test("structure/proxy (plan 11-05): every curated r2000_* name is absent from BOTH tools-manifest.json and tools-manifest.stock.json", () => {
+test("structure/proxy (plan 29-01): every curated anno_* name is absent from BOTH tools-manifest.json and tools-manifest.stock.json", () => {
   const fork = readManifest(FORK_MANIFEST_PATH);
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const forkNames = new Set(fork.tools.map((t) => t.name));
   const stockNames = new Set(stock.tools.map((t) => t.name));
-  assert.ok(CURATED_R2000_TOOLS.length > 0, "CURATED_R2000_TOOLS must be non-empty for this assertion to mean anything");
-  for (const name of CURATED_R2000_TOOLS) {
-    assert.ok(!forkNames.has(name), `${name} is curated but present in the FORK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`);
-    assert.ok(!stockNames.has(name), `${name} is curated but present in the STOCK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`);
+  assert.ok(CURATED_ANNO_TOOLS.length > 0, "the curated set must be non-empty for this assertion to mean anything");
+  for (const name of CURATED_ANNO_TOOLS) {
+    assert.ok(!forkNames.has(name), `${name} is curated but present in the FORK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`);
+    assert.ok(!stockNames.has(name), `${name} is curated but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`);
   }
 });
 

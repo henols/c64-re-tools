@@ -90,26 +90,26 @@ const cell = (text) => text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
  * a silently dropped identifier is the same incompleteness failure as a
  * hand-curated exclusion, and worse, because it leaves no trace to notice.
  *
- * Plan 11-05 added a SECOND loop registration, structurally identical in
- * shape (`tools[IDENT.name] = ...` inside `for (const IDENT of
- * R2000_TOOL_DEFINITIONS)`) but semantically different: the r2000_* family
- * is not a VICE emulator capability at all (D-16/Rule A18 -- regenerator2000
- * never touches VICE), so it has no fork-vs-stock availability distinction
- * for this table to render. It is excluded the SAME way the manifest loop's
- * own `def` is -- structurally, by matching its own loop-variable pattern --
- * rather than added to the "synthetic, available on both backends" set the
- * three single-const registrations (vice_result_continue/vice_recycle/
- * vice_diagnose) belong to.
+ * A SECOND loop registration exists, structurally identical in shape
+ * (`tools[IDENT.name] = ...` inside `for (const IDENT of
+ * ANNO_TOOL_DEFINITIONS)`) but semantically different: the anno_* family is
+ * not a VICE emulator capability at all (D-16/Rule A18 -- the annotation
+ * store is a proxy-local SQLite file and never touches VICE), so it has no
+ * fork-vs-stock availability distinction for this table to render. It is
+ * excluded the SAME way the manifest loop's own `def` is -- structurally, by
+ * matching its own loop-variable pattern -- rather than added to the
+ * "synthetic, available on both backends" set the three single-const
+ * registrations (vice_result_continue/vice_recycle/vice_diagnose) belong to.
  */
 export function discoverSyntheticToolNames(proxySource) {
   const REGISTRATION_RE = /tools\[(\w+)\.name\]\s*=/g;
   const LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/;
-  const R2000_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/;
+  const ANNO_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/;
 
   const loopVarMatch = proxySource.match(LOOP_VAR_RE);
   const loopVar = loopVarMatch ? loopVarMatch[1] : null;
-  const r2000LoopVarMatch = proxySource.match(R2000_LOOP_VAR_RE);
-  const r2000LoopVar = r2000LoopVarMatch ? r2000LoopVarMatch[1] : null;
+  const annoLoopVarMatch = proxySource.match(ANNO_LOOP_VAR_RE);
+  const annoLoopVar = annoLoopVarMatch ? annoLoopVarMatch[1] : null;
 
   const seenIdents = new Set();
   const names = [];
@@ -120,7 +120,7 @@ export function discoverSyntheticToolNames(proxySource) {
     seenIdents.add(ident);
 
     if (ident === loopVar) continue; // the manifest loop's own registration -- not synthetic
-    if (ident === r2000LoopVar) continue; // the r2000_* family's own loop registration -- not a VICE capability at all
+    if (ident === annoLoopVar) continue; // the anno_* family's own loop registration -- not a VICE capability at all
 
     // WR-08: bound the search to THIS declaration's own body before extracting
     // its name, so a declaration with no `name:` field (a spread, a computed

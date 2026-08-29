@@ -58,14 +58,15 @@ function independentlyDiscoverSyntheticNames(proxySource) {
   const LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/;
   const loopVarMatch = proxySource.match(LOOP_VAR_RE);
   const loopVar = loopVarMatch ? loopVarMatch[1] : null;
-  // Plan 11-05: a SECOND loop registration, structurally identical in shape
-  // but not a VICE capability at all (D-16/Rule A18 -- regenerator2000 never
-  // touches VICE, so it has no fork-vs-stock row to contribute here).
-  // Excluded the same structural way the manifest loop's own `def` already
-  // is, never resolved as a single-const synthetic tool.
-  const R2000_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/;
-  const r2000LoopVarMatch = proxySource.match(R2000_LOOP_VAR_RE);
-  const r2000LoopVar = r2000LoopVarMatch ? r2000LoopVarMatch[1] : null;
+  // A SECOND loop registration, structurally identical in shape but not a
+  // VICE capability at all (D-16/Rule A18 -- the anno_* family reaches a
+  // proxy-local SQLite annotation store and never touches VICE, so it has no
+  // fork-vs-stock row to contribute here). Excluded the same structural way
+  // the manifest loop's own `def` already is, never resolved as a
+  // single-const synthetic tool.
+  const ANNO_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/;
+  const annoLoopVarMatch = proxySource.match(ANNO_LOOP_VAR_RE);
+  const annoLoopVar = annoLoopVarMatch ? annoLoopVarMatch[1] : null;
 
   const seen = new Set();
   const names = new Set();
@@ -75,7 +76,7 @@ function independentlyDiscoverSyntheticNames(proxySource) {
     if (seen.has(ident)) continue;
     seen.add(ident);
     if (ident === loopVar) continue;
-    if (ident === r2000LoopVar) continue;
+    if (ident === annoLoopVar) continue;
 
     // WR-08: bound the search to THIS declaration's own body via brace-depth
     // counting -- deliberately a DIFFERENT bounding technique from the
