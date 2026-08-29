@@ -1,514 +1,470 @@
 #!/usr/bin/env node
-// spawn-seam.test.ts -- turns R2000-01's spawn-seam invariant into a
-// checked property (INT-02, D-11.1-05): every regenerator2000 spawn call
-// site in this repo must call `assertNoViceFlag(argv)` before spawning,
-// and the set of sites that exist is pinned so a future third site cannot
-// appear unguarded and go unnoticed.
+// spawn-seam.test.ts -- turns the spawn-seam invariant into a checked
+// property (INT-02, D-11.1-05): every shipped module that spawns the EMULATOR
+// binary must do it in the safe form -- an argv ARRAY, never a shell command
+// string and never a string-interpolated binary path -- and the set of sites
+// that exist is pinned, so a future second site cannot appear unguarded and
+// go unnoticed.
 //
-// WHY THIS FILE EXISTS: `r2000-launch.ts`'s header used to claim it was the
-// ONE place in this repo that spawns regenerator2000. That was false --
-// `r2000-mcp-client.ts:332` is a second, necessary spawn site (`withR2000-
-// Session()` needs a long-lived async child, which `runR2000()`'s blocking
-// `spawnSync` cannot provide). `R2000-01` itself was never compromised --
-// both sites call `assertNoViceFlag(argv)` first -- but a maintainer
-// trusting the wrong header would not know a THIRD site must guard too.
-// This file replaces that prose promise with a mechanically checked one.
+// ============================================================================
+// RE-POINTED BY PLAN 29-10 (2026-08-30). READ THIS BEFORE CHANGING ANYTHING.
+// ============================================================================
+//
+// THE FOUNDING INCIDENT, kept verbatim in substance because it is the reason
+// this file exists at all and stays true in the past tense:
+//
+//   `r2000-launch.ts`'s header used to claim it was the ONE place in this
+//   repo that spawned regenerator2000. That was FALSE -- `r2000-mcp-client.ts`
+//   held a second, necessary spawn site, because a long-lived async child is
+//   not something a blocking `spawnSync` can provide. The invariant itself
+//   was never actually compromised (both sites did guard their argv first),
+//   but a maintainer trusting the wrong header would not have known that a
+//   THIRD site had to guard too. That is the whole lesson: A PROSE PROMISE
+//   ABOUT WHERE SPAWNS LIVE IS WORTH NOTHING; only a discovery pass over the
+//   real shipped module set is worth anything. Everything below is the
+//   mechanically checked replacement for that prose promise.
+//
+// WHAT MOVED, AND WHY IT HAD TO. Plan 29-10 deleted the retired
+// static-analysis integration, and with it BOTH of the spawn sites this
+// guard was originally measured against. That does NOT retire the guard:
+// the DISCIPLINE -- no shipped module spawns a child in an injectable form,
+// and the set of modules that spawn at all is pinned rather than assumed --
+// outlives the substrate it was first measured on. So the SUBJECT was
+// re-pointed, not the machinery:
+//
+//   BEFORE                                   AFTER
+//   ------                                   -----
+//   the analyser binary (R2000_BIN)          the emulator binary (VICE_BIN /
+//                                            "x64sc" / a resolved binPath)
+//   assertNoViceFlag(argv) precedes          the call uses the argv-ARRAY
+//   every spawn                              form, and the module builds no
+//                                            shell command string from the
+//                                            binary path
+//   2 expected sites                         1 expected site
+//
+// The `assertNoViceFlag` half could not be carried across and is not
+// pretended to be: its entire subject was "never hand a VICE flag to the
+// ANALYSER", and there is no analyser to hand anything to. What replaced it
+// is the property that still has a subject and still has teeth -- the
+// command-injection form of the emulator spawn, which `backend-detect.mts`
+// already states as a rule in its own header ("spawnSync only, argv array,
+// shell: false, never a shell string and never string interpolation of
+// binPath") and which nothing was mechanically checking until now.
+//
+// THE RE-POINT WAS PROVEN, NOT ASSERTED. A guard whose planted violation no
+// longer reddens has not been re-pointed -- this phase's standing
+// prohibition. The plants in section 4 below are committed, they run on every
+// invocation, and plan 29-10 re-ran them against the post-deletion tree.
+//
+// WHAT WAS DELETED RATHER THAN RE-POINTED, stated so it is not looked for:
+// the environment-gated live session-reuse transcript (D18-02) and the
+// committed-fixture existence check that partnered it. Their subject was a
+// held analyser child process being reused across two calls; there is no such
+// child. Under D-01 a gated block whose subject is gone is still a test that
+// includes it, so both were removed outright rather than skipped or left as a
+// `todo`.
 //
 // DISCOVERY, not enumeration: the scanned module set is derived from
 // `package.json`'s `files[]` array -- the SHIPPED production `.ts`/`.mts`
 // module set -- via the shared enumerator in `shipped-modules.ts`, its one
 // home, imported rather than copied. See that module for why the set is
 // `files[]`-derived rather than a raw `readdirSync` filtered only on
-// `*.test.*`: BOTH `r2000-test-gate.ts` and `acme-gate.ts` are real, but
-// non-shipped, spawn call sites that the broader directory listing would
-// incorrectly catch, so neither is a special case. Within that derived set,
-// this file finds every call to a spawn-family function whose first argument
-// is a regenerator2000-binary-shaped expression, and asserts the discovered set
-// of FILES equals `EXPECTED_R2000_SPAWN_SITES` exactly, in both directions
-// -- a third site appearing, or one of the two disappearing, both FAIL.
+// `*.test.*`: `acme-gate.ts` is a real, but non-shipped, spawn call site that
+// the broader directory listing would incorrectly catch, so it is not a
+// special case here.
 //
-// GREP-GATE HYGIENE (mandatory, CLAUDE.md): this directory's own headers
-// and doc comments discuss `spawnSync`, `spawn(bin, argv, ...)` and the
-// regenerator2000 binary constantly in prose -- an unfiltered text scan
-// would be self-invalidating. `codeOnly()` below strips BOTH comments
-// (`//` and `/* */`, reusing `r2000-launch.test.ts`'s WR-02-fixed
-// close-token-by-position algorithm) AND string/template literal bodies
-// (adapting `docs-dangling-refs.test.ts`'s character-scanning literal
-// extractor to blank literal text instead of collecting it) before any
-// spawn-call pattern is matched -- so neither a comment describing a spawn
-// call, nor a string literal that merely quotes one, can be discovered as
-// a real call site. The planted-violation test below proves both traps are
-// closed, not merely asserts they are.
+// GREP-GATE HYGIENE (mandatory, CLAUDE.md): this directory's own headers and
+// doc comments discuss `spawnSync`, `spawn(bin, argv, ...)` and the emulator
+// binary constantly in prose -- an unfiltered text scan would be
+// self-invalidating. `codeOnly()` strips BOTH comments (`//` and `/* */`,
+// reusing the WR-02-fixed close-token-by-position algorithm) AND
+// string/template literal bodies (adapting `docs-dangling-refs.test.ts`'s
+// character-scanning literal extractor to blank literal text instead of
+// collecting it) before any spawn-call pattern is matched -- so neither a
+// comment describing a spawn call, nor a string literal that merely quotes
+// one, can be discovered as a real call site. The planted-violation control
+// in section 4 proves both traps are closed, not merely asserts they are.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { runR2000Tool } from "./r2000-tools.ts";
-import { __r2000SessionStateForTest, __resetR2000SessionForTest } from "./r2000-session.ts";
-import { buildMcpServerStdioArgs, assertNoViceFlag as launchAssertNoViceFlag } from "./r2000-launch.ts";
-import { synthesizeProject } from "./r2000-project.ts";
-import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// `codeOnly()` -- strip comments AND string/template-literal bodies -- is
-// imported from `shipped-modules.ts`, its single home. Real code (including
-// any `${ ... }` interpolation) survives verbatim; comment text and
-// quoted-literal text do not. Deliberately a superset of a comments-only
-// stripper: a decoy string literal that merely quotes a spawn call as prose
-// text must not be discoverable here as a call.
-
-// The scanned module set comes from the shared enumerator in
-// `shipped-modules.ts` -- its single home, not a local copy:
-// `package.json`'s `files[]` filtered to `.ts`/`.mts`, deliberately NOT a
-// raw `readdirSync` over this directory, and it THROWS rather than returning
-// a short list. That module's own doc comment carries the full rationale,
-// including why a directory listing would wrongly catch the two unshipped
-// test-only gate modules that each spawn a real binary with a fixed argv:
-// `r2000-test-gate.ts` and `acme-gate.ts`.
-
-/** Spawn-family function names this guard watches. `execSync` is
- * deliberately omitted -- it takes a shell command STRING, not an argv
- * array, and no regenerator2000 call site in this repo (or that could pass
- * `assertNoViceFlag`, which scans an argv array) uses it; adding it here
- * would only ever match a false positive. */
-const SPAWN_FUNCTION_NAMES = ["spawnSync", "spawn", "execFileSync", "execFile", "exec"] as const;
+/** Spawn-family function names this guard watches. Unlike the pre-29-10
+ * version, `exec`/`execSync` are INCLUDED and are the dangerous ones: they
+ * take a shell command STRING rather than an argv array, which is exactly the
+ * form this guard now exists to forbid at an emulator spawn site. */
+const ARGV_SPAWN_NAMES = ["spawnSync", "spawn", "execFileSync", "execFile"] as const;
+const SHELL_SPAWN_NAMES = ["execSync", "exec"] as const;
 
 /** Matches `<spawnFn>(<firstArgToken>` in already-`codeOnly()`-ed source,
  * capturing the function name and the raw first-argument token, which can
  * only ever be an identifier. `codeOnly()` removes a quoted literal
- * ENTIRELY -- quote characters included -- so a string-literal first
- * argument contributes nothing at all and surfaces as `spawnSync(, ...)`.
- * The identifier group below therefore cannot match it, which is the
- * intended outcome: the literal's actual text was never real code to begin
- * with. `isR2000SpawnCall()` (below) is what then decides whether a matched
- * identifier names the regenerator2000 binary. */
-const SPAWN_CALL_RE = new RegExp(`\\b(${SPAWN_FUNCTION_NAMES.join("|")})\\s*\\(\\s*([A-Za-z_$][A-Za-z0-9_$]*)`, "g");
+ * ENTIRELY -- quote characters included -- so a string-literal first argument
+ * contributes nothing at all and surfaces as `spawnSync(, ...)`. The
+ * identifier group therefore cannot match it, which is the intended outcome:
+ * the literal's text was never real code to begin with.
+ * `identNamesEmulatorBinary()` is what then decides whether a matched
+ * identifier names the emulator binary. */
+const ARGV_CALL_RE = new RegExp(`\\b(${ARGV_SPAWN_NAMES.join("|")})\\s*\\(\\s*([A-Za-z_$][A-Za-z0-9_$]*)`, "g");
+
+/** The SHELL-form call pattern. Deliberately captures the whole call opening
+ * INCLUDING any interpolation marker, because a shell spawn's danger is in
+ * its argument's shape rather than in a bare identifier: `exec(`+"`"+`${bin} -help`+"`"+`)`
+ * is the violation, and `codeOnly()` preserves `${ ... }` interpolation
+ * expressions while blanking the surrounding literal text. */
+const SHELL_CALL_RE = new RegExp(`(?<![.\\w$])(${SHELL_SPAWN_NAMES.join("|")})\\s*\\(\\s*([^)]{0,120})`, "g");
 
 interface SpawnCallSite {
   fn: string;
   arg: string;
   index: number;
+  /** True when the call is a shell-command-string form rather than the argv
+   * array form -- the shape this guard forbids at an emulator spawn site. */
+  shellForm: boolean;
 }
 
-/** Every spawn-family call in `codeOnlySrc`, with the call's start index
- * (used by the guard-before-spawn ordering check below) and its bare first
- * argument identifier (a quoted-literal first argument does not match this
- * regex at all, since `codeOnly()` already removed its text -- see
- * `SPAWN_CALL_RE`'s own comment). */
-function findSpawnCalls(codeOnlySrc: string): SpawnCallSite[] {
+/** Every argv-form spawn call in `codeOnlySrc`, with the call's start index
+ * and its bare first-argument identifier. */
+function findArgvSpawnCalls(codeOnlySrc: string): SpawnCallSite[] {
   const sites: SpawnCallSite[] = [];
-  for (const m of codeOnlySrc.matchAll(SPAWN_CALL_RE)) {
-    sites.push({ fn: m[1], arg: m[2], index: m.index ?? -1 });
+  for (const m of codeOnlySrc.matchAll(ARGV_CALL_RE)) {
+    sites.push({ fn: m[1], arg: m[2], index: m.index ?? -1, shellForm: false });
   }
   return sites;
 }
 
-/** True iff `ident` is, anywhere in `codeOnlySrc`, declared/assigned from
- * an expression that resolves to the regenerator2000 binary name --
- * `R2000_BIN` itself, or a local variable whose declaration mentions
- * `process.env.R2000_BIN` or the literal binary name (matched against the
- * FULL raw source, not `codeOnlySrc`, specifically so a literal default
- * like `"regenerator2000"` -- which `codeOnly()` blanks out because it is a
- * string literal -- is still recognised as naming the binary). */
-function identNamesR2000Binary(ident: string, codeOnlySrc: string, rawSrc: string): boolean {
-  if (ident === "R2000_BIN") return true;
+/** Every shell-form spawn call in `codeOnlySrc` whose argument mentions an
+ * emulator-binary-shaped name.
+ *
+ * TWO SUBTLETIES, both load-bearing, both pinned by a control in section 4:
+ *
+ *   1. A `RegExp.prototype.exec(...)` call is NOT one of these. This
+ *      directory legitimately calls `.exec()` on regexes in a dozen modules,
+ *      and every one of them must stay invisible here or this guard is red on
+ *      a correct tree -- whose cheapest "fix" under pressure is to weaken it.
+ *      `SHELL_CALL_RE`'s lookbehind rejects any `exec` preceded by a dot or
+ *      an identifier character, so only a bare `exec(`/`execSync(` -- the
+ *      form `node:child_process` is actually imported as -- can match.
+ *
+ *   2. The name test here is DELIBERATELY LOOSER than `EMULATOR_BIN_SHAPE`,
+ *      and must be. `codeOnly()` blanks a template literal's TEXT while
+ *      keeping its interpolated expressions, so the violation
+ *      `execSync(<backtick>${binPath} ${flag}<backtick>)` arrives here as the
+ *      run-together token `binPathflag` -- with no word boundary after
+ *      `binPath` for a `\b`-anchored pattern to find. That run-together shape
+ *      IS the signature of interpolating the binary into a command string,
+ *      which is precisely the violation, so an unanchored substring test is
+ *      the correct instrument rather than a sloppy one. */
+function findShellSpawnCalls(codeOnlySrc: string): SpawnCallSite[] {
+  const sites: SpawnCallSite[] = [];
+  for (const m of codeOnlySrc.matchAll(SHELL_CALL_RE)) {
+    const argText = m[2] ?? "";
+    if (!EMULATOR_BIN_SUBSTRING.test(argText)) continue;
+    sites.push({ fn: m[1], arg: argText.trim(), index: m.index ?? -1, shellForm: true });
+  }
+  return sites;
+}
+
+/** The emulator binary, in every shape this repo spells it. `VICE_BIN` is the
+ * env var and the constant; `x64sc` is the default value; `binPath`/`viceBin`
+ * are the two resolved-path locals `backend-detect.mts` carries. Never a bare
+ * `bin`, which is too generic to mean anything.
+ *
+ * Word-anchored, for the argv form, where the identifier stands alone. */
+const EMULATOR_BIN_SHAPE = /\bVICE_BIN\b|\bx64sc\b|\bbinPath\b|\bviceBin\b/;
+
+/** The same names, UNANCHORED -- see `findShellSpawnCalls()`'s subtlety 2 for
+ * why the shell form needs a substring test rather than a word-boundary one. */
+const EMULATOR_BIN_SUBSTRING = /VICE_BIN|x64sc|binPath|viceBin/;
+
+/** True iff `ident` is, anywhere in the module, declared or assigned from an
+ * expression that resolves to the emulator binary name -- one of the shapes
+ * above directly, or a local whose declaration mentions one. The declaration
+ * scan runs against the FULL RAW source, not `codeOnlySrc`, specifically so a
+ * literal default like `"x64sc"` -- which `codeOnly()` blanks out because it
+ * is a string literal -- is still recognised as naming the binary. */
+function identNamesEmulatorBinary(ident: string, rawSrc: string): boolean {
+  if (EMULATOR_BIN_SHAPE.test(ident)) return true;
   const declRe = new RegExp(`\\b(?:const|let|var)\\s+${ident}\\b[^;\\n]*`, "g");
   for (const m of rawSrc.matchAll(declRe)) {
-    if (/R2000_BIN|regenerator2000/.test(m[0])) return true;
+    if (EMULATOR_BIN_SHAPE.test(m[0])) return true;
+  }
+  // A function PARAMETER named for the binary counts too -- backend-detect's
+  // own probe takes `binPath: string` and spawns it, which is the real site.
+  const paramRe = new RegExp(`\\(([^)]*\\b${ident}\\b[^)]*)\\)`, "g");
+  for (const m of rawSrc.matchAll(paramRe)) {
+    if (EMULATOR_BIN_SHAPE.test(m[1])) return true;
   }
   return false;
 }
 
-/** True iff the call's first argument is a regenerator2000-binary-shaped
- * expression -- `R2000_BIN` directly, or a local identifier resolved from
- * it, per `identNamesR2000Binary()`. A bare literal first argument (e.g.
- * `spawn("/usr/bin/x64sc", ...)`) never matches `SPAWN_CALL_RE` in the
- * first place, since `codeOnly()` already blanked its text -- there is
- * nothing here to misidentify as "regenerator2000" from a stripped
- * literal, by construction. */
-function isR2000SpawnCall(site: SpawnCallSite, codeOnlySrc: string, rawSrc: string): boolean {
-  return identNamesR2000Binary(site.arg, codeOnlySrc, rawSrc);
+/** True iff the argv-form call's SECOND argument is an array literal -- the
+ * safe form. Looked for immediately after the first-argument identifier and
+ * its comma, so `spawnSync(binPath, [flag], {...})` passes and
+ * `spawnSync(binPath, someString)` does not. */
+function usesArgvArray(codeOnlySrc: string, site: SpawnCallSite): boolean {
+  const after = codeOnlySrc.slice(site.index, site.index + 200);
+  const idx = after.indexOf(site.arg);
+  if (idx === -1) return false;
+  const rest = after.slice(idx + site.arg.length);
+  return /^\s*,\s*\[/.test(rest);
 }
 
-/** The index of the first `assertNoViceFlag(` call in `codeOnlySrc`, or -1
- * if the module never calls it (as either an import or a call). */
-function firstAssertNoViceFlagCallIndex(codeOnlySrc: string): number {
-  const m = /\bassertNoViceFlag\s*\(/.exec(codeOnlySrc);
-  return m ? m.index : -1;
-}
-
-/** True iff `codeOnlySrc` imports (or, for the guard's own defining
- * module, defines) `assertNoViceFlag`. */
-function importsOrDefinesAssertNoViceFlag(codeOnlySrc: string): boolean {
-  return /\bassertNoViceFlag\b/.test(codeOnlySrc);
-}
-
-export interface R2000SpawnSiteReport {
+export interface EmulatorSpawnSiteReport {
   file: string;
-  r2000SpawnCalls: SpawnCallSite[];
-  guardsBeforeEverySpawn: boolean;
-  importsOrDefinesGuard: boolean;
+  emulatorSpawnCalls: SpawnCallSite[];
+  /** True when EVERY discovered call in this module uses the argv-array form
+   * and none uses a shell command string. */
+  allCallsUseSafeForm: boolean;
+  shellFormCalls: SpawnCallSite[];
 }
 
-/** Scans one module's real source text and reports every regenerator2000
- * spawn call it contains, plus whether the module's guard-before-spawn
- * property holds. Returns `undefined` if the module contains no
- * regenerator2000 spawn call at all -- callers filter on that to build the
- * discovered site SET. */
-function scanModuleForR2000SpawnSites(rawSrc: string, file: string): R2000SpawnSiteReport | undefined {
+/** Scans one module's real source text and reports every emulator spawn call
+ * it contains, plus whether the module's safe-form property holds. Returns
+ * `undefined` if the module contains no emulator spawn call at all -- callers
+ * filter on that to build the discovered site SET. */
+function scanModuleForEmulatorSpawnSites(rawSrc: string, file: string): EmulatorSpawnSiteReport | undefined {
   const codeOnlySrc = codeOnly(rawSrc);
-  const allSpawnCalls = findSpawnCalls(codeOnlySrc);
-  const r2000SpawnCalls = allSpawnCalls.filter((s) => isR2000SpawnCall(s, codeOnlySrc, rawSrc));
-  if (r2000SpawnCalls.length === 0) return undefined;
+  const argvCalls = findArgvSpawnCalls(codeOnlySrc).filter((s) => identNamesEmulatorBinary(s.arg, rawSrc));
+  const shellCalls = findShellSpawnCalls(codeOnlySrc);
+  const emulatorSpawnCalls = [...argvCalls, ...shellCalls];
+  if (emulatorSpawnCalls.length === 0) return undefined;
 
-  const guardIdx = firstAssertNoViceFlagCallIndex(codeOnlySrc);
-  const guardsBeforeEverySpawn = guardIdx !== -1 && r2000SpawnCalls.every((s) => guardIdx < s.index);
+  const allCallsUseSafeForm = shellCalls.length === 0 && argvCalls.every((s) => usesArgvArray(codeOnlySrc, s));
 
-  return {
-    file,
-    r2000SpawnCalls,
-    guardsBeforeEverySpawn,
-    importsOrDefinesGuard: importsOrDefinesAssertNoViceFlag(codeOnlySrc),
-  };
+  return { file, emulatorSpawnCalls, allCallsUseSafeForm, shellFormCalls: shellCalls };
 }
 
-/** Every top-level production module that contains at least one
- * regenerator2000 spawn call, with its full report. */
-function discoverR2000SpawnSites(): R2000SpawnSiteReport[] {
-  const reports: R2000SpawnSiteReport[] = [];
+/** Every top-level shipped module that contains at least one emulator spawn
+ * call, with its full report. */
+function discoverEmulatorSpawnSites(): EmulatorSpawnSiteReport[] {
+  const reports: EmulatorSpawnSiteReport[] = [];
   for (const file of shippedTsModules()) {
     const rawSrc = readFileSync(join(HERE, file), "utf8");
-    const report = scanModuleForR2000SpawnSites(rawSrc, file);
+    const report = scanModuleForEmulatorSpawnSites(rawSrc, file);
     if (report) reports.push(report);
   }
   return reports;
 }
 
-/** The frozen, exactly-two-entry expected set (INT-02/D-11.1-05). Values
- * name each site's role -- purely documentary, read by the assertion
- * failure messages below, never by the discovery logic itself (which
- * derives the real set independently). */
-const EXPECTED_R2000_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({
-  "r2000-launch.ts": "sync CLI seam -- runR2000()'s blocking spawnSync",
-  "r2000-mcp-client.ts":
-    "async MCP session -- the one spawn() statement in openR2000Session() now serves both " +
-    "withR2000Session()'s one-shot wrapper (CLI verbs) and the long-lived session r2000-session.ts holds " +
-    "open across many r2000_* calls (D18-02/D18-07); r2000-session.ts itself never spawns",
+/** The frozen expected set. Values name each site's role -- purely
+ * documentary, read by the assertion failure messages below, never by the
+ * discovery logic itself (which derives the real set independently).
+ *
+ * ONE entry today, where there were two before plan 29-10. That is not a
+ * weakening: the two it replaced both spawned a binary that no longer exists,
+ * and this one spawns a binary that does. The set-equality test below still
+ * fails in BOTH directions. */
+const EXPECTED_EMULATOR_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({
+  "backend-detect.mts":
+    "the --help probe -- probeBackend() runs one candidate flag against the resolved VICE binary to " +
+    "classify it as the fork or stock upstream, argv array and shell:false, bounded by a timeout",
 });
 
 // -- 1. Set equality, both directions ---------------------------------------
 
-test("the discovered regenerator2000 spawn-site set equals EXPECTED_R2000_SPAWN_SITES exactly, in both directions", () => {
-  const discovered = discoverR2000SpawnSites().map((r) => r.file);
+test("the discovered emulator spawn-site set equals EXPECTED_EMULATOR_SPAWN_SITES exactly, in both directions", () => {
+  const discovered = discoverEmulatorSpawnSites().map((r) => r.file);
   const discoveredSet = new Set(discovered);
-  const expectedFiles = Object.keys(EXPECTED_R2000_SPAWN_SITES);
+  const expectedFiles = Object.keys(EXPECTED_EMULATOR_SPAWN_SITES);
 
   const missing = expectedFiles.filter((f) => !discoveredSet.has(f));
-  const extra = discovered.filter((f) => !(f in EXPECTED_R2000_SPAWN_SITES));
+  const extra = discovered.filter((f) => !(f in EXPECTED_EMULATOR_SPAWN_SITES));
 
   assert.deepEqual(
     missing,
     [],
-    `expected regenerator2000 spawn site(s) not discovered -- either the site no longer spawns it, or the ` +
+    `expected emulator spawn site(s) not discovered -- either the site no longer spawns it, or the ` +
       `discovery regex regressed: ${missing.join(", ")}`
   );
   assert.deepEqual(
     extra,
     [],
-    `a regenerator2000 spawn site was discovered that is NOT in EXPECTED_R2000_SPAWN_SITES -- a third spawn ` +
-      `site has appeared and must be added to the frozen set (after confirming it guards with ` +
-      `assertNoViceFlag(), per R2000-01): ${extra.join(", ")}`
+    `an emulator spawn site was discovered that is NOT in EXPECTED_EMULATOR_SPAWN_SITES -- a second spawn ` +
+      `site has appeared and must be added to the frozen set (after confirming it uses the argv-array form ` +
+      `with no shell string): ${extra.join(", ")}`
   );
-  assert.equal(Object.keys(EXPECTED_R2000_SPAWN_SITES).length, 2, "EXPECTED_R2000_SPAWN_SITES must have exactly two entries");
+  assert.equal(
+    Object.keys(EXPECTED_EMULATOR_SPAWN_SITES).length,
+    1,
+    "EXPECTED_EMULATOR_SPAWN_SITES must have exactly one entry"
+  );
 });
 
-// -- 2. Guard-before-spawn ---------------------------------------------------
+// -- 2. The safe form at every discovered site -------------------------------
 
-test("every discovered regenerator2000 spawn site calls assertNoViceFlag(argv) before every regenerator2000 spawn in that file", () => {
-  const reports = discoverR2000SpawnSites();
-  assert.ok(reports.length > 0, "no regenerator2000 spawn site was discovered at all -- see the non-vacuity test below");
+test("every discovered emulator spawn site uses the argv-array form and builds no shell command string", () => {
+  const reports = discoverEmulatorSpawnSites();
+  assert.ok(reports.length > 0, "no emulator spawn site was discovered at all -- see the non-vacuity test below");
   for (const report of reports) {
-    assert.ok(
-      report.importsOrDefinesGuard,
-      `${report.file} spawns regenerator2000 but does not import or define assertNoViceFlag`
+    assert.deepEqual(
+      report.shellFormCalls.map((c) => `${c.fn}(${c.arg}`),
+      [],
+      `${report.file} spawns the emulator through a SHELL COMMAND STRING -- an argv array is mandatory here, ` +
+        `because a shell string makes the binary path injectable`
     );
     assert.ok(
-      report.guardsBeforeEverySpawn,
-      `${report.file}: assertNoViceFlag(argv) does not precede every regenerator2000 spawn call in this file ` +
-        `(R2000-01's spawn-before-guard invariant is violated)`
+      report.allCallsUseSafeForm,
+      `${report.file}: not every emulator spawn call passes an argv ARRAY as its second argument ` +
+        `(the command-injection invariant this seam exists to hold)`
     );
   }
 });
 
 // -- 3. Non-vacuity floor -----------------------------------------------------
 
-test("non-vacuity: the scanned module set is real, and at least one regenerator2000 spawn call site was discovered", () => {
+test("non-vacuity: the scanned module set is real, and at least one emulator spawn call site was discovered", () => {
   const modules = shippedTsModules();
   assert.ok(modules.length >= 40, `expected at least 40 top-level production modules, got ${modules.length}`);
 
-  const reports = discoverR2000SpawnSites();
+  const reports = discoverEmulatorSpawnSites();
   assert.ok(
     reports.length >= 1,
-    "discoverR2000SpawnSites() found zero regenerator2000 spawn sites -- a discovery pass that finds nothing " +
-      "must fail this test, not silently pass a guard-before-spawn check with nothing to check"
+    "discoverEmulatorSpawnSites() found zero emulator spawn sites -- a discovery pass that finds nothing " +
+      "must fail this test, not silently pass a safe-form check with nothing to check"
   );
 });
 
-// -- 4. Planted violation (committed), both directions -----------------------
+// -- 4. Planted violations (committed), both directions ----------------------
 
-test("planted violation: a module that spawns R2000_BIN with no assertNoViceFlag anywhere is reported as guard-missing", () => {
+test("planted violation: a module that spawns the emulator through a shell command string is reported unsafe", () => {
   const plantedSource =
-    `import { spawnSync } from "node:child_process";\n` +
-    `import { R2000_BIN } from "./r2000-launch.ts";\n` +
+    `import { execSync } from "node:child_process";\n` +
     `\n` +
-    `export function evilRunR2000(argv: readonly string[]) {\n` +
-    `  return spawnSync(R2000_BIN, [...argv], { encoding: "utf8" });\n` +
+    `export function evilProbe(binPath: string, flag: string) {\n` +
+    "  return execSync(`${binPath} ${flag}`, { encoding: \"utf8\" });\n" +
     `}\n`;
 
-  const report = scanModuleForR2000SpawnSites(plantedSource, "scratch-evil-spawn-site.ts");
-  assert.ok(report, "the planted violation's spawnSync(R2000_BIN call must be discovered as a real spawn site");
+  const report = scanModuleForEmulatorSpawnSites(plantedSource, "scratch-evil-spawn-site.ts");
+  assert.ok(report, "the planted violation's shell-string spawn must be discovered as a real spawn site");
   assert.equal(
-    report!.importsOrDefinesGuard,
-    false,
-    "the planted violation imports R2000_BIN but never assertNoViceFlag -- must be reported guard-missing"
+    report!.shellFormCalls.length,
+    1,
+    "the planted violation interpolates the binary path into a shell command string -- must be reported as a shell-form call"
   );
   assert.equal(
-    report!.guardsBeforeEverySpawn,
+    report!.allCallsUseSafeForm,
     false,
-    "a module with no assertNoViceFlag call at all must never report guardsBeforeEverySpawn: true"
+    "a module that spawns the emulator through a shell string must never report allCallsUseSafeForm: true"
   );
 });
 
-test("planted violation: a module whose spawnSync(R2000_BIN call is preceded by assertNoViceFlag reports guarded", () => {
+test("planted violation: a module whose emulator spawn passes an argv array reports safe", () => {
   const guardedSource =
     `import { spawnSync } from "node:child_process";\n` +
-    `import { R2000_BIN, assertNoViceFlag } from "./r2000-launch.ts";\n` +
     `\n` +
-    `export function goodRunR2000(argv: readonly string[]) {\n` +
-    `  assertNoViceFlag(argv);\n` +
-    `  return spawnSync(R2000_BIN, [...argv], { encoding: "utf8" });\n` +
+    `export function goodProbe(binPath: string, flag: string) {\n` +
+    `  return spawnSync(binPath, [flag], { encoding: "utf8", timeout: 2000 });\n` +
     `}\n`;
 
-  const report = scanModuleForR2000SpawnSites(guardedSource, "scratch-good-spawn-site.ts");
-  assert.ok(report, "the guarded control's spawnSync(R2000_BIN call must be discovered as a real spawn site");
-  assert.equal(report!.guardsBeforeEverySpawn, true, "a genuinely guard-first module must report guardsBeforeEverySpawn: true");
+  const report = scanModuleForEmulatorSpawnSites(guardedSource, "scratch-good-spawn-site.ts");
+  assert.ok(report, "the safe control's spawnSync(binPath, [flag] call must be discovered as a real spawn site");
+  assert.equal(report!.shellFormCalls.length, 0);
+  assert.equal(report!.allCallsUseSafeForm, true, "a genuinely argv-array module must report allCallsUseSafeForm: true");
 });
 
-test("planted violation control: a spawnSync(R2000_BIN mention that exists ONLY inside a block comment and a string literal is NOT reported", () => {
+test("planted violation: an argv-form emulator spawn whose second argument is a bare string, not an array, is reported unsafe", () => {
+  const sloppySource =
+    `import { spawnSync } from "node:child_process";\n` +
+    `\n` +
+    `export function sloppyProbe(binPath: string, joinedArgs: string) {\n` +
+    `  return spawnSync(binPath, joinedArgs, { shell: true });\n` +
+    `}\n`;
+
+  const report = scanModuleForEmulatorSpawnSites(sloppySource, "scratch-sloppy-spawn-site.ts");
+  assert.ok(report, "the sloppy control's spawnSync(binPath call must still be discovered as a real spawn site");
+  assert.equal(
+    report!.allCallsUseSafeForm,
+    false,
+    "passing a joined string where an argv array belongs must never report allCallsUseSafeForm: true"
+  );
+});
+
+test("planted violation control: an emulator spawn mention that exists ONLY inside a block comment and a string literal is NOT reported", () => {
   const decoySource =
     `import { spawnSync } from "node:child_process";\n` +
     `\n` +
     `/**\n` +
-    ` * This module used to call spawnSync(R2000_BIN, argv) directly, before\n` +
-    ` * it was refactored to go through runR2000() instead -- see history.\n` +
+    ` * This module used to call spawnSync(binPath, argv) directly, before\n` +
+    ` * it was refactored to go through probeBackend() instead -- see history.\n` +
     ` */\n` +
     `export const HISTORICAL_NOTE =\n` +
-    `  "this module used to call spawnSync(R2000_BIN, argv) directly, before it was refactored";\n` +
+    `  "this module used to call spawnSync(binPath, argv) directly, before it was refactored";\n` +
     `\n` +
     `export function harmless(): void {\n` +
-    `  spawnSync("echo", ["not regenerator2000 at all"]);\n` +
+    `  spawnSync("echo", ["not the emulator at all"]);\n` +
     `}\n`;
 
-  const report = scanModuleForR2000SpawnSites(decoySource, "scratch-decoy-spawn-site.ts");
+  const report = scanModuleForEmulatorSpawnSites(decoySource, "scratch-decoy-spawn-site.ts");
   assert.equal(
     report,
     undefined,
-    "a spawnSync(R2000_BIN mention that exists only inside a comment and a string literal must not be " +
-      "discovered as a real regenerator2000 spawn call -- codeOnly() must strip both before matching"
+    "a spawnSync(binPath mention that exists only inside a comment and a string literal must not be " +
+      "discovered as a real emulator spawn call -- codeOnly() must strip both before matching"
   );
 });
 
-// -- 5. Real-source sanity: the two named sites individually --------------
+test("planted violation control: a RegExp.prototype.exec() call is never mistaken for a shell spawn", () => {
+  // This directory calls `.exec()` on regexes in a dozen modules. If any of
+  // them were discovered as shell spawns, this guard would be red on a
+  // correct tree and would be "fixed" by weakening it -- so the negative is
+  // pinned here rather than left to luck.
+  const regexSource =
+    `const RE = /\\bVICE_BIN\\b/g;\n` +
+    `export function findIt(text: string) {\n` +
+    `  return RE.exec(text);\n` +
+    `}\n`;
 
-test("r2000-launch.ts's own runR2000() spawnSync(R2000_BIN call is discovered and reports guarded", () => {
-  const src = readFileSync(join(HERE, "r2000-launch.ts"), "utf8");
-  const report = scanModuleForR2000SpawnSites(src, "r2000-launch.ts");
-  assert.ok(report, "r2000-launch.ts must be discovered as a regenerator2000 spawn site");
-  assert.equal(report!.guardsBeforeEverySpawn, true);
+  const report = scanModuleForEmulatorSpawnSites(regexSource, "scratch-regex-exec.ts");
+  assert.equal(report, undefined, "a regex .exec(text) call must never be discovered as an emulator shell spawn");
 });
 
-test("r2000-mcp-client.ts's withR2000Session() spawn(bin, argv, ...) call is discovered and reports guarded", () => {
-  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
-  const report = scanModuleForR2000SpawnSites(src, "r2000-mcp-client.ts");
-  assert.ok(report, "r2000-mcp-client.ts must be discovered as a regenerator2000 spawn site");
-  assert.equal(report!.guardsBeforeEverySpawn, true);
+// -- 5. Real-source sanity: the one named site individually ------------------
+
+test("backend-detect.mts's own probeBackend() spawnSync(binPath, [flag] call is discovered and reports safe", () => {
+  const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
+  const report = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
+  assert.ok(report, "backend-detect.mts must be discovered as an emulator spawn site");
+  assert.equal(report!.shellFormCalls.length, 0, "backend-detect.mts must build no shell command string");
+  assert.equal(report!.allCallsUseSafeForm, true);
 });
 
-// -- 6. D18-02: r2000-session.ts is IN the scanned set, and contributes -----
-// -- zero discovered spawn sites -- proving the guard is demonstrably ------
-// -- looking at the new module, not merely silent about it. ----------------
-
-test("shippedTsModules() now includes r2000-session.ts (plan 18-03), and it contributes zero discovered regenerator2000 spawn sites (D18-02)", () => {
-  const modules = shippedTsModules();
-  assert.ok(
-    modules.includes("r2000-session.ts"),
-    "expected r2000-session.ts to be inside package.json's files[] -- without this entry the guard below " +
-      "would be scanning a set that never included the new module, making its own proof vacuous"
-  );
-
-  const src = readFileSync(join(HERE, "r2000-session.ts"), "utf8");
-  const report = scanModuleForR2000SpawnSites(src, "r2000-session.ts");
+test("the one-spawn-site invariant: backend-detect.mts contains exactly ONE emulator spawn call -- a second path means a probe was added without re-running the decision", () => {
+  const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
+  const report = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
+  assert.ok(report);
   assert.equal(
-    report,
-    undefined,
-    "r2000-session.ts must never contribute a discovered regenerator2000 spawn site -- it calls INTO " +
-      "r2000-mcp-client.ts's openR2000Session() (dynamically), and never spawns itself (D18-02)"
-  );
-
-  const discovered = discoverR2000SpawnSites().map((r) => r.file);
-  assert.equal(
-    discovered.includes("r2000-session.ts"),
-    false,
-    "r2000-session.ts must not appear in the real discovered spawn-site set either"
-  );
-});
-
-// -- 7. The one-spawn-site invariant (the assumption-delta companion test) -
-// -- promoting r2000-mcp-client.ts to serve TWO session kinds must still --
-// -- leave exactly ONE spawn statement, guarded before it. -----------------
-
-/** After `codeOnly()` stripping, counts every regenerator2000-shaped spawn
- * call in `src` and reports whether `assertNoViceFlag(` precedes ALL of
- * them. Reuses this file's own `findSpawnCalls()`/`isR2000SpawnCall()`/
- * `firstAssertNoViceFlagCallIndex()` helpers rather than a second parallel
- * implementation. */
-function oneSpawnSiteReport(src: string): { count: number; guardOffset: number; guardsBeforeAll: boolean } {
-  const codeOnlySrc = codeOnly(src);
-  const spawnCalls = findSpawnCalls(codeOnlySrc).filter((s) => isR2000SpawnCall(s, codeOnlySrc, src));
-  const guardOffset = firstAssertNoViceFlagCallIndex(codeOnlySrc);
-  const guardsBeforeAll = guardOffset !== -1 && spawnCalls.every((s) => guardOffset < s.index);
-  return { count: spawnCalls.length, guardOffset, guardsBeforeAll };
-}
-
-test("the one-spawn-site invariant: r2000-mcp-client.ts contains exactly ONE regenerator2000 spawn call, guarded by assertNoViceFlag( before it -- a second path means a third session kind was added without re-running D18-02's decision", () => {
-  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
-  const result = oneSpawnSiteReport(src);
-  assert.equal(
-    result.count,
+    report!.emulatorSpawnCalls.length,
     1,
-    `expected exactly ONE regenerator2000 spawn call in r2000-mcp-client.ts -- the promote left one spawn ` +
-      `statement serving both openR2000Session()'s long-lived session and withR2000Session()'s one-shot ` +
-      `wrapper (which itself now calls openR2000Session() rather than spawning separately); found ` +
-      `${result.count}. A second spawn path appearing means a third session kind was added without ` +
-      `re-running D18-02's decision.`
-  );
-  assert.ok(
-    result.guardsBeforeAll,
-    "expected assertNoViceFlag( to precede the (single) regenerator2000 spawn call in r2000-mcp-client.ts"
+    `expected exactly ONE emulator spawn call in backend-detect.mts -- found ` +
+      `${report!.emulatorSpawnCalls.length}. A second spawn path appearing means a probe was added without ` +
+      `re-running the single-probe decision, and it must be confirmed safe-form before this number moves.`
   );
 });
 
-test("planted violation: duplicating r2000-mcp-client.ts's spawn statement into a second function makes the one-spawn-site invariant fail", () => {
-  const src = readFileSync(join(HERE, "r2000-mcp-client.ts"), "utf8");
-  // Reuses the SAME local identifier name ("bin") the real spawn call uses,
-  // so isR2000SpawnCall()'s identNamesR2000Binary() resolves it exactly the
-  // way it resolves the real call's own `bin` -- a faithful duplicate, not
-  // a decoy the detector would ignore for an unrelated reason.
+test("planted violation: duplicating backend-detect.mts's spawn statement into a second function makes the one-spawn-site invariant fail", () => {
+  const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
+  // Reuses the SAME local identifier name ("binPath") the real spawn call
+  // uses, so identNamesEmulatorBinary() resolves it exactly the way it
+  // resolves the real call's own argument -- a faithful duplicate, not a
+  // decoy the detector would ignore for an unrelated reason.
   const duplicated =
     src +
-    `\nexport function __scratchSecondSpawnPath(bin: string, argv: string[]) {\n` +
-    `  return spawn(bin, [...argv], { stdio: ["pipe", "pipe", "pipe"] });\n` +
+    `\nexport function __scratchSecondProbePath(binPath: string, flag: string) {\n` +
+    `  return spawnSync(binPath, [flag], { encoding: "utf8" });\n` +
     `}\n`;
-  const before = oneSpawnSiteReport(src);
-  const after = oneSpawnSiteReport(duplicated);
-  assert.equal(before.count, 1, "sanity: the real file must report exactly one spawn call before duplication");
+  const before = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
+  const after = scanModuleForEmulatorSpawnSites(duplicated, "backend-detect.mts");
+  assert.equal(before!.emulatorSpawnCalls.length, 1, "sanity: the real file must report exactly one spawn call before duplication");
   assert.notEqual(
-    after.count,
+    after!.emulatorSpawnCalls.length,
     1,
-    "expected the duplicated spawn statement to be discovered as a SECOND regenerator2000 spawn site, " +
-      "flipping the one-spawn-site invariant to fail -- if this assertion itself fails, the test above is vacuous"
-  );
-});
-
-// -- 8. D18-02 live session-reuse transcript (gated, real binary) ----------
-// -- captures a committed artifact proving assertNoViceFlag ran against ----
-// -- the fixed builder's argv before any child existed, and that a second -
-// -- call reached the SAME held child. -------------------------------------
-
-const LIVE_SKIP_REASON = skipReasonFor("spawn-seam.test.ts");
-
-test("regenerator2000 availability gate (D-11)", () => {
-  assertR2000RequiredIfEnvSet(assert);
-});
-
-const EVIDENCE_DIR = join(
-  HERE,
-  "..",
-  "..",
-  "..",
-  ".planning",
-  "phases",
-  "18-persistent-session-and-tool-surface",
-  "evidence",
-);
-const EVIDENCE_PATH = join(EVIDENCE_DIR, "18-session-reuse-transcript.json");
-
-test(
-  "gated: session-reuse transcript (D18-02) -- assertNoViceFlag runs against the fixed builder's argv before any child exists, and a second call reaches the same held child",
-  { skip: LIVE_SKIP_REASON },
-  async () => {
-    const workDir = mkdtempSync(join(HERE, ".r2000-spawn-seam-test-live-"));
-    try {
-      await __resetR2000SessionForTest();
-
-      const projectPath = join(workDir, "session-reuse.regen2000proj");
-      writeFileSync(projectPath, synthesizeProject(new Uint8Array([0xea]), { origin: 0xc000 }));
-
-      // The SAME fixed builder r2000-mcp-client.ts's openR2000Session() calls
-      // internally -- asserted here, independently, against the argv this
-      // test then drives the real session with.
-      const argv = buildMcpServerStdioArgs({ projectPath });
-
-      // Runs before any child exists for this project path (no session has
-      // been opened yet -- confirmed by __resetR2000SessionForTest() above).
-      // Throws if it ever finds --vice; reaching the next line proves it ran
-      // and passed.
-      launchAssertNoViceFlag(argv);
-      const guardRanBeforeChildExisted = true;
-
-      const call1 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
-      assert.equal(call1.isError, false, `first call failed: ${JSON.stringify(call1)}`);
-      const pid1 = __r2000SessionStateForTest().pid;
-      assert.ok(pid1 !== undefined, "expected a real pid after the first call");
-
-      const call2 = await runR2000Tool("r2000_get_binary_info", { project: projectPath });
-      assert.equal(call2.isError, false, `second call failed: ${JSON.stringify(call2)}`);
-      const pid2 = __r2000SessionStateForTest().pid;
-
-      assert.equal(pid2, pid1, "expected the second call to reach the SAME held child (same pid) as the first");
-
-      const transcript = {
-        recordedAt: new Date().toISOString(),
-        r2000Bin: process.env.R2000_BIN ?? "regenerator2000",
-        argv,
-        assertNoViceFlagRanBeforeChildExisted: guardRanBeforeChildExisted,
-        pidAfterCall1: pid1,
-        pidAfterCall2: pid2,
-        samePid: pid1 === pid2,
-        note:
-          "D18-02 proof, captured live: assertNoViceFlag(argv) ran against buildMcpServerStdioArgs()'s " +
-          "output before any child existed for this project path, and a second r2000_get_binary_info call " +
-          "reached the same held child (same pid) as the first -- driven by spawn-seam.test.ts " +
-          "against a real regenerator2000 binary.",
-      };
-      mkdirSync(EVIDENCE_DIR, { recursive: true });
-      writeFileSync(EVIDENCE_PATH, JSON.stringify(transcript, null, 2) + "\n");
-    } finally {
-      await __resetR2000SessionForTest();
-      rmSync(workDir, { recursive: true, force: true });
-    }
-  }
-);
-
-test("a committed session-reuse transcript fixture exists under the phase's evidence directory (D18-02)", () => {
-  assert.ok(
-    existsSync(EVIDENCE_PATH),
-    `expected a committed transcript fixture at ${EVIDENCE_PATH} -- the live test above (re)writes it when ` +
-      `regenerator2000 is available; it must also be committed so the proof survives a CI run where the ` +
-      `live test is skipped`
+    "expected the duplicated spawn statement to be discovered as a SECOND emulator spawn site, flipping the " +
+      "one-spawn-site invariant to fail -- if this assertion itself fails, the test above is vacuous"
   );
 });

@@ -57,12 +57,90 @@
 //   cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs
 
 import { mkdirSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { synthesizeProject } from "../../r2000-project.ts";
-
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------------------
+// THE FROZEN PROJECT-FILE WRITER (plan 29-10, 2026-08-30).
+//
+// This function used to be imported from the retired static-analysis
+// integration's own project module, which plan 29-10 deleted. It is inlined
+// here, emitting BYTE-FOR-BYTE the same JSON that module emitted -- proven by
+// this generator's own determinism contract above, which now does double duty:
+// re-running it must leave `git status --porcelain` on this directory EMPTY,
+// so a single changed byte in any of the twelve committed
+// `project.regen2000proj` files fails the check.
+//
+// WHY INLINE RATHER THAN RE-POINT ONTO THIS PROJECT'S OWN STORE. The twelve
+// fixtures' consumers read the ANALYSER's project file. Re-pointing the writer
+// at the Phase 28 annotation store would re-derive all twelve committed
+// fixtures and change what the census controls measure -- which is Phase 30's
+// work, on Phase 30's evidence, not a side effect of a deletion. The deleted
+// module's own classification entry says the same thing in the other
+// direction: once the store is this project's own, there is no such file to
+// synthesise.
+//
+// WHAT THAT MEANS FOR A LATER READER: after plan 29-10's commit, THE TWELVE
+// COMMITTED FIXTURES ARE THE ONLY REMAINING RECORD OF THIS FILE FORMAT. There
+// is no other producer in this repo and no specification of it anywhere. If
+// this writer and those fixtures ever disagree, the fixtures are the
+// authority, not this code.
+//
+// PHASE 30 re-points this writer when the store-native project file lands.
+// Until then it is frozen: do not "improve" the shape, the key order, or the
+// compression, because every one of those is load-bearing for byte equality.
+//
+// EVERY CHECKED NEGATIVE IN THIS FILE STAYS. The equal-length and
+// identical-tail throws, `assertDispatchesNowhere()`,
+// `assertNoIndirectJumpOpcode()` and `assertCarriesPushIdiom()` are the reason
+// this is a generator rather than twelve hand-committed blobs, and they are
+// what keeps the fixtures reproducible. None of them touched the deleted
+// module.
+// ---------------------------------------------------------------------------
+
+/** The system string the deleted module defaulted to, always written
+ * explicitly and never omitted. */
+const PROJECT_SYSTEM_C64 = "Commodore 64";
+
+/**
+ * Emits the project file for `bytes` at `origin`, byte-identically to the
+ * deleted producer: gzip the payload, base64 it, and write `origin`,
+ * `raw_data_base64`, an empty `blocks` array and the two forced settings, IN
+ * THAT KEY ORDER, stringified with no whitespace, no timestamp and no
+ * host-dependent value. The absence of all three is what makes this
+ * generator's determinism contract checkable at all.
+ */
+function synthesizeProject(bytes, { origin, system = PROJECT_SYSTEM_C64 }) {
+  if (!Number.isInteger(origin) || origin < 0 || origin > 0xffff) {
+    throw new Error(
+      `synthesizeProject: origin ${origin} is out of range -- expected an integer 0..0xffff (0..65535)`,
+    );
+  }
+  if (bytes.length === 0) {
+    throw new Error("synthesizeProject: payload is empty -- a project file must carry at least one byte");
+  }
+
+  const raw_data_base64 = gzipSync(bytes).toString("base64");
+
+  const project = {
+    origin,
+    raw_data_base64,
+    blocks: [],
+    settings: {
+      // Forced true, never configurable (D-05). Do not add a parameter that
+      // overrides this.
+      use_illegal_opcodes: true,
+      // Always written explicitly, never omitted (D-05 / Phase 9's .vsf
+      // finding).
+      system,
+    },
+  };
+
+  return JSON.stringify(project);
+}
 
 const ORIGIN = 0x0810;
 

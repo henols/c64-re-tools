@@ -734,15 +734,44 @@ test("planted violation: the same predicates the real scan uses report all five 
 });
 
 test("planted violation: an in-scope file with no entry is reported by the same completeness predicate the real scan calls", () => {
-  // The synthetic disk list is FULLY synthetic -- two names the registry
+  // The synthetic disk list is FULLY synthetic -- two names the entry list
   // does classify plus one it does not -- rather than the real enumeration
   // with one name appended. Measured: appending to the real enumeration made
-  // THIS test go red alongside Direction 1 during this plan's own on-disk
+  // THIS test go red alongside Direction 1 during plan 29-05's own on-disk
   // break-and-restore probe, because the planted file then appeared in the
   // list too, and that muddied the attribution of an observed RED. A
   // predicate test should exercise the predicate, not the filesystem.
-  const syntheticDisk = ["r2000-launch.ts", "r2000-tools.ts", "r2000-synthetic-unclassified.ts"];
-  const unclassified = unclassifiedModules(MODULE_CLASSIFICATION, syntheticDisk);
+  //
+  // THE ENTRY LIST IS NOW SYNTHETIC TOO (plan 29-10), for exactly the same
+  // reason one step further out. This test used to pass the REAL registry and
+  // name two of its then-`in-enumeration` modules. Plan 29-10 deleted every
+  // one of those, so the real registry's in-enumeration set is now EMPTY by
+  // design -- and against an empty set the two "classified" names read as
+  // unclassified and this test went red without anything being wrong. A
+  // predicate test should exercise the predicate, not the registry's current
+  // contents either; the registry's own completeness is Direction 1's job.
+  const syntheticEntries: readonly ModuleClassificationEntry[] = [
+    {
+      module: "r2000-synthetic-classified-a.ts",
+      scope: "in-enumeration",
+      verdict: "glue",
+      basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
+      extractables: [],
+    },
+    {
+      module: "r2000-synthetic-classified-b.ts",
+      scope: "in-enumeration",
+      verdict: "glue",
+      basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
+      extractables: [],
+    },
+  ];
+  const syntheticDisk = [
+    "r2000-synthetic-classified-a.ts",
+    "r2000-synthetic-classified-b.ts",
+    "r2000-synthetic-unclassified.ts",
+  ];
+  const unclassified = unclassifiedModules(syntheticEntries, syntheticDisk);
   assert.deepEqual(
     unclassified,
     ["r2000-synthetic-unclassified.ts"],

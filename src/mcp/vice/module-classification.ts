@@ -42,15 +42,19 @@
 //   direction and two in the other. Measured on this tree:
 //
 //     - THREE GLUE modules had prominent unprefixed consumers. The session
-//       lifecycle is still imported by the stdio entry point directly
-//       (`vice-proxy.ts:200`); the CLI is reached from `vice-proxy.ts:309`
-//       plus four files under `scripts/`. `vice-proxy.ts` survives the
-//       substrate swap. Its imports of those three modules do NOT -- and the
-//       tool surface's import is ALREADY GONE, substituted for the owned
-//       store's own surface by plan 29-01: there is no analyser tool
-//       surface left to expose, and in due course no analyser session to
-//       close and no analyser CLI to dispatch to. This record predicted that
-//       and is being read back rather than rewritten.
+//       lifecycle was imported by the stdio entry point directly; the tool
+//       surface was too; the CLI is reached from `vice-proxy.ts:307` plus
+//       four files under `scripts/`. `vice-proxy.ts` survives the substrate
+//       swap. Its imports of those three modules did NOT -- and ALL THREE
+//       ARE NOW GONE, exactly as this paragraph predicted before any of them
+//       went: plan 29-01 substituted the tool surface for the owned store's
+//       own, and plan 29-10 removed the session-close import with the module
+//       it named. THE PREDICTION IS THEREFORE DISCHARGED RATHER THAN
+//       REWRITTEN, which is the only reading that keeps this record worth
+//       anything -- a discriminator that had been quietly edited to match
+//       whatever happened would prove nothing about the judgement it was
+//       used to make. Only the CLI's citation survives, because only the
+//       CLI's module did.
 //     - TWO CAPABILITY modules have no unprefixed consumer at all (the ACME
 //       identifier module and the confidence-grade module). Their basis is
 //       a requirement id, which is the second admissible basis and is not a
@@ -107,19 +111,29 @@
 // glue modules were surveyed for a pure, name-independent symbol with a
 // consumer that survives the substrate swap. RESULT: none found. Four
 // candidates were considered and rejected on measurement, recorded so the
-// survey reads as work done rather than an assumption:
-//   - `parseR2000TimeoutMs` (`r2000-launch.ts:251`) is a pure
-//     string-to-number parser with a range refusal, but its subject is the
-//     analyser's own spawn timeout env var and it has no consumer outside
-//     the family.
+// survey reads as work done rather than an assumption.
+//
+// THE LINE CITATIONS THAT USED TO ACCOMPANY THESE FOUR WERE REMOVED BY PLAN
+// 29-10, IN THE COMMIT THAT DELETED THEIR FILES, and their removal is itself
+// the record working rather than rotting: DIRECTION 9b requires every
+// `path:NN` in this module's own prose to resolve to a real file and a real
+// line, so a citation into a deleted module is a hard failure, not a stale
+// footnote. The symbols are named without a site, which is all a survey
+// finding needs to stay readable:
+//   - `parseR2000TimeoutMs` (the launch module) was a pure string-to-number
+//     parser with a range refusal, but its subject was the analyser's own
+//     spawn timeout environment variable and it had no consumer outside the
+//     family.
 //   - `checkAcceptedOptions` (`anno-cli.ts:169`) is a generic argv option
-//     checker, used only by the CLI it lives in and its own test.
-//   - `resolveStorePath` (`r2000-tools.ts:972`) and
-//     `composeAddressDetails` (`r2000-tools.ts:1121`) both exist to work
-//     around specific behaviours of the analyser's own tool surface.
-//   - the single-flight session queue (`r2000-session.ts:294` onward) has a
-//     generic DISCIPLINE but an implementation bound to the analyser child
-//     process, and no consumer outside the family.
+//     checker, used only by the CLI it lives in and its own test. This is the
+//     one of the four whose module SURVIVED, so it is the one that keeps its
+//     citation.
+//   - `resolveStorePath` and `composeAddressDetails` (the tool-surface
+//     module) both existed to work around specific behaviours of the
+//     analyser's own tool surface.
+//   - the single-flight session queue (the session module) had a generic
+//     DISCIPLINE but an implementation bound to the analyser child process,
+//     and no consumer outside the family.
 //
 // LINE CITATIONS ARE ADVISORY, AND THE LIABILITY IS MEASURED, NOT
 // HYPOTHETICAL. Every `consumers[]` entry cites a path and the symbol
@@ -301,9 +315,8 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-tools.ts", symbol: "assertLegalAcmeIdentifier", line: 104 },
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 86 },
-        { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 76 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 106 },
+        { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 97 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
       rationale:
@@ -335,7 +348,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/anno-coverage.ts", symbol: "CONFIDENCE_GRADES", line: 144 },
-        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 21 },
+        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 42 },
       ],
       requirements: ["COV-01", "COV-02"],
       rationale:
@@ -487,7 +500,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 85 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 105 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "buildRegBits" },
       ],
       requirements: ["SEAM-02"],
@@ -516,7 +529,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 89 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 109 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "anno-regbits.json", line: 48 },
         { path: "src/skills/c64-memory-mapping/SKILL.md", symbol: "anno-regbits.json", line: 195 },
       ],
@@ -548,7 +561,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-symbol-roundtrip.test.ts", symbol: "importLabels", line: 46 },
       ],
       requirements: ["R2000-14", "R2000-15"],
       rationale:
@@ -561,13 +573,20 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-test-gate.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "Its own note already refused to be read as a claim of survival: every one of its ten measured " +
+        "importers died with the substrate it gated, and the substrate-INDEPENDENT half of its discipline had " +
+        "already been extracted under a different name. Deleted rather than renamed (plan 29-10, D-16) on that " +
+        "authority. The DISCIPLINE it owned survives and is what a later reader carries forward.",
+      supersededBy: "src/mcp/vice/acme-gate.ts",
+    },
     verdict: "capability",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/r2000-verify.test.ts", symbol: "skipReasonFor", line: 40 },
-        { path: "src/mcp/vice/r2000-tools.test.ts", symbol: "R2000_BIN", line: 38 },
-      ],
+      consumers: [],
       requirements: ["SEAM-01"],
       rationale:
         "Owns the availability-gate DISCIPLINE that SEAM-01 names: exactly one computed skip reason per " +
@@ -597,15 +616,25 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-verify.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "Its own note already said what a later phase inherits is the discipline and its two pinned false-pass " +
+        "transcripts, NOT the route -- and the route was the whole module. Deleted rather than renamed (plan " +
+        "29-10, D-16) on that authority. THE TRANSCRIPTS RODE FORWARD before the module went: both are " +
+        "committed verbatim under .planning/phases/29-the-mcp-surface/fixtures/, with a README recording their " +
+        "provenance and Phase 30's obligation to RE-RECORD them from real assembler output rather than assert " +
+        "against these.",
+      supersededBy: ".planning/phases/29-the-mcp-surface/fixtures/",
+    },
     verdict: "capability",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/r2000-verify.test.ts", symbol: "acmeVerdict", line: 37 },
-      ],
+      consumers: [],
       requirements: ["EXPORT-01", "EXPORT-03"],
       rationale:
-        "Owns the never-trust-the-exit-code verdict discipline. acmeVerdict() at r2000-verify.ts:116 " +
+        "Owns the never-trust-the-exit-code verdict discipline. Its acmeVerdict() " +
         "derives its result ONLY from parsed assembler result lines: it requires unanimity across every " +
         "such line, lets no passing line hide a later failing one, refuses to guess when two are " +
         "present, reads a skipped assembler as a failure rather than an absence of evidence, and never " +
@@ -642,7 +671,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 309 },
+        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 307 },
         { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 52 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
       ],
@@ -671,15 +700,19 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-launch.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "Every export was a statement about a process that does not exist after the substrate swap, so there " +
+        "was nothing in it to carry forward (plan 29-10, D-01/D-02). Its extractables survey had already found " +
+        "none. All three cited consumers went in the same commit or lost the import in it.",
+    },
     verdict: "glue",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/r2000-verify.ts", symbol: "buildVerifyArgs", line: 46 },
-        { path: "src/mcp/vice/anno-symbols.ts", symbol: "runR2000", line: 72 },
-        { path: "src/mcp/vice/r2000-mcp-client.ts", symbol: "buildMcpServerStdioArgs", line: 84 },
-      ],
-      requirements: [],
+      consumers: [],
+      requirements: ["CUT-01"],
       rationale:
         "Builds argv for, and spawns, the external analyser binary -- one argv-array builder per verb, " +
         "plus the timeout, buffer ceiling and the refusal of a flag belonging to that binary's own CLI. " +
@@ -693,15 +726,20 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-mcp-client.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "Its entire vocabulary was the retired server's own wire protocol, so nothing in it meant anything " +
+        "without that server (plan 29-10, D-01/D-02). It was one of the two spawn sites spawn-seam.test.ts was " +
+        "originally measured against; that guard was RE-POINTED onto the emulator spawn seam in this same " +
+        "commit rather than retired, because the discipline outlives the substrate.",
+    },
     verdict: "glue",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/r2000-tools.ts", symbol: "R2000Call", line: 108 },
-        { path: "src/mcp/vice/r2000-session.ts", symbol: "openR2000Session", line: 554 },
-        { path: "src/mcp/vice/anno-symbols.ts", symbol: "withR2000Session", line: 73 },
-      ],
-      requirements: [],
+      consumers: [],
+      requirements: ["CUT-01"],
       rationale:
         "Speaks the wire protocol to the external analyser's own server over stdio: handshake, request " +
         "framing, call timeouts, restart budget, and the save-then-verify-persistence round trip. Its " +
@@ -711,14 +749,23 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-project.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "The file format it built belonged to the retired analyser; once the store is this project's own there " +
+        "is no such file to synthesise (plan 29-10, D-01/D-02). Its second cited consumer -- the coverage " +
+        "fixture generator, which this record is why anyone knew about -- did NOT lose the capability: " +
+        "synthesizeProject() was INLINED there as a frozen module-private writer in this same commit, proven " +
+        "byte-identical by that generator's own determinism contract over all twelve committed fixtures. " +
+        "Those twelve files are now the only remaining record of the format.",
+      supersededBy: "src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs",
+    },
     verdict: "glue",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/r2000-session.ts", symbol: "ensureProjectSettings", line: 94 },
-        { path: "src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs", symbol: "synthesizeProject", line: 63 },
-      ],
-      requirements: [],
+      consumers: [],
+      requirements: ["CUT-01"],
       rationale:
         "Builds and settings-normalises the external analyser's own project file, whose format that " +
         "analyser owns. Once the store is this project's own, there is no such file to synthesise.",
@@ -733,14 +780,20 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-session.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "It owned the session lifecycle of a child process that no longer exists (plan 29-10, D-01/D-02). " +
+        "THIS ENTRY PREDICTED ITS OWN DISCHARGE and was read back rather than rewritten: the stdio entry " +
+        "point's import was named here as the discriminator's own trap -- a surviving consumer whose REASON " +
+        "for importing does not survive -- and plan 29-10 removed exactly that import and its call site.",
+    },
     verdict: "glue",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "closeR2000SessionSync", line: 200 },
-        { path: "src/mcp/vice/r2000-tools.ts", symbol: "runInR2000Session", line: 1164 },
-      ],
-      requirements: [],
+      consumers: [],
+      requirements: ["CUT-01"],
       rationale:
         "Owns the analyser child process's session lifecycle: open, the strict-arrival single-flight " +
         "queue with its bounded wait, and the synchronous close on process exit. The stdio entry point " +
@@ -755,13 +808,23 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   },
   {
     module: "r2000-tools.ts",
-    scope: "in-enumeration",
+    scope: "discharged",
+    fate: {
+      kind: "deleted",
+      on: "2026-08-30",
+      why:
+        "MCP-01 replaced this surface with one derived from the procedure manifest, and that replacement had " +
+        "already landed (plan 29-01) before this module went (plan 29-10, D-01/D-02). Its last remaining " +
+        "out-of-family consumer -- the derivation guard's upstream-integrity half -- was RE-POINTED onto the " +
+        "surviving curated set in the same commit, carrying plan 29-08's upstream-to-surface name mapping so " +
+        "the comparison keeps its meaning; it was observed still failing under a flipped manifest disposition " +
+        "before that re-point was accepted.",
+      supersededBy: "src/mcp/vice/anno-tools.ts",
+    },
     verdict: "glue",
     basis: {
-      consumers: [
-        { path: "src/mcp/vice/anno-derivation.test.ts", symbol: "CURATED_R2000_TOOLS", line: 55 },
-      ],
-      requirements: [],
+      consumers: [],
+      requirements: ["CUT-01", "MCP-01"],
       rationale:
         "The curated tool surface over the external analyser's own verbs: the definitions, the curation " +
         "gate, the store-path resolver and the client-side compositions that work around specific " +

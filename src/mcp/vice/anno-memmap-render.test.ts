@@ -2,6 +2,27 @@
 // provenance sidecar schema, the render digest, and the golden-output render
 // plus its drift guard. All of it runs everywhere now -- D-17 re-pointed the
 // renderer onto this project's own store, so the once-gated half builds rows.
+//
+// WHAT WAS REMOVED FROM THE END OF THIS FILE, AND WHY (plan 29-10, D-01 with
+// D-11 named as its authority, 2026-08-30). This file used to end in an
+// UNGATED availability assertion for the retired external analyser -- one
+// that ran on every single suite invocation, not behind any environment
+// variable -- plus the `SKIP_REASON` constant feeding it. Both are GONE, with
+// the gate module they called. D-01's own words are that the retired
+// integration must "never be included in any tests"; an assertion that
+// interrogates whether that integration is installed is the most literal
+// possible violation of that, and it could not have survived in a skipped or
+// `todo` form either, since a gated test whose subject no longer exists is
+// still a test that includes it.
+//
+// THE THREE RENDER TESTS WERE NOT DELETED WITH IT, and looking for them by
+// their old gated names is the mistake this paragraph exists to prevent.
+// D-17 gave them a substrate: plan 29-12 CONVERTED them at wave 6 into
+// ungated tests over a real Phase 28 store, keeping every assertion and
+// dropping only the child that used to supply the rows. They are the golden
+// render, the `[unknown]`/malformed-confidence case and the pipe-plus-newline
+// escaping case, all above. D-01 required the dependency to go, not the
+// coverage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -19,7 +40,6 @@ import {
 import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.ts";
-import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -568,21 +588,3 @@ test("comment evidence containing BOTH a pipe and an embedded newline renders as
   assert.ok(trickyRow.includes("table \\| pipe<br>second line"));
 });
 
-// ---------------------------------------------------------------------------
-// The regenerator2000 availability gate itself (D-11). Nothing above it is
-// gated any more -- this is the one test left in this file that consults the
-// gate at all, and it is what keeps `assertR2000RequiredIfEnvSet()`
-// observable now that the surrounding suite runs everywhere.
-//
-// `SKIP_REASON` survives with no consumer above it ON PURPOSE. It is not
-// dead weight to tidy away: this file's allow-list entry is discharged by
-// plan 29-10, which deletes the gate module and this test together, and
-// removing either here would discharge that entry inside a plan the entry
-// does not cite.
-// ---------------------------------------------------------------------------
-
-const SKIP_REASON: string | false = skipReasonFor("anno-memmap-render.test.ts");
-
-test("regenerator2000 availability gate (D-11)", () => {
-  assertR2000RequiredIfEnvSet(assert);
-});

@@ -192,12 +192,6 @@ import { capabilityRefusalMessage } from "./capability-registry.ts";
 // anno-tools.ts's own runAnnoTool(), which opens it, answers exactly one call
 // against it and closes it again (D-06), reached only when a tool is called.
 import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
-// Plan 18-04 (D18-22): a STATIC import, deliberately -- the teardown region
-// below cannot `await` a dynamic import, and this costs no child process
-// either way. `r2000-session.ts` itself keeps its OWN import of
-// `r2000-mcp-client.ts` (the actual spawn seam) dynamic; importing this one
-// function reference here spawns nothing at module load.
-import { closeR2000SessionSync } from "./r2000-session.ts";
 
 // ------------------------------------------------------------ r2000 subcommand
 //
@@ -234,9 +228,11 @@ import { closeR2000SessionSync } from "./r2000-session.ts";
 // non-blocking, unlike a TTY or a regular file), so a bare `process.exit()`
 // immediately after can discard whatever write has not yet drained --
 // measured at a 128 KiB truncation point on this host's Node for a single
-// write exceeding the OS pipe's capacity. The reachable trigger is
-// `cmdExportAsm`'s `console.error(result.stderr)` in anno-cli.ts, which can
-// carry a large diagnostic from the spawned regenerator2000 child: the one
+// write exceeding the OS pipe's capacity. The trigger this was FOUND
+// through -- a CLI verb that echoed a spawned child's whole stderr -- was
+// withdrawn with the analyser it spawned (plan 29-07, D-14), but the hazard
+// is a property of the exit path rather than of that verb: any verb that
+// prints a diagnostic larger than the pipe's capacity hits it, and the one
 // case where the user most needs the diagnostic is exactly the case a piped
 // invocation could silently lose it in. `drainStdio()` below explicitly
 // awaits both streams' own pending writes (a `write("", cb)`-style
@@ -291,12 +287,14 @@ if (process.argv[2] === "anno") {
   // Test-only escape hatch, never documented to end users and inert unless
   // this exact env var is set: writes a deterministic filler payload
   // through this SAME drained-exit path, so vice-proxy.test.ts can measure
-  // an exact byte count well above any OS pipe capacity without needing a
-  // real regenerator2000 project (empirically, neither `--help`'s ~5.6 KB
-  // USAGE text nor a synthesized/garbage `.regen2000proj` fed to
-  // export-asm's error path scales anywhere near 128 KiB on this host's
-  // regenerator2000 0.9.20 -- both were measured before this hatch was
-  // added; see 11.1-05-SUMMARY.md for the measurements). Never reachable
+  // an exact byte count well above any OS pipe capacity without needing any
+  // real project file at all. That independence is the point: measured at
+  // the time, neither `--help`'s ~5.6 KB USAGE text nor a synthesized or
+  // garbage project file fed to a verb's error path scaled anywhere near
+  // 128 KiB on this host, so no real invocation could reach the truncation
+  // point on demand (see 11.1-05-SUMMARY.md for those measurements). The
+  // hatch outlives the routes it was measured against, because it depends on
+  // none of them. Never reachable
   // from a real `anno <verb>` invocation: the check is against a specific,
   // unambiguous env var name no real caller would ever set.
   const testFillBytes = process.env.VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES;
@@ -3160,16 +3158,6 @@ async function forwardToVice(name: string, args: Record<string, unknown>): Promi
 // the control session's release function exactly once. Do not move either
 // marker away from the code each one bounds.
 //
-// Plan 18-04 (D18-22): this region ALSO kills a live regenerator2000
-// session, if one is held, via `r2000-session.ts`'s own synchronous close
-// function (see its one call site inside onTeardown() below) -- synchronous
-// by construction (it signals a retained `ChildProcess` handle directly,
-// mirroring `r2000-mcp-client.ts`'s own `killAfter()` kill), so it fits this
-// region's existing structural constraints (see this region's own opening
-// paragraph, above) without widening them. No save is attempted here on the
-// way out: a save cannot be meaningfully performed synchronously on a
-// process about to die, and D18-08's per-call save discipline has already
-// flushed everything a caller is owed before this point is ever reached.
 let teardownRan = false;
 
 function releaseLeaseNow(trigger: string): void {
@@ -3183,7 +3171,6 @@ function onTeardown(trigger: string): void {
   if (teardownRan) return; // idempotent -- SIGINT then SIGTERM ~100ms later both call in
   teardownRan = true;
   releaseLeaseNow(trigger);
-  closeR2000SessionSync(trigger);
 }
 
 process.stdin.on("end", () => onTeardown("stdin_end"));
