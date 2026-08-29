@@ -4827,3 +4827,205 @@ test("applyEnumUsage validates its address through parseStoreAddress before any 
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// D-15's CONSEQUENCE, which is the half of the decision that is easy to lose:
+// the version refusal must stay a SINGLE-WITNESS refusal. The bump was taken
+// deliberately and with the cost named; what must not happen afterwards is a
+// migration arm arriving quietly, because that would silently re-interpret
+// files this build declared unopenable.
+//
+// The two tests below exclude the two ways that goes wrong. The first is
+// BEHAVIOURAL: an actual version 2 file on disk is refused by name and left
+// byte-identical, which rules out both a silent open (it would not throw) and
+// a silent upgrade (the file would change). The second is STRUCTURAL, and it
+// is what makes the refusal a SINGLE witness rather than merely a working one.
+// ---------------------------------------------------------------------------
+
+/**
+ * The `SCHEMA_VERSION` 2 DDL, spelled out as its own frozen literal.
+ *
+ * DELIBERATELY HAND-WRITTEN AND DELIBERATELY NOT DERIVED FROM `DDL`. The
+ * fixture's whole value is that it is a GENUINE OLD-FORMAT FILE rather than a
+ * current store with one integer changed: a fixture built by taking today's DDL
+ * and subtracting today's additions would track every future change to the
+ * shape it is supposed to have frozen, and would stop being version 2 the
+ * moment version 4 arrived. This is the shape as it stood at version 2 --
+ * `anno_enum_usage` and its index are absent because they did not exist -- and
+ * it must never be edited to follow the live schema.
+ */
+const SCHEMA_VERSION_2_DDL = `
+create table anno_meta (
+  id integer primary key check(id = 1),
+  schema_version integer not null,
+  revision integer not null
+);
+
+create table anno_range (
+  id integer primary key autoincrement,
+  start integer not null,
+  end_inclusive integer not null,
+  data_type text not null,
+  bank integer
+);
+
+create table anno_label (
+  id integer primary key autoincrement,
+  address integer not null,
+  name text not null unique,
+  kind text not null,
+  bank integer
+);
+
+create table anno_comment (
+  id integer primary key autoincrement,
+  address integer not null,
+  comment_type text not null,
+  text text not null,
+  bank integer,
+  unique(address, comment_type)
+);
+
+create table anno_scope (
+  id integer primary key autoincrement,
+  start integer not null,
+  end_inclusive integer not null
+);
+
+create table anno_enum (
+  id integer primary key autoincrement,
+  name text not null unique,
+  variants text not null,
+  description text
+);
+
+create table anno_xref (
+  id integer primary key autoincrement,
+  from_address integer not null,
+  to_address integer not null,
+  access_kind text not null,
+  bank integer
+);
+
+create table anno_snapshot (
+  revision integer primary key
+);
+
+create index anno_range_end_start on anno_range(end_inclusive, start);
+create index anno_label_address on anno_label(address);
+create index anno_comment_address on anno_comment(address);
+create index anno_xref_to on anno_xref(to_address);
+`;
+
+/**
+ * Writes a genuine `SCHEMA_VERSION` 2 store file at `path`, IN A CHILD PROCESS.
+ *
+ * The child is not ceremony. `STORE-07` puts the `node:sqlite` dependency in
+ * `anno-store.ts` alone, and a fixture builder that imported the builtin here
+ * would put a second SQLite access point in the store's own test file -- which
+ * is the shape that guard exists to keep rare. The child names the builtin; this
+ * file does not.
+ */
+function writeSchemaVersion2Store(path: string): void {
+  const script =
+    "const { DatabaseSync } = require('node:sqlite');" +
+    "const db = new DatabaseSync(process.argv[1]);" +
+    "db.exec(process.argv[2]);" +
+    "db.prepare('insert into anno_meta(id, schema_version, revision) values (1, 2, 0)').run();" +
+    "db.close();";
+  execFileSync(process.execPath, ["-e", script, path, SCHEMA_VERSION_2_DDL], { stdio: "pipe" });
+}
+
+test("D-15: a genuine SCHEMA_VERSION 2 store file is REFUSED by name -- naming both the version found and the version expected -- and the file is left byte-identical, so neither a silent open nor a silent upgrade is possible", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "legacy-v2.annostore");
+    writeSchemaVersion2Store(path);
+
+    // NON-VACUITY, TAKEN FIRST: the fixture must really be a version 2 store
+    // before the refusal below means anything. A builder that silently wrote
+    // nothing would make every assertion in this test pass for the wrong
+    // reason.
+    assert.ok(existsSync(path), "the fixture must exist on disk before it can be refused");
+    const bytesBefore = readFileSync(path);
+    assert.ok(bytesBefore.length > 0, "and it must be a real file, not an empty one -- an empty file takes a DIFFERENT refusal branch");
+    assert.notEqual(SCHEMA_VERSION, 2, "and this test is only meaningful while the current version is not 2");
+
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /schema_version 2/, "the refusal must name the version it FOUND -- 2 -- not merely that there was a mismatch");
+        assert.match(e.message, new RegExp(`expected ${SCHEMA_VERSION}`), "and the version it WANTED, so the reader can tell which build is which");
+        return true;
+      },
+    );
+
+    // THE BYTE COMPARISON IS WHAT EXCLUDES A SILENT UPGRADE. Remove it and this
+    // test still passes against an `openStore` that migrated the file and then
+    // threw anyway; keep it and a migration arm cannot hide behind the refusal.
+    const bytesAfter = readFileSync(path);
+    assert.equal(bytesAfter.length, bytesBefore.length, "a refusal must not resize the file it refused");
+    assert.ok(
+      bytesAfter.equals(bytesBefore),
+      "and it must not change a single byte: D-15 declared every version 2 store unopenable, so the bytes stay exactly as their owner " +
+        "left them and remain recoverable by hand",
+    );
+  });
+});
+
+test("D-15: the schema_version refusal is a SINGLE WITNESS -- exactly one comparison site, inside openStore, with no second write of anno_meta.schema_version and no migration entry point anywhere in the module", () => {
+  const src = readFileSync(join(HERE, "anno-store.ts"), "utf8");
+
+  // LITERAL BODIES KEPT (`codeOnly(src, true)`): half of what is asserted below
+  // is SQL text inside statement literals, and the strict mode that blanks them
+  // would make those absence claims pass vacuously.
+  const stripped = codeOnly(src, true);
+  assert.ok(stripped.includes("export function openStore("), "the stripper must leave openStore findable, or every claim below is vacuous");
+
+  // --- 1. Exactly one comparison, and it is inside openStore. ---
+  const comparisons = stripped.match(/schema_version\s*!==\s*SCHEMA_VERSION/g) ?? [];
+  assert.equal(
+    comparisons.length,
+    1,
+    "the module must compare a store's declared schema_version against SCHEMA_VERSION at EXACTLY ONE site. A SECOND comparison site is " +
+      "how a migration arm gets added without a decision: it reads as a harmless special case beside the real gate, and it silently " +
+      "re-interprets files this build declared unopenable (D-15). If a second site is genuinely wanted, that is a decision to take " +
+      "explicitly, not a test to relax.",
+  );
+
+  const openStoreStart = stripped.indexOf("export function openStore(");
+  const afterOpenStore = stripped.indexOf("\nexport function closeStore(", openStoreStart);
+  assert.ok(afterOpenStore > openStoreStart, "openStore's extent must be bounded by the next exported function, or the locality claim below is unmeasured");
+  const openStoreBody = stripped.slice(openStoreStart, afterOpenStore);
+  assert.equal(
+    (openStoreBody.match(/schema_version\s*!==\s*SCHEMA_VERSION/g) ?? []).length,
+    1,
+    "and that one site must be inside openStore -- the gate belongs where the file is first read, not somewhere a caller could bypass",
+  );
+
+  // --- 2. anno_meta.schema_version is WRITTEN only at store creation. ---
+  const schemaWrites = stripped.match(/insert into anno_meta|update anno_meta set schema_version/g) ?? [];
+  assert.deepEqual(
+    schemaWrites,
+    ["insert into anno_meta"],
+    "the ONLY statement that writes a schema_version is the one that creates a fresh store. An `update anno_meta set schema_version` " +
+      "anywhere in this module IS an upgrade path, whatever it is called, and it would rewrite a file's declared version behind the " +
+      "refusal's back",
+  );
+  const freshBranchStart = stripped.indexOf("insert into anno_meta");
+  assert.ok(
+    freshBranchStart > openStoreStart && freshBranchStart < afterOpenStore,
+    "and that one write must sit inside openStore's fresh-store branch",
+  );
+
+  // --- 3. No migration entry point, under any of its names. ---
+  for (const forbidden of ["migrate", "migration", "upgradeStore", "downgradeStore"]) {
+    assert.equal(
+      stripped.toLowerCase().includes(forbidden.toLowerCase()),
+      false,
+      `the module must contain no ${forbidden} entry point: D-15 bought the anno_enum_usage table by ACCEPTING that every version 2 ` +
+        `store becomes permanently unopenable, and an arm added later would be guessing at a history nothing recorded -- the exact ` +
+        `failure the version 1 legacy directory's own record already names`,
+    );
+  }
+});
