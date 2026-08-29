@@ -3856,7 +3856,22 @@ test("CR-08: a retained snapshot TRUNCATED to zero bytes is REFUSED by name -- t
       // this test closes is quoted in revision numbers AND in bytes -- "69632
       // -> 0" is the whole finding -- and a test that never names the number
       // cannot be matched against it.
-      assert.equal(bytesBefore.length, 69632, "the live store measures the 69,632 bytes the CR-08 reproduction destroyed");
+      //
+      // RE-RECORDED 2026-08-29 (D-15), 69632 -> 81920, AND THE CAUSE IS NAMED.
+      // This is the second admissible reason the number moves, beside the
+      // SQLite default the paragraph above anticipates: the DDL itself grew.
+      // `SCHEMA_VERSION` 3 adds `anno_enum_usage` and its index, so a
+      // three-write store now carries more schema pages. The CR-08
+      // reproduction's own figure is and remains 69,632 -- that is the number
+      // the finding is quoted in and it is left spelled out here so the finding
+      // stays matchable -- and what this line pins is TODAY's live store, whose
+      // whole point is that the bytes below are IDENTICAL after the refusal.
+      assert.equal(
+        bytesBefore.length,
+        81920,
+        "the live store measures 81,920 bytes at SCHEMA_VERSION 3 -- the CR-08 reproduction destroyed 69,632, which is the same store " +
+          "one table and one index smaller (D-15)",
+      );
       assert.equal(rowsBefore.length, 3, "with the three rows the three writes added");
 
       const snapPath = snapshotPathFor(store, 1);

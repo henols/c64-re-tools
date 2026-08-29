@@ -164,6 +164,7 @@ import {
   type DataType,
   type LabelKind,
   type LabelRow,
+  type EnumUsageRow,
   type ProjectEnumRow,
   type RangeRow,
   type ScopeRow,
@@ -214,9 +215,18 @@ export interface AnnoWriteResult {
  * with. `anno-types.ts`'s `SCHEMA_VERSION` doc comment carries the whole
  * argument and the reason a version-1 store is refused rather than migrated.
  *
- * THE DDL CHANGE TOUCHED ONLY `anno_snapshot`. Every other table's column list
- * below, including the reserved and uninterpreted `bank` columns, is
- * byte-identical to version 1's.
+ * THE VERSION 2 DDL CHANGE TOUCHED ONLY `anno_snapshot`. Every other table's
+ * column list below, including the reserved and uninterpreted `bank` columns,
+ * was byte-identical to version 1's.
+ *
+ * THAT SENTENCE IS KEPT AND SCOPED RATHER THAN DELETED, because at
+ * `SCHEMA_VERSION` 3 it stopped being the whole truth: D-15 (2026-08-29) ADDS
+ * one table, `anno_enum_usage`, and its index. It changes no existing table's
+ * column list, so the scoped claim above still holds of every table version 2
+ * had. The version 3 table associates ONE address with ONE `anno_enum` row by
+ * enum **id** -- see `anno-types.ts`'s `SCHEMA_VERSION` doc comment for what
+ * the bump buys, why no migration arm was written, and the basis measured on
+ * the day that cost was accepted.
  *
  * `anno_xref` and its `access_kind` column exist from the very first write.
  * Two requirement texts look like they conflict here and do not: `STORE-05`
@@ -277,6 +287,14 @@ create table anno_enum (
   description text
 );
 
+create table anno_enum_usage (
+  id integer primary key autoincrement,
+  address integer not null,
+  enum_id integer not null references anno_enum(id),
+  bank integer,
+  unique(address, bank)
+);
+
 create table anno_xref (
   id integer primary key autoincrement,
   from_address integer not null,
@@ -292,6 +310,7 @@ create table anno_snapshot (
 create index anno_range_end_start on anno_range(end_inclusive, start);
 create index anno_label_address on anno_label(address);
 create index anno_comment_address on anno_comment(address);
+create index anno_enum_usage_address on anno_enum_usage(address);
 create index anno_xref_to on anno_xref(to_address);
 `;
 
@@ -3186,6 +3205,142 @@ export function listProjectEnums(handle: AnnoStoreHandle): ProjectEnumRow[] {
     name: row.name,
     variants: JSON.parse(row.variants) as Record<string, string>,
     description: row.description,
+  }));
+}
+
+/**
+ * Associates ONE address with ONE project enum, so the address's operand is
+ * formatted through that enum's variants (`SCHEMA_VERSION` 3, D-15).
+ *
+ * THE ASSOCIATION IS BY `anno_enum.id`, NEVER BY NAME, and that is the whole
+ * design of the table. `updateProjectEnum` renames an enum in place, keeping
+ * its id; a usage row that persisted the NAME would either be orphaned by the
+ * rename or -- worse, because it is silent -- re-pointed at whatever enum next
+ * took the old name. The name a caller passes here is resolved to an id ONCE,
+ * at write time, and `listEnumUsage` resolves it back through a join at read
+ * time.
+ *
+ * AN ENUM NAME NO `anno_enum` ROW CARRIES IS REFUSED BY NAME, naming the enum
+ * that was not found, and nothing is written. The alternative -- creating the
+ * enum implicitly -- would let a typo produce a real, empty enum that formats
+ * nothing and looks deliberate.
+ *
+ * THE IDEMPOTENCY SHAPE IS `putXref`'s, COPIED RATHER THAN REINVENTED: the
+ * existing row is selected first and `changed: false` is returned when the same
+ * enum is already applied at the same address. The REVISION still advances --
+ * see `AnnoWriteResult`, where that is the module's stated invariant for every
+ * accepted write, `changed` being the only signal that separates a no-op from
+ * a real edit.
+ *
+ * Every argument is validated through `anno-types.ts`'s own assertions before
+ * any SQL runs. `parseStoreAddress` in particular refuses an UNPREFIXED numeric
+ * string such as `"53280"` outright rather than guessing a base -- WR-22's
+ * recorded failure, in which a JSON `"1"` arrived verbatim and SQLite's column
+ * affinity turned an argument error into a corruption refusal.
+ */
+export function applyEnumUsage(
+  handle: AnnoStoreHandle,
+  args: { address: number | string; name: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const address = parseStoreAddress(args.address, { what: "address" });
+  const name = assertEnumName(args.name);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      // READ INSIDE THE TRANSACTION, for the reason the write sequence's own
+      // rollback comment gives: resolving the enum outside it would open a
+      // window in which a concurrent writer renames or removes it between the
+      // read and the insert.
+      const target = readEnumRow(db, name);
+      if (!target) {
+        throw new AnnoLabelError(
+          `project enum ${JSON.stringify(name)} does not exist, so there is nothing to apply at $${address.toString(16).padStart(4, "0")} -- the write is ` +
+            `REFUSED rather than creating the enum implicitly, because a mistyped name would otherwise become a real, empty enum that ` +
+            `formats nothing and looks deliberate. Create it first.`,
+          { identifier: name, reason: "no such enum" },
+        );
+      }
+
+      const existing = db.prepare("select id, enum_id from anno_enum_usage where address = ? and bank is ?").get(address, null) as
+        | { id: number; enum_id: number }
+        | undefined;
+      if (existing) {
+        if (existing.enum_id === target.id) return false;
+        // ONE ADDRESS CARRIES AT MOST ONE ENUM (the `unique(address, bank)`
+        // constraint), so applying a DIFFERENT enum replaces rather than
+        // refuses: the schema's own words for the verb are "Applies an enum
+        // definition to format the immediate operand ... at a specific
+        // address", which is a set, not an add.
+        db.prepare("update anno_enum_usage set enum_id = ? where id = ?").run(target.id, existing.id);
+        return true;
+      }
+      db.prepare("insert into anno_enum_usage(address, enum_id, bank) values (?, ?, ?)").run(address, target.id, null);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/**
+ * Clears the enum usage at one address. An address that carries none returns
+ * `changed: false` and is NOT an error -- clearing is idempotent in the same
+ * direction applying is, and the schema's own words make the empty name the
+ * clear ("Omit or send empty to clear"), so a caller clearing twice is doing
+ * the ordinary thing rather than a mistake worth refusing.
+ *
+ * THIS IS THE MODULE'S **THIRD** ROW-DELETING STATEMENT, and the count is
+ * stated here rather than left to be rediscovered. `28-REVIEW` recorded exactly
+ * TWO -- the snapshot ring's prune, which removes an `anno_snapshot` pointer
+ * row, and `retype()`, which removes an overlapped `anno_range` row -- and a
+ * reader who checks that number against this tree will find THREE. The third is
+ * this one.
+ *
+ * The count is written in prose, deliberately without spelling the SQL prefix a
+ * census greps for, so that a `grep` over this module counts STATEMENTS and not
+ * the sentence describing them. Nothing else about the deletion discipline
+ * changed: this statement runs inside the write sequence's transaction, so a
+ * refusal raised anywhere in the sequence rolls it back with everything else.
+ */
+export function clearEnumUsage(handle: AnnoStoreHandle, args: { address: number | string; baseRevision?: number }): AnnoWriteResult {
+  const address = parseStoreAddress(args.address, { what: "address" });
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db.prepare("select id from anno_enum_usage where address = ? and bank is ?").get(address, null) as
+        | { id: number }
+        | undefined;
+      if (!existing) return false;
+      db.prepare("delete from anno_enum_usage where id = ?").run(existing.id);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every enum usage, in ascending ADDRESS order, with the enum's name resolved
+ * through a join on `anno_enum.id` rather than read from a second on-disk copy
+ * of it. Reads the reserved `bank` column. */
+export function listEnumUsage(handle: AnnoStoreHandle): EnumUsageRow[] {
+  const rows = handle.db
+    .prepare(
+      // ONE LITERAL, NOT A CONCATENATION. The statement is long enough to want
+      // wrapping and is deliberately not wrapped: the module's SQL is written
+      // as bare statement literals so a census over this file reads the
+      // statement it executes, and so no reader has to prove that a `+` between
+      // two fragments joined only literals.
+      "select u.id as id, u.address as address, u.enum_id as enum_id, e.name as enum_name, u.bank as bank from anno_enum_usage u join anno_enum e on e.id = u.enum_id order by u.address, u.id",
+    )
+    .all() as { id: number; address: number; enum_id: number; enum_name: string; bank: number | null }[];
+  return rows.map((row) => ({
+    id: row.id,
+    address: row.address,
+    enumId: row.enum_id,
+    enumName: row.enum_name,
+    bank: row.bank,
   }));
 }
 

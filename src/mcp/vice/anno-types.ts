@@ -150,8 +150,40 @@ import { ViceError, type ViceErrorOptions } from "./vice.ts";
  * watching. The legacy directory is therefore left on disk untouched: never
  * adopted, never migrated, never deleted, so the bytes stay recoverable by
  * hand.
+ *
+ * ---------------------------------------------------------------------------
+ * VERSION 3, 2026-08-29 (D-15) -- AND THE COST IS NAMED HERE RATHER THAN LEFT
+ * IN A PLANNING DIRECTORY, because a version number whose rationale lives
+ * somewhere else is a number the next reader has no way to weigh.
+ *
+ * WHAT THE BUMP BUYS: `anno_enum_usage`, the table that associates ONE address
+ * with ONE `anno_enum` row, which is what `r2000_apply_enum_usage`'s route
+ * needs and what version 2 had nowhere to put. The association is by enum
+ * **id**, never by enum name, so `updateProjectEnum`'s rename can neither
+ * orphan a usage nor silently re-point it at a different enum.
+ *
+ * NO MIGRATION ARM WAS WRITTEN, AND THAT IS THE ACCEPTED COST: every
+ * version 2 store on disk is permanently unopenable. The refusal below stays a
+ * SINGLE-WITNESS refusal -- one comparison site in `openStore`, no upgrade
+ * path, no silent re-write of `anno_meta`. The basis measured on the day of the
+ * decision: no store file is tracked in this repository and none exists in its
+ * working tree, the store's own module landed 2026-08-27, the version 2 shape
+ * landed 2026-08-28, and the last release tag (`v0.5.0`, 2026-08-25) PREDATES
+ * the store entirely -- so no tagged release has ever shipped a store at all.
+ * Any store that would be stranded is in a user's own project and outside this
+ * repository's reach by construction; that is an assumption, flagged rather
+ * than asserted.
+ *
+ * THE VERSION 1 PARAGRAPH ABOVE IS THE PRECEDENT THIS IS MEASURED AGAINST, and
+ * the two refusals are NOT the same kind. Version 1 could not be migrated even
+ * in principle -- the ring's ownership was unrecoverable, so a migration would
+ * have had to guess. Version 3 COULD have been given a migration arm and
+ * deliberately was not, because one bought now protects stores that may not
+ * exist, and it would put new code into a module six hardening rounds went
+ * into. Stating the difference is the point: this one is a choice, not an
+ * impossibility.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** The 6510's address space, inclusive at both ends. */
 export const ADDRESS_MIN = 0x0000;
@@ -440,6 +472,26 @@ export interface ProjectEnumRow {
   name: string;
   variants: Readonly<Record<string, string>>;
   description: string | null;
+}
+
+/**
+ * One enum usage as the store holds it: the association between ONE address
+ * and ONE project enum, added at `SCHEMA_VERSION` 3 (D-15).
+ *
+ * `enumId` IS WHAT THE STORE PERSISTS; `enumName` is resolved through the join
+ * at read time and is never a second on-disk copy of the name. A row that
+ * persisted the NAME would be re-pointed silently by `updateProjectEnum`'s
+ * rename -- the usage would follow whatever enum next took the old name -- and
+ * the disagreement would be invisible because both answers look authoritative.
+ * `bank` is the same reserved, uninterpreted column every other row type
+ * carries.
+ */
+export interface EnumUsageRow {
+  id: number;
+  address: number;
+  enumId: number;
+  enumName: string;
+  bank: number | null;
 }
 
 /** One cross-reference as the store holds it. Only NON-DERIVABLE references
