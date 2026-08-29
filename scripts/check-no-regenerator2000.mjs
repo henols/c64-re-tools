@@ -551,6 +551,16 @@ const EXEMPTION_CLASSES = [
 // names it, in that plan's own commit. THIS BLOCK MUST BE EMPTY AT THE PHASE'S
 // CLOSE; plan 29-11 asserts exactly that.
 //
+// CLOSED 2026-08-30 BY PLAN 29-11. The block is EMPTY, and it reached empty the
+// only way that makes emptiness a real fact rather than a bookkeeping one:
+// every entry it ever held was DISCHARGED by the plan that cited it. None was
+// deleted here for lack of an owner, and none was converted into a permanent
+// exemption to dodge this assertion -- that conversion is the widening this
+// phase's standing prohibition forbids, and it would make an entry pinning a
+// statement that is FALSE after the deletion permanent. The dated header above
+// is kept deliberately: it is the record of what the block was for and when it
+// existed, and a deleted block is an invitation to reintroduce one.
+//
 // Three assertions run over every entry, and each catches a different way an
 // allow-list rots:
 //   - the path must EXIST on disk       -> an entry left behind after its file
@@ -981,7 +991,33 @@ for (const [rel, pin] of Object.entries(SKILL_ATTRIBUTION_PINS)) {
 }
 
 // --- the temporary allow-list ----------------------------------------------
+//
+// THE EMPTINESS ASSERTION (plan 29-11, 2026-08-30). This is what keeps the
+// block above empty: a later phase cannot QUIETLY re-add an entry, because
+// adding one makes this gate exit non-zero.
+//
+// The three per-entry assertions below it are kept ON PURPOSE and are
+// unreachable only for as long as the block stays empty. A later phase that
+// genuinely needs a temporary allow-list again must DELETE this assertion in
+// the commit that re-opens the block -- an explicit, reviewable act with a diff
+// -- and the moment it does, the machinery below is there to police whatever it
+// adds. Deleting the block and its checks instead would leave nothing to
+// re-open and nothing to police.
+//
+// Do NOT discharge a future entry by moving it into EXEMPTION_CLASSES. That
+// converts a dated, owned, count-pinned obligation into a PERMANENT exemption,
+// which is the widening this file exists to refuse -- one file at a time.
 const planIds = phasePlanIds();
+need(
+  TEMPORARY_ALLOW_LIST.length === 0,
+  `temporary allow-list: the block must be EMPTY (opened ${ALLOW_LIST_OPENED}, closed 2026-08-30 by plan 29-11), ` +
+    `but it holds ${TEMPORARY_ALLOW_LIST.length} entr${TEMPORARY_ALLOW_LIST.length === 1 ? "y" : "ies"}: ` +
+    `${TEMPORARY_ALLOW_LIST.map((e) => `${e.path} (plan ${e.plan}, pinned ${e.count})`).join(", ")}. Every entry ` +
+    `this block ever held was discharged by the plan that cited it. If a later phase genuinely needs a temporary ` +
+    `allow-list again, DELETE THIS ASSERTION in the commit that re-opens the block -- deliberately and visibly -- ` +
+    `and re-date the header. Do NOT instead widen the permanent exemption set to make a temporary obligation ` +
+    `permanent; that is the one route this gate exists to refuse.`
+);
 need(
   TEMPORARY_ALLOW_LIST.length === 0 || (planIds !== null && planIds.size >= 10),
   `temporary allow-list: the phase directory ${PHASE_DIR.slice(ROOT.length + 1)} must exist and hold at least 10 ` +
@@ -1034,7 +1070,7 @@ console.log(
     `${allowTotal} temporarily allow-listed across ${TEMPORARY_ALLOW_LIST.length} entries.\n` +
     `  permanent exemptions (exact pins):\n` +
     EXEMPTION_CLASSES.map((c) => `    ${c.id.padEnd(36)} ${perClassHits.get(c.id)}`).join("\n") +
-    `\n  temporary allow-list by discharging plan (opened ${ALLOW_LIST_OPENED}, must be EMPTY at phase close):\n` +
+    `\n  temporary allow-list by discharging plan (opened ${ALLOW_LIST_OPENED}; asserted EMPTY since 2026-08-30, plan 29-11):\n` +
     [...byPlan.entries()]
       .sort()
       .map(([p, n]) => `    ${p.padEnd(36)} ${n}`)
